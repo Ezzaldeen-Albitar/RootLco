@@ -12,8 +12,15 @@
  */
 import { AppFailure } from '@/server/errors/app-failure';
 import { appendAudit } from '@/server/audit/audit';
-import { resolveLimit, decodeCursor, type Page } from '@/server/db/pagination';
-import { ITEM_ORDER, MOVEMENT_ORDER } from '../data/inventory-repository';
+import { pageRequest, resolveLimit, decodeCursor, type Page } from '@/server/db/pagination';
+import {
+  ITEM_ORDER,
+  LOCATION_ORDER,
+  MOVEMENT_ORDER,
+  PART_ISSUE_ORDER,
+  RESERVATION_ORDER,
+} from '../data/inventory-repository';
+import { workOrderModule } from '@/modules/work-order';
 import type { DbHandle } from '@/server/db/transaction';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import type {
@@ -23,7 +30,10 @@ import type {
   ItemRow,
   MovementListFilter,
   MovementRow,
+  PartIssueListRow,
+  ReservationListRow,
   StockBalanceRow,
+  StockLocationListRow,
 } from '../data/inventory-repository';
 
 /** An item as the API renders it. Carries no cost — that is `inv.cost.view` data. */
@@ -160,6 +170,109 @@ export interface OpenInventoryCommitments {
   /** True when either count is non-zero, i.e. closure must be refused. */
   readonly blocking: boolean;
 }
+
+/**
+ * One stock reservation as the list renders it (Phase 1-30 A2, S-14).
+ *
+ * `quantity` is `numeric(12, 3)` and stays a decimal STRING. `expiresAt` is
+ * `null` when the reservation carries no expiry - a real state, not a missing
+ * value, and not one to paper over with a far-future instant.
+ */
+export interface ReservationListView {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly itemId: string;
+  readonly sku: string;
+  readonly locationId: string;
+  readonly locationCode: string;
+  readonly workOrderId: string | null;
+  readonly quantity: string;
+  readonly status: string;
+  readonly expiresAt: string | null;
+  readonly createdAt: string;
+  readonly recordVersion: number;
+}
+
+/**
+ * One part issue as the per-work-order list renders it (Phase 1-30 A2, S-15).
+ *
+ * `quantity` and `returnedQty` are both `numeric(12, 3)` decimal STRINGS, and the
+ * outstanding amount is deliberately NOT published: netting them here would mean
+ * subtracting two exact decimals in IEEE-754, which is the arithmetic the
+ * server-owned-amount rule exists to prevent. A consumer that needs the
+ * difference has both exact operands.
+ */
+export interface PartIssueListView {
+  readonly id: string;
+  readonly workOrderId: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly itemId: string;
+  readonly sku: string;
+  readonly locationId: string;
+  readonly locationCode: string;
+  readonly reservationId: string | null;
+  readonly quantity: string;
+  readonly returnedQty: string;
+  readonly issuedAt: string;
+}
+
+/** One stock location as the picker renders it (Phase 1-30 A2, S-16). */
+export interface StockLocationView {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly locationCode: string;
+  readonly name: string;
+  readonly locationType: string;
+  readonly parentLocationId: string | null;
+  readonly status: string;
+}
+
+const toReservationListView = (row: ReservationListRow): ReservationListView => ({
+  id: row.id,
+  companyId: row.companyId,
+  branchId: row.branchId,
+  itemId: row.itemId,
+  sku: row.sku,
+  locationId: row.locationId,
+  locationCode: row.locationCode,
+  workOrderId: row.workOrderId,
+  quantity: row.quantity,
+  status: row.status,
+  expiresAt: row.expiresAt === null ? null : row.expiresAt.toISOString(),
+  createdAt: row.createdAt.toISOString(),
+  recordVersion: row.recordVersion,
+});
+
+const toPartIssueListView = (row: PartIssueListRow): PartIssueListView => ({
+  id: row.id,
+  workOrderId: row.workOrderId,
+  companyId: row.companyId,
+  branchId: row.branchId,
+  itemId: row.itemId,
+  sku: row.sku,
+  locationId: row.locationId,
+  locationCode: row.locationCode,
+  reservationId: row.reservationId,
+  quantity: row.quantity,
+  returnedQty: row.returnedQty,
+  // `inv.part_issues` has no `issued_at` column; `created_at` IS the instant the
+  // part left the store, written by the statement that posted the movement.
+  issuedAt: row.createdAt.toISOString(),
+});
+
+const toStockLocationView = (row: StockLocationListRow): StockLocationView => ({
+  id: row.id,
+  companyId: row.companyId,
+  branchId: row.branchId,
+  locationCode: row.locationCode,
+  name: row.name,
+  locationType: row.locationType,
+  parentLocationId: row.parentLocationId,
+  status: row.status,
+});
 
 export class InventoryReadService {
   public constructor(private readonly repository: InventoryRepository) {}
@@ -327,6 +440,138 @@ export class InventoryReadService {
     });
 
     return { ...result, items: result.items.map(toMovementView) };
+  }
+
+  /**
+   * One branch's stock reservations, newest first (Phase 1-30 A2, seam S-14).
+   *
+   * `authorizeScope` is UNCONDITIONAL and runs BEFORE any row is read, for the
+   * reason the class docblock gives: the difference between an empty and a
+   * non-empty page is itself information, so authorizing after the query would
+   * still leak whether a branch holds commitments.
+   *
+   * A named `locationId` is resolved to its OWN company and branch and compared
+   * against the authorized pair - otherwise it would be a way past the branch
+   * check, which is exactly the hole `readAvailability` closes the same way.
+   *
+   * `auditClass` on the route is `none`, matching `inv.stock-availability-read`
+   * rather than `inv.stock-movement-list`. The movement ledger is audited because
+   * it is the complete record of what a branch holds and consumes; a list of open
+   * commitments is not that record, and A2 does not invent read-audit actions for
+   * ordinary reads.
+   */
+  public async listReservations(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly itemId?: string | undefined;
+      readonly locationId?: string | undefined;
+      readonly workOrderId?: string | undefined;
+      readonly status?: string | undefined;
+    },
+    page: { readonly cursor?: string | undefined; readonly limit?: number | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<Page<ReservationListView>> {
+    await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
+
+    if (filter.locationId !== undefined) {
+      const location = await this.repository.readLocation(db, filter.locationId);
+      if (!location) {
+        throw new AppFailure('ERR-RES-001', {
+          message: `Stock location ${filter.locationId} was not found`,
+        });
+      }
+      if (location.companyId !== filter.companyId || location.branchId !== filter.branchId) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: 'locationId names a different company or branch from the one authorized',
+          safeDetails: { violations: [{ path: 'query.locationId', rule: 'custom' }] },
+        });
+      }
+    }
+
+    const result = await this.repository.listReservations(
+      db,
+      filter,
+      pageRequest(RESERVATION_ORDER, page)
+    );
+    return { ...result, items: result.items.map(toReservationListView) };
+  }
+
+  /**
+   * One WORK ORDER's part issues, newest first (Phase 1-30 A2, seam S-15).
+   *
+   * ## Why the parent is mandatory
+   *
+   * The work order is resolved through `@/modules/work-order` BEFORE any issue is
+   * read, and that call performs the deferred scoped authorization against the
+   * ROW's own company and branch. The alternative shape - a top-level
+   * `GET /stock-issues?workOrderId=...` - names no parent, so
+   * `requiresScopedEvaluation` sees an empty target, returns false whatever the
+   * declaration says, and the check degrades to the scope-blind
+   * `iam.has_permission` (P1-18-A-01). RLS would then be the only narrowing, and
+   * `app.branch_ids` is the permission-blind union of every active grant.
+   *
+   * It also settles what an empty answer means: a visible work order with no
+   * parts issued returns an empty page; one the caller may not see is
+   * `ERR-RES-001` before a single issue row is touched, so an empty page can
+   * never stand in for a refusal.
+   *
+   * Reading this module's own rows through the work-order module's public
+   * surface, not its tables - the same one-way dependency `openCommitmentsFor`
+   * describes in the other direction.
+   */
+  public async listPartIssuesForWorkOrder(
+    db: DbHandle,
+    workOrderId: string,
+    page: { readonly cursor?: string | undefined; readonly limit?: number | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<Page<PartIssueListView>> {
+    const workOrder = await workOrderModule().workOrders.requireWorkOrder(
+      db,
+      workOrderId,
+      authorizeScope
+    );
+    const result = await this.repository.listPartIssuesForWorkOrder(
+      db,
+      workOrder.id,
+      pageRequest(PART_ISSUE_ORDER, page)
+    );
+    return { ...result, items: result.items.map(toPartIssueListView) };
+  }
+
+  /**
+   * One branch's stock locations, by code (Phase 1-30 A2, seam S-16).
+   *
+   * The location is the scope anchor every movement derives from, so a picker
+   * that offered locations outside the authorized branch would be offering ids
+   * that `inv.post_stock_movement` will refuse - and revealing that those
+   * branches exist. `authorizeScope` therefore runs first and unconditionally,
+   * on the same required `(companyId, branchId)` the reservation list uses.
+   *
+   * Inactive locations are NOT hidden by default. Stock already sitting in a
+   * location that was later deactivated still has to be findable, and a picker
+   * that silently omitted it would make that stock unreachable; `status` is
+   * published on every row and offered as a filter instead.
+   */
+  public async listLocations(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly locationType?: string | undefined;
+      readonly status?: string | undefined;
+    },
+    page: { readonly cursor?: string | undefined; readonly limit?: number | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<Page<StockLocationView>> {
+    await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
+    const result = await this.repository.listLocations(
+      db,
+      filter,
+      pageRequest(LOCATION_ORDER, page)
+    );
+    return { ...result, items: result.items.map(toStockLocationView) };
   }
 
   /**

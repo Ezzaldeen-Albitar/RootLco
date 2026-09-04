@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 356,
-    "publicApi": 356,
+    "registered": 368,
+    "publicApi": 368,
     "internal": 0,
-    "withRequiredEvidence": 356,
+    "withRequiredEvidence": 368,
     "invocationOnly": 0,
     "p1_15": {
       "registered": 28,
@@ -57,9 +57,9 @@
       "metadataOnly": 0
     },
     "p1_20": {
-      "registered": 21,
-      "publicApi": 21,
-      "operationDepth": 21,
+      "registered": 28,
+      "publicApi": 28,
+      "operationDepth": 28,
       "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
@@ -67,9 +67,9 @@
       "metadataOnly": 0
     },
     "p1_21": {
-      "registered": 14,
-      "publicApi": 14,
-      "operationDepth": 14,
+      "registered": 17,
+      "publicApi": 17,
+      "operationDepth": 17,
       "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
@@ -77,9 +77,9 @@
       "metadataOnly": 0
     },
     "p1_22": {
-      "registered": 20,
-      "publicApi": 20,
-      "operationDepth": 20,
+      "registered": 22,
+      "publicApi": 22,
+      "operationDepth": 22,
       "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
@@ -4142,6 +4142,40 @@
       "unitOnly": false
     },
     {
+      "id": "inv.stock-location-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/stock-locations",
+      "public": false,
+      "files": ["tests/backend/p1-30-a2-inventory-reads.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "pagination"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant",
+        "pagination"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "inv.stock-movement-list",
       "surface": "public-api",
       "method": "GET",
@@ -4211,6 +4245,40 @@
         "idempotency",
         "isolation",
         "outbox",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "inv.stock-reservation-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/stock-reservations",
+      "public": false,
+      "files": ["tests/backend/p1-30-a2-inventory-reads.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "pagination"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant",
+        "pagination"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
         "route",
         "service",
         "success"
@@ -4297,6 +4365,40 @@
         "denial",
         "idempotency",
         "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "inv.work-order-part-issue-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/work-orders/{workOrderId}/part-issues",
+      "public": false,
+      "files": ["tests/backend/p1-30-a2-inventory-reads.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "pagination"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial",
+        "pagination"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
         "route",
         "service",
         "success"
@@ -5485,6 +5587,40 @@
       "unitOnly": false
     },
     {
+      "id": "quo.quotation-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/work-orders/{workOrderId}/quotations",
+      "public": false,
+      "files": ["tests/backend/p1-30-a2-published-reads.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "pagination"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial",
+        "pagination"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "quo.quotation-revision-create",
       "surface": "public-api",
       "method": "POST",
@@ -5575,6 +5711,104 @@
         "isolation",
         "outbox",
         "rollback",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "quo.quotation-revision-decisions-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/quotation-revisions/{revisionId}/decisions",
+      "public": false,
+      "files": ["tests/backend/p1-30-a2-published-reads.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "quo.quotation-revision-detail",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/quotation-revisions/{revisionId}",
+      "public": false,
+      "files": ["tests/backend/p1-30-a2-published-reads.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "quo.quotation-revision-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/quotations/{quotationId}/revisions",
+      "public": false,
+      "files": ["tests/backend/p1-30-a2-published-reads.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "pagination"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial",
+        "pagination"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
         "route",
         "service",
         "success"
@@ -8184,6 +8418,72 @@
       "unitOnly": false
     },
     {
+      "id": "sal.receipt-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/payments",
+      "public": false,
+      "files": ["tests/backend/p1-30-a2-published-reads.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "pagination"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant",
+        "pagination"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "sal.work-order-invoice-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/work-orders/{workOrderId}/invoice",
+      "public": false,
+      "files": ["tests/backend/p1-30-a2-published-reads.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "shared.attachment-download-authorize",
       "surface": "public-api",
       "method": "POST",
@@ -9224,6 +9524,22 @@
       "unitOnly": false
     },
     {
+      "id": "svc.price-list-detail",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/price-lists/{priceListId}",
+      "public": false,
+      "files": ["tests/backend/p1-30-a2-published-reads.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["success", "denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "svc.price-list-list",
       "surface": "public-api",
       "method": "GET",
@@ -9366,6 +9682,22 @@
       "unitOnly": false
     },
     {
+      "id": "svc.price-rule-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/price-lists/{priceListId}/versions/{versionId}/rules",
+      "public": false,
+      "files": ["tests/backend/p1-30-a2-published-reads.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["success", "denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "svc.price-rule-record",
       "surface": "public-api",
       "method": "POST",
@@ -9490,6 +9822,22 @@
         "service",
         "success"
       ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "svc.service-detail",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/services/{serviceId}",
+      "public": false,
+      "files": ["tests/backend/p1-30-a2-published-reads.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["success", "denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false

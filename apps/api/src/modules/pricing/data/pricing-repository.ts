@@ -71,6 +71,34 @@ export interface PriceListVersionRow {
   readonly recordVersion: number;
 }
 
+/**
+ * One price rule as the rule list renders it (Phase 1-30 A2, seam S-13).
+ *
+ * The stored rule plus the SERVICE it prices, because a rule identified only by
+ * `service_id` is unreadable - the shipped read convention pairs every id with a
+ * label drawn from a real table.
+ *
+ * `amount` is `numeric(18,4)` and stays a decimal STRING. It carries no currency
+ * of its own: `svc.price_rules` has no `currency_code` column and the rule
+ * INHERITS the list's, which is why the projection that publishes it must attach
+ * the parent list's currency rather than leaving the figure unlabelled.
+ */
+export interface PriceRuleListRow {
+  readonly id: string;
+  readonly priceListVersionId: string;
+  readonly serviceId: string;
+  readonly serviceCode: string;
+  readonly serviceName: string;
+  readonly companyId: string | null;
+  readonly branchId: string | null;
+  readonly customerClass: string | null;
+  readonly amount: string;
+  readonly taxClassId: string | null;
+  readonly priority: number;
+  readonly status: string;
+  readonly recordVersion: number;
+}
+
 export interface DiscountRuleRow {
   readonly id: string;
   readonly discountCode: string;
@@ -798,6 +826,137 @@ export class PricingRepository extends Repository {
    * `svc.guard_price_rule_parent_frozen` refuses this on a published or archived
    * parent, which is what makes a published version's prices immutable.
    */
+  /**
+   * Every version of one price list, newest effective date first
+   * (Phase 1-30 A2, seam S-13).
+   *
+   * Bounded by `limit` rather than keyset-paginated, exactly as `listPriceLists`
+   * above is: a price list accumulates versions at the rate a tenant republishes
+   * its prices, which is a handful a year, and the caller is told when the bound
+   * was reached instead of being handed a cursor it will never use twice.
+   *
+   * `effective_from` descending with `version_no` descending as the tie-break.
+   * `uq_price_list_versions_no` makes `version_no` unique within the list, so the
+   * order is total; two versions may legitimately share an effective date while a
+   * correction supersedes an unpublished one, and without the tie-break their
+   * order would be arbitrary between reads.
+   */
+  public async listPriceListVersions(
+    db: DbHandle,
+    priceListId: string,
+    limit: number
+  ): Promise<readonly PriceListVersionRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      price_list_id: string;
+      version_no: number;
+      effective_from: string;
+      effective_to: string | null;
+      status: string;
+      notes: string | null;
+      record_version: number;
+    }>(
+      db,
+      `SELECT id, price_list_id, version_no, effective_from::text AS effective_from,
+              effective_to::text AS effective_to, status, notes, record_version
+         FROM svc.price_list_versions
+        WHERE tenant_id = $1 AND price_list_id = $2 AND deleted_at IS NULL
+        ORDER BY effective_from DESC, version_no DESC
+        LIMIT $3`,
+      [context.principal.tenantId, priceListId, limit]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      priceListId: row.price_list_id,
+      versionNo: row.version_no,
+      effectiveFrom: row.effective_from,
+      effectiveTo: row.effective_to,
+      status: row.status,
+      notes: row.notes,
+      recordVersion: row.record_version,
+    }));
+  }
+
+  /**
+   * The rules on one price-list version, in RESOLUTION order
+   * (Phase 1-30 A2, seam S-13).
+   *
+   * ## Why this ordering and not alphabetical
+   *
+   * `svc.resolve_price` picks a winner by `specificity DESC, priority DESC`, where
+   * specificity is built from which of `branch_id`, `company_id` and
+   * `customer_class` the rule narrows on. This list reproduces that expression so
+   * a reader sees the rules in the order the resolver would consider them - which
+   * is the whole question a pricing screen is asked ("why did this service resolve
+   * to that amount?"). Sorting by service name would answer a different one and
+   * would hide the precedence entirely.
+   *
+   * The weights are the resolver's own: branch 4, company 2, customer class 1.
+   * They live in `svc.resolve_price` and are repeated here deliberately and
+   * visibly, because the alternative - inventing a different order for the read -
+   * would show a precedence the engine does not use.
+   *
+   * Bounded by `limit` with one row of headroom, so truncation is reportable
+   * rather than silent. `svc.price_rules` has no natural ceiling: a version may
+   * carry a rule per service per narrowing combination.
+   */
+  public async listPriceRules(
+    db: DbHandle,
+    versionId: string,
+    limit: number
+  ): Promise<readonly PriceRuleListRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      price_list_version_id: string;
+      service_id: string;
+      service_code: string;
+      service_name: string;
+      company_id: string | null;
+      branch_id: string | null;
+      customer_class: string | null;
+      amount: string;
+      tax_class_id: string | null;
+      priority: number;
+      status: string;
+      record_version: number;
+    }>(
+      db,
+      `SELECT r.id, r.price_list_version_id, r.service_id,
+              sv.service_code, sv.name AS service_name,
+              r.company_id, r.branch_id, r.customer_class,
+              r.amount::text AS amount, r.tax_class_id, r.priority, r.status,
+              r.record_version
+         FROM svc.price_rules r
+         JOIN svc.services sv ON sv.tenant_id = r.tenant_id AND sv.id = r.service_id
+        WHERE r.tenant_id = $1 AND r.price_list_version_id = $2 AND r.deleted_at IS NULL
+        ORDER BY (CASE WHEN r.branch_id IS NOT NULL THEN 4 ELSE 0 END
+                + CASE WHEN r.company_id IS NOT NULL THEN 2 ELSE 0 END
+                + CASE WHEN r.customer_class IS NOT NULL THEN 1 ELSE 0 END) DESC,
+                 r.priority DESC,
+                 sv.service_code ASC,
+                 r.id ASC
+        LIMIT $3`,
+      [context.principal.tenantId, versionId, limit + 1]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      priceListVersionId: row.price_list_version_id,
+      serviceId: row.service_id,
+      serviceCode: row.service_code,
+      serviceName: row.service_name,
+      companyId: row.company_id,
+      branchId: row.branch_id,
+      customerClass: row.customer_class,
+      amount: row.amount,
+      taxClassId: row.tax_class_id,
+      priority: row.priority,
+      status: row.status,
+      recordVersion: row.record_version,
+    }));
+  }
+
   public async insertPriceRule(
     db: DbHandle,
     input: {

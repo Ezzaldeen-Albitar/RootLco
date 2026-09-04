@@ -69,6 +69,92 @@ export interface PriceRuleView {
   readonly recordVersion: number;
 }
 
+/**
+ * One price rule as the rule list renders it (Phase 1-30 A2, seam S-13).
+ *
+ * `PriceRuleView` above is the WRITE echo - the id and the amount just recorded.
+ * This is the read, and it carries the two things a pricing screen actually needs:
+ * the SERVICE the rule prices, and the NARROWING that decides whether the rule
+ * applies at all.
+ *
+ * `amount` is a `numeric(18,4)` decimal STRING labelled with the parent LIST's
+ * currency. `svc.price_rules` has no currency column - a rule inherits the list's
+ * - so publishing the figure without attaching that currency would be publishing
+ * an unlabelled amount, which this codebase does not do.
+ *
+ * `specificity` is the resolver's own weight, not a new concept:
+ * `svc.resolve_price` orders candidates by `specificity DESC, priority DESC`, with
+ * branch 4, company 2 and customer class 1. It is published so a reader can see
+ * WHY one rule beats another instead of inferring it from three nullable columns.
+ */
+export interface PriceRuleListView {
+  readonly id: string;
+  readonly priceListVersionId: string;
+  readonly service: {
+    readonly id: string;
+    readonly serviceCode: string;
+    readonly name: string;
+  };
+  /** The narrowing. `null` in a slot means "applies regardless of that slot". */
+  readonly appliesTo: {
+    readonly companyId: string | null;
+    readonly branchId: string | null;
+    readonly customerClass: string | null;
+  };
+  readonly amount: string;
+  readonly currency: string;
+  readonly taxClassId: string | null;
+  readonly priority: number;
+  /** 0-7, the resolver's weight. Higher wins before `priority` is consulted. */
+  readonly specificity: number;
+  readonly status: string;
+  readonly recordVersion: number;
+}
+
+/**
+ * One version's rules, with the context that gives the amounts meaning
+ * (Phase 1-30 A2, seam S-13).
+ *
+ * A NAMED interface rather than an inline object literal, because
+ * `tests/ci/named-wire-shapes.test.ts` requires every response body to serialise a
+ * named type a client can import — and it caught this one as the single anonymous
+ * shape on the wire. `currency` sits on the envelope as well as on each rule
+ * deliberately: it belongs to the PARENT LIST, `svc.price_rules` stores none, and
+ * a caller reading an empty `rules` array still needs to know what the list is
+ * denominated in.
+ */
+export interface PriceListRulesView {
+  readonly priceListId: string;
+  readonly versionId: string;
+  readonly versionNo: number;
+  readonly versionStatus: string;
+  readonly currency: string;
+  readonly rules: readonly PriceRuleListView[];
+  /** True when the bound was reached, so a short list never passes for complete. */
+  readonly truncated: boolean;
+}
+
+/**
+ * A price list with its version history (Phase 1-30 A2, seam S-13).
+ *
+ * `versions` is bounded and `versionsTruncated` says so when the bound was
+ * reached - a short list that does not admit it is the failure mode this field
+ * exists to prevent. Rules are NOT included: they belong to a version, they have
+ * no ceiling, and they are read at
+ * `GET /price-lists/{priceListId}/versions/{versionId}/rules`.
+ */
+export interface PriceListDetailView {
+  readonly id: string;
+  readonly priceListCode: string;
+  readonly name: string;
+  readonly currency: string;
+  readonly description: string | null;
+  readonly status: string;
+  readonly recordVersion: number;
+  readonly versions: readonly PriceListVersionView[];
+  readonly versionsTruncated: boolean;
+}
+
 export interface CreatePriceListInput {
   readonly priceListCode: string;
   readonly name: string;
@@ -145,6 +231,122 @@ export class PriceListService {
   public async list(db: DbHandle, limit: number): Promise<readonly PriceListView[]> {
     const rows = await this.repository.listPriceLists(db, limit);
     return rows.map(toListView);
+  }
+
+  /**
+   * One price list with its version history (Phase 1-30 A2, seam S-13).
+   *
+   * ## What was missing
+   *
+   * `findPriceList` existed as an internal single-row lookup with no route, and
+   * NOTHING could list a list's versions - `findPriceListVersion` reads one by id,
+   * which a caller can only use if it already knows the id. So `svc.price-list-list`
+   * could show that a price list exists and `svc.price-list-version-create` could
+   * add to it, while no caller could see what versions it already had, which was
+   * published, or which was effective. `svc.resolve_price` picked among them and
+   * the product could not show its working.
+   *
+   * Tenant-scoped, like every other operation on this table: `svc.price_lists` has
+   * no `company_id` and no `branch_id`, so there is no scope target and a declared
+   * branch scope would fail closed for every caller (P1-18-A-01).
+   */
+  public async detail(
+    db: DbHandle,
+    priceListId: string,
+    versionLimit: number
+  ): Promise<PriceListDetailView> {
+    const list = await this.repository.findPriceList(db, priceListId);
+    if (list === null) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Price list ${priceListId} is not visible`,
+      });
+    }
+    // One row of headroom, so truncation is detected rather than assumed.
+    const rows = await this.repository.listPriceListVersions(db, list.id, versionLimit + 1);
+    const truncated = rows.length > versionLimit;
+    const versions = truncated ? rows.slice(0, versionLimit) : rows;
+    return {
+      id: list.id,
+      priceListCode: list.priceListCode,
+      name: list.name,
+      currency: list.currencyCode,
+      description: list.description,
+      status: list.status,
+      recordVersion: list.recordVersion,
+      versions: versions.map(toVersionView),
+      versionsTruncated: truncated,
+    };
+  }
+
+  /**
+   * The rules on one version, in the resolver's own precedence order
+   * (Phase 1-30 A2, seam S-13).
+   *
+   * The version is resolved first and checked to belong to the price list named in
+   * the path. Without that check `/price-lists/{a}/versions/{b}/rules` would
+   * return `b`'s rules whatever `a` was - the id in the path would be decoration,
+   * and a caller could read any version's prices through any list they can name.
+   *
+   * The currency comes from the PARENT LIST, read here, because `svc.price_rules`
+   * stores none and every amount that leaves this module carries the currency that
+   * gives it meaning.
+   */
+  public async listRules(
+    db: DbHandle,
+    priceListId: string,
+    versionId: string,
+    limit: number
+  ): Promise<PriceListRulesView> {
+    const list = await this.repository.findPriceList(db, priceListId);
+    if (list === null) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Price list ${priceListId} is not visible`,
+      });
+    }
+    const version = await this.repository.findPriceListVersion(db, versionId);
+    if (version === null || version.priceListId !== list.id) {
+      // Uniform refusal: a version that exists under a DIFFERENT list is reported
+      // exactly as one that does not exist, so the path cannot be used to probe
+      // which version ids are real.
+      throw new AppFailure('ERR-RES-001', {
+        message: `Price list version ${versionId} is not visible on price list ${priceListId}`,
+      });
+    }
+
+    const rows = await this.repository.listPriceRules(db, version.id, limit);
+    const truncated = rows.length > limit;
+    const kept = truncated ? rows.slice(0, limit) : rows;
+    return {
+      priceListId: list.id,
+      versionId: version.id,
+      versionNo: version.versionNo,
+      versionStatus: version.status,
+      currency: list.currencyCode,
+      rules: kept.map((row) => ({
+        id: row.id,
+        priceListVersionId: row.priceListVersionId,
+        service: { id: row.serviceId, serviceCode: row.serviceCode, name: row.serviceName },
+        appliesTo: {
+          companyId: row.companyId,
+          branchId: row.branchId,
+          customerClass: row.customerClass,
+        },
+        amount: row.amount,
+        currency: list.currencyCode,
+        taxClassId: row.taxClassId,
+        priority: row.priority,
+        // The resolver's weights, restated: branch 4, company 2, class 1. The SQL
+        // ORDER BY computes the same sum, so the published number and the order
+        // the rows arrive in cannot disagree.
+        specificity:
+          (row.branchId === null ? 0 : 4) +
+          (row.companyId === null ? 0 : 2) +
+          (row.customerClass === null ? 0 : 1),
+        status: row.status,
+        recordVersion: row.recordVersion,
+      })),
+      truncated,
+    };
   }
 
   /**

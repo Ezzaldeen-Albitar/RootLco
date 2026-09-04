@@ -1,9 +1,9 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 20,
-    "publicApi": 20,
-    "operationDepth": 20,
+    "registered": 22,
+    "publicApi": 22,
+    "operationDepth": 22,
     "invocationOnly": 0,
     "pending": 0,
     "unitOnly": 0,
@@ -743,6 +743,72 @@
       "referenced": true,
       "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
       "declared": ["denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "sal.receipt-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/payments",
+      "public": false,
+      "files": ["tests/backend/p1-30-a2-published-reads.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "pagination"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant",
+        "pagination"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "sal.work-order-invoice-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/work-orders/{workOrderId}/invoice",
+      "public": false,
+      "files": ["tests/backend/p1-30-a2-published-reads.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
       "required": [
         "route",
         "service",

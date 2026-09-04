@@ -193,13 +193,26 @@ describe('the API application lives in the workspace', () => {
     // reason BR-03's eight modules carried eleven, and the whole reason both
     // this number and the operation count below are asserted rather than one.
     //
-    // This is deliberately NOT the 263 that `validate:authorization-coverage`
+    // This is deliberately NOT the path count that `validate:authorization-coverage`
     // and the OpenAPI document report. Those count PATHS; this walk counts every
     // `route.ts` under the API root, and the two differ by one — measured at 258
     // files against 257 paths before this slice, and 270 against 263 after, so
     // the gap is pre-existing and unchanged. Reconciling them by editing
     // whichever number looked wrong is how a real gap would get hidden.
-    expect(routeFiles.length).toBe(287);
+    //
+    // 293 with P1-30 A2's SIX new route modules: `price-lists/[priceListId]`,
+    // `quotation-revisions/[revisionId]`, `stock-locations`,
+    // `work-orders/[workOrderId]/invoice`, `work-orders/[workOrderId]/part-issues`
+    // and `work-orders/[workOrderId]/quotations`.
+    //
+    // Six FILES for TWELVE operations, and the gap is the point of asserting both:
+    // the other six A2 reads were added to route modules that already existed
+    // (`services/[serviceId]`, `quotations/[quotationId]/revisions`,
+    // `quotation-revisions/[revisionId]/decisions`, `stock-reservations`,
+    // `payments`, and the price-rule collection), so a slice that published a read
+    // by creating a redundant second module for a path would move this count and
+    // not the other.
+    expect(routeFiles.length).toBe(293);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -220,7 +233,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 356 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 368 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -254,7 +267,7 @@ describe('the API application lives in the workspace', () => {
     // 325 with BR-04: eight operations over six modules — the inspection-template
     // collection and the id-addressed template each co-locate two verbs on one
     // path, so the module count moves by six while this one moves by eight.
-    expect(report.operations).toHaveLength(356);
+    expect(report.operations).toHaveLength(368);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the
