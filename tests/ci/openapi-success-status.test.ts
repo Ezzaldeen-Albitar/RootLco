@@ -59,7 +59,7 @@ describe('every operation publishes the success status it returns', () => {
     // the original defect, so the scanner reports rather than assumes — and this
     // asserts it had nothing to report.
     expect(unresolved).toEqual([]);
-    expect(actual.size).toBe(352);
+    expect(actual.size).toBe(356);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -81,9 +81,9 @@ describe('every operation publishes the success status it returns', () => {
       (acc, s) => ({ ...acc, [s]: (acc[s] ?? 0) + 1 }),
       {}
     );
-    expect(counts[201]).toBe(102);
+    expect(counts[201]).toBe(105);
     expect(counts[202]).toBe(1);
-    expect(counts[200]).toBe(249);
+    expect(counts[200]).toBe(250);
   });
 
   it('reads the handler, not the declaration', () => {

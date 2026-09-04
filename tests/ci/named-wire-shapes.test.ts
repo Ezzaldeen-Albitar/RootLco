@@ -71,8 +71,8 @@ describe('every route body serialises a named type', () => {
     expect(summary.named + summary.anonymous + summary.composed + summary.unresolved).toBe(
       summary.bodies
     );
-    expect(summary.bodies).toBe(352);
-    expect(summary.named).toBe(300);
+    expect(summary.bodies).toBe(356);
+    expect(summary.named).toBe(304);
     expect(summary.composed).toBe(52);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);
