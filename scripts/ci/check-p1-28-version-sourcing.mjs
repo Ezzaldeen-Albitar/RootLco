@@ -337,6 +337,8 @@ export const OUT_OF_SUBJECT_ADAPTERS = Object.freeze({
   signOffRework: 'qms.rework-sign-off — P1-29 W8, not an apt/rec operation',
   recordAdditionalWorkApproval: 'wo.additional-work-approval — P1-29 W8, not an apt/rec operation',
   closeWorkOrder: 'wo.work-order-closure — P1-29 W8, not an apt/rec operation',
+  updateService: 'svc.service-update — P1-30 W1, not an apt/rec operation',
+  publishServiceVersion: 'svc.service-version-publish — P1-30 W1, not an apt/rec operation',
 });
 
 export function expectedAdapterOperations(guarded, manifest, decisions) {

@@ -324,10 +324,15 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         key: 'catalog',
         labelKey: 'nav.catalog',
         icon: 'catalog',
-        href: '/catalog',
+        // `/services`, not `/catalog`: the P1-30 server-arithmetic gate freezes
+        // its areas to the resource nouns (`features/services`, the `services`
+        // route segment), and a screen at any other segment would sit outside
+        // the gate the phase's closure condition depends on. Built by P1-30 W1.
+        href: '/services',
         permission: 'svc.service.read',
-        status: 'planned',
-        scope: 'company',
+        status: 'available',
+        // Tenant-wide: `svc.services` carries no company and no branch.
+        scope: 'tenant',
       },
       {
         key: 'inventory',
