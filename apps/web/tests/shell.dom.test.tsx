@@ -53,17 +53,18 @@ describe('sidebar', () => {
     // An operator who clicks a module and lands on a 404 stops trusting the
     // whole navigation.
     //
-    // The example is `Inventory`, not `Customers`. Customers was planned when
-    // this test was written and became available in P1-27 — so the assertion
-    // started failing against a module that had simply been built. Inventory is
-    // a later phase, which is what makes it a valid stand-in today; whoever
-    // builds it will land here for the same reason and should move the example
-    // on again rather than weaken the claim.
+    // The example is `Reports`, not `Customers` and not `Inventory`. Customers
+    // was planned when this test was written and became available in P1-27;
+    // Inventory took its place and became available in P1-30 W4 — each time the
+    // assertion started failing against a module that had simply been built.
+    // Reports is a later phase, which is what makes it a valid stand-in today;
+    // whoever builds it will land here for the same reason and should move the
+    // example on again rather than weaken the claim.
     renderLtr(
       <Sidebar locale="en" messages={messages} groups={groups} pathname="/en" collapsed={false} />
     );
-    expect(screen.queryByRole('link', { name: /Inventory/ })).toBeNull();
-    const planned = screen.getByText('Inventory', { selector: 'span' });
+    expect(screen.queryByRole('link', { name: /Reports/ })).toBeNull();
+    const planned = screen.getByText('Reports', { selector: 'span' });
     expect(planned.closest('[aria-disabled="true"]')).not.toBeNull();
   });
 

@@ -50,7 +50,7 @@ import { ROOT, bodySchemaOf, compareOperation, readMirror } from './check-p1-29-
 const slash = (p) => p.split(sep).join('/');
 
 /** The P1-30 id namespaces held to a mirror today. Grows per wave; pinned by the test. */
-export const P1_30_DOMAINS = Object.freeze(['svc', 'quo']);
+export const P1_30_DOMAINS = Object.freeze(['svc', 'quo', 'inv']);
 const IN_SCOPE = new RegExp(`^(${P1_30_DOMAINS.join('|')})\\.`);
 const WRITE_METHODS = Object.freeze(['POST', 'PATCH', 'PUT', 'DELETE']);
 
@@ -63,6 +63,7 @@ export const MIRROR_FILES = Object.freeze([
   join('lib', 'contracts', 'services-contract.ts'),
   join('lib', 'contracts', 'pricing-contract.ts'),
   join('lib', 'contracts', 'quotations-contract.ts'),
+  join('lib', 'contracts', 'inventory-contract.ts'),
 ]);
 
 /**
@@ -70,7 +71,12 @@ export const MIRROR_FILES = Object.freeze([
  * today: every `svc` write carries a body. An entry here must name a write
  * that exists and does not parse a body, or the gate refuses it as stale.
  */
-export const BODYLESS = Object.freeze({});
+export const BODYLESS = Object.freeze({
+  // The approval is the act itself: the batch is the path parameter and the
+  // approver is the caller. Entered scope with `inv` in W4; no P1-30 screen sends it.
+  'inv.opening-batch-approve':
+    'the approval carries nothing but the batch in the path and the caller as approver',
+});
 
 /** Field-level omissions the web side has decided, with reasons. Empty today. */
 export const DISPOSITIONS = Object.freeze({});
@@ -91,6 +97,23 @@ export const DISPOSITIONS = Object.freeze({});
  */
 export const PENDING_MIRRORS = Object.freeze({
   // W2 wrote the pricing mirror and deleted its five entries in the same change.
+  // The `inv` writes entered this scope with W4, which mirrors the two reservation
+  // writes. Issues and returns belong to W5 (canonical plan §4); damage, intake and
+  // opening batches are sent by no P1-30 screen (FE-008…FE-013 do not render them),
+  // so their mirrors have no consumer in this phase and are owed by whichever phase
+  // builds one.
+  'inv.stock-issue-create': 'PENDING: P1-30 W5 (FE-011) writes the issue mirror',
+  'inv.stock-return-create': 'PENDING: P1-30 W5 (FE-012) writes the return mirror',
+  'inv.damaged-stock-create':
+    'PENDING: no P1-30 screen sends this (outside FE-008…FE-013); a later phase owes the mirror',
+  'inv.customer-supplied-part-create':
+    'PENDING: no P1-30 screen sends this (outside FE-008…FE-013); a later phase owes the mirror',
+  'inv.external-purchase-part-create':
+    'PENDING: no P1-30 screen sends this (outside FE-008…FE-013); a later phase owes the mirror',
+  'inv.opening-batch-create':
+    'PENDING: no P1-30 screen sends this (outside FE-008…FE-013); a later phase owes the mirror',
+  'inv.opening-batch-line-create':
+    'PENDING: no P1-30 screen sends this (outside FE-008…FE-013); a later phase owes the mirror',
 });
 
 const problems = [];

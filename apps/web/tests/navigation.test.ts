@@ -72,6 +72,8 @@ describe('the navigation model', () => {
       'customer-duplicates',
       'customers',
       'gallery',
+      // P1-30 W4: item search, stock availability and reservations at `/inventory`.
+      'inventory',
       'overview',
       // P1-30 W2: price lists, versions, rules and the price lookup at `/pricing`,
       // gated on `svc.price.read` — the permission its reads require.
@@ -123,7 +125,7 @@ describe('the navigation model', () => {
       // in P1-28, when the screens they point at were built.
       'delivery',
       'documents',
-      'inventory',
+      // `inventory` left this list in P1-30 W4.
       'notifications',
       'reports',
       // `technicians` left this list in P1-29 W4, when the workspace was built.

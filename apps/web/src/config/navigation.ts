@@ -367,9 +367,12 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         key: 'inventory',
         labelKey: 'nav.inventory',
         icon: 'inventory',
+        // `/inventory`: a segment the server-arithmetic gate pre-names. The
+        // item search is tenant-wide and gates the page; the stock panels take
+        // a branch as their target inside the screen. Built by P1-30 W4.
         href: '/inventory',
         permission: 'inv.item.read',
-        status: 'planned',
+        status: 'available',
         scope: 'branch',
       },
       {

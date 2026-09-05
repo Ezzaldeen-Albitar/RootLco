@@ -143,6 +143,7 @@ export default async function WorkOrderDetailPage({
       canReadDiagnostics={holds(session.permissions, WORK_ORDER_DETAIL_PERMISSIONS.diagnosticRead)}
       canRecordLabor={holds(session.permissions, WORK_ORDER_DETAIL_PERMISSIONS.laborRecord)}
       canReadQuotations={holds(session.permissions, WORK_ORDER_DETAIL_PERMISSIONS.quotationRead)}
+      canReadStock={holds(session.permissions, WORK_ORDER_DETAIL_PERMISSIONS.stockRead)}
     />
   );
 }
