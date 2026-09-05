@@ -50,7 +50,7 @@ import { ROOT, bodySchemaOf, compareOperation, readMirror } from './check-p1-29-
 const slash = (p) => p.split(sep).join('/');
 
 /** The P1-30 id namespaces held to a mirror today. Grows per wave; pinned by the test. */
-export const P1_30_DOMAINS = Object.freeze(['svc']);
+export const P1_30_DOMAINS = Object.freeze(['svc', 'quo']);
 const IN_SCOPE = new RegExp(`^(${P1_30_DOMAINS.join('|')})\\.`);
 const WRITE_METHODS = Object.freeze(['POST', 'PATCH', 'PUT', 'DELETE']);
 
@@ -62,6 +62,7 @@ const WRITE_METHODS = Object.freeze(['POST', 'PATCH', 'PUT', 'DELETE']);
 export const MIRROR_FILES = Object.freeze([
   join('lib', 'contracts', 'services-contract.ts'),
   join('lib', 'contracts', 'pricing-contract.ts'),
+  join('lib', 'contracts', 'quotations-contract.ts'),
 ]);
 
 /**

@@ -342,6 +342,9 @@ export const OUT_OF_SUBJECT_ADAPTERS = Object.freeze({
   // P1-30 W2: both guard the PRICE LIST's record version, sourced from the detail read.
   createPriceListVersion: 'svc.price-list-version-create — P1-30 W2, not an apt/rec operation',
   publishPriceListVersion: 'svc.price-list-version-publish — P1-30 W2, not an apt/rec operation',
+  // P1-30 W3: both guard the QUOTATION's record version, sourced from the detail read.
+  createQuotationRevision: 'quo.quotation-revision-create — P1-30 W3, not an apt/rec operation',
+  issueQuotation: 'quo.quotation-issue — P1-30 W3, not an apt/rec operation',
 });
 
 export function expectedAdapterOperations(guarded, manifest, decisions) {
