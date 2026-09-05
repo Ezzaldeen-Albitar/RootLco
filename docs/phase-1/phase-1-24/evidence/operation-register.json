@@ -11154,7 +11154,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-30-a2-published-reads.test.ts"],
+      "tests": [
+        "tests/backend/p1-30-a2-published-reads.test.ts",
+        "tests/backend/p1-30-w1-service-catalogue.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/services/[serviceId]/route.ts"
     },
@@ -11192,7 +11195,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-20-service-catalog.test.ts"],
+      "tests": [
+        "tests/backend/p1-20-service-catalog.test.ts",
+        "tests/backend/p1-30-w1-service-catalogue.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/services/route.ts"
     },

@@ -414,6 +414,31 @@ export const REGISTER = Object.freeze([
     why: "no P1-30 web code computes money — every figure rendered is the server's, formatted only through lib/money",
   },
   {
+    name: 'validate:p1-30-access',
+    owner: ROOT,
+    tier: 'required',
+    // `gate-before-read` for P1-30 route pages — the page half of PC-1
+    // (canonical plan §5.3): a page must deny and RETURN on a permission before
+    // it awaits anything that costs a request. A sibling of `validate:p1-29-access`
+    // with its own derivation (`svc|quo|inv|sal|wty` resource roots from the
+    // register) and the SAME judgement, so the four holes the adversarial review
+    // of the first P1-29 version found cannot regress here. Shipped beside the
+    // first P1-30 screen (W1); mutation-proved by tests/ci/p1-30-access-gate.test.ts.
+    why: 'every P1-30 route page denies and returns on a permission before its first awaited read',
+  },
+  {
+    name: 'validate:p1-30-payload-parity',
+    owner: ROOT,
+    tier: 'required',
+    // The hand-transcribed request payloads a P1-30 screen sends, compared
+    // against the routes' real zod schemas (canonical plan §5.6). Scoped by
+    // `P1_30_DOMAINS`, which grows per wave like the arithmetic gate's areas —
+    // `svc` at W1 — and borrows the P1-29 gate's comparison, locator, naming
+    // rule and mirror reader rather than copying them. Anti-vacuity is a
+    // relationship, not a count. Mutation-proved by tests/ci/p1-30-payload-parity.test.ts.
+    why: 'every in-scope P1-30 write has a mirror that matches its zod schema, or a declared reason not to',
+  },
+  {
     name: 'validate:p1-28-access',
     owner: ROOT,
     tier: 'required',

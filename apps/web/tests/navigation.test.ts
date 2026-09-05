@@ -63,6 +63,9 @@ describe('the navigation model', () => {
       // Built in P1-28 (`P1-28-FE-001`): the branch calendar at
       // `/appointments`, flipped in the same change that landed the screen.
       'appointments',
+      // P1-30 W1: the service catalogue at `/services`, gated on
+      // `svc.service.read` — the permission its list operation requires.
+      'catalog',
       // Both duplicate queues are in the sidebar, each behind its OWN
       // `*.duplicate.review` code. They had screens and no route into them —
       // a page nobody can reach is not delivered.
@@ -110,7 +113,6 @@ describe('the navigation model', () => {
     // `available` without a screen, the sidebar starts producing 404s.
     expect(planned.sort()).toEqual([
       'billing',
-      'catalog',
       // `customers` and `vehicles` left this list in P1-27, and `appointments`
       // in P1-28, when the screens they point at were built.
       'delivery',
