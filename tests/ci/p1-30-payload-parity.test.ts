@@ -90,7 +90,7 @@ describe('the scope is P1-30’s own, and it is pinned by name', () => {
   it('holds exactly the domains W1 built screens for', () => {
     // The wave that adds `quo`, `inv`, `sal` or `wty` must change this line
     // too — a mirror obligation must never appear silently.
-    expect([...P1_30_DOMAINS]).toEqual(['svc', 'quo']);
+    expect([...P1_30_DOMAINS]).toEqual(['svc', 'quo', 'inv']);
   });
 
   it('reads the services mirror and nothing of P1-29’s', () => {
@@ -98,6 +98,7 @@ describe('the scope is P1-30’s own, and it is pinned by name', () => {
       'lib/contracts/services-contract.ts',
       'lib/contracts/pricing-contract.ts',
       'lib/contracts/quotations-contract.ts',
+      'lib/contracts/inventory-contract.ts',
     ]);
   });
 });
@@ -119,7 +120,7 @@ describe('anti-vacuity', () => {
   it('passes on the tree as it stands and names what it examined', () => {
     const { code, out } = runGate(join(ROOT, 'apps', 'web', 'src'));
     expect(out).toMatch(
-      /P1-30 payload parity \[svc, quo\]: \d+ operation\(s\) in scope, \d+ write\(s\)/
+      /P1-30 payload parity \[svc, quo, inv\]: \d+ operation\(s\) in scope, \d+ write\(s\)/
     );
     // Non-vacuity: the svc scope holds writes with bodies, and they were counted.
     const bodies = Number(/(\d+) with a body/.exec(out)?.[1] ?? '0');
