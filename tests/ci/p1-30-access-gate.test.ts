@@ -87,6 +87,16 @@ describe('the derivation is P1-30’s own and is not empty', () => {
     expect(segments).not.toContain('technicians');
   });
 
+  it('derives the dashboard segments the arithmetic gate pre-names, so /pricing is examined', () => {
+    // `/pricing` renders `price-lists` and `prices`; no operation has `pricing`
+    // as its first path part, so without this union the W2 pages would sit
+    // outside the gate-before-read check.
+    const segments = ownedSegments();
+    for (const expected of ['pricing', 'quotations', 'inventory', 'invoices', 'payments']) {
+      expect(segments, `${expected} is a pre-named P1-30 dashboard segment`).toContain(expected);
+    }
+  });
+
   it('the id namespaces are exactly the five P1-30 domains', () => {
     // The ids are ASSEMBLED rather than written as literals. The P1-24 operation
     // register credits any test file whose raw text contains an operation id as

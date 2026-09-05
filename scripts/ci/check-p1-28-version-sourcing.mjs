@@ -339,6 +339,9 @@ export const OUT_OF_SUBJECT_ADAPTERS = Object.freeze({
   closeWorkOrder: 'wo.work-order-closure — P1-29 W8, not an apt/rec operation',
   updateService: 'svc.service-update — P1-30 W1, not an apt/rec operation',
   publishServiceVersion: 'svc.service-version-publish — P1-30 W1, not an apt/rec operation',
+  // P1-30 W2: both guard the PRICE LIST's record version, sourced from the detail read.
+  createPriceListVersion: 'svc.price-list-version-create — P1-30 W2, not an apt/rec operation',
+  publishPriceListVersion: 'svc.price-list-version-publish — P1-30 W2, not an apt/rec operation',
 });
 
 export function expectedAdapterOperations(guarded, manifest, decisions) {

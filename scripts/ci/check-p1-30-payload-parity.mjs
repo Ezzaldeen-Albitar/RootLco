@@ -59,7 +59,10 @@ const WRITE_METHODS = Object.freeze(['POST', 'PATCH', 'PUT', 'DELETE']);
  * P1-29 gate records: a globbed directory would let a stray file become a
  * mirror, and the generated manifest is the file most likely to stray.
  */
-export const MIRROR_FILES = Object.freeze([join('lib', 'contracts', 'services-contract.ts')]);
+export const MIRROR_FILES = Object.freeze([
+  join('lib', 'contracts', 'services-contract.ts'),
+  join('lib', 'contracts', 'pricing-contract.ts'),
+]);
 
 /**
  * Writes in scope that parse NO request body, each with the reason. Empty
@@ -86,11 +89,7 @@ export const DISPOSITIONS = Object.freeze({});
  * same change. An entry cannot outlive its reason.
  */
 export const PENDING_MIRRORS = Object.freeze({
-  'svc.price-list-create': 'PENDING: P1-30 W2 (FE-002) writes the price-list mirror',
-  'svc.price-list-version-create': 'PENDING: P1-30 W2 (FE-002) writes the price-list mirror',
-  'svc.price-list-version-publish': 'PENDING: P1-30 W2 (FE-002) writes the price-list mirror',
-  'svc.price-rule-record': 'PENDING: P1-30 W2 (FE-002) writes the price-list mirror',
-  'svc.price-list-assignment-create': 'PENDING: P1-30 W2 (FE-002) writes the price-list mirror',
+  // W2 wrote the pricing mirror and deleted its five entries in the same change.
 });
 
 const problems = [];
