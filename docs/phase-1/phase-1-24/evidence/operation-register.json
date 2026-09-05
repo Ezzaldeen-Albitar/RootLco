@@ -6185,7 +6185,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-20-quotation.test.ts",
-        "tests/backend/p1-30-a2-published-reads.test.ts"
+        "tests/backend/p1-30-a2-published-reads.test.ts",
+        "tests/backend/p1-30-w3-quotations.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/quotations/[quotationId]/route.ts"
@@ -6236,7 +6237,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-20-quotation.test.ts"],
+      "tests": [
+        "tests/backend/p1-20-quotation.test.ts",
+        "tests/backend/p1-30-w3-quotations.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/quotations/[quotationId]/issue/route.ts"
     },
@@ -6322,7 +6326,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-30-a2-published-reads.test.ts"],
+      "tests": [
+        "tests/backend/p1-30-a2-published-reads.test.ts",
+        "tests/backend/p1-30-w3-quotations.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/quotations/route.ts"
     },
@@ -6368,7 +6375,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-20-quotation.test.ts"],
+      "tests": [
+        "tests/backend/p1-20-quotation.test.ts",
+        "tests/backend/p1-30-w3-quotations.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/quotations/[quotationId]/revisions/route.ts"
     },
@@ -6452,7 +6462,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-30-a2-published-reads.test.ts"],
+      "tests": [
+        "tests/backend/p1-30-a2-published-reads.test.ts",
+        "tests/backend/p1-30-w3-quotations.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/quotation-revisions/[revisionId]/decisions/route.ts"
     },
@@ -6490,7 +6503,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-30-a2-published-reads.test.ts"],
+      "tests": [
+        "tests/backend/p1-30-a2-published-reads.test.ts",
+        "tests/backend/p1-30-w3-quotations.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/quotation-revisions/[revisionId]/route.ts"
     },
@@ -6530,7 +6546,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-30-a2-published-reads.test.ts"],
+      "tests": [
+        "tests/backend/p1-30-a2-published-reads.test.ts",
+        "tests/backend/p1-30-w3-quotations.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/quotations/[quotationId]/revisions/route.ts"
     },

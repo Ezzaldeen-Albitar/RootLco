@@ -73,6 +73,8 @@ export type IconName =
   | 'customers'
   /** A price tag: price lists, rules and the price that applies. */
   | 'pricing'
+  /** A document with a signature line: a quotation and the decisions on it. */
+  | 'quotations'
   | 'vehicles'
   /**
    * A review queue, not a list.
@@ -347,6 +349,19 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         status: 'available',
         // Tenant-wide: `svc.price_lists` carries no company and no branch.
         scope: 'tenant',
+      },
+      {
+        key: 'quotations',
+        labelKey: 'nav.quotations',
+        icon: 'quotations',
+        // `/quotations`: an operation root and a segment the server-arithmetic
+        // gate pre-names. Quotations are reached FROM a work order; the page
+        // takes the work order in its address. Built by P1-30 W3.
+        href: '/quotations',
+        permission: 'quo.quotation.read',
+        status: 'available',
+        // Branch-scoped: a quotation sits in its work order's branch.
+        scope: 'branch',
       },
       {
         key: 'inventory',

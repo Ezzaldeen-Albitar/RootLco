@@ -76,6 +76,9 @@ describe('the navigation model', () => {
       // P1-30 W2: price lists, versions, rules and the price lookup at `/pricing`,
       // gated on `svc.price.read` — the permission its reads require.
       'pricing',
+      // P1-30 W3: the quotations of a work order at `/quotations`, gated on
+      // `quo.quotation.read` — the permission its reads require.
+      'quotations',
       // P1-28 Wave D: the Reception entry landed WITH its first screen, the
       // check-in wizard at `/receptions/check-in` (`P1-28-FE-007`).
       'receptions',
