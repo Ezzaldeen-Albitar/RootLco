@@ -9049,7 +9049,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-22-invoice-lifecycle.test.ts"],
+      "tests": [
+        "tests/backend/p1-22-invoice-lifecycle.test.ts",
+        "tests/backend/p1-30-w6-invoices.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/invoices/[invoiceId]/cancellation/route.ts"
     },
@@ -9096,7 +9099,8 @@
       "tests": [
         "tests/backend/p1-22-concurrency.test.ts",
         "tests/backend/p1-22-invoice-lifecycle.test.ts",
-        "tests/backend/p1-22-isolation.test.ts"
+        "tests/backend/p1-22-isolation.test.ts",
+        "tests/backend/p1-30-w6-invoices.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/invoices/route.ts"
@@ -9138,7 +9142,8 @@
       "tests": [
         "tests/backend/p1-22-currency-coherence.test.ts",
         "tests/backend/p1-22-invoice-lifecycle.test.ts",
-        "tests/backend/p1-22-isolation.test.ts"
+        "tests/backend/p1-22-isolation.test.ts",
+        "tests/backend/p1-30-w6-invoices.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/invoices/[invoiceId]/route.ts"
@@ -9188,6 +9193,7 @@
       "tests": [
         "tests/backend/p1-22-concurrency.test.ts",
         "tests/backend/p1-22-invoice-lifecycle.test.ts",
+        "tests/backend/p1-30-w6-invoices.test.ts",
         "tests/foundation/operation-coverage-gate.test.ts"
       ],
       "classification": "Covered",
@@ -9230,7 +9236,8 @@
       "tests": [
         "tests/backend/p1-22-currency-coherence.test.ts",
         "tests/backend/p1-22-invoice-lifecycle.test.ts",
-        "tests/backend/p1-22-isolation.test.ts"
+        "tests/backend/p1-22-isolation.test.ts",
+        "tests/backend/p1-30-w6-invoices.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/invoices/[invoiceId]/outstanding/route.ts"
@@ -9271,7 +9278,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-22-invoice-lifecycle.test.ts",
-        "tests/backend/p1-22-isolation.test.ts"
+        "tests/backend/p1-22-isolation.test.ts",
+        "tests/backend/p1-30-w6-invoices.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/invoice-preview/route.ts"
@@ -9514,7 +9522,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-30-a2-published-reads.test.ts"],
+      "tests": [
+        "tests/backend/p1-30-a2-published-reads.test.ts",
+        "tests/backend/p1-30-w6-invoices.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/invoice/route.ts"
     },
