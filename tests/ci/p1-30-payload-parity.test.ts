@@ -100,6 +100,7 @@ describe('the scope is P1-30’s own, and it is pinned by name', () => {
       'lib/contracts/quotations-contract.ts',
       'lib/contracts/inventory-contract.ts',
       'lib/contracts/billing-contract.ts',
+      'lib/contracts/payments-contract.ts',
     ]);
   });
 });

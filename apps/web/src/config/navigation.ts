@@ -93,6 +93,8 @@ export type IconName =
   | 'catalog'
   | 'inventory'
   | 'billing'
+  /** Banknotes: money taken in and applied to what is owed. */
+  | 'payments'
   | 'delivery'
   | 'documents'
   | 'notifications'
@@ -385,6 +387,19 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         // in no catalogue — RES-05). Built by P1-30 W6.
         href: '/invoices',
         permission: 'sal.invoice.manage',
+        status: 'available',
+        scope: 'branch',
+      },
+      {
+        key: 'payments',
+        labelKey: 'nav.payments',
+        icon: 'payments',
+        // `/payments`: the segment the server-arithmetic gate pre-names for
+        // this module. Gated on `sal.finance.view`, the ONLY code both receipt
+        // reads declare and the one a cashier holds — recording and allocating
+        // are offered inside the screen, not by this gate. Built by P1-30 W7.
+        href: '/payments',
+        permission: 'sal.finance.view',
         status: 'available',
         scope: 'branch',
       },

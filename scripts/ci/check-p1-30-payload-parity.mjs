@@ -65,6 +65,7 @@ export const MIRROR_FILES = Object.freeze([
   join('lib', 'contracts', 'quotations-contract.ts'),
   join('lib', 'contracts', 'inventory-contract.ts'),
   join('lib', 'contracts', 'billing-contract.ts'),
+  join('lib', 'contracts', 'payments-contract.ts'),
 ]);
 
 /**
@@ -125,8 +126,6 @@ export const PENDING_MIRRORS = Object.freeze({
   // notes and deliveries are sent by no P1-30 screen.
   'sal.credit-note-create':
     'PENDING: no P1-30 screen sends this (credit notes are in no FE row); a later phase owes the mirror',
-  'sal.payment-record': 'PENDING: P1-30 W7 (FE-016) writes the payment mirror',
-  'sal.payment-allocate': 'PENDING: P1-30 W7 (FE-017) writes the allocation mirror',
   'sal.delivery-checklist-record':
     'PENDING: no P1-30 screen sends this (FE-008…FE-021 do not render deliveries); a later phase owes the mirror',
   'sal.delivery-complete':
