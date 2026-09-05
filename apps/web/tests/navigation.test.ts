@@ -78,6 +78,10 @@ describe('the navigation model', () => {
       // P1-30 W4: item search, stock availability and reservations at `/inventory`.
       'inventory',
       'overview',
+      // P1-30 W7: the branch's receipts at `/payments`, gated on
+      // `sal.finance.view` — the only code both receipt reads declare, and the
+      // one a cashier holds. A NEW entry: the module had no navigation row.
+      'payments',
       // P1-30 W2: price lists, versions, rules and the price lookup at `/pricing`,
       // gated on `svc.price.read` — the permission its reads require.
       'pricing',
@@ -123,7 +127,8 @@ describe('the navigation model', () => {
     // The business modules P1-27 and later deliver. If one of these ever turns
     // `available` without a screen, the sidebar starts producing 404s.
     expect(planned.sort()).toEqual([
-      // `billing` left this list in P1-30 W6.
+      // `billing` left this list in P1-30 W6, and `payments` was ADDED as an
+      // available entry in W7 (the module had no navigation row before it).
       // `customers` and `vehicles` left this list in P1-27, and `appointments`
       // in P1-28, when the screens they point at were built.
       'delivery',

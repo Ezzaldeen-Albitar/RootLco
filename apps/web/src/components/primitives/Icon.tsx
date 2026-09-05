@@ -88,6 +88,12 @@ const PATHS: Record<IconName, readonly string[]> = {
     'M9 8.4h6',
     'M9 12.2h6',
   ],
+  payments: [
+    'M2.6 6.4h18.8v11.2H2.6V6.4Z',
+    'M12 14.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4Z',
+    'M6 9.2h.01',
+    'M18 14.8h.01',
+  ],
   delivery: [
     'M2.8 7.4h10.4v8.4H2.8V7.4Z',
     'M13.2 10.4h3.6l2.8 2.9v2.5h-6.4v-5.4Z',
