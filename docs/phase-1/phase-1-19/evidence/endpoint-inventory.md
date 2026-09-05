@@ -5,7 +5,7 @@ registry. Do not hand-edit.** Every column is read out of the
 `defineOperation` literal that guards the route, so this table cannot
 describe a surface the code does not expose, and cannot omit one it does.
 
-Operations in the registry: **356**. In the four P1-19 schemas: **94**. Delivered by P1-19: **58**.
+Operations in the registry: **368**. In the four P1-19 schemas: **94**. Delivered by P1-19: **58**.
 
 **36** operation(s) in these schemas were delivered by a LATER contract and are deliberately absent from the tables below — this document describes P1-19's surface, not the schemas'. They are named here so their absence is a stated fact rather than a gap, and every correctness reconciliation this script performs (seeded permission, catalogued audit action, non-inert branch scope) is applied to them exactly as it is to P1-19’s own.
 

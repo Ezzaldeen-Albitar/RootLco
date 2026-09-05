@@ -42,10 +42,15 @@
  *   `sal.partner_outstanding_balance` loops a partner's issued invoices with no
  *   currency filter and returns one unlabelled scalar; every amount that leaves this
  *   module carries the currency that gives it meaning.
- * - **It does not list receipts.** `sal.receipts` is gated whole-row by
- *   `sal.finance.view`, so a caller without it sees zero rows rather than redacted
- *   ones — there is no honest amount-free projection, and building one would be a
- *   promise the RLS policy does not keep.
+ * - **It does not offer an amount-free receipt list.** `sal.receipts` is gated
+ *   whole-row by `sal.finance.view`, so a caller without it sees zero rows rather
+ *   than redacted ones — there is no honest amount-free projection, and building one
+ *   would be a promise the RLS policy does not keep. Phase 1-30 A2 (seam S-11) adds
+ *   `sal.receipt-list`, which does not contradict that: it DECLARES
+ *   `sal.finance.view`, the same code the sibling `sal.receipt-detail` declares, so
+ *   every caller it serves is one `sel_receipts_gated` already hands whole rows to.
+ *   The refusal above is a refusal to publish a list to callers who cannot hold the
+ *   code, and the policy still enforces it.
  * - **It performs no arithmetic on money.** Every sum is PostgreSQL's, in `numeric`.
  *   `Money` from `@/modules/pricing` has no `add` and no `multiply`, and none is
  *   added here.
@@ -58,6 +63,7 @@ import { PaymentReadService } from './application/payment-read-service';
 export type {
   PaymentAllocationRow,
   PaymentMethodRow,
+  ReceiptListRow,
   ReceiptRow,
   ReceiptScope,
   ReceiptUnallocatedRow,
@@ -75,6 +81,7 @@ export type {
   PaymentMethodView,
   ReceiptAllocationView,
   ReceiptDetailView,
+  ReceiptListView,
 } from './application/payment-read-service';
 
 export {

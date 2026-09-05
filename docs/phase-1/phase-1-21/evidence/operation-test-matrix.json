@@ -1,9 +1,9 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 14,
-    "publicApi": 14,
-    "operationDepth": 14,
+    "registered": 17,
+    "publicApi": 17,
+    "operationDepth": 17,
     "invocationOnly": 0,
     "pending": 0,
     "unitOnly": 0,
@@ -383,6 +383,40 @@
       "unitOnly": false
     },
     {
+      "id": "inv.stock-location-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/stock-locations",
+      "public": false,
+      "files": ["tests/backend/p1-30-a2-inventory-reads.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "pagination"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant",
+        "pagination"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "inv.stock-movement-list",
       "surface": "public-api",
       "method": "GET",
@@ -452,6 +486,40 @@
         "idempotency",
         "isolation",
         "outbox",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "inv.stock-reservation-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/stock-reservations",
+      "public": false,
+      "files": ["tests/backend/p1-30-a2-inventory-reads.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "pagination"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant",
+        "pagination"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
         "route",
         "service",
         "success"
@@ -538,6 +606,40 @@
         "denial",
         "idempotency",
         "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "inv.work-order-part-issue-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/work-orders/{workOrderId}/part-issues",
+      "public": false,
+      "files": ["tests/backend/p1-30-a2-inventory-reads.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "pagination"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial",
+        "pagination"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
         "route",
         "service",
         "success"

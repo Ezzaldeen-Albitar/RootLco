@@ -50,14 +50,19 @@ export type {
   IssueQuotationInput,
   MoneyLine,
   QuotationLineInput,
+  QuotationSummaryView,
   QuotationView,
+  RevisionHeaderView,
   RevisionView,
 } from './application/quotation-service';
 
 export type {
   DecideInput,
+  DecisionAuditView,
   DecisionView,
   EvidenceInput,
+  EvidenceView,
+  RevisionDecisionAuditView,
   RevisionDecisionView,
 } from './application/quotation-decision-service';
 

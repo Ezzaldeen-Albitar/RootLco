@@ -312,6 +312,11 @@ import '@/app/api/v1/quotations/route';
 import '@/app/api/v1/quotations/[quotationId]/route';
 import '@/app/api/v1/quotations/[quotationId]/revisions/route';
 import '@/app/api/v1/quotations/[quotationId]/issue/route';
+import '@/app/api/v1/work-orders/[workOrderId]/quotations/route';
+import '@/app/api/v1/quotation-revisions/[revisionId]/route';
+import '@/app/api/v1/stock-locations/route';
+import '@/app/api/v1/work-orders/[workOrderId]/part-issues/route';
+import '@/app/api/v1/price-lists/[priceListId]/route';
 import '@/app/api/v1/quotation-items/[quotationItemId]/decisions/route';
 import '@/app/api/v1/quotation-revisions/[revisionId]/decisions/route';
 
@@ -339,6 +344,7 @@ import '@/app/api/v1/external-purchase-parts/route';
 // documents that agree with each other and disagree with the code.
 // `scripts/ci/check-route-registry-parity.mjs` is what catches that, and it named all
 // twenty of these before they were added.
+import '@/app/api/v1/work-orders/[workOrderId]/invoice/route';
 import '@/app/api/v1/work-orders/[workOrderId]/invoice-preview/route';
 import '@/app/api/v1/invoices/route';
 import '@/app/api/v1/invoices/[invoiceId]/route';

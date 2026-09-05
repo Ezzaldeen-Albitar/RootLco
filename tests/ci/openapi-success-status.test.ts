@@ -59,7 +59,7 @@ describe('every operation publishes the success status it returns', () => {
     // the original defect, so the scanner reports rather than assumes — and this
     // asserts it had nothing to report.
     expect(unresolved).toEqual([]);
-    expect(actual.size).toBe(356);
+    expect(actual.size).toBe(368);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -81,9 +81,13 @@ describe('every operation publishes the success status it returns', () => {
       (acc, s) => ({ ...acc, [s]: (acc[s] ?? 0) + 1 }),
       {}
     );
+    // P1-30 A2 adds twelve operations and every one is a GET returning 200, so
+    // 250 -> 262 while 201 and 202 are unchanged. Asserted as three independent
+    // numbers: a slice that shipped a write mislabelled as a read would move the
+    // 200 count and leave 201 short, which a single total could not show.
     expect(counts[201]).toBe(105);
     expect(counts[202]).toBe(1);
-    expect(counts[200]).toBe(250);
+    expect(counts[200]).toBe(262);
   });
 
   it('reads the handler, not the declaration', () => {

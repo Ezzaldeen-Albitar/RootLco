@@ -60,7 +60,10 @@ export type {
   ItemView,
   MovementView,
   OpenInventoryCommitments,
+  PartIssueListView,
   ReconciliationView,
+  ReservationListView,
+  StockLocationView,
 } from './application/inventory-read-service';
 
 export type {

@@ -1,7 +1,10 @@
 /**
- * POST /api/v1/quotations/{quotationId}/revisions (Phase 1-20, P1-20-BE-011).
+ * /api/v1/quotations/{quotationId}/revisions.
  *
- * Creates a new DRAFT revision. This is how a commercial change reaches a customer.
+ * `GET` lists the revision history (Phase 1-30 A2, seam S-08); `POST` creates a
+ * new draft revision (Phase 1-20, P1-20-BE-011).
+ *
+ * ## POST — creates a new DRAFT revision. This is how a commercial change reaches a customer.
  *
  * An issued revision is never edited: `quo.guard_quotation_item` refuses any item
  * insert, update or delete whose parent revision is not `draft`, which is exactly
@@ -27,7 +30,7 @@
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
-import { parseOrFail, schemas } from '@/server/http/validation';
+import { parseOrFail, schemas, searchParamsToObject } from '@/server/http/validation';
 import { AppFailure } from '@/server/errors/app-failure';
 import { INTERNAL_CODE } from '@/modules/service-catalog';
 import { MAX_ITEMS_PER_REVISION, MAX_ITEM_DESCRIPTION, quotationModule } from '@/modules/quotation';
@@ -65,6 +68,71 @@ export const Body = z
     discountRequestedBy: schemas.uuid.optional(),
   })
   .strict();
+
+/**
+ * Query surface for the history — pagination only, `.strict()`.
+ *
+ * An unknown parameter is `ERR-VAL-001` (422), never silently dropped; a
+ * malformed cursor is `ERR-PAG-001` (400). The two are different answers to
+ * different mistakes and are deliberately not collapsed.
+ */
+const Query = z
+  .object({ cursor: schemas.cursor.optional(), limit: schemas.limit.optional() })
+  .strict();
+
+/**
+ * The revision history — headers only, newest revision first.
+ *
+ * `quo.quotation-detail` reaches `listRevisions` and `findRevision` already, but
+ * it publishes ONLY `current_revision_id`'s revision. Superseded, rejected and
+ * expired revisions are immutable and retained precisely so the tenant can show
+ * what a customer was offered at each stage, and until now nothing could read
+ * them. This is that history; the lines live on the drill-down,
+ * `GET /quotation-revisions/{revisionId}`.
+ *
+ * Captured totals cross as decimal STRINGS — see `RevisionHeaderView`.
+ */
+export const QUOTATION_REVISION_LIST_OPERATION = defineOperation({
+  id: 'quo.quotation-revision-list',
+  module: 'quotation',
+  method: 'GET',
+  path: '/quotations/{quotationId}/revisions',
+  summary: "List a quotation's revision history, newest revision first.",
+  // The read code, not the manage code the POST below declares: reading what was
+  // offered is not authority to offer something new.
+  permissions: ['quo.quotation.read'],
+  // The path names no branch, so the scope is re-decided against the PARENT
+  // quotation's own company and branch once it is read (P1-18-A-01).
+  scope: 'branch',
+  auditClass: 'none',
+  rateLimitPolicy: 'expensive-read',
+  cacheCategory: 'never',
+});
+
+export async function GET(
+  request: Request,
+  route: { params: Promise<{ quotationId: string }> }
+): Promise<Response> {
+  const raw = await route.params;
+  const rawQuery = searchParamsToObject(new URL(request.url).searchParams);
+  return handleOperation(
+    QUOTATION_REVISION_LIST_OPERATION,
+    request,
+    async ({ db, authorizeScope }) => {
+      const params = parseOrFail(Params, raw, 'path');
+      const query = parseOrFail(Query, rawQuery, 'query');
+      return {
+        body: await quotationModule().quotations.listRevisionsFor(
+          db,
+          params.quotationId,
+          { cursor: query.cursor, limit: query.limit },
+          authorizeScope
+        ),
+      };
+    },
+    { params: raw }
+  );
+}
 
 export const QUOTATION_REVISION_CREATE_OPERATION = defineOperation({
   id: 'quo.quotation-revision-create',
