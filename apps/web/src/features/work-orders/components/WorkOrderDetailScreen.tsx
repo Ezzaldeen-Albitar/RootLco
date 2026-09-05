@@ -151,6 +151,13 @@ export function WorkOrderDetailScreen({
           >
             {translate(messages, 'workOrders.detail.stockLink')}
           </Link>
+          {' · '}
+          <Link
+            href={`/${locale}/inventory/parts?workOrderId=${workOrder.id}`}
+            className="text-primary underline-offset-2 hover:underline"
+          >
+            {translate(messages, 'workOrders.detail.partsLink')}
+          </Link>
         </p>
       ) : null}
 
