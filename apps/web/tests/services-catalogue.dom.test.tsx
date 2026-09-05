@@ -44,7 +44,29 @@ vi.mock('@/features/services/api', () => ({
 
 const push = vi.fn();
 const refresh = vi.fn();
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push, refresh }) }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push, refresh }),
+  // `notFound()` throws in Next; a stub that returned would let a route render
+  // past a locale it does not serve.
+  notFound: () => {
+    throw new Error('notFound() was called');
+  },
+}));
+
+// The route pages are rendered here too: an async server component that no
+// unit test renders sits in the coverage denominator at 0% and is exactly the
+// "dashboard-routes-unrendered" gap the web coverage baseline records. The
+// session is the only server dependency; it is the page's permission source.
+let PERMISSIONS: readonly string[] = [];
+vi.mock('@/features/authentication/api/session', () => ({
+  requireSession: async () => ({ permissions: PERMISSIONS, email: 'operator@test.local' }),
+}));
+
+type RoutePage = (args: { params: Promise<Record<string, string>> }) => Promise<React.ReactNode>;
+async function renderPage(page: RoutePage, params: Record<string, string>) {
+  const tree = await page({ params: Promise.resolve(params) });
+  return renderLtr(tree as React.ReactElement);
+}
 
 const notifyActionResult = vi.fn((..._args: unknown[]): boolean => true);
 vi.mock('@/components/notifications/action-notifications', () => ({
@@ -53,6 +75,8 @@ vi.mock('@/components/notifications/action-notifications', () => ({
 
 const { ServiceCatalogueScreen } =
   await import('@/features/services/components/ServiceCatalogueScreen');
+const ServiceCataloguePage = (await import('@/app/[locale]/(dashboard)/services/page'))
+  .default as unknown as RoutePage;
 
 const CATEGORY = '55555555-5555-4555-8555-555555555555';
 const BRANCH = '22222222-2222-4222-8222-222222222222';
@@ -357,5 +381,36 @@ describe('Arabic, right to left', () => {
     expect(
       within(screen.getByRole('table')).getByText(AR['services.lifecycle.active'] as string)
     ).toBeVisible();
+  });
+});
+
+describe('the /services route page decides before it reads', () => {
+  it('refuses an operator without svc.service.read, and issues no read', async () => {
+    PERMISSIONS = [];
+    await renderPage(ServiceCataloguePage, { locale: 'en' });
+    expect(screen.getByText(EN['state.denied.title'] as string)).toBeVisible();
+    expect(listServices).not.toHaveBeenCalled();
+  });
+
+  it('renders the catalogue with svc.service.read, and withholds creation without manage', async () => {
+    PERMISSIONS = ['svc.service.read'];
+    await renderPage(ServiceCataloguePage, { locale: 'en' });
+    expect(await screen.findByText('OIL-CHANGE')).toBeVisible();
+    expect(
+      screen.queryByRole('button', { name: EN['services.catalogue.create'] as string })
+    ).toBeNull();
+  });
+
+  it('offers creation to a manager', async () => {
+    PERMISSIONS = ['svc.service.read', 'svc.service.manage'];
+    await renderPage(ServiceCataloguePage, { locale: 'en' });
+    expect(
+      screen.getByRole('button', { name: EN['services.catalogue.create'] as string })
+    ).toBeVisible();
+  });
+
+  it('a locale it does not serve is not found', async () => {
+    PERMISSIONS = ['svc.service.read'];
+    await expect(renderPage(ServiceCataloguePage, { locale: 'xx' })).rejects.toThrow('notFound');
   });
 });

@@ -10759,7 +10759,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-30-a2-published-reads.test.ts"],
+      "tests": [
+        "tests/backend/p1-30-a2-published-reads.test.ts",
+        "tests/backend/p1-30-w2-pricing.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/price-lists/[priceListId]/route.ts"
     },
@@ -10795,7 +10798,7 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-20-pricing.test.ts"],
+      "tests": ["tests/backend/p1-20-pricing.test.ts", "tests/backend/p1-30-w2-pricing.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/price-lists/route.ts"
     },
@@ -10837,7 +10840,7 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-20-pricing.test.ts"],
+      "tests": ["tests/backend/p1-20-pricing.test.ts", "tests/backend/p1-30-w2-pricing.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/price-lists/[priceListId]/versions/route.ts"
     },
@@ -10921,7 +10924,7 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-20-pricing.test.ts"],
+      "tests": ["tests/backend/p1-20-pricing.test.ts", "tests/backend/p1-30-w2-pricing.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/prices/route.ts"
     },
@@ -10957,7 +10960,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-30-a2-published-reads.test.ts"],
+      "tests": [
+        "tests/backend/p1-30-a2-published-reads.test.ts",
+        "tests/backend/p1-30-w2-pricing.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/price-lists/[priceListId]/versions/[versionId]/rules/route.ts"
     },

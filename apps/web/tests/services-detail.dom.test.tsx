@@ -30,6 +30,7 @@ const createServiceVersion = vi.fn();
 const publishServiceVersion = vi.fn();
 const listBranches = vi.fn();
 const listServiceCategories = vi.fn();
+const readService = vi.fn();
 vi.mock('@/features/services/api', () => ({
   updateService: (...args: unknown[]) => updateService(...args),
   setBranchAvailability: (...args: unknown[]) => setBranchAvailability(...args),
@@ -42,11 +43,34 @@ vi.mock('@/features/services/api', () => ({
   listServices: vi.fn(),
   createService: vi.fn(),
   createServiceCategory: vi.fn(),
+  readService: (...args: unknown[]) => readService(...args),
 }));
 
 const push = vi.fn();
 const refresh = vi.fn();
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push, refresh }) }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push, refresh }),
+  // `notFound()` throws in Next; a stub that returned would let a route render
+  // past a locale it does not serve.
+  notFound: () => {
+    throw new Error('notFound() was called');
+  },
+}));
+
+// The route pages are rendered here too: an async server component that no
+// unit test renders sits in the coverage denominator at 0% and is exactly the
+// "dashboard-routes-unrendered" gap the web coverage baseline records. The
+// session is the only server dependency; it is the page's permission source.
+let PERMISSIONS: readonly string[] = [];
+vi.mock('@/features/authentication/api/session', () => ({
+  requireSession: async () => ({ permissions: PERMISSIONS, email: 'operator@test.local' }),
+}));
+
+type RoutePage = (args: { params: Promise<Record<string, string>> }) => Promise<React.ReactNode>;
+async function renderPage(page: RoutePage, params: Record<string, string>) {
+  const tree = await page({ params: Promise.resolve(params) });
+  return renderLtr(tree as React.ReactElement);
+}
 
 const notifyActionResult = vi.fn((..._args: unknown[]): boolean => true);
 vi.mock('@/components/notifications/action-notifications', () => ({
@@ -54,6 +78,8 @@ vi.mock('@/components/notifications/action-notifications', () => ({
 }));
 
 const { ServiceDetailScreen } = await import('@/features/services/components/ServiceDetailScreen');
+const ServiceDetailPage = (await import('@/app/[locale]/(dashboard)/services/[serviceId]/page'))
+  .default as unknown as RoutePage;
 
 const SERVICE_ID = '33333333-3333-4333-8333-333333333333';
 const CATEGORY = '55555555-5555-4555-8555-555555555555';
@@ -288,5 +314,50 @@ describe('a draft is created, held, and published against the SERVICE version', 
     );
     expect(await screen.findByText(EN['services.version.rangeOrder'] as string)).toBeVisible();
     expect(createServiceVersion).not.toHaveBeenCalled();
+  });
+});
+
+describe('the /services/[serviceId] route page renders the read as what it was', () => {
+  const failed = (status: string) => ({ status, correlationId: 'corr-p' });
+
+  it('refuses without svc.service.read, before the read', async () => {
+    PERMISSIONS = [];
+    await renderPage(ServiceDetailPage, { locale: 'en', serviceId: SERVICE_ID });
+    expect(screen.getByText(EN['state.denied.title'] as string)).toBeVisible();
+    expect(readService).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['not-found', 'state.notFound.title'],
+    ['denied', 'state.denied.title'],
+    ['expired', 'state.expired.title'],
+    ['unavailable', 'state.unavailable.title'],
+    ['error', 'state.error.title'],
+  ])('a %s read renders that state and nothing else', async (status, key) => {
+    PERMISSIONS = ['svc.service.read'];
+    readService.mockResolvedValue(failed(status));
+    await renderPage(ServiceDetailPage, { locale: 'en', serviceId: SERVICE_ID });
+    expect(screen.getByText(EN[key] as string)).toBeVisible();
+    expect(screen.queryByText('OIL-CHANGE')).toBeNull();
+  });
+
+  it('renders the service with the capabilities the session holds', async () => {
+    PERMISSIONS = ['svc.service.read', 'svc.service.manage'];
+    readService.mockResolvedValue(okRead(service()));
+    await renderPage(ServiceDetailPage, { locale: 'en', serviceId: SERVICE_ID });
+    expect(readService).toHaveBeenCalledWith(SERVICE_ID);
+    expect(
+      screen.getByRole('region', { name: EN['services.detail.summaryHeading'] as string })
+    ).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: EN['services.detail.save'] as string })
+    ).toBeVisible();
+  });
+
+  it('a locale it does not serve is not found', async () => {
+    PERMISSIONS = ['svc.service.read'];
+    await expect(
+      renderPage(ServiceDetailPage, { locale: 'xx', serviceId: SERVICE_ID })
+    ).rejects.toThrow('notFound');
   });
 });

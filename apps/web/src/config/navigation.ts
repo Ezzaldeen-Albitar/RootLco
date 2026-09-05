@@ -71,6 +71,8 @@ export interface NavigationGroup {
 export type IconName =
   | 'overview'
   | 'customers'
+  /** A price tag: price lists, rules and the price that applies. */
+  | 'pricing'
   | 'vehicles'
   /**
    * A review queue, not a list.
@@ -332,6 +334,18 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         permission: 'svc.service.read',
         status: 'available',
         // Tenant-wide: `svc.services` carries no company and no branch.
+        scope: 'tenant',
+      },
+      {
+        key: 'pricing',
+        labelKey: 'nav.pricing',
+        icon: 'pricing',
+        // `/pricing`: the P1-30 server-arithmetic gate pre-names this segment
+        // (`features/pricing`, the `pricing` route segment). Built by P1-30 W2.
+        href: '/pricing',
+        permission: 'svc.price.read',
+        status: 'available',
+        // Tenant-wide: `svc.price_lists` carries no company and no branch.
         scope: 'tenant',
       },
       {

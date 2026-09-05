@@ -73,6 +73,9 @@ describe('the navigation model', () => {
       'customers',
       'gallery',
       'overview',
+      // P1-30 W2: price lists, versions, rules and the price lookup at `/pricing`,
+      // gated on `svc.price.read` — the permission its reads require.
+      'pricing',
       // P1-28 Wave D: the Reception entry landed WITH its first screen, the
       // check-in wizard at `/receptions/check-in` (`P1-28-FE-007`).
       'receptions',

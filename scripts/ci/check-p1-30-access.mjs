@@ -45,6 +45,7 @@ import { join, relative, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { judgePage } from './check-p1-29-access.mjs';
+import { P1_30_AREAS } from './check-p1-30-server-arithmetic.mjs';
 
 const HERE = fileURLToPath(new URL('.', import.meta.url));
 export const ROOT = join(HERE, '..', '..');
@@ -78,6 +79,15 @@ export function ownedSegments(registerPath = REGISTER) {
       .split('/')
       .filter((p) => p && p !== 'api' && p !== 'v1' && !p.startsWith('{'));
     if (parts.length > 0) segments.add(parts[0]);
+  }
+  // The route segments the server-arithmetic gate pre-names (`pricing`,
+  // `quotations`, ...) are owned too: a screen may sit under a segment that is
+  // not any operation's first path part — `/pricing` renders `price-lists` and
+  // `prices` — and a page outside this derivation would escape the
+  // gate-before-read check while sitting squarely inside the phase.
+  for (const area of P1_30_AREAS) {
+    const match = /^app\/\[locale\]\/\(dashboard\)\/([^/]+)$/.exec(area);
+    if (match) segments.add(match[1]);
   }
   return [...segments].sort();
 }

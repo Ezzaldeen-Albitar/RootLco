@@ -96,6 +96,7 @@ describe('the scope is P1-30’s own, and it is pinned by name', () => {
   it('reads the services mirror and nothing of P1-29’s', () => {
     expect([...MIRROR_FILES].map((f) => f.replace(/\\/g, '/'))).toEqual([
       'lib/contracts/services-contract.ts',
+      'lib/contracts/pricing-contract.ts',
     ]);
   });
 });
