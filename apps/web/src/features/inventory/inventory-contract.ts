@@ -1,6 +1,7 @@
 /**
  * The inventory contract this phase consumes (P1-30, `W4`, FE-008 item search,
- * FE-009 stock balance, FE-010 reservations).
+ * FE-009 stock balance, FE-010 reservations; `W5`, FE-011 issues, FE-012
+ * returns, FE-013 stock movements).
  *
  * | operation                          | method | path                                        | permission          |
  * | ---------------------------------- | ------ | ------------------------------------------- | ------------------- |
@@ -11,13 +12,21 @@
  * | `org.branch-list`                  | GET    | `/org/branches`                             | `org.branch.read`   |
  * | `inv.stock-reservation-create`     | POST   | `/stock-reservations`                       | `inv.stock.operate` |
  * | `inv.stock-reservation-release`    | POST   | `/stock-reservations/{reservationId}/release` | `inv.stock.operate` |
+ * | `inv.work-order-part-issue-list`   | GET    | `/work-orders/{workOrderId}/part-issues`    | `inv.stock.read`    |
+ * | `wo.required-part-list`            | GET    | `/work-orders/{workOrderId}/required-parts` | `wo.work_order.read`|
+ * | `inv.stock-movement-list`          | GET    | `/stock-movements`                          | `inv.stock.read`    |
+ * | `inv.stock-issue-create`           | POST   | `/stock-issues`                             | `inv.stock.operate` |
+ * | `inv.stock-return-create`          | POST   | `/stock-returns`                            | `inv.stock.operate` |
  *
  * Typed from the routes that own the shapes and from the views in
  * `apps/api/src/modules/inventory/application/*`. The published document
  * carries no field schema for any inventory response, so these interfaces are
- * the only field-level contract, and `tests/backend/p1-30-w4-inventory.test.ts`
- * PARSES them out of this file and holds them against rows that came out of
- * the database, in both directions.
+ * the only field-level contract. The backend proofs
+ * (`tests/backend/p1-30-w4-inventory.test.ts`, `p1-30-w5-parts-movements.test.ts`)
+ * hold rows that came out of the database against the fields these views
+ * publish, with local row types and literal expected strings; they do not
+ * parse this file, so a field renamed here is caught by the type checker and
+ * the DOM tests, not by them.
  *
  * ## Every quantity is a decimal string, and none is computed here
  *
@@ -47,6 +56,22 @@
  * - No reservation detail: a reservation is found through the list.
  * - No item or location WRITER exists at all: a workshop that has recorded no
  *   items and no locations sees an empty product here, and the screen says so.
+ * - (W5) No issue or return detail, and no return list: a part issue is found
+ *   through its work order, and what has come back is `returnedQty` on that
+ *   row. A movement row carries the location's identifier but no code, and the
+ *   ledger cannot be filtered by the reference's identifier.
+ *
+ * ## W5: issues and returns carry a transport key and no body key
+ *
+ * `inv.stock-issue-create` and `inv.stock-return-create` are marked idempotent,
+ * so the transport attaches the header key to every send; NEITHER takes a key
+ * in its body, so neither echoes `replayed` — a repeat under the same header
+ * key returns the stored response. `PartIssue.returnedQty` and `quantity` are
+ * two exact operands the screen shows side by side; the difference is never
+ * taken here, and `ReturnEcho.totalReturned` / `issuedQuantity` are shown as
+ * the server states them. Reading the movement ledger is AUDITED
+ * (`inv.movement_history.read`), so a screen reads it only on an explicit
+ * action, never on first paint.
  */
 
 /** The permissions the W4 screen consults, as the backend registers them. */
@@ -59,6 +84,8 @@ export const INVENTORY_PERMISSIONS = {
   operate: 'inv.stock.operate',
   /** The branch picker's own code. */
   branchRead: 'org.branch.read',
+  /** (W5) The work-order header and its required parts, for the parts screen. */
+  workOrderRead: 'wo.work_order.read',
 } as const;
 
 /** `ck_item_master_type`, mirrored. */
@@ -80,6 +107,24 @@ export type LocationType = (typeof LOCATION_TYPES)[number];
 /** `ck_stock_locations_status`, mirrored. Inactive locations are listed, not hidden. */
 export const ACTIVATION_STATES = ['active', 'inactive'] as const;
 export type ActivationState = (typeof ACTIVATION_STATES)[number];
+
+/** `MOVEMENT_TYPES` of the inventory domain, mirrored (W5). */
+export const MOVEMENT_TYPES = ['opening', 'issue', 'return', 'damage', 'adjustment'] as const;
+export type MovementType = (typeof MOVEMENT_TYPES)[number];
+
+/** `REFERENCE_KINDS` of the inventory domain, mirrored (W5): what a movement points back at. */
+export const REFERENCE_KINDS = [
+  'opening_line',
+  'part_issue',
+  'part_return',
+  'damage',
+  'adjustment',
+] as const;
+export type ReferenceKind = (typeof REFERENCE_KINDS)[number];
+
+/** A movement's direction, mirrored (W5). */
+export const DIRECTIONS = ['in', 'out'] as const;
+export type Direction = (typeof DIRECTIONS)[number];
 
 /**
  * A quantity as every inventory write accepts it: up to nine integer digits
@@ -179,6 +224,108 @@ export interface StockLocation {
   readonly locationType: LocationType;
   readonly parentLocationId: string | null;
   readonly status: ActivationState;
+}
+
+/**
+ * One row of `inv.work-order-part-issue-list` — `PartIssueListView` (W5).
+ * `quantity` and `returnedQty` are two exact decimal strings; the row carries
+ * no remaining figure and the screen computes none.
+ */
+export interface PartIssue {
+  readonly id: string;
+  readonly workOrderId: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly itemId: string;
+  readonly sku: string;
+  readonly locationId: string;
+  readonly locationCode: string;
+  readonly reservationId: string | null;
+  readonly quantity: string;
+  readonly returnedQty: string;
+  readonly issuedAt: string;
+}
+
+/** The echo of `inv.stock-issue-create` — `IssueView` (W5). */
+export interface IssueEcho {
+  readonly id: string;
+  readonly movementId: string;
+  readonly workOrderId: string;
+  readonly itemId: string;
+  readonly locationId: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly quantity: string;
+  readonly reservationId: string | null;
+}
+
+/**
+ * The echo of `inv.stock-return-create` — `ReturnView` (W5). `totalReturned`
+ * and `issuedQuantity` are the server's running figures for the issue; they
+ * are shown as stated and never combined here.
+ */
+export interface ReturnEcho {
+  readonly id: string;
+  readonly partIssueId: string;
+  readonly quantity: string;
+  readonly totalReturned: string;
+  readonly issuedQuantity: string;
+}
+
+/**
+ * One row of `inv.stock-movement-list` — `MovementView` (W5). `sequence` is
+ * the ledger's own order as a STRING (a bigint), served newest first;
+ * `signedQuantity` is the server's signed figure. The row names the location
+ * by identifier only.
+ */
+export interface StockMovement {
+  readonly id: string;
+  readonly sequence: string;
+  readonly itemId: string;
+  readonly sku: string;
+  readonly locationId: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly movementType: MovementType;
+  readonly direction: Direction;
+  readonly quantity: string;
+  readonly signedQuantity: string;
+  readonly reference: MovementReference;
+  readonly occurredAt: string;
+  readonly correlationId: string | null;
+}
+
+/** What a movement points back at: the kind of record and its identifier. */
+export interface MovementReference {
+  readonly kind: ReferenceKind;
+  readonly id: string;
+}
+
+/**
+ * One required part of a work order — `wo.required-part-list` (W5), the
+ * work-order module's `LineRow`. `reference` is the item's identifier when the
+ * line was recorded against one; `unit` is free text the line was written with.
+ */
+export interface RequiredPart {
+  readonly id: string;
+  readonly workOrderId: string;
+  readonly jobId: string | null;
+  readonly description: string;
+  readonly quantity: string;
+  readonly unit: string;
+  readonly reference: string | null;
+  readonly recordVersion: number;
+}
+
+/** What the movement ledger may narrow by (W5); instants are FULL ISO-8601 strings. */
+export interface MovementCriteria {
+  readonly itemId?: string;
+  readonly locationId?: string;
+  readonly workOrderId?: string;
+  readonly movementType?: MovementType;
+  readonly referenceKind?: ReferenceKind;
+  readonly occurredFrom?: string;
+  readonly occurredTo?: string;
 }
 
 /** The branch pair every stock read is addressed to — the read's TARGET, re-authorized server-side. */

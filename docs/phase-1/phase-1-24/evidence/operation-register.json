@@ -4743,7 +4743,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-21-inventory-stock.test.ts"],
+      "tests": [
+        "tests/backend/p1-21-inventory-stock.test.ts",
+        "tests/backend/p1-30-w5-parts-movements.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/stock-issues/route.ts"
     },
@@ -4826,7 +4829,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-21-inventory-reads.test.ts"],
+      "tests": [
+        "tests/backend/p1-21-inventory-reads.test.ts",
+        "tests/backend/p1-30-w5-parts-movements.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/stock-movements/route.ts"
     },
@@ -5000,7 +5006,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-21-inventory-stock.test.ts"],
+      "tests": [
+        "tests/backend/p1-21-inventory-stock.test.ts",
+        "tests/backend/p1-30-w5-parts-movements.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/stock-returns/route.ts"
     },
@@ -5040,7 +5049,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-30-a2-inventory-reads.test.ts"],
+      "tests": [
+        "tests/backend/p1-30-a2-inventory-reads.test.ts",
+        "tests/backend/p1-30-w5-parts-movements.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/part-issues/route.ts"
     },
@@ -14184,7 +14196,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-19-work-order-lines.test.ts"],
+      "tests": [
+        "tests/backend/p1-19-work-order-lines.test.ts",
+        "tests/backend/p1-30-w5-parts-movements.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/required-parts/route.ts"
     },

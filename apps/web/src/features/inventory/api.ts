@@ -14,24 +14,32 @@ import {
 } from '@/lib/api/read-operation';
 import { fromFailure, success, type ActionState } from '@/lib/forms/action-result';
 import type {
+  StockIssueCreateBody,
   StockReservationCreateBody,
   StockReservationReleaseBody,
+  StockReturnCreateBody,
 } from '@/lib/contracts/inventory-contract';
 import type { BranchOption } from '@/features/services/services-contract';
 import type {
   AvailabilityCriteria,
   InventoryItem,
+  IssueEcho,
   ItemSearchCriteria,
+  MovementCriteria,
+  PartIssue,
+  RequiredPart,
   ReservationCriteria,
   ReservationEcho,
+  ReturnEcho,
   StockAvailability,
   StockLocation,
+  StockMovement,
   StockReservation,
   StockTarget,
 } from './inventory-contract';
 
 /**
- * The inventory adapters (P1-30, `W4`, FE-008/009/010).
+ * The inventory adapters (P1-30, `W4`, FE-008/009/010; `W5`, FE-011/012/013).
  *
  * Nothing here fetches directly: `authorizedClient()` is the only network owner
  * in this application. This file turns operations into view states and does
@@ -60,6 +68,16 @@ import type {
  * `inv.stock-reservation-release` is NOT marked idempotent, so no key is sent;
  * it is idempotent in effect and reports `replayed` when the reservation was
  * already past `active`.
+ *
+ * ## W5: the parts of a work order, and the ledger
+ *
+ * `inv.work-order-part-issue-list` and `wo.required-part-list` name the work
+ * order in the path — the parent IS the target, one guard — and travel through
+ * `query()`. `inv.stock-movement-list` is branch-targeted like the other stock
+ * reads and is AUDITED on the server: the screen calls it only on an explicit
+ * action. The two writes, `inv.stock-issue-create` and `inv.stock-return-create`,
+ * are marked idempotent (the transport attaches the header key) and take no
+ * body key, so they echo no `replayed`.
  */
 
 /** A write that creates or returns something the screen must then hold on to. */
@@ -173,6 +191,53 @@ export async function listBranches(): Promise<ReadState<ItemsOnly<BranchOption>>
   return readOperation<ItemsOnly<BranchOption>>('/api/v1/org/branches');
 }
 
+/** The part issues of one work order (`inv.work-order-part-issue-list`), newest first; the parent is the target. */
+export async function listPartIssues(
+  workOrderId: string,
+  request: TableRequest,
+  cursor: string | null
+): Promise<ServerPage<PartIssue>> {
+  return page<PartIssue>(
+    `/api/v1/work-orders/${encodeURIComponent(workOrderId)}/part-issues` +
+      query({ cursor, limit: request.pageSize })
+  );
+}
+
+/** The required parts of one work order (`wo.required-part-list`) — a bounded list, no page. */
+export async function listRequiredParts(
+  workOrderId: string
+): Promise<ReadState<ItemsOnly<RequiredPart>>> {
+  return readOperation<ItemsOnly<RequiredPart>>(
+    `/api/v1/work-orders/${encodeURIComponent(workOrderId)}/required-parts`
+  );
+}
+
+/**
+ * The movement ledger of one branch (`inv.stock-movement-list`), newest
+ * sequence first. AUDITED on the server — call it on an explicit action only.
+ */
+export async function listMovements(
+  target: StockTarget,
+  criteria: MovementCriteria,
+  request: TableRequest,
+  cursor: string | null
+): Promise<ServerPage<StockMovement>> {
+  return page<StockMovement>(
+    '/api/v1/stock-movements' +
+      branchTargetQuery(target, {
+        itemId: criteria.itemId,
+        locationId: criteria.locationId,
+        workOrderId: criteria.workOrderId,
+        movementType: criteria.movementType,
+        referenceKind: criteria.referenceKind,
+        occurredFrom: criteria.occurredFrom,
+        occurredTo: criteria.occurredTo,
+        cursor,
+        limit: request.pageSize,
+      })
+  );
+}
+
 /* ------------------------------------------------------------------ *
  * Writes
  * ------------------------------------------------------------------ */
@@ -196,6 +261,45 @@ export async function createReservation(
       ...success('inventory.reserve.success', attempt),
       correlationId: result.correlationId,
     },
+    created: result.data,
+  };
+}
+
+/**
+ * Issue parts to a work order (`inv.stock-issue-create`). The transport attaches
+ * the header key. An issue against a reservation consumes it; one larger than
+ * the reservation is refused (409), which the screen renders as the refusal it
+ * is.
+ */
+export async function createIssue(
+  body: StockIssueCreateBody,
+  attempt = 1
+): Promise<CreateOutcome<IssueEcho>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<IssueEcho>('POST', '/api/v1/stock-issues', body);
+  if (!result.ok) return { state: fromFailure(result, attempt), created: null };
+  return {
+    state: { ...success('inventory.issue.success', attempt), correlationId: result.correlationId },
+    created: result.data,
+  };
+}
+
+/**
+ * Return issued parts (`inv.stock-return-create`). The transport attaches the
+ * header key. The echo carries the server's running `totalReturned` and the
+ * `issuedQuantity` it is measured against, shown as stated.
+ */
+export async function createReturn(
+  body: StockReturnCreateBody,
+  attempt = 1
+): Promise<CreateOutcome<ReturnEcho>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<ReturnEcho>('POST', '/api/v1/stock-returns', body);
+  if (!result.ok) return { state: fromFailure(result, attempt), created: null };
+  return {
+    state: { ...success('inventory.return.success', attempt), correlationId: result.correlationId },
     created: result.data,
   };
 }

@@ -97,13 +97,11 @@ export const DISPOSITIONS = Object.freeze({});
  */
 export const PENDING_MIRRORS = Object.freeze({
   // W2 wrote the pricing mirror and deleted its five entries in the same change.
-  // The `inv` writes entered this scope with W4, which mirrors the two reservation
-  // writes. Issues and returns belong to W5 (canonical plan §4); damage, intake and
-  // opening batches are sent by no P1-30 screen (FE-008…FE-013 do not render them),
-  // so their mirrors have no consumer in this phase and are owed by whichever phase
-  // builds one.
-  'inv.stock-issue-create': 'PENDING: P1-30 W5 (FE-011) writes the issue mirror',
-  'inv.stock-return-create': 'PENDING: P1-30 W5 (FE-012) writes the return mirror',
+  // The `inv` writes entered this scope with W4 (the two reservation writes); W5
+  // wrote the issue and return mirrors and deleted their entries in the same
+  // change. Damage, intake and opening batches are sent by no P1-30 screen
+  // (FE-008…FE-013 do not render them), so their mirrors have no consumer in this
+  // phase and are owed by whichever phase builds one.
   'inv.damaged-stock-create':
     'PENDING: no P1-30 screen sends this (outside FE-008…FE-013); a later phase owes the mirror',
   'inv.customer-supplied-part-create':

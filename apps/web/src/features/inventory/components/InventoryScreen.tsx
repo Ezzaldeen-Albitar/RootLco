@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
@@ -18,7 +18,6 @@ import {
   createReservation,
   listAvailability,
   listItems,
-  listLocations,
   listReservations,
   releaseReservation,
 } from '../api';
@@ -37,13 +36,13 @@ import {
   type ReservationEcho,
   type ReservationState,
   type StockAvailability,
-  type StockLocation,
   type StockReservation,
   type StockTarget,
 } from '../inventory-contract';
 import {
   BranchPairPicker,
   EMPTY_PAIR,
+  LocationPicker,
   LocationTypeLabel,
   OutcomeNote,
   PRIMARY_BUTTON,
@@ -52,7 +51,9 @@ import {
   SECONDARY_BUTTON,
   UUID,
   useBranches,
+  useLocations,
   type BranchPair,
+  type Locations,
 } from './shared';
 
 /**
@@ -121,6 +122,24 @@ export function InventoryScreen({
   return (
     <div className="flex min-h-0 flex-col gap-4">
       <ItemSearch locale={locale} messages={messages} />
+
+      {canReadStock ? (
+        <p className="text-caption" lang={locale}>
+          <Link
+            href={`/${locale}/inventory/parts`}
+            className="text-primary underline-offset-2 hover:underline"
+          >
+            {translate(messages, 'inventory.links.parts')}
+          </Link>
+          {' · '}
+          <Link
+            href={`/${locale}/inventory/movements`}
+            className="text-primary underline-offset-2 hover:underline"
+          >
+            {translate(messages, 'inventory.links.movements')}
+          </Link>
+        </p>
+      ) : null}
 
       {canReadStock ? (
         <TargetPanel
@@ -469,79 +488,6 @@ function TargetPanel({
 /* ------------------------------------------------------------------ *
  * FE-009 — availability, one row per cell
  * ------------------------------------------------------------------ */
-
-interface Locations {
-  readonly items: readonly StockLocation[] | null;
-  readonly refused: string | null;
-  readonly truncated: boolean;
-}
-
-function useLocations(target: StockTarget): Locations {
-  const [items, setItems] = useState<readonly StockLocation[] | null>(null);
-  const [refused, setRefused] = useState<string | null>(null);
-  const [truncated, setTruncated] = useState(false);
-  useEffect(() => {
-    let live = true;
-    void listLocations(target).then((state) => {
-      if (!live) return;
-      if (state.status === 'ok') {
-        setItems(state.data.items);
-        setTruncated(state.data.hasMore);
-      } else {
-        setRefused(
-          state.status === 'denied'
-            ? 'inventory.locations.refused'
-            : 'inventory.locations.unavailable'
-        );
-      }
-    });
-    return () => {
-      live = false;
-    };
-  }, [target]);
-  return { items, refused, truncated };
-}
-
-function LocationPicker({
-  messages,
-  locations,
-  label,
-  placeholder,
-  value,
-  onChange,
-  required,
-  error,
-}: {
-  readonly messages: Messages;
-  readonly locations: Locations;
-  readonly label: string;
-  readonly placeholder: string;
-  readonly value: string;
-  readonly onChange: (next: string) => void;
-  readonly required?: boolean;
-  readonly error?: string | undefined;
-}) {
-  const note = locations.refused
-    ? translateDynamic(messages, locations.refused)
-    : locations.truncated
-      ? translate(messages, 'inventory.locations.truncated')
-      : undefined;
-  return (
-    <SelectField
-      label={label}
-      {...(required ? { required: true } : {})}
-      {...(note ? { description: note } : {})}
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      options={(locations.items ?? []).map((location) => ({
-        value: location.id,
-        label: `${location.locationCode} — ${location.name}`,
-      }))}
-      placeholder={placeholder}
-      error={error}
-    />
-  );
-}
 
 function AvailabilityPanel({
   locale,

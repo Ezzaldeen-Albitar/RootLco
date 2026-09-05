@@ -8,8 +8,13 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
 
-import { listBranches } from '../api';
-import type { LocationType, ReservationState } from '../inventory-contract';
+import { listBranches, listLocations } from '../api';
+import type {
+  LocationType,
+  ReservationState,
+  StockLocation,
+  StockTarget,
+} from '../inventory-contract';
 
 /**
  * Pieces the inventory screen shares (P1-30, `W4`).
@@ -191,5 +196,88 @@ export function OutcomeNote({
         </>
       ) : null}
     </p>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * The locations of a branch, for the pickers (shared by W4 and W5)
+ * ------------------------------------------------------------------ */
+
+export interface Locations {
+  readonly items: readonly StockLocation[] | null;
+  readonly refused: string | null;
+  readonly truncated: boolean;
+}
+
+export function useLocations(target: StockTarget | null): Locations {
+  const [items, setItems] = useState<readonly StockLocation[] | null>(null);
+  const [refused, setRefused] = useState<string | null>(null);
+  const [truncated, setTruncated] = useState(false);
+  const companyId = target?.companyId ?? null;
+  const branchId = target?.branchId ?? null;
+  useEffect(() => {
+    if (companyId === null || branchId === null) return;
+    const target = { companyId, branchId };
+    let live = true;
+    void listLocations(target).then((state) => {
+      if (!live) return;
+      if (state.status === 'ok') {
+        setItems(state.data.items);
+        setTruncated(state.data.hasMore);
+      } else {
+        setRefused(
+          state.status === 'denied'
+            ? 'inventory.locations.refused'
+            : 'inventory.locations.unavailable'
+        );
+      }
+    });
+    return () => {
+      live = false;
+    };
+    // Keyed on the pair's VALUES, never the object: a caller that rebuilds its
+    // target per render must not re-read the locations without end.
+  }, [companyId, branchId]);
+  return { items, refused, truncated };
+}
+
+export function LocationPicker({
+  messages,
+  locations,
+  label,
+  placeholder,
+  value,
+  onChange,
+  required,
+  error,
+}: {
+  readonly messages: Messages;
+  readonly locations: Locations;
+  readonly label: string;
+  readonly placeholder: string;
+  readonly value: string;
+  readonly onChange: (next: string) => void;
+  readonly required?: boolean;
+  readonly error?: string | undefined;
+}) {
+  const note = locations.refused
+    ? translateDynamic(messages, locations.refused)
+    : locations.truncated
+      ? translate(messages, 'inventory.locations.truncated')
+      : undefined;
+  return (
+    <SelectField
+      label={label}
+      {...(required ? { required: true } : {})}
+      {...(note ? { description: note } : {})}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      options={(locations.items ?? []).map((location) => ({
+        value: location.id,
+        label: `${location.locationCode} — ${location.name}`,
+      }))}
+      placeholder={placeholder}
+      error={error}
+    />
   );
 }
