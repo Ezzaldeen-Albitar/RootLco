@@ -50,7 +50,7 @@ import { ROOT, bodySchemaOf, compareOperation, readMirror } from './check-p1-29-
 const slash = (p) => p.split(sep).join('/');
 
 /** The P1-30 id namespaces held to a mirror today. Grows per wave; pinned by the test. */
-export const P1_30_DOMAINS = Object.freeze(['svc', 'quo', 'inv']);
+export const P1_30_DOMAINS = Object.freeze(['svc', 'quo', 'inv', 'sal']);
 const IN_SCOPE = new RegExp(`^(${P1_30_DOMAINS.join('|')})\\.`);
 const WRITE_METHODS = Object.freeze(['POST', 'PATCH', 'PUT', 'DELETE']);
 
@@ -64,6 +64,7 @@ export const MIRROR_FILES = Object.freeze([
   join('lib', 'contracts', 'pricing-contract.ts'),
   join('lib', 'contracts', 'quotations-contract.ts'),
   join('lib', 'contracts', 'inventory-contract.ts'),
+  join('lib', 'contracts', 'billing-contract.ts'),
 ]);
 
 /**
@@ -76,6 +77,13 @@ export const BODYLESS = Object.freeze({
   // approver is the caller. Entered scope with `inv` in W4; no P1-30 screen sends it.
   'inv.opening-batch-approve':
     'the approval carries nothing but the batch in the path and the caller as approver',
+  // Issuance has no parameters: the invoice is the path parameter and the
+  // version travels as If-Match. Sent by the W6 screen with no body.
+  'sal.invoice-issue':
+    'issuance carries nothing but the invoice in the path and its version as If-Match',
+  // The amount was fixed at request time; the approval names the note in the path.
+  'sal.credit-note-approve':
+    'the approval carries nothing but the credit note in the path and the caller as approver',
 });
 
 /** Field-level omissions the web side has decided, with reasons. Empty today. */
@@ -112,6 +120,23 @@ export const PENDING_MIRRORS = Object.freeze({
     'PENDING: no P1-30 screen sends this (outside FE-008…FE-013); a later phase owes the mirror',
   'inv.opening-batch-line-create':
     'PENDING: no P1-30 screen sends this (outside FE-008…FE-013); a later phase owes the mirror',
+  // The `sal` writes entered this scope with W6, which mirrors the invoice
+  // create and cancel bodies. Payments belong to W7 (canonical plan §4); credit
+  // notes and deliveries are sent by no P1-30 screen.
+  'sal.credit-note-create':
+    'PENDING: no P1-30 screen sends this (credit notes are in no FE row); a later phase owes the mirror',
+  'sal.payment-record': 'PENDING: P1-30 W7 (FE-016) writes the payment mirror',
+  'sal.payment-allocate': 'PENDING: P1-30 W7 (FE-017) writes the allocation mirror',
+  'sal.delivery-checklist-record':
+    'PENDING: no P1-30 screen sends this (FE-008…FE-021 do not render deliveries); a later phase owes the mirror',
+  'sal.delivery-complete':
+    'PENDING: no P1-30 screen sends this (FE-008…FE-021 do not render deliveries); a later phase owes the mirror',
+  'sal.delivery-create':
+    'PENDING: no P1-30 screen sends this (FE-008…FE-021 do not render deliveries); a later phase owes the mirror',
+  'sal.delivery-receiver-verify':
+    'PENDING: no P1-30 screen sends this (FE-008…FE-021 do not render deliveries); a later phase owes the mirror',
+  'sal.delivery-signature-attach':
+    'PENDING: no P1-30 screen sends this (FE-008…FE-021 do not render deliveries); a later phase owes the mirror',
 });
 
 const problems = [];

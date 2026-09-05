@@ -345,6 +345,9 @@ export const OUT_OF_SUBJECT_ADAPTERS = Object.freeze({
   // P1-30 W3: both guard the QUOTATION's record version, sourced from the detail read.
   createQuotationRevision: 'quo.quotation-revision-create — P1-30 W3, not an apt/rec operation',
   issueQuotation: 'quo.quotation-issue — P1-30 W3, not an apt/rec operation',
+  // P1-30 W6: both guard the INVOICE's record version, sourced from the detail read.
+  issueInvoice: 'sal.invoice-issue — P1-30 W6, not an apt/rec operation',
+  cancelInvoice: 'sal.invoice-cancel — P1-30 W6, not an apt/rec operation',
 });
 
 export function expectedAdapterOperations(guarded, manifest, decisions) {

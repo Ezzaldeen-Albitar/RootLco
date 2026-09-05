@@ -150,17 +150,9 @@ export const DATABASE_ENFORCED = Object.freeze({
  * nothing.
  */
 export const KNOWN_UNCATALOGUED = Object.freeze([
-  {
-    file: 'apps/web/src/config/navigation.ts',
-    code: 'sal.invoice.read',
-    why:
-      'the billing navigation entry gates on a code that exists nowhere. The catalogue carries ' +
-      'sal.invoice.issue, sal.invoice.manage and sal.finance.view, and no sal.invoice.read. The ' +
-      "entry is status 'planned' so no page is behind it yet, which is why nobody noticed: the " +
-      "client's hasPermission is an exact-match includes() over the server-issued list and fails " +
-      'closed, so the moment a page ships this entry is hidden from everybody, permanently.',
-    owner: 'the billing Frontend phase (P1-30/P1-31), or a Frontend-profile correction before it',
-  },
+  // `sal.invoice.read` on the billing navigation entry was the first entry here;
+  // P1-30 W6 re-gated the entry on `sal.invoice.manage` (the code every invoice
+  // read declares) in the change that built the page, and the entry left.
   {
     file: 'apps/web/src/config/navigation.ts',
     code: 'sal.delivery.read',

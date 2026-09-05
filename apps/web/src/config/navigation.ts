@@ -379,9 +379,13 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         key: 'billing',
         labelKey: 'nav.billing',
         icon: 'billing',
-        href: '/billing',
-        permission: 'sal.invoice.read',
-        status: 'planned',
+        // `/invoices`: the segment the server-arithmetic gate pre-names for
+        // this module. Gated on `sal.invoice.manage`, the code every invoice
+        // read declares (`sal.invoice.read`, named here until P1-30 W6, exists
+        // in no catalogue — RES-05). Built by P1-30 W6.
+        href: '/invoices',
+        permission: 'sal.invoice.manage',
+        status: 'available',
         scope: 'branch',
       },
       {

@@ -61,6 +61,7 @@ export function WorkOrderDetailScreen({
   canRecordLabor,
   canReadQuotations = false,
   canReadStock = false,
+  canReadInvoice = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -79,6 +80,8 @@ export function WorkOrderDetailScreen({
   readonly canReadQuotations?: boolean;
   /** P1-30 W4: the link into this work order's stock reservations. Optional so earlier callers stand. */
   readonly canReadStock?: boolean;
+  /** P1-30 W6: the link into this work order's invoice. Optional so earlier callers stand. */
+  readonly canReadInvoice?: boolean;
 }) {
   const [detail, setDetail] = useState<WorkOrderDetail>(initial);
   const [reloadError, setReloadError] = useState<string | null>(null);
@@ -157,6 +160,17 @@ export function WorkOrderDetailScreen({
             className="text-primary underline-offset-2 hover:underline"
           >
             {translate(messages, 'workOrders.detail.partsLink')}
+          </Link>
+        </p>
+      ) : null}
+
+      {canReadInvoice ? (
+        <p className="text-body">
+          <Link
+            href={`/${locale}/invoices?workOrderId=${workOrder.id}`}
+            className="text-primary underline-offset-2 hover:underline"
+          >
+            {translate(messages, 'workOrders.detail.invoiceLink')}
           </Link>
         </p>
       ) : null}
