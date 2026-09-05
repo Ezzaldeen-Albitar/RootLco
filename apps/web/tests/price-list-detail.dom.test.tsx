@@ -26,6 +26,7 @@ const publishPriceListVersion = vi.fn();
 const recordPriceRule = vi.fn();
 const createPriceListAssignment = vi.fn();
 const listBranches = vi.fn();
+const readPriceList = vi.fn();
 vi.mock('@/features/pricing/api', () => ({
   listPriceRules: (...args: unknown[]) => listPriceRules(...args),
   createPriceListVersion: (...args: unknown[]) => createPriceListVersion(...args),
@@ -34,7 +35,7 @@ vi.mock('@/features/pricing/api', () => ({
   createPriceListAssignment: (...args: unknown[]) => createPriceListAssignment(...args),
   listBranches: () => listBranches(),
   listPriceLists: vi.fn(),
-  readPriceList: vi.fn(),
+  readPriceList: (...args: unknown[]) => readPriceList(...args),
   createPriceList: vi.fn(),
   resolvePrice: vi.fn(),
 }));
@@ -46,7 +47,29 @@ vi.mock('@/features/services/api', () => ({
 
 const push = vi.fn();
 const refresh = vi.fn();
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push, refresh }) }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push, refresh }),
+  // `notFound()` throws in Next; a stub that returned would let a route render
+  // past a locale it does not serve.
+  notFound: () => {
+    throw new Error('notFound() was called');
+  },
+}));
+
+// The route pages are rendered here too: an async server component that no
+// unit test renders sits in the coverage denominator at 0% and is exactly the
+// "dashboard-routes-unrendered" gap the web coverage baseline records. The
+// session is the only server dependency; it is the page's permission source.
+let PERMISSIONS: readonly string[] = [];
+vi.mock('@/features/authentication/api/session', () => ({
+  requireSession: async () => ({ permissions: PERMISSIONS, email: 'operator@test.local' }),
+}));
+
+type RoutePage = (args: { params: Promise<Record<string, string>> }) => Promise<React.ReactNode>;
+async function renderPage(page: RoutePage, params: Record<string, string>) {
+  const tree = await page({ params: Promise.resolve(params) });
+  return renderLtr(tree as React.ReactElement);
+}
 
 const notifyActionResult = vi.fn((..._args: unknown[]): boolean => true);
 vi.mock('@/components/notifications/action-notifications', () => ({
@@ -55,6 +78,8 @@ vi.mock('@/components/notifications/action-notifications', () => ({
 
 const { PriceListDetailScreen } =
   await import('@/features/pricing/components/PriceListDetailScreen');
+const PriceListDetailPage = (await import('@/app/[locale]/(dashboard)/pricing/[priceListId]/page'))
+  .default as unknown as RoutePage;
 
 const LIST_ID = '33333333-3333-4333-8333-333333333333';
 const PUBLISHED_ID = '44444444-4444-4444-8444-444444444444';
@@ -428,5 +453,48 @@ describe('an assignment is recorded, and the absence of a read is said', () => {
       await within(form).findByText(EN['pricing.assignment.rangeOrder'] as string)
     ).toBeVisible();
     expect(createPriceListAssignment).not.toHaveBeenCalled();
+  });
+});
+
+describe('the /pricing/[priceListId] route page renders the read as what it was', () => {
+  const failed = (status: string) => ({ status, correlationId: 'corr-p' });
+
+  it('refuses without svc.price.read, before the read', async () => {
+    PERMISSIONS = [];
+    await renderPage(PriceListDetailPage, { locale: 'en', priceListId: LIST_ID });
+    expect(screen.getByText(EN['state.denied.title'] as string)).toBeVisible();
+    expect(readPriceList).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['not-found', 'state.notFound.title'],
+    ['denied', 'state.denied.title'],
+    ['expired', 'state.expired.title'],
+    ['unavailable', 'state.unavailable.title'],
+    ['error', 'state.error.title'],
+  ])('a %s read renders that state and nothing else', async (status, key) => {
+    PERMISSIONS = ['svc.price.read'];
+    readPriceList.mockResolvedValue(failed(status));
+    await renderPage(PriceListDetailPage, { locale: 'en', priceListId: LIST_ID });
+    expect(screen.getByText(EN[key] as string)).toBeVisible();
+    expect(screen.queryByText('RETAIL')).toBeNull();
+  });
+
+  it('renders the list with the capabilities the session holds', async () => {
+    PERMISSIONS = ['svc.price.read', 'svc.price.manage', 'svc.price.publish'];
+    readPriceList.mockResolvedValue(okRead(priceList()));
+    await renderPage(PriceListDetailPage, { locale: 'en', priceListId: LIST_ID });
+    expect(readPriceList).toHaveBeenCalledWith(LIST_ID);
+    expect(
+      screen.getByRole('region', { name: EN['pricing.detail.summaryHeading'] as string })
+    ).toBeVisible();
+    expect(screen.getByText(EN['pricing.publish.heading'] as string)).toBeVisible();
+  });
+
+  it('a locale it does not serve is not found', async () => {
+    PERMISSIONS = ['svc.price.read'];
+    await expect(
+      renderPage(PriceListDetailPage, { locale: 'xx', priceListId: LIST_ID })
+    ).rejects.toThrow('notFound');
   });
 });

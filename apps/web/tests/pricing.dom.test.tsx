@@ -48,7 +48,29 @@ vi.mock('@/features/services/api', () => ({
 
 const push = vi.fn();
 const refresh = vi.fn();
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push, refresh }) }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push, refresh }),
+  // `notFound()` throws in Next; a stub that returned would let a route render
+  // past a locale it does not serve.
+  notFound: () => {
+    throw new Error('notFound() was called');
+  },
+}));
+
+// The route pages are rendered here too: an async server component that no
+// unit test renders sits in the coverage denominator at 0% and is exactly the
+// "dashboard-routes-unrendered" gap the web coverage baseline records. The
+// session is the only server dependency; it is the page's permission source.
+let PERMISSIONS: readonly string[] = [];
+vi.mock('@/features/authentication/api/session', () => ({
+  requireSession: async () => ({ permissions: PERMISSIONS, email: 'operator@test.local' }),
+}));
+
+type RoutePage = (args: { params: Promise<Record<string, string>> }) => Promise<React.ReactNode>;
+async function renderPage(page: RoutePage, params: Record<string, string>) {
+  const tree = await page({ params: Promise.resolve(params) });
+  return renderLtr(tree as React.ReactElement);
+}
 
 const notifyActionResult = vi.fn((..._args: unknown[]): boolean => true);
 vi.mock('@/components/notifications/action-notifications', () => ({
@@ -56,6 +78,8 @@ vi.mock('@/components/notifications/action-notifications', () => ({
 }));
 
 const { PricingScreen } = await import('@/features/pricing/components/PricingScreen');
+const PricingPage = (await import('@/app/[locale]/(dashboard)/pricing/page'))
+  .default as unknown as RoutePage;
 
 const LIST_ID = '33333333-3333-4333-8333-333333333333';
 const SERVICE_ID = '55555555-5555-4555-8555-555555555555';
@@ -370,5 +394,32 @@ describe('Arabic, right to left', () => {
     expect(
       screen.getByRole('button', { name: AR['pricing.lookup.submit'] as string })
     ).toBeVisible();
+  });
+});
+
+describe('the /pricing route page decides before it reads', () => {
+  it('refuses an operator without svc.price.read, and issues no read', async () => {
+    PERMISSIONS = [];
+    await renderPage(PricingPage, { locale: 'en' });
+    expect(screen.getByText(EN['state.denied.title'] as string)).toBeVisible();
+    expect(listPriceLists).not.toHaveBeenCalled();
+  });
+
+  it('renders the screen with svc.price.read, and withholds creation without manage', async () => {
+    PERMISSIONS = ['svc.price.read'];
+    await renderPage(PricingPage, { locale: 'en' });
+    expect(await screen.findByRole('table')).toBeVisible();
+    expect(screen.queryByRole('button', { name: EN['pricing.list.create'] as string })).toBeNull();
+  });
+
+  it('offers creation to a manager', async () => {
+    PERMISSIONS = ['svc.price.read', 'svc.price.manage'];
+    await renderPage(PricingPage, { locale: 'en' });
+    expect(screen.getByRole('button', { name: EN['pricing.list.create'] as string })).toBeVisible();
+  });
+
+  it('a locale it does not serve is not found', async () => {
+    PERMISSIONS = ['svc.price.read'];
+    await expect(renderPage(PricingPage, { locale: 'xx' })).rejects.toThrow('notFound');
   });
 });
