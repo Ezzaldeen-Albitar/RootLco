@@ -165,12 +165,12 @@ different tree is not evidence about this one.
 | Web tier — files the run reported           | 114    | the same report, cross-checked against the walk above              |
 | Root unit tier — tests executed             | 3211  | `--record unit`, from the `vitest` JSON report                     |
 | Root unit tier — files the run reported     | 118   | the same report, cross-checked against the tier's include rule      |
-| Committed web floor (`minTests`)            | 2500  | `.github/ci-baselines/test-count-baseline.json`                    |
+| Committed web floor (`minTests`)            | 3050  | `.github/ci-baselines/test-count-baseline.json`                    |
 | Committed unit floor (`minTests`)           | 1050  | the same baseline                                                  |
 | Migrations on disk                          | 136   | a walk of `supabase/migrations`                                    |
 
 The floor and the measurement are different questions and they have different
-authorities. The baseline file defines the FLOOR, so binding "the floor is 2500"
+authorities. The baseline file defines the FLOOR, so binding "the floor is 3050"
 to it is a definition. It does not define the MEASUREMENT, and the wave in which
 it was allowed to is the wave in which this page carried a total far below what
 the tree was running.
