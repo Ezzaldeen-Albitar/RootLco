@@ -226,7 +226,9 @@ export function PaymentsScreen({
               aria-label={translate(messages, 'payments.record.heading')}
               className="rounded-md border border-border bg-surface p-4"
             >
-              <h2 className="text-heading-3">{translate(messages, 'payments.record.heading')}</h2>
+              <h2 className="text-section-title">
+                {translate(messages, 'payments.record.heading')}
+              </h2>
               <p className="mt-2 text-body text-text-secondary">
                 {translate(messages, 'payments.record.needsCode')}
               </p>
@@ -315,7 +317,7 @@ function TargetPanel({
       className="rounded-md border border-border bg-surface p-4"
       data-print="hide"
     >
-      <h2 className="text-heading-3">{translate(messages, 'payments.target.heading')}</h2>
+      <h2 className="text-section-title">{translate(messages, 'payments.target.heading')}</h2>
       <p className="mt-1 text-body text-text-secondary">
         {translate(messages, 'payments.target.explain')}
       </p>
@@ -430,7 +432,7 @@ function RecordPanel({
       className="rounded-md border border-border bg-surface p-4"
       data-print="hide"
     >
-      <h2 className="text-heading-3">{translate(messages, 'payments.record.heading')}</h2>
+      <h2 className="text-section-title">{translate(messages, 'payments.record.heading')}</h2>
       {methods === null ? (
         <p className="mt-2 text-body text-text-secondary">
           {translate(messages, 'payments.methods.loading')}
@@ -691,7 +693,7 @@ function ReceiptsPanel({
       className="rounded-md border border-border bg-surface p-4"
       data-print="hide"
     >
-      <h2 className="text-heading-3">{translate(messages, 'payments.list.heading')}</h2>
+      <h2 className="text-section-title">{translate(messages, 'payments.list.heading')}</h2>
       <form
         aria-label={translate(messages, 'payments.list.filtersLabel')}
         className="mt-3 grid gap-3 sm:grid-cols-3"
@@ -842,7 +844,7 @@ function ReceiptPanel({
         className="rounded-md border border-border bg-surface p-4"
         data-print="hide"
       >
-        <h2 className="text-heading-3">{translate(messages, 'payments.receipt.heading')}</h2>
+        <h2 className="text-section-title">{translate(messages, 'payments.receipt.heading')}</h2>
         <dl className="mt-3 grid gap-3 sm:grid-cols-2">
           <Row label={translate(messages, 'payments.receipt.reference')}>{receipt.reference}</Row>
           <Row label={translate(messages, 'payments.receipt.status')}>
@@ -874,7 +876,7 @@ function ReceiptPanel({
           {translate(messages, 'payments.receipt.noNames')}
         </p>
 
-        <h3 className="mt-4 text-heading-3">
+        <h3 className="mt-4 text-section-title">
           {translate(messages, 'payments.allocations.heading')}
         </h3>
         {receipt.allocations.length === 0 ? (
@@ -1000,7 +1002,7 @@ function AllocateForm({
         });
       }}
     >
-      <h3 className="sm:col-span-2 text-heading-3">
+      <h3 className="sm:col-span-2 text-section-title">
         {translate(messages, 'payments.allocate.heading')}
       </h3>
       <p className="sm:col-span-2 text-body text-text-secondary">
@@ -1068,7 +1070,7 @@ function PrintPanel({
       className="rounded-md border border-border bg-surface p-4"
     >
       <div data-print="hide">
-        <h2 className="text-heading-3">{translate(messages, 'payments.print.heading')}</h2>
+        <h2 className="text-section-title">{translate(messages, 'payments.print.heading')}</h2>
         <p className="mt-1 text-body text-text-secondary">
           {translate(messages, 'payments.print.explain')}
         </p>
