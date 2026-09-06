@@ -142,7 +142,9 @@ What actually remained after this slice, measured on the fresh tenant `p30_accep
 | invoice, allocation, outstanding balance | **yes** once a quotation exists — the invoice is built from an accepted quotation                                                                               |
 
 The inventory gap is closed by the follow-on slice `remediation/p1-30-backend-commercial-setup`
-(five operations, two bundle codes, no migration, no permission minted) and its Frontend half.
+(five operations, two bundle codes, no migration, no permission minted — PR #322, `develop`
+`159727b1`) and its Frontend half (PR #323, the setup and opening-stock screens, `develop` `ea8c0666`);
+the fresh-organisation acceptance that exercises the whole chain is `w9-acceptance-record.md`.
 Tax classes and rates, the invoice numbering mode, discount rules and approval policies are
 **valid-but-unconfigured**: the chain tolerates their absence and they are product gaps for the
 Owner's register, not acceptance blockers.
