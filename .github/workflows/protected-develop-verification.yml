@@ -40,11 +40,14 @@ on:
   # A dispatch starts every job in this file, and two of them cannot mean the
   # same thing under `workflow_dispatch` as they do under `push`:
   #
-  #   - `database-migration-replay` fails by design, because a dispatch has no
-  #     base reference to diff against and migration immutability therefore
-  #     cannot be checked. It refuses to report success for a check it could
-  #     not run, which is correct — but it makes the RUN red for a reason that
-  #     says nothing about the commit.
+  #   - `database-migration-replay` fails by design on a dispatch of a WORK
+  #     branch, because such a dispatch has no base reference to diff against
+  #     and migration immutability therefore cannot be checked. It refuses to
+  #     report success for a check it could not run, which is correct — but it
+  #     makes the RUN red for a reason that says nothing about the commit. A
+  #     dispatch of `develop` or `main` derives its base from HEAD's first
+  #     parent — the branch as it stood before the merge at its tip — and also
+  #     walks the first-parent history (see `_reusable-database-assurance.yml`).
   #   - `database-security` and the Supabase-backed jobs pull images, so a
   #     Docker Hub rate limit surfaces here as a failure of the candidate when
   #     it is a failure of the registry.
