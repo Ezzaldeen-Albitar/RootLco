@@ -54,14 +54,35 @@ function config(
   return { host: HOST, port: PORT, database, user, password, max };
 }
 
+/**
+ * Errors a pool emitted with no query in flight — an idle client the server
+ * terminated, typically. `pg-pool` re-emits those on the POOL, and a pool with
+ * no `error` listener turns them into an uncaught exception that vitest
+ * reports as an unhandled error AFTER every test has passed (exit 1, all
+ * green). Every pool this module creates records them here instead, and a
+ * suite asserts the list is empty when it tears down.
+ */
+const strays: Error[] = [];
+
+export function strayPoolErrors(): readonly Error[] {
+  return strays;
+}
+
+function recording(pool: Pool): Pool {
+  pool.on('error', (error: Error) => {
+    strays.push(error);
+  });
+  return pool;
+}
+
 /** A pool bound to an arbitrary database on the cluster, as the admin login. */
 export function adminPoolFor(database: string, max = 5): Pool {
-  return new Pool(config(ADMIN_USER, ADMIN_PASSWORD, database, max));
+  return recording(new Pool(config(ADMIN_USER, ADMIN_PASSWORD, database, max)));
 }
 
 /** A pool bound to an arbitrary database on the cluster, as a harness login role. */
 export function loginPoolFor(user: string, password: string, database: string, max = 5): Pool {
-  return new Pool(config(user, password, database, max));
+  return recording(new Pool(config(user, password, database, max)));
 }
 
 /**
@@ -127,9 +148,50 @@ export async function createIsolatedDatabase(cluster: Pool, name: string): Promi
   }
 }
 
-/** Drops `name`, terminating any session still attached to it. Idempotent. */
+/**
+ * How long the drop waits for the database's sessions to close on their own
+ * before it forces them. Pools ended by the caller close within milliseconds;
+ * the ceiling exists only so a crashed run's leftovers cannot hang a suite.
+ */
+const SESSION_DRAIN_MS = 5_000;
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Sessions still open on `name`, other than the caller's own.
+ */
+async function openSessions(cluster: Pool, name: string): Promise<number> {
+  const { rows } = await cluster.query<{ n: string }>(
+    'SELECT count(*)::text AS n FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()',
+    [name]
+  );
+  return Number(rows[0]?.n ?? '0');
+}
+
+/**
+ * Drops an isolated database, AFTER its sessions have closed.
+ *
+ * `pool.end()` resolves before the server has closed a single socket:
+ * `pg-pool`'s `_pulseQueue` calls `client.end()` on each idle client without
+ * waiting and fires the end callback the moment its own client list is empty
+ * (node_modules/pg-pool/index.js, `_pulseQueue` / `_remove`). A
+ * `DROP DATABASE ... WITH (FORCE)` issued straight after therefore races the
+ * clients' Terminate messages; when the drop wins, the server answers the
+ * still-open socket with `57P01 terminating connection due to administrator
+ * command`, the ending client emits it, and the pool re-emits it with nobody
+ * listening. Locally the Terminate won every time; on the hosted runner the
+ * drop did, once, and the backend tier exited 1 with every test green.
+ *
+ * So the drop first waits until `pg_stat_activity` shows no session on the
+ * database. The FORCE stays for what the wait cannot reach — a crashed run's
+ * leftovers that `dropStaleIsolatedDatabases` sweeps — behind the ceiling.
+ */
 export async function dropIsolatedDatabase(cluster: Pool, name: string): Promise<void> {
   assertIsolatedName(name);
+  const deadline = Date.now() + SESSION_DRAIN_MS;
+  while ((await openSessions(cluster, name)) > 0 && Date.now() < deadline) {
+    await sleep(25);
+  }
   await cluster.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
 }
 

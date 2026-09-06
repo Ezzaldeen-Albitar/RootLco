@@ -41,6 +41,7 @@ import {
   createIsolatedDatabase,
   dropIsolatedDatabase,
   dropStaleIsolatedDatabases,
+  strayPoolErrors,
   loginPoolFor,
 } from './isolated-database';
 import { readGenesisInput, runGenesis } from '../../scripts/platform/genesis-platform-operator.mjs';
@@ -183,6 +184,10 @@ async function teardownIsolated(): Promise<void> {
 afterAll(async () => {
   try {
     await teardownIsolated();
+    // A pool that emitted an error with no query in flight would otherwise
+    // have crashed the process after every test passed; here it fails the
+    // suite by name instead. Empty is the only acceptable answer.
+    expect(strayPoolErrors().map((error) => error.message)).toEqual([]);
   } finally {
     // The sentinel is test-owned and always removed, whatever happened above.
     await removeSentinel();
