@@ -80,15 +80,24 @@ import { FakeIdentityProvider, setIdentityProvider } from '@/modules/iam';
 import { __resetIdentityProviderForTests } from '@/modules/iam/provider/identity-provider';
 import { TENANT_BOOTSTRAP_METHOD_CODES } from '@/modules/payments';
 import { SEQUENCE_DEFINITIONS } from '@/modules/shared-services';
-import { POST as organizationProvisionRoute } from '@/app/api/v1/platform/organizations/route';
+import {
+  ORGANIZATION_PROVISION_OPERATION,
+  POST as organizationProvisionRoute,
+} from '@/app/api/v1/platform/organizations/route';
 import {
   PAYMENT_METHOD_LIST_OPERATION,
   GET as paymentMethodListRoute,
 } from '@/app/api/v1/payment-methods/route';
 import { PAYMENT_RECORD_OPERATION, POST as paymentRecordRoute } from '@/app/api/v1/payments/route';
-import { POST as individualCreateRoute } from '@/app/api/v1/customers/individuals/route';
-import { POST as roleCreateRoute } from '@/app/api/v1/iam/roles/route';
-import { POST as rolePermissionAddRoute } from '@/app/api/v1/iam/roles/[roleId]/permissions/route';
+import {
+  INDIVIDUAL_CREATE_OPERATION,
+  POST as individualCreateRoute,
+} from '@/app/api/v1/customers/individuals/route';
+import { ROLE_CREATE_OPERATION, POST as roleCreateRoute } from '@/app/api/v1/iam/roles/route';
+import {
+  ROLE_PERMISSION_ADD_OPERATION,
+  POST as rolePermissionAddRoute,
+} from '@/app/api/v1/iam/roles/[roleId]/permissions/route';
 
 const IDENTITY_PROVIDER = 'test_harness';
 const SUBJECT_HOLDER = 'fx_p130_platform_holder';
@@ -353,10 +362,13 @@ afterAll(async () => {
 }, 60_000);
 
 describe('P1-30 — the payment methods a provisioned tenant is given', () => {
-  it('drives the two shipped payment operations, by id, and adds no new one', () => {
+  it('drives six shipped operations, each by id, and publishes no new one', () => {
     // Named rather than assumed: this slice publishes NO operation. It changes
-    // what provisioning writes, and these two are the existing reads and writes
-    // that were unreachable in a fresh tenant until it did.
+    // what provisioning writes, and these are the existing reads and writes that
+    // were unreachable in a fresh tenant until it did. Every id the coverage
+    // manifest credits to this file appears here, so the manifest entry is true
+    // under the strict rule rather than only under the lenient one.
+    expect(ORGANIZATION_PROVISION_OPERATION.id).toBe('platform.organization-provision');
     expect(PAYMENT_METHOD_LIST_OPERATION.id).toBe('sal.payment-method-list');
     expect(PAYMENT_METHOD_LIST_OPERATION.permissions).toEqual(['sal.payment.record']);
     expect(PAYMENT_RECORD_OPERATION.id).toBe('sal.payment-record');
@@ -364,6 +376,9 @@ describe('P1-30 — the payment methods a provisioned tenant is given', () => {
       'sal.payment.record',
       'sal.finance.view',
     ]);
+    expect(INDIVIDUAL_CREATE_OPERATION.id).toBe('crm.individual-create');
+    expect(ROLE_CREATE_OPERATION.id).toBe('iam.role-create');
+    expect(ROLE_PERMISSION_ADD_OPERATION.id).toBe('iam.role-permission-add');
   });
 
   it('PM-B1 a fresh tenant receives exactly the canonical ASM-14 methods', async () => {
