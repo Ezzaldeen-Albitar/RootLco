@@ -9,11 +9,14 @@
  *     resolves, operationIds are unique, every operation declares security and
  *     its required-permission extension, every failure response points at the
  *     shared problem component, and no path escapes `/api/v1`.
- *  2. **`tests/foundation/openapi.test.ts`** — the document still *matches the
+ *  2. **`tests/openapi-contract.test.ts`** — the document still *matches the
  *     code*: it is regenerated from the operation registry and compared. That is
  *     the divergence gate; this one is the sanity gate. Neither replaces the
  *     other: a hand-edited document could be perfectly well-formed and still
- *     describe an endpoint that no longer exists.
+ *     describe an endpoint that no longer exists. Neither covers the third
+ *     case either — a route that exists and was never registered, so both
+ *     documents omit it and agree with each other. That is
+ *     `scripts/ci/check-route-registry-parity.mjs` (CSA-14).
  *
  * Exit codes: 0 valid · 1 invalid · 2 IO error.
  */

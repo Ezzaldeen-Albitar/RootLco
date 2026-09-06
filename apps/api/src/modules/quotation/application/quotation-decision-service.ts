@@ -101,8 +101,135 @@ export interface RevisionDecisionView {
   readonly quotationStatus: string | null;
 }
 
+/**
+ * One recorded decision as the audit read renders it (P1-30 A2, seam S-09).
+ *
+ * `DecisionView` above is the WRITE response - what was just recorded. This is
+ * the read: it names the LINE the decision belongs to, so a reviewer can hold it
+ * against the revision without a second lookup, and it carries every evidence row
+ * rather than the single `evidence_ref` the write path echoes back.
+ *
+ * `decidedBy` is a `iam.user_accounts` id and is returned for navigation only.
+ * It is deliberately NOT resolved to a name here: that is personal data behind
+ * its own read, and joining it in would publish an actor directory to anyone
+ * holding `quo.quotation.read`.
+ */
+export interface DecisionAuditView {
+  readonly decisionId: string;
+  readonly quotationRevisionId: string;
+  readonly quotationItemId: string;
+  readonly lineNumber: number;
+  readonly description: string | null;
+  readonly decision: string;
+  readonly channel: string;
+  readonly decidedAt: string;
+  readonly recordedBy: string;
+  readonly evidence: readonly EvidenceView[];
+}
+
+/** One evidence row. Carries a document VERSION id, never a storage key. */
+export interface EvidenceView {
+  readonly id: string;
+  readonly evidenceKind: string;
+  readonly documentVersionId: string | null;
+  readonly referenceNote: string | null;
+  readonly recordedAt: string;
+}
+
+/**
+ * The decision state of one revision (P1-30 A2, seam S-09).
+ *
+ * `outcome` is RECOMPUTED from the item rows by `rollUpDecisions`, exactly as
+ * every other consumer of this data computes it - there is no stored
+ * revision-level decision in `quo` and this read invents none. `null` means the
+ * revision is still partly undecided, which is a real state and not an absence.
+ *
+ * `itemCount` comes from the revision's items, not from the decisions, so
+ * `decisions.length < itemCount` is visibly "not everything has been answered"
+ * rather than something a caller has to infer.
+ */
+export interface RevisionDecisionAuditView {
+  readonly quotationId: string;
+  readonly revisionId: string;
+  readonly revisionStatus: string;
+  readonly itemCount: number;
+  readonly decidedCount: number;
+  readonly outcome: 'accepted' | 'rejected' | null;
+  readonly decisions: readonly DecisionAuditView[];
+}
+
 export class QuotationDecisionService {
   public constructor(private readonly repository: QuotationRepository) {}
+
+  /**
+   * Every decision recorded against one revision, with its evidence
+   * (Phase 1-30 A2, seam S-09).
+   *
+   * ## What was missing
+   *
+   * Everything. `quo.approval_decisions` could be written per item and per
+   * revision, and read back exactly one item at a time through
+   * `findDecisionForItem` - which the write path uses to detect a replay, not to
+   * publish anything. `quo.approval_evidence` had an INSERT and no read at all.
+   * So the append-only approval trail the schema was built to keep
+   * (BR-QUO-001/002) was unreadable through the product: a dispute over what a
+   * customer approved could not be answered from the API.
+   *
+   * ## Scope
+   *
+   * From the revision row's own company and branch, resolved BEFORE any decision
+   * is read. The path names no branch, so `scope: 'branch'` would otherwise be
+   * inert (P1-18-A-01), and a revision the caller may not see is `ERR-RES-001`
+   * rather than an empty decision list.
+   *
+   * ## The outcome is derived, never stored
+   *
+   * `rollUpDecisions` folds the item rows the same way `commercialApproval` and
+   * the write path do. Caching it here would create a second approval truth that
+   * could disagree with the rows underneath it.
+   */
+  public async readRevisionDecisions(
+    db: DbHandle,
+    revisionId: string,
+    authorizeScope: ScopeAuthorizer
+  ): Promise<RevisionDecisionAuditView> {
+    const revision = await this.repository.findRevision(db, revisionId);
+    if (revision === null) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Quotation revision ${revisionId} is not visible`,
+      });
+    }
+    await authorizeScope({ companyId: revision.companyId, branchId: revision.branchId });
+
+    const rows = await this.repository.listDecisionsForRevision(db, revision.id);
+    const tally = await this.repository.tallyDecisions(db, revision.id);
+    return {
+      quotationId: revision.quotationId,
+      revisionId: revision.id,
+      revisionStatus: revision.status,
+      itemCount: tally.itemCount,
+      decidedCount: tally.approvedCount + tally.rejectedCount,
+      outcome: rollUpDecisions(tally),
+      decisions: rows.map((row) => ({
+        decisionId: row.id,
+        quotationRevisionId: row.quotationRevisionId,
+        quotationItemId: row.quotationItemId,
+        lineNumber: row.lineNumber,
+        description: row.description,
+        decision: row.decision,
+        channel: row.decisionChannel,
+        decidedAt: row.decidedAt.toISOString(),
+        recordedBy: row.decidedBy,
+        evidence: row.evidence.map((piece) => ({
+          id: piece.id,
+          evidenceKind: piece.evidenceKind,
+          documentVersionId: piece.documentVersionId,
+          referenceNote: piece.referenceNote,
+          recordedAt: piece.recordedAt.toISOString(),
+        })),
+      })),
+    };
+  }
 
   /**
    * Records the customer's decision on ONE quotation line.

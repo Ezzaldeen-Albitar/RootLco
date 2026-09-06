@@ -42,9 +42,11 @@ import { InventoryRepository } from './data/inventory-repository';
 import { InventoryReadService } from './application/inventory-read-service';
 import { InventoryStockService } from './application/inventory-stock-service';
 import { InventoryIntakeService } from './application/inventory-intake-service';
+import { InventoryCatalogService } from './application/inventory-catalog-service';
 
 export type {
   BalanceReconciliationRow,
+  ItemCategoryRow,
   ItemListFilter,
   ItemRow,
   MovementListFilter,
@@ -52,15 +54,29 @@ export type {
   ReservationRow,
   StockBalanceRow,
   StockLocationRow,
+  UnitOfMeasureRow,
   WorkOrderStateRow,
 } from './data/inventory-repository';
+
+export type {
+  CreateItemCategoryInput,
+  CreateItemInput,
+  CreateStockLocationInput,
+  CreatedItemView,
+  CreatedStockLocationView,
+  ItemCategoryView,
+  UnitOfMeasureView,
+} from './application/inventory-catalog-service';
 
 export type {
   AvailabilityView,
   ItemView,
   MovementView,
   OpenInventoryCommitments,
+  PartIssueListView,
   ReconciliationView,
+  ReservationListView,
+  StockLocationView,
 } from './application/inventory-read-service';
 
 export type {
@@ -78,6 +94,7 @@ export type {
 } from './application/inventory-intake-service';
 
 export {
+  CATEGORY_CODE_FORMAT,
   CUSTODY_STATES,
   DAMAGE_DISPOSITIONS,
   DIRECTIONS,
@@ -137,6 +154,11 @@ export const inventoryModule = composeModule({
       reads: new InventoryReadService(repository),
       stock: new InventoryStockService(repository),
       intake: new InventoryIntakeService(repository),
+      // The master data every movement is keyed on (P1-30 corrective slice):
+      // categories, items, units and locations. Writes catalogue rows only —
+      // never stock, never cost — so the opening batch stays the sole path by
+      // which stock appears from nothing.
+      catalog: new InventoryCatalogService(repository),
     };
   },
 });

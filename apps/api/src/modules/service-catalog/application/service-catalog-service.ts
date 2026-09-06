@@ -18,11 +18,12 @@ import type { DbHandle } from '@/server/db/transaction';
 import { pageRequest, type Page } from '@/server/db/pagination';
 import { AppFailure } from '@/server/errors/app-failure';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
-import { SERVICE_ORDER } from '../data/service-catalog-repository';
+import { SERVICE_CATEGORY_ORDER, SERVICE_ORDER } from '../data/service-catalog-repository';
 import type {
   BranchAvailabilityRow,
   LaborTimeRow,
   ServiceCatalogRepository,
+  ServiceCategoryRow,
   ServiceListFilter,
   ServiceRow,
   ServiceVersionRow,
@@ -36,6 +37,25 @@ export interface ServiceView {
   readonly description: string | null;
   readonly categoryId: string;
   readonly lifecycleStatus: string;
+  readonly recordVersion: number;
+}
+
+/**
+ * A service category as the API renders it.
+ *
+ * `sortOrder` is a NUMBER, not a decimal string: the column is `integer`. The
+ * decimal-string rule this codebase applies to money and to `standard_minutes`
+ * exists because `numeric` cannot survive IEEE-754 — an `integer` can, and
+ * stringifying it would imply a precision that is not there.
+ */
+export interface ServiceCategoryView {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+  readonly description: string | null;
+  readonly parentCategoryId: string | null;
+  readonly sortOrder: number | null;
+  readonly status: string;
   readonly recordVersion: number;
 }
 
@@ -67,6 +87,17 @@ const toServiceView = (row: ServiceRow): ServiceView => ({
   description: row.description,
   categoryId: row.serviceCategoryId,
   lifecycleStatus: row.lifecycleStatus,
+  recordVersion: row.recordVersion,
+});
+
+const toServiceCategoryView = (row: ServiceCategoryRow): ServiceCategoryView => ({
+  id: row.id,
+  code: row.code,
+  name: row.name,
+  description: row.description,
+  parentCategoryId: row.parentCategoryId,
+  sortOrder: row.sortOrder,
+  status: row.status,
   recordVersion: row.recordVersion,
 });
 
@@ -117,6 +148,25 @@ export class ServiceCatalogService {
     // unfiltered listing, including for an unrestricted principal.
     const result = await this.repository.listServices(db, filter, request);
     return { ...result, items: result.items.map(toServiceView) };
+  }
+
+  /**
+   * Lists the tenant's service taxonomy.
+   *
+   * No scope authorization beyond the pre-handler permission check, and that is
+   * the same reasoning `list` states for an unfiltered service listing rather
+   * than a weaker one: the taxonomy has no `company_id` and no `branch_id`, the
+   * route names no branch, and `authorizeScope({})` would fail closed on the
+   * empty target whatever scope were declared (the P1-19 hardening that closed
+   * P1-18-A-01). RLS narrows the rows to the caller's tenant.
+   */
+  public async listCategories(
+    db: DbHandle,
+    page: { cursor?: string | undefined; limit?: number | undefined }
+  ): Promise<Page<ServiceCategoryView>> {
+    const request = pageRequest(SERVICE_CATEGORY_ORDER, page);
+    const result = await this.repository.listServiceCategories(db, request);
+    return { ...result, items: result.items.map(toServiceCategoryView) };
   }
 
   /** Reads one service, or `ERR-RES-001` when it is not visible to the caller. */

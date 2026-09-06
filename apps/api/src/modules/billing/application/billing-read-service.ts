@@ -460,6 +460,19 @@ export function balanceIsTrustworthy(invoice: InvoiceRow): boolean {
   return invoice.money !== null;
 }
 
+/**
+ * The invoice a work order has, or the fact that it has none.
+ *
+ * A named envelope rather than a bare `InvoiceView | null`, because the absence is
+ * itself the answer a screen needs: "this work order has not been invoiced yet" is
+ * a 200 with `invoice: null`, not a 404. A 404 here would be indistinguishable from
+ * "that work order is not visible to you", and those two must not collapse.
+ */
+export interface WorkOrderInvoiceView {
+  readonly workOrderId: string;
+  readonly invoice: InvoiceView | null;
+}
+
 export class BillingReadService {
   public constructor(private readonly repository: BillingRepository) {}
 
@@ -493,6 +506,51 @@ export class BillingReadService {
       lines: lines.map(toInvoiceLineView),
       recordVersion: invoice.recordVersion,
     };
+  }
+
+  /**
+   * The live invoice for a work order, if it has one (P1-30 A2, seam S-10).
+   *
+   * `liveInvoiceForWorkOrder` has existed since P1-22 with no route in front of it:
+   * its only callers are the duplicate-create refusal and the delivery module's
+   * financial-blocker port, neither of which a screen can reach. So a work-order
+   * screen could not answer "has this been invoiced?" without listing invoices and
+   * filtering client-side.
+   *
+   * Scope comes from the WORK ORDER row, never from the request. `findWorkOrderScope`
+   * resolves company and branch, and `authorizeScope` is given those before the
+   * invoice is read — the same order `readInvoice` and `previewInvoice` use, and for
+   * the same reason: an id-addressed read with an empty target degrades to the
+   * scope-blind `iam.has_permission` (P1-18-A-01).
+   *
+   * A work order that is not visible is `ERR-RES-001`. A visible work order with no
+   * invoice is a 200 carrying `invoice: null`. Collapsing those two would tell a
+   * caller "no invoice" for a work order in a branch they cannot see.
+   */
+  public async readWorkOrderInvoice(
+    db: DbHandle,
+    workOrderId: string,
+    authorizeScope: ScopeAuthorizer
+  ): Promise<WorkOrderInvoiceView> {
+    const scope = await this.repository.findWorkOrderScope(db, workOrderId);
+    if (!scope) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Work order ${workOrderId} was not found in scope`,
+      });
+    }
+    await authorizeScope({ companyId: scope.companyId, branchId: scope.branchId });
+
+    const invoice = await this.repository.liveInvoiceForWorkOrder(db, {
+      workOrderId: scope.workOrderId,
+      companyId: scope.companyId,
+      branchId: scope.branchId,
+    });
+
+    // `toInvoiceView` folds the three amount columns to `totals: null` when RLS hid
+    // them, so a caller without `sal.finance.view` gets the header with the money
+    // OMITTED rather than zeroed. Reused deliberately: a second mapper would be a
+    // second wire contract for one row.
+    return { workOrderId: scope.workOrderId, invoice: invoice ? toInvoiceView(invoice) : null };
   }
 
   /**

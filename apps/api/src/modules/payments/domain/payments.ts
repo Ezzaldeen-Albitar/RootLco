@@ -137,6 +137,39 @@ export function assertPaymentMethodIsTenantScoped(method: {
 }
 
 /**
+ * The method codes every tenant is provisioned with — the other half of the rule
+ * above.
+ *
+ * `assertPaymentMethodIsTenantScoped` has said since P1-22 that "the tenant must
+ * be provisioned with its own method row", and until the P1-30 corrective slice
+ * nothing did: six organisations created through the shipped control-plane
+ * operation held zero tenant-scope methods between them, so each could read the
+ * payments experience and record nothing. Tenant provisioning now copies the
+ * PLATFORM catalogue rows named here into the new tenant, inside the same
+ * transaction that creates it.
+ *
+ * **Codes, not kinds, and not a set of labels.** `method_code` and `kind` are
+ * equal for all three platform rows, and this file already refuses to treat one
+ * as the other — so the bootstrap selects the platform rows BY CODE and copies
+ * each row's own `kind` and `display_name` rather than restating them. The
+ * canonical vocabulary is `supabase/seeds/08_sal_payment_methods.sql` (ASM-14 /
+ * CON-04: cash, card terminal, bank transfer, and no online gateway or
+ * settlement type); nothing is invented here, and a platform row missing at
+ * provisioning time makes the provisioning fail rather than produce a tenant
+ * with fewer methods than the product requires.
+ *
+ * SERVER-OWNED. No request field names a method: the provisioning body is
+ * `.strict()` and carries no `paymentMethods` member, so the set is fixed for
+ * every tenant and a caller cannot widen, narrow or rename it.
+ */
+export const TENANT_BOOTSTRAP_METHOD_CODES = Object.freeze([
+  'cash',
+  'card_terminal',
+  'bank_transfer',
+] as const);
+export type TenantBootstrapMethodCode = (typeof TENANT_BOOTSTRAP_METHOD_CODES)[number];
+
+/**
  * Refuses an allocation whose three currencies are not all the same.
  *
  * `sal.allocate_receipt` checks receipt-vs-invoice itself. This adds the caller's

@@ -31,14 +31,16 @@
  * unreachable, and one that silently passed would be decoration.
  */
 import { AppFailure } from '@/server/errors/app-failure';
-import { MAX_PAGE_SIZE } from '@/server/db/pagination';
+import { MAX_PAGE_SIZE, pageRequest, type Page } from '@/server/db/pagination';
 import type { DbHandle } from '@/server/db/transaction';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { moneyView, type MoneyView } from '@/modules/pricing';
+import { RECEIPT_ORDER } from '../data/payments-repository';
 import type {
   PaymentAllocationRow,
   PaymentMethodRow,
   PaymentsRepository,
+  ReceiptListRow,
 } from '../data/payments-repository';
 
 /**
@@ -157,8 +159,141 @@ const toAllocationView = (row: PaymentAllocationRow): ReceiptAllocationView => (
   allocatedAt: row.allocatedAt.toISOString(),
 });
 
+/**
+ * One receipt as the list renders it (Phase 1-30 A2, seam S-11).
+ *
+ * The detail's fields minus its allocation history. Both amounts are `MoneyView`
+ * - an exact decimal STRING with the currency that labels it - because
+ * `sal.receipts.amount` is `numeric(18,4)` and the remainder is PostgreSQL's own
+ * `round(amount - sum(allocations), 4)`. Nothing is summed, netted or converted
+ * in TypeScript, here or anywhere on the way to the caller.
+ *
+ * `unallocated` is `0` for a REVERSED receipt as well as for a fully allocated
+ * one - `sal.receipt_unallocated` returns 0 early on `reversed`. `status` is
+ * beside it for exactly that reason: the scalar alone cannot tell those apart,
+ * and a screen that read the remainder without the status would show a reversed
+ * receipt as settled.
+ *
+ * No `receivedBy`, for the reason `ReceiptDetailView` gives: it is stamped from
+ * `iam.current_user_id()`, it is never a client input, and who handled the money
+ * is a question the audit trail answers.
+ */
+export interface ReceiptListView {
+  readonly id: string;
+  /** `sal.receipts.receipt_number` - opaque text, never parsed or sorted by. */
+  readonly reference: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly payerPartnerId: string;
+  readonly method: {
+    readonly id: string;
+    readonly scope: string;
+    readonly kind: string;
+    readonly displayName: string;
+    readonly status: string;
+  } | null;
+  readonly money: MoneyView;
+  readonly unallocated: MoneyView;
+  readonly status: string;
+  readonly receivedAt: string;
+  readonly evidenceDocumentVersionId: string | null;
+  readonly recordVersion: number;
+}
+
 export class PaymentReadService {
   public constructor(private readonly repository: PaymentsRepository) {}
+
+  /**
+   * `sal.receipt-list` — a branch's receipts, newest first (P1-30 A2, seam S-11).
+   *
+   * ## Why this is class C and not a thin route
+   *
+   * There was no receipt list at any layer: `PaymentReadService` had exactly
+   * `listPaymentMethods` and `readReceipt`, and `PaymentsRepository` had
+   * single-row finders plus `listAllocations`. Query, projection, repository
+   * method, service method and route are all new. The module surface also
+   * recorded a deliberate refusal to list receipts, and that refusal is answered
+   * rather than overridden: it rests on there being no honest projection for a
+   * caller WITHOUT `sal.finance.view`, and this operation declares that code, so
+   * the only callers it serves are ones `sel_receipts_gated` already hands whole
+   * rows to.
+   *
+   * ## Scope
+   *
+   * `companyId` and `branchId` are required and authorized BEFORE any row is
+   * read. The RLS policy's scope arms narrow on `iam.allowed_branch_ids()` - the
+   * permission-blind union of every active grant - so `sal.finance.view` held in
+   * one branch would otherwise read cash taken in every branch the caller has any
+   * grant in (P1-18-A-01). Authorizing first also stops the empty/non-empty
+   * difference from reporting whether a branch takes money at all.
+   *
+   * ## Method labels, in one query and not N
+   *
+   * `sal.payment_methods` is dual-scope reference data - three platform rows plus
+   * the tenant's own - and `readReceipt` deliberately resolves it through the
+   * repository rather than joining, so the `(scope = 'platform' OR tenant_id = ...)`
+   * predicate is not copied into a second place. The same rule is kept here by
+   * loading the whole method set ONCE per page and labelling rows from it: one
+   * extra statement, not one per receipt, and still no second copy of the
+   * predicate.
+   */
+  public async listReceipts(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly payerPartnerId?: string | undefined;
+      readonly status?: string | undefined;
+      readonly invoiceId?: string | undefined;
+    },
+    page: { readonly cursor?: string | undefined; readonly limit?: number | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<Page<ReceiptListView>> {
+    await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
+
+    const result = await this.repository.listReceipts(db, filter, pageRequest(RECEIPT_ORDER, page));
+    const methods = new Map<string, PaymentMethodRow>(
+      (await this.repository.listPaymentMethods(db)).map((row) => [row.id, row])
+    );
+    return {
+      ...result,
+      items: result.items.map((row) => this.toReceiptListView(row, methods)),
+    };
+  }
+
+  private toReceiptListView(
+    row: ReceiptListRow,
+    methods: ReadonlyMap<string, PaymentMethodRow>
+  ): ReceiptListView {
+    const method = methods.get(row.paymentMethodId);
+    return {
+      id: row.id,
+      reference: row.receiptNumber,
+      companyId: row.companyId,
+      branchId: row.branchId,
+      payerPartnerId: row.payerPartnerId,
+      // `null` when the method is not visible to this tenant rather than a
+      // fabricated label. `readReceipt` renders the same absence the same way.
+      method:
+        method === undefined
+          ? null
+          : {
+              id: method.id,
+              scope: method.scope,
+              kind: method.kind,
+              displayName: method.displayName,
+              status: method.status,
+            },
+      money: moneyView(row.amount, row.currencyCode),
+      // Labelled with the receipt's OWN currency. A receipt has exactly one, so
+      // no amount on this page is unlabelled and no two currencies are mixed.
+      unallocated: moneyView(row.unallocated, row.currencyCode),
+      status: row.status,
+      receivedAt: row.receivedAt.toISOString(),
+      evidenceDocumentVersionId: row.evidenceDocumentVersionId,
+      recordVersion: row.recordVersion,
+    };
+  }
 
   /**
    * `sal.payment-method-list` — the methods a receipt may cite, and the ones it

@@ -110,6 +110,11 @@
       "why": "PRE-P1-29 governance and tooling branches: the ownership profiles themselves, the gates that read them, and the tests that prove those gates can still fail. Owned by no lane of the initiative."
     },
     {
+      "branchPrefix": "chore/operation-coverage-",
+      "profile": "repository-tooling",
+      "why": "The operation-to-test coverage gate belongs to no phase — it derives the evidence floor for every namespace from P1-14 to P1-30 — so a correction to how it READS a `defineOperation` literal is repository tooling, not a phase change. Carries the gate, its suites and the per-phase operation-test-matrix.json files the gate itself writes, and by that profile no API source: a branch that rewrites the gate must not also carry the product the gate is what reviews. A family prefix rather than one branch name, because the gate's own defect class recurs and the next correction should not need a second rule."
+    },
+    {
       "branchPrefix": "feature/pre-p1-29-backend-",
       "profile": "pre-p1-29-backend",
       "why": "The Backend lane of PRE-P1-29. Listed BEFORE the initiative branch so a lane branch is judged by its lane rather than by the wider integration profile — first match wins, and the narrower rule must be reachable."
@@ -138,6 +143,21 @@
       "branchPrefix": "feature/p1-29-",
       "profile": "p1-29-frontend",
       "why": "The Frontend lane of P1-29. Distinct from feature/pre-p1-29- above and not a prefix of it in either direction — pre-p1-29 branches diverge at the fourth character — so the initiative lanes and the phase lanes cannot reach one another."
+    },
+    {
+      "branchPrefix": "remediation/p1-30-payment-method-bootstrap",
+      "profile": "p1-30-tenant-bootstrap",
+      "why": "The P1-30 corrective slice that makes a freshly provisioned tenant able to trade: tenant-local payment methods, the document-number sequences, and the seventeen commercial codes the first administrator could otherwise never hold (A0 finding F-01). Its own profile rather than p1-30-backend, which would also have permitted the diff: that lane is one branch per read seam and this branch publishes no operation, so borrowing it would have declared nothing. The prefixes do not overlap, so the order relative to the Backend lane is documentary."
+    },
+    {
+      "branchPrefix": "remediation/p1-30-backend-",
+      "profile": "p1-30-backend",
+      "why": "The Backend prerequisite lane of P1-30 — one branch per read seam or contract the A0 preflight proved missing (docs/phase-1/phase-1-30/a0-read-surface-matrix.md). Listed BEFORE the Frontend lane and before any broader remediation/p1-30- rule that may later be added: first match wins. There is deliberately NO broad remediation/p1-30- rule, so a branch nobody mapped is refused rather than absorbed."
+    },
+    {
+      "branchPrefix": "feature/p1-30-",
+      "profile": "p1-30-frontend",
+      "why": "The Frontend lane of P1-30 (services, quotations, inventory, billing and payments screens). Not a prefix of feature/p1-29- in either direction, so the two phases cannot reach one another. The A0 preflight itself travels on this lane: it adds these profiles (tooling, tests) and the read-surface matrix (docs), and no screen."
     },
     {
       "branchPrefix": "planning/",

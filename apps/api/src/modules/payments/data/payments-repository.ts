@@ -47,6 +47,14 @@
  * build and none is built. The same gate is on `sal.payment_allocations`.
  */
 import { Repository } from '@/server/db/repository';
+import {
+  buildPageWithCursors,
+  cursorTimestamp,
+  keysetFragment,
+  type OrderingContract,
+  type Page,
+  type PageRequest,
+} from '@/server/db/pagination';
 import type { DbHandle } from '@/server/db/transaction';
 import { assertAllocationUsesPrimitive } from '../domain/payments';
 
@@ -165,6 +173,20 @@ export interface ReceiptRow {
   readonly recordVersion: number;
 }
 
+/**
+ * One receipt as the list renders it (Phase 1-30 A2, seam S-11).
+ *
+ * `ReceiptRow` plus the derived remainder, so a page answers "what is still
+ * outstanding on this receipt" without a second call per row. The remainder is
+ * `sal.receipt_unallocated(id)` - the SAME primitive `receiptUnallocated` calls,
+ * applied per row inside one statement rather than re-implemented as a join and
+ * a SUM. Nothing here stores or caches a balance.
+ */
+export interface ReceiptListRow extends ReceiptRow {
+  /** `round(amount - sum(allocations), 4)` as a STRING. 0 for a reversed receipt. */
+  readonly unallocated: string;
+}
+
 /** `sal.receipt_unallocated` plus the currency that labels it. */
 export interface ReceiptUnallocatedRow {
   readonly receiptId: string;
@@ -198,6 +220,23 @@ export interface PaymentAllocationRow {
 
 const PAYMENT_METHOD_COLUMNS = `id, scope, tenant_id, method_code, kind, display_name, status,
   deleted_at, record_version`;
+
+/**
+ * Receipts are listed newest-first by `received_at` (Phase 1-30 A2, S-11).
+ *
+ * `received_at` and not `created_at`: it is the business instant the money
+ * arrived, it is frozen by `sal.guard_receipt_freeze`, and it is the column
+ * `ix_receipts_payer_date` already orders on. `receipt_number` is explicitly NOT
+ * a sort key - `ReceiptRow` records that it is opaque text from
+ * `shared.next_display_number`, never parsed, formatted or sorted by.
+ *
+ * The key is qualified so a cursor minted here cannot be replayed against
+ * another list.
+ */
+export const RECEIPT_ORDER: OrderingContract = Object.freeze({
+  key: 'sal.receipts:received_at_desc',
+  direction: 'desc',
+});
 
 const RECEIPT_COLUMNS = `id, company_id, branch_id, receipt_number, payment_method_id,
   payer_partner_id, currency_code, amount, received_at, evidence_document_version_id, status,
@@ -497,6 +536,101 @@ export class PaymentsRepository extends Repository {
    * reaching past that pair — `iam.has_permission_in_scope` is satisfied by company
    * **OR** branch, so authorization alone does not make the pair coherent (H6).
    */
+  /**
+   * A branch's receipts, newest first (Phase 1-30 A2, seam S-11).
+   *
+   * ## Why this did not already exist
+   *
+   * The module surface recorded a deliberate refusal to list receipts: because
+   * `sel_receipts_gated` gates the WHOLE ROW on `sal.finance.view`, a caller
+   * without that code sees zero rows rather than redacted ones, so there is no
+   * honest amount-free projection to publish. That reasoning is intact and this
+   * read does not contradict it - `sal.receipt-list` DECLARES `sal.finance.view`,
+   * the same code the sibling `sal.receipt-detail` declares, so every caller that
+   * reaches this query is one the policy already serves whole rows to. What was
+   * refused was a list for callers who cannot hold the code; that is still
+   * refused, by the policy itself.
+   *
+   * ## Scope
+   *
+   * `company_id` and `branch_id` are bound predicates and the caller has already
+   * authorized them. The policy's scope arms narrow on `iam.allowed_branch_ids()`,
+   * the permission-blind union of every active grant, so without the explicit
+   * predicate a caller holding `sal.finance.view` anywhere would read receipts in
+   * every branch they hold any grant in (P1-18-A-01).
+   *
+   * ## `deleted_at`
+   *
+   * Filtered here, unlike `findReceipt` above. That read cannot filter it because
+   * the primitives it feeds ignore `deleted_at` and the two would disagree; a
+   * list feeds no primitive, so the only truthful answer is to omit rows the
+   * tenant has deleted rather than publish them and let the caller guess.
+   */
+  public async listReceipts(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly payerPartnerId?: string | undefined;
+      readonly status?: string | undefined;
+      readonly invoiceId?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<ReceiptListRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.payerPartnerId ?? null,
+      filter.status ?? null,
+      filter.invoiceId ?? null,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'r.received_at', id: 'r.id' },
+      RECEIPT_ORDER,
+      values.length + 1
+    );
+    const rows = await this.run<ReceiptSql & { unallocated: string; sort_value: string }>(
+      db,
+      // `invoiceId` is an EXISTS over `sal.payment_allocations` rather than a JOIN:
+      // a receipt may allocate to the same invoice more than once, and a join would
+      // return that receipt twice on one page - a duplicate the keyset would then
+      // page across.
+      `SELECT ${RECEIPT_COLUMNS},
+              sal.receipt_unallocated(r.id)::text AS unallocated,
+              ${cursorTimestamp('r.received_at')} AS sort_value
+         FROM sal.receipts r
+        WHERE r.tenant_id = $1 AND r.company_id = $2 AND r.branch_id = $3
+          AND r.deleted_at IS NULL
+          AND ($4::uuid IS NULL OR r.payer_partner_id = $4)
+          AND ($5::text IS NULL OR r.status = $5)
+          AND ($6::uuid IS NULL OR EXISTS (
+                SELECT 1 FROM sal.payment_allocations a
+                 WHERE a.tenant_id = r.tenant_id
+                   AND a.receipt_id = r.id
+                   AND a.invoice_id = $6))
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      rows.rows.map((row) => ({
+        item: { ...toReceipt(row), unallocated: row.unallocated },
+        // Microsecond precision from SQL. A JS `Date` truncates to milliseconds
+        // and silently skips rows sharing the boundary row's millisecond
+        // (`P1-27-INT-006`); receipts recorded in one transaction share
+        // `transaction_timestamp()` exactly.
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      RECEIPT_ORDER
+    );
+  }
+
   public async receiptUnallocated(
     db: DbHandle,
     receiptId: string,

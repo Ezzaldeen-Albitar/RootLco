@@ -103,6 +103,7 @@ export type {
   NumberingConfigView,
   OutstandingView,
   PayerSplitView,
+  WorkOrderInvoiceView,
   /**
    * The delivery module's financial blocker. Exported because `@/modules/delivery`
    * composes its eligibility decision from it and must be able to name the type.

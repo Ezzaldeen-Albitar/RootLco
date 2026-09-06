@@ -29,6 +29,7 @@
  * internally, so any other order would deadlock against them.
  */
 import type { DbHandle } from '@/server/db/transaction';
+import { pageRequest, type Page } from '@/server/db/pagination';
 import { AppFailure } from '@/server/errors/app-failure';
 import { callerHoldsPermission, type ScopeAuthorizer } from '@/server/auth/authorization';
 import { appendAudit } from '@/server/audit/audit';
@@ -53,6 +54,7 @@ import {
   isTerminalRevision,
   rollUpDecisions,
 } from '../domain/quotation';
+import { QUOTATION_LIST_ORDERING, REVISION_LIST_ORDERING } from '../data/quotation-repository';
 import type {
   ItemRow,
   NewItemInput,
@@ -141,6 +143,49 @@ export interface RevisionView {
   readonly lines: readonly MoneyLine[];
 }
 
+/**
+ * A revision HEADER, for the history list (P1-30 A2, S-08).
+ *
+ * `RevisionView` minus `lines`. The captured totals stay, and stay decimal
+ * STRINGS: `captured_subtotal`…`captured_grand_total` are `numeric(18, 4)` and
+ * `ck_quotation_revisions_totals` holds `grand = subtotal - discount + tax` in
+ * the database. A history that rendered them as JSON numbers would let a client
+ * re-derive that identity in IEEE-754 and disagree with the row it came from.
+ * Nothing recomputes them here; they are carried through `::text` untouched.
+ *
+ * The lines are omitted, not hidden: they are on the drill-down,
+ * `GET /quotation-revisions/{revisionId}`. A history of ten revisions each
+ * carrying up to `MAX_ITEMS_PER_REVISION` priced lines is a response nobody
+ * reads and a cost every reader pays.
+ */
+export interface RevisionHeaderView {
+  readonly id: string;
+  readonly quotationId: string;
+  readonly revisionNumber: number;
+  readonly status: string;
+  readonly currency: string;
+  readonly issuedAt: string | null;
+  readonly expiresAt: string | null;
+  readonly subtotal: string;
+  readonly discountTotal: string;
+  readonly taxTotal: string;
+  readonly grandTotal: string;
+  readonly recordVersion: number;
+  /**
+   * True for the revision this quotation is currently offering.
+   *
+   * The parent's `current_revision_id` when it is set, and the HIGHEST revision
+   * number when it is not. That second half is not a convenience: the column is
+   * only written when a revision is ISSUED, so it is NULL for every quotation
+   * still in draft - and `QuotationService.detail` already falls back the same
+   * way, returning the latest revision as `currentRevision`. Reading only the
+   * column would make the history claim no revision is current while the detail
+   * endpoint names one, and two reads of the same document disagreeing about that
+   * is worse than either answer alone.
+   */
+  readonly isCurrent: boolean;
+}
+
 export interface QuotationView {
   readonly id: string;
   readonly quotationNumber: string;
@@ -154,6 +199,45 @@ export interface QuotationView {
   readonly recordVersion: number;
   readonly currentRevision: RevisionView | null;
 }
+
+/**
+ * A quotation HEADER, for the list a work-order screen shows (P1-30 A2, S-07).
+ *
+ * `QuotationView` minus `currentRevision`. The list is deliberately not the
+ * detail: rendering N quotations each with its revision and priced lines would
+ * make one screen issue N+1 statements and would put every line of every
+ * superseded document into a response nobody reads. `currentRevisionId` is
+ * carried so the caller can follow the link to `GET /quotations/{id}`, which is
+ * where the money lives.
+ *
+ * No amount appears here at all, so there is no decimal to preserve and no
+ * partial total to mistake for a document total.
+ */
+export interface QuotationSummaryView {
+  readonly id: string;
+  readonly quotationNumber: string;
+  readonly workOrderId: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly currency: string;
+  readonly status: string;
+  readonly payerPartnerRef: string | null;
+  readonly currentRevisionId: string | null;
+  readonly recordVersion: number;
+}
+
+const toSummary = (row: QuotationRow): QuotationSummaryView => ({
+  id: row.id,
+  quotationNumber: row.quotationNumber,
+  workOrderId: row.workOrderId,
+  companyId: row.companyId,
+  branchId: row.branchId,
+  currency: row.currencyCode,
+  status: row.status,
+  payerPartnerRef: row.payerPartnerRef,
+  currentRevisionId: row.currentRevisionId,
+  recordVersion: row.recordVersion,
+});
 
 const toLine = (row: ItemRow): MoneyLine => ({
   id: row.id,
@@ -169,6 +253,31 @@ const toLine = (row: ItemRow): MoneyLine => ({
   taxAmount: row.capturedTaxAmount,
   lineTotal: row.capturedLineTotal,
   priceRuleRef: row.priceRuleRef,
+});
+
+const toRevisionHeader = (
+  row: RevisionRow,
+  currentRevisionId: string | null
+): RevisionHeaderView => ({
+  id: row.id,
+  quotationId: row.quotationId,
+  revisionNumber: row.revisionNumber,
+  status: row.status,
+  currency: row.currencyCode,
+  issuedAt: row.issuedAt === null ? null : row.issuedAt.toISOString(),
+  expiresAt: row.expiresAt === null ? null : row.expiresAt.toISOString(),
+  subtotal: row.capturedSubtotal,
+  discountTotal: row.capturedDiscountTotal,
+  taxTotal: row.capturedTaxTotal,
+  grandTotal: row.capturedGrandTotal,
+  recordVersion: row.recordVersion,
+  // Compared against the EFFECTIVE current revision the caller resolves once - the
+  // parent's `current_revision_id`, or the latest revision when that is NULL.
+  // Never derived from `status = 'issued'`, which would be a second and quietly
+  // different truth: a quotation whose issued revision has since expired still
+  // points at it, and `uq_quotation_revisions_one_issued` permits zero issued
+  // revisions, not just one.
+  isCurrent: currentRevisionId !== null && currentRevisionId === row.id,
 });
 
 const toRevisionView = (row: RevisionRow, lines: readonly ItemRow[]): RevisionView => ({
@@ -593,6 +702,125 @@ export class QuotationService {
       expired.push(current.id);
     }
     return expired;
+  }
+
+  /**
+   * One work order's quotations, newest first (Phase 1-30 A2, seam S-07).
+   *
+   * ## Where the scope comes from
+   *
+   * From the WORK ORDER row, through `requireWorkOrder` — the same port
+   * `create` uses, for the same reason. The route names no branch, so
+   * `scope: 'branch'` would be inert on its own: `requiresScopedEvaluation`
+   * returns false for an empty target whatever the declaration says, and the
+   * check would fall through to the scope-blind `iam.has_permission`
+   * (P1-18-A-01). RLS alone cannot contain that, because `app.branch_ids` is the
+   * permission-blind union of every active grant.
+   *
+   * Deriving from the parent rather than from the quotations also settles what
+   * an empty answer means. A work order in the caller's scope that has never
+   * been quoted returns an empty page, which is the truth. A work order the
+   * caller may not see is refused by `requireWorkOrder` with `ERR-RES-001`
+   * BEFORE any quotation is read, so an empty page can never stand in for "you
+   * are not allowed to know" — that would be an existence oracle.
+   */
+  public async listForWorkOrder(
+    db: DbHandle,
+    workOrderId: string,
+    page: { cursor?: string | undefined; limit?: number | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<Page<QuotationSummaryView>> {
+    const workOrder = await workOrderModule().workOrders.requireWorkOrder(
+      db,
+      workOrderId,
+      authorizeScope
+    );
+    const request = pageRequest(QUOTATION_LIST_ORDERING, page);
+    const result = await this.repository.listQuotationsForWorkOrder(db, workOrder.id, request);
+    return { ...result, items: result.items.map(toSummary) };
+  }
+
+  /**
+   * One quotation's revision history, newest first (Phase 1-30 A2, seam S-08).
+   *
+   * ## What was actually missing
+   *
+   * Not `listRevisions` — `detail` already calls it. What no caller could reach
+   * is any revision OTHER than the current one: `detail` returns
+   * `current_revision_id`'s lines and nothing else, so a superseded revision, a
+   * rejected one and an expired one were all unreadable through the API even
+   * though the rows are immutable and retained on purpose.
+   *
+   * ## Scope
+   *
+   * From the parent quotation's row, via `findQuotation` + `authorizeScope` —
+   * the same derivation `detail` performs, for the same P1-18-A-01 reason. The
+   * quotation is resolved FIRST, so a quotation the caller may not see is
+   * `ERR-RES-001` before any revision is read; an empty page can therefore only
+   * mean a visible quotation with no revisions.
+   */
+  public async listRevisionsFor(
+    db: DbHandle,
+    quotationId: string,
+    page: { cursor?: string | undefined; limit?: number | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<Page<RevisionHeaderView>> {
+    const quotation = await this.repository.findQuotation(db, quotationId);
+    if (quotation === null) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Quotation ${quotationId} is not visible`,
+      });
+    }
+    await authorizeScope({ companyId: quotation.companyId, branchId: quotation.branchId });
+
+    // The EFFECTIVE current revision, resolved ONCE for the whole page.
+    //
+    // `current_revision_id` is written when a revision is issued, so it is NULL on
+    // every draft quotation. `detail` already falls back to the latest revision in
+    // that case; this read must fall back the same way or the two would disagree
+    // about which revision a quotation is offering. The fallback reads the TOP row
+    // of the same ordering this list uses, so the two cannot diverge - and it costs
+    // one single-row indexed read, only on the NULL path.
+    const currentRevisionId =
+      quotation.currentRevisionId ??
+      (await this.repository.listRevisionsPage(db, quotation.id, { limit: 1, cursor: null }))
+        .items[0]?.id ??
+      null;
+
+    const request = pageRequest(REVISION_LIST_ORDERING, page);
+    const result = await this.repository.listRevisionsPage(db, quotation.id, request);
+    return {
+      ...result,
+      items: result.items.map((row) => toRevisionHeader(row, currentRevisionId)),
+    };
+  }
+
+  /**
+   * One revision with its priced lines, current or not (P1-30 A2, seam S-08).
+   *
+   * The drill-down the history list links to. `findRevision` and `listItems`
+   * both already existed and are used unchanged; what is new is that a revision
+   * which is NOT the quotation's current one can now be read at all.
+   *
+   * Scope comes from the revision row's own `company_id`/`branch_id`. Those are
+   * immutable (`tg_quotation_revisions_immutable`) and the composite FK to
+   * `quo.quotations` includes them, so the revision cannot carry a scope its
+   * parent does not — authorizing the row is authorizing the document.
+   */
+  public async revisionDetail(
+    db: DbHandle,
+    revisionId: string,
+    authorizeScope: ScopeAuthorizer
+  ): Promise<RevisionView> {
+    const revision = await this.repository.findRevision(db, revisionId);
+    if (revision === null) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Quotation revision ${revisionId} is not visible`,
+      });
+    }
+    await authorizeScope({ companyId: revision.companyId, branchId: revision.branchId });
+    const items = await this.repository.listItems(db, revision.id);
+    return toRevisionView(revision, items);
   }
 
   /** One quotation with its current revision, or `ERR-RES-001`. */

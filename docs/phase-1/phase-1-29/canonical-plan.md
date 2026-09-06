@@ -37,8 +37,10 @@ Technicians` at line 220, table at lines 222-239.
 
 **That table is the authority. This document does not restate it.** Its shape, so that drift is
 detectable: two columns (`Requirement`, `Status`), no id column, **16 data rows** at lines
-224-239. Status tally as it stands: `Planned` 3 · `Blocked` 7 · `Partly blocked` 1 ·
-`Contracted` 4 · `Partly contracted` 1.
+224-239. Status tally as it stands (restated 2026-09-06 for the two rows the Owner-requirements
+grounding found stale against `develop` — `INT-045`/`INT-047` and `INT-100`, both "answered" in
+the table below): `Planned` 3 · `Blocked` 5 · `Partly blocked` 1 · `Contracted` 5 ·
+`Partly contracted` 1 · `Delivered` 1.
 
 **The Status column predates PRE-P1-29 and is stale.** Every blocker it names has since been
 answered by a merged PRE-P1-29 contract, and the reconciliation belongs here rather than in the

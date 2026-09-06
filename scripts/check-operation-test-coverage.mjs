@@ -1597,7 +1597,10 @@ export const MANIFEST = {
     note: 'bounded allow-listed read; a tenant-B customer is unreachable (cross-tenant); an invalid cursor and an oversized query are refused (denial); safe projection only, no sensitive identifier',
   },
   'crm.individual-create': {
-    files: ['tests/backend/p1-16-customer-creation.test.ts'],
+    files: [
+      'tests/backend/p1-16-customer-creation.test.ts',
+      'tests/backend/p1-30-tenant-bootstrap-reachability.test.ts',
+    ],
     required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'rollback'],
     note: 'partner + individual profile + audit + outbox commit in one transaction; an injected failure leaves none of the four (rollback); the created customer is invisible from tenant B (cross-tenant)',
   },
@@ -1816,6 +1819,7 @@ export const MANIFEST = {
       'tests/backend/p1-14-idempotency-replay.test.ts',
       'tests/backend/p1-24-iam-route-depth.test.ts',
       'tests/backend/p1-29-w9-owner-bootstrap.test.ts',
+      'tests/backend/p1-30-tenant-bootstrap-reachability.test.ts',
     ],
     required: [],
     note: 'created and found in the list',
@@ -1839,6 +1843,7 @@ export const MANIFEST = {
       'tests/backend/p1-14-idempotency-replay.test.ts',
       'tests/backend/p1-24-iam-route-depth.test.ts',
       'tests/backend/p1-29-w9-owner-bootstrap.test.ts',
+      'tests/backend/p1-30-tenant-bootstrap-reachability.test.ts',
     ],
     required: ['success', 'denial', 'audit'],
     note: 'delegable allow added; permission-denied under RLS',
@@ -2307,6 +2312,26 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'audit', 'stale-version'],
     note: 'service_code is IMMUTABLE and the body schema is .strict(), so naming it is a 422 rather than a silently discarded field — a permissive schema would let a caller believe the code changed; archived is TERMINAL and the service refuses every write to an archived row, which is strictly stronger than svc.guard_service_lifecycle (that trigger refuses only the transition out of archived, so a rename of an archived service would pass it); reactivation is expressible at the boundary on purpose, so the ERR-TRN-001 refusal is the applications and not an enum error; description distinguishes absent from null because ck_services_desc_not_blank accepts NULL and refuses the empty string; If-Match is required and a stale record_version is ERR-CON-001',
   },
+  'svc.service-category-list': {
+    files: ['tests/backend/p1-30-a1-service-catalogue-head.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'P1-30 A1 seam S-02, read half. The taxonomy had a projection (findCategory) and no list wrapper, so a picker could not be built and svc.service-create could not be offered a category that exists; status is projected deliberately, because svc.service-create refuses an inactive category and a picker blind to it offers choices the next call rejects; ordering is the QUALIFIED contract svc.service_categories:code_asc on code, the only column that is both unique per tenant and immutable, so a keyset page cannot repeat or skip a row because someone renamed a category mid-listing; no filters are offered and an unknown query parameter is refused (denial); a tenant-B principal sees none of tenant A taxonomy (cross-tenant) — note the falsifiability result recorded in the suite header: neutralising the query-level tenant predicate leaves that case GREEN because sel_service_categories_tenant absorbs it, so this proves isolation HOLDS without proving which layer holds it',
+  },
+  'svc.service-category-create': {
+    files: ['tests/backend/p1-30-a1-service-catalogue-head.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'P1-30 A1 seam S-02, write half — the head of the commercial chain. A0 measured zero INSERT INTO svc.service_categories across apps/api, supabase/seeds and supabase/migrations, so on a tenant created through the product the taxonomy was empty and permanently so and svc.service-create could not be called at all; code is the LOWER-snake internal form and is frozen by tg_service_categories_immutable, so a duplicate collides on uq_service_categories_code and no later edit repairs it; status is not a settable field, because a category created inactive is one nothing may be filed under; the row carries no company_id and no branch_id, so creating one is a tenant-wide act and the handler demands svc.service.manage granted tenant-wide — SVC_CATALOG_SCOPED_A2 holds that permission IN FULL through a branch-scoped grant and is refused on the identical request SVC_CATALOG_MANAGER succeeds on; cross-tenant is proved with a tenant-B principal holding the permission unrestricted whose category never appears in tenant A',
+  },
+  'svc.service-version-create': {
+    files: ['tests/backend/p1-30-a1-service-catalogue-head.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit'],
+    note: 'P1-30 A1 seam S-03. svc.service-version-publish needs a draft and nothing could create one — every INSERT INTO svc.service_versions in the tree is a fixture writing through an RLS-bypassing admin pool — so no API-created service was ever sellable and every quotation line was refused; deliberately NOT versionGuarded, because creating a draft does not mutate the service and there is no prior version of the created thing to guard, following dia.template-version-create and shared.template-version-create rather than the single price-list precedent, and the no-If-Match case goes red if that flag is restored; version_no is computed inside the INSERT under FOR UPDATE on the service, so two concurrent creates cannot both claim the same number on uq_service_versions_no; drafts may overlap each other and the live version freely, because ex_service_versions_no_published_overlap is WHERE status = published; an archived service is refused ERR-TRN-001 and a tenant-B service is not visible',
+  },
+  'svc.price-list-assignment-create': {
+    files: ['tests/backend/p1-30-a1-service-catalogue-head.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'isolation'],
+    note: 'P1-30 A1 seam S-04, the last link. svc.resolve_price requires an ACTIVE assignment row covering the context and nothing wrote that table, so GET /prices answered no price configured for every input on every API-created tenant; the route is TOP-LEVEL because uq_price_list_assignments_signature keys on (tenant, company, branch, customer_class, priority) and NOT on price_list_id — a nested path would misdescribe the invariant, since a create can be refused by an active row belonging to a price list the caller cannot see, and the test proves that refusal ACROSS two books; the caller-visible signal is the violation context_already_assigned, not a message, because problemFor never sends an AppFailure message over the wire, and the response names no price-list id at all; svc.price.manage and not svc.price.publish, because this is assignment management rather than publication; scope is branch and the selector is authorized before it is stored, while a wildcard — which sets the tenant default book — demands the permission tenant-wide, which is deliberately stronger than svc.price-rule-record and is proved by a branch-scoped holder succeeding within its scope and refused on a wildcard (isolation)',
+  },
   'svc.service-version-publish': {
     files: ['tests/backend/p1-20-service-catalog.test.ts'],
     required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'stale-version'],
@@ -2383,6 +2408,36 @@ export const MANIFEST = {
     files: ['tests/backend/p1-21-inventory-reads.test.ts'],
     required: ['denial', 'cross-tenant'],
     note: 'inv.item_master carries NO company_id and NO branch_id, so an item is tenant-wide reference data and the operation is scope:tenant with no branch filter at all — a branch filter here would narrow nothing, and declaring scope:branch would 403 every unfiltered listing because requireScopedPermissions fails closed on an empty target; the keyset order is (sku, id), a total order backed by uq_item_master_sku; archived items are excluded by default because inv.guard_item_lifecycle makes archived terminal; NO cost is returned, because inv.item_cost_details is gated by inv.cost.view inside its own RLS policy; a tenant-B item never appears (cross-tenant); a LIKE metacharacter in the search term is escaped, so a search for % returns the items whose sku literally contains % rather than the whole catalog (denial)',
+  },
+  // P1-30 corrective slice — the inventory master data a fresh tenant needs
+  // before any stock can exist. The F-02 remeasurement at develop 6f6236c3 found
+  // inv.item_categories, inv.item_master and inv.stock_locations with RLS, grants
+  // and a permission code and NO writer; inv.opening-batch-line-create needs an
+  // item and a location, so nothing could ever be counted in.
+  'inv.item-category-list': {
+    files: ['tests/backend/p1-30-inventory-master-data.test.ts'],
+    required: ['cross-tenant'],
+    note: 'the picker read: inv.item-search filters by categoryId and inv.item-create requires one, and nothing published them; tenant-wide like the item search beside it, ordered (code, id) under uq_item_categories_code; a tenant-B category never appears (cross-tenant)',
+  },
+  'inv.item-category-create': {
+    files: ['tests/backend/p1-30-inventory-master-data.test.ts'],
+    required: ['denial', 'cross-tenant', 'audit', 'idempotency'],
+    note: 'inv.item_categories has no company or branch column, so the row is tenant-wide reference data and the write requires inv.item.manage held TENANT-WIDE — a branch-scoped holder of the same code is 403 (P1-18-A-01, the same control svc.service-category-create applies); an unknown or inactive parent is a 422 naming the field; a duplicate code is a 409 (denial); one audit record per create and a same-key replay writes nothing twice (idempotency); tenant B writes land in B (cross-tenant)',
+  },
+  'inv.uom-list': {
+    files: ['tests/backend/p1-30-inventory-master-data.test.ts'],
+    required: [],
+    note: 'inv.item_master.uom_id is NOT NULL and nothing published the units; returns the twelve platform rows plus the tenant own, active only, under sel_units_of_measure_visible; not paged because it is a closed reference list, exactly as sal.payment-method-list treats its own; parses no input, so — as for that operation — there is no unbacked denial flag to declare',
+  },
+  'inv.item-create': {
+    files: ['tests/backend/p1-30-inventory-master-data.test.ts'],
+    required: ['denial', 'cross-tenant', 'audit', 'idempotency'],
+    note: 'creates the catalogue row only — NO cost (inv.item_cost_details is the restricted 1:1 cost table and valuation is an Owner decision) and NO stock (the opening batch stays the sole path by which stock appears); category and unit are validated before the insert so the refusal names the field rather than surfacing as 23503; tenant-wide authority like the category; the echo is read back through the same UoM join inv.item-search uses, so a created item reads exactly as a listed one; a duplicate SKU is a 409 (denial)',
+  },
+  'inv.stock-location-create': {
+    files: ['tests/backend/p1-30-inventory-master-data.test.ts'],
+    required: ['denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'a location is BRANCH infrastructure: the body names the company and branch, which are the scope target authorized before the write and re-enforced by ins_stock_locations_scope; a holder scoped to A2 is refused A1 and admitted A2 (isolation); the hierarchy inv.guard_stock_location_hierarchy enforces is stated by the field before the insert — a warehouse takes no parent, storage and quarantine name a warehouse in the SAME branch — so each refusal is a 422 naming parentLocationId rather than a check violation (denial); a duplicate code in the branch is a 409; permission is inv.item.manage because the 118-code catalogue names no location authority and this slice mints none (RES-05), recorded as a residual',
   },
   'inv.stock-availability-read': {
     files: ['tests/backend/p1-21-inventory-reads.test.ts'],
@@ -2533,7 +2588,11 @@ export const MANIFEST = {
     note: 'a SECOND operation rather than a flag, because sal.guard_dual_control_approval raises check_violation when approved_by = requested_by and BOTH are stamped from iam.current_user_id() — the maker on INSERT, the approver on UPDATE — so the two acts must come from two sessions belonging to two different users and no single endpoint could satisfy that however it were shaped; audit class is approval rather than financial because the fact recorded is a second person’s decision; the test drives it with a distinct approver principal and asserts the same-user attempt is refused with a caller-safe message rather than a constraint name (denial); idempotent because the primitive returns silently on an already-approved note, and uq_financial_events_source would refuse a second event with 23505 in any case — a free backstop',
   },
   'sal.payment-record': {
-    files: ['tests/backend/p1-22-payments.test.ts', 'tests/backend/p1-22-isolation.test.ts'],
+    files: [
+      'tests/backend/p1-22-payments.test.ts',
+      'tests/backend/p1-22-isolation.test.ts',
+      'tests/backend/p1-30-tenant-bootstrap-reachability.test.ts',
+    ],
     required: ['outbox', 'denial', 'cross-tenant'],
     note: 'records that money was received and structurally CANNOT claim a settlement: ck_payment_methods_kind admits exactly cash, card_terminal and bank_transfer with the schema comment "No online payment gateway/settlement types (ASM-14, CON-04)", so there is no column in which an authorisation or a card could be stored and the body has no such field; receivedBy is absent by construction because sal.record_receipt stamps the cashier and the tenant from the session, so offering either as an input would be offering a lie; the denial cases include a PLATFORM payment method, which is visible to every tenant via sel_payment_methods_scope and citable by NO receipt — fk_receipts_method resolves (tenant_id, payment_method_id) and a platform row’s tenant_id is NULL, so it raises 23503 about a method the caller can see in the list; a fifth decimal place is refused at the boundary because exceeding scale is NOT an error, PostgreSQL silently rounds it away',
   },
@@ -2548,7 +2607,10 @@ export const MANIFEST = {
     note: 'requires sal.finance.view where the invoice detail does not, and the asymmetry is the schema’s: sal.receipts is gated WHOLE-ROW by it on SELECT, so a caller without it sees zero receipts rather than redacted ones and there is no honest "receipt without amounts" projection to build — declaring the permission is the truthful contract, because the alternative is an endpoint that returns 404 for a receipt that exists; the receipt reference is stable and is not a second identity: receipt_number is allocated once by sal.record_receipt and frozen by sal.guard_receipt_freeze, which is unconditional on every UPDATE and covers the number as well as the money, so the test asserts the SAME number after a replay of the recording command',
   },
   'sal.payment-method-list': {
-    files: ['tests/backend/p1-22-payments.test.ts'],
+    files: [
+      'tests/backend/p1-22-payments.test.ts',
+      'tests/backend/p1-30-tenant-bootstrap-reachability.test.ts',
+    ],
     required: [],
     note: 'exists because sal.record_receipt takes a payment_method_id and without a way to discover one payment recording is unreachable — the difference between a usable API and a decorative one; scope is tenant and that is FORCED by the table, which has no company_id and no branch_id column at all, so declaring branch would be a claim the schema cannot support and authorizeScope would have nothing coherent to check; the projection reports `recordable` per row, because the three seeded PLATFORM methods are visible to every tenant via sel_payment_methods_scope and citable by NO receipt — fk_receipts_method resolves (tenant_id, payment_method_id) and a platform row’s tenant_id is NULL — so leaving a caller to discover that FK by receiving a 23503 about a method it can see in the list would be the trap this list exists to remove. THE `required` LIST IS EMPTY, AND THAT IS DELIBERATE: this is the only P1-22 operation that parses NO input at all — no path parameter, no query schema, no body — so it has nothing to validate and no state to refuse, and neither `denial` nor `cross-tenant` can be backed by an assertion that is not a fiction. `denial` was in this entry and was REMOVED after the suite author refused to declare an unbacked flag and said so; the same argument this note already made for `cross-tenant` applies to it verbatim, and the obligation had been copy-pasted across the P1-22 block. The derived floor still requires route, service, success and authorization, so this is not an unguarded row — it is a row whose extra obligations were imaginary',
   },
@@ -2665,6 +2727,7 @@ export const MANIFEST = {
     files: [
       'tests/backend/pre-p1-29-platform-control-plane.test.ts',
       'tests/backend/p1-29-w9-owner-bootstrap.test.ts',
+      'tests/backend/p1-30-tenant-bootstrap-reachability.test.ts',
     ],
     required: ['denial'],
     note: 'the sanctioned path to org.provision_organization; tenant.activate is never forwarded, because that branch would close the §6.3 bootstrap window inside the transaction that depends on it',
@@ -2674,17 +2737,134 @@ export const MANIFEST = {
     required: ['denial', 'audit'],
     note: 'the operation that makes the bootstrap window self-closing rather than permanent; the graph is M4s and the history row is M3s, so the route duplicates neither',
   },
+
+  // ========================================================================
+  // Phase 1-30 A2 — the published READ seams (S-07 … S-16).
+  //
+  // Twelve operations across ten seams: 2 class A (the read existed and was
+  // unpublished), 5 class B (an existing model needed a thin route), 3 class C
+  // (a new read model). S-11 was reclassified B -> C by executable evidence.
+  //
+  // Every one is a GET, none mints a permission code, and none carries an audit
+  // action: A2 is a read slice and does not invent write-style audit for ordinary
+  // reads. The derived floor (route, service, success, authorization, plus
+  // cross-tenant for a path naming a resource and isolation for a branch scope)
+  // comes from the registration; `required` below is additive.
+  // ========================================================================
+  'sal.work-order-invoice-read': {
+    files: ['tests/backend/p1-30-a2-published-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'P1-30 A2 seam S-10, class A. BillingRepository.liveInvoiceForWorkOrder existed since P1-22 with no route: its only callers were the duplicate-create refusal and the delivery module financial blocker, so a work-order screen could not answer has this been invoiced without listing invoices and filtering client-side. Singleton by uq_invoices_work_order_active, so no pagination and no ordering contract. Absence is 200 with invoice null and NOT 404 — collapsing them would tell a caller no invoice for a work order in a branch they cannot see, an existence oracle disguised as an empty result. A caller without sal.finance.view gets totals null and never a zero: sel_invoice_amounts_gated hides the amounts row, the query is a LEFT JOIN precisely so that yields NULL, money is OMITTED not fabricated. Permission is sal.invoice.manage, the code the sibling sal.invoice-detail declares — NOT sal.invoice.read, which navigation.ts names but the 118-code catalogue does not define (RES-05), so declaring it would gate the route on a permission no actor can hold. Isolation is proved in TWO layers deliberately: SAL_SCOPED_A2 gets 404 because sel_work_orders_scope hides the parent (database layer) and SAL_PERMISSION_ELSEWHERE, whose widening grant makes the parent visible, gets 403 from authorizeScope on the scope read FROM the work-order row (application layer, P1-18-A-01). Widening one assertion to [403,404] would have proved only the first',
+  },
+  'svc.service-detail': {
+    files: ['tests/backend/p1-30-a2-published-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'P1-30 A2 seam S-12, class A. ServiceCatalogService.detail existed and was unrouted, so a service could be created and updated and never read back individually; the GET was added to the existing route file and needed no new path template. Tenant scope, because svc.services carries no company_id and no branch_id and the path names no branch — a branch declaration would have no target and fail closed for every caller (P1-18-A-01). The projection carries NO price: resolution depends on company, branch, customer class and date and is gated on svc.price.read in a different module, so bolting one on here would leak the price book to every catalogue reader, and the test asserts the absence of amount, unitPrice, currency and priceRule by substring. Publishes record_version and an ETag, which the guarded update has always demanded via If-Match',
+  },
+  'quo.quotation-list': {
+    files: ['tests/backend/p1-30-a2-published-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'pagination'],
+    note: 'P1-30 A2 seam S-07, class B. quo.quotations.work_order_id is NOT NULL and immutable, so the parent is the authority for scope and the path names it; a top-level GET /quotations?workOrderId= would name no parent, which makes the declared branch scope inert (requiresScopedEvaluation returns false on an empty target) and leaves app.branch_ids — the permission-blind union of every active grant — as the only narrowing. Scope comes from requireWorkOrder, the same port quotation create uses. A visible work order nobody has quoted answers an EMPTY page; one the caller may not see is ERR-RES-001 before any quotation is read, so an empty page can never stand in for a refusal. Headers only: no revision object and no priced line travels, so nothing here can round money — currentRevisionId is present as the navigation link and the assertion is on the nested key, not the substring. Keyset on the qualified contract quo.quotations:created_at_desc with the cursor minted by cursorTimestamp at MICROSECOND precision (P1-27-INT-006), because quotations written in one transaction share transaction_timestamp exactly; two pages are proved to be disjoint. A malformed cursor is ERR-PAG-001 at 400 and an unknown query parameter ERR-VAL-001 at 422, asserted separately. Falsifiability measured: removing authorizeScope turns the isolation case RED (200 for 403) — this read has no pre-handler target, so that check is the only guard',
+  },
+  'quo.quotation-revision-list': {
+    files: ['tests/backend/p1-30-a2-published-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'pagination'],
+    note: 'P1-30 A2 seam S-08, list half, class B (A0 classed the seam A and section 6.3 corrected it: listRevisions and findRevision are NOT unrouted, quo.quotation-detail reaches both). The real gap is that the detail publishes ONLY current_revision_id, so a superseded, rejected or expired revision was unreadable although the rows are immutable and retained on purpose. Keyset on quo.quotation_revisions:revision_number_desc — the document own sequence, unique per quotation by uq_quotation_revisions_number, rather than created_at which for revisions produced in one transaction distinguishes nothing. isCurrent is the EFFECTIVE current revision: current_revision_id when set, and the highest revision number when it is NULL, because that column is only written on ISSUE and QuotationService.detail already falls back the same way — reading the column alone made the history claim no revision is current while the detail endpoint named one, which the test now pins. Captured totals stay decimal STRINGS and nothing recomputes ck_quotation_revisions_totals. Scope is re-decided against the PARENT quotation row',
+  },
+  'quo.quotation-revision-detail': {
+    files: ['tests/backend/p1-30-a2-published-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'P1-30 A2 seam S-08, drill-down half, class B. Top-level /quotation-revisions/{revisionId} because that collection already exists in this API — POST /quotation-revisions/{revisionId}/decisions addresses exactly this row — and nesting the read under the quotation would give the same row two addresses. findRevision and listItems are reused unchanged; what is new is that a revision which is NOT the quotation current one can be read at all, which the test proves by reading a SUPERSEDED revision with its lines after a revise. Every amount on the revision and on each line is numeric(18,4) and crosses as a decimal STRING; ck_quotation_revisions_totals and ck_quotation_items_tax_amount hold the arithmetic in the database and nothing here recomputes either. Scope is derived from the revision row own company and branch, which are immutable and tied to the parent by the composite FK, so authorizing the row is authorizing the document. Publishes record_version and an ETag for the guarded issue command',
+  },
+  'quo.quotation-revision-decisions-read': {
+    files: ['tests/backend/p1-30-a2-published-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'P1-30 A2 seam S-09, class C. quo.approval_decisions had exactly one reader — findDecisionForItem, a single-item lookup the WRITE path uses to detect a replay — and quo.approval_evidence had an INSERT and no read at all, so the append-only approval trail the schema exists to keep (BR-QUO-001/002) could be written and never read back: a dispute about what a customer approved had no answer through the API. Bounded and deliberately NOT paginated: uq_approval_decisions_item permits at most one decision per revision-item and MAX_ITEMS_PER_REVISION caps items at 200, so the set has a hard structural ceiling that cannot grow with time or use. Ordered by the ITEM line number, not decided_at, because a reviewer reads the list against the quotation they are holding. evidence is an ARRAY even though evidence_ref is a single column, because approval_evidence is keyed only by approval_decision_id with no uniqueness constraint and a scalar would silently drop the rest; the aggregate uses json_agg FILTER-equivalent COALESCE so a decision with no evidence yields [] and never a phantom null row. outcome is RECOMPUTED by rollUpDecisions from the item rows on every call — there is no stored revision-level decision in quo and this read invents none — and null while lines remain undecided is a real state, reported beside itemCount so a caller does not have to infer it. Publishes no storage key (evidence carries a shared.document_versions id, and resolving it is a separate read with its own authorization) and no actor name',
+  },
+  'svc.price-list-detail': {
+    files: ['tests/backend/p1-30-a2-published-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'P1-30 A2 seam S-13, detail half, class C. findPriceList existed as an internal single-row lookup with no route and NOTHING could list a price list versions — findPriceListVersion reads one by id, which a caller can only use if it already knows the id — so svc.price-list-list could show that a list exists and svc.price-list-version-create could add to it while no caller could see what versions it had, which was published, or which was effective, and svc.resolve_price picked among them with the product unable to show its working. Versions are BOUNDED with one row of headroom and versionsTruncated reports the bound rather than returning a short list silently; a price list gains a version when a tenant republishes prices, so a cursor would be ceremony. Tenant scope, like every other operation on svc.price_lists, which carries no company_id and no branch_id. The list currency is published and no amount is — prices live on the rules',
+  },
+  'svc.price-rule-list': {
+    files: ['tests/backend/p1-30-a2-published-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'P1-30 A2 seam S-13, rules half, class C. svc.price_rules could be written, counted by an internal guard and read by the resolver, and by nothing else — there was no rule list at any layer, so an operator could publish a price list and never see what was in it. Ordered by the RESOLVER own precedence, specificity DESC then priority DESC with branch 4, company 2 and customer class 1, reproduced in the ORDER BY and published as a computed specificity field so the order the rows arrive in and the number explaining it come from the same arithmetic; sorting alphabetically would have hidden the precedence the engine actually uses. amount is numeric(18,4) as a decimal STRING labelled with the PARENT LIST currency, because svc.price_rules stores none and a rule inherits the list — a bare figure would be an unlabelled amount. The version must belong to the price list named in the path and a version under a DIFFERENT list is refused with the same ERR-RES-001 an absent one gets, so the path id is not decoration and cannot be used to probe which version ids are real. Bounded with headroom; truncated is reported',
+  },
+  'sal.receipt-list': {
+    files: ['tests/backend/p1-30-a2-published-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'pagination'],
+    note: 'P1-30 A2 seam S-11, class C — RECLASSIFIED from B by executable evidence and accepted by Owner decision 2026-09-04: PaymentReadService had only listPaymentMethods and readReceipt, and PaymentsRepository only single-row finders plus listAllocations, so query, projection, repository method, service method and route are all new. The payments module surface RECORDED a deliberate refusal to list receipts; that refusal is answered rather than overridden, because it rests on there being no honest amount-free projection for a caller WITHOUT sal.finance.view and this operation DECLARES that code — the same one the sibling sal.receipt-detail declares — so the only callers it serves are ones sel_receipts_gated already hands whole rows to. The stale claim in the module docblock was corrected in the same commit. companyId and branchId are REQUIRED and are the authorizationTarget: the policy scope arms narrow on iam.allowed_branch_ids, the permission-blind union of every active grant, so an optional pair would mean sal.finance.view held in one branch reads the cash taken in every branch the caller has any grant in (P1-18-A-01). money and unallocated are exact decimal STRINGS with the receipt own currency; unallocated is sal.receipt_unallocated, PostgreSQL own round(amount - sum(allocations), 4), derived per row and stored nowhere, and it is 0 for a REVERSED receipt as well as a fully allocated one, which is why status travels beside it. deleted_at is filtered here unlike findReceipt, which cannot filter it because the primitives it feeds ignore it. Payment methods are labelled by loading the dual-scope reference set ONCE per page rather than joining, so the (scope = platform OR tenant_id = ...) predicate is not copied into a second place, and an unresolvable method is null rather than a fabricated label. Falsifiability measured and recorded honestly: removing authorizeScope alone is GREEN (the pre-handler target check refuses first), removing the pre-handler target alone is GREEN (the service check refuses), removing BOTH is RED at 200 for 403 — two independently sufficient layers, and only the third mutation shows the property is enforced at all',
+  },
+  'inv.stock-reservation-list': {
+    files: ['tests/backend/p1-30-a2-inventory-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'pagination'],
+    note: 'P1-30 A2 seam S-14, class B. inv.reserve_stock and inv.release_reservation both had routes and nothing could ask what is reserved: a screen could read GET /stock-availability and see that some quantity was committed but not to which work order or when it lapses, so a reservation could not be released deliberately, only left to expire. companyId and branchId are REQUIRED and are the authorizationTarget, the inv.stock-movement-list precedent. auditClass none, matching inv.stock-availability-read rather than the movement ledger: the ledger is audited because it is the complete record of what a branch holds and consumes, a list of open commitments is not that record, and this slice mints no read-audit action. A named locationId is resolved to its OWN company and branch and compared against the authorized pair, otherwise it would be a way around the branch check. quantity is numeric(12,3) as a decimal STRING; expiresAt is published as stored INCLUDING null, because a reservation with no expiry is a real state and a far-future substitute would make an open commitment look time-bounded. Keyset on inv.stock_reservations:created_at_desc with a microsecond cursor. Falsifiability measured: neutralising the company/branch predicate was GREEN at first and that was a hole in the SUITE, not defence in depth — every fixture reservation lived in branch A1 — so a reservation in BRANCH_A2 and a case asserting it never appears were added, and the same mutation is now RED on exactly that case. INV_FULL is unrestricted, so allowed_branch_ids is NULL and RLS admits every tenant-A row: for such a caller the SQL predicate is the ONLY narrowing and the suite has to carry that proof itself',
+  },
+  'inv.work-order-part-issue-list': {
+    files: ['tests/backend/p1-30-a2-inventory-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'pagination'],
+    note: 'P1-30 A2 seam S-15, class B, PARENT-SCOPED and that is the whole point. A0 section 6.3 corrected the shape: a top-level GET /stock-issues?workOrderId= narrowed only by a query parameter would name no parent, so requiresScopedEvaluation sees an empty target and returns false whatever scope is declared (P1-18-A-01), leaving app.branch_ids as the only narrowing on a per-work-order stock history. Naming the parent in the path makes the work-order ROW the thing authorized, and the service resolves it through the work-order module public surface before reading a single issue. A visible work order with nothing issued answers an EMPTY page; one the caller may not see is ERR-RES-001 before any issue row is touched. returnedQty is the SAME correlated sum over inv.part_returns that readPartIssue computes, in SQL; quantity and returnedQty are both numeric(12,3) decimal STRINGS and the outstanding amount is deliberately NOT published, because netting two exact decimals in IEEE-754 is the arithmetic the server-owned-amount rule forbids and inv.guard_part_return_ceiling is the authority on the bound. Ordered by created_at, not issued_at — measured against the table, which has no issued_at column. Both isolation layers are proved: INV_SCOPED_A2 gets 404 because RLS hides the parent, and INV_PERMISSION_ELSEWHERE, whose widening grant makes it visible, gets 403 from the application check. Falsifiability measured: removing authorizeScope turns that second case RED at 200 for 403',
+  },
+  'inv.stock-location-list': {
+    files: ['tests/backend/p1-30-a2-inventory-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'pagination'],
+    note: 'P1-30 A2 seam S-16, class B, and the read every other stock operation depended on. The location is the SCOPE ANCHOR: inv.post_stock_movement derives company_id and branch_id from it rather than from anything the caller sends, and reserving, issuing, returning, adjusting and recording damage all take a locationId — so before this route every one of those commands required an id the product could not produce, while readLocation existed as an internal scope resolver with no list in front of it. companyId and branchId are REQUIRED and are the authorizationTarget: a branch-blind location list would be a directory of which branches exist and how they are laid out. INACTIVE locations are listed rather than hidden, because stock already sitting in a location that was later deactivated still has to be findable and a picker that omitted it would strand that stock; status is on every row and offered as a filter instead. Ordered by location_code ascending, which uq_stock_locations_code makes total within a branch and which is the string an operator actually reads; name and parentLocationId are carried because two bins in different warehouses can be indistinguishable otherwise. No amount and no quantity crosses — a location is reference data. Falsifiability measured: neutralising the company/branch predicate is RED on three cases with no change to the suite, because the location fixtures already span both branches',
+  },
 };
 
 // ---------------------------------------------------------------------------
 // Registry scanning
 // ---------------------------------------------------------------------------
 
-const literalString = (source, key) => {
-  const m = new RegExp(`\\b${key}\\s*:\\s*['"\`]([^'"\`]*)['"\`]`).exec(source);
+/**
+ * Reads one declared field out of a `defineOperation({...})` literal.
+ *
+ * COMMENTS ARE STRIPPED FIRST, and that is the whole point of these two lines.
+ *
+ * A `defineOperation` literal in this codebase routinely explains its choice by
+ * naming the alternative it REJECTED — `scope: 'branch'` would fail closed here,
+ * `auditClass: 'none'` would be wrong because this writes money — in a comment
+ * directly above the real key. The regex takes the FIRST match, so a
+ * comment-blind read returns the rejected value and the operation is measured as
+ * something it never declared.
+ *
+ * `derivedRequirements()` reads exactly these fields to decide what evidence an
+ * operation owes, so the failure is not cosmetic. One direction is harmless — a
+ * commented `scope: 'branch'` above a real `tenant` ADDS an isolation obligation
+ * nothing owes, which is a false FAILURE and gets noticed. The other direction is
+ * a false GREEN: a commented `scope: 'tenant'` above a real `branch` DROPS the
+ * isolation requirement, a commented `auditClass: 'none'` above a real class
+ * drops `audit`, and the gate then reports success over an operation whose
+ * evidence was never demanded. A gate that can be silenced by a sentence of prose
+ * beside the code is not a gate.
+ *
+ * It was live: `svc.service-list` declares `scope: 'tenant'` and explains, four
+ * lines above, that "Declaring `scope: 'branch'` here would be worse than
+ * useless". This gate read `branch` for the whole of P1-20 and every run since.
+ * Only the manifest's own declared `isolation` — additive, and written for an
+ * unrelated reason — kept the effective requirement correct.
+ *
+ * `stripComments` is a lexer, not a `//`-to-end-of-line regex: these literals
+ * carry `path` and `summary` strings with `http://` in them, and truncating there
+ * would delete real declarations. It is a hoisted function declaration, so the
+ * forward reference from here is resolved before either helper can be called.
+ *
+ * Both helpers strip on their own input rather than trusting the caller, because
+ * that is the property `tests/ci/operation-literal-parsing.test.ts` pins: fed a
+ * raw literal whose comment names one value and whose code names another, the
+ * CODE value wins.
+ */
+export const literalString = (source, key) => {
+  const m = new RegExp(`\\b${key}\\s*:\\s*['"\`]([^'"\`]*)['"\`]`).exec(
+    stripComments(source ?? '')
+  );
   return m ? m[1] : null;
 };
-const literalTrue = (source, key) => new RegExp(`\\b${key}\\s*:\\s*true\\b`).test(source);
+
+/** The boolean-flag form of `literalString`, comment-blind for the same reason. */
+export const literalTrue = (source, key) =>
+  new RegExp(`\\b${key}\\s*:\\s*true\\b`).test(stripComments(source ?? ''));
 
 /**
  * Extracts one `defineOperation({...})` literal, starting at its opening brace,
@@ -2732,7 +2912,24 @@ export function scanRegisteredOperations(root = REPOSITORY_ROOT) {
       if (!/\.tsx?$/.test(entry.name)) continue;
       const rel = toPosix(relative(root, full));
       if (rel.endsWith('server/auth/operation-registry.ts')) continue;
-      const source = readFileSync(full, 'utf8');
+      /*
+       * Stripped ONCE, for the brace balancing rather than for the field reads.
+       *
+       * `literalAt` counts `{` and `}` with no idea which are code, so a comment
+       * that mentions `defineOperation()` in prose — six do today, in
+       * `server/audit/audit.ts` and `server/auth/audit-actions.ts` — sends the
+       * scanner hunting the next `{` in the file and slicing a "literal" that
+       * spans whatever follows. Those six survive only because the slice happens
+       * to contain no `id:`, which is luck, not a rule. A comment that spelled a
+       * full literal would register a phantom operation the gate then demands
+       * evidence for; a commented-out OLD registration sitting after the real one
+       * would be worse, because `operations.set` is last-write-wins and the dead
+       * copy's facts would replace the live ones.
+       *
+       * Measured before and after on this tree: identical id sets, identical
+       * facts. This closes the hole rather than repairing damage.
+       */
+      const source = stripComments(readFileSync(full, 'utf8'));
       let index = source.indexOf('defineOperation(');
       while (index >= 0) {
         const braceStart = source.indexOf('{', index);
@@ -2925,6 +3122,13 @@ export function stripCoverageBlock(source) {
  *
  * Regex-versus-division is decided the way a lexer does it: a `/` starts a regex
  * only when the previous significant character cannot end an expression.
+ *
+ * It serves TWO readers, and both need the same lexer. Test files come through
+ * here so prose cannot stand in for a test, as above; API source comes through
+ * `scanRegisteredOperations` and `literalString`/`literalTrue` so a comment
+ * beside a `defineOperation` key cannot be read as the declaration. The second
+ * caller is why the string-awareness is load-bearing twice over — an operation's
+ * `path` and `summary` are string literals that contain `//`.
  */
 export function stripComments(source) {
   let out = '';

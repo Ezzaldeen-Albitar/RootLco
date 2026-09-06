@@ -71,6 +71,10 @@ export interface NavigationGroup {
 export type IconName =
   | 'overview'
   | 'customers'
+  /** A price tag: price lists, rules and the price that applies. */
+  | 'pricing'
+  /** A document with a signature line: a quotation and the decisions on it. */
+  | 'quotations'
   | 'vehicles'
   /**
    * A review queue, not a list.
@@ -89,6 +93,8 @@ export type IconName =
   | 'catalog'
   | 'inventory'
   | 'billing'
+  /** Banknotes: money taken in and applied to what is owed. */
+  | 'payments'
   | 'delivery'
   | 'documents'
   | 'notifications'
@@ -324,27 +330,77 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         key: 'catalog',
         labelKey: 'nav.catalog',
         icon: 'catalog',
-        href: '/catalog',
+        // `/services`, not `/catalog`: the P1-30 server-arithmetic gate freezes
+        // its areas to the resource nouns (`features/services`, the `services`
+        // route segment), and a screen at any other segment would sit outside
+        // the gate the phase's closure condition depends on. Built by P1-30 W1.
+        href: '/services',
         permission: 'svc.service.read',
-        status: 'planned',
-        scope: 'company',
+        status: 'available',
+        // Tenant-wide: `svc.services` carries no company and no branch.
+        scope: 'tenant',
+      },
+      {
+        key: 'pricing',
+        labelKey: 'nav.pricing',
+        icon: 'pricing',
+        // `/pricing`: the P1-30 server-arithmetic gate pre-names this segment
+        // (`features/pricing`, the `pricing` route segment). Built by P1-30 W2.
+        href: '/pricing',
+        permission: 'svc.price.read',
+        status: 'available',
+        // Tenant-wide: `svc.price_lists` carries no company and no branch.
+        scope: 'tenant',
+      },
+      {
+        key: 'quotations',
+        labelKey: 'nav.quotations',
+        icon: 'quotations',
+        // `/quotations`: an operation root and a segment the server-arithmetic
+        // gate pre-names. Quotations are reached FROM a work order; the page
+        // takes the work order in its address. Built by P1-30 W3.
+        href: '/quotations',
+        permission: 'quo.quotation.read',
+        status: 'available',
+        // Branch-scoped: a quotation sits in its work order's branch.
+        scope: 'branch',
       },
       {
         key: 'inventory',
         labelKey: 'nav.inventory',
         icon: 'inventory',
+        // `/inventory`: a segment the server-arithmetic gate pre-names. The
+        // item search is tenant-wide and gates the page; the stock panels take
+        // a branch as their target inside the screen. Built by P1-30 W4.
         href: '/inventory',
         permission: 'inv.item.read',
-        status: 'planned',
+        status: 'available',
         scope: 'branch',
       },
       {
         key: 'billing',
         labelKey: 'nav.billing',
         icon: 'billing',
-        href: '/billing',
-        permission: 'sal.invoice.read',
-        status: 'planned',
+        // `/invoices`: the segment the server-arithmetic gate pre-names for
+        // this module. Gated on `sal.invoice.manage`, the code every invoice
+        // read declares (`sal.invoice.read`, named here until P1-30 W6, exists
+        // in no catalogue — RES-05). Built by P1-30 W6.
+        href: '/invoices',
+        permission: 'sal.invoice.manage',
+        status: 'available',
+        scope: 'branch',
+      },
+      {
+        key: 'payments',
+        labelKey: 'nav.payments',
+        icon: 'payments',
+        // `/payments`: the segment the server-arithmetic gate pre-names for
+        // this module. Gated on `sal.finance.view`, the ONLY code both receipt
+        // reads declare and the one a cashier holds — recording and allocating
+        // are offered inside the screen, not by this gate. Built by P1-30 W7.
+        href: '/payments',
+        permission: 'sal.finance.view',
+        status: 'available',
         scope: 'branch',
       },
       {

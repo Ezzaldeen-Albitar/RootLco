@@ -10,7 +10,7 @@
  * The backend requires an `Idempotency-Key` header on every operation it
  * registers as idempotent, and answers `400 ERR-INT-002` without one — before
  * authorization is evaluated. That set is NOT "the POST operations": it is
- * currently 158 operations (PATCH 3, POST 149, PUT 6).
+ * currently 164 operations (PATCH 3, POST 155, PUT 6).
  *
  * The client used to infer the answer from the HTTP method, which was wrong for
  * every non-POST member of that set. This table is the contract instead of a
@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 13, export 1, financial 13, none 143, privileged 169, security 13.
+ * Currently approval 13, export 1, financial 14, none 158, privileged 174, security 13.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 352 of them. */
+/** Every operation the contract publishes. 373 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -1025,11 +1025,32 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'none',
   },
   {
+    template: '/item-categories',
+    method: 'GET',
+    operationId: 'inv.item-category-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/item-categories',
+    method: 'POST',
+    operationId: 'inv.item-category-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
     template: '/items',
     method: 'GET',
     operationId: 'inv.item-search',
     idempotent: false,
     auditClass: 'none',
+  },
+  {
+    template: '/items',
+    method: 'POST',
+    operationId: 'inv.item-create',
+    idempotent: true,
+    auditClass: 'privileged',
   },
   {
     template: '/jobs',
@@ -1383,6 +1404,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
   },
   {
     template: '/payments',
+    method: 'GET',
+    operationId: 'sal.receipt-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/payments',
     method: 'POST',
     operationId: 'sal.payment-record',
     idempotent: true,
@@ -1424,6 +1452,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'privileged',
   },
   {
+    template: '/price-list-assignments',
+    method: 'POST',
+    operationId: 'svc.price-list-assignment-create',
+    idempotent: true,
+    auditClass: 'financial',
+  },
+  {
     template: '/price-lists',
     method: 'GET',
     operationId: 'svc.price-list-list',
@@ -1438,6 +1473,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'financial',
   },
   {
+    template: '/price-lists/{priceListId}',
+    method: 'GET',
+    operationId: 'svc.price-list-detail',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
     template: '/price-lists/{priceListId}/versions',
     method: 'POST',
     operationId: 'svc.price-list-version-create',
@@ -1450,6 +1492,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     operationId: 'svc.price-list-version-publish',
     idempotent: true,
     auditClass: 'financial',
+  },
+  {
+    template: '/price-lists/{priceListId}/versions/{versionId}/rules',
+    method: 'GET',
+    operationId: 'svc.price-rule-list',
+    idempotent: false,
+    auditClass: 'none',
   },
   {
     template: '/price-lists/{priceListId}/versions/{versionId}/rules',
@@ -1508,6 +1557,20 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'approval',
   },
   {
+    template: '/quotation-revisions/{revisionId}',
+    method: 'GET',
+    operationId: 'quo.quotation-revision-detail',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/quotation-revisions/{revisionId}/decisions',
+    method: 'GET',
+    operationId: 'quo.quotation-revision-decisions-read',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
     template: '/quotation-revisions/{revisionId}/decisions',
     method: 'POST',
     operationId: 'quo.quotation-revision-decide',
@@ -1534,6 +1597,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     operationId: 'quo.quotation-issue',
     idempotent: true,
     auditClass: 'financial',
+  },
+  {
+    template: '/quotations/{quotationId}/revisions',
+    method: 'GET',
+    operationId: 'quo.quotation-revision-list',
+    idempotent: false,
+    auditClass: 'none',
   },
   {
     template: '/quotations/{quotationId}/revisions',
@@ -1935,6 +2005,20 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'approval',
   },
   {
+    template: '/service-categories',
+    method: 'GET',
+    operationId: 'svc.service-category-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/service-categories',
+    method: 'POST',
+    operationId: 'svc.service-category-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
     template: '/services',
     method: 'GET',
     operationId: 'svc.service-list',
@@ -1950,6 +2034,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
   },
   {
     template: '/services/{serviceId}',
+    method: 'GET',
+    operationId: 'svc.service-detail',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/services/{serviceId}',
     method: 'PATCH',
     operationId: 'svc.service-update',
     idempotent: true,
@@ -1959,6 +2050,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     template: '/services/{serviceId}/branch-availability',
     method: 'POST',
     operationId: 'svc.branch-availability-set',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/services/{serviceId}/versions',
+    method: 'POST',
+    operationId: 'svc.service-version-create',
     idempotent: true,
     auditClass: 'privileged',
   },
@@ -1984,11 +2082,32 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'privileged',
   },
   {
+    template: '/stock-locations',
+    method: 'GET',
+    operationId: 'inv.stock-location-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/stock-locations',
+    method: 'POST',
+    operationId: 'inv.stock-location-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
     template: '/stock-movements',
     method: 'GET',
     operationId: 'inv.stock-movement-list',
     idempotent: false,
     auditClass: 'privileged',
+  },
+  {
+    template: '/stock-reservations',
+    method: 'GET',
+    operationId: 'inv.stock-reservation-list',
+    idempotent: false,
+    auditClass: 'none',
   },
   {
     template: '/stock-reservations',
@@ -2157,6 +2276,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     operationId: 'dia.template-version-status-set',
     idempotent: true,
     auditClass: 'privileged',
+  },
+  {
+    template: '/units-of-measure',
+    method: 'GET',
+    operationId: 'inv.uom-list',
+    idempotent: false,
+    auditClass: 'none',
   },
   {
     template: '/vehicle-catalogue/body-types',
@@ -2418,6 +2544,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'none',
   },
   {
+    template: '/work-orders/{workOrderId}/invoice',
+    method: 'GET',
+    operationId: 'sal.work-order-invoice-read',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
     template: '/work-orders/{workOrderId}/invoice-preview',
     method: 'GET',
     operationId: 'sal.invoice-preview',
@@ -2432,6 +2565,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'privileged',
   },
   {
+    template: '/work-orders/{workOrderId}/part-issues',
+    method: 'GET',
+    operationId: 'inv.work-order-part-issue-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
     template: '/work-orders/{workOrderId}/quality-controls',
     method: 'GET',
     operationId: 'qms.qc-record-list',
@@ -2444,6 +2584,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     operationId: 'qms.qc-record-open',
     idempotent: true,
     auditClass: 'privileged',
+  },
+  {
+    template: '/work-orders/{workOrderId}/quotations',
+    method: 'GET',
+    operationId: 'quo.quotation-list',
+    idempotent: false,
+    auditClass: 'none',
   },
   {
     template: '/work-orders/{workOrderId}/reopen-attempts',

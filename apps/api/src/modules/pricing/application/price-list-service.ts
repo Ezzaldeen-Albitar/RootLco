@@ -34,6 +34,7 @@ import { Decimal, MONEY } from '../domain/decimal';
 import { assertCurrencyCode } from '../domain/money';
 import { PricingRuleError } from '../domain/pricing';
 import type {
+  PriceListAssignmentRow,
   PriceListRow,
   PriceListVersionRow,
   PricingRepository,
@@ -66,6 +67,92 @@ export interface PriceRuleView {
   readonly amount: string;
   readonly currency: string;
   readonly recordVersion: number;
+}
+
+/**
+ * One price rule as the rule list renders it (Phase 1-30 A2, seam S-13).
+ *
+ * `PriceRuleView` above is the WRITE echo - the id and the amount just recorded.
+ * This is the read, and it carries the two things a pricing screen actually needs:
+ * the SERVICE the rule prices, and the NARROWING that decides whether the rule
+ * applies at all.
+ *
+ * `amount` is a `numeric(18,4)` decimal STRING labelled with the parent LIST's
+ * currency. `svc.price_rules` has no currency column - a rule inherits the list's
+ * - so publishing the figure without attaching that currency would be publishing
+ * an unlabelled amount, which this codebase does not do.
+ *
+ * `specificity` is the resolver's own weight, not a new concept:
+ * `svc.resolve_price` orders candidates by `specificity DESC, priority DESC`, with
+ * branch 4, company 2 and customer class 1. It is published so a reader can see
+ * WHY one rule beats another instead of inferring it from three nullable columns.
+ */
+export interface PriceRuleListView {
+  readonly id: string;
+  readonly priceListVersionId: string;
+  readonly service: {
+    readonly id: string;
+    readonly serviceCode: string;
+    readonly name: string;
+  };
+  /** The narrowing. `null` in a slot means "applies regardless of that slot". */
+  readonly appliesTo: {
+    readonly companyId: string | null;
+    readonly branchId: string | null;
+    readonly customerClass: string | null;
+  };
+  readonly amount: string;
+  readonly currency: string;
+  readonly taxClassId: string | null;
+  readonly priority: number;
+  /** 0-7, the resolver's weight. Higher wins before `priority` is consulted. */
+  readonly specificity: number;
+  readonly status: string;
+  readonly recordVersion: number;
+}
+
+/**
+ * One version's rules, with the context that gives the amounts meaning
+ * (Phase 1-30 A2, seam S-13).
+ *
+ * A NAMED interface rather than an inline object literal, because
+ * `tests/ci/named-wire-shapes.test.ts` requires every response body to serialise a
+ * named type a client can import — and it caught this one as the single anonymous
+ * shape on the wire. `currency` sits on the envelope as well as on each rule
+ * deliberately: it belongs to the PARENT LIST, `svc.price_rules` stores none, and
+ * a caller reading an empty `rules` array still needs to know what the list is
+ * denominated in.
+ */
+export interface PriceListRulesView {
+  readonly priceListId: string;
+  readonly versionId: string;
+  readonly versionNo: number;
+  readonly versionStatus: string;
+  readonly currency: string;
+  readonly rules: readonly PriceRuleListView[];
+  /** True when the bound was reached, so a short list never passes for complete. */
+  readonly truncated: boolean;
+}
+
+/**
+ * A price list with its version history (Phase 1-30 A2, seam S-13).
+ *
+ * `versions` is bounded and `versionsTruncated` says so when the bound was
+ * reached - a short list that does not admit it is the failure mode this field
+ * exists to prevent. Rules are NOT included: they belong to a version, they have
+ * no ceiling, and they are read at
+ * `GET /price-lists/{priceListId}/versions/{versionId}/rules`.
+ */
+export interface PriceListDetailView {
+  readonly id: string;
+  readonly priceListCode: string;
+  readonly name: string;
+  readonly currency: string;
+  readonly description: string | null;
+  readonly status: string;
+  readonly recordVersion: number;
+  readonly versions: readonly PriceListVersionView[];
+  readonly versionsTruncated: boolean;
 }
 
 export interface CreatePriceListInput {
@@ -107,6 +194,36 @@ const toVersionView = (row: PriceListVersionRow): PriceListVersionView => ({
   recordVersion: row.recordVersion,
 });
 
+/**
+ * An assignment as the API renders it.
+ *
+ * No money. `svc.price_list_assignments` has no `numeric` column - it names a
+ * book and a context, and the amounts live in that book's rules. `priority` is
+ * `integer` and stays a JSON number.
+ */
+export interface PriceListAssignmentView {
+  readonly id: string;
+  readonly priceListId: string;
+  readonly companyId: string | null;
+  readonly branchId: string | null;
+  readonly customerClass: string | null;
+  readonly priority: number;
+  readonly effectiveFrom: string;
+  readonly effectiveTo: string | null;
+  readonly status: string;
+  readonly recordVersion: number;
+}
+
+export interface AssignPriceListInput {
+  readonly priceListId: string;
+  readonly companyId?: string | undefined;
+  readonly branchId?: string | undefined;
+  readonly customerClass?: string | undefined;
+  readonly priority?: number | undefined;
+  readonly effectiveFrom: string;
+  readonly effectiveTo?: string | undefined;
+}
+
 export class PriceListService {
   public constructor(private readonly repository: PricingRepository) {}
 
@@ -114,6 +231,122 @@ export class PriceListService {
   public async list(db: DbHandle, limit: number): Promise<readonly PriceListView[]> {
     const rows = await this.repository.listPriceLists(db, limit);
     return rows.map(toListView);
+  }
+
+  /**
+   * One price list with its version history (Phase 1-30 A2, seam S-13).
+   *
+   * ## What was missing
+   *
+   * `findPriceList` existed as an internal single-row lookup with no route, and
+   * NOTHING could list a list's versions - `findPriceListVersion` reads one by id,
+   * which a caller can only use if it already knows the id. So `svc.price-list-list`
+   * could show that a price list exists and `svc.price-list-version-create` could
+   * add to it, while no caller could see what versions it already had, which was
+   * published, or which was effective. `svc.resolve_price` picked among them and
+   * the product could not show its working.
+   *
+   * Tenant-scoped, like every other operation on this table: `svc.price_lists` has
+   * no `company_id` and no `branch_id`, so there is no scope target and a declared
+   * branch scope would fail closed for every caller (P1-18-A-01).
+   */
+  public async detail(
+    db: DbHandle,
+    priceListId: string,
+    versionLimit: number
+  ): Promise<PriceListDetailView> {
+    const list = await this.repository.findPriceList(db, priceListId);
+    if (list === null) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Price list ${priceListId} is not visible`,
+      });
+    }
+    // One row of headroom, so truncation is detected rather than assumed.
+    const rows = await this.repository.listPriceListVersions(db, list.id, versionLimit + 1);
+    const truncated = rows.length > versionLimit;
+    const versions = truncated ? rows.slice(0, versionLimit) : rows;
+    return {
+      id: list.id,
+      priceListCode: list.priceListCode,
+      name: list.name,
+      currency: list.currencyCode,
+      description: list.description,
+      status: list.status,
+      recordVersion: list.recordVersion,
+      versions: versions.map(toVersionView),
+      versionsTruncated: truncated,
+    };
+  }
+
+  /**
+   * The rules on one version, in the resolver's own precedence order
+   * (Phase 1-30 A2, seam S-13).
+   *
+   * The version is resolved first and checked to belong to the price list named in
+   * the path. Without that check `/price-lists/{a}/versions/{b}/rules` would
+   * return `b`'s rules whatever `a` was - the id in the path would be decoration,
+   * and a caller could read any version's prices through any list they can name.
+   *
+   * The currency comes from the PARENT LIST, read here, because `svc.price_rules`
+   * stores none and every amount that leaves this module carries the currency that
+   * gives it meaning.
+   */
+  public async listRules(
+    db: DbHandle,
+    priceListId: string,
+    versionId: string,
+    limit: number
+  ): Promise<PriceListRulesView> {
+    const list = await this.repository.findPriceList(db, priceListId);
+    if (list === null) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Price list ${priceListId} is not visible`,
+      });
+    }
+    const version = await this.repository.findPriceListVersion(db, versionId);
+    if (version === null || version.priceListId !== list.id) {
+      // Uniform refusal: a version that exists under a DIFFERENT list is reported
+      // exactly as one that does not exist, so the path cannot be used to probe
+      // which version ids are real.
+      throw new AppFailure('ERR-RES-001', {
+        message: `Price list version ${versionId} is not visible on price list ${priceListId}`,
+      });
+    }
+
+    const rows = await this.repository.listPriceRules(db, version.id, limit);
+    const truncated = rows.length > limit;
+    const kept = truncated ? rows.slice(0, limit) : rows;
+    return {
+      priceListId: list.id,
+      versionId: version.id,
+      versionNo: version.versionNo,
+      versionStatus: version.status,
+      currency: list.currencyCode,
+      rules: kept.map((row) => ({
+        id: row.id,
+        priceListVersionId: row.priceListVersionId,
+        service: { id: row.serviceId, serviceCode: row.serviceCode, name: row.serviceName },
+        appliesTo: {
+          companyId: row.companyId,
+          branchId: row.branchId,
+          customerClass: row.customerClass,
+        },
+        amount: row.amount,
+        currency: list.currencyCode,
+        taxClassId: row.taxClassId,
+        priority: row.priority,
+        // The resolver's weights, restated: branch 4, company 2, class 1. The SQL
+        // ORDER BY computes the same sum, so the published number and the order
+        // the rows arrive in cannot disagree.
+        specificity:
+          (row.branchId === null ? 0 : 4) +
+          (row.companyId === null ? 0 : 2) +
+          (row.customerClass === null ? 0 : 1),
+        status: row.status,
+        recordVersion: row.recordVersion,
+      })),
+      truncated,
+    };
   }
 
   /**
@@ -393,6 +626,133 @@ export class PriceListService {
    * Both were genuinely reaching the client as `ERR-SYS-001` before this mapping,
    * which told a caller nothing actionable and marked the failure as monitored.
    */
+  /**
+   * Assigns a price list to a scope context.
+   *
+   * `svc.resolve_price` requires an ACTIVE assignment row covering the context
+   * before it will return anything, and nothing in the product could write one -
+   * so every price resolution on every API-created tenant answered "no price
+   * configured" (A0 F-02, seam S-04).
+   *
+   * ## Why the conflict message names the CONTEXT and not the price list
+   *
+   * `uq_price_list_assignments_signature` is
+   * `(tenant_id, company_id, branch_id, customer_class, priority) NULLS NOT DISTINCT`
+   * where the row is active - and `price_list_id` is deliberately NOT in it.
+   * That is what the table comment means by "exactly one price list" per
+   * context: two books cannot both claim the same context at the same priority,
+   * because `svc.resolve_price` would then have to arbitrate between them.
+   *
+   * The consequence is that a create can be refused by a row belonging to a
+   * DIFFERENT price list - one the caller may not even be looking at. It is why
+   * the route is the top-level `/price-list-assignments` rather than nested
+   * under a price list: the invariant is not scoped to one.
+   *
+   * What the CALLER actually receives is the violation, not this message:
+   * `problemFor` builds the response from the error catalogue plus `safeDetails`,
+   * and an `AppFailure` message never crosses the wire. So the caller-visible
+   * signal is `{path: 'body.priority', rule: 'context_already_assigned'}` - which
+   * says the context is taken rather than that this price list is - and the
+   * response deliberately names no price-list id at all. The message below is
+   * server-side only, for the log.
+   */
+  public async assign(db: DbHandle, input: AssignPriceListInput): Promise<PriceListAssignmentView> {
+    // Lock the list rather than merely read it: an assignment naming a list that
+    // is being deactivated in a concurrent transaction must not slip in behind
+    // the status check.
+    const list = await this.repository.lockPriceList(db, input.priceListId);
+    if (list === null) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Price list ${input.priceListId} is not visible`,
+      });
+    }
+    if (list.status !== 'active') {
+      throw new AppFailure('ERR-TRN-001', {
+        message: `Price list ${list.priceListCode} is ${list.status} and cannot be assigned`,
+      });
+    }
+
+    // A branch that does not belong to the named company would otherwise be
+    // authorized against whichever half happens to match - `iam.has_permission_in_scope`
+    // is disjunctive across scope rows. The same check `recordRule` makes.
+    if (input.companyId !== undefined && input.branchId !== undefined) {
+      const coherent = await this.repository.branchBelongsToCompany(
+        db,
+        input.companyId,
+        input.branchId
+      );
+      if (!coherent) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: `Branch ${input.branchId} does not belong to company ${input.companyId}`,
+          safeDetails: {
+            violations: [{ path: 'body.branchId', rule: 'branch_company_mismatch' }],
+          },
+        });
+      }
+    }
+
+    const priority = input.priority ?? 0;
+    let created: PriceListAssignmentRow;
+    try {
+      created = await this.repository.insertPriceListAssignment(db, {
+        priceListId: input.priceListId,
+        companyId: input.companyId ?? null,
+        branchId: input.branchId ?? null,
+        customerClass: input.customerClass ?? null,
+        priority,
+        effectiveFrom: input.effectiveFrom,
+        effectiveTo: input.effectiveTo ?? null,
+      });
+    } catch (cause) {
+      if (isSqlState(cause, SQLSTATE.uniqueViolation)) {
+        const context = [
+          input.companyId === undefined ? 'any company' : `company ${input.companyId}`,
+          input.branchId === undefined ? 'any branch' : `branch ${input.branchId}`,
+          input.customerClass === undefined
+            ? 'any customer class'
+            : `customer class ${input.customerClass}`,
+        ].join(', ');
+        throw new AppFailure('ERR-CON-001', {
+          message:
+            `An active price-list assignment already covers ${context} at priority ` +
+            `${priority}. The uniqueness is on the CONTEXT, not on the price list, so the ` +
+            'existing assignment may name a different price list. Use another priority, or ' +
+            'deactivate the existing assignment.',
+          safeDetails: {
+            violations: [{ path: 'body.priority', rule: 'context_already_assigned' }],
+          },
+        });
+      }
+      if (isSqlState(cause, SQLSTATE.foreignKeyViolation)) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: `Price list ${input.priceListId} is not visible`,
+          safeDetails: { violations: [{ path: 'body.priceListId', rule: 'unknown_price_list' }] },
+        });
+      }
+      throw cause;
+    }
+
+    await appendAudit(db, {
+      action: 'svc.price_list_assignment.created',
+      entityType: 'svc.price_list_assignment',
+      entityId: created.id,
+      details: [
+        { field: 'priceListId', classification: 'internal', value: created.priceListId },
+        { field: 'companyId', classification: 'internal', value: created.companyId ?? 'any' },
+        { field: 'branchId', classification: 'internal', value: created.branchId ?? 'any' },
+        {
+          field: 'customerClass',
+          classification: 'internal',
+          value: created.customerClass ?? 'any',
+        },
+        { field: 'priority', classification: 'public', value: String(created.priority) },
+        { field: 'effectiveFrom', classification: 'internal', value: created.effectiveFrom },
+      ],
+    });
+
+    return created;
+  }
+
   private async insertMappingConflicts(
     db: DbHandle,
     input: {

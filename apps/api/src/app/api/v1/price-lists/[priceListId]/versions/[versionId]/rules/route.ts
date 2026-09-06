@@ -1,5 +1,8 @@
 /**
- * POST /api/v1/price-lists/{priceListId}/versions/{versionId}/rules
+ * /api/v1/price-lists/{priceListId}/versions/{versionId}/rules.
+ *
+ * `GET` lists the rules on one version, in the resolver's own precedence order
+ * (Phase 1-30 A2, seam S-13); `POST` records a rule on a draft version.
  * (Phase 1-20, P1-20-BE-004, P1-20-BE-014).
  *
  * Records one price rule on a DRAFT version.
@@ -55,6 +58,90 @@ export const Body = z
     priority: z.coerce.number().int().min(0).max(1_000_000).optional(),
   })
   .strict();
+
+/**
+ * How many rules one response carries.
+ *
+ * A bound with one row of headroom, so truncation is REPORTED rather than
+ * silently produced. `svc.price_rules` has no natural ceiling - a version may
+ * carry a rule per service per company/branch/customer-class combination - so a
+ * caller must be able to tell a short list from a complete one.
+ */
+const RULE_LIMIT = 200;
+
+/**
+ * The rules on one version, in the order `svc.resolve_price` considers them.
+ *
+ * ## Why this needed a new read model
+ *
+ * `svc.price_rules` could be written (`svc.price-rule-record`) and counted
+ * (`countPriceRules`, an internal guard) and read by the resolver, and by nothing
+ * else. There was no rule list at any layer. So an operator could publish a price
+ * list and never see what was in it, and the question a pricing screen exists to
+ * answer - "why did this service resolve to that amount?" - had no data behind it.
+ *
+ * ## Ordering is the answer, not a presentation choice
+ *
+ * `svc.resolve_price` picks by `specificity DESC, priority DESC`, where
+ * specificity weights branch 4, company 2 and customer class 1. The query
+ * reproduces that expression and the response publishes the computed
+ * `specificity`, so the order the rows arrive in and the number explaining it
+ * come from the same arithmetic. Sorting alphabetically would have hidden the
+ * precedence the resolver actually uses.
+ *
+ * ## The path is checked, not decorative
+ *
+ * The version must belong to the price list named in the path; a version under a
+ * different list is refused exactly as a non-existent one is, so the path cannot
+ * be used to probe which version ids are real.
+ *
+ * ## Money
+ *
+ * `amount` is `numeric(18,4)` and crosses as a decimal STRING, labelled with the
+ * PARENT LIST's currency - `svc.price_rules` stores no currency of its own, and a
+ * bare figure would be an unlabelled amount.
+ */
+export const PRICE_RULE_LIST_OPERATION = defineOperation({
+  id: 'svc.price-rule-list',
+  module: 'pricing',
+  method: 'GET',
+  path: '/price-lists/{priceListId}/versions/{versionId}/rules',
+  summary: "List one price-list version's rules in resolution order.",
+  // The read code, not the `svc.price.manage` the POST below declares.
+  permissions: ['svc.price.read'],
+  // `tenant`: `svc.price_lists` and `svc.price_list_versions` carry no company or
+  // branch, and the path names none, so a branch declaration would have no target
+  // and would be inert (P1-18-A-01). The rules themselves carry OPTIONAL
+  // company/branch NARROWING columns, which say which scope a rule applies to -
+  // they are not the row's own scope and are published, not filtered on.
+  scope: 'tenant',
+  auditClass: 'none',
+  rateLimitPolicy: 'expensive-read',
+  cacheCategory: 'never',
+});
+
+export async function GET(
+  request: Request,
+  route: { params: Promise<{ priceListId: string; versionId: string }> }
+): Promise<Response> {
+  const raw = await route.params;
+  return handleOperation(
+    PRICE_RULE_LIST_OPERATION,
+    request,
+    async ({ db }) => {
+      const params = parseOrFail(Params, raw, 'path');
+      return {
+        body: await pricingModule().priceLists.listRules(
+          db,
+          params.priceListId,
+          params.versionId,
+          RULE_LIMIT
+        ),
+      };
+    },
+    { params: raw }
+  );
+}
 
 export const PRICE_RULE_RECORD_OPERATION = defineOperation({
   id: 'svc.price-rule-record',

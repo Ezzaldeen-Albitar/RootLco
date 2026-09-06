@@ -26,6 +26,8 @@ import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 import {
   buildPage,
+  buildPageWithCursors,
+  cursorTimestamp,
   keysetFragment,
   type OrderingContract,
   type Page,
@@ -45,6 +47,51 @@ export const ITEM_ORDER: OrderingContract = Object.freeze({ key: 'sku', directio
  */
 export const MOVEMENT_ORDER: OrderingContract = Object.freeze({ key: 'seq', direction: 'desc' });
 
+/**
+ * Reservations are listed newest-first by `created_at` (Phase 1-30 A2, S-14).
+ *
+ * A reservation has no identity sequence, and `expires_at` is nullable, so
+ * `created_at` is the only chronology every row carries. The key is qualified —
+ * `ITEM_ORDER` and `MOVEMENT_ORDER` above are two of the three unqualified keys
+ * left in the codebase and are not the pattern to copy; a bare `sku` or `seq`
+ * could be replayed against any list sorting on a column of that name.
+ */
+export const RESERVATION_ORDER: OrderingContract = Object.freeze({
+  key: 'inv.stock_reservations:created_at_desc',
+  direction: 'desc',
+});
+
+/**
+ * Part issues are listed newest-first by `created_at` (Phase 1-30 A2, S-15).
+ *
+ * `inv.part_issues` has no separate business instant — there is no `issued_at`
+ * column — so `created_at` IS the moment the part left the store, written by the
+ * same statement that posted the movement. Naming it here rather than assuming a
+ * business-time column exists: measured against the table, not the vocabulary.
+ */
+export const PART_ISSUE_ORDER: OrderingContract = Object.freeze({
+  key: 'inv.part_issues:created_at_desc',
+  direction: 'desc',
+});
+
+/**
+ * Stock locations are listed by `location_code` (Phase 1-30 A2, S-16).
+ *
+ * `uq_stock_locations_code` makes the code unique within a branch, so it is a
+ * total order there, and it is the string an operator actually reads. Ascending,
+ * because a location list is a picker and a picker is alphabetical.
+ */
+export const LOCATION_ORDER: OrderingContract = Object.freeze({
+  key: 'inv.stock_locations:location_code_asc',
+  direction: 'asc',
+});
+
+/** Categories are listed by code; `uq_item_categories_code` makes `(code, id)` total. */
+export const CATEGORY_ORDER: OrderingContract = Object.freeze({
+  key: 'inv.item_categories:code_asc',
+  direction: 'asc',
+});
+
 /** Escapes LIKE metacharacters. Binding a value does not neutralise `%` or `_`. */
 function escapeLikeTerm(term: string): string {
   return term.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
@@ -63,6 +110,27 @@ export interface ItemRow {
   readonly isSerialized: boolean;
   readonly lifecycleStatus: string;
   readonly recordVersion: number;
+}
+
+/** One item category — tenant-wide, like the item it files. */
+export interface ItemCategoryRow {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+  readonly description: string | null;
+  readonly parentCategoryId: string | null;
+  readonly status: string;
+  readonly recordVersion: number;
+}
+
+/** One unit of measure as the catalogue exposes it: platform or the tenant's own. */
+export interface UnitOfMeasureRow {
+  readonly id: string;
+  readonly scope: string;
+  readonly code: string;
+  readonly name: string;
+  readonly dimension: string;
+  readonly status: string;
 }
 
 export interface ItemListFilter {
@@ -103,6 +171,27 @@ export interface StockLocationRow {
   readonly status: string;
 }
 
+/**
+ * A stock location as the picker list renders it (Phase 1-30 A2, S-16).
+ *
+ * `StockLocationRow` below is the SCOPE ANCHOR used by the write paths and
+ * deliberately carries only what those need. This adds `name` and
+ * `parentLocationId`, because a list an operator picks from must show the label
+ * a human reads and the warehouse a bin nests under — `ck_stock_locations_type`
+ * lets `storage` and `quarantine` nest, and two bins in different warehouses can
+ * carry indistinguishable names otherwise.
+ */
+export interface StockLocationListRow {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly locationCode: string;
+  readonly name: string;
+  readonly locationType: string;
+  readonly parentLocationId: string | null;
+  readonly status: string;
+}
+
 export interface ReservationRow {
   readonly id: string;
   readonly companyId: string;
@@ -137,6 +226,37 @@ export interface PartIssueRow {
   readonly reservationId: string | null;
   readonly quantity: string;
   readonly returnedQty: string;
+}
+
+/**
+ * One reservation as the list renders it (Phase 1-30 A2, S-14).
+ *
+ * `ReservationRow` plus the two labels a list needs to be readable — the item's
+ * SKU and the location's code. Both are joined from real tables rather than
+ * derived, so the shipped read convention holds: an id is returned for
+ * navigation, never as the visible label. `createdAt` is added because the list
+ * is ordered by it and a reader cannot verify an ordering whose key is invisible.
+ */
+export interface ReservationListRow extends ReservationRow {
+  readonly sku: string;
+  readonly locationCode: string;
+  readonly createdAt: Date;
+}
+
+/**
+ * One part issue as the per-work-order list renders it (Phase 1-30 A2, S-15).
+ *
+ * `PartIssueRow` — including the `returned_qty` sum `readPartIssue` already
+ * computes in SQL — plus the SKU and location code, and `createdAt` for the same
+ * reason as above. `quantity` and `returnedQty` are `numeric(12,3)` and stay
+ * decimal STRINGS; the OUTSTANDING amount is deliberately NOT computed here,
+ * because subtracting two decimals in JavaScript is exactly the arithmetic the
+ * server-owned-money rule forbids. The consumer has both exact strings.
+ */
+export interface PartIssueListRow extends PartIssueRow {
+  readonly sku: string;
+  readonly locationCode: string;
+  readonly createdAt: Date;
 }
 
 export interface MovementRow {
@@ -229,6 +349,46 @@ interface ItemSql {
   lifecycle_status: string;
   record_version: number;
 }
+
+const CATEGORY_COLUMNS = `id, code, name, description, parent_category_id, status, record_version`;
+
+interface ItemCategorySql {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  parent_category_id: string | null;
+  status: string;
+  record_version: number;
+}
+
+const toItemCategory = (r: ItemCategorySql): ItemCategoryRow => ({
+  id: r.id,
+  code: r.code,
+  name: r.name,
+  description: r.description,
+  parentCategoryId: r.parent_category_id,
+  status: r.status,
+  recordVersion: r.record_version,
+});
+
+interface UnitOfMeasureSql {
+  id: string;
+  scope: string;
+  code: string;
+  name: string;
+  dimension: string;
+  status: string;
+}
+
+const toUnitOfMeasure = (r: UnitOfMeasureSql): UnitOfMeasureRow => ({
+  id: r.id,
+  scope: r.scope,
+  code: r.code,
+  name: r.name,
+  dimension: r.dimension,
+  status: r.status,
+});
 
 const toItem = (r: ItemSql): ItemRow => ({
   id: r.id,
@@ -430,6 +590,277 @@ export class InventoryRepository extends Repository {
   // -------------------------------------------------------------------------
 
   /**
+   * One branch's stock locations, by code (Phase 1-30 A2, seam S-16).
+   *
+   * The caller has already authorized `(companyId, branchId)` - they are the
+   * operation's `authorizationTarget`, exactly as on `inv.stock-movement-list`.
+   * They are bound as filter columns here as well: RLS narrows to
+   * `app.branch_ids`, the permission-blind union of every active grant, so
+   * without the explicit predicate a caller holding `inv.stock.read` in one
+   * branch could read another branch's locations through a grant carrying a
+   * different permission (P1-18-A-01).
+   *
+   * `ix_stock_locations_branch` covers the equality prefix and
+   * `uq_stock_locations_code` orders inside it.
+   */
+  public async listLocations(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly locationType?: string | undefined;
+      readonly status?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<StockLocationListRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.locationType ?? null,
+      filter.status ?? null,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'location_code', id: 'id' },
+      LOCATION_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<{
+      id: string;
+      company_id: string;
+      branch_id: string;
+      location_code: string;
+      name: string;
+      location_type: string;
+      parent_location_id: string | null;
+      status: string;
+    }>(
+      db,
+      // Optional filters are bound as `($n::type IS NULL OR col = $n)` so no
+      // predicate is assembled from input and the keyset parameter index is fixed.
+      `SELECT id, company_id, branch_id, location_code, name, location_type,
+              parent_location_id, status
+         FROM inv.stock_locations
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+          AND deleted_at IS NULL
+          AND ($4::text IS NULL OR location_type = $4)
+          AND ($5::text IS NULL OR status = $5)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPage(
+      result.rows.map((row) => ({
+        id: row.id,
+        companyId: row.company_id,
+        branchId: row.branch_id,
+        locationCode: row.location_code,
+        name: row.name,
+        locationType: row.location_type,
+        parentLocationId: row.parent_location_id,
+        status: row.status,
+      })),
+      request,
+      LOCATION_ORDER,
+      (row) => ({ sortValue: row.locationCode, id: row.id })
+    );
+  }
+
+  /**
+   * One branch's stock reservations, newest first (Phase 1-30 A2, seam S-14).
+   *
+   * `(companyId, branchId)` are REQUIRED and are the operation's
+   * `authorizationTarget` - the `inv.stock-movement-list` precedent, for the
+   * reason recorded there: optional scope columns skip `authorizeScope`
+   * altogether and leave RLS as the only narrowing.
+   *
+   * `expiresAt` is published as it is stored, including NULL. A reservation with
+   * no expiry is a genuine state (`inv.reserve_stock` may be called without one),
+   * and substituting a far-future instant would make an open commitment look
+   * time-bounded.
+   */
+  public async listReservations(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly itemId?: string | undefined;
+      readonly locationId?: string | undefined;
+      readonly workOrderId?: string | undefined;
+      readonly status?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<ReservationListRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.itemId ?? null,
+      filter.locationId ?? null,
+      filter.workOrderId ?? null,
+      filter.status ?? null,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'r.created_at', id: 'r.id' },
+      RESERVATION_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<{
+      id: string;
+      company_id: string;
+      branch_id: string;
+      item_id: string;
+      sku: string;
+      location_id: string;
+      location_code: string;
+      work_order_id: string | null;
+      quantity: string;
+      status: string;
+      idempotency_key: string | null;
+      expires_at: Date | null;
+      record_version: number;
+      created_at: Date;
+      sort_value: string;
+    }>(
+      db,
+      `SELECT r.id, r.company_id, r.branch_id, r.item_id, i.sku,
+              r.location_id, l.location_code, r.work_order_id,
+              r.quantity, r.status, r.idempotency_key, r.expires_at,
+              r.record_version, r.created_at,
+              ${cursorTimestamp('r.created_at')} AS sort_value
+         FROM inv.stock_reservations r
+         JOIN inv.item_master i ON i.tenant_id = r.tenant_id AND i.id = r.item_id
+         JOIN inv.stock_locations l ON l.tenant_id = r.tenant_id AND l.id = r.location_id
+        WHERE r.tenant_id = $1 AND r.company_id = $2 AND r.branch_id = $3
+          AND ($4::uuid IS NULL OR r.item_id = $4)
+          AND ($5::uuid IS NULL OR r.location_id = $5)
+          AND ($6::uuid IS NULL OR r.work_order_id = $6)
+          AND ($7::text IS NULL OR r.status = $7)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: {
+          id: row.id,
+          companyId: row.company_id,
+          branchId: row.branch_id,
+          itemId: row.item_id,
+          sku: row.sku,
+          locationId: row.location_id,
+          locationCode: row.location_code,
+          workOrderId: row.work_order_id,
+          quantity: row.quantity,
+          status: row.status,
+          idempotencyKey: row.idempotency_key,
+          expiresAt: row.expires_at,
+          recordVersion: row.record_version,
+          createdAt: row.created_at,
+        },
+        // Microsecond precision, minted in SQL. A JS `Date` truncates to
+        // milliseconds and silently SKIPS every row sharing the boundary row's
+        // millisecond (`P1-27-INT-006`) - and reservations posted by one
+        // transaction share `transaction_timestamp()` exactly.
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      RESERVATION_ORDER
+    );
+  }
+
+  /**
+   * One WORK ORDER's part issues, newest first (Phase 1-30 A2, seam S-15).
+   *
+   * Keyed on `work_order_id`, not on a caller-supplied branch. The parent row is
+   * what the application check authorizes - `InventoryReadService` resolves it
+   * through `@/modules/work-order` first - so the collection cannot be addressed
+   * without naming a work order the caller may see. A top-level
+   * `GET /stock-issues?workOrderId=...` would name no parent and leave the
+   * declared `scope: 'branch'` inert (P1-18-A-01).
+   *
+   * `returned_qty` is the SAME correlated sum `readPartIssue` computes, in SQL,
+   * over `inv.part_returns`. Both quantities cross as decimal STRINGS and neither
+   * is netted here: `numeric(12,3)` subtraction in JavaScript is precisely the
+   * arithmetic the server-owned-amount rule forbids.
+   */
+  public async listPartIssuesForWorkOrder(
+    db: DbHandle,
+    workOrderId: string,
+    request: PageRequest
+  ): Promise<Page<PartIssueListRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [context.principal.tenantId, workOrderId];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'pi.created_at', id: 'pi.id' },
+      PART_ISSUE_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<{
+      id: string;
+      company_id: string;
+      branch_id: string;
+      work_order_id: string;
+      item_id: string;
+      sku: string;
+      location_id: string;
+      location_code: string;
+      reservation_id: string | null;
+      quantity: string;
+      returned_qty: string;
+      created_at: Date;
+      sort_value: string;
+    }>(
+      db,
+      `SELECT pi.id, pi.company_id, pi.branch_id, pi.work_order_id, pi.item_id, i.sku,
+              pi.location_id, l.location_code, pi.reservation_id, pi.quantity,
+              COALESCE((SELECT sum(pr.quantity) FROM inv.part_returns pr
+                         WHERE pr.tenant_id = pi.tenant_id
+                           AND pr.part_issue_id = pi.id), 0)::numeric(12,3)::text AS returned_qty,
+              pi.created_at,
+              ${cursorTimestamp('pi.created_at')} AS sort_value
+         FROM inv.part_issues pi
+         JOIN inv.item_master i ON i.tenant_id = pi.tenant_id AND i.id = pi.item_id
+         JOIN inv.stock_locations l ON l.tenant_id = pi.tenant_id AND l.id = pi.location_id
+        WHERE pi.tenant_id = $1 AND pi.work_order_id = $2 AND pi.deleted_at IS NULL
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: {
+          id: row.id,
+          companyId: row.company_id,
+          branchId: row.branch_id,
+          workOrderId: row.work_order_id,
+          itemId: row.item_id,
+          sku: row.sku,
+          locationId: row.location_id,
+          locationCode: row.location_code,
+          reservationId: row.reservation_id,
+          quantity: row.quantity,
+          returnedQty: row.returned_qty,
+          createdAt: row.created_at,
+        },
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      PART_ISSUE_ORDER
+    );
+  }
+
+  /**
    * Reads a stock location.
    *
    * The location is the **scope anchor** for every movement:
@@ -464,6 +895,205 @@ export class InventoryRepository extends Repository {
           status: row.status,
         }
       : null;
+  }
+
+  // -------------------------------------------------------------------------
+  // P1-30 corrective slice — the master data every movement is keyed on.
+  // -------------------------------------------------------------------------
+
+  public async listItemCategories(
+    db: DbHandle,
+    filter: { readonly status?: string | undefined },
+    request: PageRequest
+  ): Promise<Page<ItemCategoryRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [context.principal.tenantId, filter.status ?? null];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'code', id: 'id' },
+      CATEGORY_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<ItemCategorySql>(
+      db,
+      `SELECT ${CATEGORY_COLUMNS}
+         FROM inv.item_categories
+        WHERE tenant_id = $1 AND deleted_at IS NULL
+          AND ($2::text IS NULL OR status = $2)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPage(result.rows.map(toItemCategory), request, CATEGORY_ORDER, (row) => ({
+      sortValue: row.code,
+      id: row.id,
+    }));
+  }
+
+  public async readItemCategory(db: DbHandle, categoryId: string): Promise<ItemCategoryRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ItemCategorySql>(
+      db,
+      `SELECT ${CATEGORY_COLUMNS}
+         FROM inv.item_categories
+        WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+      [context.principal.tenantId, categoryId]
+    );
+    return row ? toItemCategory(row) : null;
+  }
+
+  public async insertItemCategory(
+    db: DbHandle,
+    input: {
+      readonly code: string;
+      readonly name: string;
+      readonly description: string | null;
+      readonly parentCategoryId: string | null;
+    }
+  ): Promise<ItemCategoryRow> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ItemCategorySql>(
+      db,
+      `INSERT INTO inv.item_categories
+         (tenant_id, parent_category_id, code, name, description, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING ${CATEGORY_COLUMNS}`,
+      [
+        context.principal.tenantId,
+        input.parentCategoryId,
+        input.code,
+        input.name,
+        input.description,
+        context.principal.userId,
+      ]
+    );
+    if (!row) throw new Error('inventory: item category insert returned no row');
+    return toItemCategory(row);
+  }
+
+  /** Active units the tenant may use: the platform set plus its own, by code. */
+  public async listUnitsOfMeasure(db: DbHandle): Promise<readonly UnitOfMeasureRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<UnitOfMeasureSql>(
+      db,
+      `SELECT id, scope, code, name, dimension, status
+         FROM inv.units_of_measure
+        WHERE (scope = 'platform' OR tenant_id = $1)
+          AND status = 'active' AND deleted_at IS NULL
+        ORDER BY (scope = 'tenant') DESC, code ASC, id ASC`,
+      [context.principal.tenantId]
+    );
+    return result.rows.map(toUnitOfMeasure);
+  }
+
+  public async readUnitOfMeasure(db: DbHandle, uomId: string): Promise<UnitOfMeasureRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<UnitOfMeasureSql>(
+      db,
+      `SELECT id, scope, code, name, dimension, status
+         FROM inv.units_of_measure
+        WHERE (scope = 'platform' OR tenant_id = $1) AND id = $2 AND deleted_at IS NULL`,
+      [context.principal.tenantId, uomId]
+    );
+    return row ? toUnitOfMeasure(row) : null;
+  }
+
+  /**
+   * Inserts an item and returns its id. The full row is read back through
+   * `readItem`, whose UoM join is what supplies `uomCode` — the insert cannot.
+   */
+  public async insertItem(
+    db: DbHandle,
+    input: {
+      readonly itemCategoryId: string;
+      readonly sku: string;
+      readonly name: string;
+      readonly description: string | null;
+      readonly uomId: string;
+      readonly itemType: string;
+      readonly isStockTracked: boolean;
+      readonly isSerialized: boolean;
+    }
+  ): Promise<string> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `INSERT INTO inv.item_master
+         (tenant_id, item_category_id, sku, name, description, uom_id, item_type,
+          is_stock_tracked, is_serialized, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING id`,
+      [
+        context.principal.tenantId,
+        input.itemCategoryId,
+        input.sku,
+        input.name,
+        input.description,
+        input.uomId,
+        input.itemType,
+        input.isStockTracked,
+        input.isSerialized,
+        context.principal.userId,
+      ]
+    );
+    if (!row) throw new Error('inventory: item insert returned no row');
+    return row.id;
+  }
+
+  public async insertStockLocation(
+    db: DbHandle,
+    input: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly locationCode: string;
+      readonly name: string;
+      readonly locationType: string;
+      readonly parentLocationId: string | null;
+    }
+  ): Promise<StockLocationListRow & { readonly recordVersion: number }> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{
+      id: string;
+      company_id: string;
+      branch_id: string;
+      location_code: string;
+      name: string;
+      location_type: string;
+      parent_location_id: string | null;
+      status: string;
+      record_version: number;
+    }>(
+      db,
+      `INSERT INTO inv.stock_locations
+         (tenant_id, company_id, branch_id, location_code, name, location_type,
+          parent_location_id, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, company_id, branch_id, location_code, name, location_type,
+                 parent_location_id, status, record_version`,
+      [
+        context.principal.tenantId,
+        input.companyId,
+        input.branchId,
+        input.locationCode,
+        input.name,
+        input.locationType,
+        input.parentLocationId,
+        context.principal.userId,
+      ]
+    );
+    if (!row) throw new Error('inventory: stock location insert returned no row');
+    return {
+      id: row.id,
+      companyId: row.company_id,
+      branchId: row.branch_id,
+      locationCode: row.location_code,
+      name: row.name,
+      locationType: row.location_type,
+      parentLocationId: row.parent_location_id,
+      status: row.status,
+      recordVersion: row.record_version,
+    };
   }
 
   /**
@@ -897,7 +1527,7 @@ export class InventoryRepository extends Repository {
               pi.location_id, pi.reservation_id, pi.quantity,
               COALESCE((SELECT sum(pr.quantity) FROM inv.part_returns pr
                          WHERE pr.tenant_id = pi.tenant_id
-                           AND pr.part_issue_id = pi.id), 0)::text AS returned_qty
+                           AND pr.part_issue_id = pi.id), 0)::numeric(12,3)::text AS returned_qty
          FROM inv.part_issues pi
         WHERE pi.tenant_id = $1 AND pi.id = $2 AND pi.deleted_at IS NULL`,
       [context.principal.tenantId, partIssueId]

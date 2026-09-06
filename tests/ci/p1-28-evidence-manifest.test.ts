@@ -1022,23 +1022,40 @@ describe('P1-28-QA-005 — the seal is bound to the REPOSITORY, not to its own p
      * exists to hide", which is the anti-vacuity guard doing its job rather than
      * the rule failing.
      *
-     * `main` is the honest anchor for a synthetic world about a SUPERSEDED
-     * candidate: it is a real branch, it is far behind this work, and it
-     * contains none of the history the case needs to reopen. The rule under test
-     * is unchanged; only the world it is asked about is built so the question
-     * can still be put.
+     * `main` was the honest anchor for a while: a real branch, far behind this
+     * work, containing none of the history the case needs to reopen. It stopped
+     * being one on 2026-09-03, when the P1-29 promotion made `main` equal to
+     * `develop` and the range collapsed a second time — on the very first
+     * documentation-only branch cut after the promotion. No branch is behind by
+     * construction; one commit always is: the superseded candidate's own first
+     * parent. It is an ancestor of the candidate, so it contains none of the
+     * candidate's successors, and it stays that way for as long as the history
+     * exists. The rule under test is unchanged; the base NAME is resolved to
+     * that commit by a reader that answers only for the synthetic anchor and
+     * hands every other question to git.
      */
+    const anchorSha = String(
+      git(['rev-parse', '--verify', '--quiet', `${superseded}^1^{commit}`]) ?? ''
+    ).trim();
+    expect(anchorSha, 'the superseded candidate has no first parent to anchor on').toMatch(
+      /^[0-9a-f]{40}$/
+    );
+    const ANCHOR = 'p1-28-superseded-candidate-parent';
+    const anchored = (args: string[]) =>
+      args[0] === 'rev-parse' && args.some((a) => String(a).endsWith(`${ANCHOR}^{commit}`))
+        ? `${anchorSha}\n`
+        : git(args);
     const unnamed = repositoryBinding(
       {
         ...(candidateFile as object),
         candidate: {
           ...(candidateFile as unknown as { candidate: object }).candidate,
           FINAL_CODE_SHA: superseded,
-          baseBranch: 'main',
+          baseBranch: ANCHOR,
         },
         successors: [],
       } as never,
-      git
+      anchored as never
     ) as unknown as { unrecordedExecutable: string[]; commits: { sha: string }[] };
 
     expectNonEmptySuccessorRange(

@@ -337,6 +337,17 @@ export const OUT_OF_SUBJECT_ADAPTERS = Object.freeze({
   signOffRework: 'qms.rework-sign-off — P1-29 W8, not an apt/rec operation',
   recordAdditionalWorkApproval: 'wo.additional-work-approval — P1-29 W8, not an apt/rec operation',
   closeWorkOrder: 'wo.work-order-closure — P1-29 W8, not an apt/rec operation',
+  updateService: 'svc.service-update — P1-30 W1, not an apt/rec operation',
+  publishServiceVersion: 'svc.service-version-publish — P1-30 W1, not an apt/rec operation',
+  // P1-30 W2: both guard the PRICE LIST's record version, sourced from the detail read.
+  createPriceListVersion: 'svc.price-list-version-create — P1-30 W2, not an apt/rec operation',
+  publishPriceListVersion: 'svc.price-list-version-publish — P1-30 W2, not an apt/rec operation',
+  // P1-30 W3: both guard the QUOTATION's record version, sourced from the detail read.
+  createQuotationRevision: 'quo.quotation-revision-create — P1-30 W3, not an apt/rec operation',
+  issueQuotation: 'quo.quotation-issue — P1-30 W3, not an apt/rec operation',
+  // P1-30 W6: both guard the INVOICE's record version, sourced from the detail read.
+  issueInvoice: 'sal.invoice-issue — P1-30 W6, not an apt/rec operation',
+  cancelInvoice: 'sal.invoice-cancel — P1-30 W6, not an apt/rec operation',
 });
 
 export function expectedAdapterOperations(guarded, manifest, decisions) {

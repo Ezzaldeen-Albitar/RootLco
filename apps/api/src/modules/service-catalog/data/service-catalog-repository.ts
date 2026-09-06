@@ -104,6 +104,53 @@ export interface ServiceListFilter {
   readonly search?: string | undefined;
 }
 
+/**
+ * Categories are listed by `code` — the only column that is both unique per tenant
+ * and immutable (`uq_service_categories_code`, `tg_service_categories_immutable`),
+ * so a keyset page cannot repeat or skip a row because someone renamed a category
+ * mid-listing. `name` is neither.
+ *
+ * The key is the QUALIFIED `<schema>.<table>:<column>_<direction>` form the
+ * `OrderingContract` docblock documents and 54 of the 57 live contracts use.
+ * `SERVICE_ORDER` above is one of the three unqualified outliers; it is not the
+ * convention and is deliberately not copied here.
+ */
+export const SERVICE_CATEGORY_ORDER: OrderingContract = Object.freeze({
+  key: 'svc.service_categories:code_asc',
+  direction: 'asc',
+});
+
+/** Column list for an unaliased `svc.service_categories` query. */
+const CATEGORY_COLUMNS = `id, parent_category_id, code, name, description,
+       sort_order, status, record_version`;
+
+interface ServiceCategorySql {
+  readonly id: string;
+  readonly parent_category_id: string | null;
+  readonly code: string;
+  readonly name: string;
+  readonly description: string | null;
+  readonly sort_order: number | null;
+  readonly status: string;
+  readonly record_version: number;
+}
+
+/**
+ * `sort_order` stays a NUMBER. It is `integer`, not `numeric`, so the
+ * decimal-string rule this file states for `standard_minutes` does not reach it —
+ * rendering it as a string would imply a precision the column does not have.
+ */
+const toServiceCategory = (row: ServiceCategorySql): ServiceCategoryRow => ({
+  id: row.id,
+  parentCategoryId: row.parent_category_id,
+  code: row.code,
+  name: row.name,
+  description: row.description,
+  sortOrder: row.sort_order,
+  status: row.status,
+  recordVersion: row.record_version,
+});
+
 /** Column list for an unaliased `svc.services` query. */
 const SERVICE_COLUMNS = `id, service_category_id, service_code, name, description,
        lifecycle_status, archived_at, record_version`;
@@ -249,36 +296,94 @@ export class ServiceCatalogRepository extends Repository {
     return row ? toService(row) : null;
   }
 
+  /** Reads one category by id, or null when it is outside the caller's tenant. */
   public async findCategory(db: DbHandle, categoryId: string): Promise<ServiceCategoryRow | null> {
     const context = this.assertContext(db);
-    const row = await this.runOne<{
-      id: string;
-      parent_category_id: string | null;
-      code: string;
-      name: string;
-      description: string | null;
-      sort_order: number | null;
-      status: string;
-      record_version: number;
-    }>(
+    const row = await this.runOne<ServiceCategorySql>(
       db,
-      `SELECT id, parent_category_id, code, name, description, sort_order, status, record_version
-         FROM svc.service_categories
+      `SELECT ${CATEGORY_COLUMNS} FROM svc.service_categories
         WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
       [context.principal.tenantId, categoryId]
     );
-    return row
-      ? {
-          id: row.id,
-          parentCategoryId: row.parent_category_id,
-          code: row.code,
-          name: row.name,
-          description: row.description,
-          sortOrder: row.sort_order,
-          status: row.status,
-          recordVersion: row.record_version,
-        }
-      : null;
+    return row ? toServiceCategory(row) : null;
+  }
+
+  /**
+   * Lists the tenant's service taxonomy.
+   *
+   * Soft-deleted rows are excluded by the predicate and `deleted_at` is never
+   * projected — the same rule `findCategory` and `findService` follow. `status`
+   * IS projected, and that is load-bearing rather than incidental: a category
+   * that is `inactive` cannot carry a new service (`svc.service-create` refuses
+   * it with `inactive_category`), so a picker that could not see the status
+   * would offer choices the very next call rejects.
+   */
+  public async listServiceCategories(
+    db: DbHandle,
+    request: PageRequest
+  ): Promise<Page<ServiceCategoryRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [context.principal.tenantId];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'c.code', id: 'c.id' },
+      SERVICE_CATEGORY_ORDER,
+      values.length + 1
+    );
+    const rows = await this.run<ServiceCategorySql>(
+      db,
+      `SELECT c.id, c.parent_category_id, c.code, c.name, c.description,
+              c.sort_order, c.status, c.record_version
+         FROM svc.service_categories c
+        WHERE c.tenant_id = $1 AND c.deleted_at IS NULL ${keyset.predicate}
+        ${keyset.order} ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPage(rows.rows.map(toServiceCategory), request, SERVICE_CATEGORY_ORDER, (row) => ({
+      sortValue: row.code,
+      id: row.id,
+    }));
+  }
+
+  /**
+   * Inserts a category.
+   *
+   * `tenant_id` comes from the request context and never from the caller, and
+   * `created_by` from the authenticated principal — the same two bindings
+   * `insertService` makes. `status` is not a parameter: the column defaults to
+   * `active`, and offering a choice here would let a caller create a category
+   * that nothing may be filed under, which `svc.service-create` would then
+   * refuse.
+   */
+  public async insertCategory(
+    db: DbHandle,
+    input: {
+      parentCategoryId: string | null;
+      code: string;
+      name: string;
+      description: string | null;
+      sortOrder: number | null;
+    }
+  ): Promise<ServiceCategoryRow> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ServiceCategorySql>(
+      db,
+      `INSERT INTO svc.service_categories
+         (tenant_id, parent_category_id, code, name, description, sort_order, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       RETURNING ${CATEGORY_COLUMNS}`,
+      [
+        context.principal.tenantId,
+        input.parentCategoryId,
+        input.code,
+        input.name,
+        input.description,
+        input.sortOrder,
+        context.principal.userId,
+      ]
+    );
+    if (row === null) throw new Error('service-catalog: category insert returned no row');
+    return toServiceCategory(row);
   }
 
   /**
@@ -583,6 +688,75 @@ export class ServiceCatalogRepository extends Repository {
           recordVersion: row.record_version,
         }
       : null;
+  }
+
+  /**
+   * Inserts a DRAFT version for a service.
+   *
+   * `version_no` is computed in the same statement as the insert, not read and
+   * then written: `uq_service_versions_no` is `(tenant_id, service_id,
+   * version_no)`, so two concurrent creates that both read the same maximum
+   * would collide. The caller holds `FOR UPDATE` on the service row, which
+   * serialises them, and this sub-select makes the computation atomic even if a
+   * future caller forgets that lock.
+   *
+   * No overlap check: `ex_service_versions_no_published_overlap` is
+   * `WHERE (status = 'published' AND deleted_at IS NULL)`, so drafts may overlap
+   * each other and the currently published one freely. That is the point of a
+   * draft — the succession boundary is decided at publication by
+   * `svc.publish_service_version`, not here.
+   */
+  public async insertServiceVersion(
+    db: DbHandle,
+    input: {
+      serviceId: string;
+      effectiveFrom: string;
+      effectiveTo: string | null;
+      notes: string | null;
+    }
+  ): Promise<ServiceVersionRow> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{
+      id: string;
+      service_id: string;
+      version_no: number;
+      effective_from: string;
+      effective_to: string | null;
+      status: string;
+      notes: string | null;
+      record_version: number;
+    }>(
+      db,
+      `INSERT INTO svc.service_versions
+         (tenant_id, service_id, version_no, effective_from, effective_to, notes, created_by)
+       VALUES (
+         $1, $2,
+         (SELECT COALESCE(MAX(v.version_no), 0) + 1
+            FROM svc.service_versions v
+           WHERE v.tenant_id = $1 AND v.service_id = $2),
+         $3::date, $4::date, $5, $6)
+       RETURNING id, service_id, version_no, effective_from::text AS effective_from,
+                 effective_to::text AS effective_to, status, notes, record_version`,
+      [
+        context.principal.tenantId,
+        input.serviceId,
+        input.effectiveFrom,
+        input.effectiveTo,
+        input.notes,
+        context.principal.userId,
+      ]
+    );
+    if (row === null) throw new Error('service-catalog: service version insert returned no row');
+    return {
+      id: row.id,
+      serviceId: row.service_id,
+      versionNo: row.version_no,
+      effectiveFrom: row.effective_from,
+      effectiveTo: row.effective_to,
+      status: row.status,
+      notes: row.notes,
+      recordVersion: row.record_version,
+    };
   }
 
   /**

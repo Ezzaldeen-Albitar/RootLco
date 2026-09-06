@@ -50,8 +50,13 @@ export type {
   CreatePriceListInput,
   PriceListVersionView,
   PriceListView,
+  PriceListDetailView,
+  PriceListRulesView,
   PriceRuleView,
+  PriceRuleListView,
   RecordPriceRuleInput,
+  AssignPriceListInput,
+  PriceListAssignmentView,
 } from './application/price-list-service';
 export type {
   ApprovalCeilingReader,

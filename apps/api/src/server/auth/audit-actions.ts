@@ -1291,11 +1291,25 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'A service catalog entry was created or its descriptive fields changed. Not `financial`: a service carries no price — svc.price_rules does — so changing one alters what may be sold, not what it costs.',
   },
   {
+    code: 'svc.service_category.updated',
+    class: 'privileged',
+    entityType: 'svc.service_category',
+    description:
+      'A service category was created or its descriptive fields changed. `privileged` and not `financial` for the same reason as svc.service.updated: the taxonomy decides what MAY be sold, never what it costs. entityType is singular, matching svc.service and svc.price_list rather than the three plural outliers in this catalogue.',
+  },
+  {
     code: 'svc.branch_availability.changed',
     class: 'privileged',
     entityType: 'svc.branch_service_availability',
     description:
       'A service was made available or unavailable at a branch. There is exactly one such row per (company, branch, service), so this records a change of state rather than an addition to a history.',
+  },
+  {
+    code: 'svc.service_version.drafted',
+    class: 'privileged',
+    entityType: 'svc.service_version',
+    description:
+      'A draft service version was created. Distinct from svc.service_version.published because a draft changes nothing a customer can be charged against — drafts are excluded from ex_service_versions_no_published_overlap and may overlap freely — while publication fixes the definition for a date range. Recording both is what lets an auditor see how long a definition sat in draft before it went live.',
   },
   {
     code: 'svc.service_version.published',
@@ -1317,6 +1331,13 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     entityType: 'svc.price_list_version',
     description:
       'A draft price-list version was created. Not `financial`: a draft is not yet a price anyone is charged against, and its effective_from is provisional until svc.publish_price_list_version overwrites it.',
+  },
+  {
+    code: 'svc.price_list_assignment.created',
+    class: 'financial',
+    entityType: 'svc.price_list_assignment',
+    description:
+      'A price list was assigned to a scope context (company / branch / customer class) at a priority. Financial because svc.resolve_price selects the book this row names, so the assignment decides which amounts a customer is quoted — it carries no amount itself. entityType is SINGULAR, matching svc.price_list and svc.price_list_version; svc.price_rules is one of three plural outliers in this catalogue and is not the convention.',
   },
   {
     code: 'svc.price_rule.recorded',
@@ -1420,6 +1441,31 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     entityType: 'inv.opening_inventory_batch',
     description:
       'A draft opening-inventory batch was created. Creates no stock: the batch is a counted intention until inv.approve_opening_batch posts its opening movements, and ck_opening_inventory_batches_maker_checker requires a different approver.',
+  },
+  // P1-30 corrective slice: the master data every movement is keyed on. Until
+  // this slice no operation wrote any of the three tables, so a tenant created
+  // through the shipped provisioning could hold no stock at all. Privileged,
+  // not financial — none carries an amount — and none creates stock.
+  {
+    code: 'inv.item_category.created',
+    class: 'privileged',
+    entityType: 'inv.item_category',
+    description:
+      'An item category was created in the tenant catalogue. Tenant-wide reference data: it files items and filters searches, and holds no stock.',
+  },
+  {
+    code: 'inv.item.created',
+    class: 'privileged',
+    entityType: 'inv.item',
+    description:
+      'An item was created in the tenant catalogue with its SKU, unit and tracking flags. No cost and no stock: cost lives in the restricted inv.item_cost_details and stock only ever appears through an approved opening batch or a recorded movement.',
+  },
+  {
+    code: 'inv.stock_location.created',
+    class: 'privileged',
+    entityType: 'inv.stock_location',
+    description:
+      'A stock location was created in a branch — a warehouse, or a storage or quarantine location nested under one. Defines where stock may sit; holds none until a movement is posted there.',
   },
   {
     code: 'inv.opening_batch.approved',

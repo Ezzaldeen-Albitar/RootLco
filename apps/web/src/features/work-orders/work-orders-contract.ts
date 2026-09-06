@@ -142,6 +142,12 @@ export const WORK_ORDER_DETAIL_PERMISSIONS = {
   diagnosticRead: 'dia.diagnostic.read',
   /** P1-29 W8: raising and resolving a job's blockers, the work-log precedent. */
   laborRecord: 'tech.labor.record',
+  /** P1-30 W3: the link into this work order's quotations (a money-free link; the screens live under `quotations`). */
+  quotationRead: 'quo.quotation.read',
+  /** P1-30 W4: the link into the stock reservations of this work order (a money-free link; the screen lives under `inventory`). */
+  stockRead: 'inv.stock.read',
+  /** P1-30 W6: the link into this work order's invoice (a money-free link; the screen lives under `invoices`). */
+  invoiceRead: 'sal.invoice.manage',
 } as const;
 
 /**

@@ -30,6 +30,14 @@
  */
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
+import {
+  buildPageWithCursors,
+  cursorTimestamp,
+  keysetFragment,
+  type OrderingContract,
+  type Page,
+  type PageRequest,
+} from '@/server/db/pagination';
 
 export interface QuotationRow {
   readonly id: string;
@@ -105,6 +113,46 @@ export interface EvidenceRow {
   readonly referenceNote: string | null;
 }
 
+/**
+ * One line's decision with its evidence, for the audit read (P1-30 A2, S-09).
+ *
+ * `DecisionRow` above is the single-item lookup the WRITE path uses to detect a
+ * replay. This carries what a reviewer needs instead: which line was decided
+ * (`lineNumber`, `description`), and the evidence rows attached to it.
+ *
+ * `evidence` is an ARRAY even though `evidence_ref` on the decision is a single
+ * column. `quo.approval_evidence` is append-only and keyed only by
+ * `approval_decision_id` with no uniqueness constraint, so more than one row can
+ * legitimately reference the same decision - `evidence_ref` names the FIRST piece
+ * attached, not the only one. Publishing a scalar would silently drop the rest.
+ */
+export interface DecisionAuditRow {
+  readonly id: string;
+  readonly quotationRevisionId: string;
+  readonly quotationItemId: string;
+  readonly lineNumber: number;
+  readonly description: string | null;
+  readonly decision: string;
+  readonly decidedBy: string;
+  readonly decisionChannel: string;
+  readonly decidedAt: Date;
+  readonly evidence: readonly EvidenceAuditRow[];
+}
+
+/** One evidence row attached to a decision. Carries no storage key - by design. */
+export interface EvidenceAuditRow {
+  readonly id: string;
+  readonly evidenceKind: string;
+  /**
+   * A `shared.document_versions` id, never a storage path. Resolving it to a
+   * downloadable object is the document module's job and needs its own
+   * authorization; leaking a key here would be a download that bypassed it.
+   */
+  readonly documentVersionId: string | null;
+  readonly referenceNote: string | null;
+  readonly recordedAt: Date;
+}
+
 /** Counts used to fold per-item decisions into a quotation-level outcome. */
 export interface DecisionTally {
   readonly itemCount: number;
@@ -128,6 +176,45 @@ export interface NewItemInput {
   readonly discount: string;
   readonly taxRate: string;
 }
+
+/**
+ * Ordering for a work order's quotations — newest first (Phase 1-30 A2, S-07).
+ *
+ * `created_at` and not `quotation_number`: the number is allocated by
+ * `shared.next_display_number` per company and branch, so it is a display
+ * identity, not a chronology, and ordering a list by it would be ordering by a
+ * counter whose meaning changes with the branch. `id` is the tie-breaker that
+ * makes the order total.
+ *
+ * The key is qualified `<schema>.<table>:<column>_<direction>` so a cursor minted
+ * here cannot be replayed against another list: `decodeCursor` refuses a cursor
+ * whose `k` does not match the contract it is handed.
+ */
+export const QUOTATION_LIST_ORDERING: OrderingContract = {
+  key: 'quo.quotations:created_at_desc',
+  direction: 'desc',
+};
+
+/**
+ * Ordering for one quotation's revision history — newest revision first
+ * (Phase 1-30 A2, S-08).
+ *
+ * `revision_number`, not `created_at`. `uq_quotation_revisions_number` makes the
+ * number unique per quotation and `ck_quotation_revisions_number` keeps it
+ * positive, so it is the document's OWN sequence and already a total order
+ * within the parent; `created_at` would order by when a row was written, which
+ * for revisions produced in one transaction is not a distinguishing fact at all.
+ * The `id` tie-breaker is kept because the contract requires a total order from
+ * the fragment itself, not from a uniqueness constraint the helper cannot see.
+ *
+ * The cursor carries the number rendered `::text`. PostgreSQL infers the
+ * parameter's type from the integer column it is compared against, so the
+ * comparison is numeric, not lexicographic.
+ */
+export const REVISION_LIST_ORDERING: OrderingContract = {
+  key: 'quo.quotation_revisions:revision_number_desc',
+  direction: 'desc',
+};
 
 const QUOTATION_COLUMNS = `id, company_id, branch_id, work_order_id, quotation_number,
        currency_code, payer_partner_ref, current_revision_id, status, record_version`;
@@ -354,6 +441,61 @@ export class QuotationRepository extends Repository {
     return row ? toRevision(row) : null;
   }
 
+  /**
+   * One work order's quotations, newest first (Phase 1-30 A2, seam S-07).
+   *
+   * The caller has ALREADY authorized the work order's own company and branch —
+   * `QuotationService.listForWorkOrder` does that through `requireWorkOrder`
+   * before this runs. This statement therefore filters on `work_order_id` and
+   * leaves the scope narrowing where it belongs: to that check plus
+   * `sel_quotations_scope`. It does NOT re-derive company or branch from a
+   * caller-supplied value, because a client-chosen company/branch pair is
+   * exactly what the parent-row derivation exists to avoid.
+   *
+   * `ix_quotations_work_order` covers the equality prefix. A work order holds a
+   * handful of quotations, so the residual sort is over a tiny set.
+   *
+   * The sort value is minted by `cursorTimestamp`, at MICROSECOND precision, and
+   * the response does not carry it — hence `buildPageWithCursors`. A JS `Date`
+   * would truncate to milliseconds and silently skip every row sharing the
+   * boundary row's millisecond (`P1-27-INT-006`), and quotations created in one
+   * transaction share `transaction_timestamp()` exactly.
+   */
+  public async listQuotationsForWorkOrder(
+    db: DbHandle,
+    workOrderId: string,
+    page: PageRequest
+  ): Promise<Page<QuotationRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [context.principal.tenantId, workOrderId];
+    const keyset = keysetFragment(
+      page,
+      { sort: 'created_at', id: 'id' },
+      QUOTATION_LIST_ORDERING,
+      values.length + 1
+    );
+    const result = await this.run<QuotationSql & { sort_value: string }>(
+      db,
+      `SELECT ${QUOTATION_COLUMNS},
+              ${cursorTimestamp('created_at')} AS sort_value
+         FROM quo.quotations
+        WHERE tenant_id = $1 AND work_order_id = $2 AND deleted_at IS NULL
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: toQuotation(row),
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      page,
+      QUOTATION_LIST_ORDERING
+    );
+  }
+
   public async listRevisions(db: DbHandle, quotationId: string): Promise<readonly RevisionRow[]> {
     const context = this.assertContext(db);
     const result = await this.run<RevisionSql>(
@@ -366,6 +508,54 @@ export class QuotationRepository extends Repository {
     return result.rows.map(toRevision);
   }
 
+  /**
+   * One quotation's revisions, newest first, paginated (Phase 1-30 A2, S-08).
+   *
+   * The unpaginated `listRevisions` above stays where it is: `detail` and
+   * `expireLapsed` need the whole set and both operate on one document under a
+   * lock. This variant exists because a PUBLISHED history has no bound —
+   * `revise` may be called any number of times — and an unbounded response is
+   * what the pagination contract exists to prevent.
+   *
+   * Scope narrowing is not repeated here. `QuotationService.listRevisionsFor`
+   * has already authorized the parent quotation's own company and branch, and
+   * `sel_quotation_revisions_scope` is the second layer.
+   */
+  public async listRevisionsPage(
+    db: DbHandle,
+    quotationId: string,
+    page: PageRequest
+  ): Promise<Page<RevisionRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [context.principal.tenantId, quotationId];
+    const keyset = keysetFragment(
+      page,
+      { sort: 'revision_number', id: 'id' },
+      REVISION_LIST_ORDERING,
+      values.length + 1
+    );
+    const result = await this.run<RevisionSql & { sort_value: string }>(
+      db,
+      `SELECT ${REVISION_COLUMNS},
+              revision_number::text AS sort_value
+         FROM quo.quotation_revisions
+        WHERE tenant_id = $1 AND quotation_id = $2 AND deleted_at IS NULL
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: toRevision(row),
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      page,
+      REVISION_LIST_ORDERING
+    );
+  }
+
   public async listItems(db: DbHandle, revisionId: string): Promise<readonly ItemRow[]> {
     const context = this.assertContext(db);
     const result = await this.run<ItemSql>(
@@ -376,6 +566,105 @@ export class QuotationRepository extends Repository {
       [context.principal.tenantId, revisionId]
     );
     return result.rows.map(toItem);
+  }
+
+  /**
+   * Every decision recorded against one revision, with its evidence
+   * (Phase 1-30 A2, seam S-09).
+   *
+   * ## Why this is bounded and not paginated
+   *
+   * `uq_approval_decisions_item` permits at most ONE decision per
+   * (revision, item), and a revision holds at most `MAX_ITEMS_PER_REVISION`
+   * items - 200, enforced by the application before any item is inserted. So the
+   * result set has a hard structural ceiling of 200 rows and cannot grow with
+   * time or use. A cursor over a set that cannot exceed one page would be
+   * ceremony, and `quo.quotation-detail` already returns the same revision's
+   * lines under the same ceiling.
+   *
+   * ## Ordering
+   *
+   * By the ITEM's line number, not by `decided_at`. A reviewer reads the decision
+   * list against the quotation they are holding, so it must be in document order;
+   * `decided_at` would scatter the same document's lines by the order a customer
+   * happened to answer them. `seq` breaks the tie deterministically.
+   *
+   * Evidence is aggregated in SQL rather than fetched per decision - 200 lines
+   * would otherwise be 200 extra statements, and the two reads could straddle a
+   * concurrent insert and describe an instant that never existed.
+   */
+  public async listDecisionsForRevision(
+    db: DbHandle,
+    revisionId: string
+  ): Promise<readonly DecisionAuditRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      quotation_revision_id: string;
+      quotation_item_id: string;
+      line_number: number;
+      description: string | null;
+      decision: string;
+      decided_by: string;
+      decision_channel: string;
+      decided_at: Date;
+      evidence: readonly {
+        id: string;
+        evidence_kind: string;
+        document_version_id: string | null;
+        reference_note: string | null;
+        created_at: string;
+      }[];
+    }>(
+      db,
+      // `coalesce(json_agg(...) FILTER (WHERE ...), '[]')` rather than a bare
+      // `json_agg`: an unfiltered aggregate over a LEFT JOIN with no match yields
+      // `[null]`, not `[]`, and a null-bearing array would reach the mapper as a
+      // phantom evidence row.
+      `SELECT d.id, d.quotation_revision_id, d.quotation_item_id,
+              it.line_number, it.description,
+              d.decision, d.decided_by, d.decision_channel, d.decided_at,
+              COALESCE((
+                SELECT json_agg(json_build_object(
+                         'id', e.id,
+                         'evidence_kind', e.evidence_kind,
+                         'document_version_id', e.document_version_id,
+                         'reference_note', e.reference_note,
+                         'created_at', to_char(e.created_at AT TIME ZONE 'UTC',
+                                               'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+                       ) ORDER BY e.seq)
+                  FROM quo.approval_evidence e
+                 WHERE e.tenant_id = d.tenant_id
+                   AND e.approval_decision_id = d.id
+              ), '[]'::json) AS evidence
+         FROM quo.approval_decisions d
+         JOIN quo.quotation_items it
+           ON it.tenant_id = d.tenant_id
+          AND it.id = d.quotation_item_id
+        WHERE d.tenant_id = $1 AND d.quotation_revision_id = $2
+        ORDER BY it.line_number ASC, d.seq ASC`,
+      [context.principal.tenantId, revisionId]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      quotationRevisionId: row.quotation_revision_id,
+      quotationItemId: row.quotation_item_id,
+      lineNumber: row.line_number,
+      description: row.description,
+      decision: row.decision,
+      decidedBy: row.decided_by,
+      decisionChannel: row.decision_channel,
+      decidedAt: row.decided_at,
+      evidence: row.evidence.map((e) => ({
+        id: e.id,
+        evidenceKind: e.evidence_kind,
+        documentVersionId: e.document_version_id,
+        referenceNote: e.reference_note,
+        // Already rendered as millisecond ISO inside SQL, so it matches
+        // `.toISOString()` exactly rather than depending on the jsonb decoder.
+        recordedAt: new Date(e.created_at),
+      })),
+    }));
   }
 
   public async findItem(db: DbHandle, itemId: string): Promise<ItemRow | null> {

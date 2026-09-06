@@ -44,6 +44,56 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ serviceId: schemas.uuid });
 
+/**
+ * P1-30 A2, seam S-12 — class A: the read already existed and was only unpublished.
+ *
+ * `ServiceCatalogService.detail` has been in the module since P1-20 with no route in
+ * front of it, so a screen holding a service id could not resolve that service without
+ * paging the whole catalogue to find it. This publishes the existing method; it adds no
+ * repository query and no second mapper, because two mappers would be two wire
+ * contracts for one row.
+ */
+export const SERVICE_DETAIL_OPERATION = defineOperation({
+  id: 'svc.service-detail',
+  module: 'service-catalog',
+  method: 'GET',
+  path: '/services/{serviceId}',
+  summary: 'Read one service from the tenant catalog.',
+  permissions: ['svc.service.read'],
+  // `tenant`, matching `svc.service-list` and the PATCH below. Naming a resource id in
+  // the path does NOT pin a scope here, because the row has none to give:
+  // `svc.services` carries no company_id and no branch_id. Declaring a narrower scope
+  // would leave the target empty and fail closed for every caller (P1-18-A-01); RLS
+  // narrows the row to the caller's tenant.
+  scope: 'tenant',
+  auditClass: 'none',
+  // The registered read policy for a single-resource lookup. There is no
+  // 'standard-read' in RATE_LIMIT_POLICIES and `defineOperation` refuses an
+  // unregistered name at module load.
+  rateLimitPolicy: 'low-risk-metadata',
+  cacheCategory: 'never',
+});
+
+export async function GET(
+  request: Request,
+  route: { params: Promise<{ serviceId: string }> }
+): Promise<Response> {
+  const raw = await route.params;
+  return handleOperation(
+    SERVICE_DETAIL_OPERATION,
+    request,
+    async ({ db }) => {
+      // Parsed INSIDE the pipeline: parsing before `handleOperation` lets the
+      // AppFailure escape the route function and surface as an unhandled 500
+      // instead of a 422 naming the path segment.
+      const params = parseOrFail(Params, raw, 'path');
+      const detail = await serviceCatalogModule().services.detail(db, params.serviceId);
+      return { body: detail, recordVersion: detail.recordVersion };
+    },
+    { params: raw }
+  );
+}
+
 export const Body = z
   .object({
     serviceCategoryId: schemas.uuid.optional(),

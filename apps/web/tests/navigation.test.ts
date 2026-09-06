@@ -63,13 +63,31 @@ describe('the navigation model', () => {
       // Built in P1-28 (`P1-28-FE-001`): the branch calendar at
       // `/appointments`, flipped in the same change that landed the screen.
       'appointments',
+      // P1-30 W6: the invoice of a work order at `/invoices`, gated on
+      // `sal.invoice.manage` — the code every invoice read requires.
+      'billing',
+      // P1-30 W1: the service catalogue at `/services`, gated on
+      // `svc.service.read` — the permission its list operation requires.
+      'catalog',
       // Both duplicate queues are in the sidebar, each behind its OWN
       // `*.duplicate.review` code. They had screens and no route into them —
       // a page nobody can reach is not delivered.
       'customer-duplicates',
       'customers',
       'gallery',
+      // P1-30 W4: item search, stock availability and reservations at `/inventory`.
+      'inventory',
       'overview',
+      // P1-30 W7: the branch's receipts at `/payments`, gated on
+      // `sal.finance.view` — the only code both receipt reads declare, and the
+      // one a cashier holds. A NEW entry: the module had no navigation row.
+      'payments',
+      // P1-30 W2: price lists, versions, rules and the price lookup at `/pricing`,
+      // gated on `svc.price.read` — the permission its reads require.
+      'pricing',
+      // P1-30 W3: the quotations of a work order at `/quotations`, gated on
+      // `quo.quotation.read` — the permission its reads require.
+      'quotations',
       // P1-28 Wave D: the Reception entry landed WITH its first screen, the
       // check-in wizard at `/receptions/check-in` (`P1-28-FE-007`).
       'receptions',
@@ -109,13 +127,13 @@ describe('the navigation model', () => {
     // The business modules P1-27 and later deliver. If one of these ever turns
     // `available` without a screen, the sidebar starts producing 404s.
     expect(planned.sort()).toEqual([
-      'billing',
-      'catalog',
+      // `billing` left this list in P1-30 W6, and `payments` was ADDED as an
+      // available entry in W7 (the module had no navigation row before it).
       // `customers` and `vehicles` left this list in P1-27, and `appointments`
       // in P1-28, when the screens they point at were built.
       'delivery',
       'documents',
-      'inventory',
+      // `inventory` left this list in P1-30 W4.
       'notifications',
       'reports',
       // `technicians` left this list in P1-29 W4, when the workspace was built.

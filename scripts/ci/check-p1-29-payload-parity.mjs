@@ -315,23 +315,30 @@ function describeType(t) {
 }
 
 /** Every exported interface across the frozen mirror list. */
-export function readMirror(mirrorRoot) {
+/**
+ * `files` and `report` are parameters so a SIBLING gate (P1-30's) can read its
+ * own mirror list and collect its own problems without copying this reader —
+ * two copies of a reader is how the brace-counting scanners drifted. Both
+ * default to this module's own list and `note`, so every existing call is
+ * byte-for-byte the same behaviour.
+ */
+export function readMirror(mirrorRoot, files = MIRROR_FILES, report = note) {
   const interfaces = new Map();
   const seenIn = new Map();
 
-  for (const rel of MIRROR_FILES) {
+  for (const rel of files) {
     const path = join(mirrorRoot, rel);
     if (!existsSync(path)) {
-      note(`mirror file absent: ${slash(rel)}`);
+      report(`mirror file absent: ${slash(rel)}`);
       continue;
     }
     if (NEVER_A_MIRROR.some((banned) => path.endsWith(banned))) {
-      note(`${slash(rel)} is on NEVER_A_MIRROR and must not be read as a mirror`);
+      report(`${slash(rel)} is on NEVER_A_MIRROR and must not be read as a mirror`);
       continue;
     }
     const file = parseModule(readFileSync(path, 'utf8'));
     if (!file) {
-      note(`mirror file does not parse: ${slash(rel)}`);
+      report(`mirror file does not parse: ${slash(rel)}`);
       continue;
     }
     for (const stmt of file.statements) {
@@ -340,7 +347,7 @@ export function readMirror(mirrorRoot) {
       if (!exported) continue;
       const name = stmt.name.text;
       if (interfaces.has(name)) {
-        note(`interface \`${name}\` is declared twice — ${seenIn.get(name)} and ${slash(rel)}`);
+        report(`interface \`${name}\` is declared twice — ${seenIn.get(name)} and ${slash(rel)}`);
         continue;
       }
       interfaces.set(name, readInterface(stmt));

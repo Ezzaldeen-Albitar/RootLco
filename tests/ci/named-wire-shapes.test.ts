@@ -71,9 +71,20 @@ describe('every route body serialises a named type', () => {
     expect(summary.named + summary.anonymous + summary.composed + summary.unresolved).toBe(
       summary.bodies
     );
-    expect(summary.bodies).toBe(352);
-    expect(summary.named).toBe(300);
-    expect(summary.composed).toBe(52);
+    // 368 bodies with P1-30 A2's twelve published reads. Every one resolves to a
+    // NAMED interface, so `named` moves by twelve and `composed` does not — the
+    // two buckets are re-pinned independently rather than by adding twelve to a
+    // total, because a read whose body is an inline object literal lands in
+    // `composed` (or, worse, `anonymous`) and the totals alone would not say so.
+    // One did: `PriceListService.listRules` returned an anonymous shape and this
+    // gate named it, which is why `PriceListRulesView` exists.
+    // 373 with the P1-30 inventory master data (#322): the category list and
+    // create, the item create and the location create serialise named views
+    // (`named` +4); the units-of-measure list answers `{ items }` composed in
+    // the route from `UnitOfMeasureView[]` (`composed` +1).
+    expect(summary.bodies).toBe(373);
+    expect(summary.named).toBe(320);
+    expect(summary.composed).toBe(53);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);
   });

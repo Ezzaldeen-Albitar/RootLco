@@ -1,8 +1,9 @@
 /**
- * POST /api/v1/quotation-revisions/{revisionId}/decisions
- * (Phase 1-20, P1-20-BE-008, BE-009).
+ * /api/v1/quotation-revisions/{revisionId}/decisions.
  *
- * Records ONE decision against every still-undecided line of a revision, atomically.
+ * `GET` reads the recorded approval trail (Phase 1-30 A2, seam S-09); `POST`
+ * records ONE decision against every still-undecided line of a revision,
+ * atomically (Phase 1-20, P1-20-BE-008, BE-009).
  *
  * ## What this is, and what it is not
  *
@@ -75,6 +76,73 @@ export const Body = z
     presentedRevisionId: schemas.uuid,
   })
   .strict();
+
+/**
+ * The approval trail for one revision — every decision, in document order, with
+ * the evidence attached to it.
+ *
+ * ## Why this needed a new read model
+ *
+ * `quo.approval_decisions` had exactly one reader — `findDecisionForItem`, a
+ * single-item lookup the WRITE path uses to detect a replay — and
+ * `quo.approval_evidence` had an INSERT and no read at all. So the append-only
+ * trail the schema exists to keep (BR-QUO-001/002) could be written and never
+ * read back: a dispute about what a customer approved, and on what evidence, had
+ * no answer through the API.
+ *
+ * ## Bounded, so not paginated
+ *
+ * `uq_approval_decisions_item` allows at most one decision per (revision, item)
+ * and a revision holds at most `MAX_ITEMS_PER_REVISION` items, so the set has a
+ * hard structural ceiling of 200 rows that cannot grow with time or use. There is
+ * no cursor because there is nothing to page.
+ *
+ * ## What it does not publish
+ *
+ * No storage key — evidence carries a `shared.document_versions` id, and turning
+ * that into a downloadable object is a separate read with its own authorization.
+ * No actor name — `recordedBy` is an id for navigation; resolving it would
+ * publish a user directory to every holder of `quo.quotation.read`.
+ * No money — amounts belong to the revision and are read there.
+ */
+export const QUOTATION_REVISION_DECISIONS_READ_OPERATION = defineOperation({
+  id: 'quo.quotation-revision-decisions-read',
+  module: 'quotation',
+  method: 'GET',
+  path: '/quotation-revisions/{revisionId}/decisions',
+  summary: 'Read the recorded approval decisions and evidence for a quotation revision.',
+  // The read code, not the `quo.decision.record` the POST below declares:
+  // reviewing what a customer decided is not authority to decide on their behalf.
+  permissions: ['quo.quotation.read'],
+  // Re-decided against the REVISION row's own company and branch once it is read;
+  // the path names no branch, so the declaration alone is inert (P1-18-A-01).
+  scope: 'branch',
+  auditClass: 'none',
+  rateLimitPolicy: 'low-risk-metadata',
+  cacheCategory: 'never',
+});
+
+export async function GET(
+  request: Request,
+  route: { params: Promise<{ revisionId: string }> }
+): Promise<Response> {
+  const raw = await route.params;
+  return handleOperation(
+    QUOTATION_REVISION_DECISIONS_READ_OPERATION,
+    request,
+    async ({ db, authorizeScope }) => {
+      const params = parseOrFail(Params, raw, 'path');
+      return {
+        body: await quotationModule().decisions.readRevisionDecisions(
+          db,
+          params.revisionId,
+          authorizeScope
+        ),
+      };
+    },
+    { params: raw }
+  );
+}
 
 export const QUOTATION_REVISION_DECIDE_OPERATION = defineOperation({
   id: 'quo.quotation-revision-decide',

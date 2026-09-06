@@ -554,6 +554,97 @@ export const PROFILES = {
       supabase: 'a Frontend phase must not change the database',
     },
   },
+  'p1-30-frontend': {
+    why:
+      'the Frontend lane of P1-30: the service catalogue and pricing, quotation and approval, ' +
+      "inventory and parts, invoice and payment screens — rendering the server's figures, never " +
+      'computing them (P1-30 RENDERS SERVER ARITHMETIC ONLY)',
+    allowed: ['web', 'docs', 'tooling', 'tests', 'rootConfig'],
+    forbidden: {
+      apiSource:
+        'a Frontend phase must not change API source — route it through the Backend lane. The same ' +
+        'boundary p1-29-frontend holds, declared under its own name because a profile borrowed from ' +
+        'another phase declares nothing about this one',
+      apiConfig: 'a Frontend phase must not change API workspace configuration',
+      webGenerated:
+        'the idempotent-operations manifest is GENERATED from the Backend register — a screen that ' +
+        'hand-edits it desynchronises the two, and the register is not on this side of the lane',
+      webContract:
+        'that allow-list holds six frozen P1-28 files. A P1-30 mirror is new source under apps/web ' +
+        'and travels as web',
+      migrations: 'a screen must not carry a migration',
+      dbSeeds:
+        'a screen must not seed a permission — the Backend lane that publishes the operation does',
+      supabase: 'a Frontend phase must not change the database',
+    },
+  },
+  'p1-30-backend': {
+    why:
+      'the Backend prerequisite lane of P1-30: the read seams the A0 preflight proved missing ' +
+      '(docs/phase-1/phase-1-30/a0-read-surface-matrix.md), one branch per seam, with the ' +
+      'permission seeds and generated manifest they need',
+    allowed: [
+      'apiSource',
+      'migrations',
+      // A seam that needs a least-privilege READ code mints it in the only
+      // shipping insert into iam.permissions, supabase/seeds/04_iam_permission_catalog.sql.
+      'dbSeeds',
+      // The idempotent-operations manifest is GENERATED from the Backend
+      // register; a slice that publishes an operation must regenerate it.
+      'webGenerated',
+      'docs',
+      'tooling',
+      'tests',
+      'rootConfig',
+    ],
+    forbidden: {
+      web:
+        'the P1-30 Backend lane is Backend-only — the screens are a separate change under ' +
+        'p1-30-frontend, so no screen ships against a contract nobody reviewed',
+      webContract:
+        'the contract-mirror allow-list names P1-28 files. A P1-30 operation has no row in it, so a ' +
+        "Backend slice reaching for one is reaching for another phase's sealed artefact",
+      apiConfig: 'P1-30 must not change API workspace configuration',
+      supabase:
+        'P1-30 must not change the database HARNESS — the migrations and the permission catalogue ' +
+        'it does need travel under their own buckets',
+    },
+  },
+  'p1-30-tenant-bootstrap': {
+    why:
+      'the P1-30 corrective slice: a tenant created by the shipped provisioning operation could ' +
+      'not trade. Three closures, each measured on develop 029fc20d before anything was written ' +
+      '- no tenant-scope payment method (so no receipt could cite one), no number sequence at any ' +
+      'scope (so no invoice, receipt or quotation could be numbered), and a 48-code administrator ' +
+      'bundle holding no commercial permission at all (A0 finding F-01, which the delegation rule ' +
+      'makes permanent). Backend and database only: one privilege migration, the two bootstrap ' +
+      'writers, the server-owned sets they read, and the proofs',
+    // NARROWER than `p1-30-backend`, which would also have permitted this diff.
+    // Borrowing it would have declared nothing: that profile's `why` describes
+    // the read seams the A0 preflight proved missing, one branch per seam, and
+    // this branch publishes no operation and adds no read. It changes what
+    // PROVISIONING writes.
+    allowed: ['apiSource', 'migrations', 'docs', 'tooling', 'tests', 'rootConfig'],
+    forbidden: {
+      web:
+        'Backend-only. The seven P1-30 screens are already merged and are not touched: this slice ' +
+        'changes what a tenant is given, not what a page renders',
+      webContract:
+        'that allow-list holds six frozen P1-28 files, and this slice publishes no operation, so ' +
+        'no exhaustiveness assertion reaches a mirror row',
+      webGenerated:
+        'no operation is published, so the idempotency manifest cannot move - a regenerated ' +
+        'manifest here would mean something else changed',
+      apiConfig: 'no dependency and no build setting changes',
+      dbSeeds:
+        'no permission is minted. Every one of the seventeen commercial codes the administrator ' +
+        'bundle gains already exists in the 118-code catalogue, and the payment-method vocabulary ' +
+        'is the P1-11 seed this slice COPIES rather than extends',
+      supabase:
+        'the database HARNESS is untouched; the one migration this slice does need travels under ' +
+        'its own bucket',
+    },
+  },
   'p1-09-database-seed': {
     why:
       'a missed P1-09 DATABASE seed obligation, repaired after the fact: one declared seed file ' +

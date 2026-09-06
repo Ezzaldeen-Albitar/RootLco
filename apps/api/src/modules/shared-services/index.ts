@@ -42,6 +42,7 @@ import { ExportRepository } from './data/export-repository';
 import { MessageDispatchRepository } from './data/message-dispatch-repository';
 import { NotificationReadRepository } from './data/notification-read-repository';
 import { NotificationRepository } from './data/notification-repository';
+import { NumberSequenceBootstrapRepository } from './data/number-sequence-bootstrap-repository';
 import { NumberSequenceRepository } from './data/number-sequence-repository';
 import { TemplateRepository } from './data/template-repository';
 import { BranchTransitionAdapter } from './data/transition-repository';
@@ -52,6 +53,7 @@ import { ExportAuthorizationService } from './application/export-authorization-s
 import { HealthService } from './application/health-service';
 import { MessageDispatcher } from './application/message-dispatcher';
 import { NumberAllocationService } from './application/number-allocation-service';
+import { NumberSequenceBootstrapService } from './application/number-sequence-bootstrap-service';
 import { NotificationReadService } from './application/notification-read-service';
 import { SharedNotificationService } from './application/notification-service';
 import { StatusTransitionService } from './application/status-transition-service';
@@ -117,6 +119,7 @@ export {
   sequenceCodes,
   type SequenceDefinition,
 } from './domain/sequence-registry';
+export type { SequenceBootstrapScope } from './data/number-sequence-bootstrap-repository';
 export {
   AGGREGATES,
   findTransition,
@@ -298,6 +301,7 @@ export const sharedServicesModule = composeModule({
     const templates = new TemplateRepository();
     const messages = new NotificationRepository();
     const sequences = new NumberSequenceRepository();
+    const sequenceBootstrap = new NumberSequenceBootstrapRepository();
     const exports_ = new ExportRepository();
     const dispatch = new MessageDispatchRepository();
     const messageReads = new NotificationReadRepository();
@@ -322,6 +326,11 @@ export const sharedServicesModule = composeModule({
       documentReads: new DocumentReadService(documentReadsRepo),
       templates: new TemplateService(templates),
       numbers: new NumberAllocationService(sequences),
+      // The provisioning-time writer, separate from `numbers` because it runs
+      // under a different authority: `app_platform` inside the §6.3 window,
+      // never a tenant request. Its repository holds one INSERT and no read, so
+      // nothing here can allocate, re-number or reconfigure a run.
+      sequenceBootstrap: new NumberSequenceBootstrapService(sequenceBootstrap),
       transitions: new StatusTransitionService([new BranchTransitionAdapter()]),
       exports: new ExportAuthorizationService(exports_),
       health: new HealthService(),

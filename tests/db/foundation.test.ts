@@ -1378,6 +1378,10 @@ describe('database foundation', () => {
       'ins_partner_sensitive_attributes_tenant',
       'ins_partner_status_history_tenant',
       'ins_payment_allocations_gated',
+      // P1-30 tenant-bootstrap corrective slice: the control plane's copy of the
+      // canonical ASM-14 methods into a tenant it is provisioning. Five terms,
+      // and no UPDATE or DELETE beside it.
+      'ins_payment_methods_platform_bootstrap',
       'ins_payment_methods_tenant',
       'ins_plate_history_tenant',
       'ins_powertrain_types_tenant',
@@ -1634,6 +1638,10 @@ describe('database foundation', () => {
       'sel_partner_sensitive_attributes_tenant',
       'sel_partner_status_history_tenant',
       'sel_payment_allocations_gated',
+      // P1-30 tenant-bootstrap corrective slice: PLATFORM rows only, so the
+      // control plane reads the catalogue it copies from and can see no
+      // tenant's methods — not even the ones it has just written.
+      'sel_payment_methods_platform_canonical',
       'sel_payment_methods_scope',
       'sel_permissions_all',
       'sel_permissions_platform_bootstrap',
