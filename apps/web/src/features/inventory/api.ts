@@ -14,7 +14,12 @@ import {
 } from '@/lib/api/read-operation';
 import { fromFailure, success, type ActionState } from '@/lib/forms/action-result';
 import type {
+  ItemCategoryCreateBody,
+  ItemCreateBody,
+  OpeningBatchCreateBody,
+  OpeningBatchLineCreateBody,
   StockIssueCreateBody,
+  StockLocationCreateBody,
   StockReservationCreateBody,
   StockReservationReleaseBody,
   StockReturnCreateBody,
@@ -22,10 +27,14 @@ import type {
 import type { BranchOption } from '@/features/services/services-contract';
 import type {
   AvailabilityCriteria,
+  CreatedStockLocation,
   InventoryItem,
   IssueEcho,
+  ItemCategory,
   ItemSearchCriteria,
   MovementCriteria,
+  OpeningBatch,
+  OpeningBatchLine,
   PartIssue,
   RequiredPart,
   ReservationCriteria,
@@ -36,6 +45,7 @@ import type {
   StockMovement,
   StockReservation,
   StockTarget,
+  UnitOfMeasureOption,
 } from './inventory-contract';
 
 /**
@@ -326,6 +336,171 @@ export async function releaseReservation(
   return {
     state: {
       ...success('inventory.release.success', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * W10 — inventory setup and opening stock (CC-05)
+ * ------------------------------------------------------------------ */
+
+/**
+ * The tenant's item categories (`inv.item-category-list`, `inv.item.read`).
+ * Tenant-wide, code order, and small: one page of a hundred is the whole
+ * catalogue of any workshop this phase serves; a longer one would say so in
+ * `hasMore`, which the screen renders as a truncation note rather than hiding.
+ */
+export async function listItemCategories(): Promise<ReadState<CursorPage<ItemCategory>>> {
+  return readOperation<CursorPage<ItemCategory>>(`/api/v1/item-categories${query({ limit: 100 })}`);
+}
+
+/**
+ * The units a tenant may count in (`inv.uom-list`, `inv.item.read`): the
+ * platform set plus the tenant's own. No tenant unit WRITER exists (register
+ * area B, B-22), so the screen offers this list and says where it comes from.
+ */
+export async function listUnitsOfMeasure(): Promise<ReadState<ItemsOnly<UnitOfMeasureOption>>> {
+  return readOperation<ItemsOnly<UnitOfMeasureOption>>('/api/v1/units-of-measure');
+}
+
+/**
+ * Create a category (`inv.item-category-create`). Tenant-wide: requires
+ * `inv.item.manage` held tenant-wide, which the server checks and the screen
+ * cannot; a branch-scoped holder is refused with 403 and the screen renders
+ * that as the refusal it is. The transport attaches the idempotency key.
+ */
+export async function createItemCategory(
+  body: ItemCategoryCreateBody,
+  attempt = 1
+): Promise<CreateOutcome<ItemCategory>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<ItemCategory>('POST', '/api/v1/item-categories', body);
+  if (!result.ok) return { state: fromFailure(result, attempt), created: null };
+  return {
+    state: {
+      ...success('inventory.setup.category.success', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/**
+ * Create a catalogue item (`inv.item-create`). A row and nothing else: no
+ * cost, no stock. The echo is the same shape the item search publishes, so a
+ * created item can be shown beside the search results without a second read.
+ */
+export async function createItem(
+  body: ItemCreateBody,
+  attempt = 1
+): Promise<CreateOutcome<InventoryItem>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<InventoryItem>('POST', '/api/v1/items', body);
+  if (!result.ok) return { state: fromFailure(result, attempt), created: null };
+  return {
+    state: {
+      ...success('inventory.setup.item.success', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/**
+ * Create a stock location (`inv.stock-location-create`). Branch-scoped by the
+ * pair in the body; the hierarchy rules (a warehouse has no parent, storage
+ * and quarantine need a warehouse parent of the same branch) are the server's,
+ * stated by the field, and the form repeats only the two it can know before
+ * sending.
+ */
+export async function createStockLocation(
+  body: StockLocationCreateBody,
+  attempt = 1
+): Promise<CreateOutcome<CreatedStockLocation>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<CreatedStockLocation>('POST', '/api/v1/stock-locations', body);
+  if (!result.ok) return { state: fromFailure(result, attempt), created: null };
+  return {
+    state: {
+      ...success('inventory.setup.location.success', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/**
+ * Open an opening-inventory batch (`inv.opening-batch-create`). The batch is
+ * the only path by which stock first appears; nothing reads it back, so the
+ * screen keeps this echo for the life of the page.
+ */
+export async function createOpeningBatch(
+  body: OpeningBatchCreateBody,
+  attempt = 1
+): Promise<CreateOutcome<OpeningBatch>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<OpeningBatch>('POST', '/api/v1/opening-inventory-batches', body);
+  if (!result.ok) return { state: fromFailure(result, attempt), created: null };
+  return {
+    state: {
+      ...success('inventory.opening.batch.success', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/** Add a counted line to a draft batch (`inv.opening-batch-line-create`). `quantity` is the exact decimal string. */
+export async function createOpeningBatchLine(
+  batchId: string,
+  body: OpeningBatchLineCreateBody,
+  attempt = 1
+): Promise<CreateOutcome<OpeningBatchLine>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<OpeningBatchLine>(
+    'POST',
+    `/api/v1/opening-inventory-batches/${encodeURIComponent(batchId)}/lines`,
+    body
+  );
+  if (!result.ok) return { state: fromFailure(result, attempt), created: null };
+  return {
+    state: {
+      ...success('inventory.opening.line.success', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/**
+ * Approve a batch (`inv.opening-batch-approve`), which posts the opening
+ * movements. Bodyless: the batch is in the path and the approver is the
+ * caller. The server refuses the person who counted it (409, maker ≠
+ * checker) — the screen renders that refusal as published and offers nothing
+ * around it.
+ */
+export async function approveOpeningBatch(
+  batchId: string,
+  attempt = 1
+): Promise<CreateOutcome<OpeningBatch>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<OpeningBatch>(
+    'POST',
+    `/api/v1/opening-inventory-batches/${encodeURIComponent(batchId)}/approval`,
+    undefined
+  );
+  if (!result.ok) return { state: fromFailure(result, attempt), created: null };
+  return {
+    state: {
+      ...success('inventory.opening.approve.success', attempt),
       correlationId: result.correlationId,
     },
     created: result.data,

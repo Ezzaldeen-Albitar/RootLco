@@ -108,29 +108,17 @@ export const PENDING_MIRRORS = Object.freeze({
   // W2 wrote the pricing mirror and deleted its five entries in the same change.
   // The `inv` writes entered this scope with W4 (the two reservation writes); W5
   // wrote the issue and return mirrors and deleted their entries in the same
-  // change. Damage, intake and opening batches are sent by no P1-30 screen
-  // (FE-008…FE-013 do not render them), so their mirrors have no consumer in this
-  // phase and are owed by whichever phase builds one.
+  // change. W10 (the inventory setup and opening-stock screens, change-control
+  // CC-05) mirrored the category, item, location and opening-batch writes and
+  // deleted their five entries in the same change. Damage and intake are sent
+  // by no P1-30 screen (FE-008…FE-013 do not render them), so their mirrors
+  // have no consumer in this phase and are owed by whichever phase builds one.
   'inv.damaged-stock-create':
     'PENDING: no P1-30 screen sends this (outside FE-008…FE-013); a later phase owes the mirror',
   'inv.customer-supplied-part-create':
     'PENDING: no P1-30 screen sends this (outside FE-008…FE-013); a later phase owes the mirror',
   'inv.external-purchase-part-create':
     'PENDING: no P1-30 screen sends this (outside FE-008…FE-013); a later phase owes the mirror',
-  'inv.opening-batch-create':
-    'PENDING: no P1-30 screen sends this (outside FE-008…FE-013); a later phase owes the mirror',
-  'inv.opening-batch-line-create':
-    'PENDING: no P1-30 screen sends this (outside FE-008…FE-013); a later phase owes the mirror',
-  // The P1-30 corrective slice published the three master-data writers a fresh
-  // tenant needs before any stock can exist. Their screens are the inventory
-  // setup surface the same remediation owes on the Frontend lane, which must
-  // delete these three entries as it writes the mirror.
-  'inv.item-category-create':
-    'PENDING: the inventory setup screen (P1-30 corrective Frontend slice) owes the mirror',
-  'inv.item-create':
-    'PENDING: the inventory setup screen (P1-30 corrective Frontend slice) owes the mirror',
-  'inv.stock-location-create':
-    'PENDING: the inventory setup screen (P1-30 corrective Frontend slice) owes the mirror',
   // The `sal` writes entered this scope with W6, which mirrors the invoice
   // create and cancel bodies. Payments belong to W7 (canonical plan §4); credit
   // notes and deliveries are sent by no P1-30 screen.

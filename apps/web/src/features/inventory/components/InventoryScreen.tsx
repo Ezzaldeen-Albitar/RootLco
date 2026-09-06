@@ -123,23 +123,39 @@ export function InventoryScreen({
     <div className="flex min-h-0 flex-col gap-4">
       <ItemSearch locale={locale} messages={messages} />
 
-      {canReadStock ? (
-        <p className="text-caption" lang={locale}>
-          <Link
-            href={`/${locale}/inventory/parts`}
-            className="text-primary underline-offset-2 hover:underline"
-          >
-            {translate(messages, 'inventory.links.parts')}
-          </Link>
-          {' · '}
-          <Link
-            href={`/${locale}/inventory/movements`}
-            className="text-primary underline-offset-2 hover:underline"
-          >
-            {translate(messages, 'inventory.links.movements')}
-          </Link>
-        </p>
-      ) : null}
+      <p className="text-caption" lang={locale}>
+        <Link
+          href={`/${locale}/inventory/setup`}
+          className="text-primary underline-offset-2 hover:underline"
+        >
+          {translate(messages, 'inventory.links.setup')}
+        </Link>
+        {canReadStock ? (
+          <>
+            {' · '}
+            <Link
+              href={`/${locale}/inventory/opening-stock`}
+              className="text-primary underline-offset-2 hover:underline"
+            >
+              {translate(messages, 'inventory.links.openingStock')}
+            </Link>
+            {' · '}
+            <Link
+              href={`/${locale}/inventory/parts`}
+              className="text-primary underline-offset-2 hover:underline"
+            >
+              {translate(messages, 'inventory.links.parts')}
+            </Link>
+            {' · '}
+            <Link
+              href={`/${locale}/inventory/movements`}
+              className="text-primary underline-offset-2 hover:underline"
+            >
+              {translate(messages, 'inventory.links.movements')}
+            </Link>
+          </>
+        ) : null}
+      </p>
 
       {canReadStock ? (
         <TargetPanel

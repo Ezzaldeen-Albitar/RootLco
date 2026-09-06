@@ -11,9 +11,11 @@
  * decimals); a JSON number is refused by the route. Nothing here is a money
  * field — no inventory write carries a cost in this wave.
  *
- * W4 mirrors the two reservation writes and W5 the issue and return writes.
- * The damage, intake and opening-batch writes belong to no P1-30 screen; they
- * stay declared PENDING in the gate rather than mirrored without a consumer.
+ * W4 mirrors the two reservation writes, W5 the issue and return writes, and
+ * W10 (the inventory setup and opening-stock screens, change-control CC-05)
+ * the category, item, location and opening-batch writes. The damage and
+ * intake writes belong to no P1-30 screen; they stay declared PENDING in the
+ * gate rather than mirrored without a consumer.
  */
 
 /**
@@ -67,4 +69,73 @@ export interface StockReturnCreateBody {
   readonly partIssueId: string;
   readonly quantity: string;
   readonly reason?: string;
+}
+
+/**
+ * `inv.item-category-create` — `POST /item-categories`. Tenant-wide: the body
+ * names no company or branch, and the route requires `inv.item.manage` held
+ * tenant-wide. `code` is lower-case snake case (`^[a-z][a-z0-9_]{1,62}$`);
+ * `parentCategoryId` must name an ACTIVE category of the same tenant.
+ */
+export interface ItemCategoryCreateBody {
+  readonly code: string;
+  readonly name: string;
+  readonly description?: string;
+  readonly parentCategoryId?: string;
+}
+
+/**
+ * `inv.item-create` — `POST /items`. A catalogue row only: no cost and no
+ * stock — stock first appears through an approved opening batch. `uomId`
+ * must name an active unit visible to the tenant (platform or its own).
+ */
+export interface ItemCreateBody {
+  readonly itemCategoryId: string;
+  readonly sku: string;
+  readonly name: string;
+  readonly description?: string;
+  readonly uomId: string;
+  readonly itemType: 'part' | 'material' | 'consumable' | 'fluid' | 'kit';
+  readonly isStockTracked?: boolean;
+  readonly isSerialized?: boolean;
+}
+
+/**
+ * `inv.stock-location-create` — `POST /stock-locations`. Branch-scoped by the
+ * pair in the body. A warehouse has no parent; storage and quarantine need a
+ * parent that is a warehouse of the same branch — the server states which
+ * rule refused, by the field.
+ */
+export interface StockLocationCreateBody {
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly locationCode: string;
+  readonly name: string;
+  readonly locationType: 'warehouse' | 'storage' | 'quarantine';
+  readonly parentLocationId?: string;
+}
+
+/**
+ * `inv.opening-batch-create` — `POST /opening-inventory-batches`. `asOfDate`
+ * is a plain ISO date (the column is a `date`). The batch is the only path
+ * by which stock first appears, and nothing reads it back: no batch list or
+ * detail operation exists, so the screen holds the echo until approval.
+ */
+export interface OpeningBatchCreateBody {
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly batchCode: string;
+  readonly asOfDate: string;
+  readonly notes?: string;
+}
+
+/**
+ * `inv.opening-batch-line-create` — `POST /opening-inventory-batches/{batchId}/lines`.
+ * `quantity` is a decimal string. The approval (`inv.opening-batch-approve`)
+ * carries no body and is declared BODYLESS in the gate.
+ */
+export interface OpeningBatchLineCreateBody {
+  readonly itemId: string;
+  readonly locationId: string;
+  readonly quantity: string;
 }

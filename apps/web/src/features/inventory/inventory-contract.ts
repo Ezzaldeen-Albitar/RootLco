@@ -86,6 +86,10 @@ export const INVENTORY_PERMISSIONS = {
   branchRead: 'org.branch.read',
   /** (W5) The work-order header and its required parts, for the parts screen. */
   workOrderRead: 'wo.work_order.read',
+  /** W10: the category, item and location writers (`inv.item.manage`, held tenant-wide). */
+  itemManage: 'inv.item.manage',
+  /** W10: opening-batch approval (`inv.adjustment.approve`, a second person — maker ≠ checker). */
+  approve: 'inv.adjustment.approve',
 } as const;
 
 /** `ck_item_master_type`, mirrored. */
@@ -358,4 +362,88 @@ export interface ReservationCriteria {
   readonly locationId?: string;
   readonly workOrderId?: string;
   readonly status?: ReservationState;
+}
+
+/* ------------------------------------------------------------------ *
+ * W10 — inventory setup and opening stock (change-control CC-05)
+ *
+ * | operation                        | method | path                                            | permission               |
+ * | -------------------------------- | ------ | ----------------------------------------------- | ------------------------ |
+ * | `inv.item-category-list`         | GET    | `/item-categories`                              | `inv.item.read`          |
+ * | `inv.item-category-create`       | POST   | `/item-categories`                              | `inv.item.manage`        |
+ * | `inv.uom-list`                   | GET    | `/units-of-measure`                             | `inv.item.read`          |
+ * | `inv.item-create`                | POST   | `/items`                                        | `inv.item.manage`        |
+ * | `inv.stock-location-create`      | POST   | `/stock-locations`                              | `inv.item.manage`        |
+ * | `inv.opening-batch-create`       | POST   | `/opening-inventory-batches`                    | `inv.stock.operate`      |
+ * | `inv.opening-batch-line-create`  | POST   | `/opening-inventory-batches/{batchId}/lines`    | `inv.stock.operate`      |
+ * | `inv.opening-batch-approve`      | POST   | `/opening-inventory-batches/{batchId}/approval` | `inv.adjustment.approve` |
+ *
+ * No batch list or detail read exists (register area C, line C-2): a batch is
+ * readable only through the echoes of the writes that made it, until its
+ * approval posts the opening movements, which `inv.stock-movement-list` and
+ * `inv.stock-availability-read` then publish. The screen says so.
+ * ------------------------------------------------------------------ */
+
+/** The server category-code rule, lower-case snake case. Mirrors `CATEGORY_CODE_FORMAT`. */
+export const CATEGORY_CODE = /^[a-z][a-z0-9_]{1,62}$/;
+/** The server SKU rule. Mirrors `SKU_FORMAT`. */
+export const SKU_CODE = /^[A-Za-z0-9][A-Za-z0-9_-]{1,62}$/;
+/** The server location and batch code rule. Mirrors `LOCATION_CODE_FORMAT`. */
+export const LOCATION_CODE = /^[A-Za-z0-9][A-Za-z0-9_-]{1,62}$/;
+/** A plain ISO date, the only precision `as_of_date` has. */
+export const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+export const MAX_DESCRIPTION = 2000;
+
+/** One row of `inv.item-category-list` and the echo of `inv.item-category-create` (`ItemCategoryView`). */
+export interface ItemCategory {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+  readonly description: string | null;
+  readonly parentCategoryId: string | null;
+  readonly status: ActivationState;
+  readonly recordVersion: number;
+}
+
+export const UNIT_SCOPES = ['platform', 'tenant'] as const;
+export type UnitScope = (typeof UNIT_SCOPES)[number];
+
+/** One row of `inv.uom-list` (`UnitOfMeasureView`): the platform set plus the tenant units. */
+export interface UnitOfMeasureOption {
+  readonly id: string;
+  readonly scope: UnitScope;
+  readonly code: string;
+  readonly name: string;
+  readonly dimension: string;
+}
+
+/** The echo of `inv.stock-location-create` (`CreatedStockLocationView`): a location plus its version. */
+export interface CreatedStockLocation extends StockLocation {
+  readonly recordVersion: number;
+}
+
+/**
+ * The echo of `inv.opening-batch-create` and of `inv.opening-batch-approve`
+ * (`OpeningBatchView`). `countedBy` is the creator, `approvedBy` the second
+ * person — the server refuses the same person (409), and the screen renders
+ * that refusal as published.
+ */
+export interface OpeningBatch {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly batchCode: string;
+  readonly status: string;
+  readonly countedBy: string;
+  readonly approvedBy: string | null;
+  readonly recordVersion: number;
+}
+
+/** The echo of `inv.opening-batch-line-create` (`OpeningLineView`). `quantity` is the exact decimal string. */
+export interface OpeningBatchLine {
+  readonly id: string;
+  readonly batchId: string;
+  readonly itemId: string;
+  readonly locationId: string;
+  readonly quantity: string;
 }
