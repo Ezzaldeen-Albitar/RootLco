@@ -443,9 +443,10 @@ describe('item categories', () => {
   });
 
   it('refuses an unknown or inactive parent by the field', async () => {
-    const unknown = await createCategory(MANAGER, 'c3', { parentCategoryId: randomUUID() });
-    expect(unknown.status).toBe(422);
-    expect((unknown.body as { violations: unknown[] }).violations).toEqual([
+    const refused = await createCategory(MANAGER, 'c3', { parentCategoryId: randomUUID() });
+    expect(refused.status).toBe(422);
+    // The helper types the body as the echo; a refusal carries the violation list.
+    expect((refused.body as unknown as { violations: unknown[] }).violations).toEqual([
       { path: 'body.parentCategoryId', rule: 'unknown_category' },
     ]);
   });

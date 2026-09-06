@@ -738,7 +738,7 @@ document says so in its own header.**
 | path                                                  | lines |
 | ----------------------------------------------------- | ----- |
 | `README.md` — the index and the consolidated register | 443   |
-| `owner-workflow-requirements.md`                      | 397   |
+| `owner-workflow-requirements.md`                      | 422   |
 | `workshop/end-to-end-workshop-workflow.md`            | 1244  |
 | `workshop/frontend-implementation-program.md`         | 954   |
 | `workshop/pricing-payment-and-delivery.md`            | 1137  |
@@ -1037,7 +1037,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/task-matrix.json = 1487 -->
 <!-- derived: lines docs/phase-1/phase-1-27/task-register.md = 299 -->
 <!-- derived: lines docs/product/README.md = 443 -->
-<!-- derived: lines docs/product/owner-workflow-requirements.md = 397 -->
+<!-- derived: lines docs/product/owner-workflow-requirements.md = 422 -->
 <!-- derived: lines docs/product/vehicle-catalogue/catalogue-architecture.md = 1029 -->
 <!-- derived: lines docs/product/vehicle-catalogue/manual-entry-policy.md = 656 -->
 <!-- derived: lines docs/product/vehicle-catalogue/provider-evaluation.md = 648 -->

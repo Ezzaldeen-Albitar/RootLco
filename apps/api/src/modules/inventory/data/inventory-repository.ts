@@ -824,7 +824,7 @@ export class InventoryRepository extends Repository {
               pi.location_id, l.location_code, pi.reservation_id, pi.quantity,
               COALESCE((SELECT sum(pr.quantity) FROM inv.part_returns pr
                          WHERE pr.tenant_id = pi.tenant_id
-                           AND pr.part_issue_id = pi.id), 0)::text AS returned_qty,
+                           AND pr.part_issue_id = pi.id), 0)::numeric(12,3)::text AS returned_qty,
               pi.created_at,
               ${cursorTimestamp('pi.created_at')} AS sort_value
          FROM inv.part_issues pi
@@ -1527,7 +1527,7 @@ export class InventoryRepository extends Repository {
               pi.location_id, pi.reservation_id, pi.quantity,
               COALESCE((SELECT sum(pr.quantity) FROM inv.part_returns pr
                          WHERE pr.tenant_id = pi.tenant_id
-                           AND pr.part_issue_id = pi.id), 0)::text AS returned_qty
+                           AND pr.part_issue_id = pi.id), 0)::numeric(12,3)::text AS returned_qty
          FROM inv.part_issues pi
         WHERE pi.tenant_id = $1 AND pi.id = $2 AND pi.deleted_at IS NULL`,
       [context.principal.tenantId, partIssueId]
