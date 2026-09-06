@@ -144,40 +144,40 @@ reception is P1-28's journey, not P1-27's.
 The Owner's mandatory intake workflow, in the order the Owner stated it. All
 **Planned** unless a stronger status is shown.
 
-| #   | Requirement                                                                                                             | Status                                                                   |
-| --- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| 1   | Vehicle arrives — appointment or walk-in                                                                                | Planned                                                                  |
-| 2   | Search or create the customer                                                                                           | Planned                                                                  |
-| 3   | **Show the customer's vehicles**                                                                                        | **Blocked** — no read lists them (`INT-012`)                             |
-| 4   | A customer may have multiple vehicles                                                                                   | Planned                                                                  |
-| 5   | Select the correct vehicle **explicitly**                                                                               | Planned                                                                  |
-| 6   | Create or link a new vehicle when necessary                                                                             | Planned                                                                  |
-| 7   | Start appointment / walk-in / reception                                                                                 | Contracted                                                               |
-| 8   | Confirm customer and vehicle                                                                                            | Planned                                                                  |
-| 9   | Capture customer-reported concerns                                                                                      | Contracted                                                               |
-| 10  | Mark those concerns **"Not yet technically verified"**                                                                  | Planned                                                                  |
-| 11  | Capture reception condition                                                                                             | Contracted                                                               |
-| 12  | Seven exterior photos: front, rear, front-left, front-right, rear-left, rear-right, approved seventh overall/roof angle | **Blocked** — media upload unsupported (`INT-093`, `INT-094`, `INT-095`) |
-| 13  | Dashboard photo showing odometer, SOC for EV/hybrid, fuel where applicable, visible warning lights                      | **Blocked** — same                                                       |
-| 14  | VIN / chassis photo on first visit, or when existing evidence is missing or unreadable                                  | **Blocked** — same                                                       |
-| 15  | Initial computer diagnostic scan evidence where available                                                               | Planned                                                                  |
-| 16  | Conditional road test                                                                                                   | **Blocked** — road test exists nowhere in the platform (`INT-054`)       |
-| 17  | Road-test duration may range ~5 minutes to ~1 hour by vehicle condition                                                 | Planned                                                                  |
-| 18  | Road-test observations                                                                                                  | Blocked — same as 16                                                     |
-| 19  | Unsafe-to-road-test outcome                                                                                             | Blocked — same as 16                                                     |
-| 20  | Lift inspection                                                                                                         | Blocked — same as 16                                                     |
-| 21  | Lift-inspection observations and evidence                                                                               | Blocked — same as 16                                                     |
-| 22  | Damage map                                                                                                              | Contracted                                                               |
-| 23  | Vehicle contents                                                                                                        | Contracted                                                               |
-| 24  | Party roles                                                                                                             | **Blocked** — no read publishes a visit's party roles (`INT-015`)        |
-| 25  | Reception officer final observations                                                                                    | Planned                                                                  |
-| 26  | Separate **customer statement**, **technical observation** and **confirmed diagnosis**                                  | Planned                                                                  |
-| 27  | Signature                                                                                                               | Contracted                                                               |
-| 28  | Refusal workflow                                                                                                        | Contracted                                                               |
-| 29  | Reception summary                                                                                                       | Planned                                                                  |
-| 30  | Reception document                                                                                                      | Planned                                                                  |
-| 31  | Accept vehicle into custody                                                                                             | Contracted                                                               |
-| 32  | Convert approved reception into a work order                                                                            | Contracted                                                               |
+| #   | Requirement                                                                                                             | Status                                                                                                                  |
+| --- | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| 1   | Vehicle arrives — appointment or walk-in                                                                                | Planned                                                                                                                 |
+| 2   | Search or create the customer                                                                                           | Planned                                                                                                                 |
+| 3   | **Show the customer's vehicles**                                                                                        | Delivered — `crm.customer-vehicle-list` (P1-16 remediation) and the P1-27/P1-28 screens; row refreshed 2026-09-06 (H-2) |
+| 4   | A customer may have multiple vehicles                                                                                   | Planned                                                                                                                 |
+| 5   | Select the correct vehicle **explicitly**                                                                               | Planned                                                                                                                 |
+| 6   | Create or link a new vehicle when necessary                                                                             | Planned                                                                                                                 |
+| 7   | Start appointment / walk-in / reception                                                                                 | Contracted                                                                                                              |
+| 8   | Confirm customer and vehicle                                                                                            | Planned                                                                                                                 |
+| 9   | Capture customer-reported concerns                                                                                      | Contracted                                                                                                              |
+| 10  | Mark those concerns **"Not yet technically verified"**                                                                  | Planned                                                                                                                 |
+| 11  | Capture reception condition                                                                                             | Contracted                                                                                                              |
+| 12  | Seven exterior photos: front, rear, front-left, front-right, rear-left, rear-right, approved seventh overall/roof angle | **Blocked** — media upload unsupported (`INT-093`, `INT-094`, `INT-095`)                                                |
+| 13  | Dashboard photo showing odometer, SOC for EV/hybrid, fuel where applicable, visible warning lights                      | **Blocked** — same                                                                                                      |
+| 14  | VIN / chassis photo on first visit, or when existing evidence is missing or unreadable                                  | **Blocked** — same                                                                                                      |
+| 15  | Initial computer diagnostic scan evidence where available                                                               | Planned                                                                                                                 |
+| 16  | Conditional road test                                                                                                   | **Blocked** — road test exists nowhere in the platform (`INT-054`)                                                      |
+| 17  | Road-test duration may range ~5 minutes to ~1 hour by vehicle condition                                                 | Planned                                                                                                                 |
+| 18  | Road-test observations                                                                                                  | Blocked — same as 16                                                                                                    |
+| 19  | Unsafe-to-road-test outcome                                                                                             | Blocked — same as 16                                                                                                    |
+| 20  | Lift inspection                                                                                                         | Blocked — same as 16                                                                                                    |
+| 21  | Lift-inspection observations and evidence                                                                               | Blocked — same as 16                                                                                                    |
+| 22  | Damage map                                                                                                              | Contracted                                                                                                              |
+| 23  | Vehicle contents                                                                                                        | Contracted                                                                                                              |
+| 24  | Party roles                                                                                                             | **Blocked** — no read publishes a visit's party roles (`INT-015`)                                                       |
+| 25  | Reception officer final observations                                                                                    | Planned                                                                                                                 |
+| 26  | Separate **customer statement**, **technical observation** and **confirmed diagnosis**                                  | Planned                                                                                                                 |
+| 27  | Signature                                                                                                               | Contracted                                                                                                              |
+| 28  | Refusal workflow                                                                                                        | Contracted                                                                                                              |
+| 29  | Reception summary                                                                                                       | Planned                                                                                                                 |
+| 30  | Reception document                                                                                                      | Planned                                                                                                                 |
+| 31  | Accept vehicle into custody                                                                                             | Contracted                                                                                                              |
+| 32  | Convert approved reception into a work order                                                                            | Contracted                                                                                                              |
 
 ### The operational property P1-28 must satisfy
 
@@ -242,27 +242,27 @@ P1-28 must not expose UUIDs or technical entity names to workshop users.
 
 ## P1-30 — Services, Quotations, Inventory, Billing and Payments
 
-| Requirement                                                             | Status                                                                                  |
-| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Service catalogue                                                       | **Blocked** — no service can be created; no category exists (`INT-055`)                 |
-| Labour                                                                  | Contracted                                                                              |
-| Work pricing                                                            | **Blocked** — no price-list assignment write, so every quotation line fails (`INT-057`) |
-| Internal inventory parts                                                | Partly blocked — `locationId` required, no location list (`INT-066`)                    |
-| Part issue                                                              | Contracted                                                                              |
-| Part return                                                             | Partly blocked — remaining returnable quantity not computable (`INT-067`)               |
-| Part consumption                                                        | Contracted                                                                              |
-| External part request                                                   | Contracted                                                                              |
-| External supplier                                                       | **Blocked** — no supplier master (`INT-075`)                                            |
-| Expected / approved / final cost                                        | Partly blocked — parts cost readable by nothing (`INT-070`)                             |
-| External part receipt                                                   | **Blocked** — external parts have no read at all (`INT-073`, `INT-074`)                 |
-| Quotation                                                               | **Blocked** — no quotation list of any kind (`INT-060`)                                 |
-| Customer approval                                                       | Partly blocked — decisions unreadable (`INT-061`)                                       |
-| Additional-work approval                                                | **Blocked** — needs a party-role id no operation publishes (`INT-015`)                  |
-| Discounts where authorised                                              | Partly blocked — no discount-rule surface (`INT-062`)                                   |
-| Decimal-string money, ISO currency codes                                | Delivered — platform-wide invariant, gate-enforced                                      |
-| Accounting handoff                                                      | Planned                                                                                 |
-| Invoice                                                                 | Partly blocked — no invoice list; untaxed (`INT-083`, `INT-090`)                        |
-| Payment state — paid / partially paid / unpaid **only where supported** | Partly blocked — no payment list (`INT-085`, `INT-091`)                                 |
+| Requirement                                                             | Status                                                                                                                                         |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Service catalogue                                                       | Delivered — A1 (#311) category/version writers, W1 (#314) screen; `INT-055` closed                                                             |
+| Labour                                                                  | Contracted                                                                                                                                     |
+| Work pricing                                                            | Delivered — A1 (#311) assignment writer, W2 (#315) screen; `INT-057` closed                                                                    |
+| Internal inventory parts                                                | Contracted — location list (A2 S-16) and the item/category/location writers (#322); the setup and opening-stock screens are owed (CC-05)       |
+| Part issue                                                              | Contracted                                                                                                                                     |
+| Part return                                                             | Delivered — W5 (#318); the `returnedQty` scale inconsistency is deferred with an owner (CC-07)                                                 |
+| Part consumption                                                        | Contracted                                                                                                                                     |
+| External part request                                                   | Contracted                                                                                                                                     |
+| External supplier                                                       | **Blocked** — no supplier master (`INT-075`)                                                                                                   |
+| Expected / approved / final cost                                        | Partly blocked — parts cost readable by nothing (`INT-070`)                                                                                    |
+| External part receipt                                                   | **Blocked** — external parts have no read at all (`INT-073`, `INT-074`)                                                                        |
+| Quotation                                                               | Delivered — A2 S-07 per-work-order list, W3 (#316) screens; `INT-060` closed                                                                   |
+| Customer approval                                                       | Delivered — W3 (#316) decision display and record; `INT-061` closed                                                                            |
+| Additional-work approval                                                | **Blocked** — needs a party-role id no operation publishes (`INT-015`)                                                                         |
+| Discounts where authorised                                              | Partly blocked — a discounted line works once an approval limit exists (shipped screen); `svc.discount_rules` stays dormant (CC-06, `INT-062`) |
+| Decimal-string money, ISO currency codes                                | Delivered — platform-wide invariant, gate-enforced                                                                                             |
+| Accounting handoff                                                      | Planned                                                                                                                                        |
+| Invoice                                                                 | Partly blocked — W6 (#319) preview/issue/print delivered; no invoice list (`INT-083`) and untaxed until a tax writer exists (CC-06, `INT-090`) |
+| Payment state — paid / partially paid / unpaid **only where supported** | Delivered — A2 S-11 receipt list, W7 (#320) form/allocation/receipt/print; `INT-085`, `INT-091` closed                                         |
 
 ---
 
@@ -288,6 +288,47 @@ P1-28 must not expose UUIDs or technical entity names to workshop users.
 | Warranty                                                     | Contracted                                                                                                            |
 | Reports                                                      | **Blocked until #206** — the two report operations returned 500 to every request (`INT-113`); now fixed and reachable |
 | Complete delivery history                                    | Partly blocked — delivery id and version unrecoverable (`INT-084`)                                                    |
+
+---
+
+## Owner requirements recorded 2026-09-06 — nine areas
+
+On 2026-09-06 the Owner stated nine further requirement areas. Each was grounded against the
+repository at protected `develop` `6f6236c3` and is recorded line by line — Owner wording,
+normalised behaviour, existing evidence with its file and line, remaining gap, owning module,
+delivery placement, dependencies and observable acceptance criteria, and whether the line is an
+**Owner requirement** or a **proposed implementation policy** — in
+`owner-requirements-2026-09-06.md`. Dated identifiers (`OWR-2026-09-06-<area>-<n>`) mark the
+genuinely new requirements; where an existing row of this register already covered a line, that
+row is named instead and its Status refreshed above. The change-control dispositions are in
+`../phase-1/phase-1-30/change-control-2026-09-06.md`.
+
+Statuses below count the lines in each area. **Documented is not implemented.**
+
+| area | title                                             | lines | Delivered | Contracted | Blocked | Planned | Undecided | where it lands                                                                                                                                                                                                              |
+| ---- | ------------------------------------------------- | ----- | --------- | ---------- | ------- | ------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A    | Intelligence and dashboards                       | 21    | 0         | 2          | 5       | 8       | 6         | the approved operational baseline: P1-31 Backend prerequisite lane + P1-31 reporting UI; broader analytics and prediction: explicit follow-on slices; the metric list is an Owner decision first                            |
+| B    | Inventory                                         | 24    | 9         | 0          | 5       | 2       | 8         | present-scope gaps on the P1-30 corrective lanes (#322 and CC-05); transfers, in-transit, supplier returns, cross-company movement and cost lineage: named follow-on Backend slices                                         |
+| C    | Stocktaking                                       | 15    | 1         | 0          | 9       | 0       | 5         | a Backend prerequisite on the P1-30 Backend lane, then a P1-30 inventory screen; the cutoff/reconciliation method is an Owner decision                                                                                      |
+| D    | Duplicate demand and approvals                    | 11    | 1         | 0          | 5       | 1       | 4         | transport replay safety is delivered; demand detection, justified repeats and their approval are a P1-30 corrective Backend slice with a web half                                                                           |
+| E    | Changing costs and prices                         | 16    | 2         | 0          | 6       | 2       | 6         | document snapshots and price-version immutability are delivered; acquisition-cost evidence, movement cost and valuation are the follow-on Backend slice "inventory costing", gated on the Owner's valuation-method decision |
+| F    | Vehicle and service knowledge (oil specification) | 12    | 0         | 0          | 3       | 4       | 5         | a named follow-on "vehicle knowledge — fluid specification", gated on the vehicle-catalogue provider decision; manual entry stays mandatory                                                                                 |
+| G    | RootLco owner administration                      | 30    | 3         | 3          | 4       | 8       | 12        | a named follow-on "Platform Owner Console" (Backend lane first); seat semantics and the delegation rules are Owner decisions; no price or quota is invented                                                                 |
+| H    | Reception workflow and camera/OCR                 | 26    | 9         | 1          | 4       | 10      | 2         | register and capture-policy refresh now; camera capture, assisted VIN/odometer extraction and the confirm/correct step as a named P1-28 corrective slice; the road-test record is still absent everywhere                   |
+| I    | AI integration and future ERP                     | 22    | 2         | 0          | 0       | 11      | 9         | an Owner-commissioned evaluation first; the integration as a named follow-on behind a provider port; accounting, HR and rewards as explicit follow-on commitments with named owners                                         |
+
+Two findings from the grounding that change this register directly:
+
+- **The "32-step workflow" is the P1-28 table above (rows 1–32).** The end-to-end journey document
+  holds twenty-nine steps; the two counts describe different registers, not three lost steps.
+- **Reception media capture was delivered and Owner-accepted in P1-28** (closure PASS 2026-08-20) —
+  seven exterior photographs as the baseline floor, dashboard and VIN evidence, immutable versions,
+  per-visit bindings. What the Owner now requires beyond it — in-app camera capture and assisted
+  extraction of VIN and odometer values, with the original image and the extracted candidate both
+  preserved, validation against the identifier rules and the odometer history, and staff
+  confirmation — does not exist anywhere in the repository, and the P1-28 media suite currently
+  bans `getUserMedia`. That is new direction, recorded as such; earlier capture exclusions do not
+  remove it.
 
 ---
 
