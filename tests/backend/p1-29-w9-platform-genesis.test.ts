@@ -13,28 +13,65 @@
  *   G4  the result is auditable: an audit record and secret-free evidence
  *   G5  no long-lived bypass is left behind: the privilege graph is unchanged
  *   G6  a partially established operator (grants gone, account and tenant kept) is completed, not re-created
+ *   G7  the SHARED database is untouched: an unrelated operator's grant survives
+ *       the whole lifecycle, including this suite's own cleanup
  *
- * The suite starts from a clean platform (no active grant anywhere) and ends
- * by removing what it created; it never runs alongside another backend suite.
+ * ## Where it runs, and why that changed
+ *
+ * G1's precondition is "a platform with no operator". This suite once obtained
+ * it with `DELETE FROM iam.platform_grants`, unqualified, on the SHARED local
+ * database — which is not a fixture cleanup but a revocation of the real
+ * platform operator's authority. Measured 2026-09-06 on the Owner acceptance
+ * stack after one full `test:backend` run: every control-plane route
+ * answered 403 ERR-IAM-001 until the genesis CLI was re-run by hand.
+ *
+ * So the suite now builds its OWN database — every migration replayed from
+ * empty, then the declared seeds, exactly as CI builds its container — runs
+ * the genesis there, and drops it afterwards. The shared database is opened
+ * only to create and drop that database, and to hold the G7 sentinel. Nothing
+ * here deletes a row it did not write.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
+import { adminPool, ensureBackendFixtures, ensureTestLogins, TENANT_A } from './helpers';
+import { PLATFORM_LOGIN, RUNTIME_LOGIN } from '../db/helpers';
 import {
-  adminPool,
-  cleanBackendFixtures,
-  ensureTestLogins,
-  runtimeAppPool,
-  platformAppPool,
-} from './helpers';
+  ISOLATED_PREFIX,
+  adminPoolFor,
+  createIsolatedDatabase,
+  dropIsolatedDatabase,
+  dropStaleIsolatedDatabases,
+  strayPoolErrors,
+  loginPoolFor,
+} from './isolated-database';
 import { readGenesisInput, runGenesis } from '../../scripts/platform/genesis-platform-operator.mjs';
 
 const RUN = Math.random().toString(36).slice(2, 8);
 const EMAIL = `operator_${RUN}@fixture.test`;
 const HOME = `w9genesis_${RUN}`;
+/** This run's own database. Created in beforeAll, dropped in afterAll and on setup failure. */
+const ISOLATED = `${ISOLATED_PREFIX}genesis_${RUN}`;
+/** Deliberately weak, deliberately fake, local test databases only (see tests/db/helpers.ts). */
+const TEST_LOGIN_PASSWORD = 'rootlco-local-test-only';
 
+/**
+ * The G7 sentinel: an operator on the SHARED database that this suite did not
+ * establish and must not disturb. A test-owned account in TENANT_A with one
+ * platform grant, written before the isolated database exists and read back
+ * after it is gone. Deterministic id, so a crashed run's leftover is removed by
+ * the next run's setup rather than accumulating.
+ */
+const SENTINEL_ACCOUNT = 'd9900000-0000-4000-8000-0000000000ee';
+const SENTINEL_SUBJECT = 'fx_w9_genesis_sentinel';
+const SYSTEM_ACTOR = '00000000-0000-4000-8000-000000000001';
+
+/** The SHARED database: create/drop of the isolated one, and the sentinel. Nothing else. */
+let cluster: Pool;
+/** The isolated database, as the admin login. Every genesis assertion reads here. */
 let admin: Pool;
 let runtime: Pool;
 let platform: Pool;
+let sentinelBefore: string;
 
 function input(overrides: Record<string, string> = {}) {
   return readGenesisInput(
@@ -46,6 +83,9 @@ function input(overrides: Record<string, string> = {}) {
       GENESIS_PROVIDER_SUBJECT: `sub_${RUN}`,
       GENESIS_HOME_TENANT_CODE: HOME,
       ...overrides,
+      // The repository's ProcessEnv augmentation requires NODE_ENV; the CLI
+      // never reads it. Stated rather than cast around.
+      NODE_ENV: 'test',
     },
     ['--confirm', overrides.GENESIS_OPERATOR_EMAIL ?? EMAIL]
   );
@@ -70,55 +110,90 @@ async function privilegeGraph(): Promise<string> {
   return rows[0]?.line ?? '';
 }
 
+async function sharedGrantFingerprint(): Promise<string> {
+  const { rows } = await cluster.query<{ line: string }>(
+    `SELECT coalesce(string_agg(account_id || ':' || permission_code || ':' || coalesce(revoked_at::text, 'live'), ',' ORDER BY account_id, permission_code), '') AS line
+       FROM iam.platform_grants`
+  );
+  return rows[0]?.line ?? '';
+}
+
+async function removeSentinel(): Promise<void> {
+  await cluster.query('DELETE FROM iam.platform_grants WHERE account_id = $1', [SENTINEL_ACCOUNT]);
+  await cluster.query('DELETE FROM iam.user_status_history WHERE user_id = $1', [SENTINEL_ACCOUNT]);
+  await cluster.query('DELETE FROM iam.user_accounts WHERE id = $1', [SENTINEL_ACCOUNT]);
+}
+
 beforeAll(async () => {
-  admin = adminPool();
-  await ensureTestLogins(admin);
-  await cleanBackendFixtures(admin);
-  runtime = runtimeAppPool(2);
-  platform = platformAppPool(2);
-  // G1's precondition: a platform with no operator. Fixture grants left by
-  // other suites are removed; the genesis must see none.
-  await admin.query('DELETE FROM iam.platform_grants');
-}, 120_000);
+  cluster = adminPool();
+  // Cluster-level: login roles are shared by every database on the server.
+  await ensureTestLogins(cluster);
+  // TENANT_A, the fixture tenant the sentinel account lives in. Idempotent, test-owned,
+  // and the same call every sibling suite makes on the shared database.
+  await ensureBackendFixtures(cluster);
+  // A previous run that crashed could not reach its own afterAll.
+  await dropStaleIsolatedDatabases(cluster);
+
+  // The G7 sentinel on the SHARED database, before anything else happens.
+  await removeSentinel();
+  await cluster.query(
+    `INSERT INTO iam.user_accounts
+       (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+     VALUES ($1, $2, 'test_harness', $3, $4, 'Genesis sentinel', 'active', $5)`,
+    [SENTINEL_ACCOUNT, TENANT_A, SENTINEL_SUBJECT, `${SENTINEL_SUBJECT}@fixture.test`, SYSTEM_ACTOR]
+  );
+  await cluster.query(
+    `INSERT INTO iam.platform_grants (account_id, permission_code, granted_by, created_by)
+     VALUES ($1, 'platform.organization.read', $2, $2)`,
+    [SENTINEL_ACCOUNT, SYSTEM_ACTOR]
+  );
+  sentinelBefore = await sharedGrantFingerprint();
+
+  // The isolated database. If building it fails, drop what was made and fail
+  // the suite here — never fall back to the shared database.
+  try {
+    await createIsolatedDatabase(cluster, ISOLATED);
+  } catch (error) {
+    await dropIsolatedDatabase(cluster, ISOLATED);
+    throw error;
+  }
+  admin = adminPoolFor(ISOLATED, 3);
+  runtime = loginPoolFor(RUNTIME_LOGIN, TEST_LOGIN_PASSWORD, ISOLATED, 2);
+  platform = loginPoolFor(PLATFORM_LOGIN, TEST_LOGIN_PASSWORD, ISOLATED, 2);
+  // G1's precondition — a platform with no operator — is now a PROPERTY of a
+  // database replayed from empty, not the result of deleting anybody's grants.
+}, 300_000);
+
+/**
+ * Ends the isolated pools and drops the isolated database — once. G7 calls it
+ * to prove the cleanup path against the sentinel; afterAll calls it again for
+ * the ordinary path and for any run that never reached G7. A pool ended twice
+ * throws, so the second call must be a no-op rather than a repeat.
+ */
+let tornDown = false;
+async function teardownIsolated(): Promise<void> {
+  if (tornDown) return;
+  tornDown = true;
+  // Order matters: the pools must close before the database can be dropped.
+  await runtime?.end();
+  await platform?.end();
+  await admin?.end();
+  await dropIsolatedDatabase(cluster, ISOLATED);
+}
 
 afterAll(async () => {
-  await runtime.end();
-  await platform.end();
-  const home = await admin.query<{ id: string }>(
-    'SELECT id FROM org.tenants WHERE tenant_code = $1',
-    [HOME]
-  );
-  const ids = home.rows.map((r) => r.id);
-  if (ids.length > 0) {
-    await admin.query(
-      'DELETE FROM iam.platform_grants WHERE account_id IN (SELECT id FROM iam.user_accounts WHERE tenant_id = ANY($1::uuid[]))',
-      [ids]
-    );
-    for (const table of [
-      'iam.audit_record_details',
-      'iam.audit_integrity_links',
-      'iam.audit_records',
-      'iam.user_status_history',
-      'iam.user_accounts',
-      'org.tenant_status_history',
-      'org.branch_settings',
-      'org.company_settings',
-      'org.branches',
-      'org.legal_companies',
-      'org.tenant_subscriptions',
-      'org.tenant_feature_overrides',
-      'shared.number_sequences',
-      'org.tenants',
-    ]) {
-      const column = table === 'org.tenants' ? 'id' : 'tenant_id';
-      await admin.query(`DELETE FROM ${table} WHERE ${column} = ANY($1::uuid[])`, [ids]);
-    }
+  try {
+    await teardownIsolated();
+    // A pool that emitted an error with no query in flight would otherwise
+    // have crashed the process after every test passed; here it fails the
+    // suite by name instead. Empty is the only acceptable answer.
+    expect(strayPoolErrors().map((error) => error.message)).toEqual([]);
+  } finally {
+    // The sentinel is test-owned and always removed, whatever happened above.
+    await removeSentinel();
+    await cluster.end();
   }
-  await admin.query(
-    "DELETE FROM shared.idempotency_keys WHERE operation = 'org_provisioning' AND idempotency_key LIKE 'platform-genesis:%'"
-  );
-  await admin.end();
-}, 60_000);
+}, 120_000);
 
 describe('W9 — platform operator genesis', () => {
   let graphBefore: string;
@@ -127,10 +202,10 @@ describe('W9 — platform operator genesis', () => {
   it('refuses outside the two named environments, without the confirmation, and with a malformed input', () => {
     expect(() => input({ ROOTLCO_ENV: 'production' })).toThrow(/ROOTLCO_ENV/);
     expect(() =>
-      readGenesisInput({ ROOTLCO_ENV: 'local-acceptance', GENESIS_OPERATOR_EMAIL: EMAIL }, [
-        '--confirm',
-        'someone@else.test',
-      ])
+      readGenesisInput(
+        { NODE_ENV: 'test', ROOTLCO_ENV: 'local-acceptance', GENESIS_OPERATOR_EMAIL: EMAIL },
+        ['--confirm', 'someone@else.test']
+      )
     ).toThrow(/--confirm/);
     expect(() => input({ GENESIS_OPERATOR_EMAIL: 'not-an-address' })).toThrow(/address/);
     expect(() =>
@@ -343,5 +418,27 @@ describe('W9 — platform operator genesis', () => {
 
   it('G5 the privilege graph is exactly what it was: rows were written, privileges were not', async () => {
     expect(await privilegeGraph()).toBe(graphBefore);
+  });
+
+  it('G7 the shared database is untouched: an unrelated operator grant survives the whole lifecycle', async () => {
+    // Read on the SHARED database, after every genesis run above. Before the
+    // isolation this suite deleted every platform grant on the server in its
+    // beforeAll, so this assertion would have failed on the first line.
+    const live = await cluster.query<{ permission_code: string }>(
+      'SELECT permission_code FROM iam.platform_grants WHERE account_id = $1 AND revoked_at IS NULL',
+      [SENTINEL_ACCOUNT]
+    );
+    expect(live.rows.map((r) => r.permission_code)).toEqual(['platform.organization.read']);
+    expect(await sharedGrantFingerprint()).toBe(sentinelBefore);
+    // And the genesis really happened somewhere else: the operator this suite
+    // established does not exist on the shared database at all.
+    const leaked = await cluster.query('SELECT 1 FROM org.tenants WHERE tenant_code = $1', [HOME]);
+    expect(leaked.rowCount).toBe(0);
+    // Failure cleanup, proved rather than promised: dropping the isolated database
+    // now — the same call afterAll makes — leaves the sentinel exactly as it was.
+    await teardownIsolated();
+    expect(await sharedGrantFingerprint()).toBe(sentinelBefore);
+    const gone = await cluster.query('SELECT 1 FROM pg_database WHERE datname = $1', [ISOLATED]);
+    expect(gone.rowCount).toBe(0);
   });
 });

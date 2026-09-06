@@ -74,7 +74,8 @@ the other five are tenant-wide and guarded by `isProvisioned`.
 
 ### The commercial code bundle
 
-`TENANT_ADMINISTRATOR_ROLE` grows 48 → 65. The seventeen added codes are derived, not chosen: each
+`TENANT_ADMINISTRATOR_ROLE` grows 48 → 65 here (→ 67 with the inventory codes the commercial-setup
+slice adds). The seventeen added codes are derived, not chosen: each
 is declared by a shipped P1-30 screen's contract or gates one of its navigation entries, and each
 already exists in the 118-code catalogue. **No permission is minted** (RES-05). They are held so
 they can be delegated — a cashier or service advisor is a role the Owner creates, and an
@@ -121,32 +122,30 @@ unnoticed, which is what an exhaustive assertion is for.
 
 ---
 
-## 4. What is still blocked — F-02, and it is not closed by this slice
+## 4. What was still blocked after this slice — F-02, re-measured
 
-The A0 preflight's second finding stands, unchanged and unrepairable by any bootstrap:
+> **Corrected 2026-09-06, after this record was first written.** The paragraph below repeated
+> the A0 preflight's eleven-table count without re-measuring it. The Owner pointed out that A1
+> (PR #311) had already delivered the price-list-assignment writer — and it had, together with the
+> category and service-version writers, all with screens in W1–W2. The re-measurement is
+> `f02-remeasurement.md`; its verdict is kept here so this record does not mislead a later reader.
 
-> **eleven master-data tables in the commercial chain have no in-product writer** —
-> `svc.service_categories`, `svc.service_versions`, `svc.price_list_assignments`,
-> `svc.discount_rules`, `svc.pricing_approval_policies`, `inv.item_categories`, `inv.item_master`,
-> `inv.stock_locations`, `sal.invoice_numbering_configs`, `org.tax_classes`, `org.tax_rates`.
+What actually remained after this slice, measured on the fresh tenant `p30_acceptance_ac0zif`:
 
-No route, SQL function, migration or seed writes any of them. A bootstrap can give a tenant what
-the product already knows how to create; it cannot invent a writer that does not exist. The
-consequence for acceptance is exact:
+| chain link                               | reachable after THIS slice?                                                                                                                                     |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| customer, vehicle, reception, work order | **yes** — the P1-29 journey, unchanged                                                                                                                          |
+| service catalogue, pricing               | **yes** — A1 + W1/W2 writers and screens (the A0 claim was stale)                                                                                               |
+| quotation, issue, decision               | **yes** — W3, given a sellable priced service                                                                                                                   |
+| **payment: method → receipt → print**    | **yes** — this slice, proved by PM-B4                                                                                                                           |
+| inventory                                | **no** — `inv.item_categories`, `inv.item_master`, `inv.stock_locations` had no writer, and `inv.item.manage` / `inv.adjustment.approve` were not in the bundle |
+| invoice, allocation, outstanding balance | **yes** once a quotation exists — the invoice is built from an accepted quotation                                                                               |
 
-| chain link                                    | reachable on a fresh tenant after this slice?         |
-| --------------------------------------------- | ----------------------------------------------------- |
-| customer, vehicle, reception, work order      | **yes** — the P1-29 journey, unchanged                |
-| **payment: method → receipt → receipt print** | **yes** — this slice, proved by PM-B4                 |
-| service catalogue, pricing                    | no — no category or version writer (F-02)             |
-| quotation                                     | no — priced lines need a price-list assignment (F-02) |
-| inventory                                     | no — no item or location writer (F-02)                |
-| invoice, allocation, outstanding balance      | no — depends on the links above                       |
-
-F-02 belongs to the Backend phases that own those tables (P1-20 service catalogue and pricing,
-P1-21 inventory, P1-22 billing and payments), exactly as the A0 matrix routed it. It is a
-**blocking** disposition for the integrated commercial-chain acceptance and must be decided by the
-Product Owner before P1-G30 can record that acceptance as passed.
+The inventory gap is closed by the follow-on slice `remediation/p1-30-backend-commercial-setup`
+(five operations, two bundle codes, no migration, no permission minted) and its Frontend half.
+Tax classes and rates, the invoice numbering mode, discount rules and approval policies are
+**valid-but-unconfigured**: the chain tolerates their absence and they are product gaps for the
+Owner's register, not acceptance blockers.
 
 ## 5. Residuals this slice leaves open
 

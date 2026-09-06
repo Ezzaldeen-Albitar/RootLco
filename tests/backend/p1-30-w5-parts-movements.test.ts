@@ -14,8 +14,9 @@
  *   the server holds." `quantity` and `returnedQty` on the per-work-order list
  *   are asserted as literal strings before and after a return; no expectation
  *   is computed in this file. Found here: before any return `returnedQty` is
- *   the unscaled `"0"`, after one it is `"1.000"` — the screen shows each as
- *   published.
+ *   `"0.000"` (the correlated sum is cast through `numeric(12,3)` since #322;
+ *   before that it was the unscaled `"0"`), after one it is `"1.000"` — the
+ *   screen shows each as published.
  * - "The server refuses a return larger than what remains issued." Asserted.
  * - "Choosing a reservation consumes it." The reservation's status is read back
  *   as `consumed`, and an issue larger than its reservation is 409 ERR-TRN-001.
@@ -340,7 +341,7 @@ describe('FE-011 inv.stock-issue-create', () => {
       // "0", not "0.000" — the coalesced sum is not cast to numeric(12,3) —
       // while after a return it is scaled ("1.000", below). The screen renders
       // the string as published; this suite asserts what the server states.
-      returnedQty: '0',
+      returnedQty: '0.000',
     });
     expect(typeof row?.returnedQty).toBe('string');
     expect(Object.keys(row ?? {}).filter((k) => /remaining|outstanding/i.test(k))).toEqual([]);

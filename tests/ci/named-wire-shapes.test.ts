@@ -78,9 +78,13 @@ describe('every route body serialises a named type', () => {
     // `composed` (or, worse, `anonymous`) and the totals alone would not say so.
     // One did: `PriceListService.listRules` returned an anonymous shape and this
     // gate named it, which is why `PriceListRulesView` exists.
-    expect(summary.bodies).toBe(368);
-    expect(summary.named).toBe(316);
-    expect(summary.composed).toBe(52);
+    // 373 with the P1-30 inventory master data (#322): the category list and
+    // create, the item create and the location create serialise named views
+    // (`named` +4); the units-of-measure list answers `{ items }` composed in
+    // the route from `UnitOfMeasureView[]` (`composed` +1).
+    expect(summary.bodies).toBe(373);
+    expect(summary.named).toBe(320);
+    expect(summary.composed).toBe(53);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);
   });

@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 368,
-    "openapiPaths": 292,
-    "openapiOperations": 368,
+    "operations": 373,
+    "openapiPaths": 294,
+    "openapiOperations": 373,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -11,10 +11,10 @@
     "outboxForeignWriters": 0,
     "errorCodes": 28,
     "permissionCodes": 118,
-    "auditActions": 213
+    "auditActions": 216
   },
   "counts": {
-    "Covered": 368
+    "Covered": 373
   },
   "operations": [
     {
@@ -4512,6 +4512,108 @@
       "file": "apps/api/src/app/api/v1/inventory-reconciliations/route.ts"
     },
     {
+      "id": "inv.item-category-create",
+      "domain": "inventory",
+      "method": "POST",
+      "route": "/api/v1/item-categories",
+      "permissions": ["inv.item.manage"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "inv.item_category.created",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/item-categories",
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial",
+        "cross-tenant"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-30-inventory-master-data.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/item-categories/route.ts"
+    },
+    {
+      "id": "inv.item-category-list",
+      "domain": "inventory",
+      "method": "GET",
+      "route": "/api/v1/item-categories",
+      "permissions": ["inv.item.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/item-categories",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": ["route", "service", "success", "authorization", "cross-tenant"],
+      "providedEvidence": ["authorization", "cross-tenant", "route", "service", "success"],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-30-inventory-master-data.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/item-categories/route.ts"
+    },
+    {
+      "id": "inv.item-create",
+      "domain": "inventory",
+      "method": "POST",
+      "route": "/api/v1/items",
+      "permissions": ["inv.item.manage"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "inv.item.created",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/items",
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial",
+        "cross-tenant"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-30-inventory-master-data.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/items/route.ts"
+    },
+    {
       "id": "inv.item-search",
       "domain": "inventory",
       "method": "GET",
@@ -4545,6 +4647,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-21-inventory-reads.test.ts",
+        "tests/backend/p1-30-inventory-master-data.test.ts",
         "tests/backend/p1-30-w4-inventory.test.ts"
       ],
       "classification": "Covered",
@@ -4588,7 +4691,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-21-inventory-intake.test.ts"],
+      "tests": [
+        "tests/backend/p1-21-inventory-intake.test.ts",
+        "tests/backend/p1-30-inventory-master-data.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/opening-inventory-batches/[batchId]/approval/route.ts"
     },
@@ -4628,7 +4734,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-21-inventory-intake.test.ts"],
+      "tests": [
+        "tests/backend/p1-21-inventory-intake.test.ts",
+        "tests/backend/p1-30-inventory-master-data.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/opening-inventory-batches/route.ts"
     },
@@ -4666,7 +4775,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-21-inventory-intake.test.ts"],
+      "tests": [
+        "tests/backend/p1-21-inventory-intake.test.ts",
+        "tests/backend/p1-30-inventory-master-data.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/opening-inventory-batches/[batchId]/lines/route.ts"
     },
@@ -4706,6 +4818,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-21-inventory-reads.test.ts",
+        "tests/backend/p1-30-inventory-master-data.test.ts",
         "tests/backend/p1-30-w4-inventory.test.ts"
       ],
       "classification": "Covered",
@@ -4757,6 +4870,48 @@
       "file": "apps/api/src/app/api/v1/stock-issues/route.ts"
     },
     {
+      "id": "inv.stock-location-create",
+      "domain": "inventory",
+      "method": "POST",
+      "route": "/api/v1/stock-locations",
+      "permissions": ["inv.item.manage"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "inv.stock_location.created",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/stock-locations",
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-30-inventory-master-data.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/stock-locations/route.ts"
+    },
+    {
       "id": "inv.stock-location-list",
       "domain": "inventory",
       "method": "GET",
@@ -4794,6 +4949,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-30-a2-inventory-reads.test.ts",
+        "tests/backend/p1-30-inventory-master-data.test.ts",
         "tests/backend/p1-30-w4-inventory.test.ts"
       ],
       "classification": "Covered",
@@ -5018,6 +5174,28 @@
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/stock-returns/route.ts"
+    },
+    {
+      "id": "inv.uom-list",
+      "domain": "inventory",
+      "method": "GET",
+      "route": "/api/v1/units-of-measure",
+      "permissions": ["inv.item.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/units-of-measure",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": ["route", "service", "success", "authorization"],
+      "providedEvidence": ["authorization", "route", "service", "success"],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-30-inventory-master-data.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/units-of-measure/route.ts"
     },
     {
       "id": "inv.work-order-part-issue-list",

@@ -121,6 +121,16 @@ export const PENDING_MIRRORS = Object.freeze({
     'PENDING: no P1-30 screen sends this (outside FE-008…FE-013); a later phase owes the mirror',
   'inv.opening-batch-line-create':
     'PENDING: no P1-30 screen sends this (outside FE-008…FE-013); a later phase owes the mirror',
+  // The P1-30 corrective slice published the three master-data writers a fresh
+  // tenant needs before any stock can exist. Their screens are the inventory
+  // setup surface the same remediation owes on the Frontend lane, which must
+  // delete these three entries as it writes the mirror.
+  'inv.item-category-create':
+    'PENDING: the inventory setup screen (P1-30 corrective Frontend slice) owes the mirror',
+  'inv.item-create':
+    'PENDING: the inventory setup screen (P1-30 corrective Frontend slice) owes the mirror',
+  'inv.stock-location-create':
+    'PENDING: the inventory setup screen (P1-30 corrective Frontend slice) owes the mirror',
   // The `sal` writes entered this scope with W6, which mirrors the invoice
   // create and cancel bodies. Payments belong to W7 (canonical plan §4); credit
   // notes and deliveries are sent by no P1-30 screen.
