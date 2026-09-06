@@ -27,17 +27,25 @@ vi.mock('@/lib/api/server-client', () => ({
 }));
 
 const {
+  approveOpeningBatch,
   createIssue,
+  createItem,
+  createItemCategory,
+  createOpeningBatch,
+  createOpeningBatchLine,
   createReservation,
   createReturn,
+  createStockLocation,
   listAvailability,
   listBranches,
+  listItemCategories,
   listItems,
   listLocations,
   listMovements,
   listPartIssues,
   listRequiredParts,
   listReservations,
+  listUnitsOfMeasure,
   releaseReservation,
 } = await import('@/features/inventory/api');
 const { requiresIdempotencyKey, resolveOperation } = await import('@/lib/api/operation-contract');
@@ -48,6 +56,7 @@ const ITEM_ID = '33333333-3333-4333-8333-333333333333';
 const LOCATION_ID = '44444444-4444-4444-8444-444444444444';
 const RESERVATION_ID = '55555555-5555-4555-8555-555555555555';
 const WORK_ORDER_ID = '77777777-7777-4777-8777-777777777777';
+const BATCH_ID = '88888888-8888-4888-8888-888888888888';
 
 const TARGET = { companyId: COMPANY_ID, branchId: BRANCH_ID };
 const REQUEST = { pageSize: 25 } as never;
@@ -518,5 +527,175 @@ describe('W5 — issuing and returning carry a transport key and send the body a
     expect(issued.state.status).toBe('expired');
     expect(returned.state.status).toBe('expired');
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe('W10 — the setup reads are tenant-wide and assert no scope', () => {
+  it('lists the categories in one page of a hundred, and the units with no query', async () => {
+    get.mockResolvedValueOnce(ok({ items: [], nextCursor: null, hasMore: false }));
+    const categories = await listItemCategories();
+    expect(categories.status).toBe('ok');
+    expect(String(get.mock.calls[0]?.[0])).toBe('/api/v1/item-categories?limit=100');
+
+    get.mockResolvedValueOnce(ok({ items: [] }));
+    const units = await listUnitsOfMeasure();
+    expect(units.status).toBe('ok');
+    expect(String(get.mock.calls[1]?.[0])).toBe('/api/v1/units-of-measure');
+  });
+
+  it('reports a refused read as denied, not as an empty catalogue', async () => {
+    get.mockResolvedValue(failure('forbidden'));
+    expect((await listItemCategories()).status).toBe('denied');
+    expect((await listUnitsOfMeasure()).status).toBe('denied');
+  });
+
+  it('resolves every W10 write to a published idempotent operation', () => {
+    expect(resolveOperation('POST', '/api/v1/item-categories')?.operationId).toBe(
+      'inv.item-category-create'
+    );
+    expect(resolveOperation('POST', '/api/v1/items')?.operationId).toBe('inv.item-create');
+    expect(resolveOperation('POST', '/api/v1/stock-locations')?.operationId).toBe(
+      'inv.stock-location-create'
+    );
+    expect(resolveOperation('POST', '/api/v1/opening-inventory-batches')?.operationId).toBe(
+      'inv.opening-batch-create'
+    );
+    expect(
+      resolveOperation('POST', `/api/v1/opening-inventory-batches/${BATCH_ID}/lines`)?.operationId
+    ).toBe('inv.opening-batch-line-create');
+    expect(
+      resolveOperation('POST', `/api/v1/opening-inventory-batches/${BATCH_ID}/approval`)
+        ?.operationId
+    ).toBe('inv.opening-batch-approve');
+    for (const path of [
+      '/api/v1/item-categories',
+      '/api/v1/items',
+      '/api/v1/stock-locations',
+      '/api/v1/opening-inventory-batches',
+      `/api/v1/opening-inventory-batches/${BATCH_ID}/approval`,
+    ]) {
+      expect(requiresIdempotencyKey('POST', path)).toBe(true);
+    }
+    // The line create is published WITHOUT an idempotency key: a repeated
+    // request adds a second line. The screen's busy flag is the only guard,
+    // and the W10 record states the fact rather than this suite pretending
+    // the transport carries a key it does not.
+    expect(
+      requiresIdempotencyKey('POST', `/api/v1/opening-inventory-batches/${BATCH_ID}/lines`)
+    ).toBe(false);
+  });
+});
+
+describe('W10 — the setup writes send the body as given and state the outcome', () => {
+  it('creates a category, an item and a location at their routes with the body untouched', async () => {
+    send.mockResolvedValueOnce(ok({ id: 'cat-1', code: 'brakes' }));
+    const category = await createItemCategory({ code: 'brakes', name: 'Brakes' });
+    expect(category.state.status).toBe('success');
+    expect(category.state.messageKey).toBe('inventory.setup.category.success');
+    expect(category.created).toEqual({ id: 'cat-1', code: 'brakes' });
+    expect(send.mock.calls[0]).toEqual([
+      'POST',
+      '/api/v1/item-categories',
+      { code: 'brakes', name: 'Brakes' },
+    ]);
+
+    send.mockResolvedValueOnce(ok({ id: ITEM_ID, sku: 'BRK-001' }));
+    const body = {
+      itemCategoryId: 'cat-1',
+      sku: 'BRK-001',
+      name: 'Brake pad',
+      uomId: 'u-1',
+      itemType: 'part' as const,
+      isStockTracked: true,
+      isSerialized: false,
+    };
+    const item = await createItem(body);
+    expect(item.state.messageKey).toBe('inventory.setup.item.success');
+    expect(send.mock.calls[1]).toEqual(['POST', '/api/v1/items', body]);
+
+    send.mockResolvedValueOnce(ok({ id: LOCATION_ID, locationCode: 'WH-1' }));
+    const location = await createStockLocation({
+      companyId: COMPANY_ID,
+      branchId: BRANCH_ID,
+      locationCode: 'WH-1',
+      name: 'Main',
+      locationType: 'warehouse',
+    });
+    expect(location.state.messageKey).toBe('inventory.setup.location.success');
+    expect(send.mock.calls[2]?.[1]).toBe('/api/v1/stock-locations');
+  });
+
+  it('a refused write is a refusal with its correlation reference, and nothing created', async () => {
+    send.mockResolvedValue({
+      ok: false as const,
+      kind: 'validation',
+      correlationId: 'corr-9',
+      problem: { violations: [{ path: 'body.parentCategoryId', rule: 'unknown_category' }] },
+    });
+    const outcome = await createItemCategory({ code: 'pads', name: 'Pads' });
+    expect(outcome.created).toBeNull();
+    expect(outcome.state.status).toBe('invalid');
+    expect(outcome.state.correlationId).toBe('corr-9');
+    expect(outcome.state.fieldErrors).toEqual({
+      parentCategoryId: 'form.violation.unknown_category',
+    });
+  });
+
+  it('an expired session is reported as expired before any request', async () => {
+    authorizedClient.mockResolvedValue(null);
+    const outcome = await createItem({
+      itemCategoryId: 'cat-1',
+      sku: 'X',
+      name: 'x',
+      uomId: 'u',
+      itemType: 'part',
+    });
+    expect(outcome.state.status).toBe('expired');
+    expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe('W10 — the opening batch is opened, lined and approved at its own routes', () => {
+  it('opens the batch and adds a line with the quantity as a string', async () => {
+    send.mockResolvedValueOnce(ok({ id: BATCH_ID, status: 'draft' }));
+    const batch = await createOpeningBatch({
+      companyId: COMPANY_ID,
+      branchId: BRANCH_ID,
+      batchCode: 'OPEN-1',
+      asOfDate: '2026-09-06',
+    });
+    expect(batch.state.messageKey).toBe('inventory.opening.batch.success');
+    expect(send.mock.calls[0]?.[1]).toBe('/api/v1/opening-inventory-batches');
+
+    send.mockResolvedValueOnce(ok({ id: 'line-1', quantity: '12.000' }));
+    const line = await createOpeningBatchLine(BATCH_ID, {
+      itemId: ITEM_ID,
+      locationId: LOCATION_ID,
+      quantity: '12.000',
+    });
+    expect(line.state.messageKey).toBe('inventory.opening.line.success');
+    expect(send.mock.calls[1]).toEqual([
+      'POST',
+      `/api/v1/opening-inventory-batches/${BATCH_ID}/lines`,
+      { itemId: ITEM_ID, locationId: LOCATION_ID, quantity: '12.000' },
+    ]);
+  });
+
+  it('approves with no body — the batch is in the path and the approver is the caller', async () => {
+    send.mockResolvedValueOnce(ok({ id: BATCH_ID, status: 'approved' }));
+    const outcome = await approveOpeningBatch(BATCH_ID);
+    expect(outcome.state.messageKey).toBe('inventory.opening.approve.success');
+    expect(send.mock.calls[0]).toEqual([
+      'POST',
+      `/api/v1/opening-inventory-batches/${BATCH_ID}/approval`,
+      undefined,
+    ]);
+  });
+
+  it('the counter approving is a conflict, stated as one', async () => {
+    send.mockResolvedValue(failure('conflict'));
+    const outcome = await approveOpeningBatch(BATCH_ID);
+    expect(outcome.created).toBeNull();
+    expect(outcome.state.status).toBe('conflict');
   });
 });
