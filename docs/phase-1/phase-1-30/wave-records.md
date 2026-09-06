@@ -19,21 +19,21 @@ stack was not performed by the author (it needs an authenticated session, and th
 enter credentials) — the DOM tier and the backend proof are the evidence each wave offered, and
 the integrated acceptance on a fresh organisation is the step W9 owes.
 
-| item | PR   | merged     | items                              | backend cases | web cases (api / dom)    |
-| ---- | ---- | ---------- | ---------------------------------- | ------------- | ------------------------ |
-| A0   | #310 | `f6381020` | preflight, profiles, matrix, gate  | —             | —                        |
-| A1   | #311 | `bf78cea6` | seams S-02, S-03, S-04             | 31            | —                        |
-| A2   | #313 | `96cf4ec3` | seams S-07 … S-16                  | 41 + 21       | —                        |
-| W1   | #314 | `0eb9d3e2` | FE-001                             | 7             | 17 / 21 + 15             |
-| W2   | #315 | `d52bf3d1` | FE-002, FE-006                     | 9             | 16 / 18 + 18             |
-| W3   | #316 | `f2bd512a` | FE-003, FE-004, FE-005, FE-007     | 11            | 14 / 16 + 20             |
-| W4   | #317 | `64159666` | FE-008, FE-009, FE-010             | 16            | 29 (shared) / 30         |
-| W5   | #318 | `2748d044` | FE-011, FE-012, FE-013             | 13            | (shared) / 22 + 12       |
-| W6   | #319 | `0e280dc3` | FE-014, FE-015, FE-019, FE-020     | 14            | 16 / 28                  |
-| W7   | #320 | `029fc20d` | FE-016, FE-017, FE-018, FE-021     | 16            | 15 / 50                  |
-| TB   | #321 | `6f6236c3` | tenant bootstrap (CC-01 precursor) | 12            | —                        |
-| CS   | #322 | `159727b1` | F-02 writers, CC-01 … CC-13        | 15 + 8        | —                        |
-| W10  | #323 | pending    | CC-05 screens                      | —             | +8 / 17 + 14 (on the PR) |
+| item | PR   | merged     | items                              | backend cases | web cases (api / dom) |
+| ---- | ---- | ---------- | ---------------------------------- | ------------- | --------------------- |
+| A0   | #310 | `f6381020` | preflight, profiles, matrix, gate  | —             | —                     |
+| A1   | #311 | `bf78cea6` | seams S-02, S-03, S-04             | 31            | —                     |
+| A2   | #313 | `96cf4ec3` | seams S-07 … S-16                  | 41 + 21       | —                     |
+| W1   | #314 | `0eb9d3e2` | FE-001                             | 7             | 17 / 21 + 15          |
+| W2   | #315 | `d52bf3d1` | FE-002, FE-006                     | 9             | 16 / 18 + 18          |
+| W3   | #316 | `f2bd512a` | FE-003, FE-004, FE-005, FE-007     | 11            | 14 / 16 + 20          |
+| W4   | #317 | `64159666` | FE-008, FE-009, FE-010             | 16            | 29 (shared) / 30      |
+| W5   | #318 | `2748d044` | FE-011, FE-012, FE-013             | 13            | (shared) / 22 + 12    |
+| W6   | #319 | `0e280dc3` | FE-014, FE-015, FE-019, FE-020     | 14            | 16 / 28               |
+| W7   | #320 | `029fc20d` | FE-016, FE-017, FE-018, FE-021     | 16            | 15 / 50               |
+| TB   | #321 | `6f6236c3` | tenant bootstrap (CC-01 precursor) | 12            | —                     |
+| CS   | #322 | `159727b1` | F-02 writers, CC-01 … CC-13        | 15 + 8        | —                     |
+| W10  | #323 | `ea8c0666` | CC-05 screens                      | —             | +8 / 17 + 14          |
 
 Operations: 352 at P1-30's start → 356 (A1) → 368 (A2) → **373** (#322). Migrations 136 → **137**
 (#321). Permission codes **118** throughout. Administrator bundle 48 → 65 (#321) → **67** (#322).
@@ -135,8 +135,8 @@ write's notice was destroyed by the remount its re-read caused; notices now live
 What has no writer is said (S-05 open at the time — closed by #322 and W10). Entering `inv` brought
 seven writes into parity scope, declared PENDING with honest reasons; `inv.opening-batch-approve`
 declared BODYLESS. Proof: `p1-30-w4-inventory.test.ts` (16, balances `20.000 / 2.500 / 17.500` as
-strings, body-key replay, release replay moving nothing), `inventory-api.test.ts` (29 today, shared
-with W5 and W10), `inventory.dom.test.tsx` (30). The shell test's planned-module stand-in moved from
+strings, body-key replay, release replay moving nothing), `inventory-api.test.ts` (29 at `159727b1`, 38 once W10
+landed, shared with W5 and W10), `inventory.dom.test.tsx` (30). The shell test's planned-module stand-in moved from
 Inventory to Reports. Hosted: web 33951249733, unit 33953908483, final 33954831652/33954831931.
 
 ## W5 — issues, returns, stock movements, FE-011/012/013 (#318, `2748d044`)
@@ -216,9 +216,11 @@ register with nine completeness critiques applied (CC-10). Proof:
 Hosted: web run 34034909066, unit run 34036060603, final run on `70e369f2` 21/21 green; merge
 second parent `70e369f2`, tree `9aaee140`.
 
-## W10 — the inventory setup and opening-stock screens, CC-05 (#323, pending)
+## W10 — the inventory setup and opening-stock screens, CC-05 (#323, merged `ea8c0666`)
 
 `inventory-setup-slice.md`. Two route pages, zero API change; the last screen a fresh organisation
 lacked before stock could exist through the product. Its record states two absences: no
 opening-batch read exists, and `inv.opening-batch-line-create` carries no idempotency key. This
-row is completed when #323 is on `develop`.
+row was completed when #323 reached `develop` (`ea8c0666`); web record run 34038179042
+(130 files, 3490 tests), unit record run 34039719991; the two screens were then walked in a real
+browser on a fresh organisation (`w9-acceptance-record.md` §3).

@@ -89,7 +89,8 @@ not exist.
 
 > **RE-MEASURED 2026-09-06 — see `f02-remeasurement.md`.** Seven of the eleven gained writers and
 > screens in A1 and W1–W2; three (`inv.item_categories`, `inv.item_master`, `inv.stock_locations`)
-> are closed by the commercial-setup slice; five are valid-but-unconfigured and the chain tolerates
+> are closed by the commercial-setup slice (#322) and its screens (#323, `inventory-setup-slice.md`),
+> both on `develop` `ea8c0666`; five are valid-but-unconfigured and the chain tolerates
 > their absence. The finding as written below is the preflight's record and stands as history.
 
 The commercial chain is: service category → service → service version → price list → price-list
@@ -265,7 +266,8 @@ codes**, every one already in the catalogue:
 Three catalogue codes are **not** reachable by the walk and are therefore not proposed:
 `inv.cost.view` (a field-level gate on cost and margin, risk **high** — the P1-10 contract says those
 fields render only with it, so holding it by default would defeat the split the contract asks for),
-`inv.item.manage` (declared by no route — the item master has no writer, which is F-02), and
+`inv.item.manage` (declared by no route at the time — the item master had no writer, which was F-02;
+#322 declared it on the three master-data writers and added it to the bundle, corrected 2026-09-06), and
 `sal.reversal.approve` (no reversal route exists; P1-22-L-05 records the absence).
 
 Two questions the derivation cannot answer, and which are the Owner's:
