@@ -1383,7 +1383,10 @@
       "method": "POST",
       "path": "/customers/individuals",
       "public": false,
-      "files": ["tests/backend/p1-16-customer-creation.test.ts"],
+      "files": [
+        "tests/backend/p1-16-customer-creation.test.ts",
+        "tests/backend/p1-30-tenant-bootstrap-reachability.test.ts"
+      ],
       "referenced": true,
       "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
       "declared": ["success", "denial", "cross-tenant", "audit", "outbox", "rollback"],
@@ -3306,7 +3309,8 @@
         "tests/backend/iam-operations.test.ts",
         "tests/backend/p1-14-idempotency-replay.test.ts",
         "tests/backend/p1-24-iam-route-depth.test.ts",
-        "tests/backend/p1-29-w9-owner-bootstrap.test.ts"
+        "tests/backend/p1-29-w9-owner-bootstrap.test.ts",
+        "tests/backend/p1-30-tenant-bootstrap-reachability.test.ts"
       ],
       "referenced": true,
       "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
@@ -3346,7 +3350,8 @@
         "tests/backend/iam-admin-writes.test.ts",
         "tests/backend/p1-14-idempotency-replay.test.ts",
         "tests/backend/p1-24-iam-route-depth.test.ts",
-        "tests/backend/p1-29-w9-owner-bootstrap.test.ts"
+        "tests/backend/p1-29-w9-owner-bootstrap.test.ts",
+        "tests/backend/p1-30-tenant-bootstrap-reachability.test.ts"
       ],
       "referenced": true,
       "derived": [
@@ -4742,7 +4747,8 @@
       "public": false,
       "files": [
         "tests/backend/pre-p1-29-platform-control-plane.test.ts",
-        "tests/backend/p1-29-w9-owner-bootstrap.test.ts"
+        "tests/backend/p1-29-w9-owner-bootstrap.test.ts",
+        "tests/backend/p1-30-tenant-bootstrap-reachability.test.ts"
       ],
       "referenced": true,
       "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
@@ -8329,7 +8335,10 @@
       "method": "GET",
       "path": "/payment-methods",
       "public": false,
-      "files": ["tests/backend/p1-22-payments.test.ts"],
+      "files": [
+        "tests/backend/p1-22-payments.test.ts",
+        "tests/backend/p1-30-tenant-bootstrap-reachability.test.ts"
+      ],
       "referenced": true,
       "derived": ["route", "service", "success", "authorization"],
       "declared": [],
@@ -8345,7 +8354,11 @@
       "method": "POST",
       "path": "/payments",
       "public": false,
-      "files": ["tests/backend/p1-22-payments.test.ts", "tests/backend/p1-22-isolation.test.ts"],
+      "files": [
+        "tests/backend/p1-22-payments.test.ts",
+        "tests/backend/p1-22-isolation.test.ts",
+        "tests/backend/p1-30-tenant-bootstrap-reachability.test.ts"
+      ],
       "referenced": true,
       "derived": [
         "route",

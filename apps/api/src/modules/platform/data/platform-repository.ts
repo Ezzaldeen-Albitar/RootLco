@@ -33,6 +33,20 @@ export interface OrganizationRow {
   readonly createdAt: string;
 }
 
+/**
+ * The three roots `org.provision_organization` creates and names in its own
+ * response document.
+ *
+ * A named type rather than an inline shape because it now crosses a module
+ * boundary: the branch-scoped number sequences are keyed on the company and
+ * branch, so `@/modules/shared-services` is handed this pair.
+ */
+export interface ProvisionedRoot {
+  readonly tenantId: string;
+  readonly companyId: string;
+  readonly branchId: string;
+}
+
 export class PlatformRepository extends Repository {
   protected readonly module = 'platform';
 
@@ -101,14 +115,27 @@ export class PlatformRepository extends Repository {
     db: DbHandle,
     spec: Readonly<Record<string, unknown>>,
     idempotencyKey: string
-  ): Promise<{ readonly tenantId: string }> {
-    const row = await this.runOne<{ result: { tenant_id: string } }>(
-      db,
-      'SELECT org.provision_organization($1::jsonb, $2) AS result',
-      [JSON.stringify(spec), idempotencyKey]
-    );
+  ): Promise<ProvisionedRoot> {
+    const row = await this.runOne<{
+      result: { tenant_id: string; company_id: string; branch_id: string };
+    }>(db, 'SELECT org.provision_organization($1::jsonb, $2) AS result', [
+      JSON.stringify(spec),
+      idempotencyKey,
+    ]);
     if (!row) throw new Error('provision_organization returned no row');
-    return { tenantId: row.result.tenant_id };
+    // The company and branch are read from the SAME response document the
+    // function has always returned (`jsonb_build_object('tenant_id', …,
+    // 'company_id', …, 'branch_id', …)`), not from a second query. They are
+    // needed because the branch-scoped number sequences the P1-30 corrective
+    // slice provisions are keyed on exactly this pair, and `app_platform` could
+    // otherwise only rediscover them through org.legal_companies /
+    // org.branches — a read it holds, but a second source for a fact the
+    // provisioning call already handed back.
+    return {
+      tenantId: row.result.tenant_id,
+      companyId: row.result.company_id,
+      branchId: row.result.branch_id,
+    };
   }
 
   /**

@@ -37,9 +37,17 @@ A0 was commissioned to answer "which reads exist, which are missing". The measur
 
 ### F-01 — no real organization can hold ANY commercial permission
 
+> **CLOSED 2026-09-06 by the P1-30 tenant-bootstrap corrective slice.** The bundle now carries the
+> seventeen commercial codes, and the exact 403 recorded below is asserted as a 201 in
+> `tests/backend/p1-30-tenant-bootstrap-reachability.test.ts` (`F01-B1`), proved falsifiable by
+> removing one code and watching it answer 403 again. The finding as written stands as the record of
+> what was true at the A0 preflight; the two paragraphs it left implicit are added at the end of this
+> section. Organizations provisioned BEFORE the slice keep the set they were given — a backfill
+> decision, carried as a residual rather than performed silently.
+
 The tenant administrator the First-Owner bootstrap writes
-(`apps/api/src/modules/iam/domain/bootstrap-roles.ts`, `TENANT_ADMINISTRATOR_ROLE`) holds 48
-permission codes. **None of the 27 commercial codes is among them.** The delegation rule lets an
+(`apps/api/src/modules/iam/domain/bootstrap-roles.ts`, `TENANT_ADMINISTRATOR_ROLE`) held 48
+permission codes at the preflight, and holds 65 since the corrective slice. **None of the 27 commercial codes is among them.** The delegation rule lets an
 actor map or grant only codes it holds itself (`ins_role_permissions_delegable`,
 `ins_role_grants_delegable`, migration `20260726090000`), and the bundle is written once, at
 provisioning (`tenant-bootstrap-service.ts`); the platform surface is `POST /platform/organizations`
@@ -56,6 +64,25 @@ Proved on the production build as the Owner of `rootlco_w7b`:
 Four Owner accounts on this environment (44, 46, 48 and 48 codes) hold zero commercial codes between
 them. **Until this changes, every P1-30 screen answers 403 for every operator of every tenant**, and
 no amount of Frontend work alters that.
+
+#### What the corrective slice found alongside it
+
+Confirming F-01 executably at develop `029fc20d` turned up two more closures of the same class —
+things the SHIPPED provisioning operation does not give a tenant, each independently fatal to the
+commercial chain and each invisible to every gate:
+
+| what was missing                             | measured                                              | why it is fatal                                                                                                                                       |
+| -------------------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| a tenant-scope row in `sal.payment_methods`  | six tenants, **0** rows                               | `fk_receipts_method` is `(tenant_id, payment_method_id)` and a platform row's `tenant_id` is NULL, so no receipt can cite one                         |
+| any row in `shared.number_sequences`         | six tenants, **0** rows                               | `shared.next_display_number` matches `(company_id, branch_id)` exactly; invoice issue, receipt record and quotation create refuse rather than degrade |
+| the seventeen commercial codes (F-01 itself) | roles across all six tenants held **0** `sal.*` codes | `ins_role_permissions_delegable` admits a mapping only when the actor holds the code, so the closure is permanent                                     |
+
+All three are repaired in one slice, in the same transaction that creates the tenant. The payment
+methods needed one privilege migration (`20260906090000`); the sequences needed none — the policy
+and the INSERT privilege had existed since the control plane shipped and had simply never been used.
+
+**F-02 below is NOT closed by that slice and cannot be**: no bootstrap can invent a writer that does
+not exist.
 
 ### F-02 — eleven master-data tables in the commercial chain have no in-product writer
 
@@ -285,7 +312,8 @@ re-run by hand afterwards.
 
 #### The re-run bundle attack — F-01 is wider than §1 states
 
-Cross-referencing `TENANT_ADMINISTRATOR_ROLE.permissionCodes` (48) in
+Cross-referencing `TENANT_ADMINISTRATOR_ROLE.permissionCodes` (48 at the preflight, 65 since the
+corrective slice) in
 `apps/api/src/modules/iam/domain/bootstrap-roles.ts` against the 23 permission gates in
 `apps/web/src/config/navigation.ts` and the 118-code catalogue in
 `supabase/seeds/04_iam_permission_catalog.sql`: **12 of the 23 gates are not held.**
@@ -296,6 +324,14 @@ Cross-referencing `TENANT_ADMINISTRATOR_ROLE.permissionCodes` (48) in
 | recorded elsewhere                           | `org.settings.manage` (W9-R2), `sal.invoice.read` and `sal.delivery.read` (RES-05 — absent from the catalogue entirely) |
 | commercial — F-01's own                      | `inv.item.read`, `svc.service.read`                                                                                     |
 | **undocumented and unrecorded**              | `apt.appointment.read`, `iam.audit.view`, `rpt.report.read`, `shared.notification.read`                                 |
+
+Of those twelve, the corrective slice closes the two marked _commercial_ plus `iam.approval.manage`
+and the quotation, pricing, invoice and payment gates. Eight remain unheld and are carried as
+residuals: `crm.customer.duplicate.review` and `veh.vehicle.duplicate.review` (deliberate),
+`org.settings.manage` (W9-R2), `sal.invoice.read` and `sal.delivery.read` (RES-05 — absent from the
+catalogue, so nothing can hold them and the navigation entries are the thing to correct), and
+`apt.appointment.read`, `iam.audit.view`, `rpt.report.read`, `shared.notification.read`, which gate
+surfaces of phases the Owner has already accepted.
 
 The last four gate surfaces of phases the Owner has already accepted — appointments (P1-28), the
 audit log (P1-26), reporting and notifications (P1-23). The bundle holds **zero** `apt.*` codes while

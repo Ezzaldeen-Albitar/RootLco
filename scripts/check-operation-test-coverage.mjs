@@ -1597,7 +1597,10 @@ export const MANIFEST = {
     note: 'bounded allow-listed read; a tenant-B customer is unreachable (cross-tenant); an invalid cursor and an oversized query are refused (denial); safe projection only, no sensitive identifier',
   },
   'crm.individual-create': {
-    files: ['tests/backend/p1-16-customer-creation.test.ts'],
+    files: [
+      'tests/backend/p1-16-customer-creation.test.ts',
+      'tests/backend/p1-30-tenant-bootstrap-reachability.test.ts',
+    ],
     required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'rollback'],
     note: 'partner + individual profile + audit + outbox commit in one transaction; an injected failure leaves none of the four (rollback); the created customer is invisible from tenant B (cross-tenant)',
   },
@@ -1816,6 +1819,7 @@ export const MANIFEST = {
       'tests/backend/p1-14-idempotency-replay.test.ts',
       'tests/backend/p1-24-iam-route-depth.test.ts',
       'tests/backend/p1-29-w9-owner-bootstrap.test.ts',
+      'tests/backend/p1-30-tenant-bootstrap-reachability.test.ts',
     ],
     required: [],
     note: 'created and found in the list',
@@ -1839,6 +1843,7 @@ export const MANIFEST = {
       'tests/backend/p1-14-idempotency-replay.test.ts',
       'tests/backend/p1-24-iam-route-depth.test.ts',
       'tests/backend/p1-29-w9-owner-bootstrap.test.ts',
+      'tests/backend/p1-30-tenant-bootstrap-reachability.test.ts',
     ],
     required: ['success', 'denial', 'audit'],
     note: 'delegable allow added; permission-denied under RLS',
@@ -2553,7 +2558,11 @@ export const MANIFEST = {
     note: 'a SECOND operation rather than a flag, because sal.guard_dual_control_approval raises check_violation when approved_by = requested_by and BOTH are stamped from iam.current_user_id() — the maker on INSERT, the approver on UPDATE — so the two acts must come from two sessions belonging to two different users and no single endpoint could satisfy that however it were shaped; audit class is approval rather than financial because the fact recorded is a second person’s decision; the test drives it with a distinct approver principal and asserts the same-user attempt is refused with a caller-safe message rather than a constraint name (denial); idempotent because the primitive returns silently on an already-approved note, and uq_financial_events_source would refuse a second event with 23505 in any case — a free backstop',
   },
   'sal.payment-record': {
-    files: ['tests/backend/p1-22-payments.test.ts', 'tests/backend/p1-22-isolation.test.ts'],
+    files: [
+      'tests/backend/p1-22-payments.test.ts',
+      'tests/backend/p1-22-isolation.test.ts',
+      'tests/backend/p1-30-tenant-bootstrap-reachability.test.ts',
+    ],
     required: ['outbox', 'denial', 'cross-tenant'],
     note: 'records that money was received and structurally CANNOT claim a settlement: ck_payment_methods_kind admits exactly cash, card_terminal and bank_transfer with the schema comment "No online payment gateway/settlement types (ASM-14, CON-04)", so there is no column in which an authorisation or a card could be stored and the body has no such field; receivedBy is absent by construction because sal.record_receipt stamps the cashier and the tenant from the session, so offering either as an input would be offering a lie; the denial cases include a PLATFORM payment method, which is visible to every tenant via sel_payment_methods_scope and citable by NO receipt — fk_receipts_method resolves (tenant_id, payment_method_id) and a platform row’s tenant_id is NULL, so it raises 23503 about a method the caller can see in the list; a fifth decimal place is refused at the boundary because exceeding scale is NOT an error, PostgreSQL silently rounds it away',
   },
@@ -2568,7 +2577,10 @@ export const MANIFEST = {
     note: 'requires sal.finance.view where the invoice detail does not, and the asymmetry is the schema’s: sal.receipts is gated WHOLE-ROW by it on SELECT, so a caller without it sees zero receipts rather than redacted ones and there is no honest "receipt without amounts" projection to build — declaring the permission is the truthful contract, because the alternative is an endpoint that returns 404 for a receipt that exists; the receipt reference is stable and is not a second identity: receipt_number is allocated once by sal.record_receipt and frozen by sal.guard_receipt_freeze, which is unconditional on every UPDATE and covers the number as well as the money, so the test asserts the SAME number after a replay of the recording command',
   },
   'sal.payment-method-list': {
-    files: ['tests/backend/p1-22-payments.test.ts'],
+    files: [
+      'tests/backend/p1-22-payments.test.ts',
+      'tests/backend/p1-30-tenant-bootstrap-reachability.test.ts',
+    ],
     required: [],
     note: 'exists because sal.record_receipt takes a payment_method_id and without a way to discover one payment recording is unreachable — the difference between a usable API and a decorative one; scope is tenant and that is FORCED by the table, which has no company_id and no branch_id column at all, so declaring branch would be a claim the schema cannot support and authorizeScope would have nothing coherent to check; the projection reports `recordable` per row, because the three seeded PLATFORM methods are visible to every tenant via sel_payment_methods_scope and citable by NO receipt — fk_receipts_method resolves (tenant_id, payment_method_id) and a platform row’s tenant_id is NULL — so leaving a caller to discover that FK by receiving a 23503 about a method it can see in the list would be the trap this list exists to remove. THE `required` LIST IS EMPTY, AND THAT IS DELIBERATE: this is the only P1-22 operation that parses NO input at all — no path parameter, no query schema, no body — so it has nothing to validate and no state to refuse, and neither `denial` nor `cross-tenant` can be backed by an assertion that is not a fiction. `denial` was in this entry and was REMOVED after the suite author refused to declare an unbacked flag and said so; the same argument this note already made for `cross-tenant` applies to it verbatim, and the obligation had been copy-pasted across the P1-22 block. The derived floor still requires route, service, success and authorization, so this is not an unguarded row — it is a row whose extra obligations were imaginary',
   },
@@ -2685,6 +2697,7 @@ export const MANIFEST = {
     files: [
       'tests/backend/pre-p1-29-platform-control-plane.test.ts',
       'tests/backend/p1-29-w9-owner-bootstrap.test.ts',
+      'tests/backend/p1-30-tenant-bootstrap-reachability.test.ts',
     ],
     required: ['denial'],
     note: 'the sanctioned path to org.provision_organization; tenant.activate is never forwarded, because that branch would close the §6.3 bootstrap window inside the transaction that depends on it',

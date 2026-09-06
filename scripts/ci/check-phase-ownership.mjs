@@ -610,6 +610,41 @@ export const PROFILES = {
         'it does need travel under their own buckets',
     },
   },
+  'p1-30-tenant-bootstrap': {
+    why:
+      'the P1-30 corrective slice: a tenant created by the shipped provisioning operation could ' +
+      'not trade. Three closures, each measured on develop 029fc20d before anything was written ' +
+      '- no tenant-scope payment method (so no receipt could cite one), no number sequence at any ' +
+      'scope (so no invoice, receipt or quotation could be numbered), and a 48-code administrator ' +
+      'bundle holding no commercial permission at all (A0 finding F-01, which the delegation rule ' +
+      'makes permanent). Backend and database only: one privilege migration, the two bootstrap ' +
+      'writers, the server-owned sets they read, and the proofs',
+    // NARROWER than `p1-30-backend`, which would also have permitted this diff.
+    // Borrowing it would have declared nothing: that profile's `why` describes
+    // the read seams the A0 preflight proved missing, one branch per seam, and
+    // this branch publishes no operation and adds no read. It changes what
+    // PROVISIONING writes.
+    allowed: ['apiSource', 'migrations', 'docs', 'tooling', 'tests', 'rootConfig'],
+    forbidden: {
+      web:
+        'Backend-only. The seven P1-30 screens are already merged and are not touched: this slice ' +
+        'changes what a tenant is given, not what a page renders',
+      webContract:
+        'that allow-list holds six frozen P1-28 files, and this slice publishes no operation, so ' +
+        'no exhaustiveness assertion reaches a mirror row',
+      webGenerated:
+        'no operation is published, so the idempotency manifest cannot move - a regenerated ' +
+        'manifest here would mean something else changed',
+      apiConfig: 'no dependency and no build setting changes',
+      dbSeeds:
+        'no permission is minted. Every one of the seventeen commercial codes the administrator ' +
+        'bundle gains already exists in the 118-code catalogue, and the payment-method vocabulary ' +
+        'is the P1-11 seed this slice COPIES rather than extends',
+      supabase:
+        'the database HARNESS is untouched; the one migration this slice does need travels under ' +
+        'its own bucket',
+    },
+  },
   'p1-09-database-seed': {
     why:
       'a missed P1-09 DATABASE seed obligation, repaired after the fact: one declared seed file ' +
