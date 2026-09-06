@@ -677,7 +677,10 @@
       "method": "GET",
       "path": "/payment-methods",
       "public": false,
-      "files": ["tests/backend/p1-22-payments.test.ts"],
+      "files": [
+        "tests/backend/p1-22-payments.test.ts",
+        "tests/backend/p1-30-tenant-bootstrap-reachability.test.ts"
+      ],
       "referenced": true,
       "derived": ["route", "service", "success", "authorization"],
       "declared": [],
@@ -693,7 +696,11 @@
       "method": "POST",
       "path": "/payments",
       "public": false,
-      "files": ["tests/backend/p1-22-payments.test.ts", "tests/backend/p1-22-isolation.test.ts"],
+      "files": [
+        "tests/backend/p1-22-payments.test.ts",
+        "tests/backend/p1-22-isolation.test.ts",
+        "tests/backend/p1-30-tenant-bootstrap-reachability.test.ts"
+      ],
       "referenced": true,
       "derived": [
         "route",

@@ -75,11 +75,40 @@
  * (W9-R3) recorded in the derivation record.
  *
  * Excluded on purpose, each with its reason in the W9 derivation record:
- * `platform.*` (never a tenant code), `iam.approval.manage` and
- * `iam.login.view_all` (no walked route on the journey declares them),
- * and the reception, CRM and vehicle codes beyond the creation path above
- * (W3's customer context is resolved server-side through the reception port
- * under scope-only policies, and no W1–W8 screen writes them).
+ * `platform.*` (never a tenant code), `iam.login.view_all` (no walked route on
+ * the journey declares it), and the reception, CRM and vehicle codes beyond the
+ * creation path above (W3's customer context is resolved server-side through the
+ * reception port under scope-only policies, and no W1–W8 screen writes them).
+ *
+ * ## The P1-30 commercial block (corrective slice, 2026-09-06)
+ *
+ * The derivation above walked ONE phase's routes, and the blind spot was exactly
+ * the shape of that method: the set carried no `svc.`, `quo.`, `inv.` or `sal.`
+ * code at all. Because `ins_role_permissions_delegable` admits a mapping only
+ * when the acting administrator already holds the code being mapped, that was
+ * not an inconvenience an operator could work around — it was a CLOSURE. No
+ * principal in a tenant created by the shipped provisioning operation could ever
+ * hold a commercial code, so the service catalogue, pricing, quotation,
+ * inventory, invoice and payment surfaces P1-30 ships were unreachable in every
+ * such tenant, permanently. Measured at develop `029fc20d`: across the six
+ * organisations on the stack, roles held ZERO `sal.*` codes between them.
+ *
+ * The seventeen codes below are DERIVED, not chosen: each is declared by a P1-30
+ * screen's own contract (`apps/web/src/features/{services,pricing,quotations,
+ * inventory,billing,payments}/*-contract.ts`) or gates one of its navigation
+ * entries, and each already exists in the 118-code catalogue — this slice mints
+ * none. `iam.approval.manage` moves out of the exclusion list above for the same
+ * reason it was in it: the rule was "no walked route declares it", and W3's
+ * quotation screen now walks `iam.approval-limit-list`.
+ *
+ * They are held so they can be DELEGATED. The commercial personas a workshop
+ * actually runs — a service advisor, a parts keeper, a cashier — are roles the
+ * Owner creates, and an administrator can create none of them out of codes it
+ * does not hold.
+ *
+ * The bundle is written ONCE, at provisioning. Organisations created before this
+ * slice keep the set they were given; bringing them forward is a backfill
+ * decision, recorded as a residual rather than performed here.
  */
 
 export interface BootstrapRoleDefinition {
@@ -101,7 +130,7 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
   code: 'tenant_administrator',
   name: 'Tenant Administrator',
   description:
-    'Tenant administration established at provisioning: session reachability, IAM administration, the organisation reads the workshop screens require, and every code the P1-29 personas need, so that they can be delegated.',
+    'Tenant administration established at provisioning: session reachability, IAM administration, the organisation reads the workshop screens require, and every code the P1-29 and P1-30 personas need, so that they can be delegated.',
   permissionCodes: Object.freeze([
     // Session reachability and IAM administration (direct).
     'iam.user.read',
@@ -156,5 +185,25 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     'rec.reception.signature.manage',
     'rec.reception.approve',
     'rec.reception.convert',
+    // The P1-30 commercial chain: held to be exercised and to be delegated to
+    // the commercial personas. Each is declared by a shipped P1-30 screen or
+    // gates one of its navigation entries; none is minted here.
+    'svc.service.read',
+    'svc.service.manage',
+    'svc.price.read',
+    'svc.price.manage',
+    'svc.price.publish',
+    'quo.quotation.read',
+    'quo.quotation.manage',
+    'quo.decision.record',
+    'iam.approval.manage',
+    'inv.item.read',
+    'inv.stock.read',
+    'inv.stock.operate',
+    'sal.invoice.manage',
+    'sal.invoice.issue',
+    'sal.finance.view',
+    'sal.payment.record',
+    'sal.payment.allocate',
   ]),
 });

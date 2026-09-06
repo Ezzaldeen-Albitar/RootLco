@@ -571,7 +571,10 @@
       "method": "POST",
       "path": "/customers/individuals",
       "public": false,
-      "files": ["tests/backend/p1-16-customer-creation.test.ts"],
+      "files": [
+        "tests/backend/p1-16-customer-creation.test.ts",
+        "tests/backend/p1-30-tenant-bootstrap-reachability.test.ts"
+      ],
       "referenced": true,
       "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
       "declared": ["success", "denial", "cross-tenant", "audit", "outbox", "rollback"],

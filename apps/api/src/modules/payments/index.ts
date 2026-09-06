@@ -57,8 +57,10 @@
  */
 import { composeModule } from '@/server/layering';
 import { PaymentsRepository } from './data/payments-repository';
+import { PaymentMethodBootstrapRepository } from './data/payment-method-bootstrap-repository';
 import { PaymentService } from './application/payment-service';
 import { PaymentReadService } from './application/payment-read-service';
+import { PaymentMethodBootstrapService } from './application/payment-method-bootstrap-service';
 
 export type {
   PaymentAllocationRow,
@@ -92,6 +94,8 @@ export {
   PLATFORM_CODE_FORMAT,
   PaymentRuleError,
   RECEIPT_STATUSES,
+  TENANT_BOOTSTRAP_METHOD_CODES,
+  type TenantBootstrapMethodCode,
   assertAllocatable,
   assertAllocationCurrencyCoherent,
   assertAllocationUsesPrimitive,
@@ -118,6 +122,14 @@ export {
  * construct a `PaymentsRepository` could call `allocateReceipt` without the currency,
  * scope and bound checks the service performs — and, worse, could be extended with
  * the raw INSERT the whole module exists to prevent.
+ *
+ * `methodBootstrap` is the third service and the one exception to "two services over
+ * ONE repository": it writes `sal.payment_methods` during tenant provisioning, as
+ * `app_platform`, under a policy set no runtime caller can reach, and it must not be
+ * reachable through the repository the two runtime services share. Its own repository
+ * therefore holds exactly one statement and no read. The module still owns the table,
+ * which is why the writer lives here and `@/modules/platform` calls it rather than
+ * reaching into `sal` itself.
  */
 export const paymentsModule = composeModule({
   module: 'payments',
@@ -126,6 +138,7 @@ export const paymentsModule = composeModule({
     return {
       reads: new PaymentReadService(repository),
       payments: new PaymentService(repository),
+      methodBootstrap: new PaymentMethodBootstrapService(new PaymentMethodBootstrapRepository()),
     };
   },
 });

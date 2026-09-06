@@ -392,11 +392,16 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
         WHERE r.tenant_id = $1 AND r.action = 'org.tenant.provisioned' AND r.entity_id = $1`,
       [body.tenantId]
     );
+    // Exhaustive on purpose, and it earned that: the P1-30 corrective slice
+    // added the two counts below and this assertion is what reported the change
+    // rather than letting it pass unnoticed. Both are counts, not identifiers.
     expect(audit.rows[0]?.details).toEqual([
       'activated',
       'display_name',
       'first_owner_role_id',
+      'number_sequences_provisioned',
       'owner_account_id',
+      'payment_methods_provisioned',
       'tenant_administrator_role_id',
       'tenant_code',
     ]);
@@ -421,7 +426,9 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
     const result = await provision('b3');
     expect(result.status).toBe(201);
     const expected = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes].sort();
-    expect(expected).toHaveLength(48);
+    // 48 before the P1-30 corrective slice; 65 with the seventeen commercial
+    // codes F-01 proved no tenant could otherwise ever hold.
+    expect(expected).toHaveLength(65);
     expect(expected.some((c) => c.includes('*'))).toBe(false);
     expect(expected.some((c) => c.startsWith('platform.'))).toBe(false);
     expect(new Set(expected).size).toBe(expected.length);
@@ -568,7 +575,7 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
         [result.body.ownerAccountId, 'active']
       )
     ).toBe(2);
-    expect(await codesOfRole(result.body.tenantAdministratorRoleId)).toHaveLength(48);
+    expect(await codesOfRole(result.body.tenantAdministratorRoleId)).toHaveLength(65);
   });
 
   it('W9-B9 an active tenant cannot reopen the bootstrap write window', async () => {
@@ -618,7 +625,7 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
       ])) ?? -1,
     ];
     const before = await counts();
-    expect(before).toEqual([1, 1, 2, 51, 2]);
+    expect(before).toEqual([1, 1, 2, 68, 2]);
 
     asHolder();
     const replay = await provision('b10', {}, key);
@@ -757,11 +764,19 @@ describe('W9 — the created human, through the real application paths', () => {
     }
     // A code the administrator does not hold cannot be delegated: the finite
     // set is the boundary, enforced by the database, not by this suite.
+    //
+    // `org.settings.manage` and not `iam.approval.manage`: the P1-30 corrective
+    // slice moved the latter INTO the bundle (W3's quotation screen walks
+    // `iam.approval-limit-list`, which is exactly the rule the exclusion list
+    // states). `org.settings.manage` remains excluded for its own stated reason
+    // — no walked route declares it, and the Workspace card renders read-only
+    // without it — so the boundary is still proved against a real exclusion
+    // rather than against a code that merely happens to be absent today.
     asBearer();
     const beyond = await call(rolePermissionAddRoute, {
       path: `/iam/roles/${role.body.id}/permissions`,
       params: { roleId: role.body.id },
-      body: { permissionCode: 'iam.approval.manage', effect: 'allow' },
+      body: { permissionCode: 'org.settings.manage', effect: 'allow' },
       bearer: accessToken,
       idempotencyKey: randomUUID(),
     });

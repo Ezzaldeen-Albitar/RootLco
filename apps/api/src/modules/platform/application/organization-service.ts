@@ -13,7 +13,13 @@ import { AppFailure } from '@/server/errors/app-failure';
 import { isSqlState, SQLSTATE } from '@/server/db/repository';
 import { type DbHandle, withPlatformTarget } from '@/server/db/transaction';
 import { type FirstOwnerInput, iamModule } from '@/modules/iam';
-import type { OrganizationRow, PlatformRepository } from '../data/platform-repository';
+import { paymentsModule } from '@/modules/payments';
+import { sharedServicesModule } from '@/modules/shared-services';
+import type {
+  OrganizationRow,
+  PlatformRepository,
+  ProvisionedRoot,
+} from '../data/platform-repository';
 
 export interface OrganizationView {
   readonly id: string;
@@ -77,14 +83,17 @@ export class OrganizationService {
    *  2. the platform-on-target window, derived from what step 1 returned and
    *     never from the request: the First-Owner bootstrap writes the account,
    *     `first_owner`, `tenant_administrator`, their mappings and grants;
-   *  3. the audit record, inside the same window, so the new tenant's own
+   *  3. the tenant's own canonical payment methods and its document-number
+   *     sequences, in the same window, because a tenant that can neither take
+   *     money nor number an invoice is not a provisioned workshop;
+   *  4. the audit record, inside the same window, so the new tenant's own
    *     trail carries its genesis with the identifiers the bootstrap produced;
-   *  4. only then, and only when asked, activation through the same function
+   *  5. only then, and only when asked, activation through the same function
    *     the lifecycle operation uses — AFTER a usable administrator exists.
    *
    * Any refusal at any step throws, and the transaction the route opened rolls
-   * back all four. The committed states are therefore exactly two: nothing, or
-   * a tenant with its administrator (active if requested).
+   * back all five. The committed states are therefore exactly two: nothing, or
+   * a tenant that works (active if requested).
    *
    * Activation needs the lifecycle authority as well as the provisioning one,
    * because `upd_tenants_platform` is predicated on it. That is checked BEFORE
@@ -112,6 +121,39 @@ export class OrganizationService {
     const tenant = (command.spec.tenant ?? {}) as Record<string, unknown>;
     const bootstrap = await withPlatformTarget(db, created.tenantId, async (target) => {
       const owner = await iamModule().tenantBootstrap.bootstrapFirstOwner(target, command.owner);
+
+      // The tenant's own payment methods, in the same window and for the same
+      // reason the roles are: a composite foreign key makes them a PRECONDITION
+      // of the product working, not an administrative nicety a new operator can
+      // be left to discover. `fk_receipts_method` resolves
+      // (tenant_id, payment_method_id), a platform row's tenant_id is NULL, and
+      // no route creates a tenant one — so before this call every organisation
+      // this operation had ever created could read the payments experience and
+      // record nothing. Six of them existed. The write belongs to `payments`:
+      // this service names the need, that module owns `sal.payment_methods`, and
+      // the vocabulary is the P1-11 seed's rather than either module's.
+      //
+      // A shortfall throws, so the whole provisioning unwinds. That is the
+      // point: there must be no committed tenant the product calls provisioned
+      // and which cannot record an ASM-14 receipt.
+      const paymentMethods =
+        await paymentsModule().methodBootstrap.provisionCanonicalMethods(target);
+
+      // The document numbers, for the same reason and with the same failure
+      // mode. Every human-facing number on this platform comes from
+      // shared.next_display_number, which refuses when no row is configured for
+      // (tenant, company, branch, code) — and app_runtime holds no INSERT here
+      // either. Invoice issue, receipt record and quotation create do not
+      // degrade: they fail. Zero rows existed for any tenant on the stack.
+      //
+      // Unlike the payment methods, this half needed NO migration:
+      // ins_number_sequences_platform and the INSERT privilege have existed
+      // since the control plane shipped and had simply never been used.
+      const numberSequences =
+        await sharedServicesModule().sequenceBootstrap.provisionRegisteredSequences(target, {
+          companyId: created.companyId,
+          branchId: created.branchId,
+        });
 
       // Both control-plane writes declare auditClass: 'privileged' with a named
       // action, and NEITHER is written by the pipeline: route-handler validates
@@ -144,6 +186,20 @@ export class OrganizationService {
             value: owner.tenantAdministratorRoleId,
           },
           { field: 'activated', classification: 'public', value: String(command.activate) },
+          // Counts, not lists: both sets are server-owned and identical for
+          // every tenant, so the fact worth recording is that the tenant left
+          // the window able to take money and to number a document. Public —
+          // neither names an identifier.
+          {
+            field: 'payment_methods_provisioned',
+            classification: 'public',
+            value: String(paymentMethods),
+          },
+          {
+            field: 'number_sequences_provisioned',
+            classification: 'public',
+            value: String(numberSequences),
+          },
         ],
       });
       return owner;
@@ -181,7 +237,7 @@ export class OrganizationService {
     db: DbHandle,
     spec: Readonly<Record<string, unknown>>,
     idempotencyKey: string
-  ): Promise<{ readonly tenantId: string }> {
+  ): Promise<ProvisionedRoot> {
     try {
       return await this.repository.provisionOrganization(db, spec, idempotencyKey);
     } catch (error) {
