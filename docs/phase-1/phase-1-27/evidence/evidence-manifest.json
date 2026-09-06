@@ -48,7 +48,7 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "595d7a40b62fb2c5cff4154448511f244b7c2701c2267ba5f1170ff8c8f30dee",
+      "sha256": "0febd60c7d257d25deadde3a67e3efd6a75b28b606ba6fc5a1eb9d1f04dd1e77",
       "bytes": 148839
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
@@ -152,7 +152,7 @@
       "bytes": 62211
     },
     "docs/phase-1/phase-1-27/risk-register.md": {
-      "sha256": "69d8faf75597dce936c31bab45006e978513d5d7db15acda57b553d3693db8be",
+      "sha256": "fc3d00273da1ede10e23de09e73563b9279dbbf7d2cb649dbcae5333076ae17a",
       "bytes": 187802
     },
     "docs/phase-1/phase-1-27/task-matrix-verdicts.json": {
