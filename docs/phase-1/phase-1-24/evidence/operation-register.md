@@ -9,14 +9,14 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 368   |
+| Public operations        | 373   |
 | Domains (modules)        | 20    |
-| OpenAPI paths            | 292   |
-| OpenAPI operations       | 368   |
+| OpenAPI paths            | 294   |
+| OpenAPI operations       | 373   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 118   |
-| Audit actions catalogued | 213   |
+| Audit actions catalogued | 216   |
 | Domain events catalogued | 50    |
 | Structured error codes   | 28    |
 
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 368        |
+| Covered           | 373        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -39,7 +39,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | delivery        | 6          | 6       | 5      | 5       | 5          | 1               |
 | diagnostics     | 23         | 23      | 15     | 15      | 14         | 4               |
 | iam             | 46         | 46      | 29     | 27      | 12         | 9               |
-| inventory       | 17         | 17      | 10     | 11      | 8          | 0               |
+| inventory       | 22         | 22      | 13     | 14      | 11         | 0               |
 | meta            | 1          | 1       | 0      | 0       | 0          | 0               |
 | payments        | 5          | 5       | 2      | 2       | 2          | 0               |
 | platform        | 3          | 3       | 2      | 2       | 1          | 0               |
@@ -174,18 +174,23 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `inv.damaged-stock-create`                          | POST   | `/api/v1/damaged-stock`                                                             | branch  | `inv.stock.operate`                                                  | inv.stock.damaged                            | yes  | —   | audit authorization denial idempotency isolation route service success                                                        | Covered |
 | `inv.external-purchase-part-create`                 | POST   | `/api/v1/external-purchase-parts`                                                   | branch  | `inv.external_purchase.record`                                       | inv.external_purchase.recorded               | yes  | —   | audit authorization denial idempotency isolation route service success                                                        | Covered |
 | `inv.inventory-reconciliation-read`                 | GET    | `/api/v1/inventory-reconciliations`                                                 | branch  | `inv.audit.read`                                                     | inv.reconciliation.performed                 | —    | —   | audit authorization cross-tenant denial isolation route service success                                                       | Covered |
+| `inv.item-category-create`                          | POST   | `/api/v1/item-categories`                                                           | tenant  | `inv.item.manage`                                                    | inv.item_category.created                    | yes  | —   | audit authorization cross-tenant denial idempotency route service success                                                     | Covered |
+| `inv.item-category-list`                            | GET    | `/api/v1/item-categories`                                                           | tenant  | `inv.item.read`                                                      | —                                            | —    | —   | authorization cross-tenant route service success                                                                              | Covered |
+| `inv.item-create`                                   | POST   | `/api/v1/items`                                                                     | tenant  | `inv.item.manage`                                                    | inv.item.created                             | yes  | —   | audit authorization cross-tenant denial idempotency route service success                                                     | Covered |
 | `inv.item-search`                                   | GET    | `/api/v1/items`                                                                     | tenant  | `inv.item.read`                                                      | —                                            | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
 | `inv.opening-batch-approve`                         | POST   | `/api/v1/opening-inventory-batches/{batchId}/approval`                              | branch  | `inv.adjustment.approve`                                             | inv.opening_batch.approved                   | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `inv.opening-batch-create`                          | POST   | `/api/v1/opening-inventory-batches`                                                 | branch  | `inv.stock.operate`                                                  | inv.opening_batch.created                    | yes  | —   | audit authorization denial idempotency isolation route service success                                                        | Covered |
 | `inv.opening-batch-line-create`                     | POST   | `/api/v1/opening-inventory-batches/{batchId}/lines`                                 | branch  | `inv.stock.operate`                                                  | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `inv.stock-availability-read`                       | GET    | `/api/v1/stock-availability`                                                        | branch  | `inv.stock.read`                                                     | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `inv.stock-issue-create`                            | POST   | `/api/v1/stock-issues`                                                              | branch  | `inv.stock.operate`                                                  | inv.part.issued                              | yes  | —   | audit authorization denial idempotency isolation outbox route service success                                                 | Covered |
+| `inv.stock-location-create`                         | POST   | `/api/v1/stock-locations`                                                           | branch  | `inv.item.manage`                                                    | inv.stock_location.created                   | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `inv.stock-location-list`                           | GET    | `/api/v1/stock-locations`                                                           | branch  | `inv.stock.read`                                                     | —                                            | —    | —   | authorization cross-tenant denial isolation pagination route service success                                                  | Covered |
 | `inv.stock-movement-list`                           | GET    | `/api/v1/stock-movements`                                                           | branch  | `inv.stock.read`                                                     | inv.movement_history.read                    | —    | —   | audit authorization cross-tenant denial isolation route service success                                                       | Covered |
 | `inv.stock-reservation-create`                      | POST   | `/api/v1/stock-reservations`                                                        | branch  | `inv.stock.operate`                                                  | inv.stock.reserved                           | yes  | —   | audit authorization denial idempotency isolation outbox route service success                                                 | Covered |
 | `inv.stock-reservation-list`                        | GET    | `/api/v1/stock-reservations`                                                        | branch  | `inv.stock.read`                                                     | —                                            | —    | —   | authorization cross-tenant denial isolation pagination route service success                                                  | Covered |
 | `inv.stock-reservation-release`                     | POST   | `/api/v1/stock-reservations/{reservationId}/release`                                | branch  | `inv.stock.operate`                                                  | inv.stock.reservation_released               | —    | —   | audit authorization cross-tenant denial idempotency isolation outbox route service success                                    | Covered |
 | `inv.stock-return-create`                           | POST   | `/api/v1/stock-returns`                                                             | branch  | `inv.stock.operate`                                                  | inv.part.returned                            | yes  | —   | audit authorization denial idempotency isolation route service success                                                        | Covered |
+| `inv.uom-list`                                      | GET    | `/api/v1/units-of-measure`                                                          | tenant  | `inv.item.read`                                                      | —                                            | —    | —   | authorization route service success                                                                                           | Covered |
 | `inv.work-order-part-issue-list`                    | GET    | `/api/v1/work-orders/{workOrderId}/part-issues`                                     | branch  | `inv.stock.read`                                                     | —                                            | —    | —   | authorization cross-tenant denial isolation pagination route service success                                                  | Covered |
 | `meta.ping`                                         | GET    | `/api/v1/meta/ping`                                                                 | tenant  | `org.tenant.read`                                                    | —                                            | —    | —   | authorization route service success                                                                                           | Covered |
 | `org.branch-list`                                   | GET    | `/api/v1/org/branches`                                                              | tenant  | `org.branch.read`                                                    | —                                            | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |

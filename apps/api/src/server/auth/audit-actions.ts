@@ -1442,6 +1442,31 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'A draft opening-inventory batch was created. Creates no stock: the batch is a counted intention until inv.approve_opening_batch posts its opening movements, and ck_opening_inventory_batches_maker_checker requires a different approver.',
   },
+  // P1-30 corrective slice: the master data every movement is keyed on. Until
+  // this slice no operation wrote any of the three tables, so a tenant created
+  // through the shipped provisioning could hold no stock at all. Privileged,
+  // not financial — none carries an amount — and none creates stock.
+  {
+    code: 'inv.item_category.created',
+    class: 'privileged',
+    entityType: 'inv.item_category',
+    description:
+      'An item category was created in the tenant catalogue. Tenant-wide reference data: it files items and filters searches, and holds no stock.',
+  },
+  {
+    code: 'inv.item.created',
+    class: 'privileged',
+    entityType: 'inv.item',
+    description:
+      'An item was created in the tenant catalogue with its SKU, unit and tracking flags. No cost and no stock: cost lives in the restricted inv.item_cost_details and stock only ever appears through an approved opening batch or a recorded movement.',
+  },
+  {
+    code: 'inv.stock_location.created',
+    class: 'privileged',
+    entityType: 'inv.stock_location',
+    description:
+      'A stock location was created in a branch — a warehouse, or a storage or quarantine location nested under one. Defines where stock may sit; holds none until a movement is posted there.',
+  },
   {
     code: 'inv.opening_batch.approved',
     class: 'approval',

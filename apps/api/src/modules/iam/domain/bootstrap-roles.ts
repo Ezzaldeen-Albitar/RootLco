@@ -198,8 +198,21 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     'quo.decision.record',
     'iam.approval.manage',
     'inv.item.read',
+    // The catalogue write — items, categories, units, and (until a code of its
+    // own is decided) stock locations. The seventeen commercial codes above
+    // were derived from the shipped P1-30 SCREENS, and no screen wrote the
+    // inventory master data because no operation did; the F-02 remeasurement
+    // of 2026-09-06 added the operations, and this is the authority they need.
+    'inv.item.manage',
     'inv.stock.read',
     'inv.stock.operate',
+    // Held so the Owner can DELEGATE it: an opening batch is maker–checker
+    // (`ck_opening_inventory_batches_maker`), so the administrator who counts
+    // cannot also approve, and an approver role can only be built out of a
+    // code the administrator holds. Without it no stock could ever appear in a
+    // fresh organisation — the F-02 remeasurement of 2026-09-06 found this
+    // the one AUTHORIZATION gap left after PR #321.
+    'inv.adjustment.approve',
     'sal.invoice.manage',
     'sal.invoice.issue',
     'sal.finance.view',

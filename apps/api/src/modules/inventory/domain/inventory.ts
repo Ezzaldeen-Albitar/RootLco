@@ -105,6 +105,8 @@ export const SKU_FORMAT = /^[A-Za-z0-9][A-Za-z0-9_-]{1,62}$/;
 
 /** `ck_stock_locations_code_format`. */
 export const LOCATION_CODE_FORMAT = /^[A-Za-z0-9][A-Za-z0-9_-]{1,62}$/;
+/** `ck_item_categories_code_format` — the lower-snake internal code, unlike a SKU. */
+export const CATEGORY_CODE_FORMAT = /^[a-z][a-z0-9_]{1,62}$/;
 
 /** Column widths, so a caller gets a 422 rather than a driver truncation error. */
 export const MAX_DESCRIPTION = 2000;

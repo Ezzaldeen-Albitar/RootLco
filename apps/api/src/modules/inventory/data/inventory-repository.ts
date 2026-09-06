@@ -86,6 +86,12 @@ export const LOCATION_ORDER: OrderingContract = Object.freeze({
   direction: 'asc',
 });
 
+/** Categories are listed by code; `uq_item_categories_code` makes `(code, id)` total. */
+export const CATEGORY_ORDER: OrderingContract = Object.freeze({
+  key: 'inv.item_categories:code_asc',
+  direction: 'asc',
+});
+
 /** Escapes LIKE metacharacters. Binding a value does not neutralise `%` or `_`. */
 function escapeLikeTerm(term: string): string {
   return term.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
@@ -104,6 +110,27 @@ export interface ItemRow {
   readonly isSerialized: boolean;
   readonly lifecycleStatus: string;
   readonly recordVersion: number;
+}
+
+/** One item category — tenant-wide, like the item it files. */
+export interface ItemCategoryRow {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+  readonly description: string | null;
+  readonly parentCategoryId: string | null;
+  readonly status: string;
+  readonly recordVersion: number;
+}
+
+/** One unit of measure as the catalogue exposes it: platform or the tenant's own. */
+export interface UnitOfMeasureRow {
+  readonly id: string;
+  readonly scope: string;
+  readonly code: string;
+  readonly name: string;
+  readonly dimension: string;
+  readonly status: string;
 }
 
 export interface ItemListFilter {
@@ -322,6 +349,46 @@ interface ItemSql {
   lifecycle_status: string;
   record_version: number;
 }
+
+const CATEGORY_COLUMNS = `id, code, name, description, parent_category_id, status, record_version`;
+
+interface ItemCategorySql {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  parent_category_id: string | null;
+  status: string;
+  record_version: number;
+}
+
+const toItemCategory = (r: ItemCategorySql): ItemCategoryRow => ({
+  id: r.id,
+  code: r.code,
+  name: r.name,
+  description: r.description,
+  parentCategoryId: r.parent_category_id,
+  status: r.status,
+  recordVersion: r.record_version,
+});
+
+interface UnitOfMeasureSql {
+  id: string;
+  scope: string;
+  code: string;
+  name: string;
+  dimension: string;
+  status: string;
+}
+
+const toUnitOfMeasure = (r: UnitOfMeasureSql): UnitOfMeasureRow => ({
+  id: r.id,
+  scope: r.scope,
+  code: r.code,
+  name: r.name,
+  dimension: r.dimension,
+  status: r.status,
+});
 
 const toItem = (r: ItemSql): ItemRow => ({
   id: r.id,
@@ -828,6 +895,205 @@ export class InventoryRepository extends Repository {
           status: row.status,
         }
       : null;
+  }
+
+  // -------------------------------------------------------------------------
+  // P1-30 corrective slice — the master data every movement is keyed on.
+  // -------------------------------------------------------------------------
+
+  public async listItemCategories(
+    db: DbHandle,
+    filter: { readonly status?: string | undefined },
+    request: PageRequest
+  ): Promise<Page<ItemCategoryRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [context.principal.tenantId, filter.status ?? null];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'code', id: 'id' },
+      CATEGORY_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<ItemCategorySql>(
+      db,
+      `SELECT ${CATEGORY_COLUMNS}
+         FROM inv.item_categories
+        WHERE tenant_id = $1 AND deleted_at IS NULL
+          AND ($2::text IS NULL OR status = $2)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPage(result.rows.map(toItemCategory), request, CATEGORY_ORDER, (row) => ({
+      sortValue: row.code,
+      id: row.id,
+    }));
+  }
+
+  public async readItemCategory(db: DbHandle, categoryId: string): Promise<ItemCategoryRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ItemCategorySql>(
+      db,
+      `SELECT ${CATEGORY_COLUMNS}
+         FROM inv.item_categories
+        WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+      [context.principal.tenantId, categoryId]
+    );
+    return row ? toItemCategory(row) : null;
+  }
+
+  public async insertItemCategory(
+    db: DbHandle,
+    input: {
+      readonly code: string;
+      readonly name: string;
+      readonly description: string | null;
+      readonly parentCategoryId: string | null;
+    }
+  ): Promise<ItemCategoryRow> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ItemCategorySql>(
+      db,
+      `INSERT INTO inv.item_categories
+         (tenant_id, parent_category_id, code, name, description, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING ${CATEGORY_COLUMNS}`,
+      [
+        context.principal.tenantId,
+        input.parentCategoryId,
+        input.code,
+        input.name,
+        input.description,
+        context.principal.userId,
+      ]
+    );
+    if (!row) throw new Error('inventory: item category insert returned no row');
+    return toItemCategory(row);
+  }
+
+  /** Active units the tenant may use: the platform set plus its own, by code. */
+  public async listUnitsOfMeasure(db: DbHandle): Promise<readonly UnitOfMeasureRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<UnitOfMeasureSql>(
+      db,
+      `SELECT id, scope, code, name, dimension, status
+         FROM inv.units_of_measure
+        WHERE (scope = 'platform' OR tenant_id = $1)
+          AND status = 'active' AND deleted_at IS NULL
+        ORDER BY (scope = 'tenant') DESC, code ASC, id ASC`,
+      [context.principal.tenantId]
+    );
+    return result.rows.map(toUnitOfMeasure);
+  }
+
+  public async readUnitOfMeasure(db: DbHandle, uomId: string): Promise<UnitOfMeasureRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<UnitOfMeasureSql>(
+      db,
+      `SELECT id, scope, code, name, dimension, status
+         FROM inv.units_of_measure
+        WHERE (scope = 'platform' OR tenant_id = $1) AND id = $2 AND deleted_at IS NULL`,
+      [context.principal.tenantId, uomId]
+    );
+    return row ? toUnitOfMeasure(row) : null;
+  }
+
+  /**
+   * Inserts an item and returns its id. The full row is read back through
+   * `readItem`, whose UoM join is what supplies `uomCode` — the insert cannot.
+   */
+  public async insertItem(
+    db: DbHandle,
+    input: {
+      readonly itemCategoryId: string;
+      readonly sku: string;
+      readonly name: string;
+      readonly description: string | null;
+      readonly uomId: string;
+      readonly itemType: string;
+      readonly isStockTracked: boolean;
+      readonly isSerialized: boolean;
+    }
+  ): Promise<string> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `INSERT INTO inv.item_master
+         (tenant_id, item_category_id, sku, name, description, uom_id, item_type,
+          is_stock_tracked, is_serialized, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING id`,
+      [
+        context.principal.tenantId,
+        input.itemCategoryId,
+        input.sku,
+        input.name,
+        input.description,
+        input.uomId,
+        input.itemType,
+        input.isStockTracked,
+        input.isSerialized,
+        context.principal.userId,
+      ]
+    );
+    if (!row) throw new Error('inventory: item insert returned no row');
+    return row.id;
+  }
+
+  public async insertStockLocation(
+    db: DbHandle,
+    input: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly locationCode: string;
+      readonly name: string;
+      readonly locationType: string;
+      readonly parentLocationId: string | null;
+    }
+  ): Promise<StockLocationListRow & { readonly recordVersion: number }> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{
+      id: string;
+      company_id: string;
+      branch_id: string;
+      location_code: string;
+      name: string;
+      location_type: string;
+      parent_location_id: string | null;
+      status: string;
+      record_version: number;
+    }>(
+      db,
+      `INSERT INTO inv.stock_locations
+         (tenant_id, company_id, branch_id, location_code, name, location_type,
+          parent_location_id, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, company_id, branch_id, location_code, name, location_type,
+                 parent_location_id, status, record_version`,
+      [
+        context.principal.tenantId,
+        input.companyId,
+        input.branchId,
+        input.locationCode,
+        input.name,
+        input.locationType,
+        input.parentLocationId,
+        context.principal.userId,
+      ]
+    );
+    if (!row) throw new Error('inventory: stock location insert returned no row');
+    return {
+      id: row.id,
+      companyId: row.company_id,
+      branchId: row.branch_id,
+      locationCode: row.location_code,
+      name: row.name,
+      locationType: row.location_type,
+      parentLocationId: row.parent_location_id,
+      status: row.status,
+      recordVersion: row.record_version,
+    };
   }
 
   /**

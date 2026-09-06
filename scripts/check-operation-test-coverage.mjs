@@ -2409,6 +2409,36 @@ export const MANIFEST = {
     required: ['denial', 'cross-tenant'],
     note: 'inv.item_master carries NO company_id and NO branch_id, so an item is tenant-wide reference data and the operation is scope:tenant with no branch filter at all — a branch filter here would narrow nothing, and declaring scope:branch would 403 every unfiltered listing because requireScopedPermissions fails closed on an empty target; the keyset order is (sku, id), a total order backed by uq_item_master_sku; archived items are excluded by default because inv.guard_item_lifecycle makes archived terminal; NO cost is returned, because inv.item_cost_details is gated by inv.cost.view inside its own RLS policy; a tenant-B item never appears (cross-tenant); a LIKE metacharacter in the search term is escaped, so a search for % returns the items whose sku literally contains % rather than the whole catalog (denial)',
   },
+  // P1-30 corrective slice — the inventory master data a fresh tenant needs
+  // before any stock can exist. The F-02 remeasurement at develop 6f6236c3 found
+  // inv.item_categories, inv.item_master and inv.stock_locations with RLS, grants
+  // and a permission code and NO writer; inv.opening-batch-line-create needs an
+  // item and a location, so nothing could ever be counted in.
+  'inv.item-category-list': {
+    files: ['tests/backend/p1-30-inventory-master-data.test.ts'],
+    required: ['cross-tenant'],
+    note: 'the picker read: inv.item-search filters by categoryId and inv.item-create requires one, and nothing published them; tenant-wide like the item search beside it, ordered (code, id) under uq_item_categories_code; a tenant-B category never appears (cross-tenant)',
+  },
+  'inv.item-category-create': {
+    files: ['tests/backend/p1-30-inventory-master-data.test.ts'],
+    required: ['denial', 'cross-tenant', 'audit', 'idempotency'],
+    note: 'inv.item_categories has no company or branch column, so the row is tenant-wide reference data and the write requires inv.item.manage held TENANT-WIDE — a branch-scoped holder of the same code is 403 (P1-18-A-01, the same control svc.service-category-create applies); an unknown or inactive parent is a 422 naming the field; a duplicate code is a 409 (denial); one audit record per create and a same-key replay writes nothing twice (idempotency); tenant B writes land in B (cross-tenant)',
+  },
+  'inv.uom-list': {
+    files: ['tests/backend/p1-30-inventory-master-data.test.ts'],
+    required: [],
+    note: 'inv.item_master.uom_id is NOT NULL and nothing published the units; returns the twelve platform rows plus the tenant own, active only, under sel_units_of_measure_visible; not paged because it is a closed reference list, exactly as sal.payment-method-list treats its own; parses no input, so — as for that operation — there is no unbacked denial flag to declare',
+  },
+  'inv.item-create': {
+    files: ['tests/backend/p1-30-inventory-master-data.test.ts'],
+    required: ['denial', 'cross-tenant', 'audit', 'idempotency'],
+    note: 'creates the catalogue row only — NO cost (inv.item_cost_details is the restricted 1:1 cost table and valuation is an Owner decision) and NO stock (the opening batch stays the sole path by which stock appears); category and unit are validated before the insert so the refusal names the field rather than surfacing as 23503; tenant-wide authority like the category; the echo is read back through the same UoM join inv.item-search uses, so a created item reads exactly as a listed one; a duplicate SKU is a 409 (denial)',
+  },
+  'inv.stock-location-create': {
+    files: ['tests/backend/p1-30-inventory-master-data.test.ts'],
+    required: ['denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'a location is BRANCH infrastructure: the body names the company and branch, which are the scope target authorized before the write and re-enforced by ins_stock_locations_scope; a holder scoped to A2 is refused A1 and admitted A2 (isolation); the hierarchy inv.guard_stock_location_hierarchy enforces is stated by the field before the insert — a warehouse takes no parent, storage and quarantine name a warehouse in the SAME branch — so each refusal is a 422 naming parentLocationId rather than a check violation (denial); a duplicate code in the branch is a 409; permission is inv.item.manage because the 118-code catalogue names no location authority and this slice mints none (RES-05), recorded as a residual',
+  },
   'inv.stock-availability-read': {
     files: ['tests/backend/p1-21-inventory-reads.test.ts'],
     required: ['denial', 'cross-tenant', 'isolation'],

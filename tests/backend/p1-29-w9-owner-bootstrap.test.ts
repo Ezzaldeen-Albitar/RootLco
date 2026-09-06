@@ -426,9 +426,11 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
     const result = await provision('b3');
     expect(result.status).toBe(201);
     const expected = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes].sort();
-    // 48 before the P1-30 corrective slice; 65 with the seventeen commercial
-    // codes F-01 proved no tenant could otherwise ever hold.
-    expect(expected).toHaveLength(65);
+    // 48 before the P1-30 corrective slices; 65 with the seventeen commercial
+    // codes F-01 proved no tenant could otherwise ever hold; 67 with
+    // inv.item.manage and inv.adjustment.approve, without which no item
+    // could be catalogued and no stock could ever appear.
+    expect(expected).toHaveLength(67);
     expect(expected.some((c) => c.includes('*'))).toBe(false);
     expect(expected.some((c) => c.startsWith('platform.'))).toBe(false);
     expect(new Set(expected).size).toBe(expected.length);
@@ -575,7 +577,7 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
         [result.body.ownerAccountId, 'active']
       )
     ).toBe(2);
-    expect(await codesOfRole(result.body.tenantAdministratorRoleId)).toHaveLength(65);
+    expect(await codesOfRole(result.body.tenantAdministratorRoleId)).toHaveLength(67);
   });
 
   it('W9-B9 an active tenant cannot reopen the bootstrap write window', async () => {
@@ -625,7 +627,7 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
       ])) ?? -1,
     ];
     const before = await counts();
-    expect(before).toEqual([1, 1, 2, 68, 2]);
+    expect(before).toEqual([1, 1, 2, 70, 2]);
 
     asHolder();
     const replay = await provision('b10', {}, key);

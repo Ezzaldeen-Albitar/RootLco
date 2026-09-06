@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 368,
-    "publicApi": 368,
+    "registered": 373,
+    "publicApi": 373,
     "internal": 0,
-    "withRequiredEvidence": 368,
+    "withRequiredEvidence": 373,
     "invocationOnly": 0,
     "p1_15": {
       "registered": 28,
@@ -67,9 +67,9 @@
       "metadataOnly": 0
     },
     "p1_21": {
-      "registered": 17,
-      "publicApi": 17,
-      "operationDepth": 17,
+      "registered": 22,
+      "publicApi": 22,
+      "operationDepth": 22,
       "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
@@ -3936,6 +3936,90 @@
       "unitOnly": false
     },
     {
+      "id": "inv.item-category-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/item-categories",
+      "public": false,
+      "files": ["tests/backend/p1-30-inventory-master-data.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
+      "declared": ["denial", "cross-tenant", "audit", "idempotency"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial",
+        "cross-tenant"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "inv.item-category-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/item-categories",
+      "public": false,
+      "files": ["tests/backend/p1-30-inventory-master-data.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant"],
+      "provided": ["authorization", "cross-tenant", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "inv.item-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/items",
+      "public": false,
+      "files": ["tests/backend/p1-30-inventory-master-data.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
+      "declared": ["denial", "cross-tenant", "audit", "idempotency"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial",
+        "cross-tenant"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "inv.item-search",
       "surface": "public-api",
       "method": "GET",
@@ -4138,6 +4222,50 @@
         "idempotency",
         "isolation",
         "outbox",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "inv.stock-location-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/stock-locations",
+      "public": false,
+      "files": ["tests/backend/p1-30-inventory-master-data.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["denial", "cross-tenant", "audit", "idempotency", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
         "route",
         "service",
         "success"
@@ -4374,6 +4502,22 @@
         "service",
         "success"
       ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "inv.uom-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/units-of-measure",
+      "public": false,
+      "files": ["tests/backend/p1-30-inventory-master-data.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": [],
+      "required": ["route", "service", "success", "authorization"],
+      "provided": ["authorization", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false

@@ -322,6 +322,9 @@ import '@/app/api/v1/quotation-revisions/[revisionId]/decisions/route';
 
 // Phase 1-21 — inventory.
 import '@/app/api/v1/items/route';
+// P1-30 corrective slice — the inventory master data.
+import '@/app/api/v1/item-categories/route';
+import '@/app/api/v1/units-of-measure/route';
 import '@/app/api/v1/stock-availability/route';
 import '@/app/api/v1/stock-movements/route';
 import '@/app/api/v1/inventory-reconciliations/route';

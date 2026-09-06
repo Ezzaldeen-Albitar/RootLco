@@ -47,7 +47,8 @@ A0 was commissioned to answer "which reads exist, which are missing". The measur
 
 The tenant administrator the First-Owner bootstrap writes
 (`apps/api/src/modules/iam/domain/bootstrap-roles.ts`, `TENANT_ADMINISTRATOR_ROLE`) held 48
-permission codes at the preflight, and holds 65 since the corrective slice. **None of the 27 commercial codes is among them.** The delegation rule lets an
+permission codes at the preflight, 65 after the tenant-bootstrap corrective slice, and 67 after the
+commercial-setup slice added `inv.item.manage` and `inv.adjustment.approve`. **None of the 27 commercial codes is among them.** The delegation rule lets an
 actor map or grant only codes it holds itself (`ins_role_permissions_delegable`,
 `ins_role_grants_delegable`, migration `20260726090000`), and the bundle is written once, at
 provisioning (`tenant-bootstrap-service.ts`); the platform surface is `POST /platform/organizations`
@@ -85,6 +86,11 @@ and the INSERT privilege had existed since the control plane shipped and had sim
 not exist.
 
 ### F-02 — eleven master-data tables in the commercial chain have no in-product writer
+
+> **RE-MEASURED 2026-09-06 — see `f02-remeasurement.md`.** Seven of the eleven gained writers and
+> screens in A1 and W1–W2; three (`inv.item_categories`, `inv.item_master`, `inv.stock_locations`)
+> are closed by the commercial-setup slice; five are valid-but-unconfigured and the chain tolerates
+> their absence. The finding as written below is the preflight's record and stands as history.
 
 The commercial chain is: service category → service → service version → price list → price-list
 version → price rule → **price-list assignment** → resolved price → quotation → revision → item →
@@ -312,8 +318,8 @@ re-run by hand afterwards.
 
 #### The re-run bundle attack — F-01 is wider than §1 states
 
-Cross-referencing `TENANT_ADMINISTRATOR_ROLE.permissionCodes` (48 at the preflight, 65 since the
-corrective slice) in
+Cross-referencing `TENANT_ADMINISTRATOR_ROLE.permissionCodes` (48 at the preflight, 65 then 67 after
+the two corrective slices) in
 `apps/api/src/modules/iam/domain/bootstrap-roles.ts` against the 23 permission gates in
 `apps/web/src/config/navigation.ts` and the 118-code catalogue in
 `supabase/seeds/04_iam_permission_catalog.sql`: **12 of the 23 gates are not held.**

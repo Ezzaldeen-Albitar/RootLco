@@ -37,7 +37,12 @@ import {
   scopeTargetOption,
   searchParamsToObject,
 } from '@/server/http/validation';
-import { LOCATION_TYPES, inventoryModule } from '@/modules/inventory';
+import {
+  LOCATION_CODE_FORMAT,
+  LOCATION_TYPES,
+  MAX_NAME,
+  inventoryModule,
+} from '@/modules/inventory';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -91,5 +96,73 @@ export async function GET(request: Request): Promise<Response> {
       };
     },
     scopeTargetOption(raw)
+  );
+}
+
+/**
+ * A location is BRANCH infrastructure: the body names the company and branch,
+ * which become the scope target (`scopeTargetOption`), and
+ * `ins_stock_locations_scope` enforces the same pair a second time. A
+ * `warehouse` stands alone; `storage` and `quarantine` name the warehouse they
+ * nest under (`inv.guard_stock_location_hierarchy`). `status` is refused —
+ * a location created `inactive` could hold nothing.
+ */
+export const CreateBody = z
+  .object({
+    companyId: schemas.uuid,
+    branchId: schemas.uuid,
+    locationCode: z.string().regex(LOCATION_CODE_FORMAT, 'must be an alphanumeric location code'),
+    name: z.string().min(1).max(MAX_NAME),
+    locationType: z.enum(LOCATION_TYPES),
+    parentLocationId: schemas.uuid.optional(),
+  })
+  .strict();
+
+export const STOCK_LOCATION_CREATE_OPERATION = defineOperation({
+  id: 'inv.stock-location-create',
+  successStatus: 201,
+  module: 'inventory',
+  method: 'POST',
+  path: '/stock-locations',
+  summary: 'Create a stock location in a branch.',
+  // `inv.item.manage` — "Manage item master, categories, UoM". The 118-code
+  // catalogue names no location authority and this slice mints none (RES-05);
+  // whether store layout deserves a code of its own is an Owner residual.
+  permissions: ['inv.item.manage'],
+  scope: 'branch',
+  auditClass: 'privileged',
+  auditAction: 'inv.stock_location.created',
+  idempotent: true,
+  rateLimitPolicy: 'standard-command',
+  cacheCategory: 'never',
+});
+
+export async function POST(request: Request): Promise<Response> {
+  const body = await request
+    .clone()
+    .json()
+    .catch(() => null);
+  return handleOperation(
+    STOCK_LOCATION_CREATE_OPERATION,
+    request,
+    async ({ db, authorizeScope }) => {
+      const parsed = parseOrFail(CreateBody, body, 'body');
+      const created = await inventoryModule().catalog.createLocation(
+        db,
+        {
+          companyId: parsed.companyId,
+          branchId: parsed.branchId,
+          locationCode: parsed.locationCode,
+          name: parsed.name,
+          locationType: parsed.locationType,
+          ...(parsed.parentLocationId === undefined
+            ? {}
+            : { parentLocationId: parsed.parentLocationId }),
+        },
+        authorizeScope
+      );
+      return { status: 201, body: created, recordVersion: created.recordVersion };
+    },
+    { body, ...scopeTargetOption(body) }
   );
 }

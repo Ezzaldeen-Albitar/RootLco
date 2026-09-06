@@ -23,8 +23,17 @@
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
+import { callerHoldsPermissionTenantWide } from '@/server/auth/authorization';
+import { AppFailure } from '@/server/errors/app-failure';
 import { parseOrFail, schemas, searchParamsToObject } from '@/server/http/validation';
-import { ITEM_LIFECYCLE_STATES, ITEM_TYPES, MAX_NAME, inventoryModule } from '@/modules/inventory';
+import {
+  ITEM_LIFECYCLE_STATES,
+  ITEM_TYPES,
+  MAX_DESCRIPTION,
+  MAX_NAME,
+  SKU_FORMAT,
+  inventoryModule,
+} from '@/modules/inventory';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -80,4 +89,76 @@ export async function GET(request: Request): Promise<Response> {
       ),
     };
   });
+}
+
+/**
+ * The item as the catalogue records it — identity, filing and tracking
+ * flags. NO cost: `inv.item_cost_details` is the restricted 1:1 cost table
+ * and valuation is an Owner decision this slice does not pre-empt. `id`,
+ * `lifecycle_status` and `archived_at` are refused so a tenant cannot choose
+ * a key or create an item already archived.
+ */
+export const CreateBody = z
+  .object({
+    itemCategoryId: schemas.uuid,
+    sku: z.string().regex(SKU_FORMAT, 'must be an alphanumeric SKU'),
+    name: z.string().min(1).max(MAX_NAME),
+    description: z.string().min(1).max(MAX_DESCRIPTION).optional(),
+    uomId: schemas.uuid,
+    itemType: z.enum(ITEM_TYPES),
+    isStockTracked: z.boolean().optional(),
+    isSerialized: z.boolean().optional(),
+  })
+  .strict();
+
+export const ITEM_CREATE_OPERATION = defineOperation({
+  id: 'inv.item-create',
+  successStatus: 201,
+  module: 'inventory',
+  method: 'POST',
+  path: '/items',
+  summary: 'Create an item in the tenant inventory catalogue.',
+  permissions: ['inv.item.manage'],
+  scope: 'tenant',
+  auditClass: 'privileged',
+  auditAction: 'inv.item.created',
+  idempotent: true,
+  rateLimitPolicy: 'standard-command',
+  cacheCategory: 'never',
+});
+
+export async function POST(request: Request): Promise<Response> {
+  const body = await request
+    .clone()
+    .json()
+    .catch(() => null);
+  return handleOperation(
+    ITEM_CREATE_OPERATION,
+    request,
+    async ({ db }) => {
+      const parsed = parseOrFail(CreateBody, body, 'body');
+      // `inv.item_master` has no company or branch column: an item is
+      // tenant-wide catalogue reference data, so the write needs tenant-wide
+      // authority (P1-18-A-01) — see item-categories/route.ts.
+      if (!(await callerHoldsPermissionTenantWide(db, 'inv.item.manage'))) {
+        throw new AppFailure('ERR-IAM-001', {
+          message:
+            'An item is tenant-wide catalogue reference data, so creating one requires ' +
+            'inv.item.manage granted tenant-wide.',
+        });
+      }
+      const created = await inventoryModule().catalog.createItem(db, {
+        itemCategoryId: parsed.itemCategoryId,
+        sku: parsed.sku,
+        name: parsed.name,
+        ...(parsed.description === undefined ? {} : { description: parsed.description }),
+        uomId: parsed.uomId,
+        itemType: parsed.itemType,
+        ...(parsed.isStockTracked === undefined ? {} : { isStockTracked: parsed.isStockTracked }),
+        ...(parsed.isSerialized === undefined ? {} : { isSerialized: parsed.isSerialized }),
+      });
+      return { status: 201, body: created, recordVersion: created.recordVersion };
+    },
+    { body }
+  );
 }
