@@ -43,20 +43,20 @@
       "reporterSuccess": true,
       "failedSuites": [],
       "filesWithoutCases": [],
-      "measuredAtCommit": "928dc4a97fe1f04ad53641a352b17ae76b5ccef4",
+      "measuredAtCommit": "beb7968a9757a58a94370730b6cc16146ef34985",
       "dirtyExecutablePaths": [],
-      "measuredAt": "2026-09-05T18:38:43Z",
+      "measuredAt": "2026-09-06T08:19:44Z",
       "provenance": {
         "source": "hosted",
-        "runId": "33984398779",
-        "runUrl": "https://github.com/Ezzaldeen-Albitar/RootLco/actions/runs/33984398779",
+        "runId": "34021254889",
+        "runUrl": "https://github.com/Ezzaldeen-Albitar/RootLco/actions/runs/34021254889",
         "workflow": "PR CI",
-        "job": "101355202449",
+        "job": "101454186994",
         "jobName": "Web quality / web-quality",
         "step": "Web component tier",
-        "headSha": "928dc4a97fe1f04ad53641a352b17ae76b5ccef4",
+        "headSha": "beb7968a9757a58a94370730b6cc16146ef34985",
         "artifact": "evidence-web-quality",
-        "artifactDigest": "sha256:e484622600780a46edf3f9fd135332fbf5bb53ace368ff83bc10cf5ba548147f",
+        "artifactDigest": "sha256:1357e3f8eee0e019d3d40811fe3e697cc23ca4f0baf3b400fcd8e749c08ec4e6",
         "field": "apps/web/vitest-web.json"
       }
     }
