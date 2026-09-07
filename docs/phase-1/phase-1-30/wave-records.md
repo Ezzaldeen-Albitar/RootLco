@@ -39,8 +39,9 @@ Operations: 352 at P1-30's start → 356 (A1) → 368 (A2) → **373** (#322). M
 (#321). Permission codes **118** throughout. Administrator bundle 48 → 65 (#321) → **67** (#322).
 
 **Amendment A1, 2026-09-07 — re-measured on protected `develop` `3d752119`.** The table and totals
-above were verified at `159727b1` and stand as that measurement. Seven pull requests have landed
-since the closure head (#333 … #339), and four of the case counts above have moved. Counted by
+above were verified at `159727b1` and stand as that measurement. Seven pull requests, #333 to
+#339, have landed on `develop` since the promotion (`main` `8ae336c4`), and four of the case counts
+above have moved. Counted by
 running the files today: `inventory.dom.test.tsx` 30 → **37** (#335, which replaced the W4 category
 filter with a list, CC-16), `inventory-setup.dom.test.tsx` 17 → **29** (#335),
 `inventory-opening-stock.dom.test.tsx` 14 → **25** (#335 and #339), and the shared
