@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
@@ -206,28 +206,68 @@ function useCategories(): Categories {
   return { items, refused };
 }
 
-interface BranchList {
-  readonly items: readonly BranchOption[] | null;
-  readonly refused: string | null;
-  readonly offered: boolean;
-}
+/**
+ * The branch list as one of six outcomes rather than three fields — the same
+ * correction as the catalogue screen's, for the same reason (P1-30 CC-15).
+ * `items === null` used to mean both "no request was made" and "the request has
+ * not answered", and this panel resolved that toward the two identifier fields:
+ * a permitted operator met free-text boxes on every first paint.
+ */
+type BranchList =
+  | { readonly phase: 'not-offered' }
+  | { readonly phase: 'loading' }
+  | { readonly phase: 'listed'; readonly items: readonly BranchOption[] }
+  | { readonly phase: 'none' }
+  | {
+      readonly phase: 'failed';
+      readonly messageKey: string;
+      readonly retry: (() => void) | null;
+    };
+
+const BRANCHES_NOT_OFFERED: BranchList = { phase: 'not-offered' };
+const BRANCHES_LOADING: BranchList = { phase: 'loading' };
+const BRANCHES_NONE: BranchList = { phase: 'none' };
 
 function useBranchList(wanted: boolean): BranchList {
   const [items, setItems] = useState<readonly BranchOption[] | null>(null);
-  const [refused, setRefused] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{ key: string; retryable: boolean } | null>(null);
+  const [attempt, setAttempt] = useState(0);
+
+  const retry = useCallback(() => {
+    setItems(null);
+    setFailure(null);
+    setAttempt((n) => n + 1);
+  }, []);
+
   useEffect(() => {
     if (!wanted) return;
     let live = true;
     void listBranches().then((state) => {
       if (!live) return;
-      if (state.status === 'ok') setItems(state.data.items);
-      else setRefused('services.catalogue.branchesRefused');
+      if (state.status === 'ok') {
+        setItems(state.data.items);
+        return;
+      }
+      if (state.status === 'denied') {
+        setFailure({ key: 'services.catalogue.branchesRefused', retryable: false });
+      } else if (state.status === 'expired') {
+        setFailure({ key: 'state.expired.title', retryable: false });
+      } else {
+        setFailure({ key: 'services.catalogue.branchesUnavailable', retryable: true });
+      }
     });
     return () => {
       live = false;
     };
-  }, [wanted]);
-  return { items, refused, offered: wanted };
+  }, [wanted, attempt]);
+
+  if (!wanted) return BRANCHES_NOT_OFFERED;
+  if (failure !== null) {
+    return { phase: 'failed', messageKey: failure.key, retry: failure.retryable ? retry : null };
+  }
+  if (items === null) return BRANCHES_LOADING;
+  if (items.length === 0) return BRANCHES_NONE;
+  return { phase: 'listed', items };
 }
 
 /* ------------------------------------------------------------------ *
@@ -425,17 +465,36 @@ function AvailabilityPanel({
     return key ? translateDynamic(messages, key) : undefined;
   };
 
-  const listed = branches.offered && branches.items !== null;
+  const listed = branches.phase === 'listed';
+  const listedItems = branches.phase === 'listed' ? branches.items : null;
+  /*
+   * The loading-window corruption path: an identifier typed into the fallback
+   * fields survives in this panel's own state, the list then arrives, and the
+   * select finds no matching option — React blanks the control while `branchId`
+   * still holds, and would still send, the typed value. Cleared only when a
+   * list has arrived that cannot contain it.
+   */
+  const stale =
+    listedItems !== null && branchId !== '' && !listedItems.some((one) => one.id === branchId);
+  /*
+   * DERIVED, not cleared in an effect. Clearing it with `setBranchId` inside a
+   * `useEffect` is the cascading-render shape this repository's lint rule
+   * refuses, and it is not needed: the select renders `chosen` and the submit
+   * reads `chosen`, so the form can never send a pair the screen is not
+   * displaying. The typed value is not destroyed either — if the list is
+   * refused on a later mount the operator still has it.
+   */
+  const chosen = stale ? '' : branchId;
 
   const submit = async () => {
     const found: Record<string, string> = {};
-    const branch = branchId.trim();
+    const branch = chosen.trim();
     if (branch.length === 0) found['branchId'] = 'field.required';
     else if (!UUID.test(branch)) found['branchId'] = 'services.catalogue.branchIdFormat';
     // With a list, the company comes from the chosen branch's own row. Without
     // one, the operator names both halves — the body requires the pair.
     const company = listed
-      ? (branches.items?.find((option) => option.id === branch)?.companyId ?? '')
+      ? (listedItems?.find((option) => option.id === branch)?.companyId ?? '')
       : companyId.trim();
     if (company.length === 0) found['companyId'] = 'field.required';
     else if (!UUID.test(company)) found['companyId'] = 'services.catalogue.branchIdFormat';
@@ -472,13 +531,27 @@ function AvailabilityPanel({
         noValidate
         className="flex flex-col gap-3"
       >
-        {listed ? (
+        {branches.phase === 'loading' ? (
+          /*
+           * Deliberately NOT a disabled SelectField: `FieldFrame` binds its
+           * label to a control with `htmlFor` and there is no control yet.
+           * `role="status"` appears in no other phase of this panel.
+           */
+          <div className="flex flex-col gap-1.5">
+            <p className="text-label font-medium text-text-primary">
+              {translate(messages, 'services.availability.branch')}
+            </p>
+            <p role="status" aria-live="polite" className="text-supporting text-text-muted">
+              {translate(messages, 'services.catalogue.branchesLoading')}
+            </p>
+          </div>
+        ) : listed ? (
           <SelectField
             label={translate(messages, 'services.availability.branch')}
             required
-            value={branchId}
+            value={chosen}
             onChange={(event) => setBranchId(event.target.value)}
-            options={(branches.items ?? []).map((branch) => ({
+            options={(listedItems ?? []).map((branch) => ({
               value: branch.id,
               label: `${branch.branchCode} — ${branch.name}`,
             }))}
@@ -490,9 +563,11 @@ function AvailabilityPanel({
             <TextField
               label={translate(messages, 'services.availability.companyIdField')}
               description={
-                branches.refused
-                  ? translateDynamic(messages, branches.refused)
-                  : translate(messages, 'services.availability.idHelp')
+                branches.phase === 'failed'
+                  ? translateDynamic(messages, branches.messageKey)
+                  : branches.phase === 'none'
+                    ? translate(messages, 'services.catalogue.branchesNone')
+                    : translate(messages, 'services.availability.idHelp')
               }
               required
               spellCheck={false}
@@ -510,6 +585,14 @@ function AvailabilityPanel({
               onChange={(event) => setBranchId(event.target.value)}
               error={errorFor('branchId')}
             />
+            {branches.phase === 'failed' && branches.retry !== null ? (
+              <div>
+                {/* `type="button"`: this sits inside a <form> and a bare button submits it. */}
+                <button type="button" onClick={branches.retry} className={SECONDARY_BUTTON}>
+                  {translate(messages, 'state.retry')}
+                </button>
+              </div>
+            ) : null}
           </>
         )}
         <label className="flex items-center gap-2 text-body text-text-primary">

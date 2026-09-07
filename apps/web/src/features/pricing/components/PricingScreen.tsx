@@ -38,6 +38,7 @@ import {
   SECONDARY_BUTTON,
   ServicePicker,
   UUID,
+  canNameBranch,
   useBranches,
   type BranchPair,
 } from './shared';
@@ -430,7 +431,11 @@ export function PriceLookupPanel({
           error={errorFor('asOf')}
         />
         <div className="sm:col-span-2">
-          <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+          <button
+            type="submit"
+            className={PRIMARY_BUTTON}
+            disabled={busy || !canNameBranch(branches)}
+          >
             {translate(messages, 'pricing.lookup.submit')}
           </button>
         </div>

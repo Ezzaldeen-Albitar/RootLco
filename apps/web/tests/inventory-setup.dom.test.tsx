@@ -23,6 +23,9 @@ const EN = en as Record<string, string>;
 const AR = ar as Record<string, string>;
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const labelled = (key: string) => new RegExp(`^${escape(EN[key] as string)}`);
+const labelledAr = (key: string) => new RegExp(`^${escape(AR[key] as string)}`);
+/** The one listed branch, as the picker labels it. */
+const OPTION_NAME = 'AMM-1 — Amman';
 
 const listItemCategories = vi.fn();
 const listUnitsOfMeasure = vi.fn();
@@ -443,6 +446,227 @@ describe('stock locations', () => {
     renderScreen({ canManage: false, canReadStock: true, canReadBranches: true });
     await chooseBranch(user);
     expect(await screen.findByText(EN['inventory.locations.refused'] as string)).toBeVisible();
+  });
+});
+
+/* -------------------------------------------------------------------- *
+ * P1-30 CC-15 — the branch picker says which of six states it is in
+ *
+ * The defect: `items` was `null` both before a read started and while it was
+ * in flight, so a PERMITTED operator met two free-text identifier fields on
+ * every first paint — the same rendering an operator refused the branch read
+ * gets by design. Five failure reasons flattened into one sentence, and a
+ * zero-row list rendered a select holding only its placeholder.
+ * -------------------------------------------------------------------- */
+describe('CC-15 — the branch picker says which of six states it is in', () => {
+  const permitted = { canManage: true, canReadStock: true, canReadBranches: true };
+  const showButton = () =>
+    within(targetForm()).getByRole('button', {
+      name: EN['inventory.setup.locations.show'] as string,
+    });
+
+  it('while a permitted read is in flight, waits — and offers no field at all', async () => {
+    let release: (value: unknown) => void = () => {};
+    listBranches.mockImplementation(() => new Promise((resolve) => (release = resolve)));
+    renderScreen(permitted);
+
+    const target = targetForm();
+    expect(within(target).getByRole('status')).toHaveTextContent(
+      EN['inventory.common.branchesLoading'] as string
+    );
+    // THE finding: not a select with nothing in it, and not the identifier
+    // fields either. There is no control to type into while the answer is
+    // still coming.
+    expect(within(target).queryByRole('combobox')).toBeNull();
+    expect(within(target).queryByLabelText(labelled('inventory.common.companyIdField'))).toBeNull();
+    expect(within(target).queryByLabelText(labelled('inventory.common.branchIdField'))).toBeNull();
+    expect(showButton()).toBeDisabled();
+
+    release(okRead({ items: [branch] }));
+    expect(await within(targetForm()).findByRole('combobox')).toBeVisible();
+    expect(within(targetForm()).queryByRole('status')).toBeNull();
+    expect(showButton()).toBeEnabled();
+  });
+
+  it('with rows, offers the list and carries the chosen branch its own company', async () => {
+    const user = userEvent.setup();
+    renderScreen(permitted);
+    const select = await within(targetForm()).findByRole('combobox');
+    expect(within(select).getByRole('option', { name: OPTION_NAME })).toBeVisible();
+    expect(
+      within(targetForm()).queryByLabelText(labelled('inventory.common.companyIdField'))
+    ).toBeNull();
+    await user.selectOptions(select, BRANCH_ID);
+    await user.click(showButton());
+    // The affordance the identifier fields cannot give: the company comes from
+    // the branch's own row.
+    await waitFor(() =>
+      expect(listLocations).toHaveBeenCalledWith({ companyId: COMPANY_ID, branchId: BRANCH_ID })
+    );
+  });
+
+  it('with no row, says so and KEEPS the identifiers, so no permitted operator is blocked', async () => {
+    listBranches.mockResolvedValue(okRead({ items: [] }));
+    renderScreen(permitted);
+    const target = targetForm();
+    expect(
+      await within(target).findByText(EN['inventory.common.branchesNone'] as string)
+    ).toBeVisible();
+    expect(
+      within(target).getByLabelText(labelled('inventory.common.companyIdField'))
+    ).toBeVisible();
+    expect(within(target).getByLabelText(labelled('inventory.common.branchIdField'))).toBeVisible();
+    expect(within(target).queryByRole('combobox')).toBeNull();
+    // Not a dead end: the operator may still be authorised for a branch this
+    // screen cannot name, and the server re-authorizes the pair anyway.
+    expect(showButton()).toBeEnabled();
+  });
+
+  it('a failure that a second attempt could clear offers one, and the retry reconciles the pair', async () => {
+    const user = userEvent.setup();
+    listBranches
+      .mockResolvedValueOnce({ status: 'unavailable', correlationId: 'corr' })
+      .mockResolvedValueOnce(okRead({ items: [branch] }));
+    renderScreen(permitted);
+    expect(
+      await within(targetForm()).findByText(EN['inventory.common.branchesUnavailable'] as string)
+    ).toBeVisible();
+    await user.type(
+      within(targetForm()).getByLabelText(labelled('inventory.common.companyIdField')),
+      COMPANY_ID
+    );
+    await user.click(
+      within(targetForm()).getByRole('button', { name: EN['state.retry'] as string })
+    );
+    const select = await within(targetForm()).findByRole('combobox');
+    expect(within(select).getByRole('option', { name: OPTION_NAME })).toBeVisible();
+    expect(listBranches).toHaveBeenCalledTimes(2);
+    // The corruption path: a pair the arriving list cannot contain is
+    // discarded, so the control and the form agree about what will be sent.
+    expect(select).toHaveValue('');
+  });
+
+  it('a retry that fails again does not cost the operator what they typed', async () => {
+    const user = userEvent.setup();
+    listBranches.mockResolvedValue({ status: 'unavailable', correlationId: 'corr' });
+    renderScreen(permitted);
+    const company = await within(targetForm()).findByLabelText(
+      labelled('inventory.common.companyIdField')
+    );
+    await user.type(company, COMPANY_ID);
+    await user.click(
+      within(targetForm()).getByRole('button', { name: EN['state.retry'] as string })
+    );
+    await waitFor(() => expect(listBranches).toHaveBeenCalledTimes(2));
+    expect(
+      within(targetForm()).getByLabelText(labelled('inventory.common.companyIdField'))
+    ).toHaveValue(COMPANY_ID);
+  });
+
+  it('a refusal is stated as a refusal, and is not offered a retry', async () => {
+    listBranches.mockResolvedValue(denied());
+    renderScreen(permitted);
+    const target = targetForm();
+    expect(
+      await within(target).findByText(EN['inventory.common.branchesRefused'] as string)
+    ).toBeVisible();
+    expect(within(target).getByLabelText(labelled('inventory.common.branchIdField'))).toBeVisible();
+    // A refusal retried is a refusal.
+    expect(within(target).queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
+  });
+
+  it('an ended session is stated as one, and is not offered a retry either', async () => {
+    listBranches.mockResolvedValue({ status: 'expired', correlationId: 'corr' });
+    renderScreen(permitted);
+    const target = targetForm();
+    expect(await within(target).findByText(EN['state.expired.title'] as string)).toBeVisible();
+    expect(
+      within(target).getByLabelText(labelled('inventory.common.companyIdField'))
+    ).toBeVisible();
+    expect(within(target).queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
+  });
+
+  it('without org.branch.read, the identifiers are the design and no list is requested', async () => {
+    renderScreen({ canManage: true, canReadStock: true, canReadBranches: false });
+    const target = targetForm();
+    expect(listBranches).not.toHaveBeenCalled();
+    expect(
+      within(target).getByLabelText(labelled('inventory.common.companyIdField'))
+    ).toBeVisible();
+    expect(within(target).getByLabelText(labelled('inventory.common.branchIdField'))).toBeVisible();
+    expect(within(target).getByText(EN['inventory.common.identifierHelp'] as string)).toBeVisible();
+    expect(within(target).queryByRole('status')).toBeNull();
+    expect(within(target).queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
+    expect(showButton()).toBeEnabled();
+  });
+
+  /* ---- Arabic, right to left: the state the CC-15 screenshot captured ---- */
+
+  function renderArabic(over: Record<string, unknown> = {}) {
+    return renderRtl(
+      <SetupScreen
+        locale="ar"
+        messages={ar}
+        canManage={true}
+        canReadStock={true}
+        canReadBranches={true}
+        {...over}
+      />
+    );
+  }
+  const arabicTarget = () =>
+    screen.getByRole('form', { name: AR['inventory.setup.locations.targetLabel'] as string });
+
+  it('in Arabic, a read in flight is a wait and not two identifier boxes', async () => {
+    let release: (value: unknown) => void = () => {};
+    listBranches.mockImplementation(() => new Promise((resolve) => (release = resolve)));
+    renderArabic();
+    expect(document.documentElement.dir).toBe('rtl');
+    const target = arabicTarget();
+    expect(within(target).getByRole('status')).toHaveTextContent(
+      AR['inventory.common.branchesLoading'] as string
+    );
+    expect(
+      within(target).queryByLabelText(labelledAr('inventory.common.companyIdField'))
+    ).toBeNull();
+    release(okRead({ items: [branch] }));
+    expect(await within(arabicTarget()).findByRole('combobox')).toBeVisible();
+  });
+
+  it('in Arabic without the branch read, the identifier fields stay left to right', async () => {
+    renderArabic({ canReadBranches: false });
+    const target = arabicTarget();
+    const company = within(target).getByLabelText(labelledAr('inventory.common.companyIdField'));
+    expect(company).toHaveAttribute('dir', 'ltr');
+    expect(within(target).getByText(AR['inventory.common.identifierHelp'] as string)).toBeVisible();
+  });
+
+  it('in Arabic, a zero-row list says so and keeps the identifiers', async () => {
+    listBranches.mockResolvedValue(okRead({ items: [] }));
+    renderArabic();
+    const target = arabicTarget();
+    expect(
+      await within(target).findByText(AR['inventory.common.branchesNone'] as string)
+    ).toBeVisible();
+    expect(
+      within(target).getByLabelText(labelledAr('inventory.common.branchIdField'))
+    ).toBeVisible();
+  });
+
+  it('in Arabic, a failure offers the Arabic retry and then the list', async () => {
+    const user = userEvent.setup();
+    listBranches
+      .mockResolvedValueOnce({ status: 'unavailable', correlationId: 'corr' })
+      .mockResolvedValueOnce(okRead({ items: [branch] }));
+    renderArabic();
+    expect(
+      await within(arabicTarget()).findByText(AR['inventory.common.branchesUnavailable'] as string)
+    ).toBeVisible();
+    await user.click(
+      within(arabicTarget()).getByRole('button', { name: AR['state.retry'] as string })
+    );
+    expect(await within(arabicTarget()).findByRole('combobox')).toBeVisible();
+    expect(listBranches).toHaveBeenCalledTimes(2);
   });
 });
 

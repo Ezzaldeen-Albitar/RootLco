@@ -368,6 +368,110 @@ describe('creating, offered only to those who may', () => {
   });
 });
 
+/* -------------------------------------------------------------------- *
+ * P1-30 CC-15, the services copy of the branch picker.
+ *
+ * The register named the inventory copy; this screen carried a private third
+ * copy of the same shape. `items === null` meant both "no request was made"
+ * and "the request has not answered", so a PERMITTED operator met a free-text
+ * identifier box on every first paint.
+ * -------------------------------------------------------------------- */
+describe('CC-15 — the services branch picker says which state it is in', () => {
+  const listedBranches = okRead({
+    items: [{ id: BRANCH, companyId: COMPANY, branchCode: 'B1', name: 'Main' }],
+  });
+
+  it('while a permitted read is in flight, waits — and offers no field at all', async () => {
+    let release: (value: unknown) => void = () => {};
+    listBranches.mockImplementation(() => new Promise((resolve) => (release = resolve)));
+    renderCatalogue({ canReadBranches: true });
+    expect(screen.getByRole('status')).toHaveTextContent(
+      EN['services.catalogue.branchesLoading'] as string
+    );
+    expect(screen.queryByLabelText(labelled('services.catalogue.branchIdField'))).toBeNull();
+    release(listedBranches);
+    expect(
+      await screen.findByLabelText(labelled('services.catalogue.availableAtBranch'))
+    ).toBeVisible();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('with no branch listed, says so and keeps the identifier field', async () => {
+    listBranches.mockResolvedValue(okRead({ items: [] }));
+    renderCatalogue({ canReadBranches: true });
+    expect(await screen.findByText(EN['services.catalogue.branchesNone'] as string)).toBeVisible();
+    expect(screen.getByLabelText(labelled('services.catalogue.branchIdField'))).toBeVisible();
+    expect(screen.queryByLabelText(labelled('services.catalogue.availableAtBranch'))).toBeNull();
+  });
+
+  it('a failure that could clear offers a retry, and the list then arrives', async () => {
+    const user = userEvent.setup();
+    listBranches
+      .mockResolvedValueOnce({ status: 'unavailable', correlationId: 'corr' })
+      .mockResolvedValueOnce(listedBranches);
+    renderCatalogue({ canReadBranches: true });
+    expect(
+      await screen.findByText(EN['services.catalogue.branchesUnavailable'] as string)
+    ).toBeVisible();
+    await user.click(screen.getByRole('button', { name: EN['state.retry'] as string }));
+    expect(
+      await screen.findByLabelText(labelled('services.catalogue.availableAtBranch'))
+    ).toBeVisible();
+    expect(listBranches).toHaveBeenCalledTimes(2);
+  });
+
+  it('states a refusal, and an ended session, without offering a second attempt', async () => {
+    listBranches.mockResolvedValue(deniedRead);
+    const first = renderCatalogue({ canReadBranches: true });
+    expect(
+      await screen.findByText(EN['services.catalogue.branchesRefused'] as string)
+    ).toBeVisible();
+    expect(screen.queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
+    first.unmount();
+
+    listBranches.mockResolvedValue({ status: 'expired', correlationId: 'corr' });
+    renderCatalogue({ canReadBranches: true });
+    expect(await screen.findByText(EN['state.expired.title'] as string)).toBeVisible();
+    expect(screen.queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
+  });
+
+  it('in Arabic, a read in flight is a wait and not an identifier box', async () => {
+    let release: (value: unknown) => void = () => {};
+    listBranches.mockImplementation(() => new Promise((resolve) => (release = resolve)));
+    renderRtl(
+      <ServiceCatalogueScreen locale="ar" messages={ar} canManage={false} canReadBranches={true} />
+    );
+    expect(document.documentElement.dir).toBe('rtl');
+    expect(screen.getByRole('status')).toHaveTextContent(
+      AR['services.catalogue.branchesLoading'] as string
+    );
+    expect(
+      screen.queryByLabelText(
+        new RegExp(`^${escape(AR['services.catalogue.branchIdField'] as string)}`)
+      )
+    ).toBeNull();
+    release(listedBranches);
+    expect(
+      await screen.findByLabelText(
+        new RegExp(`^${escape(AR['services.catalogue.availableAtBranch'] as string)}`)
+      )
+    ).toBeVisible();
+  });
+
+  it('in Arabic, a zero-row list says so and keeps the identifier field', async () => {
+    listBranches.mockResolvedValue(okRead({ items: [] }));
+    renderRtl(
+      <ServiceCatalogueScreen locale="ar" messages={ar} canManage={false} canReadBranches={true} />
+    );
+    expect(await screen.findByText(AR['services.catalogue.branchesNone'] as string)).toBeVisible();
+    expect(
+      screen.getByLabelText(
+        new RegExp(`^${escape(AR['services.catalogue.branchIdField'] as string)}`)
+      )
+    ).toBeVisible();
+  });
+});
+
 describe('Arabic, right to left', () => {
   it('renders the catalogue in Arabic with the same behaviour', async () => {
     renderRtl(

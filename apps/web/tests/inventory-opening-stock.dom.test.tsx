@@ -36,6 +36,8 @@ vi.mock('@/features/inventory/api', () => ({
   listItems: (...args: unknown[]) => listItems(...args),
   listLocations: (...args: unknown[]) => listLocations(...args),
   listBranches: (...args: unknown[]) => listBranches(...args),
+  // `./shared` names this export; this screen never calls it.
+  listItemCategories: vi.fn(),
   createOpeningBatch: (...args: unknown[]) => createOpeningBatch(...args),
   createOpeningBatchLine: (...args: unknown[]) => createOpeningBatchLine(...args),
   approveOpeningBatch: (...args: unknown[]) => approveOpeningBatch(...args),
@@ -410,6 +412,61 @@ describe('the route page', () => {
 
   it('a locale it does not serve is not found', async () => {
     await expect(renderPage({ locale: 'xx' })).rejects.toThrow('notFound() was called');
+  });
+
+  /*
+   * P1-30 CC-15. The finding was taken FROM THIS SCREEN: the W9 Arabic
+   * opening-stock screenshot, at first paint, shows the two identifier fields
+   * the branch list then replaces. Both languages are pinned here because the
+   * evidence that the defect existed was an Arabic one.
+   */
+  it('while the permitted branch read is in flight, waits rather than asking for identifiers', async () => {
+    let release: (value: unknown) => void = () => {};
+    listBranches.mockImplementation(() => new Promise((resolve) => (release = resolve)));
+    renderScreen({ canReadBranches: true });
+    const target = targetForm();
+    expect(within(target).getByRole('status')).toHaveTextContent(
+      EN['inventory.common.branchesLoading'] as string
+    );
+    expect(within(target).queryByLabelText(labelled('inventory.common.companyIdField'))).toBeNull();
+    expect(within(target).queryByRole('combobox')).toBeNull();
+    expect(
+      within(target).getByRole('button', { name: EN['inventory.opening.chooseBranch'] as string })
+    ).toBeDisabled();
+    release(okRead({ items: [branch] }));
+    expect(await within(targetForm()).findByRole('combobox')).toBeVisible();
+  });
+
+  it('in Arabic, the first paint of this screen is a wait, not two identifier boxes', async () => {
+    let release: (value: unknown) => void = () => {};
+    listBranches.mockImplementation(() => new Promise((resolve) => (release = resolve)));
+    renderRtl(
+      <OpeningStockScreen
+        locale="ar"
+        messages={ar}
+        canOperate={true}
+        canApprove={false}
+        canReadBranches={true}
+      />
+    );
+    expect(document.documentElement.dir).toBe('rtl');
+    const target = screen.getByRole('form', {
+      name: AR['inventory.opening.targetLabel'] as string,
+    });
+    expect(within(target).getByRole('status')).toHaveTextContent(
+      AR['inventory.common.branchesLoading'] as string
+    );
+    expect(
+      within(target).queryByLabelText(
+        new RegExp(`^${escape(AR['inventory.common.companyIdField'] as string)}`)
+      )
+    ).toBeNull();
+    release(okRead({ items: [branch] }));
+    expect(
+      await within(
+        screen.getByRole('form', { name: AR['inventory.opening.targetLabel'] as string })
+      ).findByRole('combobox')
+    ).toBeVisible();
   });
 
   it('renders in Arabic, right to left, with the same statement of what is missing', async () => {

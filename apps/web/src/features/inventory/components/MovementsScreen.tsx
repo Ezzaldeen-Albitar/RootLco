@@ -29,6 +29,7 @@ import {
   PRIMARY_BUTTON,
   Qty,
   UUID,
+  canNameBranch,
   useBranches,
   useLocations,
   type BranchPair,
@@ -114,7 +115,7 @@ export function MovementsScreen({
           errors={{ companyId: errorFor('companyId'), branchId: errorFor('branchId') }}
         />
         <div className="sm:col-span-3">
-          <button type="submit" className={PRIMARY_BUTTON}>
+          <button type="submit" className={PRIMARY_BUTTON} disabled={!canNameBranch(branches)}>
             {translate(messages, 'inventory.movements.chooseBranch')}
           </button>
         </div>
