@@ -488,12 +488,22 @@ export async function requireScopeTargetInTenant(
   });
 
   throw new AppFailure('ERR-IAM-001', {
+    // `safeDetails` FIRST, and deliberately so. The P1-24 hostile mutation matrix
+    // attacks `requirePermissions`' denial document by rewriting the two-line
+    // sequence `safeDetails: { requiredPermissions: operation.permissions },` /
+    // `});` into one that leaks the caller's own gap (M2,
+    // `scripts/p1-24-mutation-matrix.mjs`). That anchor must match exactly ONE
+    // site or the matrix reports the mutation as NOT APPLIED — which is weaker
+    // than a pass, because nothing was attacked at all. Ordering the properties
+    // the other way round here keeps the anchor unique to the function the
+    // mutation is about. The object is order-independent, so this is a textual
+    // difference and not a behavioural one.
+    safeDetails: { requiredPermissions: operation.permissions },
     // Names the operation, never the company or the branch: repeating the pair
     // back would turn the uniform refusal into an echo an attacker can use to
     // confirm what it guessed.
     message:
       `Denied ${operation.id}: the named company and branch are not visible ` +
       `to the caller inside its tenant`,
-    safeDetails: { requiredPermissions: operation.permissions },
   });
 }

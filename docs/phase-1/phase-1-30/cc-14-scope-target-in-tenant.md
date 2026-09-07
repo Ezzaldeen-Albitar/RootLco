@@ -137,7 +137,20 @@ and asserts zero rows, with the coherent A9 pair returning rows in the same tran
 control. Without it, `mutation-targets.json`'s `inventory-read-company-scope` would guard a predicate
 nothing exercises.
 
-## 6. Follow-ons named, not done here
+## 6. One shape the P1-24 mutation matrix forced
+
+`requireScopeTargetInTenant` builds its denial document with `safeDetails` BEFORE `message`, which
+is the reverse of every other throw in the file. That is deliberate and load-bearing rather than
+stylistic. The P1-24 hostile mutation matrix attacks `requirePermissions`' denial document by
+rewriting the exact two-line sequence `safeDetails: { requiredPermissions: operation.permissions },`
+followed by `});` (M2 in `scripts/p1-24-mutation-matrix.mjs`). Writing the new throw in the ordinary
+order made that anchor match twice, and the matrix reported M2 as **NOT APPLIED** — a state weaker
+than a pass, because the mutation was never applied and nothing was attacked. Reordering the two
+properties restores the anchor to exactly one site. The object literal is order-independent, so the
+refusal is byte-identical either way; only the source text differs. The gate is unchanged and was
+re-run to confirm: 6 of 6 caught, 0 survived, 0 not applied.
+
+## 7. Follow-ons named, not done here
 
 - `.github/ci-baselines/mutation-targets.json` — the `why` text of `inventory-read-company-scope`
   ("Only the SQL `company_id` predicate refuses it") is now **stale**: the pre-handler refuses it
