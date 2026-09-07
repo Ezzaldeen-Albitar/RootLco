@@ -17,6 +17,25 @@
  * Once approved, `inv.guard_opening_batch_approval` freezes the batch and its lines.
  * The service refuses an add to an approved batch with `ERR-TRN-001` rather than
  * letting the trigger raise, so the caller learns *why*.
+ *
+ * ## Why this write carries no idempotency key (P1-30 CC-18, decided)
+ *
+ * Not an oversight. `uq_opening_inventory_lines_cell` allows one live line per
+ * (item, location) inside a batch, so the counted cell is ALREADY exactly-once at
+ * the row level — a repeated send cannot add a second line for the same cell, and
+ * since this change it answers `409 ERR-RES-002` rather than a 500. Only a
+ * genuinely different cell adds a line, which is a different count, not a replay.
+ *
+ * Declaring `idempotent: true` would add no guarantee and no correction path:
+ * `If-Match`-free replay stores the FIRST answer against the caller's key, so a
+ * corrected quantity sent under the same key would replay the original refusal,
+ * and the same key with a different body is `ERR-INT-001` either way. It would
+ * also force the header on every call — the web client mints a fresh key per send
+ * — and create a derived idempotency-evidence obligation with nothing to prove.
+ *
+ * Correcting a counted cell (soft-deleting a draft line, or amending its quantity
+ * under `If-Match`) is a real gap and a separate operation; the cell index is
+ * partial on `deleted_at` precisely so a re-add stays possible.
  */
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';

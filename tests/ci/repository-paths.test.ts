@@ -212,7 +212,7 @@ describe('the API application lives in the workspace', () => {
     // `payments`, and the price-rule collection), so a slice that published a read
     // by creating a redundant second module for a path would move this count and
     // not the other.
-    expect(routeFiles.length).toBe(295);
+    expect(routeFiles.length).toBe(296);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -233,7 +233,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 373 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 375 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -267,7 +267,12 @@ describe('the API application lives in the workspace', () => {
     // 325 with BR-04: eight operations over six modules — the inspection-template
     // collection and the id-addressed template each co-locate two verbs on one
     // path, so the module count moves by six while this one moves by eight.
-    expect(report.operations).toHaveLength(373);
+    // 375 with the P1-30 opening-batch reads (seam S-17): the list is a GET
+    // co-located on the existing collection module, so it moves the operation count
+    // and NOT the module count, while the id-addressed detail is a new module and
+    // moves both — two operations over one new module, and the two numbers move by
+    // different amounts again.
+    expect(report.operations).toHaveLength(375);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the

@@ -178,6 +178,7 @@ export const ROUTE_TEMPLATES = Object.freeze([
   '/notifications/{notificationId}',
   '/notifications/{notificationId}/deliveries',
   '/opening-inventory-batches',
+  '/opening-inventory-batches/{batchId}',
   '/opening-inventory-batches/{batchId}/approval',
   '/opening-inventory-batches/{batchId}/lines',
   '/org/branches',
