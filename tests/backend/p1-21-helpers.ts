@@ -655,7 +655,7 @@ export async function seedStock(input: {
         USER_A,
       ]
     );
-    // A DIFFERENT actor approves: ck_opening_inventory_batches_maker_checker.
+    // A DIFFERENT actor approves: ck_opening_inventory_batches_maker.
     await client.query(`SELECT set_config('app.user_id',$1,true)`, [INV_APPROVER.userId]);
     await client.query(`SELECT inv.approve_opening_batch($1)`, [batchId]);
     await client.query('COMMIT');

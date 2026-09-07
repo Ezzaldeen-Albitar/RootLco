@@ -82,8 +82,11 @@ describe('every route body serialises a named type', () => {
     // create, the item create and the location create serialise named views
     // (`named` +4); the units-of-measure list answers `{ items }` composed in
     // the route from `UnitOfMeasureView[]` (`composed` +1).
-    expect(summary.bodies).toBe(373);
-    expect(summary.named).toBe(320);
+    // 375 with the P1-30 opening-batch reads (S-17): the list serialises
+    // `Page<OpeningBatchListView>` and the detail `OpeningBatchDetailView`, both
+    // NAMED interfaces, so `named` moves by two and `composed` does not.
+    expect(summary.bodies).toBe(375);
+    expect(summary.named).toBe(322);
     expect(summary.composed).toBe(53);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

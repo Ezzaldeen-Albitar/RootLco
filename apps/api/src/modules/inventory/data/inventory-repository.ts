@@ -92,6 +92,19 @@ export const CATEGORY_ORDER: OrderingContract = Object.freeze({
   direction: 'asc',
 });
 
+/**
+ * Opening batches are listed newest-first by `created_at` (Phase 1-30, seam S-17).
+ *
+ * `as_of_date` is the date the count claims to describe, not the moment it was
+ * opened, and two batches may share it — so it is not a chronology a cursor can
+ * page on. `approved_at` is NULL for every draft, which is precisely the set the
+ * approver is looking for. `created_at` is the only instant every row carries.
+ */
+export const OPENING_BATCH_ORDER: OrderingContract = Object.freeze({
+  key: 'inv.opening_inventory_batches:created_at_desc',
+  direction: 'desc',
+});
+
 /** Escapes LIKE metacharacters. Binding a value does not neutralise `%` or `_`. */
 function escapeLikeTerm(term: string): string {
   return term.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
@@ -316,6 +329,87 @@ export interface OpeningBatchRow {
   readonly approvedBy: string | null;
   readonly recordVersion: number;
 }
+
+/**
+ * A batch as the recovery reads publish it (Phase 1-30, seam S-17).
+ *
+ * Extends the write-echo shape rather than replacing it: the POST responses are a
+ * published contract and this read must not quietly change them. The four extra
+ * columns are the ones an operator needs before deciding to approve — WHEN the
+ * count claims to apply, WHETHER it is already approved and when, and HOW MANY
+ * cells it covers, which is the difference between a real count and an empty
+ * draft that would attest to nothing.
+ *
+ * `lineCount` is counted in SQL over the live lines. Paging the lines to count
+ * them client-side would make an approver's decision depend on a page size.
+ */
+export interface OpeningBatchHeaderRow extends OpeningBatchRow {
+  /** `date`, read as text — a date column has no time and must not gain one. */
+  readonly asOfDate: string;
+  readonly approvedAt: Date | null;
+  readonly createdAt: Date;
+  readonly lineCount: number;
+}
+
+/** One counted cell, with the codes an operator reads instead of the ids. */
+export interface OpeningLineRow {
+  readonly id: string;
+  readonly batchId: string;
+  readonly itemId: string;
+  readonly sku: string;
+  readonly itemName: string;
+  readonly locationId: string;
+  readonly locationCode: string;
+  /** `numeric(12,3)` — a decimal STRING, never a JSON number. */
+  readonly quantity: string;
+}
+
+interface OpeningBatchHeaderSql {
+  id: string;
+  company_id: string;
+  branch_id: string;
+  batch_code: string;
+  as_of_date: string;
+  status: string;
+  counted_by: string;
+  approved_by: string | null;
+  approved_at: Date | null;
+  record_version: number;
+  created_at: Date;
+  line_count: number;
+}
+
+/**
+ * The header projection, written once because the list and the detail must not
+ * drift: a field the list publishes and the detail omits is a shape the reader
+ * has to discover by trying it.
+ *
+ * `as_of_date` is cast to text so a `date` column never acquires a time it does
+ * not have, and `line_count` is a correlated count over the live lines rather
+ * than a client-side length, which would depend on a page size.
+ */
+const OPENING_BATCH_HEADER_COLUMNS = `b.id, b.company_id, b.branch_id, b.batch_code,
+              b.as_of_date::text AS as_of_date, b.status, b.counted_by, b.approved_by,
+              b.approved_at, b.record_version, b.created_at,
+              (SELECT count(*)::int
+                 FROM inv.opening_inventory_lines l
+                WHERE l.tenant_id = b.tenant_id AND l.batch_id = b.id
+                  AND l.deleted_at IS NULL) AS line_count`;
+
+const toOpeningBatchHeaderRow = (row: OpeningBatchHeaderSql): OpeningBatchHeaderRow => ({
+  id: row.id,
+  companyId: row.company_id,
+  branchId: row.branch_id,
+  batchCode: row.batch_code,
+  asOfDate: row.as_of_date,
+  status: row.status,
+  countedBy: row.counted_by,
+  approvedBy: row.approved_by,
+  approvedAt: row.approved_at,
+  recordVersion: row.record_version,
+  createdAt: row.created_at,
+  lineCount: row.line_count,
+});
 
 /** One reconciliation row: the stored balance against the ledger sum. */
 export interface BalanceReconciliationRow {
@@ -1292,11 +1386,147 @@ export class InventoryRepository extends Repository {
    * Approves a batch, which posts one `opening` movement per line.
    *
    * `inv.approve_opening_batch` enforces draft-only and stamps the approver;
-   * `ck_opening_inventory_batches_maker_checker` enforces maker ≠ approver. Both
-   * stay in the database — this is a call, not a reimplementation.
+   * `ck_opening_inventory_batches_maker` enforces maker ≠ approver and
+   * `inv.guard_opening_batch_approval` freezes the row afterwards. All of it
+   * stays in the database — this is a call, not a reimplementation.
    */
   public async approveOpeningBatch(db: DbHandle, batchId: string): Promise<void> {
     await this.run(db, `SELECT inv.approve_opening_batch($1)`, [batchId]);
+  }
+
+  /**
+   * One branch's opening batches, newest first (Phase 1-30, seam S-17).
+   *
+   * `(companyId, branchId)` are REQUIRED and are the operation's
+   * `authorizationTarget`, on the `inv.stock-location-list` precedent. They are
+   * bound as predicates here too: RLS narrows to `app.branch_ids`, the
+   * permission-blind union of every active grant, so without the explicit columns
+   * a caller holding `inv.stock.read` in one branch could read another branch's
+   * counts through a grant carrying a different permission (P1-18-A-01).
+   *
+   * `ix_opening_inventory_batches_branch` covers the equality prefix.
+   */
+  public async listOpeningBatches(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly status?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<OpeningBatchHeaderRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.status ?? null,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'b.created_at', id: 'b.id' },
+      OPENING_BATCH_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<OpeningBatchHeaderSql & { sort_value: string }>(
+      db,
+      // The optional filter is bound as `($n::text IS NULL OR col = $n)` so no
+      // predicate is assembled from input and the keyset parameter index is fixed.
+      `SELECT ${OPENING_BATCH_HEADER_COLUMNS},
+              ${cursorTimestamp('b.created_at')} AS sort_value
+         FROM inv.opening_inventory_batches b
+        WHERE b.tenant_id = $1 AND b.company_id = $2 AND b.branch_id = $3
+          AND b.deleted_at IS NULL
+          AND ($4::text IS NULL OR b.status = $4)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: toOpeningBatchHeaderRow(row),
+        // Microsecond precision minted in SQL. A JS `Date` truncates to
+        // milliseconds and would skip every row sharing the boundary row's
+        // millisecond (`P1-27-INT-006`) — and two batches opened by one script
+        // share `transaction_timestamp()` far more often than two by hand.
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      OPENING_BATCH_ORDER
+    );
+  }
+
+  /**
+   * One batch's header by id, with no scope predicate (Phase 1-30, seam S-17).
+   *
+   * Deliberately tenant-scoped ONLY. The caller — `InventoryReadService` — needs
+   * the row's own company and branch in order to authorize against them, so a
+   * scope predicate here would make an unauthorized batch and a non-existent one
+   * indistinguishable *to the service* and leave `authorizeScope` unreachable.
+   * RLS still narrows, and a row RLS hides reads as `null`, which the service
+   * turns into the same 404 an unknown id gets.
+   */
+  public async readOpeningBatchHeader(
+    db: DbHandle,
+    batchId: string
+  ): Promise<OpeningBatchHeaderRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<OpeningBatchHeaderSql>(
+      db,
+      `SELECT ${OPENING_BATCH_HEADER_COLUMNS}
+         FROM inv.opening_inventory_batches b
+        WHERE b.tenant_id = $1 AND b.id = $2 AND b.deleted_at IS NULL`,
+      [context.principal.tenantId, batchId]
+    );
+    return row ? toOpeningBatchHeaderRow(row) : null;
+  }
+
+  /**
+   * Every counted line on one batch (Phase 1-30, seam S-17).
+   *
+   * Unpaged, and bounded by construction: `uq_opening_inventory_lines_cell` allows
+   * one live line per (item, location) inside a batch, so the collection is the
+   * branch's counted cells and not an open-ended log. A cursor here would split a
+   * count across pages and make the approver's total depend on a page size.
+   *
+   * Ordered by location then SKU — the order the shelves are walked in — and both
+   * columns are joined in so the reader sees codes rather than uuids. Quantity
+   * crosses as the exact decimal STRING `pg` returns.
+   */
+  public async listOpeningLines(db: DbHandle, batchId: string): Promise<readonly OpeningLineRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      batch_id: string;
+      item_id: string;
+      sku: string;
+      item_name: string;
+      location_id: string;
+      location_code: string;
+      quantity: string;
+    }>(
+      db,
+      `SELECT l.id, l.batch_id, l.item_id, i.sku, i.name AS item_name,
+              l.location_id, s.location_code, l.quantity
+         FROM inv.opening_inventory_lines l
+         JOIN inv.item_master i ON i.tenant_id = l.tenant_id AND i.id = l.item_id
+         JOIN inv.stock_locations s ON s.tenant_id = l.tenant_id AND s.id = l.location_id
+        WHERE l.tenant_id = $1 AND l.batch_id = $2 AND l.deleted_at IS NULL
+        ORDER BY s.location_code, i.sku, l.id`,
+      [context.principal.tenantId, batchId]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      batchId: row.batch_id,
+      itemId: row.item_id,
+      sku: row.sku,
+      itemName: row.item_name,
+      locationId: row.location_id,
+      locationCode: row.location_code,
+      quantity: row.quantity,
+    }));
   }
 
   // -------------------------------------------------------------------------
