@@ -7,6 +7,7 @@
  * clean would keep passing after the repository stopped being clean.
  */
 import { describe, it, expect } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -38,7 +39,13 @@ import {
   compare as compareRoutes,
   discoverImports,
 } from '../../scripts/ci/check-route-registry-parity.mjs';
-import { classify as classifySecret, isAllowed } from '../../scripts/ci/scan-history.mjs';
+import {
+  ALLOWED,
+  PATTERNS,
+  classify as classifySecret,
+  isAllowed,
+  scanHistory,
+} from '../../scripts/ci/scan-history.mjs';
 
 const rules = (findings: Array<{ rule: string }>) => findings.map((f) => f.rule);
 
@@ -1107,5 +1114,249 @@ describe('credential-shape scanner', () => {
     expect(isAllowed('tests/logger.test.ts', 'aws-access-key')).toBe(false);
     // Nor may an unrelated file inherit the allowance.
     expect(isAllowed('src/server/db/pool.ts', 'postgres-url-with-password')).toBe(false);
+  });
+
+  /**
+   * The six reviewed historical exclusions, as (file, pattern, commit). They are
+   * the nightly deep scan's findings on main as of 2026-09-06; each was read in
+   * masked form and is a documentation sentence, a scanner fixture or a local
+   * default. The commit is the FULL SHA on purpose — a prefix is not a name.
+   */
+  const HISTORICAL_EXCLUSIONS = [
+    [
+      'docs/phase-1/phase-1-26/local-acceptance-account-runbook.md',
+      'postgres-url-with-password',
+      '3d2bcc483d9b214a5d34bec8f1c0cd1e9a89c16b',
+    ],
+    [
+      'scripts/dev/owner-acceptance/context.mjs',
+      'postgres-url-with-password',
+      '1e96cf8e1622cea0d581c84865221d3dea8dc4d7',
+    ],
+    [
+      'apps/web/tests/observability.test.ts',
+      'jwt-service-role',
+      '3e1f9e3ef56b4fc1320242f16951d8ae578d3f31',
+    ],
+    [
+      'apps/api/.env.example',
+      'postgres-url-with-password',
+      '665255fb5daca68dac48501ea4478083836bbf20',
+    ],
+    [
+      'tests/ci/policy-and-linters.test.ts',
+      'private-key-header',
+      '1ae4ae1f9fad4c30f07f6a178753880b8e18a4a2',
+    ],
+    [
+      'tests/ci/policy-and-linters.test.ts',
+      'postgres-url-with-password',
+      '1ae4ae1f9fad4c30f07f6a178753880b8e18a4a2',
+    ],
+  ] as const;
+
+  it.each(HISTORICAL_EXCLUSIONS)(
+    'excludes %s / %s only at commit %s and only in history mode',
+    (file, pattern, commit) => {
+      expect(isAllowed(file, pattern, { mode: 'history', commit })).toBe(true);
+      // The same triple is NOT a worktree allowance — there the shape means the
+      // value is back in the tree.
+      expect(isAllowed(file, pattern, { mode: 'worktree', commit })).toBe(false);
+      expect(isAllowed(file, pattern)).toBe(false);
+      // History mode without a commit, with a prefix, or with another commit.
+      expect(isAllowed(file, pattern, { mode: 'history' })).toBe(false);
+      expect(isAllowed(file, pattern, { mode: 'history', commit: commit.slice(0, 10) })).toBe(
+        false
+      );
+      expect(isAllowed(file, pattern, { mode: 'history', commit: 'f'.repeat(40) })).toBe(false);
+      // Another class in the same commit, or another path, inherits nothing.
+      expect(isAllowed(file, 'aws-access-key', { mode: 'history', commit })).toBe(false);
+      expect(isAllowed(`${file}.bak`, pattern, { mode: 'history', commit })).toBe(false);
+      expect(isAllowed(`x/${file}`, pattern, { mode: 'history', commit })).toBe(false);
+    }
+  );
+
+  it('an entry without commits keeps its mode-agnostic meaning in history mode', () => {
+    const anyCommit = 'a'.repeat(40);
+    expect(
+      isAllowed('tests/logger.test.ts', 'postgres-url-with-password', {
+        mode: 'history',
+        commit: anyCommit,
+      })
+    ).toBe(true);
+    expect(
+      isAllowed('.github/workflows/nightly-assurance.yml', 'postgres-url-with-password', {
+        mode: 'history',
+        commit: anyCommit,
+      })
+    ).toBe(true);
+    expect(
+      isAllowed('src/server/db/pool.ts', 'postgres-url-with-password', {
+        mode: 'history',
+        commit: anyCommit,
+      })
+    ).toBe(false);
+  });
+
+  it('every allow-list entry is one path and one class; commit-bound ones name full SHAs', () => {
+    type Entry = {
+      file: string;
+      pattern: string;
+      reason: string;
+      owner: string;
+      prefix?: boolean;
+      commits?: readonly string[];
+      reviewedOn?: string;
+    };
+    const entries = ALLOWED as ReadonlyArray<Entry>;
+    const ids = new Set(PATTERNS.map((p: { id: string }) => p.id));
+    // The wildcard class is tolerated for the two scanner-definition files and
+    // nowhere else.
+    expect(
+      entries
+        .filter((e) => e.pattern === '*')
+        .map((e) => e.file)
+        .sort()
+    ).toEqual(['scripts/check-tracked-secrets.mjs', 'scripts/ci/scan-history.mjs']);
+    for (const entry of entries) {
+      expect(entry.file).toMatch(/^[A-Za-z0-9_.][A-Za-z0-9_./-]*$/); // a path, not a glob
+      expect(entry.file).not.toMatch(/^\.\.?\//);
+      expect(entry.file).not.toMatch(/[*?[\]{}]/);
+      expect(entry.pattern === '*' || ids.has(entry.pattern)).toBe(true);
+      expect(entry.reason.length).toBeGreaterThan(20);
+      expect(entry.owner.length).toBeGreaterThan(0);
+      expect('history' in entry).toBe(false); // no unbounded history waiver exists
+      if (entry.commits !== undefined) {
+        expect(entry.pattern).not.toBe('*');
+        expect(entry.prefix).toBeUndefined();
+        expect(entry.commits.length).toBeGreaterThan(0);
+        expect(new Set(entry.commits).size).toBe(entry.commits.length);
+        for (const sha of entry.commits) expect(sha).toMatch(/^[0-9a-f]{40}$/);
+        expect(entry.reviewedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        expect(Number.isNaN(Date.parse(entry.reviewedOn as string))).toBe(false);
+      }
+    }
+    // The six reviewed triples are all present — and nothing else is commit-bound.
+    const bound = entries.flatMap((e) => (e.commits ?? []).map((c) => [e.file, e.pattern, c]));
+    expect(bound.sort()).toEqual([...HISTORICAL_EXCLUSIONS].map((t) => [...t]).sort());
+  });
+
+  it('finds a fresh credential shape in a real repository; a commit-bound exclusion silences exactly its commit', (ctx) => {
+    const repo = mkdtempSync(join(tmpdir(), 'rootlco-history-scan-'));
+    ctx.onTestFinished(() => rmSync(repo, { recursive: true, force: true }));
+    const git = (...args: string[]) =>
+      execFileSync('git', args, {
+        cwd: repo,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: 'probe',
+          GIT_AUTHOR_EMAIL: 'probe@local',
+          GIT_COMMITTER_NAME: 'probe',
+          GIT_COMMITTER_EMAIL: 'probe@local',
+          GIT_AUTHOR_DATE: '2000-01-01T00:00:00+0000',
+          GIT_COMMITTER_DATE: '2000-01-01T00:00:00+0000',
+        },
+      }).trim();
+    git('init', '--quiet', '--initial-branch=main');
+    git('config', 'user.name', 'probe');
+    git('config', 'user.email', 'probe@local');
+    git('config', 'commit.gpgsign', 'false');
+    // Assembled at runtime for the same reason as `pgUrl` above.
+    const shaped = ['postgres:', '/', '/user:', 'hunter2', '@host/db'].join('');
+    writeFileSync(join(repo, 'notes.txt'), `url=${shaped}\n`);
+    git('add', 'notes.txt');
+    git('commit', '--quiet', '-m', 'first');
+    const first = git('rev-parse', 'HEAD');
+    writeFileSync(join(repo, 'notes.txt'), `url=${shaped}\nagain=${shaped}\n`);
+    git('add', 'notes.txt');
+    git('commit', '--quiet', '-m', 'second');
+    const second = git('rev-parse', 'HEAD');
+
+    // With no allowance both commits are findings, newest first, and no value is
+    // recorded anywhere in the result.
+    const open = scanHistory({ cwd: repo, allowed: [] });
+    expect(open.commitsScanned).toBe(2);
+    expect(
+      open.findings.map((f: { commit: string; file: string; pattern: string }) => [
+        f.commit,
+        f.file,
+        f.pattern,
+      ])
+    ).toEqual([
+      [second, 'notes.txt', 'postgres-url-with-password'],
+      [first, 'notes.txt', 'postgres-url-with-password'],
+    ]);
+    for (const f of open.findings) {
+      expect(Object.keys(f).sort()).toEqual(['commit', 'file', 'pattern', 'where']);
+    }
+    expect(JSON.stringify(open)).not.toContain('hunter2');
+
+    // A commit-bound entry for `first` silences `first` and nothing else.
+    const bound = scanHistory({
+      cwd: repo,
+      allowed: [{ file: 'notes.txt', pattern: 'postgres-url-with-password', commits: [first] }],
+    });
+    expect(bound.findings.map((f: { commit: string }) => f.commit)).toEqual([second]);
+
+    // The same entry keyed by a different commit, another class, or another path
+    // silences nothing.
+    for (const entry of [
+      { file: 'notes.txt', pattern: 'postgres-url-with-password', commits: ['f'.repeat(40)] },
+      { file: 'notes.txt', pattern: 'aws-access-key', commits: [first, second] },
+      { file: 'other.txt', pattern: 'postgres-url-with-password', commits: [first, second] },
+    ]) {
+      expect(scanHistory({ cwd: repo, allowed: [entry] }).findings).toHaveLength(2);
+    }
+
+    // And this is why the historical entries carry commits: a file-only entry
+    // would silence BOTH.
+    const fileWide = scanHistory({
+      cwd: repo,
+      allowed: [{ file: 'notes.txt', pattern: 'postgres-url-with-password' }],
+    });
+    expect(fileWide.findings).toEqual([]);
+  });
+
+  it('scans the hunks of a file that was renamed in the same commit', (ctx) => {
+    const repo = mkdtempSync(join(tmpdir(), 'rootlco-history-rename-'));
+    ctx.onTestFinished(() => rmSync(repo, { recursive: true, force: true }));
+    const git = (...args: string[]) =>
+      execFileSync('git', args, {
+        cwd: repo,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: 'probe',
+          GIT_AUTHOR_EMAIL: 'probe@local',
+          GIT_COMMITTER_NAME: 'probe',
+          GIT_COMMITTER_EMAIL: 'probe@local',
+          GIT_AUTHOR_DATE: '2000-01-01T00:00:00+0000',
+          GIT_COMMITTER_DATE: '2000-01-01T00:00:00+0000',
+        },
+      }).trim();
+    git('init', '--quiet', '--initial-branch=main');
+    git('config', 'user.name', 'probe');
+    git('config', 'user.email', 'probe@local');
+    git('config', 'commit.gpgsign', 'false');
+    // Long enough that git scores the rename as a similar file rather than a
+    // delete plus an add — which is precisely the case `AM` used to drop.
+    const body = Array.from({ length: 200 }, (_, i) => `line ${i}`).join('\n');
+    writeFileSync(join(repo, 'a.txt'), `${body}\n`);
+    git('add', 'a.txt');
+    git('commit', '--quiet', '-m', 'plain');
+    git('mv', 'a.txt', 'b.txt');
+    const shaped = ['postgres:', '/', '/user:', 'hunter2', '@host/db'].join('');
+    writeFileSync(join(repo, 'b.txt'), `${body}\nurl=${shaped}\n`);
+    git('add', 'b.txt');
+    git('commit', '--quiet', '-m', 'rename and append');
+    const renamed = git('rev-parse', 'HEAD');
+
+    const result = scanHistory({ cwd: repo, allowed: [] });
+    expect(
+      result.findings.map((f: { commit: string; file: string }) => [f.commit, f.file])
+    ).toContainEqual([renamed, 'b.txt']);
   });
 });

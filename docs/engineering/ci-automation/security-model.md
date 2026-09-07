@@ -143,6 +143,17 @@ verified against a SHA-256 checksum that was confirmed against the publisher's
 own checksums file. A linter fetched over the network is itself a supply-chain
 input.
 
+The nightly `backup-restore-drill` job fetches a second run-time executable:
+`postgresql-client-17` from `apt.postgresql.org`, because the runner image ships
+client 16 and the drill's service container is PostgreSQL 17. Its trust chain is
+apt's own: the PGDG source is re-enabled by the helper script that ships inside
+the Ubuntu-archive-signed `postgresql-common` package already on the image, and
+the package signature is verified against the PGDG key that same package
+carries. No key, script or binary is downloaded by hand and nothing is piped
+into a shell. The **major** is pinned — it must equal the server major the drill
+runs against — while the minor floats and is recorded, alongside the server
+version, in `backup-restore.json`.
+
 Dependabot proposes pin updates, including the trailing version comment — which
 is exactly the maintenance burden that makes teams abandon SHA pinning. It does
 not keep them correct on its own, and this table is not maintained by it: it
@@ -323,11 +334,19 @@ prevent.
 
 ### Allow-list
 
-Nine entries, each naming **one file and one pattern class**. There is no
+Fifteen entries, each naming **one file and one pattern class**. There is no
 class-wide suppression: waiving a whole token class is how a real credential
-later slips past. Three are historical-only — synthetic fixtures in commits that
-have since been rewritten to construct their prefixes at runtime, and which the
-current-tree scanner therefore no longer sees.
+later slips past. Nine are historical-only — synthetic fixtures, documentation
+sentences naming the detector's own shape, and a commented-out local default,
+in commits that were later rewritten so the current tree carries no shape. Six
+of those are **commit-bound**: the entry names the exact commit SHA(s) it was
+reviewed against (`reviewedOn`), applies only in history mode, and covers
+nothing else — the same shape in the same file in any later commit is a finding.
+
+History mode also reads the hunks of a **renamed** file. Rename detection folds
+a rename plus an edit into a single `R` entry, which the earlier `AM` filter
+dropped entirely: a credential added in the commit that renamed its file was
+never scanned.
 
 ### Preflight result
 

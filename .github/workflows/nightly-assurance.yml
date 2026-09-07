@@ -300,6 +300,25 @@ jobs:
       - name: Set up the project
         uses: ./.github/actions/setup-project
 
+      - name: Install the PostgreSQL 17 client the drill needs
+        run: |
+          set -euo pipefail
+          # The ubuntu-24.04 image ships postgresql-client 16 and deletes its
+          # PGDG apt source after the image build, while the service container
+          # above is `postgres:17-alpine` and `supabase/config.toml` declares
+          # `major_version = 17`. pg_dump refuses a server NEWER than itself
+          # ("aborting because of server version mismatch"), so the client
+          # major must equal the server major. The PGDG source is re-enabled
+          # with the signing key that `postgresql-common` ships on the image:
+          # nothing is downloaded by hand and nothing is piped into a shell.
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get -o DPkg::Lock::Timeout=120 install -y --no-install-recommends postgresql-client-17
+          # Later steps resolve pg_dump/pg_restore/psql from the 17 tree
+          # directly rather than through pg_wrapper's "newest installed" rule.
+          echo '/usr/lib/postgresql/17/bin' >> "${GITHUB_PATH}"
+          /usr/lib/postgresql/17/bin/pg_dump --version
+          /usr/lib/postgresql/17/bin/pg_restore --version
+
       - name: Build the source database
         run: |
           set -euo pipefail
@@ -397,6 +416,33 @@ jobs:
         uses: ./.github/actions/setup-project
         with:
           node-version: ${{ matrix.node }}
+          # Full history, and every branch with it. The root unit tier this cell
+          # runs (`npm run test`) includes the evidence seals, which walk
+          # ancestry (`merge-base --is-ancestor`, `rev-list`) and read
+          # `origin/develop`: promotion-caller-wiring, p1-28-evidence-manifest,
+          # p1-29-access-gate, p1-29-payload-parity, p1-27-doc-counts. At depth
+          # 1 they fail closed — "origin/develop does not resolve, so this
+          # measures nothing" — which is a fact about the clone, not the tree.
+          # Depth 0 through this action fetches `+refs/heads/*:refs/remotes/origin/*`,
+          # the checkout `unit-tests-coverage` passes with on every protected push.
+          fetch-depth: '0'
+
+      - name: The phase base branches must resolve
+        run: |
+          set -euo pipefail
+          # Asserted rather than assumed, before any suite runs: the seals read
+          # these refs, and their own refusal names the symptom rather than the
+          # cause. No fetch here: the composite dropped its credential, and a
+          # depth-0 checkout already created every branch under origin/. The
+          # rev-parse IS the assertion. Either failing fails the step.
+          for branch in develop main; do
+            git rev-parse --verify "refs/remotes/origin/${branch}" >/dev/null
+            printf 'origin/%s resolves at %s\n' "${branch}" "$(git rev-parse "refs/remotes/origin/${branch}")"
+          done
+          if [ "$(git rev-parse --is-shallow-repository)" = 'true' ]; then
+            echo "::error::the clone is shallow, so an ancestry check would report a recorded head as absent when it is merely not fetched. This job needs fetch-depth 0."
+            exit 1
+          fi
 
       - name: Label the combination
         env:

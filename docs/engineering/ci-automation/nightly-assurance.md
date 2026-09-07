@@ -70,6 +70,19 @@ table, FORCE RLS except for three named global reference tables, zero
 `SECURITY DEFINER`, no runtime role with `SUPERUSER` or `BYPASSRLS`, and
 `app_readonly` holding no write privilege anywhere.
 
+Both database jobs first check that **applied migrations are immutable**, and
+that check needs a base to diff against. The base rule, in
+`_reusable-database-assurance.yml`: on a pull request it is the pull request's
+base branch; on a push it is the event's `before`; on a schedule or a dispatch
+of `main` or `develop` it is the **first parent of HEAD** — those branches are
+merge-commit-only, so the first parent is the branch as it stood before the
+merge at its tip — and the derived path additionally walks the whole
+first-parent line, requiring that no merge ever modified, renamed or deleted a
+migration. On any other ref the check **refuses and fails**: a check that cannot
+run must not report success. Until that derivation existed, every scheduled
+nightly stopped here, so `rls-level: full` first executes hosted only once it
+lands.
+
 ## Mutation assurance
 
 Removes one guard at a time and requires the suite to notice. Current targets:
@@ -107,13 +120,56 @@ ignored.
 ## Backup and restore
 
 Ephemeral container only. Dump, destroy, restore into a fresh database, then
-prove the **schema hash**, the **per-table row counts** and **application-shaped
-queries** all match the source — including that RLS is still enabled on the
-restored tables. A restore that completes without error is not a verified
-restore.
+prove the **schema hash**, the **per-table row counts**, the **database-level
+settings** and **application-shaped queries** all match the source — including
+that RLS is still enabled on the restored tables. A restore that completes
+without error is not a verified restore.
+
+### A dump does not carry database-level settings (2026-09-07)
+
+`supabase/migrations/0001_extensions.sql` runs `ALTER DATABASE <current> SET
+search_path TO "$user", public, extensions`. That is a row in
+`pg_db_role_setting`, which belongs to the **cluster**, not to the database's
+contents — and **a compressed `pg_dump` taken without `--create` does not carry
+it**. The drill built its target with a bare `CREATE DATABASE`, so the restored
+database had no such setting.
+
+This is a **disaster-recovery gap, not only a CI artefact**. Existing objects
+keep working after such a restore because they are bound by identifier, but
+anything run **afterwards** that relies on an unqualified `citext` or on the
+`gin_trgm_ops` / `gist_trgm_ops` operator classes resolves against the wrong
+path. **A restore is not on its own sufficient to rebuild a working database;
+the database-level settings must be re-applied.**
+
+The first nightly run that got past the client-major pairing reported it as
+`schema hash diverged` while integrity matched exactly at 254 of 254 tables and
+202 of 202 rows. The restore was **faithful**: with the search paths equalised,
+both inventories were byte-identical across 9,683 rows, and the hash differed
+only in the rendered text of a check constraint on `iam.user_accounts` and the
+two trigram index operator classes on `inv.item_master` and
+`shared.search_metadata`.
+
+The drill now reads the source's settings from `pg_db_role_setting` — from the
+**catalogue**, because the dump has none — replays them onto the target with
+`ALTER DATABASE … SET` before `pg_restore` runs, and then **asserts that the
+target's set of database-level settings equals the source's**, reporting both
+sets in the job summary with secret-shaped values withheld. The schema-hash
+equality assertion is unchanged: with the paths equalised it once again measures
+structure rather than rendering. Pinning a search path inside
+`scripts/db/schema-inventory.mjs` was rejected — it would have moved the hash
+everywhere it is pinned and hidden the setting loss entirely.
 
 Production is unreachable from every workflow in this repository, and the script
-refuses to run against any host it did not create the target database on.
+refuses every host that is not a loopback address or the `postgres` service
+alias; the only database it drops or creates is `rootlco_restore_probe`.
+
+The job installs `postgresql-client-17` from PGDG before the drill runs: the
+runner image ships client 16, the service container is `postgres:17-alpine`,
+and `pg_dump` aborts on a server newer than itself. The script checks the
+pairing itself and exits 2 (tooling) rather than 1 (divergence) on a mismatch,
+and records both versions in the evidence. The failure signature is recorded at
+`docs/phase-1/phase-1-22/execution-checkpoint.md` and dispositioned as a
+repository-tooling item at `docs/phase-1/phase-1-30/closure-record.md`.
 
 ## Compatibility matrix
 
