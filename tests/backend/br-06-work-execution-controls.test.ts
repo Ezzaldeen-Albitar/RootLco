@@ -840,20 +840,22 @@ describe('N1/N2 — authorization on every one of the six operations', () => {
   it('cross-tenant: a tenant-B principal sees none of tenant A’s jobs or QC records', async () => {
     const mine = await seedJob();
     authAs(TENANT_B_FULL);
-    // Asking for tenant A's branch as tenant B: refused at scope evaluation, and
-    // RLS would refuse the rows even if it were not.
+    // Asking for tenant A's branch as tenant B. Since CC-14 this is settled at
+    // exactly 403: the pre-handler resolves the named pair to a branch visible
+    // to the caller inside its own tenant before either collection is read. The
+    // permission itself is unrestricted and cannot refuse it, and RLS would have
+    // answered an empty page — which is what the old `[403, 200]` admitted.
     const jobs = await jobList(`${branchQuery}&limit=50`);
-    expect([403, 200]).toContain(jobs.status);
-    if (jobs.status === 200) {
-      const page = (await jobs.json()) as PageOf<JobBoardRow>;
-      expect(page.items.map((row) => row.id)).not.toContain(mine.jobId);
-    }
+    expect(jobs.status).toBe(403);
+    expect(mine.jobId).toBeTruthy();
     authAs(TENANT_B_FULL);
+    // The DETAIL read is id-addressed and names no pair, so it is untouched by
+    // CC-14 and keeps the 403-or-404 its own path produces.
     const detail = await jobDetail(mine.jobId);
     expect([403, 404]).toContain(detail.status);
     authAs(TENANT_B_FULL);
     const qc = await qcList(`${branchQuery}&limit=50`);
-    expect([403, 200]).toContain(qc.status);
+    expect(qc.status).toBe(403);
   });
 
   it('isolation: the QC queue of one branch never carries another branch’s record', async () => {
