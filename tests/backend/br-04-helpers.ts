@@ -230,23 +230,45 @@ export function liveTemplateCount(tenantId: string): Promise<number> {
  * Hard deletes rather than soft ones: the soft delete is PRODUCT behaviour under
  * test, and a fixture reset that used it would leave rows every later count would
  * have to know about.
+ *
+ * Every delete is bounded to this suite's fixture tenants. The local PostgreSQL is
+ * one shared container serving every worktree and the acceptance environment, so an
+ * unbounded sweep here destroys another workstream's rows — or, when one of them is
+ * pinned by a foreign key this reset does not unwind, fails and takes the whole
+ * suite with it.
  */
 export async function resetTemplates(): Promise<void> {
+  const tenants = [TENANT_A, TENANT_B];
   // Report children — three of them also reference dia.template_items directly.
-  await admin.query('DELETE FROM dia.report_item_results');
-  await admin.query('DELETE FROM dia.measurements');
-  await admin.query('DELETE FROM dia.findings');
-  await admin.query('DELETE FROM dia.dtc_records');
-  await admin.query('DELETE FROM dia.diagnostic_evidence');
-  await admin.query('DELETE FROM dia.recommendations');
-  await admin.query('DELETE FROM dia.diagnostic_reviews');
-  await admin.query('DELETE FROM dia.diagnostic_report_status_history');
+  await admin.query('DELETE FROM dia.report_item_results WHERE tenant_id = ANY($1::uuid[])', [
+    tenants,
+  ]);
+  await admin.query('DELETE FROM dia.measurements WHERE tenant_id = ANY($1::uuid[])', [tenants]);
+  await admin.query('DELETE FROM dia.findings WHERE tenant_id = ANY($1::uuid[])', [tenants]);
+  await admin.query('DELETE FROM dia.dtc_records WHERE tenant_id = ANY($1::uuid[])', [tenants]);
+  await admin.query('DELETE FROM dia.diagnostic_evidence WHERE tenant_id = ANY($1::uuid[])', [
+    tenants,
+  ]);
+  await admin.query('DELETE FROM dia.recommendations WHERE tenant_id = ANY($1::uuid[])', [tenants]);
+  await admin.query('DELETE FROM dia.diagnostic_reviews WHERE tenant_id = ANY($1::uuid[])', [
+    tenants,
+  ]);
+  await admin.query(
+    'DELETE FROM dia.diagnostic_report_status_history WHERE tenant_id = ANY($1::uuid[])',
+    [tenants]
+  );
   // The reports themselves, which pin the versions below.
-  await admin.query('DELETE FROM dia.diagnostic_reports');
+  await admin.query('DELETE FROM dia.diagnostic_reports WHERE tenant_id = ANY($1::uuid[])', [
+    tenants,
+  ]);
   // Then the library: items, versions, templates.
-  await admin.query('DELETE FROM dia.template_items');
-  await admin.query('DELETE FROM dia.template_versions');
-  await admin.query('DELETE FROM dia.inspection_templates');
+  await admin.query('DELETE FROM dia.template_items WHERE tenant_id = ANY($1::uuid[])', [tenants]);
+  await admin.query('DELETE FROM dia.template_versions WHERE tenant_id = ANY($1::uuid[])', [
+    tenants,
+  ]);
+  await admin.query('DELETE FROM dia.inspection_templates WHERE tenant_id = ANY($1::uuid[])', [
+    tenants,
+  ]);
 }
 
 async function seedPrincipal(principal: Principal): Promise<void> {

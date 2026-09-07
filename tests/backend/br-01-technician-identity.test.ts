@@ -213,8 +213,11 @@ beforeAll(async () => {
 afterEach(async () => {
   __resetAuthenticatorForTests();
   // Assignments reference the profile by foreign key, so they unwind first —
-  // `resetRoster` alone hits fk_job_assignments_technician.
-  await admin.query('DELETE FROM wo.job_assignments');
+  // `resetRoster` alone hits fk_job_assignments_technician. Bounded to the fixture
+  // tenants: the local PostgreSQL is shared with other worktrees.
+  await admin.query('DELETE FROM wo.job_assignments WHERE tenant_id = ANY($1::uuid[])', [
+    [TENANT_A, TENANT_B],
+  ]);
   await resetRoster();
 });
 
