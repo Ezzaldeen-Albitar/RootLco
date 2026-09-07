@@ -148,9 +148,36 @@ jobs:
           # made against the previous commit on the same branch. Skipping the
           # check entirely on the protected push — the run a gate record cites —
           # would mean a rewritten historical migration is never detected there.
+          #
+          # A `schedule` or a `workflow_dispatch` carries neither a base ref nor
+          # `before`. On a PROTECTED branch the previous state is still a fact
+          # of the commit itself: `main` and `develop` are merge-commit-only
+          # with no direct push, so every commit on their first-parent line is
+          # a reviewed merge (verified: the only non-merge on either line is the
+          # root bootstrap commit), and HEAD's first parent IS the branch as it
+          # stood before that merge — the commit `before` named on the merge
+          # push that landed it. The comparison is re-derived from `HEAD^1`
+          # there, and ONLY there: on a work branch `HEAD^1` is merely the
+          # previous commit, so a diff against it inspects one commit and
+          # reports OK over a rewrite two commits back. Anywhere else the check
+          # still refuses.
+          #
+          # The derived path also asks the nightly's own question — is the WHOLE
+          # history still what we think it is — by walking the first-parent
+          # line and requiring that no merge ever modified, renamed or deleted a
+          # migration. `HEAD^1` alone re-asks the last push's question every
+          # night until the next merge; the walk is what detects a rewrite that
+          # landed while that push's own run was broken. Guarded by the same
+          # protected-ref condition, because a work branch may legally rewrite a
+          # migration before it lands.
+          #
+          # `merge-base` with `origin/develop` is NOT a base for this question:
+          # on `main` it is `HEAD^2` (the develop that was promoted), so
+          # `HEAD^2...HEAD` is empty by construction — an OK over nothing.
           BASE_REF: ${{ inputs.base-ref }}
           EVENT: ${{ github.event_name }}
           BEFORE: ${{ github.event.before }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           if [ -n "${BASE_REF}" ]; then
@@ -163,10 +190,38 @@ jobs:
             comparison="${BEFORE}...HEAD"
             label="the previous commit on this branch"
             git rev-parse --verify "${BEFORE}" >/dev/null
+          elif { [ "${EVENT}" = 'schedule' ] || [ "${EVENT}" = 'workflow_dispatch' ]; } && { [ "${REF_NAME}" = 'main' ] || [ "${REF_NAME}" = 'develop' ]; }; then
+            # Fail CLOSED: `rev-parse --verify` exits non-zero when HEAD has no
+            # first parent in this clone (a root commit, or a checkout not taken
+            # at fetch-depth 0), and `set -e` stops the step on that.
+            previous="$(git rev-parse --verify "HEAD^1^{commit}")"
+            comparison="${previous}...HEAD"
+            label="the first parent of HEAD (${previous}) — the previous state of protected branch ${REF_NAME}, derived because event ${EVENT} names no base"
+            # For the record: the head and its parents, so a reader can see that
+            # the derived base is the first parent of a merge.
+            git rev-list --parents -n 1 HEAD
+            # The whole first-parent history — the nightly's own question.
+            # `--diff-merges=first-parent` diffs every merge against the branch
+            # as it stood, which is the only diff a protected branch receives.
+            # Non-vacuity first: a walk that saw no migration added has not
+            # inspected this repository.
+            added="$(git log --first-parent --diff-merges=first-parent --diff-filter=A --name-status --format= HEAD -- supabase/migrations/ | wc -l | tr -d '[:space:]')"
+            echo "first-parent walk of ${REF_NAME}: ${added} migration file(s) added across history"
+            if [ "${added}" -eq 0 ]; then
+              echo "::error::the first-parent walk of ${REF_NAME} saw no migration being added, so it inspected nothing. A check over an empty walk must not report success."
+              exit 1
+            fi
+            rewritten="$(git log --first-parent --diff-merges=first-parent --diff-filter=MDR --name-status --format='%H' HEAD -- supabase/migrations/)"
+            if [ -n "${rewritten}" ]; then
+              echo "::error::A merge on the first-parent line of ${REF_NAME} modified, renamed or deleted a migration that was already on the branch. Migrations are immutable once merged."
+              echo "${rewritten}"
+              exit 1
+            fi
+            echo "OK: no merge on the first-parent line of ${REF_NAME} ever modified, renamed or deleted a migration"
           else
             # No base to compare against and no way to derive one. Say so rather
             # than passing over a comparison that never happened.
-            echo "::error::No base reference is available (event '${EVENT}'), so migration immutability cannot be checked. A check that cannot run must not report success."
+            echo "::error::No base reference is available (event '${EVENT}', ref '${REF_NAME}'), so migration immutability cannot be checked. A check that cannot run must not report success. A base is known on a pull request, on a push, and on a schedule or dispatch of main or develop — nowhere else."
             exit 1
           fi
           changed="$(git diff --name-status --diff-filter=MDR "${comparison}" -- supabase/migrations/)"

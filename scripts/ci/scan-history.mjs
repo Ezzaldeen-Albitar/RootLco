@@ -61,6 +61,14 @@ export const PATTERNS = [
  * Allowed matches. Each entry names a FILE and a PATTERN CLASS, plus the reason
  * and who owns it. There is no pattern-class-wide suppression: waiving a whole
  * token class is how a real credential later slips past unnoticed.
+ *
+ * An entry that carries `commits` is HISTORY-ONLY and COMMIT-BOUND: it waives
+ * the named shape in the named file only in the exact commits listed (full
+ * 40-hex SHAs — immutable under the merge-only, no-rewrite governance) and only
+ * in `--mode history`. The same shape in the same file in any other commit, or
+ * in the working tree, is a finding. `reviewedOn` is the date a person read the
+ * masked line and recorded what it is. There is deliberately no unbounded
+ * `history: true` form.
  */
 export const ALLOWED = [
   {
@@ -121,6 +129,65 @@ export const ALLOWED = [
       'Historical only. Prose example illustrating the shape the rule rejects; absent from the current tree.',
     owner: 'platform-owner',
   },
+  // ---- historical only, commit-bound --------------------------------------
+  // Reviewed 2026-09-06 against masked `git show` output. Each is a
+  // documentation sentence, a scanner fixture or a local-stack default that a
+  // later commit rewrote out of the tree; history is immutable, so the commit
+  // is named instead of the file being waived.
+  {
+    file: 'docs/phase-1/phase-1-26/local-acceptance-account-runbook.md',
+    pattern: 'postgres-url-with-password',
+    commits: ['3d2bcc483d9b214a5d34bec8f1c0cd1e9a89c16b'],
+    reviewedOn: '2026-09-06',
+    reason:
+      'Historical only. A runbook sentence spelling out the URL-with-inline-password shape the tracked-file scanner matches, to explain why the acceptance tooling never builds one. Reworded later; absent from the current tree.',
+    owner: 'platform-owner',
+  },
+  {
+    file: 'scripts/dev/owner-acceptance/context.mjs',
+    pattern: 'postgres-url-with-password',
+    commits: ['1e96cf8e1622cea0d581c84865221d3dea8dc4d7'],
+    reviewedOn: '2026-09-06',
+    reason:
+      'Historical only. A docblock comment naming the URL-with-inline-password shape both scanners match, beside the code that builds the connection as an object to avoid it. Reworded later; absent from the current tree.',
+    owner: 'platform-owner',
+  },
+  {
+    file: 'apps/web/tests/observability.test.ts',
+    pattern: 'jwt-service-role',
+    commits: ['3e1f9e3ef56b4fc1320242f16951d8ae578d3f31'],
+    reviewedOn: '2026-09-06',
+    reason:
+      'Historical only. A synthetic three-segment token literal in the web redaction test, later replaced by `syntheticJwt()`, which assembles the segments at runtime; absent from the current tree.',
+    owner: 'platform-owner',
+  },
+  {
+    file: 'apps/api/.env.example',
+    pattern: 'postgres-url-with-password',
+    commits: ['665255fb5daca68dac48501ea4478083836bbf20'],
+    reviewedOn: '2026-09-06',
+    reason:
+      'Historical only. The commented-out local Supabase CLI default connection string in the workspace copy of .env.example — the same worthless local value the root entry above documents. Rewritten as a description later; absent from the current tree.',
+    owner: 'platform-owner',
+  },
+  {
+    file: 'tests/ci/policy-and-linters.test.ts',
+    pattern: 'private-key-header',
+    commits: ['1ae4ae1f9fad4c30f07f6a178753880b8e18a4a2'],
+    reviewedOn: '2026-09-06',
+    reason:
+      'Historical only. A literal private-key-header fixture in the first version of this scanner’s own test, in the commit that introduced the scanner. The fixture is now assembled at runtime; absent from the current tree.',
+    owner: 'platform-owner',
+  },
+  {
+    file: 'tests/ci/policy-and-linters.test.ts',
+    pattern: 'postgres-url-with-password',
+    commits: ['1ae4ae1f9fad4c30f07f6a178753880b8e18a4a2'],
+    reviewedOn: '2026-09-06',
+    reason:
+      'Historical only. A literal URL-with-inline-password fixture in the first version of this scanner’s own test, in the commit that introduced the scanner. The fixture is now assembled at runtime; absent from the current tree.',
+    owner: 'platform-owner',
+  },
   {
     file: 'scripts/ci/scan-history.mjs',
     pattern: '*',
@@ -136,10 +203,28 @@ export const ALLOWED = [
   },
 ];
 
-export function isAllowed(file, pattern) {
-  return ALLOWED.some((entry) => {
+/**
+ * @param {string} file the path git reports (history) or the cwd-relative path (worktree)
+ * @param {string} pattern a PATTERNS id
+ * @param {{ mode?: 'worktree' | 'history', commit?: string }} [context]
+ * @param {ReadonlyArray<{ file: string, pattern: string, prefix?: boolean, commits?: readonly string[] }>} [allowed]
+ *   Injectable for tests only. The CLI always evaluates ALLOWED.
+ */
+export function isAllowed(file, pattern, context = {}, allowed = ALLOWED) {
+  const mode = context.mode ?? 'worktree';
+  return allowed.some((entry) => {
     const fileMatches = entry.prefix ? file.startsWith(entry.file) : file === entry.file;
-    return fileMatches && (entry.pattern === '*' || entry.pattern === pattern);
+    if (!fileMatches) return false;
+    if (entry.pattern !== '*' && entry.pattern !== pattern) return false;
+    // A commit-bound entry applies in history mode, to the commits it names,
+    // and nowhere else. In the working tree the same shape means the value is
+    // back; in any other commit it is a new occurrence. Both are findings.
+    if (!entry.commits) return true;
+    return (
+      mode === 'history' &&
+      typeof context.commit === 'string' &&
+      entry.commits.includes(context.commit)
+    );
   });
 }
 
@@ -196,7 +281,7 @@ export function scanWorktree(roots = ['.next', 'public', 'docs/api']) {
       const rel = relative(process.cwd(), full).replace(/\\/g, '/');
       for (const [index, line] of content.split('\n').entries()) {
         for (const pattern of classify(line)) {
-          if (isAllowed(rel, pattern)) continue;
+          if (isAllowed(rel, pattern, { mode: 'worktree' })) continue;
           findings.push({ where: 'worktree', file: rel, line: index + 1, pattern });
         }
       }
@@ -208,9 +293,15 @@ export function scanWorktree(roots = ['.next', 'public', 'docs/api']) {
   return { filesScanned, findings };
 }
 
-export function scanHistory() {
+/**
+ * @param {{ cwd?: string, allowed?: Parameters<typeof isAllowed>[3] }} [options]
+ *   `cwd` and `allowed` exist so a test can point the scanner at a synthetic
+ *   repository with a synthetic allow-list; the CLI passes neither.
+ */
+export function scanHistory({ cwd = process.cwd(), allowed = ALLOWED } = {}) {
   const findings = [];
   const commits = execFileSync('git', ['log', '--all', '--format=%H'], {
+    cwd,
     maxBuffer: 256 * 1024 * 1024,
   })
     .toString()
@@ -222,8 +313,11 @@ export function scanHistory() {
     try {
       diff = execFileSync(
         'git',
-        ['show', commit, '--unified=0', '--format=', '--no-color', '--diff-filter=AM'],
-        { maxBuffer: 256 * 1024 * 1024 }
+        // R is included because a credential added in the same commit that
+        // renames its file is otherwise never scanned: rename detection turns
+        // the pair into one `R` entry that `AM` drops entirely.
+        ['show', commit, '--unified=0', '--format=', '--no-color', '--diff-filter=AMR'],
+        { cwd, maxBuffer: 256 * 1024 * 1024 }
       ).toString();
     } catch {
       continue;
@@ -236,7 +330,7 @@ export function scanHistory() {
       }
       if (!line.startsWith('+')) continue;
       for (const pattern of classify(line)) {
-        if (isAllowed(file, pattern)) continue;
+        if (isAllowed(file, pattern, { mode: 'history', commit }, allowed)) continue;
         findings.push({ where: 'history', commit, file, pattern });
       }
     }
@@ -251,8 +345,10 @@ export function toMarkdown(mode, result) {
       ? `Commits scanned: **${result.commitsScanned}**`
       : `Files scanned: **${result.filesScanned}**`
   );
+  const bound = ALLOWED.filter((entry) => entry.commits).length;
   lines.push(
-    `Allow-list entries: **${ALLOWED.length}** (each names one file and one pattern class)`
+    `Allow-list entries: **${ALLOWED.length}** (each names one file and one pattern class; ` +
+      `${bound} are bound to named commits and apply to history only)`
   );
   lines.push('');
   if (!result.findings.length) {

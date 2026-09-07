@@ -17,14 +17,15 @@
  *      usable, not merely present.
  *
  * PRODUCTION IS NEVER TOUCHED. There is no production connection in this
- * repository, no workflow holds one, and this script refuses to run against any
- * host it did not create the target database on.
+ * repository, no workflow holds one, and this script refuses every host that is
+ * not a loopback address or the `postgres` service alias. The only database it
+ * ever drops or creates is `rootlco_restore_probe`; the source is read only.
  *
  * Usage: node scripts/ci/backup-restore-drill.mjs [--json out.json] [--markdown out.md]
  * Exit codes: 0 restore verified · 1 divergence · 2 tooling error.
  */
 import { execFileSync } from 'node:child_process';
-import { writeFileSync, existsSync, mkdtempSync, statSync } from 'node:fs';
+import { writeFileSync, existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -52,6 +53,29 @@ function psql(database, sql, extraArgs = []) {
     ['-h', HOST, '-p', String(PORT), '-U', USER, '-d', database, '-tAc', sql, ...extraArgs],
     { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
   ).trim();
+}
+
+/** The major of a `pg_dump --version` line such as `pg_dump (PostgreSQL) 17.11 (Ubuntu …)`. */
+export function clientMajor(versionLine) {
+  const match = /\(PostgreSQL\)\s+(\d+)/.exec(versionLine);
+  if (!match) throw new Error(`cannot read a PostgreSQL major from "${versionLine}"`);
+  return Number(match[1]);
+}
+
+/**
+ * pg_dump aborts when the server is newer than itself ("aborting because of
+ * server version mismatch"), and an archive written by a newer pg_dump is not
+ * readable by an older pg_restore. Equal majors is therefore the only pairing
+ * the drill accepts — and a mismatch is a TOOLING error, not a divergence.
+ */
+export function assertClientMatchesServer(client, server) {
+  if (client !== server) {
+    throw new Error(
+      `client/server major mismatch: pg_dump is ${client}, the server is ${server}. ` +
+        'Install a postgresql-client whose major equals the server major ' +
+        '(supabase/config.toml `major_version`) before running the drill.'
+    );
+  }
 }
 
 /** Row counts for every application table, as the control totals. */
@@ -110,6 +134,25 @@ function main(argv) {
 
   try {
     assertEphemeralTarget(HOST);
+  } catch (error) {
+    console.error(`::error::${error.message}`);
+    process.exit(2);
+  }
+
+  // ---- 0. tooling preflight ------------------------------------------------
+  // Exit 2, not 1: a client that cannot read this server is not a divergence
+  // between source and restore, and nothing below has run yet.
+  try {
+    const clientLine = execFileSync('pg_dump', ['--version'], { encoding: 'utf8' }).trim();
+    const serverMajor = Number(
+      psql('postgres', "SELECT current_setting('server_version_num')::int / 10000")
+    );
+    evidence.clientVersion = clientLine;
+    evidence.restoreClientVersion = execFileSync('pg_restore', ['--version'], {
+      encoding: 'utf8',
+    }).trim();
+    evidence.serverVersion = psql('postgres', 'SHOW server_version');
+    assertClientMatchesServer(clientMajor(clientLine), serverMajor);
   } catch (error) {
     console.error(`::error::${error.message}`);
     process.exit(2);
@@ -242,6 +285,10 @@ function main(argv) {
     } catch {
       // The container is discarded at the end of the job either way.
     }
+    // The dump is the entire source database. On a hosted runner the disk is
+    // discarded with the job; on a developer machine it would otherwise stay
+    // in the temp directory, so it is removed here in every outcome.
+    rmSync(workdir, { recursive: true, force: true });
   }
 
   const lines = ['### Backup and restore drill', ''];
@@ -256,6 +303,10 @@ function main(argv) {
   lines.push(
     `Dump: ${evidence.dumpBytes ? `${(evidence.dumpBytes / 1024 / 1024).toFixed(1)} MiB` : '—'} ` +
       `in ${evidence.dumpMs ?? '—'} ms · restore in ${evidence.restoreMs ?? '—'} ms`
+  );
+  lines.push('');
+  lines.push(
+    `Client: \`${evidence.clientVersion ?? '—'}\` · server: \`${evidence.serverVersion ?? '—'}\``
   );
   lines.push('');
   lines.push(
