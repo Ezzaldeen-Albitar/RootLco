@@ -676,15 +676,34 @@ describe('tech.technician-list', () => {
     await newProfile(BR03_USER_ONE, BRANCH_A1);
     authAs(ROSTER_TENANT_B);
     const response = await list({ companyId: COMPANY_A1, branchId: BRANCH_A1, limit: '10' });
-    // 200 and EMPTY, not 403 — and that is the measured behaviour rather than
-    // the expected one. `iam.has_permission_in_scope` returns true for ANY
-    // company/branch pair when the grant is unrestricted, including a pair from
-    // another tenant, so the permission check cannot be the tenant boundary
-    // here. The boundary is the query's own `tenant_id = current tenant`
-    // predicate with RLS behind it, and an empty page discloses less than a
-    // refusal that would confirm the branch exists somewhere.
-    expect(response.status).toBe(200);
-    expect((await bodyOf<{ items: readonly ProfileBody[] }>(response)).items).toEqual([]);
+    // 403, not the 200-and-empty this suite measured before CC-14.
+    // `iam.has_permission_in_scope` returns true for ANY company/branch pair
+    // when the grant is unrestricted, including a pair from another tenant, so
+    // the permission check cannot be the tenant boundary here. The pre-handler
+    // now resolves the named pair against a branch visible to the caller inside
+    // its own tenant and refuses before the roster is read. It stays a 403 and
+    // not a 404 precisely so it discloses nothing about whether the branch
+    // exists somewhere.
+    expect(response.status).toBe(403);
+    const foreignProblem = (await response.json()) as Record<string, unknown>;
+    expect(foreignProblem.code).toBe('ERR-IAM-001');
+
+    // A pair that exists nowhere is refused with the identical document. The
+    // whole problem body is compared with the correlation id nulled, because
+    // `problem()` above is a bare cast that keeps every field: any surviving
+    // difference would be an oracle for whether a branch exists.
+    const nowhere = await list({
+      companyId: randomUUID(),
+      branchId: randomUUID(),
+      limit: '10',
+    });
+    expect(nowhere.status).toBe(403);
+    expect({ ...((await nowhere.json()) as Record<string, unknown>), correlationId: null }).toEqual(
+      {
+        ...foreignProblem,
+        correlationId: null,
+      }
+    );
 
     const own = await list({ companyId: COMPANY_B1, branchId: BRANCH_B1, limit: '10' });
     expect(own.status).toBe(200);

@@ -401,3 +401,109 @@ export async function requireScopedPermissions(
   // `iam.has_permission`, which reads no scope at all.
   return requirePermissions(db, operation, target, { forceScoped: true });
 }
+
+/**
+ * Resolves a read's full (company, branch) target to a branch row the caller can
+ * see inside its own tenant, and refuses it uniformly when it cannot (CC-14).
+ *
+ * `iam.has_permission_in_scope` answers a question about the CALLER, not about
+ * the target. Its first branch short-circuits on an unrestricted grant
+ * (`20260718097000_iam_permission_functions.sql`) and returns true before any
+ * scope row — and therefore any `org.*` row — is read. So a holder of an
+ * unrestricted grant satisfies the permission check for ANY company and branch
+ * pair it cares to name, including another tenant's real pair and a pair that
+ * exists nowhere. Before this check the query that followed answered 200 with an
+ * empty collection, because row-level security hid the rows. No data crossed,
+ * but the refusal shape was wrong: the application layer never decided anything,
+ * and an empty page was indistinguishable from a permitted-but-empty one.
+ *
+ * This probe makes the layer decide. It runs under the CALLER'S OWN RLS, and
+ * `sel_branches_scope` narrows `org.branches` by the tenant AND by the caller's
+ * grant union (`iam.allowed_company_ids()` / `iam.allowed_branch_ids()`). The
+ * refusal therefore means "not visible to this caller inside its tenant", not
+ * "not in the tenant" — a distinction that matters for one representable
+ * principal: a caller holding the operation's permission company-scoped in C
+ * while carrying some branch-scoped grant elsewhere passes the permission check
+ * through the company row and is refused here for a branch that permission
+ * covers. That is the same answer the business table's own `sel_*_scope` policy
+ * already gives such a caller — an empty page — now named honestly and denied
+ * before the read.
+ *
+ * The refusal is IDENTICAL for a foreign tenant's real pair, a pair that exists
+ * nowhere, an in-tenant pair belonging to another company, and a soft-deleted
+ * branch. It says nothing about whether a resource exists, which is what this
+ * file's header requires of every denial. It is a refusal (`ERR-IAM-001`, 403),
+ * deliberately not a 404 and not a validation error: a not-found would confirm
+ * the existence boundary it is meant to hide, and a 422 would claim the input
+ * was malformed when it was well-formed and merely unauthorized.
+ *
+ * ORDER: the permission decision runs FIRST and this probe second. A caller
+ * missing the permission must be told that, not told the pair is invisible —
+ * the same reason `prices/route.ts` authorizes the named scope before it calls
+ * `branchBelongsToCompany`, whose answer is a false statement about the tenant's
+ * data for a caller the RLS already narrowed.
+ *
+ * Deliberately NOT folded into `requirePermissions` or `requireScopedPermissions`:
+ * both are called with empty and half targets on paths where that is legitimate,
+ * and their statement counts are pinned by the P1-18 foundation suite. A
+ * separate function keeps this an addition rather than a redefinition.
+ *
+ * Half-specified targets — only a company, or only a branch — return without
+ * issuing a statement. The six operations that pass one
+ * (`iam.company-settings-read`/`-write`, `iam.branch-settings-read`/`-write`,
+ * `shared.branch-status-read`/`-change`) have nothing to resolve a pair from,
+ * and inventing the other half here would be a second definition of scope.
+ */
+export async function requireScopeTargetInTenant(
+  db: DbHandle,
+  operation: RegisteredOperation,
+  target: AuthorizationTarget
+): Promise<void> {
+  if (operation.public) return;
+  if (target.companyId === undefined || target.branchId === undefined) return;
+
+  const context: RequestContext = db.context;
+
+  // The same predicate `PricingRepository.branchBelongsToCompany` and the
+  // service-catalogue repository already use, kept identical on purpose: one
+  // statement, the tenant from the CONTEXT rather than from the request, and
+  // `deleted_at IS NULL` so a soft-deleted branch is refused like a missing one.
+  const result = await db.query<{ ok: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM org.branches b
+        WHERE b.tenant_id = $1 AND b.company_id = $2 AND b.id = $3
+          AND b.deleted_at IS NULL
+     ) AS ok`,
+    [context.principal.tenantId, target.companyId, target.branchId]
+  );
+
+  if (result.rows[0]?.ok === true) return;
+
+  metrics().increment(METRICS.errorCount, { code: 'ERR-IAM-001', operation: operation.id });
+  log.warn('Authorization denied', {
+    ...contextLogFields(context),
+    result: 'denied',
+    errorCode: 'ERR-IAM-001',
+    context: { reason: 'scope-target-not-visible-in-tenant', declaredScope: operation.scope },
+  });
+
+  throw new AppFailure('ERR-IAM-001', {
+    // `safeDetails` FIRST, and deliberately so. The P1-24 hostile mutation matrix
+    // attacks `requirePermissions`' denial document by rewriting the two-line
+    // sequence `safeDetails: { requiredPermissions: operation.permissions },` /
+    // `});` into one that leaks the caller's own gap (M2,
+    // `scripts/p1-24-mutation-matrix.mjs`). That anchor must match exactly ONE
+    // site or the matrix reports the mutation as NOT APPLIED — which is weaker
+    // than a pass, because nothing was attacked at all. Ordering the properties
+    // the other way round here keeps the anchor unique to the function the
+    // mutation is about. The object is order-independent, so this is a textual
+    // difference and not a behavioural one.
+    safeDetails: { requiredPermissions: operation.permissions },
+    // Names the operation, never the company or the branch: repeating the pair
+    // back would turn the uniform refusal into an echo an attacker can use to
+    // confirm what it guessed.
+    message:
+      `Denied ${operation.id}: the named company and branch are not visible ` +
+      `to the caller inside its tenant`,
+  });
+}
