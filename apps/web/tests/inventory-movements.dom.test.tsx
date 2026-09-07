@@ -30,6 +30,8 @@ vi.mock('@/features/inventory/api', () => ({
   listMovements: (...args: unknown[]) => listMovements(...args),
   listLocations: (...args: unknown[]) => listLocations(...args),
   listBranches: (...args: unknown[]) => listBranches(...args),
+  // `./shared` names this export; this screen never calls it.
+  listItemCategories: vi.fn(),
   listItems: vi.fn(),
   listAvailability: vi.fn(),
   listReservations: vi.fn(),

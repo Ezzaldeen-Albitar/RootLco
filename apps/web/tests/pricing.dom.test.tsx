@@ -397,6 +397,154 @@ describe('Arabic, right to left', () => {
   });
 });
 
+/* -------------------------------------------------------------------- *
+ * P1-30 CC-15, the pricing copy of the branch picker.
+ *
+ * The register named the inventory copy; the same defect existed here, in a
+ * second file, with its own message namespace. `items === null` meant both
+ * "no request was made" and "the request has not answered", so a PERMITTED
+ * operator met two free-text identifier fields on every first paint.
+ * -------------------------------------------------------------------- */
+describe('CC-15 — the pricing branch picker says which state it is in', () => {
+  const permitted = { canReadBranches: true, canReadServices: true };
+  const listed = okRead({
+    items: [{ id: BRANCH, companyId: COMPANY, branchCode: 'B1', name: 'Main' }],
+  });
+  const submitButton = () =>
+    within(lookupForm()).getByRole('button', { name: EN['pricing.lookup.submit'] as string });
+
+  it('while a permitted read is in flight, waits — and offers no field at all', async () => {
+    let release: (value: unknown) => void = () => {};
+    listBranches.mockImplementation(() => new Promise((resolve) => (release = resolve)));
+    renderScreen(permitted);
+    const form = lookupForm();
+    expect(within(form).getByRole('status')).toHaveTextContent(
+      EN['pricing.common.branchesLoading'] as string
+    );
+    expect(within(form).queryByLabelText(labelled('pricing.common.companyIdField'))).toBeNull();
+    expect(within(form).queryByLabelText(labelled('pricing.common.branchIdField'))).toBeNull();
+    // The lookup REQUIRES the pair, so submitting while there is no control to
+    // put an error on would fail silently.
+    expect(submitButton()).toBeDisabled();
+    release(listed);
+    expect(
+      await within(lookupForm()).findByLabelText(labelled('pricing.lookup.branch'))
+    ).toBeVisible();
+    expect(within(lookupForm()).queryByRole('status')).toBeNull();
+    expect(submitButton()).toBeEnabled();
+  });
+
+  it('with no branch listed, says so and keeps the identifiers', async () => {
+    listBranches.mockResolvedValue(okRead({ items: [] }));
+    renderScreen(permitted);
+    const form = lookupForm();
+    expect(
+      await within(form).findByText(EN['pricing.common.branchesNone'] as string)
+    ).toBeVisible();
+    expect(within(form).getByLabelText(labelled('pricing.common.companyIdField'))).toBeVisible();
+    expect(within(form).getByLabelText(labelled('pricing.common.branchIdField'))).toBeVisible();
+    expect(submitButton()).toBeEnabled();
+  });
+
+  it('a failure that could clear offers a retry; a refusal does not', async () => {
+    const user = userEvent.setup();
+    listBranches
+      .mockResolvedValueOnce({ status: 'unavailable', correlationId: 'corr' })
+      .mockResolvedValueOnce(listed);
+    renderScreen(permitted);
+    expect(
+      await within(lookupForm()).findByText(EN['pricing.common.branchesUnavailable'] as string)
+    ).toBeVisible();
+    await user.click(
+      within(lookupForm()).getByRole('button', { name: EN['state.retry'] as string })
+    );
+    expect(
+      await within(lookupForm()).findByLabelText(labelled('pricing.lookup.branch'))
+    ).toBeVisible();
+    expect(listBranches).toHaveBeenCalledTimes(2);
+  });
+
+  it('states a refusal without offering a second attempt at it', async () => {
+    listBranches.mockResolvedValue(deniedRead);
+    renderScreen(permitted);
+    const form = lookupForm();
+    expect(
+      await within(form).findByText(EN['pricing.common.branchesRefused'] as string)
+    ).toBeVisible();
+    expect(within(form).queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
+  });
+
+  it('states an ended session as one, and offers no retry on a dead session', async () => {
+    listBranches.mockResolvedValue({ status: 'expired', correlationId: 'corr' });
+    renderScreen(permitted);
+    const form = lookupForm();
+    expect(await within(form).findByText(EN['state.expired.title'] as string)).toBeVisible();
+    expect(within(form).queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
+  });
+
+  it('without org.branch.read, the identifiers are the design and no list is requested', async () => {
+    renderScreen({ canReadBranches: false, canReadServices: false });
+    const form = lookupForm();
+    expect(listBranches).not.toHaveBeenCalled();
+    expect(within(form).getByLabelText(labelled('pricing.common.companyIdField'))).toBeVisible();
+    expect(within(form).getByText(EN['pricing.common.identifierHelp'] as string)).toBeVisible();
+    expect(within(form).queryByRole('status')).toBeNull();
+    expect(submitButton()).toBeEnabled();
+  });
+
+  it('in Arabic, a read in flight is a wait and not two identifier boxes', async () => {
+    let release: (value: unknown) => void = () => {};
+    listBranches.mockImplementation(() => new Promise((resolve) => (release = resolve)));
+    renderRtl(
+      <PricingScreen
+        locale="ar"
+        messages={ar}
+        canManage={false}
+        canReadBranches={true}
+        canReadServices={true}
+      />
+    );
+    expect(document.documentElement.dir).toBe('rtl');
+    const form = screen.getByRole('form', { name: AR['pricing.lookup.heading'] as string });
+    expect(within(form).getByRole('status')).toHaveTextContent(
+      AR['pricing.common.branchesLoading'] as string
+    );
+    expect(
+      within(form).queryByLabelText(
+        new RegExp(`^${escape(AR['pricing.common.companyIdField'] as string)}`)
+      )
+    ).toBeNull();
+    release(listed);
+    expect(
+      await within(
+        screen.getByRole('form', { name: AR['pricing.lookup.heading'] as string })
+      ).findByLabelText(new RegExp(`^${escape(AR['pricing.lookup.branch'] as string)}`))
+    ).toBeVisible();
+  });
+
+  it('in Arabic, a zero-row list says so and keeps the identifiers', async () => {
+    listBranches.mockResolvedValue(okRead({ items: [] }));
+    renderRtl(
+      <PricingScreen
+        locale="ar"
+        messages={ar}
+        canManage={false}
+        canReadBranches={true}
+        canReadServices={true}
+      />
+    );
+    const form = screen.getByRole('form', { name: AR['pricing.lookup.heading'] as string });
+    expect(
+      await within(form).findByText(AR['pricing.common.branchesNone'] as string)
+    ).toBeVisible();
+    expect(
+      within(form).getByLabelText(
+        new RegExp(`^${escape(AR['pricing.common.branchIdField'] as string)}`)
+      )
+    ).toBeVisible();
+  });
+});
+
 describe('the /pricing route page decides before it reads', () => {
   it('refuses an operator without svc.price.read, and issues no read', async () => {
     PERMISSIONS = [];

@@ -292,30 +292,82 @@ function useTaxonomy(): Taxonomy {
   return { categories, refused, truncated, add };
 }
 
-interface Branches {
-  readonly items: readonly BranchOption[] | null;
-  /** A message key when the list could not be read, else `null`. */
-  readonly refused: string | null;
-  /** Whether a list was even requested — false for an operator without `org.branch.read`. */
-  readonly offered: boolean;
-}
+/**
+ * The branch list as one of six outcomes rather than three fields.
+ *
+ * The old shape (`items | null`, `refused`, `offered`) could not tell "the read
+ * is in flight" from "the caller may not read branches" — `items` is `null` in
+ * both — so the picker resolved the ambiguity toward the free-text identifier
+ * field and a permitted operator met a text box on every first paint (P1-30
+ * CC-15, the same defect in this copy of the picker). `[]` is not `null`
+ * either, so an empty list rendered a select holding only its placeholder.
+ *
+ * `retry` is `null` where a second attempt cannot help — a refusal and a dead
+ * session both fail identically the second time.
+ */
+type Branches =
+  /** No `org.branch.read`. The identifier field is the DESIGN, not a fallback. */
+  | { readonly phase: 'not-offered' }
+  /** Permitted, and `org.branch-list` has not answered. The only phase with no field. */
+  | { readonly phase: 'loading' }
+  /** Answered with at least one row. */
+  | { readonly phase: 'listed'; readonly items: readonly BranchOption[] }
+  /** Answered with no row. The identifier is still offered — the server re-authorizes it. */
+  | { readonly phase: 'none' }
+  /** Did not answer. `retry` is null for a refusal and for a dead session. */
+  | {
+      readonly phase: 'failed';
+      readonly messageKey: string;
+      readonly retry: (() => void) | null;
+    };
+
+const NOT_OFFERED: Branches = { phase: 'not-offered' };
+const LOADING: Branches = { phase: 'loading' };
+const NO_BRANCH: Branches = { phase: 'none' };
 
 function useBranches(canRead: boolean): Branches {
   const [items, setItems] = useState<readonly BranchOption[] | null>(null);
-  const [refused, setRefused] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{ key: string; retryable: boolean } | null>(null);
+  const [attempt, setAttempt] = useState(0);
+
+  // A retry is a NEW attempt, so both outcome fields are cleared first: leaving
+  // `failure` set would hold the picker in its failed state while the second
+  // read is in flight.
+  const retry = useCallback(() => {
+    setItems(null);
+    setFailure(null);
+    setAttempt((n) => n + 1);
+  }, []);
+
   useEffect(() => {
     if (!canRead) return;
     let live = true;
     void listBranches().then((state) => {
       if (!live) return;
-      if (state.status === 'ok') setItems(state.data.items);
-      else setRefused('services.catalogue.branchesRefused');
+      if (state.status === 'ok') {
+        setItems(state.data.items);
+        return;
+      }
+      if (state.status === 'denied') {
+        setFailure({ key: 'services.catalogue.branchesRefused', retryable: false });
+      } else if (state.status === 'expired') {
+        setFailure({ key: 'state.expired.title', retryable: false });
+      } else {
+        setFailure({ key: 'services.catalogue.branchesUnavailable', retryable: true });
+      }
     });
     return () => {
       live = false;
     };
-  }, [canRead]);
-  return { items, refused, offered: canRead };
+  }, [canRead, attempt]);
+
+  if (!canRead) return NOT_OFFERED;
+  if (failure !== null) {
+    return { phase: 'failed', messageKey: failure.key, retry: failure.retryable ? retry : null };
+  }
+  if (items === null) return LOADING;
+  if (items.length === 0) return NO_BRANCH;
+  return { phase: 'listed', items };
 }
 
 function CategoryPicker({
@@ -365,9 +417,11 @@ function CategoryPicker({
 }
 
 /**
- * A branch, as a list when the operator may read one and as an identifier
- * field when they may not. The two are the same question to the backend — a
- * uuid it re-authorizes — and different affordances to the operator.
+ * A branch, as a list when the operator may read one and as an identifier field
+ * in every case where this screen has no list to narrow to. The two are the
+ * same question to the backend — a uuid it re-authorizes — and different
+ * affordances to the operator. A read in flight is a WAIT, not a refusal, and
+ * is the one phase with no field to type into.
  */
 function BranchPicker({
   messages,
@@ -386,13 +440,45 @@ function BranchPicker({
   readonly onChange: (next: string) => void;
   readonly error?: string | undefined;
 }) {
-  if (branches.offered && branches.items !== null) {
+  /*
+   * DECLARED BEFORE EVERY RETURN — a hook after an early return is a
+   * `react-hooks/rules-of-hooks` failure. It closes the loading-window
+   * corruption: an identifier typed into the fallback field survives in the
+   * caller's draft, the list then arrives, and the select finds no matching
+   * option — React blanks the control while the form still holds, and would
+   * still send, the typed value.
+   */
+  const listedItems = branches.phase === 'listed' ? branches.items : null;
+  const stale =
+    listedItems !== null && value !== '' && !listedItems.some((branch) => branch.id === value);
+  useEffect(() => {
+    if (stale) onChange('');
+  }, [stale, onChange]);
+
+  if (branches.phase === 'loading') {
+    /*
+     * Deliberately NOT a disabled SelectField: `FieldFrame` binds its label to a
+     * control with `htmlFor` and there is no control yet. `role="status"`
+     * appears in no other phase of this picker.
+     */
+    return (
+      <div className="flex flex-col gap-1.5">
+        <p className="text-label font-medium text-text-primary">{label}</p>
+        <p role="status" aria-live="polite" className="text-supporting text-text-muted">
+          {translate(messages, 'services.catalogue.branchesLoading')}
+        </p>
+      </div>
+    );
+  }
+
+  if (branches.phase === 'listed') {
+    const { items } = branches;
     return (
       <SelectField
         label={label}
-        value={value}
+        value={stale ? '' : value}
         onChange={(event) => onChange(event.target.value)}
-        options={branches.items.map((branch) => ({
+        options={items.map((branch) => ({
           value: branch.id,
           label: `${branch.branchCode} — ${branch.name}`,
         }))}
@@ -401,20 +487,39 @@ function BranchPicker({
       />
     );
   }
+
+  /*
+   * `not-offered`, `none` and `failed` all take the identifier: in all three the
+   * operator may still be authorised for a branch this screen cannot name, and
+   * the server re-authorizes it on every request regardless.
+   */
+  const description =
+    branches.phase === 'failed'
+      ? translateDynamic(messages, branches.messageKey)
+      : branches.phase === 'none'
+        ? translate(messages, 'services.catalogue.branchesNone')
+        : translate(messages, 'services.catalogue.branchIdHelp');
+
   return (
-    <TextField
-      label={translate(messages, 'services.catalogue.branchIdField')}
-      description={
-        branches.refused
-          ? translateDynamic(messages, branches.refused)
-          : translate(messages, 'services.catalogue.branchIdHelp')
-      }
-      spellCheck={false}
-      dir="ltr"
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      error={error}
-    />
+    <>
+      <TextField
+        label={translate(messages, 'services.catalogue.branchIdField')}
+        description={description}
+        spellCheck={false}
+        dir="ltr"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        error={error}
+      />
+      {branches.phase === 'failed' && branches.retry !== null ? (
+        <div>
+          {/* `type="button"`: this picker sits inside a <form> and a bare button submits it. */}
+          <button type="button" onClick={branches.retry} className={SECONDARY_BUTTON}>
+            {translate(messages, 'state.retry')}
+          </button>
+        </div>
+      ) : null}
+    </>
   );
 }
 
