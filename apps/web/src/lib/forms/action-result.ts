@@ -1,4 +1,9 @@
-import { failureMessageKey, violationKeysOf, type ApiFailure } from '@/lib/api/client';
+import {
+  VIOLATION_FALLBACK_KEY,
+  failureMessageKey,
+  violationKeysOf,
+  type ApiFailure,
+} from '@/lib/api/client';
 
 /**
  * What a Server Action gives back to a form.
@@ -31,6 +36,11 @@ import { failureMessageKey, violationKeysOf, type ApiFailure } from '@/lib/api/c
  * what happened before. It becomes the `messageKey` instead, so it appears in
  * the banner every form in this phase already renders. That keeps ONE shape: no
  * new field, nothing for a screen to forget to render.
+ *
+ * A violation on a ROUTE parameter goes the same way, and for a stronger reason:
+ * `{ path: 'path.batchId', rule: 'duplicate_opening_cell' }` refuses an approval
+ * that sends no body at all, so there is not only no control for `batchId` —
+ * there is no form. `violationKeysOf` classifies it, this banner shows it.
  */
 
 export type ActionStatus =
@@ -113,13 +123,25 @@ const STATUS_BY_KIND: Record<ApiFailure['kind'], ActionStatus> = {
  * 1. `messageKeyOverride`, when a caller passed one. It wins over everything,
  *    because the reason it exists is to REMOVE information; a whole-request
  *    violation leaking past it would reopen the oracle it closes.
- * 2. The first whole-request violation key, when the backend sent one. `body` +
- *    `empty_patch` says something specific and true that the generic banner does
- *    not.
+ * 2. The first whole-request violation key that SAYS something. `body` +
+ *    `empty_patch` and `path.batchId` + `duplicate_opening_cell` each state a
+ *    specific true reason the generic banner does not.
  * 3. The generic key for the failure kind.
  *
  * First rather than all, matching the per-control rule, because the banner is
  * one line.
+ *
+ * ## Why "that says something" and not simply "the first"
+ *
+ * A rule the catalogue does not carry becomes `form.violation.invalid` — "This
+ * value is not accepted here." That is less than the kind's own banner already
+ * says, so letting it win would DOWNGRADE the message: a 409 that today reads
+ * "this record cannot take that change" would become the vaguer sentence, and
+ * the API sends uncatalogued route-parameter rules (`grant_revoked`,
+ * `not_invited`, `invitation_not_accepted`) that would do exactly that now that
+ * a route parameter reaches this list at all. The fallback is skipped, not
+ * dropped: it names no control either, so nothing was going to render it, and
+ * the operator still gets the kind's banner.
  */
 export function fromFailure(
   failure: ApiFailure,
@@ -128,9 +150,10 @@ export function fromFailure(
 ): ActionState {
   const status = STATUS_BY_KIND[failure.kind];
   const { fieldErrors, formKeys } = violationKeysOf(failure);
+  const stated = formKeys.find((key) => key !== VIOLATION_FALLBACK_KEY);
   return {
     status,
-    messageKey: messageKeyOverride ?? formKeys[0] ?? failureMessageKey(failure),
+    messageKey: messageKeyOverride ?? stated ?? failureMessageKey(failure),
     ...(Object.keys(fieldErrors).length > 0 ? { fieldErrors } : {}),
     correlationId: failure.correlationId,
     attempt,

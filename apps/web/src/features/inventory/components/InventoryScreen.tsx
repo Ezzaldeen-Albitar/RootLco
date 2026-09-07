@@ -41,6 +41,7 @@ import {
 } from '../inventory-contract';
 import {
   BranchPairPicker,
+  CategoryPicker,
   EMPTY_PAIR,
   LocationPicker,
   LocationTypeLabel,
@@ -50,7 +51,9 @@ import {
   ReservationStatusBadge,
   SECONDARY_BUTTON,
   UUID,
+  canNameBranch,
   useBranches,
+  useItemCategories,
   useLocations,
   type BranchPair,
   type Locations,
@@ -82,9 +85,10 @@ import {
  *
  * ## No cost, and no item or location writer
  *
- * No inventory read publishes a cost, so none is shown. The backend has no
- * writer for items or locations yet; a workshop with none recorded sees an
- * empty product here, and the empty states say so instead of pretending.
+ * No inventory read publishes a cost, so none is shown. Items, categories and
+ * locations are created on the inventory setup page (W10); a workshop that has
+ * recorded none sees an empty product here, and the empty states say so instead
+ * of pretending.
  */
 
 export function InventoryScreen({
@@ -235,6 +239,11 @@ function ItemSearch({
   });
   const [criteria, setCriteria] = useState<ItemSearchCriteria>({});
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  /*
+   * Held HERE, above the `key={JSON.stringify(criteria)}` boundary below. Inside
+   * `ItemResults` the whole catalogue would be re-read on every search.
+   */
+  const categories = useItemCategories();
 
   const errorFor = (name: string): string | undefined => {
     const key = errors[name];
@@ -245,9 +254,6 @@ function ItemSearch({
     const found: Record<string, string> = {};
     const search = draft.search.trim();
     if (search.length > MAX_NAME) found['search'] = 'inventory.items.searchTooLong';
-    const categoryId = draft.categoryId.trim();
-    if (categoryId.length > 0 && !UUID.test(categoryId))
-      found['categoryId'] = 'inventory.common.idFormat';
     setErrors(found);
     if (Object.keys(found).length > 0) return;
     setCriteria({
@@ -257,7 +263,9 @@ function ItemSearch({
         ? { lifecycleStatus: draft.lifecycleStatus as ItemLifecycleState }
         : {}),
       ...(draft.trackedOnly ? { stockTrackedOnly: 'true' as const } : {}),
-      ...(categoryId ? { categoryId } : {}),
+      // Only ever an `<option value={category.id}>` the server published, so
+      // there is nothing left for a client-side identifier guard to refuse.
+      ...(draft.categoryId ? { categoryId: draft.categoryId } : {}),
     });
   };
 
@@ -308,14 +316,18 @@ function ItemSearch({
           }))}
           placeholder={translate(messages, 'inventory.items.activeOnly')}
         />
-        <TextField
-          label={translate(messages, 'inventory.items.categoryId')}
-          description={translate(messages, 'inventory.items.categoryHelp')}
-          spellCheck={false}
-          dir="ltr"
+        <CategoryPicker
+          messages={messages}
+          categories={categories}
+          label={translate(messages, 'inventory.items.category')}
+          placeholder={translate(messages, 'inventory.items.anyCategory')}
+          help={
+            categories.items !== null && categories.items.length === 0
+              ? translate(messages, 'inventory.items.noCategories')
+              : translate(messages, 'inventory.items.categoryHelp')
+          }
           value={draft.categoryId}
-          onChange={(event) => setDraft((d) => ({ ...d, categoryId: event.target.value }))}
-          error={errorFor('categoryId')}
+          onChange={(next) => setDraft((d) => ({ ...d, categoryId: next }))}
         />
         <CheckboxField
           label={translate(messages, 'inventory.items.trackedOnly')}
@@ -493,7 +505,7 @@ function TargetPanel({
         errors={{ companyId: errorFor('companyId'), branchId: errorFor('branchId') }}
       />
       <div className="sm:col-span-3">
-        <button type="submit" className={PRIMARY_BUTTON}>
+        <button type="submit" className={PRIMARY_BUTTON} disabled={!canNameBranch(branches)}>
           {translate(messages, 'inventory.target.show')}
         </button>
       </div>

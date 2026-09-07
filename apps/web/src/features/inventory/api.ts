@@ -34,7 +34,9 @@ import type {
   ItemSearchCriteria,
   MovementCriteria,
   OpeningBatch,
+  OpeningBatchDetail,
   OpeningBatchLine,
+  OpeningBatchSummary,
   PartIssue,
   RequiredPart,
   ReservationCriteria,
@@ -88,6 +90,15 @@ import type {
  * action. The two writes, `inv.stock-issue-create` and `inv.stock-return-create`,
  * are marked idempotent (the transport attaches the header key) and take no
  * body key, so they echo no `replayed`.
+ *
+ * ## W10: an opening batch is reachable again
+ *
+ * `inv.opening-batch-list` is branch-targeted like the other stock reads;
+ * `inv.opening-batch-read` names the batch in the path and lets the server
+ * decide scope from the row. Both are published on `inv.stock.read` — the code
+ * the opening-stock page already gates on — and together they are what lets an
+ * operator return to a draft after a reload, and a second person reach a batch
+ * they did not count in their own session.
  */
 
 /** A write that creates or returns something the screen must then hold on to. */
@@ -435,9 +446,49 @@ export async function createStockLocation(
 }
 
 /**
+ * The opening batches of one branch (`inv.opening-batch-list`,
+ * `inv.stock.read`), newest first.
+ *
+ * Branch-targeted like every other stock read: the route names `companyId` and
+ * `branchId` as required and re-authorizes that pair, so the target travels
+ * through `branchTargetQuery`. One page of fifty, and the caller reads
+ * `hasMore` rather than assuming the branch fitted — the screen says so instead
+ * of pretending it listed everything.
+ *
+ * No `status` filter is sent. The route accepts one and the screen shows every
+ * batch with the status the server gave it: an approver looking for something
+ * to approve and an operator returning to their own draft are both served by
+ * one list, and a filter nothing sends would be surface with no consumer.
+ */
+export async function listOpeningBatches(
+  target: StockTarget
+): Promise<ReadState<CursorPage<OpeningBatchSummary>>> {
+  return readOperation<CursorPage<OpeningBatchSummary>>(
+    '/api/v1/opening-inventory-batches' + branchTargetQuery(target, { limit: 50 })
+  );
+}
+
+/**
+ * One batch with its counted lines (`inv.opening-batch-read`, `inv.stock.read`).
+ *
+ * The path names the batch and nothing else — the server decides scope from the
+ * row's own company and branch, and answers 404 for a batch it will not show
+ * before it decides anything, so a `not-found` here says nothing about whether
+ * the id exists elsewhere. Quantities arrive as decimal strings and are passed
+ * through untouched.
+ */
+export async function readOpeningBatch(batchId: string): Promise<ReadState<OpeningBatchDetail>> {
+  return readOperation<OpeningBatchDetail>(
+    `/api/v1/opening-inventory-batches/${encodeURIComponent(batchId)}`
+  );
+}
+
+/**
  * Open an opening-inventory batch (`inv.opening-batch-create`). The batch is
- * the only path by which stock first appears; nothing reads it back, so the
- * screen keeps this echo for the life of the page.
+ * the only path by which stock first appears. The echo is what the screen shows
+ * immediately; the batch itself is then reachable through
+ * `listOpeningBatches` and `readOpeningBatch`, which is how a reload, a new
+ * sign-in, or the second person reaches it.
  */
 export async function createOpeningBatch(
   body: OpeningBatchCreateBody,

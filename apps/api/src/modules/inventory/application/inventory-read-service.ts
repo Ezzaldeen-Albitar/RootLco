@@ -17,6 +17,7 @@ import {
   ITEM_ORDER,
   LOCATION_ORDER,
   MOVEMENT_ORDER,
+  OPENING_BATCH_ORDER,
   PART_ISSUE_ORDER,
   RESERVATION_ORDER,
 } from '../data/inventory-repository';
@@ -30,6 +31,8 @@ import type {
   ItemRow,
   MovementListFilter,
   MovementRow,
+  OpeningBatchHeaderRow,
+  OpeningLineRow,
   PartIssueListRow,
   ReservationListRow,
   StockBalanceRow,
@@ -230,6 +233,49 @@ export interface StockLocationView {
   readonly status: string;
 }
 
+/**
+ * One opening batch as the recovery list and the detail render it (S-17).
+ *
+ * `countedBy` and `approvedBy` are user ids, published exactly as stored. The
+ * approver is the half of `ck_opening_inventory_batches_maker` a reader has to be
+ * able to check, so hiding it would defeat the reason the read exists. Resolving
+ * them to display names is a separate decision with its own permission question.
+ */
+export interface OpeningBatchListView {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly batchCode: string;
+  /** A plain ISO date — `as_of_date` is a `date`, with no time to publish. */
+  readonly asOfDate: string;
+  readonly status: string;
+  readonly countedBy: string;
+  readonly approvedBy: string | null;
+  readonly approvedAt: string | null;
+  readonly lineCount: number;
+  readonly createdAt: string;
+  readonly recordVersion: number;
+}
+
+/** One counted cell on a batch, with the codes rather than the ids. */
+export interface OpeningBatchLineView {
+  readonly id: string;
+  readonly batchId: string;
+  readonly itemId: string;
+  readonly sku: string;
+  readonly itemName: string;
+  readonly locationId: string;
+  readonly locationCode: string;
+  /** `numeric(12,3)` — a decimal STRING, never a JSON number. */
+  readonly quantity: string;
+}
+
+/** A batch and everything counted on it, in one answer (S-17). */
+export interface OpeningBatchDetailView {
+  readonly batch: OpeningBatchListView;
+  readonly lines: readonly OpeningBatchLineView[];
+}
+
 const toReservationListView = (row: ReservationListRow): ReservationListView => ({
   id: row.id,
   companyId: row.companyId,
@@ -272,6 +318,32 @@ const toStockLocationView = (row: StockLocationListRow): StockLocationView => ({
   locationType: row.locationType,
   parentLocationId: row.parentLocationId,
   status: row.status,
+});
+
+const toOpeningBatchListView = (row: OpeningBatchHeaderRow): OpeningBatchListView => ({
+  id: row.id,
+  companyId: row.companyId,
+  branchId: row.branchId,
+  batchCode: row.batchCode,
+  asOfDate: row.asOfDate,
+  status: row.status,
+  countedBy: row.countedBy,
+  approvedBy: row.approvedBy,
+  approvedAt: row.approvedAt === null ? null : row.approvedAt.toISOString(),
+  lineCount: row.lineCount,
+  createdAt: row.createdAt.toISOString(),
+  recordVersion: row.recordVersion,
+});
+
+const toOpeningBatchLineView = (row: OpeningLineRow): OpeningBatchLineView => ({
+  id: row.id,
+  batchId: row.batchId,
+  itemId: row.itemId,
+  sku: row.sku,
+  itemName: row.itemName,
+  locationId: row.locationId,
+  locationCode: row.locationCode,
+  quantity: row.quantity,
 });
 
 export class InventoryReadService {
@@ -572,6 +644,74 @@ export class InventoryReadService {
       pageRequest(LOCATION_ORDER, page)
     );
     return { ...result, items: result.items.map(toStockLocationView) };
+  }
+
+  /**
+   * One branch's opening batches, newest first (Phase 1-30, seam S-17).
+   *
+   * `authorizeScope` runs FIRST and unconditionally on the required
+   * `(companyId, branchId)`, exactly as the location and reservation lists do. A
+   * draft batch names the branch that is counting and who counted it, and the
+   * difference between an empty and a non-empty page would itself say whether a
+   * branch exists and is taking stock.
+   */
+  public async listOpeningBatches(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly status?: string | undefined;
+    },
+    page: { readonly cursor?: string | undefined; readonly limit?: number | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<Page<OpeningBatchListView>> {
+    await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
+    const result = await this.repository.listOpeningBatches(
+      db,
+      filter,
+      pageRequest(OPENING_BATCH_ORDER, page)
+    );
+    return { ...result, items: result.items.map(toOpeningBatchListView) };
+  }
+
+  /**
+   * One opening batch with its counted lines (Phase 1-30, seam S-17).
+   *
+   * ## Not-found is decided before scope, deliberately
+   *
+   * The path names a batch, not a branch, so this in-service check is the ONLY
+   * scoped guard the operation has — the route can hand the pre-handler check no
+   * target, and without this the declared `scope: 'branch'` would be inert and
+   * `app.branch_ids` would be the whole narrowing (P1-18-A-01).
+   *
+   * The header lookup carries no scope predicate, so a batch in another branch of
+   * this tenant is READ here and then refused by `authorizeScope`; a batch of
+   * another tenant, or a soft-deleted one, or an id that names nothing, all come
+   * back `null` and answer 404 before any scope decision is made. That ordering is
+   * the point: answering 403 for an id the caller may not see would confirm the id
+   * names a real batch somewhere, which is the existence signal a foreign id must
+   * not receive.
+   *
+   * The lines are read only after the scope decision, so an unauthorized caller
+   * never causes a line query to run.
+   */
+  public async readOpeningBatch(
+    db: DbHandle,
+    batchId: string,
+    authorizeScope: ScopeAuthorizer
+  ): Promise<OpeningBatchDetailView> {
+    const header = await this.repository.readOpeningBatchHeader(db, batchId);
+    if (!header) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Opening inventory batch ${batchId} was not found`,
+      });
+    }
+    await authorizeScope({ companyId: header.companyId, branchId: header.branchId });
+    const lines = await this.repository.listOpeningLines(db, header.id);
+    return {
+      batch: toOpeningBatchListView(header),
+      lines: lines.map(toOpeningBatchLineView),
+    };
   }
 
   /**

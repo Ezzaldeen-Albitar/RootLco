@@ -329,6 +329,7 @@ import '@/app/api/v1/stock-availability/route';
 import '@/app/api/v1/stock-movements/route';
 import '@/app/api/v1/inventory-reconciliations/route';
 import '@/app/api/v1/opening-inventory-batches/route';
+import '@/app/api/v1/opening-inventory-batches/[batchId]/route';
 import '@/app/api/v1/opening-inventory-batches/[batchId]/lines/route';
 import '@/app/api/v1/opening-inventory-batches/[batchId]/approval/route';
 import '@/app/api/v1/stock-reservations/route';

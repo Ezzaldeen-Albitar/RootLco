@@ -42,9 +42,12 @@ import {
   TENANT_A,
   adminPool,
   cleanBackendFixtures,
+  contextFor,
   ensureBackendFixtures,
   ensureTestLogins,
 } from './helpers';
+import { withTransaction } from '@/server/db/transaction';
+import { InventoryRepository } from '@/modules/inventory/data/inventory-repository';
 import { BRANCH_A2, BRANCH_B1, COMPANY_B1, establishP1_19Fixtures } from './p1-19-helpers';
 import {
   BRANCH_A9,
@@ -472,9 +475,10 @@ describe('inv.stock-movement-list — the immutable ledger', () => {
   });
 
   it('never returns another tenant’s movements (cross-tenant)', async () => {
-    // The tenant-B principal reads its OWN branch. Asking for tenant A's branch would
-    // be refused by the scope check and would prove nothing about tenancy — the point
-    // is that a legitimate read inside B never surfaces an A row.
+    // The tenant-B principal reads its OWN branch. Asking for tenant A's branch is
+    // refused before the query since CC-14 — `p1-30-a2-inventory-reads.test.ts` pins
+    // that refusal and its uniformity — and would prove nothing about tenancy. The
+    // point here is that a legitimate read inside B never surfaces an A row.
     authAs(INV_TENANT_B);
     const response = await call(
       MOVEMENTS,
@@ -663,21 +667,31 @@ describe('H1 — no read reaches stock without naming and authorizing a branch',
   });
 
   /**
-   * H6 regression — an INCOHERENT (company, branch) pair must select nothing.
+   * H6 regression — an INCOHERENT (company, branch) pair is now REFUSED.
    *
    * `iam.has_permission_in_scope` matches
    *   (scope_type='company' AND company_id = p_company)
    *   OR (scope_type='branch' AND branch_id = p_branch)
    * so a COMPANY-scoped grant on A1 passes the check while naming a branch of the
-   * OTHER company. `authorizeScope` therefore cannot be what refuses this — only a
-   * `company_id` SQL predicate can.
+   * OTHER company. `authorizeScope` therefore cannot be what refuses this.
    *
-   * Measured before the fix: `/inventory-reconciliations` returned 200 with
+   * Measured before the original fix: `/inventory-reconciliations` returned 200 with
    * `cellsChecked: 1`, disclosing company A9's SKU, location and `storedOnHand`
    * "7.000", while `/stock-availability` with the IDENTICAL pair returned zero items
    * — because availability carried both predicates and reconciliation carried one.
+   * P1-21 closed that with a `company_id` SQL predicate, and this suite then measured
+   * 200 with an empty page.
    *
-   * These fail if the `company_id` predicate is dropped from any branch-scoped read.
+   * CONTRACT CHANGE (CC-14). The answer is now 403 `ERR-IAM-001`, refused BEFORE the
+   * read: `requireScopeTargetInTenant` resolves the named pair to a branch row visible
+   * to the caller inside its own tenant, and (COMPANY_A1, BRANCH_A9) is not a row at
+   * all — BRANCH_A9 belongs to COMPANY_A9. It is the same refusal a foreign tenant's
+   * pair and a pair that exists nowhere receive, which is the point: the answer must
+   * not say which kind of wrong the pair was.
+   *
+   * The `company_id` SQL predicate is now DEFENCE IN DEPTH rather than the only
+   * refusal, so its falsification moved to the repository-level case below, which
+   * calls the reads directly with no pre-handler in front of them.
    */
   it('returns nothing for an incoherent company/branch pair on every read', async () => {
     authAs(INV_COMPANY_SCOPED);
@@ -686,38 +700,125 @@ describe('H1 — no read reaches stock without naming and authorizing a branch',
       RECONCILE,
       `/api/v1/inventory-reconciliations?companyId=${COMPANY_A1}&branchId=${BRANCH_A9}`
     );
-    expect(recon.status, 'reconciliation for an incoherent pair').toBe(200);
-    const reconBody = await bodyOf<{
-      cellsChecked: number;
-      cells: readonly { companyId: string }[];
-    }>(recon);
-    // The decisive assertion: no cell, and in particular no cell belonging to A9.
-    expect(reconBody.cellsChecked).toBe(0);
-    expect(reconBody.cells).toHaveLength(0);
-    expect(reconBody.cells.some((c) => c.companyId === COMPANY_A9)).toBe(false);
+    expect(recon.status, 'reconciliation for an incoherent pair').toBe(403);
+    expect((await bodyOf<{ code?: string }>(recon)).code).toBe('ERR-IAM-001');
 
     const avail = await call(
       AVAILABILITY,
       `/api/v1/stock-availability?companyId=${COMPANY_A1}&branchId=${BRANCH_A9}`
     );
-    expect(avail.status).toBe(200);
-    expect((await bodyOf<{ items: readonly unknown[] }>(avail)).items).toHaveLength(0);
+    expect(avail.status).toBe(403);
+    expect((await bodyOf<{ code?: string }>(avail)).code).toBe('ERR-IAM-001');
 
     const movements = await call(
       MOVEMENTS,
       `/api/v1/stock-movements?companyId=${COMPANY_A1}&branchId=${BRANCH_A9}`
     );
-    expect(movements.status).toBe(200);
-    expect((await bodyOf<{ items: readonly unknown[] }>(movements)).items).toHaveLength(0);
+    expect(movements.status).toBe(403);
+    expect((await bodyOf<{ code?: string }>(movements)).code).toBe('ERR-IAM-001');
   });
 
   /**
-   * THE CONTROL, without which the test above is vacuous.
+   * The falsification of the `company_id` SQL predicate, re-homed (CC-14).
    *
-   * `cellsChecked: 0` proves nothing unless A9 actually holds stock that a correct
-   * implementation would have returned to someone. An unrestricted caller naming the
-   * COHERENT pair must see it — so the zero above is the `company_id` predicate
-   * refusing an incoherent pair, not an empty fixture.
+   * With the pre-handler refusing the incoherent pair, the HTTP cases above no longer
+   * reach the SQL at all — so dropping `b.company_id = $2` from the inventory reads
+   * would leave them green. That would make `mutation-targets.json`'s
+   * `inventory-read-company-scope` guard a predicate nothing exercises.
+   *
+   * This case calls the repository DIRECTLY, with no route and no pre-handler, on a
+   * transaction opened for INV_FULL. INV_FULL's grant is UNRESTRICTED, so
+   * `iam.allowed_branch_ids()` is NULL and RLS narrows to the tenant only: A9's rows
+   * ARE visible to this transaction. The `company_id` predicate is therefore the only
+   * thing that can return zero here, and deleting it returns A9's stock — which is
+   * finding H6 in its original form.
+   *
+   * The CONTROL two cases below still proves A9 holds the stock a correct
+   * implementation would hand the COHERENT pair.
+   */
+  it('repository: the company_id predicate alone refuses the incoherent pair', async () => {
+    const repository = new InventoryRepository();
+
+    await withTransaction(contextFor({ userId: INV_FULL.userId }), async (db) => {
+      const movements = await repository.listMovements(
+        db,
+        { companyId: COMPANY_A1, branchId: BRANCH_A9 },
+        { limit: 50, cursor: null }
+      );
+      expect(movements.items).toHaveLength(0);
+
+      const availability = await repository.readAvailability(
+        db,
+        { companyId: COMPANY_A1, branchId: BRANCH_A9 },
+        { limit: 50, cursor: null }
+      );
+      expect(availability.items).toHaveLength(0);
+
+      const reconciliation = await repository.reconcileBalances(
+        db,
+        { companyId: COMPANY_A1, branchId: BRANCH_A9 },
+        50
+      );
+      expect(reconciliation).toHaveLength(0);
+
+      // The control, inside the same transaction so the visibility claim is not
+      // an assumption: the COHERENT A9 pair does reach A9's stock from here.
+      const coherent = await repository.readAvailability(
+        db,
+        { companyId: COMPANY_A9, branchId: BRANCH_A9 },
+        { limit: 50, cursor: null }
+      );
+      expect(coherent.items.length).toBeGreaterThan(0);
+    });
+  });
+
+  /**
+   * The mixed-grant corner CC-14 creates, named rather than left to be discovered.
+   *
+   * INV_COMPANY_SCOPED holds the inventory permissions COMPANY-scoped on COMPANY_A1
+   * and an unrelated permission BRANCH-scoped on (COMPANY_A9, BRANCH_A9). So
+   * `iam.allowed_branch_ids()` for it is exactly [BRANCH_A9] — a scoped grant exists,
+   * therefore no unrestricted short-circuit — while its inventory permission covers
+   * every branch of COMPANY_A1 through the company row.
+   *
+   * Naming (COMPANY_A1, BRANCH_A1) therefore PASSES the permission check and FAILS
+   * the probe: `sel_branches_scope` narrows `org.branches` by that same branch union,
+   * so BRANCH_A1 is invisible to this caller even though it is in its own tenant and
+   * in a company its permission covers.
+   *
+   * This is a behaviour change of the same class as H6 above: before CC-14 the read
+   * ran and the business table's own `sel_*_scope` policy — narrowed by the identical
+   * union — returned an empty page. No data moved either way; the refusal is now made
+   * by the application layer and named honestly. The refusal means "not visible to
+   * THIS CALLER inside its tenant", which is weaker than "not in the tenant", and
+   * that distinction is exactly what this case pins.
+   */
+  it('refuses a mixed-grant caller a branch its permission covers but its grant union hides', async () => {
+    authAs(INV_COMPANY_SCOPED);
+    const refused = await call(
+      MOVEMENTS,
+      `/api/v1/stock-movements?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}`
+    );
+    expect(refused.status).toBe(403);
+    expect((await bodyOf<{ code?: string }>(refused)).code).toBe('ERR-IAM-001');
+
+    // The control: the SAME pair, for a caller whose union does not hide it, is 200.
+    // Without this the refusal above could be a broken route rather than a decision.
+    authAs(INV_FULL);
+    const allowed = await call(
+      MOVEMENTS,
+      `/api/v1/stock-movements?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}`
+    );
+    expect(allowed.status).toBe(200);
+  });
+
+  /**
+   * THE CONTROL, without which the two cases above are vacuous.
+   *
+   * A 403 and a zero-row repository read prove nothing unless A9 actually holds stock
+   * that a correct implementation would have returned to someone. An unrestricted
+   * caller naming the COHERENT pair must see it — so the refusal is about the pair,
+   * not about an empty fixture.
    */
   it('CONTROL — the A9 stock the incoherent pair failed to reach really is there', async () => {
     authAs(INV_FULL);

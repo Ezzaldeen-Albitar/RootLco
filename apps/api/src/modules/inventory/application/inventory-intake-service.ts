@@ -141,8 +141,11 @@ export class InventoryIntakeService {
    *
    * A batch is created `draft` and no parameter offers anything else: stock appears
    * only when `inv.approve_opening_batch` posts the `opening` movements, and
-   * `ck_opening_inventory_batches_maker_checker` requires a different approver. That
-   * is why this method cannot "create balances" — it creates an intention to.
+   * `ck_opening_inventory_batches_maker` requires a different approver. That is why
+   * this method cannot "create balances" — it creates an intention to.
+   *
+   * A batch code repeated inside a branch is a 409, not a 500:
+   * `uq_opening_inventory_batches_code` refuses it and the catch below says so.
    */
   public async openBatch(
     db: DbHandle,
@@ -177,6 +180,16 @@ export class InventoryIntakeService {
         notes: input.notes ?? null,
       });
     } catch (error) {
+      // `uq_opening_inventory_batches_code` (partial on `deleted_at IS NULL`)
+      // makes the code unique inside a branch. Unmapped, that refusal reached the
+      // caller as ERR-SYS-001 — a 500 saying the request broke the server, with an
+      // error-monitoring capture, when the server had in fact enforced a rule.
+      if (isSqlState(error, SQLSTATE.uniqueViolation)) {
+        throw new AppFailure('ERR-RES-002', {
+          message: `Opening batch code ${input.batchCode} already exists in this branch`,
+          safeDetails: { violations: [{ path: 'body.batchCode', rule: 'duplicate_code' }] },
+        });
+      }
       toDomainFailure(error, 'Opening batch');
     }
 
@@ -259,6 +272,31 @@ export class InventoryIntakeService {
         quantity: quantity.toString(),
       });
     } catch (error) {
+      /*
+       * `uq_opening_inventory_lines_cell` allows ONE live line per
+       * (item, location) inside a batch. That index — not an idempotency key — is
+       * what makes a counted cell exactly-once, and a second POST for the same
+       * cell is a refusal, not a retry: the cell already carries a count, and
+       * changing it is a correction no operation offers yet. The caller re-reads
+       * the batch to see what was counted.
+       *
+       * ERR-RES-002 ("Resource already exists", 409) rather than the module's own
+       * ERR-CON-001 precedent in `inventory-catalog-service`, which describes a
+       * duplicate as a stale version: nothing here is stale, and telling a counter
+       * to re-read and retry would send them round a loop that cannot succeed.
+       *
+       * Before this mapping the violation was unmapped and surfaced as
+       * ERR-SYS-001 — a 500 with an error-monitoring capture for a rule the
+       * database enforced exactly as designed.
+       */
+      if (isSqlState(error, SQLSTATE.uniqueViolation)) {
+        throw new AppFailure('ERR-RES-002', {
+          message:
+            `A quantity has already been counted for this item at this location on batch ` +
+            `${input.batchId}`,
+          safeDetails: { violations: [{ path: 'body.locationId', rule: 'duplicate_cell' }] },
+        });
+      }
       toDomainFailure(error, 'Opening line');
     }
     return {
@@ -297,6 +335,42 @@ export class InventoryIntakeService {
     try {
       await this.repository.approveOpeningBatch(db, batchId);
     } catch (error) {
+      /*
+       * `uq_stock_movements_opening_cell` allows ONE `opening` movement per
+       * (tenant, company, branch, item, location).
+       *
+       * Nothing used to stop two DRAFT batches in one branch from counting the
+       * same item at the same location: `uq_opening_inventory_lines_cell` carries
+       * `batch_id`, so it is exactly-once INSIDE a batch, and
+       * `inv.approve_opening_batch` locks and checks only its own batch row.
+       * Approving both posted two `opening` movements into that cell and doubled
+       * the stock — with a ledger that stayed internally coherent, because
+       * `on_hand` really was the sum of the movements. The Owner ruled that a
+       * second count of the same cell is never legitimate, and the index makes it
+       * unrepresentable.
+       *
+       * ERR-RES-002 ("Resource already exists", 409) and not ERR-TRN-001: this is
+       * the SAME answer `addLine` gives for the duplicate cell it guards inside a
+       * batch, and the two refusals describe one rule at two ranges. Unmapped, the
+       * 23505 would reach the approver as ERR-SYS-001 — a 500 with an
+       * error-monitoring capture — for a rule the database enforced as designed.
+       *
+       * The message names the remedy, because the caller cannot deduce it: the
+       * ledger is append-only, so nothing here can be withdrawn, and the batch is
+       * still `draft` (the violation rolled back its own approval UPDATE with it).
+       * A wrong count is corrected by a stock ADJUSTMENT, which carries a reason
+       * and its own approval, never by a second opening.
+       */
+      if (isSqlState(error, SQLSTATE.uniqueViolation)) {
+        throw new AppFailure('ERR-RES-002', {
+          message:
+            'This branch has already opened a balance for an item at a location this batch also ' +
+            'counts. An opening balance is counted once per item and location, so the batch was ' +
+            'not approved and no stock moved. Correct the quantity with a stock adjustment ' +
+            'instead of approving a second opening count.',
+          safeDetails: { violations: [{ path: 'path.batchId', rule: 'duplicate_opening_cell' }] },
+        });
+      }
       toDomainFailure(error, 'Opening batch approval');
     }
 

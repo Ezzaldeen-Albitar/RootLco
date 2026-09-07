@@ -11,39 +11,51 @@
  * `/inventory` shows the balance and `/inventory/movements` the `opening`
  * rows.
  *
- * ## What the screen says because the API cannot
+ * ## A batch is reachable again, so the rule is satisfiable by two people
  *
- * No operation reads a batch back — there is no batch list and no batch
- * detail (register area C, line C-2). A batch therefore exists for this
- * screen only through the echoes of the writes that made it, and is gone from
- * view the moment the page is left, even though it persists on the server.
- * The screen states this beside the batch, shows the batch id so it can be
- * quoted, and offers approval on the same page.
+ * `inv.opening-batch-list` lists a branch's batches and `inv.opening-batch-read`
+ * reads one back with its counted lines — both on `inv.stock.read`, the code
+ * this page already gates on. So the screen no longer renders only what it
+ * happens to hold: an operator who reloaded, or signed in again, opens their
+ * draft from the list, and the SECOND person — the one the maker-and-checker
+ * rule requires — finds the batch in their own session and approves it there.
+ * Everything shown after a batch is opened is the server's answer, not this
+ * page's memory.
  *
  * ## Maker ≠ checker
  *
  * The server refuses the person who counted the batch as its approver (409).
  * That refusal is rendered as published; the screen offers the approval to
  * whoever holds `inv.adjustment.approve` and says a second person is needed
- * when the refusal arrives. Nothing is computed here: quantities are the
- * exact decimal strings the operator typed and the server echoed.
+ * when the refusal arrives. Nothing is computed here: quantities are the exact
+ * decimal strings the operator typed and the server echoed or published, and
+ * the line count beside a listed batch is the server's own figure.
  *
- * Permissions: `inv.stock.read` gates the page (the location list is that
- * read); `inv.stock.operate` offers the batch and line forms;
+ * Permissions: `inv.stock.read` gates the page (the batch list, the batch read
+ * and the location list are all that code); `inv.stock.operate` offers the
+ * batch and line forms;
  * `inv.adjustment.approve` offers the approval; `org.branch.read` the branch
  * picker.
  */
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
+import { VIOLATION_KEY_PREFIX } from '@/lib/api/client';
 import type { ActionState } from '@/lib/forms/action-result';
-import { approveOpeningBatch, createOpeningBatch, createOpeningBatchLine, listItems } from '../api';
+import {
+  approveOpeningBatch,
+  createOpeningBatch,
+  createOpeningBatchLine,
+  listItems,
+  listOpeningBatches,
+  readOpeningBatch,
+} from '../api';
 import {
   ISO_DATE,
   LOCATION_CODE,
@@ -53,6 +65,7 @@ import {
   type InventoryItem,
   type OpeningBatch,
   type OpeningBatchLine,
+  type OpeningBatchSummary,
   type StockTarget,
 } from '../inventory-contract';
 import {
@@ -64,6 +77,7 @@ import {
   Qty,
   SECONDARY_BUTTON,
   UUID,
+  canNameBranch,
   useBranches,
   useLocations,
   type BranchPair,
@@ -78,6 +92,126 @@ interface ShownLine {
   readonly sku: string;
   readonly itemName: string;
   readonly locationCode: string;
+}
+
+/**
+ * The branch's batches as one of four outcomes rather than three fields, on the
+ * precedent `Branches` in `./shared` records: `items === null` cannot say
+ * whether a read is in flight or came back refused, and rendering a refusal as
+ * "this branch has no opening batch yet" would tell an approver that the batch
+ * they were asked to approve does not exist.
+ *
+ * `retry` is `null` where a second attempt cannot help — a refusal and a dead
+ * session are the same shape — which is the rule `shared.tsx` settled.
+ */
+type BatchList =
+  | { readonly phase: 'loading' }
+  | {
+      readonly phase: 'listed';
+      readonly items: readonly OpeningBatchSummary[];
+      /** The server's `hasMore`; the screen says so rather than implying it listed everything. */
+      readonly truncated: boolean;
+    }
+  | { readonly phase: 'none' }
+  | {
+      readonly phase: 'failed';
+      readonly messageKey: string;
+      readonly retry: (() => void) | null;
+    };
+
+const LIST_LOADING: BatchList = { phase: 'loading' };
+const LIST_NONE: BatchList = { phase: 'none' };
+
+/**
+ * `inv.opening-batch-list` for the chosen branch, and a way to ask again.
+ *
+ * `reload` is called after every write this screen makes, because the list
+ * states a status and a line count that the write just changed; a list still
+ * saying `draft` after an approval would be the screen contradicting itself.
+ */
+function useOpeningBatches(target: StockTarget | null): {
+  readonly list: BatchList;
+  readonly reload: () => void;
+} {
+  const [answer, setAnswer] = useState<{
+    readonly request: string;
+    readonly items: readonly OpeningBatchSummary[] | null;
+    readonly truncated: boolean;
+    readonly failure: { readonly key: string; readonly retryable: boolean } | null;
+  } | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const companyId = target?.companyId ?? null;
+  const branchId = target?.branchId ?? null;
+  /*
+   * The read this hook is currently waiting for, as a value.
+   *
+   * An answer is STAMPED with the request it answers and is only rendered while
+   * the stamp still matches, which is what keeps the previous branch's rows off
+   * the screen while a new branch's read is in flight — without clearing state
+   * inside the effect, which would be a cascading render. `attempt` is part of
+   * the stamp, so a retry is a different request and re-enters `loading`.
+   */
+  const request = companyId === null || branchId === null ? null : `${companyId}|${branchId}`;
+
+  const reload = useCallback(() => setAttempt((n) => n + 1), []);
+
+  useEffect(() => {
+    if (companyId === null || branchId === null || request === null) return;
+    const stamp = `${request}#${attempt}`;
+    let live = true;
+    void listOpeningBatches({ companyId, branchId }).then((state) => {
+      if (!live) return;
+      if (state.status === 'ok') {
+        setAnswer({
+          request: stamp,
+          items: state.data.items,
+          truncated: state.data.hasMore,
+          failure: null,
+        });
+        return;
+      }
+      // Three sentences, not one, on the rule `useBranches` settled: a refusal
+      // and a dead session are final, everything else is a "not right now" and
+      // is the only kind a second attempt can clear.
+      const failure =
+        state.status === 'denied'
+          ? { key: 'inventory.opening.batches.refused', retryable: false }
+          : state.status === 'expired'
+            ? { key: 'state.expired.title', retryable: false }
+            : { key: 'inventory.opening.batches.unavailable', retryable: true };
+      setAnswer({ request: stamp, items: null, truncated: false, failure });
+    });
+    return () => {
+      live = false;
+    };
+    // Keyed on the pair's VALUES, never the object — the rule `useLocations` records.
+  }, [companyId, branchId, request, attempt]);
+
+  const current =
+    answer !== null && request !== null && answer.request === `${request}#${attempt}`
+      ? answer
+      : null;
+  if (current === null) return { list: LIST_LOADING, reload };
+  if (current.failure !== null) {
+    return {
+      list: {
+        phase: 'failed',
+        messageKey: current.failure.key,
+        retry: current.failure.retryable ? reload : null,
+      },
+      reload,
+    };
+  }
+  if (current.items === null || current.items.length === 0) return { list: LIST_NONE, reload };
+  return { list: { phase: 'listed', items: current.items, truncated: current.truncated }, reload };
+}
+
+/** How a failed `inv.opening-batch-read` is said. A 404 is its own sentence, never a blank panel. */
+function detailFailureKey(status: string): string {
+  if (status === 'denied') return 'inventory.opening.detail.refused';
+  if (status === 'not-found') return 'inventory.opening.detail.gone';
+  if (status === 'expired') return 'state.expired.title';
+  return 'inventory.opening.detail.unavailable';
 }
 
 export function OpeningStockScreen({
@@ -102,7 +236,10 @@ export function OpeningStockScreen({
   const [target, setTarget] = useState<StockTarget | null>(null);
   const [batch, setBatch] = useState<OpeningBatch | null>(null);
   const [lines, setLines] = useState<readonly ShownLine[]>([]);
+  const [opening, setOpening] = useState<string | null>(null);
+  const [openFailure, setOpenFailure] = useState<string | null>(null);
   const locations = useLocations(target);
+  const { list, reload } = useOpeningBatches(target);
 
   const errorFor = (name: string): string | undefined => {
     const key = errors[name];
@@ -110,6 +247,35 @@ export function OpeningStockScreen({
   };
 
   const approved = batch !== null && batch.status === 'approved';
+
+  /**
+   * Open one batch from the list — `inv.opening-batch-read`.
+   *
+   * Everything the screen then shows about that batch is this answer: its
+   * header, and its lines with the item and location codes the server resolved.
+   * Nothing is carried over from a line this tab happened to add earlier, which
+   * is what makes the panel below true after a reload and true for a second
+   * person who never saw the count being entered.
+   */
+  const openBatch = async (batchId: string): Promise<void> => {
+    setOpening(batchId);
+    setOpenFailure(null);
+    const state = await readOpeningBatch(batchId);
+    setOpening(null);
+    if (state.status !== 'ok') {
+      setOpenFailure(detailFailureKey(state.status));
+      return;
+    }
+    setBatch(state.data.batch);
+    setLines(
+      state.data.lines.map((line) => ({
+        line,
+        sku: line.sku,
+        itemName: line.itemName,
+        locationCode: line.locationCode,
+      }))
+    );
+  };
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
@@ -126,7 +292,7 @@ export function OpeningStockScreen({
         {translate(messages, 'inventory.opening.explain')}
       </p>
       <p className="text-caption text-text-muted">
-        {translate(messages, 'inventory.opening.noBatchRead')}
+        {translate(messages, 'inventory.opening.batchesReadable')}
       </p>
       {!canOperate && !canApprove ? (
         <p className="text-caption text-text-muted">
@@ -144,6 +310,9 @@ export function OpeningStockScreen({
           if (Object.keys(found).length > 0) return;
           setBatch(null);
           setLines([]);
+          // A failure to read a batch of the PREVIOUS branch says nothing about
+          // this one, so it is cleared with everything else the branch owned.
+          setOpenFailure(null);
           setTarget({ companyId: pair.companyId.trim(), branchId: pair.branchId.trim() });
         }}
         noValidate
@@ -163,14 +332,34 @@ export function OpeningStockScreen({
           errors={{ companyId: errorFor('companyId'), branchId: errorFor('branchId') }}
         />
         <div className="sm:col-span-3">
-          <button type="submit" className={PRIMARY_BUTTON}>
+          <button type="submit" className={PRIMARY_BUTTON} disabled={!canNameBranch(branches)}>
             {translate(messages, 'inventory.opening.chooseBranch')}
           </button>
         </div>
       </form>
 
+      {target !== null ? (
+        <BatchListPanel
+          messages={messages}
+          list={list}
+          busyId={opening}
+          failureKey={openFailure}
+          onOpen={(batchId) => {
+            void openBatch(batchId);
+          }}
+        />
+      ) : null}
+
       {target !== null && batch === null && canOperate ? (
-        <BatchForm messages={messages} target={target} onOpened={setBatch} />
+        <BatchForm
+          messages={messages}
+          target={target}
+          onOpened={(opened) => {
+            setBatch(opened);
+            setLines([]);
+            reload();
+          }}
+        />
       ) : null}
 
       {batch !== null ? (
@@ -203,8 +392,22 @@ export function OpeningStockScreen({
             </div>
           </dl>
           <p className="text-caption text-text-muted">
-            {translate(messages, 'inventory.opening.batch.holdNote')}
+            {translate(messages, 'inventory.opening.batch.serverNote')}
           </p>
+          <div>
+            <button
+              type="button"
+              className={SECONDARY_BUTTON}
+              onClick={() => {
+                setBatch(null);
+                setLines([]);
+                setOpenFailure(null);
+                reload();
+              }}
+            >
+              {translate(messages, 'inventory.opening.batches.back')}
+            </button>
+          </div>
         </section>
       ) : null}
 
@@ -213,7 +416,10 @@ export function OpeningStockScreen({
           messages={messages}
           batch={batch}
           locations={locations}
-          onAdded={(shown) => setLines((current) => [...current, shown])}
+          onAdded={(shown) => {
+            setLines((current) => [...current, shown]);
+            reload();
+          }}
         />
       ) : null}
 
@@ -272,10 +478,148 @@ export function OpeningStockScreen({
           messages={messages}
           batch={batch}
           canApprove={canApprove}
-          onApproved={setBatch}
+          onApproved={(approvedBatch) => {
+            setBatch(approvedBatch);
+            reload();
+          }}
         />
       ) : null}
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * The batches this branch already has — the recovery path
+ * ------------------------------------------------------------------ */
+
+/**
+ * `inv.opening-batch-list` rendered as a table, newest first.
+ *
+ * This is the whole point of the slice: the operator who reloaded, and the
+ * second person who must approve, both arrive here and find the batch. The
+ * status is shown because it decides what can still be done with a batch — a
+ * draft takes lines and an approval, an approved one is frozen — and the line
+ * count is the server's own figure, never counted here.
+ *
+ * A wait, an empty branch and a failure are three different sentences. The
+ * empty one is a statement about this branch, not about permission: a refusal
+ * has its own wording and, where a second attempt could help, a retry.
+ */
+function BatchListPanel({
+  messages,
+  list,
+  busyId,
+  failureKey,
+  onOpen,
+}: {
+  readonly messages: Messages;
+  readonly list: BatchList;
+  /** The batch whose detail read is in flight; every open button waits on it. */
+  readonly busyId: string | null;
+  /** A failed `inv.opening-batch-read`, said here beside the row that was clicked. */
+  readonly failureKey: string | null;
+  readonly onOpen: (batchId: string) => void;
+}) {
+  return (
+    <section aria-labelledby="opening-batches-heading" className="flex flex-col gap-3">
+      <h2 id="opening-batches-heading" className="text-body font-medium text-text-primary">
+        {translate(messages, 'inventory.opening.batches.heading')}
+      </h2>
+      <p className="text-caption text-text-muted">
+        {translate(messages, 'inventory.opening.batches.explain')}
+      </p>
+      {failureKey !== null ? (
+        <p role="alert" className="text-body text-error">
+          {translateDynamic(messages, failureKey)}
+        </p>
+      ) : null}
+      {list.phase === 'loading' ? (
+        <p role="status" aria-live="polite" className="text-caption text-text-muted">
+          {translate(messages, 'inventory.opening.batches.loading')}
+        </p>
+      ) : null}
+      {list.phase === 'none' ? (
+        <p className="text-caption text-text-muted">
+          {translate(messages, 'inventory.opening.batches.none')}
+        </p>
+      ) : null}
+      {list.phase === 'failed' ? (
+        <>
+          <p className="text-caption text-text-muted">
+            {translateDynamic(messages, list.messageKey)}
+          </p>
+          {list.retry !== null ? (
+            <div>
+              {/* `type="button"`: this panel sits among forms on the same page. */}
+              <button type="button" className={SECONDARY_BUTTON} onClick={list.retry}>
+                {translate(messages, 'state.retry')}
+              </button>
+            </div>
+          ) : null}
+        </>
+      ) : null}
+      {list.phase === 'listed' ? (
+        <>
+          {list.truncated ? (
+            <p className="text-caption text-text-muted">
+              {translate(messages, 'inventory.opening.batches.truncated')}
+            </p>
+          ) : null}
+          <table className="w-full text-body">
+            <caption className="sr-only">
+              {translate(messages, 'inventory.opening.batches.caption')}
+            </caption>
+            <thead>
+              <tr className="text-caption text-text-muted">
+                <th scope="col" className="text-start font-medium">
+                  {translate(messages, 'inventory.opening.batch.code')}
+                </th>
+                <th scope="col" className="text-start font-medium">
+                  {translate(messages, 'inventory.opening.batch.asOfDate')}
+                </th>
+                <th scope="col" className="text-start font-medium">
+                  {translate(messages, 'inventory.opening.batch.status')}
+                </th>
+                <th scope="col" className="text-end font-medium">
+                  {translate(messages, 'inventory.opening.batches.column.lines')}
+                </th>
+                <th scope="col" className="text-end font-medium">
+                  {translate(messages, 'inventory.opening.batches.column.action')}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.items.map((row) => (
+                <tr key={row.id}>
+                  <td dir="ltr" className="text-start">
+                    {row.batchCode}
+                  </td>
+                  <td dir="ltr" className="text-start">
+                    {row.asOfDate}
+                  </td>
+                  <td>{translateDynamic(messages, `inventory.opening.status.${row.status}`)}</td>
+                  <td className="text-end">{row.lineCount}</td>
+                  <td className="text-end">
+                    <button
+                      type="button"
+                      className={SECONDARY_BUTTON}
+                      disabled={busyId !== null}
+                      onClick={() => onOpen(row.id)}
+                    >
+                      {translate(messages, 'inventory.opening.batches.open')}
+                      {/* The code is part of the accessible name: five buttons
+                          reading only "Open" name nothing a listener can choose
+                          between. */}
+                      <span className="sr-only"> {row.batchCode}</span>
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      ) : null}
+    </section>
   );
 }
 
@@ -564,6 +908,24 @@ function LineForm({
  * Approve — a second person
  * ------------------------------------------------------------------ */
 
+/**
+ * Whether a refusal already carries its own reason.
+ *
+ * Approval is refused for two different reasons and only one of them is
+ * "someone else must do this". The server also refuses a batch that counts a
+ * cell the branch has already opened — `path.batchId` +
+ * `duplicate_opening_cell` — and that refusal is not cured by finding a second
+ * person, so pairing it with "a second person must approve" would send the
+ * approver to fetch a colleague who would be refused for the same reason.
+ *
+ * The test is the KEY, not the status, because both are `conflict`: a banner
+ * that names a violation is the specific reason, and the standing hint below it
+ * is the generic one. `OutcomeNote` has already rendered whichever arrived.
+ */
+function statedRefusal(outcome: ActionState): boolean {
+  return outcome.messageKey?.startsWith(VIOLATION_KEY_PREFIX) === true;
+}
+
 function ApprovalPanel({
   locale,
   messages,
@@ -616,7 +978,7 @@ function ApprovalPanel({
       ) : canApprove ? (
         <>
           <OutcomeNote messages={messages} outcome={outcome} />
-          {outcome?.status === 'conflict' ? (
+          {outcome?.status === 'conflict' && !statedRefusal(outcome) ? (
             <p className="text-caption text-text-muted">
               {translate(messages, 'inventory.opening.approve.secondPerson')}
             </p>

@@ -975,11 +975,11 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files tests/ci = 66 -->
 <!-- derived: files scripts/ci = 63 -->
 <!-- derived: files apps/web/scripts = 4 -->
-<!-- derived: files supabase/migrations = 137 -->
+<!-- derived: files supabase/migrations = 138 -->
 <!-- derived: files tests/db = 144 -->
 <!-- derived: files tests/db:all = 148 -->
-<!-- derived: files tests/backend = 124 -->
-<!-- derived: files tests/backend:all = 133 -->
+<!-- derived: files tests/backend = 126 -->
+<!-- derived: files tests/backend:all = 135 -->
 <!-- derived: files apps/web/src/features/crm = 20 -->
 <!-- derived: files apps/web/src/features/vehicles = 23 -->
 <!-- derived: files p1-27-frontend-gate = 147 -->

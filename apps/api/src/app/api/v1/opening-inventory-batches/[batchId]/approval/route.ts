@@ -12,9 +12,15 @@
  *
  * `inv.adjustment.approve` (high risk), not `inv.stock.operate`. Counting and
  * approving a count are separate authorities, and
- * `ck_opening_inventory_batches_maker_checker` enforces in the database that the
- * approver is not the counter. A single permission covering both would make the
- * maker-checker rule depend on who happened to call which endpoint.
+ * `ck_opening_inventory_batches_maker` enforces in the database that the approver
+ * is not the counter, with `inv.guard_opening_batch_approval` freezing the batch
+ * once it lands. A single permission covering both would make the maker-checker
+ * rule depend on who happened to call which endpoint.
+ *
+ * The approver reaches a batch through `GET /opening-inventory-batches` and reads
+ * what they are approving through `GET /opening-inventory-batches/{batchId}`
+ * (Phase 1-30, seam S-17). Before those existed the second person had no path to
+ * a draft at all, and the rule was satisfiable only inside the counter's own tab.
  *
  * ## Why an empty batch is refused
  *

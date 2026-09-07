@@ -2,7 +2,8 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
-import { renderLtr } from './render';
+import ar from '../src/i18n/messages/ar.json';
+import { renderLtr, renderRtl } from './render';
 
 /**
  * The service detail, rendered (P1-30, `W1`, FE-001).
@@ -19,6 +20,7 @@ import { renderLtr } from './render';
  */
 
 const EN = en as Record<string, string>;
+const AR = ar as Record<string, string>;
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** A label matcher anchored at the start of the label text. */
@@ -85,6 +87,8 @@ const SERVICE_ID = '33333333-3333-4333-8333-333333333333';
 const CATEGORY = '55555555-5555-4555-8555-555555555555';
 const BRANCH = '22222222-2222-4222-8222-222222222222';
 const COMPANY = '11111111-1111-4111-8111-111111111111';
+/** A second branch, so a list can arrive that cannot contain what was typed. */
+const OTHER_BRANCH = '22222222-2222-4222-8222-222222222223';
 
 function service(over: Record<string, unknown> = {}) {
   return {
@@ -254,6 +258,158 @@ describe('availability is a branch-scoped write', () => {
       branchId: BRANCH,
       isAvailable: false,
     });
+  });
+});
+
+/* -------------------------------------------------------------------- *
+ * P1-30 CC-15, the availability panel's own copy of the branch picker.
+ *
+ * `items === null` meant both "no request was made" and "the request has not
+ * answered", so a PERMITTED operator met two free-text identifier fields on
+ * every first paint of this panel — and a branch typed during that window
+ * survived into a submit the blank select was no longer displaying.
+ * -------------------------------------------------------------------- */
+describe('CC-15 — the availability branch picker says which state it is in', () => {
+  const listedBranches = okRead({
+    items: [{ id: BRANCH, companyId: COMPANY, branchCode: 'B1', name: 'Main' }],
+  });
+
+  it('while a permitted read is in flight, waits — and offers no field at all', async () => {
+    let release: (value: unknown) => void = () => {};
+    listBranches.mockImplementation(() => new Promise((resolve) => (release = resolve)));
+    renderDetail({ canReadBranches: true });
+    const panel = screen.getByRole('region', {
+      name: EN['services.availability.heading'] as string,
+    });
+    expect(within(panel).getByRole('status')).toHaveTextContent(
+      EN['services.catalogue.branchesLoading'] as string
+    );
+    expect(
+      within(panel).queryByLabelText(labelled('services.availability.companyIdField'))
+    ).toBeNull();
+    expect(
+      within(panel).queryByLabelText(labelled('services.availability.branchIdField'))
+    ).toBeNull();
+    release(listedBranches);
+    expect(await screen.findByLabelText(labelled('services.availability.branch'))).toBeVisible();
+  });
+
+  it('a branch typed before the list arrives is never sent behind a blank control', async () => {
+    const user = userEvent.setup();
+    let release: (value: unknown) => void = () => {};
+    listBranches.mockImplementation(() => new Promise((resolve) => (release = resolve)));
+    // Refused first, so the identifier fields are the affordance and the
+    // operator can type into them.
+    const first = renderDetail({ canReadBranches: false });
+    await user.type(
+      screen.getByLabelText(labelled('services.availability.companyIdField')),
+      COMPANY
+    );
+    await user.type(screen.getByLabelText(labelled('services.availability.branchIdField')), BRANCH);
+    first.unmount();
+
+    // And now the corruption path itself: the list arrives holding a DIFFERENT
+    // branch, so the select can never show what was typed.
+    listBranches.mockImplementation(() => new Promise((resolve) => (release = resolve)));
+    renderDetail({ canReadBranches: true });
+    release(
+      okRead({
+        items: [{ id: OTHER_BRANCH, companyId: COMPANY, branchCode: 'B2', name: 'Second' }],
+      })
+    );
+    const select = await screen.findByLabelText(labelled('services.availability.branch'));
+    expect(select).toHaveValue('');
+    await user.click(
+      screen.getByRole('button', { name: EN['services.availability.submit'] as string })
+    );
+    // The screen shows no branch, so it sends none: the form and the control agree.
+    expect(setBranchAvailability).not.toHaveBeenCalled();
+  });
+
+  it('with no branch listed, says so and keeps the two identifier fields', async () => {
+    listBranches.mockResolvedValue(okRead({ items: [] }));
+    renderDetail({ canReadBranches: true });
+    expect(await screen.findByText(EN['services.catalogue.branchesNone'] as string)).toBeVisible();
+    expect(screen.getByLabelText(labelled('services.availability.companyIdField'))).toBeVisible();
+    expect(screen.getByLabelText(labelled('services.availability.branchIdField'))).toBeVisible();
+  });
+
+  it('a failure that could clear offers a retry; a refusal and an ended session do not', async () => {
+    const user = userEvent.setup();
+    listBranches
+      .mockResolvedValueOnce({ status: 'unavailable', correlationId: 'corr' })
+      .mockResolvedValueOnce(listedBranches);
+    const first = renderDetail({ canReadBranches: true });
+    expect(
+      await screen.findByText(EN['services.catalogue.branchesUnavailable'] as string)
+    ).toBeVisible();
+    await user.click(screen.getByRole('button', { name: EN['state.retry'] as string }));
+    expect(await screen.findByLabelText(labelled('services.availability.branch'))).toBeVisible();
+    first.unmount();
+
+    listBranches.mockResolvedValue({ status: 'denied', correlationId: 'corr' });
+    const second = renderDetail({ canReadBranches: true });
+    expect(
+      await screen.findByText(EN['services.catalogue.branchesRefused'] as string)
+    ).toBeVisible();
+    expect(screen.queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
+    second.unmount();
+
+    listBranches.mockResolvedValue({ status: 'expired', correlationId: 'corr' });
+    renderDetail({ canReadBranches: true });
+    expect(await screen.findByText(EN['state.expired.title'] as string)).toBeVisible();
+    expect(screen.queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
+  });
+
+  it('in Arabic, a read in flight is a wait and not two identifier boxes', async () => {
+    let release: (value: unknown) => void = () => {};
+    listBranches.mockImplementation(() => new Promise((resolve) => (release = resolve)));
+    renderRtl(
+      <ServiceDetailScreen
+        locale="ar"
+        messages={ar}
+        service={service() as never}
+        canManage
+        canReadBranches={true}
+      />
+    );
+    expect(document.documentElement.dir).toBe('rtl');
+    const panel = screen.getByRole('region', {
+      name: AR['services.availability.heading'] as string,
+    });
+    expect(within(panel).getByRole('status')).toHaveTextContent(
+      AR['services.catalogue.branchesLoading'] as string
+    );
+    expect(
+      within(panel).queryByLabelText(
+        new RegExp(`^${escape(AR['services.availability.companyIdField'] as string)}`)
+      )
+    ).toBeNull();
+    release(listedBranches);
+    expect(
+      await screen.findByLabelText(
+        new RegExp(`^${escape(AR['services.availability.branch'] as string)}`)
+      )
+    ).toBeVisible();
+  });
+
+  it('in Arabic, a zero-row list says so and keeps the identifier fields', async () => {
+    listBranches.mockResolvedValue(okRead({ items: [] }));
+    renderRtl(
+      <ServiceDetailScreen
+        locale="ar"
+        messages={ar}
+        service={service() as never}
+        canManage
+        canReadBranches={true}
+      />
+    );
+    expect(await screen.findByText(AR['services.catalogue.branchesNone'] as string)).toBeVisible();
+    expect(
+      screen.getByLabelText(
+        new RegExp(`^${escape(AR['services.availability.branchIdField'] as string)}`)
+      )
+    ).toBeVisible();
   });
 });
 

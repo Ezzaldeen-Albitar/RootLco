@@ -41,6 +41,7 @@ import { sessionAuthenticator } from '../context/principal';
 import { withTransaction, type DbHandle } from '../db/transaction';
 import {
   requirePermissions,
+  requireScopeTargetInTenant,
   requireScopedPermissions,
   type AuthorizationTarget,
   type ScopeAuthorizer,
@@ -386,6 +387,23 @@ export async function handleOperation<T>(
         context as RequestContext,
         async (db) => {
           await requirePermissions(db, operation, options.authorizationTarget ?? {});
+
+          /**
+           * CC-14. A query-scoped collection read names its OWN (company, branch)
+           * pair, and `iam.has_permission_in_scope` cannot refuse a pair outside
+           * the tenant for a holder of an unrestricted grant — it short-circuits
+           * on the grant before reading any scope row. So the pair is resolved
+           * here, after the permission decision, against a branch row visible to
+           * the caller (the probe is RLS-narrowed by the caller's grant union).
+           *
+           * READS ONLY. The five body-scoped creates keep the 404 their composite
+           * foreign key and RLS already produce (MD-X1); unifying those on 403 is
+           * a separate contract question, not this one.
+           */
+          if (operation.method === 'GET' && options.authorizationTarget !== undefined) {
+            await requireScopeTargetInTenant(db, operation, options.authorizationTarget);
+          }
+
           if (operation.featureFlag) await requireFeature(db, operation.featureFlag);
 
           const execute = () =>

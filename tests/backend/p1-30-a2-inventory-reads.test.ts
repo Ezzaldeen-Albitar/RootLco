@@ -74,13 +74,20 @@ import { randomUUID } from 'node:crypto';
 import {
   BRANCH_A1,
   COMPANY_A1,
+  TENANT_A,
   adminPool,
   cleanBackendFixtures,
   ensureBackendFixtures,
   ensureTestLogins,
   runtimeAppPool,
 } from './helpers';
-import { BRANCH_A2, createOpenWorkOrder, establishP1_19Fixtures } from './p1-19-helpers';
+import {
+  BRANCH_A2,
+  BRANCH_B1,
+  COMPANY_B1,
+  createOpenWorkOrder,
+  establishP1_19Fixtures,
+} from './p1-19-helpers';
 import {
   INV_FULL,
   INV_PERMISSION_ELSEWHERE,
@@ -329,18 +336,51 @@ describe('S-16 inv.stock-location-list', () => {
     // the application-check proof — that is the case above, which is why both exist.
     authAs(INV_SCOPED_A2);
     const hidden = await locationList(scopedQuery);
-    expect([403, 404]).toContain(hidden.status);
+    // Exactly 403, not "403 or 404": INV_SCOPED_A2 is refused by the PERMISSION
+    // check, which runs before CC-14's target probe, so the answer is settled.
+    expect(hidden.status).toBe(403);
+    expect(await codeOf(hidden)).toBe('ERR-IAM-001');
 
-    // Tenant B holds inv.stock.read unrestricted, so this refusal is the tenant
-    // boundary. It must not be a 200 listing tenant A's locations.
+    // The pair is real — asserted as ADMIN, outside RLS, so the refusals below
+    // are known to be refusals of an EXISTING branch rather than of a typo.
+    const present = await admin.query(
+      `SELECT 1 FROM org.branches
+        WHERE tenant_id = $1 AND company_id = $2 AND id = $3 AND deleted_at IS NULL`,
+      [TENANT_A, COMPANY_A1, BRANCH_A1]
+    );
+    expect(present.rowCount).toBe(1);
+
+    // Tenant B holds inv.stock.read UNRESTRICTED, so `iam.has_permission_in_scope`
+    // cannot refuse tenant A's pair. Since CC-14 the pre-handler resolves the
+    // pair inside the caller's own tenant and refuses before the list is read.
     authAs(INV_TENANT_B);
     const foreign = await locationList(scopedQuery);
-    if (foreign.status === 200) {
-      const body = (await foreign.json()) as PageBody<{ id: string }>;
-      expect(body.items).toHaveLength(0);
-    } else {
-      expect([403, 404]).toContain(foreign.status);
-    }
+    expect(foreign.status).toBe(403);
+    const foreignProblem = (await foreign.json()) as Record<string, unknown>;
+    expect(foreignProblem.code).toBe('ERR-IAM-001');
+
+    // A pair that exists nowhere is refused with a byte-identical document.
+    authAs(INV_TENANT_B);
+    const nowhere = await locationList(`?companyId=${randomUUID()}&branchId=${randomUUID()}`);
+    expect(nowhere.status).toBe(403);
+    expect({ ...((await nowhere.json()) as Record<string, unknown>), correlationId: null }).toEqual(
+      {
+        ...foreignProblem,
+        correlationId: null,
+      }
+    );
+
+    // Its OWN pair still answers 200. Without this the three refusals above would
+    // be satisfied by a probe that refused everything — the whole point is that a
+    // pair the caller CAN see is still served.
+    authAs(INV_TENANT_B);
+    const own = await locationList(`?companyId=${COMPANY_B1}&branchId=${BRANCH_B1}`);
+    expect(own.status).toBe(200);
+    // And served with tenant B's own locations only: this branch is seeded, so the
+    // isolation claim is about which rows came back rather than about an empty page.
+    const ownIds = ((await own.json()) as PageBody<{ id: string }>).items.map((row) => row.id);
+    expect(ownIds).not.toContain(WAREHOUSE_A1);
+    expect(ownIds).not.toContain(QUARANTINE_A1);
   });
 });
 
@@ -510,12 +550,28 @@ describe('S-14 inv.stock-reservation-list', () => {
 
     authAs(INV_TENANT_B);
     const foreign = await reservationList(scopedQuery);
-    if (foreign.status === 200) {
-      const body = (await foreign.json()) as PageBody<{ id: string }>;
-      expect(body.items.map((row) => row.id)).not.toContain(mine);
-    } else {
-      expect([403, 404]).toContain(foreign.status);
-    }
+    // CC-14: refused before the query, not a filtered 200. `mine` is still named
+    // so the fixture that would have leaked is real rather than hypothetical.
+    expect(mine).toBeTruthy();
+    expect(foreign.status).toBe(403);
+    const foreignProblem = (await foreign.json()) as Record<string, unknown>;
+    expect(foreignProblem.code).toBe('ERR-IAM-001');
+
+    authAs(INV_TENANT_B);
+    const nowhere = await reservationList(`?companyId=${randomUUID()}&branchId=${randomUUID()}`);
+    expect(nowhere.status).toBe(403);
+    expect({ ...((await nowhere.json()) as Record<string, unknown>), correlationId: null }).toEqual(
+      {
+        ...foreignProblem,
+        correlationId: null,
+      }
+    );
+
+    // Its own pair: 200 and an empty collection, the honest empty.
+    authAs(INV_TENANT_B);
+    const own = await reservationList(`?companyId=${COMPANY_B1}&branchId=${BRANCH_B1}`);
+    expect(own.status).toBe(200);
+    expect(((await own.json()) as PageBody<{ id: string }>).items).toEqual([]);
   });
 });
 
