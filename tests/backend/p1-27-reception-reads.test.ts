@@ -694,16 +694,31 @@ describe('authorization and the uniform 404', () => {
       (await listReceptions(`?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&tenantId=${TENANT_B}`))
         .status
     ).toBe(422);
-    // Tenant B addressing tenant A's branch: its grant is UNRESTRICTED, and an
-    // unrestricted grant is tenant-bounded by construction —
-    // `iam.has_permission_in_scope` short-circuits without consulting the
-    // target. What contains the request is the tenant predicate, and the honest
-    // answer is an EMPTY page rather than a 403 or 404 that would confirm the
-    // foreign branch exists (the p1-19 work-order board states this doctrine).
+    // Tenant B addressing tenant A's branch: its grant is UNRESTRICTED, so
+    // `iam.has_permission_in_scope` short-circuits without consulting the target
+    // and the permission check cannot be the tenant boundary. Since CC-14 the
+    // pre-handler resolves the pair against a branch visible to the caller
+    // inside its own tenant before the list is read, so the answer is a 403
+    // rather than the empty page RLS used to produce — and a 403 rather than a
+    // 404, which would confirm the foreign branch exists.
     authAs(SUBJ_TENANT_B, TENANT_B);
     const foreign = await listReceptions(`?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}`);
-    expect(foreign.status).toBe(200);
-    expect(((await foreign.json()) as PageBody).items).toEqual([]);
+    expect(foreign.status).toBe(403);
+    const foreignProblem = (await foreign.json()) as Record<string, unknown>;
+    expect(foreignProblem.code).toBe('ERR-IAM-001');
+
+    // A pair that exists nowhere is refused identically, whole document.
+    authAs(SUBJ_TENANT_B, TENANT_B);
+    const nowhere = await listReceptions(
+      `?companyId=${crypto.randomUUID()}&branchId=${crypto.randomUUID()}`
+    );
+    expect(nowhere.status).toBe(403);
+    expect({ ...((await nowhere.json()) as Record<string, unknown>), correlationId: null }).toEqual(
+      {
+        ...foreignProblem,
+        correlationId: null,
+      }
+    );
     // Its OWN empty branch answers an empty page — the honest empty, not 404.
     const own = await listReceptions(`?companyId=${COMPANY_B1}&branchId=${BRANCH_B1}`);
     expect(own.status).toBe(200);
