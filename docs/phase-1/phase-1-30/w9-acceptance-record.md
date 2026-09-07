@@ -18,6 +18,12 @@ record did.
 `:54324`. Organisations `p30_journey_a_iecd6d` and `p30_journey_b_iecd6d`, the run stamp being
 the harness's own.
 
+**Amendment A1, 2026-09-07.** Nothing in §1 to §6 is rewritten. The acceptance stands as recorded:
+run `iecd6d`, 71 steps, 0 findings, on the production build of `ea8c0666`. §7 adds what has been
+measured since, on the merged head `3d752119`: a re-run of the same journey (`ky2hqn`, 92 steps, 0
+findings), the correction of a harness defect §3 recorded without naming it as one, and the
+authenticated browser evidence FE-020 and FE-021 lacked.
+
 ## 1. Verdict
 
 **PASSED — the approved P1-30 journey runs end to end on a fresh organisation through the
@@ -183,6 +189,12 @@ Seven screenshots were taken and reviewed (held as session artefacts; described 
 One client-side refusal was captured on the way (the item form refusing an empty unit before any
 request) — the screen behaving as its DOM suite says.
 
+**Amendment A1, 2026-09-07.** Screenshot 2's parenthesis, "the first platform unit the list offered
+(centimetre)", records a **harness defect, not a product one**: the driver took the head of the unit
+list rather than choosing. The walk it describes happened as written and the screenshot is what it
+says; the unit was arbitrary. The driver has since been corrected — see §7.1 — and now selects units
+by their seeded platform code.
+
 ## 4. Failure, concurrency and isolation cases, on the same organisations
 
 | case                                                                                                                                                                   | result                                                                                      |
@@ -225,3 +237,70 @@ request) — the screen behaving as its DOM suite says.
 - No opening-batch read exists; the page holds the echoes (register C-2).
 - `sal.invoice-create` requires `payerPartnerId` (nullable, not optional): the harness first sent
   none and was refused `invalid_type`; the W6 screen sends it. Stated for the mirror's reader.
+
+## 7. Amendment A1, 2026-09-07 — the re-run on the merged head, and the printable copies
+
+Everything in this section was measured after the record above and on a later head. It corrects two
+things and adds one; it replaces nothing.
+
+### 7.1 The journey re-run — `ky2hqn`, 92 steps, 0 findings
+
+Run `ky2hqn` at 2026-09-07T18:47:29.994Z, the same harness against a production build of the merged
+head `3d752119`, on two newly provisioned organisations `p30_journey_a_ky2hqn` and
+`p30_journey_b_ky2hqn`: **92 steps, 0 findings**. The count is higher than §2's seventy-one because
+the head under test publishes the opening-batch reads and the corrected opening-cell refusal that
+landed after the closure, and the harness now walks them. §2's figures remain the figures of the
+run §2 records; neither set supersedes the other.
+
+Two differences from `iecd6d` are worth stating rather than burying.
+
+- **The unit-selection defect is fixed.** The driver now looks a unit up by its seeded platform
+  code: `each` for a discrete part, `litre` for a fluid. There is **no fallback** — a code the unit
+  list does not offer is recorded as a finding and stops the walk, because every later step depends
+  on the item. In `ky2hqn` the list answered twelve codes, both `each` and `litre` were found, and
+  the server's echo carried back exactly the unit sent for each of the two items, which the harness
+  also checks. The arbitrary "centimetre" of §3 cannot recur silently.
+- **The cross-tenant location list now answers 403 where it answered an empty 200.** That is CC-14's
+  remediation landing (`cc-14-scope-target-in-tenant.md`), not a regression: a GET naming both a
+  company and a branch is now refused by the application layer instead of running and returning
+  nothing. The step is not a finding. The harness's summary flag `isolationHeld` nevertheless
+  computes `false` on this run, because its predicate demands an empty list **body** and a 403
+  carries none — the flag is what the refusal breaks, not the isolation. Every other isolation probe
+  answered 404 or an empty collection as before.
+
+### 7.2 FE-020 and FE-021 — the printable copies, in an authenticated browser
+
+The two print tasks closed on component tests whose read adapters are mocked. They now have browser
+evidence on a production build of `3d752119`, driven through the repository's own authenticated
+Playwright projects and signing in through the product's own login form: **nine tests, nine passed,
+no skips** — the invoice printable copy in English and in Arabic, the receipt printable copy in
+both, the money-view denial in both, the page-gate refusal in both, and the sign-in setup.
+
+- **The documents matched the server's own echo.** Invoice `000001`, status issued, one line, with
+  net `45.00`, tax `0.00` and gross `45.00` JOD on the line and the same three as the totals.
+  Receipt `000001`, fully applied, method cash, received `45.00` JOD, unapplied `0.00`, one
+  allocation of `45.00` against that invoice. These are the figures the HTTP walk recorded at its
+  steps 77 to 83; nothing on the paper copy is computed by the screen.
+- **Arabic renders right to left**, `dir="rtl"` on the document, with the identifiers isolated
+  left-to-right and each isolated node's computed direction asserted rather than assumed.
+- **The print action's contract is asserted, not the dialog.** A headless browser raises no print
+  dialog, so `window.print` is replaced by a counter and the Print control is required to have
+  called it **exactly once**. What that proves is the button's contract inside the real bundle.
+- **Without `sal.finance.view` the paper copy carries no amount.** All seven money slots — four on
+  the line and three totals — read "not available" (`غير متاح` in Arabic), each checked **where it
+  sits** rather than by counting, so a copy showing a figure in one cell and the phrase twice
+  elsewhere would not pass. The assertion then requires the ISO currency code to be **wholly absent**
+  from the document's text, which is stronger than looking for zeros: the money formatter always
+  appends the code, so its absence proves that no amount was rendered anywhere. Quantities are not
+  money and are still published (`1.000`). The payments page, gated on the same code, is refused and
+  does not name the receipt.
+- **Without the page's own permission the page is refused before any read**, in both languages: no
+  print control, no document, and the refusal carries neither the invoice number nor the receipt
+  reference. The module is not offered in the navigation either.
+- **Two observations, recorded as observations and not as failures.** Arabic renders the amounts in
+  Latin digits — no Arabic-Indic digit appears in either Arabic document, which the run asserts and
+  records. And the payment method stays "Cash" in the Arabic receipt because it is tenant data the
+  organisation created, not a catalogue string the product translates.
+- **Evidence artefacts:** sixteen images and six documents, held as session artefacts outside the
+  repository and described here in prose, as §3's screenshots are and as the P1-29 record did. The
+  browser spec is a session artefact too and is not committed.
