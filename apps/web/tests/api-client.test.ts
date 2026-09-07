@@ -578,7 +578,7 @@ describe('a field violation reaches the right control with the right key', () =>
     });
   });
 
-  it('returns nothing for a failure that is not a validation failure', () => {
+  it('returns nothing for a failure that carries no violations at all', () => {
     const denied: ApiFailure = {
       ok: false,
       kind: 'forbidden',
@@ -1641,5 +1641,102 @@ describe('P1-27-QA-002 — every rule token this client translates is one the AP
     // A non-literal is skipped rather than mis-read: the CRM services forward
     // `rule: error.rule` from the domain, and there is no token to take there.
     expect([...ruleTokensIn('{ path: error.path, rule: error.rule }')]).toEqual([]);
+  });
+});
+
+/*
+ * P1-30 CC-23, the web half: the opening-batch approval's OTHER refusal.
+ *
+ * Appended below everything else on purpose. The P1-27 task matrices cite LINE
+ * RANGES of this suite and `tests/ci/p1-27-matrix-citations.test.ts` fails when
+ * a cited range stops landing on an assertion, so a new case that went in the
+ * middle would silently re-point four citations at cases they were not written
+ * about. New cases go at the end.
+ */
+describe('a violation on a route parameter is read whatever the status was', () => {
+  /**
+   * The refusal as `apps/api` sends it.
+   *
+   * `POST /api/v1/opening-inventory-batches/{id}/approval` has no body, so
+   * `path.batchId` is the only place a refusal can point; and this violation is
+   * the only place the reason travels, because `problemFor` assembles the
+   * document from the catalog entry plus `safeDetails` and reads the failure's
+   * own `message` nowhere — the sentence the service wrote naming the
+   * adjustment remedy was measured as absent on a hosted run.
+   */
+  const duplicateOpeningCell: ApiFailure = {
+    ok: false,
+    kind: 'conflict',
+    status: 409,
+    problem: {
+      type: 'urn:rootlco:error:ERR-RES-002',
+      title: 'Resource already exists',
+      status: 409,
+      code: 'ERR-RES-002',
+      correlationId: 'corr-open',
+      violations: [{ path: 'path.batchId', rule: 'duplicate_opening_cell' }],
+    },
+    correlationId: 'corr-open',
+  };
+
+  it('surfaces at form level rather than under a control no form renders', () => {
+    /*
+     * Two separate refusals of the old code, each of which ended on screen as
+     * nothing: the `kind === 'validation'` guard discarded the list because the
+     * status was 409, and `controlNameFor` would have filed it under
+     * `batchId` — a segment of the address, not a box on any form.
+     */
+    const keys = violationKeysOf(duplicateOpeningCell);
+    expect(keys.fieldErrors).toEqual({});
+    expect(keys.formKeys).toEqual(['form.violation.duplicate_opening_cell']);
+  });
+
+  it('becomes the banner in place of the generic conflict sentence', () => {
+    const state = fromFailure(duplicateOpeningCell, 1);
+    expect(state.status).toBe('conflict');
+    expect(state.messageKey).toBe('form.violation.duplicate_opening_cell');
+    // What the approver used to get instead, which names no reason at all.
+    expect(failureMessageKey(duplicateOpeningCell)).toBe('state.conflict.blocked.title');
+    expect(state.fieldErrors).toBeUndefined();
+  });
+
+  it('resolves to its own message in both languages, never the fallback', () => {
+    const key = violationMessageKey('duplicate_opening_cell');
+    expect(key).toBe(`${VIOLATION_KEY_PREFIX}duplicate_opening_cell`);
+    expect(key).not.toBe(VIOLATION_FALLBACK_KEY);
+    for (const [locale, catalogue] of Object.entries({ en, ar })) {
+      const message = (catalogue as Record<string, string>)[key] as string;
+      expect(message, `${locale} is missing the key`).toBeTruthy();
+      // Both halves of the rule, matched in each language's own words rather
+      // than through one shared token, so an entry pasted from its neighbour
+      // fails: the count this cell already has, and the remedy.
+      expect(message, `${locale} does not name the count already approved`).toMatch(
+        locale === 'ar' ? /معتمد/ : /already has an approved opening count/i
+      );
+      expect(message, `${locale} does not name the adjustment remedy`).toMatch(
+        locale === 'ar' ? /تسوية/ : /adjustment/i
+      );
+    }
+  });
+
+  it('does not let an uncatalogued route-parameter rule displace the kind banner', () => {
+    /*
+     * `grant_revoked` is one of several route-parameter rules the API emits with
+     * no message in the catalogue. It reaches `form.violation.invalid` — "This
+     * value is not accepted here" — which says LESS than the conflict banner it
+     * would replace, so the specific-or-nothing rule keeps the kind's sentence.
+     */
+    const revoked: ApiFailure = {
+      ok: false,
+      kind: 'conflict',
+      status: 409,
+      problem: {
+        code: 'ERR-RES-002',
+        violations: [{ path: 'path.grantId', rule: 'grant_revoked' }],
+      },
+      correlationId: 'corr-grant',
+    };
+    expect(violationKeysOf(revoked).formKeys).toEqual([VIOLATION_FALLBACK_KEY]);
+    expect(fromFailure(revoked, 1).messageKey).toBe('state.conflict.blocked.title');
   });
 });

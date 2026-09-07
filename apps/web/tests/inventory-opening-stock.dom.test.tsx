@@ -9,8 +9,17 @@
  * quantity as typed (a zero or malformed one is refused before any request);
  * every echo is rendered as sent; the approval is offered only to holders of
  * `inv.adjustment.approve`; and the server's maker ≠ checker refusal is shown
- * as a refusal and leaves the batch a draft. The screen's statement that no
- * batch read exists is asserted too — an absence stated, not hidden.
+ * as a refusal and leaves the batch a draft. Its OTHER refusal — a cell the
+ * branch has already opened — is told apart from that one and explained,
+ * without the second-person hint that would not cure it.
+ *
+ * The RECOVERY half is asserted below it: the branch's batches are listed with
+ * the status and the line count the server gave them; opening one renders
+ * `inv.opening-batch-read`'s answer rather than anything this tab typed; an
+ * empty branch, a refused list and an unreadable batch are three different
+ * sentences; and a person who never counted the batch reaches it from the list
+ * and approves it, which is the maker-and-checker rule satisfied without a
+ * shared browser tab. Both languages, including right to left.
  */
 
 import { screen, waitFor, within } from '@testing-library/react';
@@ -28,6 +37,8 @@ const labelled = (key: string) => new RegExp(`^${escape(EN[key] as string)}`);
 const listItems = vi.fn();
 const listLocations = vi.fn();
 const listBranches = vi.fn();
+const listOpeningBatches = vi.fn();
+const readOpeningBatch = vi.fn();
 const createOpeningBatch = vi.fn();
 const createOpeningBatchLine = vi.fn();
 const approveOpeningBatch = vi.fn();
@@ -36,6 +47,8 @@ vi.mock('@/features/inventory/api', () => ({
   listItems: (...args: unknown[]) => listItems(...args),
   listLocations: (...args: unknown[]) => listLocations(...args),
   listBranches: (...args: unknown[]) => listBranches(...args),
+  listOpeningBatches: (...args: unknown[]) => listOpeningBatches(...args),
+  readOpeningBatch: (...args: unknown[]) => readOpeningBatch(...args),
   // `./shared` names this export; this screen never calls it.
   listItemCategories: vi.fn(),
   createOpeningBatch: (...args: unknown[]) => createOpeningBatch(...args),
@@ -114,6 +127,53 @@ const line = {
   quantity: '12.000',
 };
 
+/*
+ * The RECOVERY fixtures — what the server holds, as opposed to what this tab
+ * happened to type. The SKU, the item name, the location code and the quantity
+ * below appear NOWHERE in the create path above, so a test that finds them on
+ * screen has proved the screen rendered `inv.opening-batch-read`'s answer and
+ * not its own memory of a line it added.
+ */
+const OTHER_BATCH_ID = '99999999-9999-4999-8999-999999999999';
+const SERVER_LINE_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+const summary = {
+  id: BATCH_ID,
+  companyId: COMPANY_ID,
+  branchId: BRANCH_ID,
+  batchCode: 'OPEN-2026',
+  asOfDate: '2026-09-06',
+  status: 'draft',
+  countedBy: 'user-1',
+  approvedBy: null,
+  approvedAt: null,
+  lineCount: 1,
+  createdAt: '2026-09-06T08:00:00.000Z',
+  recordVersion: 1,
+};
+const approvedSummary = {
+  ...summary,
+  id: OTHER_BATCH_ID,
+  batchCode: 'OPEN-2025',
+  asOfDate: '2025-01-02',
+  status: 'approved',
+  approvedBy: 'user-2',
+  approvedAt: '2025-01-03T09:00:00.000Z',
+  lineCount: 4,
+  recordVersion: 2,
+};
+const serverLine = {
+  id: SERVER_LINE_ID,
+  batchId: BATCH_ID,
+  itemId: ITEM_ID,
+  sku: 'FLT-009',
+  itemName: 'Oil filter',
+  locationId: LOCATION_ID,
+  locationCode: 'WH-9',
+  quantity: '7.250',
+};
+const detail = { batch: summary, lines: [serverLine] };
+
 const okRead = (data: unknown) => ({ status: 'ok' as const, data, correlationId: 'corr' });
 const cursor = (items: readonly unknown[]) => okRead({ items, nextCursor: null, hasMore: false });
 const page = (rows: readonly unknown[]) => ({
@@ -131,6 +191,25 @@ const conflict = () => ({
   state: {
     status: 'conflict' as const,
     messageKey: 'state.conflict.title',
+    attempt: 1,
+    correlationId: 'corr',
+  },
+  created: null,
+});
+/**
+ * The OTHER refusal of the same route: the branch has already opened a balance
+ * for a cell this batch counts.
+ *
+ * Also a `conflict`, so the status cannot tell the two apart — the KEY does.
+ * `fromFailure` produces exactly this state from the 409 the API sends
+ * (`path.batchId` + `duplicate_opening_cell`); `inventory-api.test.ts` asserts
+ * that mapping against the real body, which is what keeps this fixture from
+ * being a state the suite invented for itself.
+ */
+const duplicateOpeningCell = () => ({
+  state: {
+    status: 'conflict' as const,
+    messageKey: 'form.violation.duplicate_opening_cell',
     attempt: 1,
     correlationId: 'corr',
   },
@@ -182,7 +261,19 @@ async function openBatch(user: ReturnType<typeof userEvent.setup>) {
     within(panel).getByRole('button', { name: EN['inventory.opening.batch.open'] as string })
   );
   await waitFor(() => expect(createOpeningBatch).toHaveBeenCalled());
-  await screen.findByText(EN['inventory.opening.batch.holdNote'] as string);
+  await screen.findByText(EN['inventory.opening.batch.serverNote'] as string);
+}
+
+/** One row's cells as text, so a column assertion is about columns. */
+const cells = (row: HTMLElement | undefined): readonly string[] =>
+  within(row as HTMLElement)
+    .getAllByRole('cell')
+    .map((cell) => (cell.textContent ?? '').trim());
+
+/** Open a listed batch by its code, which is part of every open button's name. */
+async function openListed(user: ReturnType<typeof userEvent.setup>, code: string) {
+  await user.click(await screen.findByRole('button', { name: new RegExp(escape(code)) }));
+  await waitFor(() => expect(readOpeningBatch).toHaveBeenCalled());
 }
 
 async function addLine(user: ReturnType<typeof userEvent.setup>, quantity = '12.000') {
@@ -215,6 +306,10 @@ beforeEach(() => {
   listItems.mockResolvedValue(page([item]));
   listLocations.mockResolvedValue(cursor([warehouse]));
   listBranches.mockResolvedValue(okRead({ items: [branch] }));
+  // Empty by default so the chain tests below describe a fresh branch; the
+  // recovery tests give this read rows of their own.
+  listOpeningBatches.mockResolvedValue(cursor([]));
+  readOpeningBatch.mockResolvedValue(okRead(detail));
   createOpeningBatch.mockResolvedValue(success(draft, 'inventory.opening.batch.success'));
   createOpeningBatchLine.mockResolvedValue(success(line, 'inventory.opening.line.success'));
   approveOpeningBatch.mockResolvedValue(
@@ -226,9 +321,11 @@ beforeEach(() => {
 });
 
 describe('the chain, in order', () => {
-  it('states that no batch read exists, and offers no batch form before a branch is chosen', async () => {
+  it('states that a batch is reachable after this page, and offers no batch form before a branch is chosen', async () => {
     renderScreen();
-    expect(screen.getByText(EN['inventory.opening.noBatchRead'] as string)).toBeVisible();
+    expect(screen.getByText(EN['inventory.opening.batchesReadable'] as string)).toBeVisible();
+    // Nothing is read before a branch is named: the list is branch-targeted.
+    expect(listOpeningBatches).not.toHaveBeenCalled();
     expect(
       screen.queryByRole('form', { name: EN['inventory.opening.batch.new'] as string })
     ).toBeNull();
@@ -381,6 +478,242 @@ describe('the chain, in order', () => {
     expect(screen.getByText(EN['inventory.opening.status.draft'] as string)).toBeVisible();
     expect(form('inventory.opening.line.heading')).toBeVisible();
   });
+
+  it('a cell the branch already opened is explained, and does not send the approver for a colleague', async () => {
+    /*
+     * The refusal that used to reach the screen as nothing at all: the client
+     * read violations only on a 422, and `path.batchId` named a control no form
+     * renders, so both halves of it were dropped and the approver got the
+     * generic conflict title.
+     *
+     * The second assertion is the one that matters as much as the first. A
+     * second person cannot cure this — they would be refused for the same
+     * reason — so the standing "a second person must approve" hint must not be
+     * paired with it.
+     */
+    const user = userEvent.setup();
+    approveOpeningBatch.mockResolvedValue(duplicateOpeningCell());
+    renderScreen({ canApprove: true });
+    await chooseBranch(user);
+    await openBatch(user);
+    await addLine(user);
+    await screen.findByText('12.000');
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.opening.approve.action'] as string })
+    );
+    expect(
+      await screen.findByText(EN['form.violation.duplicate_opening_cell'] as string, {
+        exact: false,
+      })
+    ).toBeVisible();
+    expect(screen.queryByText(EN['inventory.opening.approve.secondPerson'] as string)).toBeNull();
+    expect(screen.getByText(EN['inventory.opening.status.draft'] as string)).toBeVisible();
+  });
+
+  it('in Arabic, right to left, the same refusal is explained in Arabic', async () => {
+    const user = userEvent.setup();
+    approveOpeningBatch.mockResolvedValue(duplicateOpeningCell());
+    listOpeningBatches.mockResolvedValue(cursor([summary]));
+    renderRtl(
+      <OpeningStockScreen
+        locale="ar"
+        messages={ar}
+        canOperate={false}
+        canApprove={true}
+        canReadBranches={true}
+      />
+    );
+    expect(document.documentElement.dir).toBe('rtl');
+    const target = screen.getByRole('form', {
+      name: AR['inventory.opening.targetLabel'] as string,
+    });
+    await user.selectOptions(await within(target).findByRole('combobox'), BRANCH_ID);
+    await user.click(
+      within(target).getByRole('button', { name: AR['inventory.opening.chooseBranch'] as string })
+    );
+    await openListed(user, 'OPEN-2026');
+    await user.click(
+      await screen.findByRole('button', { name: AR['inventory.opening.approve.action'] as string })
+    );
+    expect(
+      await screen.findByText(AR['form.violation.duplicate_opening_cell'] as string, {
+        exact: false,
+      })
+    ).toBeVisible();
+    // Arabic, not the English string reached through a missing key.
+    expect(AR['form.violation.duplicate_opening_cell']).not.toBe(
+      EN['form.violation.duplicate_opening_cell']
+    );
+    expect(screen.queryByText(AR['inventory.opening.approve.secondPerson'] as string)).toBeNull();
+  });
+});
+
+describe('the recovery path — a batch is reachable after the page is left', () => {
+  it('lists the branch batches with the status and the line count the server gave them', async () => {
+    const user = userEvent.setup();
+    listOpeningBatches.mockResolvedValue(cursor([summary, approvedSummary]));
+    renderScreen();
+    await chooseBranch(user);
+    const table = await screen.findByRole('table', {
+      name: EN['inventory.opening.batches.caption'] as string,
+    });
+    expect(listOpeningBatches).toHaveBeenCalledWith({
+      companyId: COMPANY_ID,
+      branchId: BRANCH_ID,
+    });
+    const rows = within(table).getAllByRole('row');
+    // Cell by cell, because the batch code also appears inside the row's own
+    // open button — that is deliberate (it is what names the button) and a
+    // by-text lookup would find two nodes and say nothing about the columns.
+    expect(cells(rows[1])).toEqual([
+      'OPEN-2026',
+      '2026-09-06',
+      EN['inventory.opening.status.draft'] as string,
+      // The server's own line count, rendered as given — nothing is counted here.
+      '1',
+      `${EN['inventory.opening.batches.open'] as string} OPEN-2026`,
+    ]);
+    expect(cells(rows[2])).toEqual([
+      'OPEN-2025',
+      '2025-01-02',
+      EN['inventory.opening.status.approved'] as string,
+      '4',
+      `${EN['inventory.opening.batches.open'] as string} OPEN-2025`,
+    ]);
+  });
+
+  it('an operator who left the page opens their draft again and sees the lines the server holds', async () => {
+    const user = userEvent.setup();
+    listOpeningBatches.mockResolvedValue(cursor([summary]));
+    renderScreen();
+    await chooseBranch(user);
+    // Nothing was created in this render: this is the reload case.
+    expect(createOpeningBatch).not.toHaveBeenCalled();
+    await openListed(user, 'OPEN-2026');
+    expect(readOpeningBatch).toHaveBeenCalledWith(BATCH_ID);
+    const lines = await screen.findByRole('table', {
+      name: EN['inventory.opening.lines.caption'] as string,
+    });
+    expect(within(lines).getByText('FLT-009')).toBeVisible();
+    expect(within(lines).getByText(/Oil filter/)).toBeVisible();
+    expect(within(lines).getByText('WH-9')).toBeVisible();
+    // The decimal string exactly as the server published it.
+    expect(within(lines).getByText('7.250')).toBeVisible();
+    expect(screen.getByText(EN['inventory.opening.batch.serverNote'] as string)).toBeVisible();
+  });
+
+  it('a second person, who may approve but not count, reaches the batch and approves it', async () => {
+    const user = userEvent.setup();
+    listOpeningBatches.mockResolvedValue(cursor([summary]));
+    renderScreen({ canOperate: false, canApprove: true });
+    await chooseBranch(user);
+    const readsBefore = listOpeningBatches.mock.calls.length;
+    await openListed(user, 'OPEN-2026');
+    // The approver counts nothing: no batch form and no line form are offered.
+    expect(
+      screen.queryByRole('form', { name: EN['inventory.opening.batch.new'] as string })
+    ).toBeNull();
+    expect(
+      screen.queryByRole('form', { name: EN['inventory.opening.line.heading'] as string })
+    ).toBeNull();
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.opening.approve.action'] as string })
+    );
+    await waitFor(() => expect(approveOpeningBatch).toHaveBeenCalledWith(BATCH_ID));
+    expect(
+      await screen.findByText(EN['inventory.opening.approve.approved'] as string)
+    ).toBeVisible();
+    // The list is read again, so it cannot go on calling an approved batch a draft.
+    await waitFor(() => expect(listOpeningBatches.mock.calls.length).toBeGreaterThan(readsBefore));
+  });
+
+  it('a branch with no batch says so, and offers no table to read', async () => {
+    const user = userEvent.setup();
+    listOpeningBatches.mockResolvedValue(cursor([]));
+    renderScreen();
+    await chooseBranch(user);
+    expect(await screen.findByText(EN['inventory.opening.batches.none'] as string)).toBeVisible();
+    expect(
+      screen.queryByRole('table', { name: EN['inventory.opening.batches.caption'] as string })
+    ).toBeNull();
+    expect(screen.queryByText(EN['inventory.opening.batches.refused'] as string)).toBeNull();
+  });
+
+  it('a list that could not be read offers another attempt; a refused one says so and does not', async () => {
+    const user = userEvent.setup();
+    listOpeningBatches.mockResolvedValue({ status: 'unavailable' as const, correlationId: 'corr' });
+    const unavailable = renderScreen();
+    await chooseBranch(user);
+    expect(
+      await screen.findByText(EN['inventory.opening.batches.unavailable'] as string)
+    ).toBeVisible();
+    expect(screen.queryByText(EN['inventory.opening.batches.none'] as string)).toBeNull();
+    const attempts = listOpeningBatches.mock.calls.length;
+    await user.click(screen.getByRole('button', { name: EN['state.retry'] as string }));
+    await waitFor(() => expect(listOpeningBatches.mock.calls.length).toBeGreaterThan(attempts));
+    unavailable.unmount();
+
+    listOpeningBatches.mockResolvedValue({ status: 'denied' as const, correlationId: 'corr' });
+    renderScreen();
+    await chooseBranch(user);
+    expect(
+      await screen.findByText(EN['inventory.opening.batches.refused'] as string)
+    ).toBeVisible();
+    expect(screen.queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
+  });
+
+  it('a batch that cannot be read is said as that, and no line is invented', async () => {
+    const user = userEvent.setup();
+    listOpeningBatches.mockResolvedValue(cursor([summary]));
+    readOpeningBatch.mockResolvedValue({ status: 'not-found' as const, correlationId: 'corr' });
+    renderScreen();
+    await chooseBranch(user);
+    await openListed(user, 'OPEN-2026');
+    expect(await screen.findByText(EN['inventory.opening.detail.gone'] as string)).toBeVisible();
+    expect(
+      screen.queryByRole('table', { name: EN['inventory.opening.lines.caption'] as string })
+    ).toBeNull();
+    expect(screen.queryByText(EN['inventory.opening.batch.serverNote'] as string)).toBeNull();
+  });
+
+  it('in Arabic, right to left, the batch is listed and read back in the same words', async () => {
+    const user = userEvent.setup();
+    listOpeningBatches.mockResolvedValue(cursor([summary]));
+    renderRtl(
+      <OpeningStockScreen
+        locale="ar"
+        messages={ar}
+        canOperate={false}
+        canApprove={true}
+        canReadBranches={true}
+      />
+    );
+    expect(document.documentElement.dir).toBe('rtl');
+    const target = screen.getByRole('form', {
+      name: AR['inventory.opening.targetLabel'] as string,
+    });
+    await user.selectOptions(await within(target).findByRole('combobox'), BRANCH_ID);
+    await user.click(
+      within(target).getByRole('button', {
+        name: AR['inventory.opening.chooseBranch'] as string,
+      })
+    );
+    const table = await screen.findByRole('table', {
+      name: AR['inventory.opening.batches.caption'] as string,
+    });
+    expect(screen.getByText(AR['inventory.opening.batches.heading'] as string)).toBeVisible();
+    expect(within(table).getByText(AR['inventory.opening.status.draft'] as string)).toBeVisible();
+    await openListed(user, 'OPEN-2026');
+    const lines = await screen.findByRole('table', {
+      name: AR['inventory.opening.lines.caption'] as string,
+    });
+    expect(within(lines).getByText('7.250')).toBeVisible();
+    expect(within(lines).getByText('WH-9')).toBeVisible();
+    expect(screen.getByText(AR['inventory.opening.batch.serverNote'] as string)).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: AR['inventory.opening.approve.action'] as string })
+    ).toBeVisible();
+  });
 });
 
 describe('the route page', () => {
@@ -469,7 +802,7 @@ describe('the route page', () => {
     ).toBeVisible();
   });
 
-  it('renders in Arabic, right to left, with the same statement of what is missing', async () => {
+  it('renders in Arabic, right to left, with the same statement about reaching a batch again', async () => {
     const { container } = renderRtl(
       <OpeningStockScreen
         locale="ar"
@@ -479,7 +812,7 @@ describe('the route page', () => {
         canReadBranches={false}
       />
     );
-    expect(screen.getByText(AR['inventory.opening.noBatchRead'] as string)).toBeVisible();
+    expect(screen.getByText(AR['inventory.opening.batchesReadable'] as string)).toBeVisible();
     expect(container.querySelector('[dir="rtl"], [dir="ltr"]')).not.toBeNull();
   });
 });

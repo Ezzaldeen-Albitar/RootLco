@@ -377,11 +377,15 @@ export interface ReservationCriteria {
  * | `inv.opening-batch-create`       | POST   | `/opening-inventory-batches`                    | `inv.stock.operate`      |
  * | `inv.opening-batch-line-create`  | POST   | `/opening-inventory-batches/{batchId}/lines`    | `inv.stock.operate`      |
  * | `inv.opening-batch-approve`      | POST   | `/opening-inventory-batches/{batchId}/approval` | `inv.adjustment.approve` |
+ * | `inv.opening-batch-list`         | GET    | `/opening-inventory-batches`                    | `inv.stock.read`         |
+ * | `inv.opening-batch-read`         | GET    | `/opening-inventory-batches/{batchId}`          | `inv.stock.read`         |
  *
- * No batch list or detail read exists (register area C, line C-2): a batch is
- * readable only through the echoes of the writes that made it, until its
- * approval posts the opening movements, which `inv.stock-movement-list` and
- * `inv.stock-availability-read` then publish. The screen says so.
+ * The two reads landed with the batch-recovery slice (seam S-17) on
+ * `inv.stock.read`, the code the opening-stock page already gates on. Before
+ * them a batch was write-only on the wire, so it survived only as the state of
+ * the tab that created it; now a batch persists AND is reachable — listed for
+ * its branch, and read back with its counted lines — which is what makes the
+ * maker-and-checker rule satisfiable by a second person in their own session.
  * ------------------------------------------------------------------ */
 
 /** The server category-code rule, lower-case snake case. Mirrors `CATEGORY_CODE_FORMAT`. */
@@ -446,4 +450,52 @@ export interface OpeningBatchLine {
   readonly itemId: string;
   readonly locationId: string;
   readonly quantity: string;
+}
+
+/**
+ * One row of `inv.opening-batch-list` and the header of
+ * `inv.opening-batch-read` (`OpeningBatchListView`).
+ *
+ * A superset of the write echo above, so a batch read back from the server can
+ * be shown by the same panel that shows a batch just opened. `countedBy` and
+ * `approvedBy` are user identifiers exactly as stored — the approver is the
+ * half of the maker-and-checker rule a reader has to be able to check, and
+ * resolving either to a display name is a separate read with its own
+ * permission question. `status` is left a `string`: the values the server
+ * publishes are its own, and the screen renders the one it is given rather
+ * than a set this file would have to keep in step.
+ */
+export interface OpeningBatchSummary {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly batchCode: string;
+  /** A plain ISO date — `as_of_date` is a `date`, with no time to publish. */
+  readonly asOfDate: string;
+  readonly status: string;
+  readonly countedBy: string;
+  readonly approvedBy: string | null;
+  readonly approvedAt: string | null;
+  /** The server's own count of the counted lines. Never derived here. */
+  readonly lineCount: number;
+  readonly createdAt: string;
+  readonly recordVersion: number;
+}
+
+/**
+ * One counted line as `inv.opening-batch-read` publishes it
+ * (`OpeningBatchLineView`): the create echo plus the codes the operator chose
+ * the cell by, so a batch read back names its items and locations without a
+ * second read. `quantity` stays the exact decimal string.
+ */
+export interface OpeningBatchLineDetail extends OpeningBatchLine {
+  readonly sku: string;
+  readonly itemName: string;
+  readonly locationCode: string;
+}
+
+/** The answer of `inv.opening-batch-read` (`OpeningBatchDetailView`): a batch and everything counted on it. */
+export interface OpeningBatchDetail {
+  readonly batch: OpeningBatchSummary;
+  readonly lines: readonly OpeningBatchLineDetail[];
 }

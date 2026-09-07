@@ -37,6 +37,8 @@ construction (the gate finds 0 violations across the five inventory route pages)
 | `inv.opening-batch-create`      | opening: batch form              | P1-21        |
 | `inv.opening-batch-line-create` | opening: line form               | P1-21        |
 | `inv.opening-batch-approve`     | opening: approval                | P1-21        |
+| `inv.opening-batch-list`        | opening: the branch's batches    | #334 S-17    |
+| `inv.opening-batch-read`        | opening: a batch and its lines   | #334 S-17    |
 
 Zero migrations, zero permission codes, zero API changes: the `p1-30-frontend` ownership profile
 forbids all three and the gate reports 0 violations against the #322 head.
@@ -54,8 +56,16 @@ forbids all three and the gate reports 0 violations against the #322 head.
   **Closed 2026-09-07 on the Backend lane** (A0 seam S-17): `inv.opening-batch-list`
   (`GET /opening-inventory-batches`, company and branch required) and `inv.opening-batch-read`
   (`GET /opening-inventory-batches/{batchId}`, with the counted lines) are published on
-  `inv.stock.read`, the permission this page already gates on. The screen still renders echoes and
-  still carries the statement above; rebuilding it on the two reads is a separate Frontend task.
+  `inv.stock.read`, the permission this page already gates on.
+
+  **Consumed 2026-09-07 on the Frontend lane** (`feature/p1-30-opening-batch-recovery`): the
+  opening-stock screen now lists the chosen branch's batches with the status and the line count the
+  server gave them, and opens one to render `inv.opening-batch-read`'s answer — its header and its
+  counted lines, with the item and location codes the server resolved. The two sentences the screen
+  and this record carried, that a batch could not be read back and that no operation listed batches,
+  were removed from both catalogues because they became false. An operator who reloaded returns to
+  their draft, and a second person reaches the batch in their own session, which is the
+  maker-and-checker rule satisfied without a shared browser tab.
 
 - **The line create carries no idempotency key, and that is now a decision** (CC-17).
   `inv.opening-batch-line-create` is published without `idempotent: true`, unlike the batch create

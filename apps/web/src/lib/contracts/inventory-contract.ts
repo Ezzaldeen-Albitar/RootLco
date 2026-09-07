@@ -117,9 +117,12 @@ export interface StockLocationCreateBody {
 
 /**
  * `inv.opening-batch-create` — `POST /opening-inventory-batches`. `asOfDate`
- * is a plain ISO date (the column is a `date`). The batch is the only path
- * by which stock first appears, and nothing reads it back: no batch list or
- * detail operation exists, so the screen holds the echo until approval.
+ * is a plain ISO date (the column is a `date`). The batch is the only path by
+ * which stock first appears. `GET /opening-inventory-batches` and
+ * `GET /opening-inventory-batches/{batchId}` read it back on `inv.stock.read`,
+ * so the screen no longer depends on holding this echo; the reads carry no
+ * request body and are mirrored as view types in the feature contract rather
+ * than here.
  */
 export interface OpeningBatchCreateBody {
   readonly companyId: string;
