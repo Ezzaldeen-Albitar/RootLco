@@ -247,16 +247,35 @@ describe('wo.work-order-list', () => {
       branchId: BRANCH_B1,
     });
 
-    // Tenant B's grant is UNRESTRICTED, and an unrestricted grant is tenant-bounded
-    // by construction — `iam.has_permission_in_scope` short-circuits on
-    // `scope_mode = 'unrestricted'` without consulting the target at all. So
-    // authorization cannot and should not refuse this request; what contains it is
-    // the tenant predicate, and the honest answer is an EMPTY page rather than a
-    // 403 or 404 that would confirm the foreign branch exists.
+    // Tenant B's grant is UNRESTRICTED, so `iam.has_permission_in_scope`
+    // short-circuits on `scope_mode = 'unrestricted'` and answers true for ANY
+    // pair — the permission check is not, and cannot be, the tenant boundary.
+    // Since CC-14 the pre-handler resolves the named pair to a branch visible to
+    // the caller inside its own tenant BEFORE the board is read, so this is now
+    // a refusal rather than the empty page RLS used to produce. It is a 403 and
+    // not a 404: a not-found would confirm the branch exists somewhere.
     authAs(TENANT_B_FULL);
     const foreign = await board();
-    expect(foreign.status).toBe(200);
-    expect((await page(foreign)).items).toEqual([]);
+    expect(foreign.status).toBe(403);
+    const foreignBody = (await foreign.json()) as Record<string, unknown>;
+    expect(foreignBody.code).toBe('ERR-IAM-001');
+
+    // And a pair that exists NOWHERE is refused identically. The two problem
+    // documents are compared whole, with only the correlation id nulled, because
+    // a difference in any other field — status, code, title, detail, the
+    // required permissions — would be the enumeration oracle this refusal exists
+    // to remove.
+    authAs(TENANT_B_FULL);
+    const nowhere = await list({
+      companyId: crypto.randomUUID(),
+      branchId: crypto.randomUUID(),
+    });
+    expect(nowhere.status).toBe(403);
+    const nowhereBody = (await nowhere.json()) as Record<string, unknown>;
+    expect({ ...nowhereBody, correlationId: null }).toEqual({
+      ...foreignBody,
+      correlationId: null,
+    });
 
     authAs(TENANT_B_FULL);
     const own = await list({ companyId: COMPANY_B1, branchId: BRANCH_B1 });

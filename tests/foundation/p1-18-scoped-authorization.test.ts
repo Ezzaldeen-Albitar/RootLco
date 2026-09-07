@@ -52,6 +52,7 @@ import { join } from 'node:path';
 import {
   evaluatePermissions,
   requirePermissions,
+  requireScopeTargetInTenant,
   requireScopedPermissions,
   type AuthorizationTarget,
 } from '@/server/auth/authorization';
@@ -572,6 +573,11 @@ describe('F7 · transaction binding', () => {
     const body = source.slice(call, end);
     expect(body).toContain('requirePermissions(db, operation');
     expect(body).toContain('requireScopedPermissions(db, operation, target)');
+    // CC-14's probe is subject to the same containment: hoisted out of the
+    // callback it would run on a different handle, or on none.
+    expect(body).toContain(
+      'requireScopeTargetInTenant(db, operation, options.authorizationTarget)'
+    );
 
     // And nowhere else: a second construction site outside the callback would
     // be the refactor this test exists to catch.
@@ -1102,5 +1108,122 @@ describe('F10 · structural completeness of the locked-row path', () => {
       expect(source).not.toContain('db/pool');
       expect(source).not.toMatch(/from\s+'pg'/);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F9 — the scope target is resolved inside the tenant, before the read (CC-14)
+// ---------------------------------------------------------------------------
+
+/**
+ * `requireScopeTargetInTenant` is the layer that decides, rather than letting
+ * row-level security answer an unrestricted holder's foreign pair with an empty
+ * page. What this tier can prove without a database is the CONTRACT: which
+ * statement is issued, with which bindings in which order, how many statements a
+ * half target costs (none), and that the refusal names no resource.
+ *
+ * What it cannot prove is that `sel_branches_scope` narrows the probe — that is
+ * the database's, and `tests/backend/authorization.test.ts` plus the read suites
+ * prove it against a real server.
+ */
+describe('F9 · scope target resolved inside the tenant', () => {
+  /** A handle that answers the EXISTS probe with the supplied verdict. */
+  function branchRecorder(ok: boolean): Recorder {
+    const queries: RecordedQuery[] = [];
+    const db = {
+      context: CONTEXT,
+      depth: 0,
+      query: (text: string, values: readonly unknown[] = []) => {
+        queries.push({ text, values, handle: db as DbHandle });
+        return Promise.resolve({ rows: [{ ok }] });
+      },
+    } as unknown as DbHandle;
+    return { db, queries };
+  }
+
+  it('resolves a full target with ONE statement against org.branches', async () => {
+    const op = operation({ permissions: ['inv.stock.read'], scope: 'branch' });
+    const { db, queries } = branchRecorder(true);
+
+    await requireScopeTargetInTenant(db, op, TARGET);
+
+    expect(queries).toHaveLength(1);
+    expect(at(queries, 0).text).toContain('FROM org.branches');
+    // The tenant comes from the CONTEXT and the pair from the target, in that
+    // order. A test that only asserted the values were present would pass on a
+    // predicate that compared the branch to the company.
+    expect(at(queries, 0).values).toEqual([TENANT, COMPANY, BRANCH]);
+    expect(at(queries, 0).handle).toBe(db);
+  });
+
+  it('excludes a soft-deleted branch in the same statement', async () => {
+    const op = operation({ permissions: ['inv.stock.read'], scope: 'branch' });
+    const { db, queries } = branchRecorder(true);
+
+    await requireScopeTargetInTenant(db, op, TARGET);
+
+    // Without this the refusal would not be identical for a soft-deleted branch,
+    // which is one of the four cases the contract says are indistinguishable.
+    expect(at(queries, 0).text).toContain('deleted_at IS NULL');
+  });
+
+  it('issues NO statement for an empty or half-specified target', async () => {
+    const op = operation({ permissions: ['iam.company.settings.read'], scope: 'company' });
+
+    for (const target of [
+      {},
+      { companyId: COMPANY },
+      { branchId: BRANCH },
+    ] satisfies readonly AuthorizationTarget[]) {
+      const { db, queries } = branchRecorder(false);
+      await requireScopeTargetInTenant(db, op, target);
+      // `false` would refuse a full target; these resolve anyway, so the early
+      // return is what is being measured and not a lucky verdict. The six
+      // half-target operations — iam.company-settings-read/write,
+      // iam.branch-settings-read/write, shared.branch-status-read/change — pass
+      // through here untouched.
+      expect(queries).toHaveLength(0);
+    }
+  });
+
+  it('issues no statement for a public operation, even with a full target', async () => {
+    const op = defineOperation({
+      ...BASE,
+      id: 'reception.fixture-public',
+      path: '/fixtures/public',
+      method: 'GET',
+      permissions: [],
+      public: true,
+      publicReason: 'Fixture: a public operation has no principal to narrow.',
+    });
+    const { db, queries } = branchRecorder(false);
+
+    await requireScopeTargetInTenant(db, op, TARGET);
+
+    expect(queries).toHaveLength(0);
+  });
+
+  it('refuses with ERR-IAM-001 and names no company or branch', async () => {
+    const op = operation({ permissions: ['inv.stock.read'], scope: 'branch' });
+    const { db } = branchRecorder(false);
+
+    const failure = await failureFrom(requireScopeTargetInTenant(db, op, TARGET));
+
+    expect(failure.code).toBe('ERR-IAM-001');
+    expect(failure.status).toBe(403);
+    expect(failure.safeDetails).toEqual({ requiredPermissions: [...op.permissions] });
+    // The message may name the OPERATION — that is public API metadata — but
+    // echoing the pair back would confirm a guess.
+    expect(failure.message).not.toContain(COMPANY);
+    expect(failure.message).not.toContain(BRANCH);
+    // And it is not the deferred-target refusal, which is a different defect
+    // with a different remedy.
+    expect(failure.message).not.toContain('deferred scoped authorization requires');
+  });
+
+  it('accepts (db, operation, target) and no permission argument', () => {
+    // The same property F1 pins for the other two entry points: a fourth
+    // parameter would be the way a caller could substitute its own code.
+    expect(requireScopeTargetInTenant).toHaveLength(3);
   });
 });

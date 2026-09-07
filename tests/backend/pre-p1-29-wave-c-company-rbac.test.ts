@@ -890,20 +890,27 @@ describe('G-6: departments acquire a way in', () => {
   it('W32 shows tenant B none of tenant A’s departments', async () => {
     // Tenant B asks for tenant A's exact company/branch pair. The permission is
     // satisfied — tenant B holds org.department.read unrestricted in its OWN
-    // tenant — so what refuses this is scope and RLS, not the permission.
+    // tenant — so the permission check cannot refuse it. Since CC-14 the
+    // pre-handler resolves the pair against a branch visible to the caller
+    // inside its own tenant and refuses BEFORE the list is read, so the answer
+    // is exactly 403 rather than the empty page RLS used to produce.
     asTenantB();
     const result = await call<{ items: { id: string }[]; code?: string }>(departmentListRoute, {
       path: `/org/departments?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}`,
       method: 'GET',
     });
-    if (result.status === 200) {
-      // If the scope check admits it, the row-level predicate must still return
-      // nothing — asserting only the status would miss a leak entirely.
-      expect(result.body.items).toHaveLength(0);
-    } else {
-      expect(result.status).toBe(403);
-      expect(result.body.code).toBe('ERR-IAM-001');
-    }
+    expect(result.status).toBe(403);
+    expect(result.body.code).toBe('ERR-IAM-001');
+
+    // A pair that exists nowhere is refused the same way: the refusal must not
+    // distinguish a real foreign branch from one that was invented.
+    asTenantB();
+    const nowhere = await call<{ items: { id: string }[]; code?: string }>(departmentListRoute, {
+      path: `/org/departments?companyId=${randomUUID()}&branchId=${randomUUID()}`,
+      method: 'GET',
+    });
+    expect(nowhere.status).toBe(result.status);
+    expect(nowhere.body.code).toBe(result.body.code);
   }, 30_000);
 
   it('W26 renames a department and appends exactly one audit record', async () => {
