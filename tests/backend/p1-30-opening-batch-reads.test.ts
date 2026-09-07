@@ -95,6 +95,7 @@ import {
   authAs,
   cleanP1_21Fixtures,
   establishP1_21Fixtures,
+  freshLocation,
 } from './p1-21-helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
@@ -491,7 +492,14 @@ describe('inv.opening-batch-read', () => {
     // The recovery case the maker-checker rule needs. The approver reads the batch
     // they did not create, approves it, and reads it back.
     const batchId = await createBatch(BRANCH_A1);
-    await addLine(batchId, { itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '9.000' });
+    // A never-opened cell. `uq_stock_movements_opening_cell` allows one `opening`
+    // movement per (item, location) in a branch, and the status-filter case above
+    // already approved (ITEM_A, WAREHOUSE_A1) in this same branch.
+    await addLine(batchId, {
+      itemId: ITEM_A,
+      locationId: await freshLocation(),
+      quantity: '9.000',
+    });
 
     authAs(INV_APPROVER);
     const beforeApproval = (await (await batchRead(batchId)).json()) as DetailBody;

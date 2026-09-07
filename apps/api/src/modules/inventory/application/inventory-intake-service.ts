@@ -335,6 +335,42 @@ export class InventoryIntakeService {
     try {
       await this.repository.approveOpeningBatch(db, batchId);
     } catch (error) {
+      /*
+       * `uq_stock_movements_opening_cell` allows ONE `opening` movement per
+       * (tenant, company, branch, item, location).
+       *
+       * Nothing used to stop two DRAFT batches in one branch from counting the
+       * same item at the same location: `uq_opening_inventory_lines_cell` carries
+       * `batch_id`, so it is exactly-once INSIDE a batch, and
+       * `inv.approve_opening_batch` locks and checks only its own batch row.
+       * Approving both posted two `opening` movements into that cell and doubled
+       * the stock — with a ledger that stayed internally coherent, because
+       * `on_hand` really was the sum of the movements. The Owner ruled that a
+       * second count of the same cell is never legitimate, and the index makes it
+       * unrepresentable.
+       *
+       * ERR-RES-002 ("Resource already exists", 409) and not ERR-TRN-001: this is
+       * the SAME answer `addLine` gives for the duplicate cell it guards inside a
+       * batch, and the two refusals describe one rule at two ranges. Unmapped, the
+       * 23505 would reach the approver as ERR-SYS-001 — a 500 with an
+       * error-monitoring capture — for a rule the database enforced as designed.
+       *
+       * The message names the remedy, because the caller cannot deduce it: the
+       * ledger is append-only, so nothing here can be withdrawn, and the batch is
+       * still `draft` (the violation rolled back its own approval UPDATE with it).
+       * A wrong count is corrected by a stock ADJUSTMENT, which carries a reason
+       * and its own approval, never by a second opening.
+       */
+      if (isSqlState(error, SQLSTATE.uniqueViolation)) {
+        throw new AppFailure('ERR-RES-002', {
+          message:
+            'This branch has already opened a balance for an item at a location this batch also ' +
+            'counts. An opening balance is counted once per item and location, so the batch was ' +
+            'not approved and no stock moved. Correct the quantity with a stock adjustment ' +
+            'instead of approving a second opening count.',
+          safeDetails: { violations: [{ path: 'path.batchId', rule: 'duplicate_opening_cell' }] },
+        });
+      }
       toDomainFailure(error, 'Opening batch approval');
     }
 
