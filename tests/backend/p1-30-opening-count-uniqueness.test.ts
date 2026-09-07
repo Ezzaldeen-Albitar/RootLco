@@ -255,7 +255,7 @@ describe('inv.opening-batch-approve — one opening count per cell', () => {
     expect((await balanceOf(ITEM_A, cell))?.onHand).toBe('12.500');
   });
 
-  it('OC-2 refuses a second batch counting the same cell, and says what to do', async () => {
+  it('OC-2 refuses a second batch counting the same cell, and names the rule', async () => {
     const cell = await freshLocation();
     // Both counted while both are drafts — which is exactly the reachable case:
     // nothing stops two counters opening a batch each for the same shelf, and the
@@ -271,11 +271,34 @@ describe('inv.opening-batch-approve — one opening count per cell', () => {
     // one batch already returns — one rule at two ranges. Never ERR-SYS-001: the
     // database enforced a rule, it did not break.
     expect(refused.status).toBe(409);
-    const failure = await bodyOf<{ code: string; message: string }>(refused);
+    expect(refused.headers.get('content-type')).toContain('application/problem+json');
+    const failure = await bodyOf<{
+      code: string;
+      title: string;
+      violations?: { path: string; rule: string }[];
+    }>(refused);
     expect(failure.code).toBe('ERR-RES-002');
-    // The remedy is named, because the caller cannot deduce it: the ledger is
-    // append-only, so nothing posted can be withdrawn.
-    expect(failure.message).toMatch(/adjustment/i);
+    expect(failure.title).toBe('Resource already exists');
+
+    /*
+     * The RULE, not the sentence — and stated here because the difference is a
+     * real limit of the envelope rather than a weaker assertion.
+     *
+     * `problemFor` builds an RFC 9457 document from the CATALOG (`type`, `title`,
+     * `status`, `code`) plus the safe details a failure declares. It reads
+     * `failure.message` NOWHERE: the sentence naming the adjustment remedy is
+     * logged and carried on the AppFailure, and never reaches the wire. This case
+     * asserted `message` first and learned that from a hosted run, where it was
+     * `undefined`.
+     *
+     * So what a client can branch on is this violation, exactly as PR #334 left
+     * the duplicate cell inside a batch: `apps/web` renders
+     * `form.violation.<rule>` from its own message catalogue. That catalogue has
+     * no `duplicate_opening_cell` string yet — it is a Frontend-lane item this
+     * Backend slice may not write — and until it does, the operator sees the
+     * generic conflict title rather than the remedy. Recorded rather than hidden.
+     */
+    expect(failure.violations).toEqual([{ path: 'path.batchId', rule: 'duplicate_opening_cell' }]);
 
     // Nothing happened. The batch is still a draft — the violation rolled its own
     // approval UPDATE back with it — and the cell holds one count, not two.
