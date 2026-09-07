@@ -43,17 +43,36 @@ forbids all three and the gate reports 0 violations against the #322 head.
 
 ## 3. What the screens say because the API cannot
 
-- **No batch read exists.** There is no opening-batch list and no detail operation (register area C,
-  line C-2). A batch is therefore visible to the opening-stock page only through the echoes of the
-  writes that made it, and disappears from view when the page is left, although it persists on the
-  server. The page states this above the chain and beside the open batch, shows the batch id so it
-  can be quoted, and offers the approval on the same page. Building a read is a Backend read seam
-  (an A2-shaped slice on `remediation/p1-30-backend-*`), not a screen's to invent.
-- **The line create carries no idempotency key.** `inv.opening-batch-line-create` is published
-  without `idempotent: true` (unlike the batch create and the approval), so a repeated request adds
-  a second line. The form's busy flag is the only guard; `inventory-api.test.ts` asserts the
-  absence rather than pretending the transport carries a key it does not. Recorded as a P1-21
-  observation for the Backend lane, not changed here.
+- **No batch read existed when this screen shipped.** There was no opening-batch list and no detail
+  operation (register area C, line C-2). A batch was therefore visible to the opening-stock page only
+  through the echoes of the writes that made it, and disappeared from view when the page was left,
+  although it persisted on the server. The page states this above the chain and beside the open
+  batch, shows the batch id so it can be quoted, and offers the approval on the same page. Building
+  a read was a Backend read seam (an A2-shaped slice on `remediation/p1-30-backend-*`), not a
+  screen's to invent.
+
+  **Closed 2026-09-07 on the Backend lane** (A0 seam S-17): `inv.opening-batch-list`
+  (`GET /opening-inventory-batches`, company and branch required) and `inv.opening-batch-read`
+  (`GET /opening-inventory-batches/{batchId}`, with the counted lines) are published on
+  `inv.stock.read`, the permission this page already gates on. The screen still renders echoes and
+  still carries the statement above; rebuilding it on the two reads is a separate Frontend task.
+
+- **The line create carries no idempotency key, and that is now a decision** (CC-17).
+  `inv.opening-batch-line-create` is published without `idempotent: true`, unlike the batch create
+  and the approval.
+
+  **Correction, 2026-09-07 — the sentence this record previously carried was false.** It said a
+  repeated request "adds a second line". It does not. `uq_opening_inventory_lines_cell` allows one
+  live line per item and location inside a batch, so a repeat for the same cell is REFUSED by the
+  index — `409 ERR-RES-002` since the mapping landed, and a `500 ERR-SYS-001` with an
+  error-monitoring capture before it, which was the real defect. Only a genuinely different cell
+  adds a line, and that is a different count rather than a duplicate. The counted cell is therefore
+  exactly-once without a key, which is why no key was added: a key would force a header on every
+  call, would replay the first answer rather than accept a correction, and would create an
+  idempotency-evidence obligation with nothing to prove. The reasoning is written into the route's
+  own docblock. Correcting a counted cell — soft-deleting a draft line, or amending a quantity under
+  `If-Match` — is a real gap and a separate operation.
+
 - **No tenant unit writer exists** (register B-22). The units section lists the platform set plus
   whatever the organisation holds and says that organisation-specific units cannot be created here
   yet, instead of offering a form that would send nothing.

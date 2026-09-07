@@ -57,6 +57,7 @@ import {
   ITEM_A_ALT,
   ITEM_A_ARCHIVED,
   QUARANTINE_A1,
+  STORAGE_A1,
   WAREHOUSE_A1,
   WAREHOUSE_A2,
   auditCountFor,
@@ -126,6 +127,14 @@ const ledgerCount = (): Promise<number> =>
   countRowsOf(`SELECT count(*)::text AS n FROM inv.stock_movements WHERE tenant_id = $1`, [
     TENANT_A,
   ]);
+
+/** Live lines on one batch, counted in the database rather than from a response. */
+const lineCountOf = (batchId: string): Promise<number> =>
+  countRowsOf(
+    `SELECT count(*)::text AS n FROM inv.opening_inventory_lines
+      WHERE batch_id = $1 AND deleted_at IS NULL`,
+    [batchId]
+  );
 
 beforeAll(async () => {
   admin = adminPool();
@@ -226,6 +235,45 @@ describe('inv.opening-batch-create', () => {
     expect(await auditCountFor('inv.opening_batch.created', firstBody.id)).toBe(1);
   });
 
+  it('answers 409 for a batch code already used in the branch, not 500 (denial)', async () => {
+    // `uq_opening_inventory_batches_code` is partial on `deleted_at IS NULL` and
+    // makes the code unique inside a branch. The violation used to be UNMAPPED, so
+    // it left the service as a raw SQLSTATE 23505 and reached the caller as
+    // ERR-SYS-001 — a 500 saying the request broke the server, with an
+    // error-monitoring capture, for a rule the database enforced exactly as
+    // designed. This case is what makes the mapping falsifiable.
+    authAs(INV_FULL);
+    const batchCode = `FX-B-DUP-${Date.now() % 100000}`;
+    const payload = {
+      companyId: COMPANY_A1,
+      branchId: BRANCH_A1,
+      batchCode,
+      asOfDate: '2026-07-01',
+    };
+    expect((await post(BATCH_CREATE, '/api/v1/opening-inventory-batches', payload)).status).toBe(
+      201
+    );
+
+    // A DIFFERENT idempotency key, so this is a genuine second request and not a
+    // replay: the refusal comes from the unique index, not from the replay store.
+    const duplicate = await post(BATCH_CREATE, '/api/v1/opening-inventory-batches', payload);
+    expect(duplicate.status).toBe(409);
+    const failure = await bodyOf<{
+      code: string;
+      violations?: readonly { path: string; rule: string }[];
+    }>(duplicate);
+    expect(failure.code).toBe('ERR-RES-002');
+    expect(failure.violations).toEqual([{ path: 'body.batchCode', rule: 'duplicate_code' }]);
+
+    // One row, so the refusal is a refusal and not a silently swallowed insert.
+    expect(
+      await countRowsOf(
+        `SELECT count(*)::text AS n FROM inv.opening_inventory_batches WHERE batch_code = $1`,
+        [batchCode]
+      )
+    ).toBe(1);
+  });
+
   it('refuses a caller lacking inv.stock.operate (authorization)', async () => {
     authAs(INV_READER);
     const response = await post(BATCH_CREATE, '/api/v1/opening-inventory-batches', {
@@ -272,6 +320,65 @@ describe('inv.opening-batch-line-create', () => {
     expect(line.quantity).toBe('12.250');
     // Still nothing in the ledger — approval is what posts movements.
     expect(await ledgerCount()).toBe(before);
+  });
+
+  it('answers 409 for a cell already counted, and only a different cell adds a line', async () => {
+    /*
+     * The record this replaces said a repeated request "adds a second line". It
+     * does not. `uq_opening_inventory_lines_cell` allows ONE live line per
+     * (item, location) inside a batch, so the counted cell is exactly-once at the
+     * row level with no idempotency key involved — and a repeat is refused. Only a
+     * genuinely DIFFERENT cell adds a line, which is a different count.
+     *
+     * Before the 23505 mapping this refusal surfaced as 500 ERR-SYS-001 with an
+     * error-monitoring capture. Removing the mapping turns this case red on
+     * exactly that, which is what makes the mapping load-bearing rather than
+     * decorative.
+     */
+    authAs(INV_FULL);
+    const batchId = await newBatch();
+    const ledgerBefore = await ledgerCount();
+    expect(
+      (await lineCall(batchId, { itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '1.000' }))
+        .status
+    ).toBe(201);
+
+    const repeat = await lineCall(batchId, {
+      itemId: ITEM_A,
+      locationId: WAREHOUSE_A1,
+      quantity: '2.000',
+    });
+    expect(repeat.status).toBe(409);
+    const failure = await bodyOf<{
+      code: string;
+      violations?: readonly { path: string; rule: string }[];
+    }>(repeat);
+    expect(failure.code).toBe('ERR-RES-002');
+    expect(failure.violations).toEqual([{ path: 'body.locationId', rule: 'duplicate_cell' }]);
+    expect(await lineCountOf(batchId)).toBe(1);
+
+    // The SAME item at a different location IS a different cell, and is counted.
+    expect(
+      (await lineCall(batchId, { itemId: ITEM_A, locationId: STORAGE_A1, quantity: '3.000' }))
+        .status
+    ).toBe(201);
+    expect(await lineCountOf(batchId)).toBe(2);
+
+    // Nothing reached the ledger either way: approval is what posts movements.
+    expect(await ledgerCount()).toBe(ledgerBefore);
+  });
+
+  it('lets exactly one of two concurrent counts of one cell win', async () => {
+    // The index is the arbiter, not a read-then-write check in the service, so the
+    // race has one winner rather than two lines or a lost update.
+    authAs(INV_FULL);
+    const batchId = await newBatch();
+    const both = await Promise.all([
+      lineCall(batchId, { itemId: ITEM_A_ALT, locationId: WAREHOUSE_A1, quantity: '4.000' }),
+      lineCall(batchId, { itemId: ITEM_A_ALT, locationId: WAREHOUSE_A1, quantity: '5.000' }),
+    ]);
+    expect(both.map((response) => response.status).sort()).toEqual([201, 409]);
+    expect(await lineCountOf(batchId)).toBe(1);
   });
 
   it('refuses a line whose location is in a different branch from the batch', async () => {
