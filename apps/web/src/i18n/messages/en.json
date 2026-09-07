@@ -3449,5 +3449,6 @@
   "form.violation.parent_required": "Storage and quarantine places need a warehouse.",
   "form.violation.unknown_location": "This location does not exist in the branch.",
   "form.violation.parent_outside_branch": "The warehouse belongs to another branch.",
-  "form.violation.parent_not_warehouse": "Only a warehouse can contain other places."
+  "form.violation.parent_not_warehouse": "Only a warehouse can contain other places.",
+  "form.violation.duplicate_opening_cell": "This item at this location already has an approved opening count, so the batch was not approved and no stock moved. A wrong quantity is corrected with an approved stock adjustment, never by counting the opening balance a second time."
 }

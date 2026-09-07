@@ -3449,5 +3449,6 @@
   "form.violation.parent_required": "أماكن التخزين والحجر تحتاج إلى مستودع.",
   "form.violation.unknown_location": "هذا الموقع غير موجود في الفرع.",
   "form.violation.parent_outside_branch": "المستودع يخص فرعًا آخر.",
-  "form.violation.parent_not_warehouse": "المستودع وحده يمكن أن يحتوي أماكن أخرى."
+  "form.violation.parent_not_warehouse": "المستودع وحده يمكن أن يحتوي أماكن أخرى.",
+  "form.violation.duplicate_opening_cell": "لهذا الصنف في هذا الموقع رصيد افتتاحي معتمد بالفعل، لذلك لم تُعتمد الدفعة ولم يتحرك أي مخزون. تُصحَّح الكمية الخاطئة بتسوية مخزون معتمدة، لا بعدّ الرصيد الافتتاحي مرة ثانية."
 }

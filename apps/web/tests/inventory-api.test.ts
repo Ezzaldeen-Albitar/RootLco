@@ -709,6 +709,44 @@ describe('W10 — the opening batch is opened, lined and approved at its own rou
   });
 
   /**
+   * The route's OTHER refusal, and the seam that made it unreadable.
+   *
+   * `uq_stock_movements_opening_cell` allows one approved `opening` movement per
+   * (item, location) in a branch, so approving a second batch that counts a cell
+   * already opened is refused. It arrives as `ERR-RES-002` carrying
+   * `path.batchId` + `duplicate_opening_cell`, and that violation is the ONLY
+   * statement of the reason on the wire: `problemFor` never reads the failure's
+   * own message, which a hosted run measured as absent.
+   *
+   * The DOM suite mocks this module, so this case is what makes its fixture
+   * honest — the state asserted there is the state produced here, from the body
+   * the API really sends.
+   */
+  it('a cell the branch already opened is refused with its reason, not a bare conflict', async () => {
+    send.mockResolvedValue({
+      ok: false as const,
+      kind: 'conflict' as const,
+      status: 409,
+      problem: {
+        type: 'urn:rootlco:error:ERR-RES-002',
+        title: 'Resource already exists',
+        status: 409,
+        code: 'ERR-RES-002',
+        correlationId: 'corr-1',
+        violations: [{ path: 'path.batchId', rule: 'duplicate_opening_cell' }],
+      },
+      correlationId: 'corr-1',
+    });
+    const outcome = await approveOpeningBatch(BATCH_ID);
+    expect(outcome.created).toBeNull();
+    expect(outcome.state.status).toBe('conflict');
+    expect(outcome.state.messageKey).toBe('form.violation.duplicate_opening_cell');
+    // The batch identifier is a segment of the address, not a box on a form —
+    // the approval sends no body at all — so nothing is filed under a control.
+    expect(outcome.state.fieldErrors).toBeUndefined();
+  });
+
+  /**
    * What a REPEATED line request actually does — the assertion this suite owed.
    *
    * `uq_opening_inventory_lines_cell` allows one live line per (item, location)

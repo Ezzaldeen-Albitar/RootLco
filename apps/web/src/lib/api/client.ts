@@ -98,7 +98,22 @@ export interface ProblemDetails {
   readonly code?: string;
   /** Present on every response, success or failure. Safe to show a user. */
   readonly correlationId?: string;
-  /** Field-level violations. Validation failures only. */
+  /**
+   * Field-level violations.
+   *
+   * **Not "validation failures only", which is what this line used to say.** A
+   * 409 carries them too: `inventory-intake-service.ts` refuses a second opening
+   * count of a cell that already has one with `ERR-RES-002` and
+   * `[{ path: 'path.batchId', rule: 'duplicate_opening_cell' }]`.
+   *
+   * On that answer this list is the ONLY machine-readable statement of the
+   * reason. `problemFor` assembles the document from the catalog entry plus the
+   * failure's `safeDetails` and reads the failure's own `message` nowhere, so
+   * the sentence the service wrote naming the remedy never reaches the wire —
+   * a hosted run measured it as absent. A reader that took the comment at its
+   * word and skipped this field on a 409 left the operator with a generic
+   * conflict title and no reason, which is what happened.
+   */
   readonly violations?: readonly Violation[];
   /** Seconds until a retry is sensible. Throttling only. */
   readonly retryAfterSeconds?: number;
@@ -542,6 +557,35 @@ export const REQUEST_PART_PREFIXES: readonly string[] = Object.freeze([
 ]);
 
 /**
+ * The request parts that name a ROUTE parameter rather than a form control.
+ *
+ * A `path.` violation is about a segment of the URL — `path.batchId`,
+ * `path.userId`, `path.grantId`. No form in this application renders a control
+ * for one: the batch identifier is in the address, not in a box, and the
+ * approval that carries it sends no body at all. `controlNameFor` still takes
+ * the leaf, because a leaf is what it is asked for, but `violationKeysOf` must
+ * not file the result under a control that cannot exist — a field error keyed
+ * `batchId` is written to a map nothing reads, which on screen is
+ * indistinguishable from having dropped it.
+ *
+ * So these name the whole request, exactly as a bare `body` does, and travel to
+ * the banner instead.
+ */
+export const ROUTE_PART_PREFIXES: readonly string[] = Object.freeze(['path', 'params']);
+
+/**
+ * Whether a violation path names a route parameter rather than a form control.
+ *
+ * The first segment decides it, because the API builds the path by joining the
+ * request part to the issue's own path and hand-thrown violations follow the
+ * same convention.
+ */
+export function namesRouteParameter(path: string): boolean {
+  const first = path.split('.').filter((segment) => segment.length > 0)[0];
+  return first !== undefined && ROUTE_PART_PREFIXES.includes(first);
+}
+
+/**
  * The `form.violation.*` keys the message catalogue actually carries.
  *
  * **Derived, not listed.** A hard-coded array of rule tokens here would be a
@@ -623,6 +667,22 @@ export interface ViolationKeys {
  * and the earliest is the one the operator can act on. Stable because the order
  * is the response's order, not an object-key iteration order.
  *
+ * ## Every kind, not only a validation failure
+ *
+ * This used to read `failure.problem?.violations` only when the kind was
+ * `validation`, and so discarded the list on every other status. The API does
+ * not honour that boundary: a 409 from the opening-batch approval carries
+ * `path.batchId` + `duplicate_opening_cell` and nothing else that names the
+ * reason. The guard is gone; the field is read wherever it arrives. Nothing is
+ * loosened by that — the values produced are still only catalogue keys, and a
+ * kind that sends no violations still yields two empty halves.
+ *
+ * ## A route parameter names no control
+ *
+ * `path.batchId` is a URL segment, not a box. `namesRouteParameter` sends it to
+ * `formKeys`, because filing it under a control named `batchId` writes it into a
+ * map that no screen reads — which on screen is exactly the same as dropping it.
+ *
  * ## Nothing here can be server prose
  *
  * The only values produced are keys from `violationMessageKey`. Even a
@@ -637,13 +697,13 @@ export interface ViolationKeys {
 export function violationKeysOf(failure: ApiFailure): ViolationKeys {
   const collected = Object.create(null) as Record<string, string>;
   const formKeys: string[] = [];
-  const violations = failure.kind === 'validation' ? failure.problem?.violations : undefined;
+  const violations = failure.problem?.violations;
 
   if (Array.isArray(violations)) {
     for (const violation of violations) {
       if (typeof violation?.path !== 'string' || typeof violation?.rule !== 'string') continue;
       const key = violationMessageKey(violation.rule);
-      const control = controlNameFor(violation.path);
+      const control = namesRouteParameter(violation.path) ? null : controlNameFor(violation.path);
       if (control === null) {
         if (!formKeys.includes(key)) formKeys.push(key);
         continue;
@@ -657,10 +717,10 @@ export function violationKeysOf(failure: ApiFailure): ViolationKeys {
 }
 
 /**
- * Field errors from a validation failure, as translation keys, by control name.
+ * Field errors from a failure, as translation keys, by control name.
  *
- * Returns an empty object rather than null for a non-validation failure, so a
- * caller can always spread it without a guard.
+ * Returns an empty object rather than null when the response carried no
+ * violations, so a caller can always spread it without a guard.
  *
  * **This used to read `problem.errors`, a field the API has never sent**, so it
  * returned `{}` for every real 422 and no form in the application could show a

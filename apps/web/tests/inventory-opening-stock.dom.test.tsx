@@ -9,7 +9,9 @@
  * quantity as typed (a zero or malformed one is refused before any request);
  * every echo is rendered as sent; the approval is offered only to holders of
  * `inv.adjustment.approve`; and the server's maker ≠ checker refusal is shown
- * as a refusal and leaves the batch a draft.
+ * as a refusal and leaves the batch a draft. Its OTHER refusal — a cell the
+ * branch has already opened — is told apart from that one and explained,
+ * without the second-person hint that would not cure it.
  *
  * The RECOVERY half is asserted below it: the branch's batches are listed with
  * the status and the line count the server gave them; opening one renders
@@ -189,6 +191,25 @@ const conflict = () => ({
   state: {
     status: 'conflict' as const,
     messageKey: 'state.conflict.title',
+    attempt: 1,
+    correlationId: 'corr',
+  },
+  created: null,
+});
+/**
+ * The OTHER refusal of the same route: the branch has already opened a balance
+ * for a cell this batch counts.
+ *
+ * Also a `conflict`, so the status cannot tell the two apart — the KEY does.
+ * `fromFailure` produces exactly this state from the 409 the API sends
+ * (`path.batchId` + `duplicate_opening_cell`); `inventory-api.test.ts` asserts
+ * that mapping against the real body, which is what keeps this fixture from
+ * being a state the suite invented for itself.
+ */
+const duplicateOpeningCell = () => ({
+  state: {
+    status: 'conflict' as const,
+    messageKey: 'form.violation.duplicate_opening_cell',
     attempt: 1,
     correlationId: 'corr',
   },
@@ -456,6 +477,74 @@ describe('the chain, in order', () => {
     ).toBeVisible();
     expect(screen.getByText(EN['inventory.opening.status.draft'] as string)).toBeVisible();
     expect(form('inventory.opening.line.heading')).toBeVisible();
+  });
+
+  it('a cell the branch already opened is explained, and does not send the approver for a colleague', async () => {
+    /*
+     * The refusal that used to reach the screen as nothing at all: the client
+     * read violations only on a 422, and `path.batchId` named a control no form
+     * renders, so both halves of it were dropped and the approver got the
+     * generic conflict title.
+     *
+     * The second assertion is the one that matters as much as the first. A
+     * second person cannot cure this — they would be refused for the same
+     * reason — so the standing "a second person must approve" hint must not be
+     * paired with it.
+     */
+    const user = userEvent.setup();
+    approveOpeningBatch.mockResolvedValue(duplicateOpeningCell());
+    renderScreen({ canApprove: true });
+    await chooseBranch(user);
+    await openBatch(user);
+    await addLine(user);
+    await screen.findByText('12.000');
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.opening.approve.action'] as string })
+    );
+    expect(
+      await screen.findByText(EN['form.violation.duplicate_opening_cell'] as string, {
+        exact: false,
+      })
+    ).toBeVisible();
+    expect(screen.queryByText(EN['inventory.opening.approve.secondPerson'] as string)).toBeNull();
+    expect(screen.getByText(EN['inventory.opening.status.draft'] as string)).toBeVisible();
+  });
+
+  it('in Arabic, right to left, the same refusal is explained in Arabic', async () => {
+    const user = userEvent.setup();
+    approveOpeningBatch.mockResolvedValue(duplicateOpeningCell());
+    listOpeningBatches.mockResolvedValue(cursor([summary]));
+    renderRtl(
+      <OpeningStockScreen
+        locale="ar"
+        messages={ar}
+        canOperate={false}
+        canApprove={true}
+        canReadBranches={true}
+      />
+    );
+    expect(document.documentElement.dir).toBe('rtl');
+    const target = screen.getByRole('form', {
+      name: AR['inventory.opening.targetLabel'] as string,
+    });
+    await user.selectOptions(await within(target).findByRole('combobox'), BRANCH_ID);
+    await user.click(
+      within(target).getByRole('button', { name: AR['inventory.opening.chooseBranch'] as string })
+    );
+    await openListed(user, 'OPEN-2026');
+    await user.click(
+      await screen.findByRole('button', { name: AR['inventory.opening.approve.action'] as string })
+    );
+    expect(
+      await screen.findByText(AR['form.violation.duplicate_opening_cell'] as string, {
+        exact: false,
+      })
+    ).toBeVisible();
+    // Arabic, not the English string reached through a missing key.
+    expect(AR['form.violation.duplicate_opening_cell']).not.toBe(
+      EN['form.violation.duplicate_opening_cell']
+    );
+    expect(screen.queryByText(AR['inventory.opening.approve.secondPerson'] as string)).toBeNull();
   });
 });
 

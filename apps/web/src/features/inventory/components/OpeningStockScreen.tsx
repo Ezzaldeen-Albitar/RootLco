@@ -46,6 +46,7 @@ import { notifyActionResult } from '@/components/notifications/action-notificati
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
+import { VIOLATION_KEY_PREFIX } from '@/lib/api/client';
 import type { ActionState } from '@/lib/forms/action-result';
 import {
   approveOpeningBatch,
@@ -907,6 +908,24 @@ function LineForm({
  * Approve — a second person
  * ------------------------------------------------------------------ */
 
+/**
+ * Whether a refusal already carries its own reason.
+ *
+ * Approval is refused for two different reasons and only one of them is
+ * "someone else must do this". The server also refuses a batch that counts a
+ * cell the branch has already opened — `path.batchId` +
+ * `duplicate_opening_cell` — and that refusal is not cured by finding a second
+ * person, so pairing it with "a second person must approve" would send the
+ * approver to fetch a colleague who would be refused for the same reason.
+ *
+ * The test is the KEY, not the status, because both are `conflict`: a banner
+ * that names a violation is the specific reason, and the standing hint below it
+ * is the generic one. `OutcomeNote` has already rendered whichever arrived.
+ */
+function statedRefusal(outcome: ActionState): boolean {
+  return outcome.messageKey?.startsWith(VIOLATION_KEY_PREFIX) === true;
+}
+
 function ApprovalPanel({
   locale,
   messages,
@@ -959,7 +978,7 @@ function ApprovalPanel({
       ) : canApprove ? (
         <>
           <OutcomeNote messages={messages} outcome={outcome} />
-          {outcome?.status === 'conflict' ? (
+          {outcome?.status === 'conflict' && !statedRefusal(outcome) ? (
             <p className="text-caption text-text-muted">
               {translate(messages, 'inventory.opening.approve.secondPerson')}
             </p>
