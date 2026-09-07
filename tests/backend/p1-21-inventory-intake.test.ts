@@ -66,6 +66,7 @@ import {
   cleanP1_21Fixtures,
   countRowsOf,
   establishP1_21Fixtures,
+  freshLocation,
 } from './p1-21-helpers';
 import { Quantity } from '@/modules/inventory';
 import { POST as BATCH_CREATE } from '@/app/api/v1/opening-inventory-batches/route';
@@ -494,7 +495,15 @@ describe('inv.opening-batch-approve', () => {
   it('refuses a second approval, because the batch is no longer draft (denial)', async () => {
     authAs(INV_FULL);
     const batchId = await newBatch();
-    await lineCall(batchId, { itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '1.000' });
+    // A never-opened cell, so the refusal below is the batch's own status and not
+    // `uq_stock_movements_opening_cell` catching a cell an earlier case opened. Both
+    // answer 409 and the two rules are proved apart:
+    // `p1-30-opening-count-uniqueness.test.ts` owns the cell rule.
+    await lineCall(batchId, {
+      itemId: ITEM_A,
+      locationId: await freshLocation(),
+      quantity: '1.000',
+    });
     authAs(INV_APPROVER);
     expect((await approveCall(batchId)).status).toBe(200);
     expect((await approveCall(batchId)).status).toBe(409);
@@ -503,25 +512,26 @@ describe('inv.opening-batch-approve', () => {
   it('refuses adding a line to an approved batch (frozen)', async () => {
     authAs(INV_FULL);
     const batchId = await newBatch();
-    await lineCall(batchId, { itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '1.000' });
+    const cell = await freshLocation();
+    await lineCall(batchId, { itemId: ITEM_A, locationId: cell, quantity: '1.000' });
     authAs(INV_APPROVER);
     await approveCall(batchId);
     authAs(INV_FULL);
     expect(
-      (await lineCall(batchId, { itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '1.000' }))
-        .status
+      (await lineCall(batchId, { itemId: ITEM_A, locationId: cell, quantity: '1.000' })).status
     ).toBe(409);
   });
 
   it('replays an idempotency key instead of posting the movements twice (idempotency)', async () => {
     authAs(INV_FULL);
     const batchId = await newBatch();
-    await lineCall(batchId, { itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '3.000' });
+    const cell = await freshLocation();
+    await lineCall(batchId, { itemId: ITEM_A, locationId: cell, quantity: '3.000' });
     authAs(INV_APPROVER);
     const key = randomUUID();
     const first = await approveCall(batchId, key);
     expect(first.status).toBe(200);
-    const afterFirst = (await balanceOf(ITEM_A, WAREHOUSE_A1))!.onHand;
+    const afterFirst = (await balanceOf(ITEM_A, cell))!.onHand;
 
     const replay = await approveCall(batchId, key);
     // The replay returns the stored response instead of the 409 a fresh second
@@ -529,7 +539,7 @@ describe('inv.opening-batch-approve', () => {
     expect(replay.status).toBe(200);
     // And, decisively, the opening movements were posted once: a second posting
     // would have doubled the stock this batch minted.
-    expect((await balanceOf(ITEM_A, WAREHOUSE_A1))!.onHand).toBe(afterFirst);
+    expect((await balanceOf(ITEM_A, cell))!.onHand).toBe(afterFirst);
     expect(await auditCountFor('inv.opening_batch.approved', batchId)).toBe(1);
   });
 
@@ -856,8 +866,11 @@ describe('opening approval publishes its movements, and tenancy is proved on rea
     // would take its projection negative.
     authAs(INV_FULL);
     const batchId = await newBatch();
-    await lineCall(batchId, { itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '2.000' });
-    await lineCall(batchId, { itemId: ITEM_A_ALT, locationId: WAREHOUSE_A1, quantity: '3.000' });
+    // Two lines, one location, two items — and a location no batch has opened, so
+    // the count under test is the EVENT count and not a cell collision.
+    const cell = await freshLocation();
+    await lineCall(batchId, { itemId: ITEM_A, locationId: cell, quantity: '2.000' });
+    await lineCall(batchId, { itemId: ITEM_A_ALT, locationId: cell, quantity: '3.000' });
     authAs(INV_APPROVER);
     expect((await approveCall(batchId)).status).toBe(200);
 
