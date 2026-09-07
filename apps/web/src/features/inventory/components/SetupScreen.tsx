@@ -41,13 +41,7 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
-import {
-  createItem,
-  createItemCategory,
-  createStockLocation,
-  listItemCategories,
-  listUnitsOfMeasure,
-} from '../api';
+import { createItem, createItemCategory, createStockLocation, listUnitsOfMeasure } from '../api';
 import {
   CATEGORY_CODE,
   ITEM_TYPES,
@@ -58,7 +52,6 @@ import {
   SKU_CODE,
   type CreatedStockLocation,
   type InventoryItem,
-  type ItemCategory,
   type ItemType,
   type LocationType,
   type StockLocation,
@@ -72,9 +65,12 @@ import {
   OutcomeNote,
   PRIMARY_BUTTON,
   UUID,
+  canNameBranch,
   useBranches,
+  useItemCategories,
   useLocations,
   type BranchPair,
+  type Categories,
 } from './shared';
 
 const LINK = 'text-primary underline-offset-2 hover:underline';
@@ -83,44 +79,6 @@ const PANEL = 'flex flex-col gap-3 rounded-lg border border-border bg-surface p-
 /* ------------------------------------------------------------------ *
  * Reads held by the screen
  * ------------------------------------------------------------------ */
-
-interface Categories {
-  readonly items: readonly ItemCategory[] | null;
-  readonly refused: string | null;
-  readonly truncated: boolean;
-  readonly add: (category: ItemCategory) => void;
-}
-
-function useCategories(): Categories {
-  const [items, setItems] = useState<readonly ItemCategory[] | null>(null);
-  const [refused, setRefused] = useState<string | null>(null);
-  const [truncated, setTruncated] = useState(false);
-  useEffect(() => {
-    let live = true;
-    void listItemCategories().then((state) => {
-      if (!live) return;
-      if (state.status === 'ok') {
-        setItems(state.data.items);
-        setTruncated(state.data.hasMore);
-      } else {
-        setRefused(
-          state.status === 'denied'
-            ? 'inventory.setup.categories.refused'
-            : 'inventory.setup.categories.unavailable'
-        );
-      }
-    });
-    return () => {
-      live = false;
-    };
-  }, []);
-  return {
-    items,
-    refused,
-    truncated,
-    add: (category) => setItems((current) => [...(current ?? []), category]),
-  };
-}
 
 interface Units {
   readonly items: readonly UnitOfMeasureOption[] | null;
@@ -169,7 +127,7 @@ export function SetupScreen({
   /** `org.branch.read` — whether a branch list is requested for the picker. */
   readonly canReadBranches: boolean;
 }) {
-  const categories = useCategories();
+  const categories = useItemCategories();
   const units = useUnits();
 
   return (
@@ -775,7 +733,7 @@ function LocationsSection({
           errors={{ companyId: errorFor('companyId'), branchId: errorFor('branchId') }}
         />
         <div className="sm:col-span-3">
-          <button type="submit" className={PRIMARY_BUTTON}>
+          <button type="submit" className={PRIMARY_BUTTON} disabled={!canNameBranch(branches)}>
             {translate(messages, 'inventory.setup.locations.show')}
           </button>
         </div>

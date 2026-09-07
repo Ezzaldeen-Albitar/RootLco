@@ -32,6 +32,7 @@ const listAvailability = vi.fn();
 const listReservations = vi.fn();
 const listLocations = vi.fn();
 const listBranches = vi.fn();
+const listItemCategories = vi.fn();
 const createReservation = vi.fn();
 const releaseReservation = vi.fn();
 vi.mock('@/features/inventory/api', () => ({
@@ -40,6 +41,7 @@ vi.mock('@/features/inventory/api', () => ({
   listReservations: (...args: unknown[]) => listReservations(...args),
   listLocations: (...args: unknown[]) => listLocations(...args),
   listBranches: (...args: unknown[]) => listBranches(...args),
+  listItemCategories: (...args: unknown[]) => listItemCategories(...args),
   createReservation: (...args: unknown[]) => createReservation(...args),
   releaseReservation: (...args: unknown[]) => releaseReservation(...args),
 }));
@@ -130,6 +132,28 @@ const location = {
   status: 'active',
 };
 const branch = { id: BRANCH_ID, companyId: COMPANY_ID, branchCode: 'AMM-1', name: 'Amman' };
+const CATEGORY_ID = '66666666-6666-4666-8666-666666666666';
+const category = {
+  id: CATEGORY_ID,
+  code: 'brakes',
+  name: 'Brakes',
+  description: null,
+  parentCategoryId: null,
+  status: 'active',
+  recordVersion: 1,
+};
+const retired = {
+  ...category,
+  id: '66666666-6666-4666-8666-666666666667',
+  code: 'retired',
+  name: 'Retired',
+  status: 'inactive',
+};
+const categoryPage = (rows: readonly unknown[]) => ({
+  items: rows,
+  nextCursor: null,
+  hasMore: false,
+});
 
 function page(rows: readonly unknown[]) {
   return { status: 'ok' as const, rows, nextCursor: null, hasMore: false, correlationId: 'corr' };
@@ -171,8 +195,9 @@ const targetForm = () =>
 
 /** Chooses the one listed branch and asks for its stock. */
 async function chooseBranch(user: ReturnType<typeof userEvent.setup>) {
-  // Until the branch list arrives the picker is two identifier fields, one of
-  // them labelled "Branch identifier" — an anchored "Branch" would match it.
+  // While a permitted list is in flight the picker is a status line with NO
+  // control at all (P1-30 CC-15), so the helper waits for the select to exist
+  // rather than for a value to appear in one.
   const select = await within(targetForm()).findByRole('combobox');
   await user.selectOptions(select, BRANCH_ID);
   await user.click(
@@ -189,6 +214,7 @@ beforeEach(() => {
   listReservations.mockResolvedValue(page([reservation()]));
   listLocations.mockResolvedValue(okRead({ items: [location], nextCursor: null, hasMore: false }));
   listBranches.mockResolvedValue(okRead({ items: [branch] }));
+  listItemCategories.mockResolvedValue(okRead(categoryPage([category])));
 });
 
 describe('FE-008 — the item search', () => {
@@ -205,6 +231,10 @@ describe('FE-008 — the item search', () => {
     expect(within(table).getByText(EN['inventory.lifecycle.active'] as string)).toBeVisible();
     expect(within(table).queryByText(/cost|price/i)).toBeNull();
     expect(screen.getByText(EN['inventory.items.noCostNote'] as string)).toBeVisible();
+    // CC-16: the category list is read once per mount, and the sentence saying
+    // categories cannot be listed from this screen is gone.
+    expect(listItemCategories).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/cannot be listed/i)).toBeNull();
   });
 
   it('sends the typed search and chosen type as criteria', async () => {
@@ -230,19 +260,6 @@ describe('FE-008 — the item search', () => {
     );
   });
 
-  it('refuses a malformed category identifier before reading', async () => {
-    const user = userEvent.setup();
-    renderScreen();
-    await waitFor(() => expect(listItems).toHaveBeenCalled());
-    const items = region('inventory.items.heading');
-    await user.type(within(items).getByLabelText(labelled('inventory.items.categoryId')), 'nope');
-    await user.click(
-      within(items).getByRole('button', { name: EN['inventory.items.show'] as string })
-    );
-    expect(await within(items).findByText(EN['inventory.common.idFormat'] as string)).toBeVisible();
-    expect(listItems).toHaveBeenCalledTimes(1);
-  });
-
   it('renders the denied state instead of an empty catalogue', async () => {
     listItems.mockResolvedValue(denied());
     renderScreen();
@@ -254,6 +271,117 @@ describe('FE-008 — the item search', () => {
     listItems.mockResolvedValue(page([]));
     renderScreen();
     expect(await screen.findByText(EN['inventory.items.none'] as string)).toBeVisible();
+  });
+
+  /* ---------------------------------------------------------------- *
+   * CC-16 — the category filter is a list, not an identifier field
+   * ---------------------------------------------------------------- */
+
+  it("offers the tenant's categories as a list and filters by the chosen one", async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    await waitFor(() => expect(listItems).toHaveBeenCalled());
+    const items = region('inventory.items.heading');
+    const select = await within(items).findByLabelText(labelled('inventory.items.category'));
+    expect(select).toBeInstanceOf(HTMLSelectElement);
+    expect(within(select).getByRole('option', { name: 'brakes — Brakes' })).toBeVisible();
+    expect(within(items).getByText(EN['inventory.items.categoryHelp'] as string)).toBeVisible();
+    await user.selectOptions(select, CATEGORY_ID);
+    await user.click(
+      within(items).getByRole('button', { name: EN['inventory.items.show'] as string })
+    );
+    // The published contract is unchanged: `inv.item-search` still takes the
+    // category as the identifier the server itself published.
+    await waitFor(() =>
+      expect(listItems.mock.calls.at(-1)?.[0]).toEqual({ categoryId: CATEGORY_ID })
+    );
+  });
+
+  it('clearing the category asks for every item again', async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    await waitFor(() => expect(listItems).toHaveBeenCalled());
+    const items = region('inventory.items.heading');
+    const select = await within(items).findByLabelText(labelled('inventory.items.category'));
+    const show = within(items).getByRole('button', { name: EN['inventory.items.show'] as string });
+    await user.selectOptions(select, CATEGORY_ID);
+    await user.click(show);
+    await waitFor(() =>
+      expect(listItems.mock.calls.at(-1)?.[0]).toEqual({ categoryId: CATEGORY_ID })
+    );
+    await user.selectOptions(select, '');
+    await user.click(show);
+    // The clear must RE-READ, not leave the filtered page on screen.
+    await waitFor(() => expect(listItems.mock.calls.at(-1)?.[0]).toEqual({}));
+    expect(listItems.mock.calls.length).toBe(3);
+  });
+
+  it('marks an inactive category as one', async () => {
+    listItemCategories.mockResolvedValue(okRead(categoryPage([category, retired])));
+    renderScreen();
+    await waitFor(() => expect(listItems).toHaveBeenCalled());
+    const items = region('inventory.items.heading');
+    const select = await within(items).findByLabelText(labelled('inventory.items.category'));
+    expect(
+      within(select).getByRole('option', {
+        name: `retired — Retired (${EN['inventory.setup.status.inactive'] as string})`,
+      })
+    ).toBeVisible();
+    expect(within(select).getByRole('option', { name: 'brakes — Brakes' })).toBeVisible();
+  });
+
+  it.each([
+    ['unavailable', 'inventory.setup.categories.unavailable'],
+    ['denied', 'inventory.setup.categories.refused'],
+  ])('still searches items, and says so, when the category list is %s', async (status, key) => {
+    listItemCategories.mockResolvedValue({ status, correlationId: 'corr' });
+    renderScreen();
+    await waitFor(() => expect(listItems).toHaveBeenCalled());
+    const items = region('inventory.items.heading');
+    const table = await within(items).findByRole('table');
+    expect(within(table).getByText('BRK-001')).toBeVisible();
+    expect(await within(items).findByText(EN[key] as string)).toBeVisible();
+    const select = within(items).getByLabelText(labelled('inventory.items.category'));
+    expect(within(select).getAllByRole('option')).toHaveLength(1);
+  });
+
+  it('offers only "any category", and says none is recorded, when the tenant has none', async () => {
+    listItemCategories.mockResolvedValue(okRead(categoryPage([])));
+    renderScreen();
+    await waitFor(() => expect(listItems).toHaveBeenCalled());
+    const items = region('inventory.items.heading');
+    expect(
+      await within(items).findByText(EN['inventory.items.noCategories'] as string)
+    ).toBeVisible();
+    const select = within(items).getByLabelText(labelled('inventory.items.category'));
+    expect(within(select).getAllByRole('option')).toHaveLength(1);
+    expect(within(select).getByRole('option')).toHaveTextContent(
+      EN['inventory.items.anyCategory'] as string
+    );
+  });
+
+  it('does not wait for the category list before reading the catalogue', async () => {
+    listItemCategories.mockReturnValue(new Promise(() => {}));
+    renderScreen();
+    await waitFor(() => expect(listItems).toHaveBeenCalled());
+    expect(await within(region('inventory.items.heading')).findByRole('table')).toBeVisible();
+  });
+
+  it('states the truncation WITHOUT losing the disclosure', async () => {
+    listItemCategories.mockResolvedValue(
+      okRead({ items: [category], nextCursor: 'c', hasMore: true })
+    );
+    renderScreen();
+    await waitFor(() => expect(listItems).toHaveBeenCalled());
+    const items = region('inventory.items.heading');
+    expect(
+      await within(items).findByText(
+        new RegExp(escape(EN['inventory.setup.categories.truncated'] as string))
+      )
+    ).toBeVisible();
+    expect(
+      within(items).getByText(new RegExp(escape(EN['inventory.items.categoryHelp'] as string)))
+    ).toBeVisible();
   });
 });
 
@@ -730,5 +858,11 @@ describe('Arabic, right to left', () => {
     const table = await screen.findByRole('table');
     expect(within(table).getByText('BRK-001')).toBeVisible();
     expect(within(table).getByText(AR['inventory.itemType.part'] as string)).toBeVisible();
+    // CC-16 in Arabic: the category filter is a real select, not a text box.
+    expect(
+      await screen.findByLabelText(
+        new RegExp('^' + escape(AR['inventory.items.category'] as string))
+      )
+    ).toBeInstanceOf(HTMLSelectElement);
   });
 });

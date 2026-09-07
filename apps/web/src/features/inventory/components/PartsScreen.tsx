@@ -42,6 +42,7 @@ import {
   Qty,
   SECONDARY_BUTTON,
   UUID,
+  canNameBranch,
   useBranches,
   useLocations,
   type BranchPair,
@@ -717,7 +718,20 @@ function IssueForm({
         <OutcomeNote messages={messages} outcome={outcome} />
       </div>
       <div className="sm:col-span-2">
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <button
+          type="submit"
+          className={PRIMARY_BUTTON}
+          /*
+           * `target === null` is not redundant defence. This is the part-ISSUE
+           * submit, not a branch submit, and the picker is mounted only while
+           * the target is unknown. Writing the condition out keeps the guard
+           * about the pair by construction rather than by an accident of the
+           * conjunction `useBranches(canReadBranches && target === null)`, so a
+           * permitted operator whose branch list came back EMPTY can still
+           * issue a part.
+           */
+          disabled={busy || (target === null && !canNameBranch(branches))}
+        >
           {translate(messages, 'inventory.issue.submit')}
         </button>
       </div>
