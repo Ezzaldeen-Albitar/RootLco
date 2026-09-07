@@ -4695,7 +4695,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-21-inventory-intake.test.ts",
-        "tests/backend/p1-30-inventory-master-data.test.ts"
+        "tests/backend/p1-30-inventory-master-data.test.ts",
+        "tests/backend/p1-30-opening-count-uniqueness.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/opening-inventory-batches/[batchId]/approval/route.ts"

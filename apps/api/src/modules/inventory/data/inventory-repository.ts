@@ -1389,6 +1389,12 @@ export class InventoryRepository extends Repository {
    * `ck_opening_inventory_batches_maker` enforces maker ≠ approver and
    * `inv.guard_opening_batch_approval` freezes the row afterwards. All of it
    * stays in the database — this is a call, not a reimplementation.
+   *
+   * The movements it posts are also where `uq_stock_movements_opening_cell` bites:
+   * at most ONE `opening` movement per (tenant, company, branch, item, location),
+   * so a second batch counting a cell this branch has already opened raises
+   * `23505` here and the whole approval — the status UPDATE included — rolls back.
+   * The service maps it to `ERR-RES-002` rather than letting it surface as a 500.
    */
   public async approveOpeningBatch(db: DbHandle, batchId: string): Promise<void> {
     await this.run(db, `SELECT inv.approve_opening_batch($1)`, [batchId]);

@@ -1,0 +1,93 @@
+-- ============================================================================
+-- Phase: 1-30 — Backend remediation (inventory setup)
+-- Migration: one opening movement per (item, location) in a branch, forever
+-- Owner module: inv
+-- Related: 20260723094000_inv_ledger.sql (inv.stock_movements),
+--          20260723095000_inv_operations.sql (inv.approve_opening_batch)
+--
+-- Rollback classification: ROLLBACK-SAFE. One partial unique index and nothing
+--   else — no table, no column, no policy, no function, no trigger, no row, no
+--   grant. A later forward migration dropping `uq_stock_movements_opening_cell`
+--   returns inv.stock_movements to exactly what 20260723094000 left it, and no
+--   state is lost by doing so. (Forward-only still applies: nothing is ever
+--   corrected by editing this file — see docs/database/migration-standard.md §4.)
+--
+-- ## The hole this closes
+--
+-- Opening approval is the ONE path in the platform that mints stock from
+-- nothing, and until now nothing prevented it from minting the same stock twice.
+--
+--   * `uq_opening_inventory_lines_cell` is UNIQUE on
+--     (tenant_id, company_id, branch_id, batch_id, item_id, location_id)
+--     WHERE deleted_at IS NULL. It carries `batch_id`, so it makes a counted
+--     cell exactly-once INSIDE ONE BATCH and says nothing across batches.
+--   * `inv.approve_opening_batch` takes `FOR UPDATE` on the batch row and
+--     refuses any status that is not `draft`. That serialises one batch against
+--     itself; it does not see a second batch at all.
+--   * `uq_stock_movements_source` is UNIQUE on
+--     (reference_kind, reference_id, direction) — one movement per SOURCE LINE.
+--     Two batches carry two different lines, so two movements are two legal
+--     sources and the index is satisfied.
+--
+-- So two DRAFT batches in the same branch may each carry a line for the same
+-- (item, location), and approving both posts TWO `opening` movements into that
+-- cell. `inv.post_stock_movement` adds each to `inv.stock_balances`,
+-- `inv.guard_stock_balance_coherence` recomputes `on_hand = Σ signed_qty` and
+-- AGREES — the ledger is internally consistent and the company's stock is
+-- double what was counted. Every downstream figure (available, reservation
+-- headroom, reconciliation) inherits the error, and because the ledger is
+-- append-only, no movement can ever be withdrawn to undo it.
+--
+-- Listing draft batches (P1-30 seam S-17) makes the hole easier to reach, not
+-- newer: an approver can now find every draft of a branch, including two that
+-- count the same shelf.
+--
+-- ## The Owner's decision
+--
+-- Asked directly whether counting the same item at the same location a second
+-- time is ever legitimate, the Owner answered that it is NEVER legitimate and
+-- must be forbidden by the database. A count that turns out to be wrong is
+-- corrected by a stock ADJUSTMENT — `inv.stock_adjustments` + `inv.approve_adjustment`,
+-- which carries a reason, a maker-checker approval and a direction — and never
+-- by a second opening. That is what this index encodes.
+--
+-- ## The predicate, and why it is exactly this
+--
+-- `movement_type = 'opening'` is the whole vocabulary term for an opening
+-- movement: `ck_stock_movements_type` admits ('opening','issue','return',
+-- 'damage','adjustment'), `ck_stock_movements_type_direction` already forces
+-- `opening` to `direction = 'in'`, and `inv.guard_stock_movement_provenance`
+-- refuses any `opening` movement whose source is not an approved
+-- `opening_line`. Naming `movement_type` alone is therefore both necessary and
+-- sufficient, and adding `direction` or `reference_kind` to the predicate would
+-- restate a rule two other objects already enforce.
+--
+-- NO OTHER MOVEMENT KIND IS CONSTRAINED. A partial index indexes only the rows
+-- its predicate admits, so `issue`, `return`, `damage` and `adjustment`
+-- movements are absent from it entirely and may repeat in a cell as often as
+-- the business requires — which is precisely how a correction reaches a cell
+-- that has already been opened.
+--
+-- Tenant-leading, per the migration standard's index rule, and the column order
+-- is the (tenant, company, branch, item, location) cell identity that
+-- `inv.stock_balances` itself is keyed on (`uq_stock_balances_cell`). A branch
+-- is the scope: the same item at the same location code in a DIFFERENT branch,
+-- company or tenant is a different cell with its own balance row, and is
+-- untouched.
+--
+-- ## What happens at approval now
+--
+-- The second approval raises `23505` on this index inside
+-- `inv.approve_opening_batch`'s transaction, so the batch's own UPDATE to
+-- `approved` rolls back with it: the batch stays `draft`, no movement is
+-- posted, and no balance moves. The application maps the violation to the
+-- registered conflict answer (`ERR-RES-002`, 409) telling the operator to
+-- correct by adjustment.
+-- ============================================================================
+
+CREATE UNIQUE INDEX uq_stock_movements_opening_cell
+  ON inv.stock_movements (tenant_id, company_id, branch_id, item_id, location_id)
+  WHERE movement_type = 'opening';
+
+COMMENT ON INDEX inv.uq_stock_movements_opening_cell IS
+  'P1-30: at most ONE opening movement per (tenant, company, branch, item, location). Opening is the only path that mints stock from nothing, and a second count of the same cell doubles it; the Owner ruled a second opening never legitimate, and a wrong count is corrected by an approved stock adjustment. Partial on movement_type = ''opening'', so issue/return/damage/adjustment movements are not indexed and may repeat freely.';

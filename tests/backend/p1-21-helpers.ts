@@ -608,12 +608,71 @@ export async function establishP1_21Fixtures(pool: Pool): Promise<void> {
 }
 
 /**
- * Puts stock into a cell the way the platform does — an approved opening batch.
+ * A brand-new sellable location in a branch, and therefore a NEVER-OPENED cell.
+ *
+ * `uq_stock_movements_opening_cell` allows one `opening` movement per
+ * (tenant, company, branch, item, location), so a file that approves several
+ * batches needs several cells. The fixture catalogue holds four usable tenant-A
+ * cells (two stock-tracked items across two sellable locations) — fewer than
+ * `p1-21-inventory-intake.test.ts` alone approves — and adding more constants
+ * would put a fixed ceiling one test further away rather than removing it.
+ *
+ * A location, not an item: `location_code` is unique per branch and nothing else
+ * about a warehouse row is asserted anywhere, whereas an item carries a SKU, a
+ * category, a unit and a lifecycle that several read suites do assert on.
+ * `cleanP1_21Fixtures` already deletes every `inv.stock_locations` row of both
+ * tenants, so these need no cleanup of their own.
+ */
+export async function freshLocation(
+  branchId: string = BRANCH_A1,
+  companyId: string = COMPANY_A1
+): Promise<string> {
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`SELECT set_config('app.user_id',$1,true)`, [USER_A]);
+    const row = await client.query<{ id: string }>(
+      `INSERT INTO inv.stock_locations
+         (tenant_id, company_id, branch_id, location_code, name, location_type, created_by)
+       VALUES ($1,$2,$3,$4,$4,'warehouse',$5) RETURNING id`,
+      [TENANT_A, companyId, branchId, `FX-CELL-${(seedSeq += 1)}`, USER_A]
+    );
+    await client.query('COMMIT');
+    return row.rows[0]?.id ?? '';
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Puts stock into a cell the way the platform does — an approved opening batch the
+ * FIRST time that cell is stocked, and an approved stock ADJUSTMENT every time
+ * after.
  *
  * Deliberately NOT a direct `stock_balances` write: `inv.guard_stock_balance_coherence`
  * would reject one, and a fixture that bypassed the ledger would let a test assert a
  * balance the movement history does not support. Runs as the admin role with the
  * actor GUC set, and uses two different actors so the maker-checker CHECK is met.
+ *
+ * ## Why the second call is an adjustment
+ *
+ * `uq_stock_movements_opening_cell` allows ONE `opening` movement per
+ * (tenant, company, branch, item, location). This helper is called many times per
+ * file against a small set of fixed cells — (ITEM_A, WAREHOUSE_A1) more than a
+ * dozen times in `p1-21-inventory-stock.test.ts` alone — and every call after the
+ * first used to mint a SECOND opening count of a cell already opened, which is
+ * exactly the double-count the index now forbids.
+ *
+ * Topping the cell up by an approved adjustment is what the product tells an
+ * operator to do, so the fixture now takes the same route. Nothing an assertion
+ * reads changes: `inv.post_stock_movement` adds an `adjustment`/`in` movement of
+ * the same quantity, `on_hand` lands on the same figure, and the coherence guard
+ * re-derives it from the ledger either way. What differs is `movement_type`, and
+ * only two callers look at that — both of them read their own issue/return/damage
+ * movements, never the seed.
  */
 export async function seedStock(input: {
   readonly itemId: string;
@@ -633,31 +692,61 @@ export async function seedStock(input: {
       `SELECT set_config('app.user_id',$1,true), set_config('app.tenant_id',$2,true)`,
       [USER_A, tenantId]
     );
-    const batch = await client.query<{ id: string }>(
-      `INSERT INTO inv.opening_inventory_batches
-         (tenant_id, company_id, branch_id, batch_code, as_of_date, counted_by, created_by)
-       VALUES ($1,$2,$3,$4,CURRENT_DATE,$5,$5) RETURNING id`,
-      [tenantId, companyId, branchId, `FX-OPEN-${(seedSeq += 1)}`, USER_A]
+    // Has this cell already been opened? The question the index answers, asked
+    // the same way it is indexed.
+    const opened = await client.query(
+      `SELECT 1 FROM inv.stock_movements
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+          AND item_id = $4 AND location_id = $5 AND movement_type = 'opening'`,
+      [tenantId, companyId, branchId, input.itemId, input.locationId]
     );
-    const batchId = batch.rows[0]?.id ?? '';
-    await client.query(
-      `INSERT INTO inv.opening_inventory_lines
-         (tenant_id, company_id, branch_id, batch_id, item_id, location_id, quantity, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7::numeric,$8)`,
-      [
-        tenantId,
-        companyId,
-        branchId,
-        batchId,
-        input.itemId,
-        input.locationId,
-        input.quantity,
-        USER_A,
-      ]
-    );
-    // A DIFFERENT actor approves: ck_opening_inventory_batches_maker.
-    await client.query(`SELECT set_config('app.user_id',$1,true)`, [INV_APPROVER.userId]);
-    await client.query(`SELECT inv.approve_opening_batch($1)`, [batchId]);
+    if (opened.rowCount === 0) {
+      const batch = await client.query<{ id: string }>(
+        `INSERT INTO inv.opening_inventory_batches
+           (tenant_id, company_id, branch_id, batch_code, as_of_date, counted_by, created_by)
+         VALUES ($1,$2,$3,$4,CURRENT_DATE,$5,$5) RETURNING id`,
+        [tenantId, companyId, branchId, `FX-OPEN-${(seedSeq += 1)}`, USER_A]
+      );
+      const batchId = batch.rows[0]?.id ?? '';
+      await client.query(
+        `INSERT INTO inv.opening_inventory_lines
+           (tenant_id, company_id, branch_id, batch_id, item_id, location_id, quantity, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7::numeric,$8)`,
+        [
+          tenantId,
+          companyId,
+          branchId,
+          batchId,
+          input.itemId,
+          input.locationId,
+          input.quantity,
+          USER_A,
+        ]
+      );
+      // A DIFFERENT actor approves: ck_opening_inventory_batches_maker.
+      await client.query(`SELECT set_config('app.user_id',$1,true)`, [INV_APPROVER.userId]);
+      await client.query(`SELECT inv.approve_opening_batch($1)`, [batchId]);
+    } else {
+      const adjustment = await client.query<{ id: string }>(
+        `INSERT INTO inv.stock_adjustments
+           (tenant_id, company_id, branch_id, item_id, location_id, direction, quantity,
+            reason, requested_by, created_by)
+         VALUES ($1,$2,$3,$4,$5,'in',$6::numeric,$7,$8,$8) RETURNING id`,
+        [
+          tenantId,
+          companyId,
+          branchId,
+          input.itemId,
+          input.locationId,
+          input.quantity,
+          `Fixture top-up ${(seedSeq += 1)}`,
+          USER_A,
+        ]
+      );
+      // The same maker-checker split: ck_stock_adjustments_maker.
+      await client.query(`SELECT set_config('app.user_id',$1,true)`, [INV_APPROVER.userId]);
+      await client.query(`SELECT inv.approve_adjustment($1)`, [adjustment.rows[0]?.id ?? '']);
+    }
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');
@@ -677,6 +766,10 @@ export async function cleanP1_21Fixtures(): Promise<void> {
     `DELETE FROM inv.part_issues WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.damaged_stock WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.stock_movements WHERE tenant_id IN ($1,$2)`,
+    // After the movements that cite them: a top-up seed approves an adjustment,
+    // and a leftover row would keep the item and location rows below undeletable.
+    `DELETE FROM inv.stock_adjustment_details WHERE tenant_id IN ($1,$2)`,
+    `DELETE FROM inv.stock_adjustments WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.stock_reservations WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.stock_balances WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.opening_inventory_lines WHERE tenant_id IN ($1,$2)`,
