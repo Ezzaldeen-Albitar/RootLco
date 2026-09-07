@@ -14,7 +14,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * (W5) The per-work-order reads name the parent and no scope; the ledger read
  * carries the target and full instants; the issue and return writes send the
  * body as typed, and the transport's own contract table marks both as
- * idempotent so a key is attached to every send.
+ * idempotent so a key is attached to every send. (W10) The opening-batch list
+ * is branch-targeted and the batch read names the batch alone; a repeated line
+ * for the same counted cell is a conflict rather than a second line.
  */
 
 const get = vi.fn();
@@ -42,10 +44,12 @@ const {
   listItems,
   listLocations,
   listMovements,
+  listOpeningBatches,
   listPartIssues,
   listRequiredParts,
   listReservations,
   listUnitsOfMeasure,
+  readOpeningBatch,
   releaseReservation,
 } = await import('@/features/inventory/api');
 const { requiresIdempotencyKey, resolveOperation } = await import('@/lib/api/operation-contract');
@@ -576,10 +580,15 @@ describe('W10 — the setup reads are tenant-wide and assert no scope', () => {
     ]) {
       expect(requiresIdempotencyKey('POST', path)).toBe(true);
     }
-    // The line create is published WITHOUT an idempotency key: a repeated
-    // request adds a second line. The screen's busy flag is the only guard,
-    // and the W10 record states the fact rather than this suite pretending
-    // the transport carries a key it does not.
+    // The line create is published WITHOUT an idempotency key, and that is a
+    // DECISION (P1-30 CC-18), not a gap this suite should paper over. What the
+    // sentence here used to claim — that a repeated request adds a second line
+    // — was false: `uq_opening_inventory_lines_cell` allows one live line per
+    // (item, location) inside a batch, so a repeat of the same counted cell is
+    // refused by the index and answers `409` since the mapping landed. Only a
+    // genuinely different cell adds a line, which is a different count rather
+    // than a replay. A key would add no guarantee and no correction path, so
+    // none is published and the transport attaches none.
     expect(
       requiresIdempotencyKey('POST', `/api/v1/opening-inventory-batches/${BATCH_ID}/lines`)
     ).toBe(false);
@@ -697,5 +706,79 @@ describe('W10 — the opening batch is opened, lined and approved at its own rou
     const outcome = await approveOpeningBatch(BATCH_ID);
     expect(outcome.created).toBeNull();
     expect(outcome.state.status).toBe('conflict');
+  });
+
+  /**
+   * What a REPEATED line request actually does — the assertion this suite owed.
+   *
+   * `uq_opening_inventory_lines_cell` allows one live line per (item, location)
+   * inside a batch, so sending the same cell twice does not add a second line:
+   * the index refuses it and the route answers `409`, which reaches the adapter
+   * as `conflict` and creates nothing. The screen therefore has something true
+   * to say, rather than a duplicate it would have to explain afterwards.
+   */
+  it('a repeated line for the same counted cell is refused as a conflict, not added twice', async () => {
+    const cell = { itemId: ITEM_ID, locationId: LOCATION_ID, quantity: '12.000' };
+    send.mockResolvedValueOnce(ok({ id: 'line-1', batchId: BATCH_ID, ...cell }));
+    const first = await createOpeningBatchLine(BATCH_ID, cell);
+    expect(first.state.status).toBe('success');
+    expect(first.created).toEqual({ id: 'line-1', batchId: BATCH_ID, ...cell });
+
+    send.mockResolvedValueOnce(failure('conflict'));
+    const again = await createOpeningBatchLine(BATCH_ID, cell);
+    expect(again.state.status).toBe('conflict');
+    expect(again.created).toBeNull();
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('W10 — the batch reads are what make a batch reachable again', () => {
+  it('lists one branch batches at the branch target with a page limit and no other filter', async () => {
+    get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
+    const state = await listOpeningBatches(TARGET);
+    expect(state.status).toBe('ok');
+    const path = String(get.mock.calls[0]?.[0]);
+    expect(path.startsWith('/api/v1/opening-inventory-batches?')).toBe(true);
+    const sent = params(path);
+    expect(sent.get('companyId')).toBe(COMPANY_ID);
+    expect(sent.get('branchId')).toBe(BRANCH_ID);
+    expect(sent.get('limit')).toBe('50');
+    expect(sent.get('status')).toBeNull();
+    expect(sent.get('cursor')).toBeNull();
+  });
+
+  it('reads one batch by id alone, and asserts no scope in the query', async () => {
+    get.mockResolvedValue(
+      ok({ batch: { id: BATCH_ID, status: 'draft' }, lines: [{ id: 'l-1', quantity: '12.000' }] })
+    );
+    const state = await readOpeningBatch(BATCH_ID);
+    expect(state.status).toBe('ok');
+    expect(String(get.mock.calls[0]?.[0])).toBe(`/api/v1/opening-inventory-batches/${BATCH_ID}`);
+  });
+
+  it('passes the line quantities through as the strings the server sent', async () => {
+    get.mockResolvedValue(
+      ok({
+        batch: { id: BATCH_ID, status: 'draft', lineCount: 1 },
+        lines: [{ id: 'l-1', sku: 'BRK-001', locationCode: 'WH-1', quantity: '0.500' }],
+      })
+    );
+    const state = await readOpeningBatch(BATCH_ID);
+    expect(state.status === 'ok' && state.data.lines[0]?.quantity).toBe('0.500');
+    expect(state.status === 'ok' && typeof state.data.lines[0]?.quantity).toBe('string');
+  });
+
+  it('reports a refused list as denied and a missing batch as not-found, never as an empty branch', async () => {
+    get.mockResolvedValueOnce(failure('forbidden'));
+    expect((await listOpeningBatches(TARGET)).status).toBe('denied');
+    get.mockResolvedValueOnce(failure('not-found'));
+    expect((await readOpeningBatch(BATCH_ID)).status).toBe('not-found');
+  });
+
+  it('an ended session is reported before either read is sent', async () => {
+    authorizedClient.mockResolvedValue(null);
+    expect((await listOpeningBatches(TARGET)).status).toBe('expired');
+    expect((await readOpeningBatch(BATCH_ID)).status).toBe('expired');
+    expect(get).not.toHaveBeenCalled();
   });
 });
