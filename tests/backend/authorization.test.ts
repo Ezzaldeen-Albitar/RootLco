@@ -27,7 +27,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
 import {
+  BRANCH_A1,
   COMMAND_PERMISSION,
+  COMPANY_A1,
   FEATURE_DISABLED,
   FEATURE_ENABLED,
   TENANT_A,
@@ -48,6 +50,7 @@ import { defineOperation, type RegisteredOperation } from '@/server/auth/operati
 import {
   evaluatePermissions,
   requirePermissions,
+  requireScopeTargetInTenant,
   requireScopedPermissions,
 } from '@/server/auth/authorization';
 import {
@@ -277,5 +280,132 @@ describe('requireScopedPermissions fails closed on an empty target (P1-18-A-01)'
       requireScopedPermissions(db, COMMAND_OPERATION, {}).catch((caught: unknown) => caught)
     );
     expect((error as AppFailure).message).toContain(DEFERRED_REFUSAL);
+  });
+});
+
+/**
+ * CC-14 — the scope-target probe, against the deployed schema and its policies.
+ *
+ * The unit tier (`tests/foundation/p1-18-scoped-authorization.test.ts`, F9) pins the
+ * statement shape and the bindings with a fake handle. What only a real server can
+ * answer is whether the predicate MEANS anything: that `ensureOrgFixtures`'
+ * COMPANY_A1/BRANCH_A1 pair really resolves, and that a pair that exists nowhere is
+ * refused with the same document as one that exists in another tenant.
+ *
+ * `USER_PERMITTED` holds an unrestricted grant, so `iam.allowed_branch_ids()` is NULL
+ * and `sel_branches_scope` narrows to the tenant alone. That is the caller the probe
+ * exists for: the one `iam.has_permission_in_scope` cannot refuse.
+ */
+describe('CC-14 scope target resolved inside the tenant', () => {
+  it('resolves the tenant own company and branch pair', async () => {
+    await withTransaction(contextFor({ userId: USER_PERMITTED }), async (db) => {
+      // Resolves means "does not throw". A returned value would be a decision the
+      // caller could ignore, which is why this function has none.
+      await expect(
+        requireScopeTargetInTenant(db, COMMAND_OPERATION, {
+          companyId: COMPANY_A1,
+          branchId: BRANCH_A1,
+        })
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  it('resolves a half-specified and an empty target without consulting the database', async () => {
+    await withTransaction(contextFor({ userId: USER_PERMITTED }), async (db) => {
+      // A company that exists nowhere: if the probe ran at all this would refuse.
+      await expect(
+        requireScopeTargetInTenant(db, COMMAND_OPERATION, { companyId: randomUUID() })
+      ).resolves.toBeUndefined();
+      await expect(
+        requireScopeTargetInTenant(db, COMMAND_OPERATION, { branchId: randomUUID() })
+      ).resolves.toBeUndefined();
+      await expect(requireScopeTargetInTenant(db, COMMAND_OPERATION, {})).resolves.toBeUndefined();
+    });
+  });
+
+  it('refuses a pair that exists nowhere and an in-tenant pair of the wrong company identically', async () => {
+    const outcomes = await withTransaction(contextFor({ userId: USER_PERMITTED }), async (db) => {
+      // Sequential, not Promise.all: `TransactionHandle` forwards to a single pg
+      // client, so two overlapping statements would be a test of the pool rather
+      // than of the probe, and this file issues its statements one at a time
+      // everywhere else.
+      const nowhere = await requireScopeTargetInTenant(db, COMMAND_OPERATION, {
+        companyId: randomUUID(),
+        branchId: randomUUID(),
+      }).catch((caught: unknown) => caught);
+      const wrongCompany = await requireScopeTargetInTenant(db, COMMAND_OPERATION, {
+        // A REAL branch of this tenant, named under a company it does not belong
+        // to. This is the H6 shape, and it must be indistinguishable from the
+        // invented pair above.
+        companyId: randomUUID(),
+        branchId: BRANCH_A1,
+      }).catch((caught: unknown) => caught);
+      return { nowhere, wrongCompany };
+    });
+
+    for (const outcome of [outcomes.nowhere, outcomes.wrongCompany]) {
+      expect(outcome).toBeInstanceOf(AppFailure);
+      const failure = outcome as AppFailure;
+      expect(failure.code).toBe('ERR-IAM-001');
+      expect(failure.status).toBe(403);
+      expect(failure.safeDetails).toEqual({ requiredPermissions: [COMMAND_PERMISSION] });
+      // It is the target refusal, not the deferred-target one: two different
+      // defects that share a code would otherwise be impossible to tell apart.
+      expect(failure.message).not.toContain('deferred scoped authorization requires');
+    }
+
+    // Identical message, so the refusal cannot be read as an existence oracle.
+    expect((outcomes.nowhere as AppFailure).message).toBe(
+      (outcomes.wrongCompany as AppFailure).message
+    );
+  });
+
+  it('refuses a soft-deleted branch exactly as it refuses a missing one', async () => {
+    // Soft-deleted through the admin pool and restored in a finally, so the shared
+    // fixture branch survives for every other suite on this database.
+    await admin.query(`UPDATE org.branches SET deleted_at = now() WHERE id = $1`, [BRANCH_A1]);
+    try {
+      const outcome = await withTransaction(contextFor({ userId: USER_PERMITTED }), async (db) =>
+        requireScopeTargetInTenant(db, COMMAND_OPERATION, {
+          companyId: COMPANY_A1,
+          branchId: BRANCH_A1,
+        }).catch((caught: unknown) => caught)
+      );
+      expect(outcome).toBeInstanceOf(AppFailure);
+      expect((outcome as AppFailure).code).toBe('ERR-IAM-001');
+      expect((outcome as AppFailure).status).toBe(403);
+    } finally {
+      await admin.query(`UPDATE org.branches SET deleted_at = NULL WHERE id = $1`, [BRANCH_A1]);
+    }
+
+    // And the restore worked, so a later suite does not inherit a deleted branch.
+    await withTransaction(contextFor({ userId: USER_PERMITTED }), async (db) => {
+      await expect(
+        requireScopeTargetInTenant(db, COMMAND_OPERATION, {
+          companyId: COMPANY_A1,
+          branchId: BRANCH_A1,
+        })
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  it('refuses a caller whose grant union hides an in-tenant branch its permission covers', async () => {
+    // The mixed-grant corner, stated at this tier because it is a property of the
+    // POLICY rather than of any route: the probe reads `org.branches` under
+    // `sel_branches_scope`, which narrows by `iam.allowed_branch_ids()`. A context
+    // carrying a branch narrowing that excludes BRANCH_A1 therefore cannot see it,
+    // and the refusal means "not visible to this caller", not "not in the tenant".
+    // `tests/backend/p1-21-inventory-reads.test.ts` proves the same corner end to end
+    // with a principal whose two REAL grants produce this narrowing.
+    const outcome = await withTransaction(
+      contextFor({ userId: USER_PERMITTED, companyIds: [COMPANY_A1], branchIds: [randomUUID()] }),
+      async (db) =>
+        requireScopeTargetInTenant(db, COMMAND_OPERATION, {
+          companyId: COMPANY_A1,
+          branchId: BRANCH_A1,
+        }).catch((caught: unknown) => caught)
+    );
+    expect(outcome).toBeInstanceOf(AppFailure);
+    expect((outcome as AppFailure).code).toBe('ERR-IAM-001');
   });
 });

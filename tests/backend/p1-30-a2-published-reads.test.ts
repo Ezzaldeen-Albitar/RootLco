@@ -84,6 +84,7 @@
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
+import { randomUUID } from 'node:crypto';
 import {
   BRANCH_A1,
   COMPANY_A1,
@@ -1297,17 +1298,26 @@ describe('S-11 sal.receipt-list', () => {
   it('is cross-tenant isolated: tenant B sees no tenant-A receipt', async () => {
     const mine = await recordReceipt('44.0000');
 
-    // Tenant B holds sal.finance.view unrestricted, so a refusal or an empty page is
-    // the tenant boundary. Either is acceptable HERE because the scope pair names
-    // tenant A's own company and branch: what must never happen is tenant A's row
-    // appearing in the answer.
+    // Tenant B holds sal.finance.view unrestricted, so the permission check cannot
+    // be the tenant boundary. Since CC-14 the pre-handler resolves the named pair
+    // against a branch visible to the caller inside its own tenant, so the answer
+    // is exactly 403 — no longer "a refusal or an empty page, either is fine".
+    expect(mine).toBeTruthy();
     authAsSal(SAL_TENANT_B);
     const foreign = await receiptList(scopedQuery);
-    if (foreign.status === 200) {
-      const body = (await foreign.json()) as PageBody<{ id: string }>;
-      expect(body.items.map((row) => row.id)).not.toContain(mine);
-    } else {
-      expect([403, 404]).toContain(foreign.status);
-    }
+    expect(foreign.status).toBe(403);
+    const foreignProblem = (await foreign.json()) as Record<string, unknown>;
+    expect(foreignProblem.code).toBe('ERR-IAM-001');
+
+    // A pair that exists nowhere is refused with the identical document.
+    authAsSal(SAL_TENANT_B);
+    const nowhere = await receiptList(`?companyId=${randomUUID()}&branchId=${randomUUID()}`);
+    expect(nowhere.status).toBe(403);
+    expect({ ...((await nowhere.json()) as Record<string, unknown>), correlationId: null }).toEqual(
+      {
+        ...foreignProblem,
+        correlationId: null,
+      }
+    );
   });
 });

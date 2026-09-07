@@ -17,7 +17,11 @@
  * `companyId` and `branchId` are REQUIRED and are the `authorizationTarget`.
  * A branch-blind location list would be a directory of which branches exist and
  * how they are laid out, narrowed only by `app.branch_ids` - the permission-blind
- * union of every active grant (P1-18-A-01).
+ * union of every active grant (P1-18-A-01). Since CC-14 the pre-handler also
+ * resolves that pair through `requireScopeTargetInTenant`, so a target that is
+ * not a branch visible to the caller inside its tenant is refused with
+ * `ERR-IAM-001` before the list is read, instead of answering 200 with the empty
+ * page row-level security would have produced.
  *
  * ## Inactive locations are listed, not hidden
  *

@@ -80,7 +80,7 @@ import {
   ensureTestLogins,
   runtimeAppPool,
 } from './helpers';
-import { BRANCH_A2, establishP1_19Fixtures } from './p1-19-helpers';
+import { BRANCH_A2, BRANCH_B1, COMPANY_B1, establishP1_19Fixtures } from './p1-19-helpers';
 import {
   INV_APPROVER,
   INV_FULL,
@@ -393,21 +393,47 @@ describe('inv.opening-batch-list', () => {
 
   it('is refused when RLS hides the branch entirely, and is cross-tenant isolated', async () => {
     // `INV_SCOPED_A2` has NO widening grant, so A1 is outside its allowed-branch
-    // union. Stated honestly: this proves isolation and proves RLS is doing it. It
-    // is NOT the application-check proof — that is the case above.
+    // union. Exactly 403, not "403 or 404": the PERMISSION check refuses it, and
+    // that runs before CC-14's target probe, so the answer is settled.
     authAs(INV_SCOPED_A2);
-    expect([403, 404]).toContain((await batchList(scopedQuery)).status);
+    const hidden = await batchList(scopedQuery);
+    expect(hidden.status).toBe(403);
+    expect(await codeOf(hidden)).toBe('ERR-IAM-001');
 
-    // Tenant B holds inv.stock.read unrestricted, so this refusal is the tenant
-    // boundary. It must not be a 200 listing tenant A's counts.
+    // Tenant B holds `inv.stock.read` UNRESTRICTED, so `iam.has_permission_in_scope`
+    // cannot refuse tenant A's pair. Since CC-14 the pre-handler resolves the pair
+    // inside the caller's own tenant and refuses before anything is read — this is
+    // not a filtered 200, and `firstA1` is named so the batch that would have
+    // leaked is a real row rather than a hypothetical one.
+    expect(firstA1).toBeTruthy();
     authAs(INV_TENANT_B);
     const foreign = await batchList(scopedQuery);
-    if (foreign.status === 200) {
-      const body = (await foreign.json()) as PageBody<{ id: string }>;
-      expect(body.items).toHaveLength(0);
-    } else {
-      expect([403, 404]).toContain(foreign.status);
-    }
+    expect(foreign.status).toBe(403);
+    const foreignProblem = (await foreign.json()) as Record<string, unknown>;
+    expect(foreignProblem.code).toBe('ERR-IAM-001');
+
+    // A pair that exists nowhere is refused with a byte-identical document, so the
+    // refusal says nothing about whether tenant A's branch is real.
+    authAs(INV_TENANT_B);
+    const nowhere = await batchList(`?companyId=${randomUUID()}&branchId=${randomUUID()}`);
+    expect(nowhere.status).toBe(403);
+    expect({ ...((await nowhere.json()) as Record<string, unknown>), correlationId: null }).toEqual(
+      {
+        ...foreignProblem,
+        correlationId: null,
+      }
+    );
+
+    // Tenant B's OWN pair still answers 200, and with none of tenant A's batches:
+    // without this the refusals above would be satisfied by a probe that refused
+    // everything.
+    authAs(INV_TENANT_B);
+    const own = await batchList(`?companyId=${COMPANY_B1}&branchId=${BRANCH_B1}`);
+    expect(own.status).toBe(200);
+    const ownIds = ((await own.json()) as PageBody<BatchRow>).items.map((row) => row.id);
+    expect(ownIds).not.toContain(firstA1);
+    expect(ownIds).not.toContain(secondA1);
+    expect(ownIds).not.toContain(otherBranch);
   });
 });
 
