@@ -179,8 +179,8 @@ the tree was running.
 
 | measure                                             | value                                      |
 | --------------------------------------------------- | ------------------------------------------- |
-| Tracked files under `docs/phase-1/phase-1-27`        | 41                                          |
-| Tracked `.md` files under the same directory         | 31                                          |
+| Tracked files under `docs/phase-1/phase-1-27`        | 42                                          |
+| Tracked `.md` files under the same directory         | 32                                          |
 | Migrations tracked by git at `HEAD`                  | 138                                         |
 | `CODE_CANDIDATE_SHA`                                 | `501f5f0d48d7b8cafc12dad51f6c501534b66a18`  |
 | Executable paths changed, candidate to accepted `develop` | 0                                      |

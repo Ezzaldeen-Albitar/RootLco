@@ -1024,7 +1024,7 @@ Three things changed, and only one of them is a document.
 
 **A digest over the evidence.** `evidence/evidence-manifest.json` carries SHA-256
 over the _bytes_ of every `.md` and `.json` file in the phase directory, walked
-rather than listed — <!-- derived: manifest fileCount = 40 --> **40** of them at
+rather than listed — <!-- derived: manifest fileCount = 41 --> **41** of them at
 this head. That number was written here as "29" and stayed there while the phase
 directory grew by seven documents: a sentence about a walk, holding a figure
 nothing read. It is derived now, so the next document that joins the tree fails

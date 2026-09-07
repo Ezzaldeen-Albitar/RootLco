@@ -659,7 +659,7 @@ absent from that verification table. The reconciliation is §12.
 
 ## 9. Documentation set
 
-### 9.1 Phase documentation — `docs/phase-1/phase-1-27/` (41 tracked files)
+### 9.1 Phase documentation — `docs/phase-1/phase-1-27/` (42 tracked files)
 
 **This table used to list fifteen of them, and eight of its fifteen line counts
 were wrong** — under a row in §15.1 asserting "26 of 26 exact" (`E-06`, `E-07`).
@@ -686,10 +686,10 @@ under-report itself by seven files.
 | `ci-evidence.md`                                  | 275   | Hosted CI, with every value classified and every hosted one naming its run         |
 | `clean-room-evidence.md`                          | 379   | The clean-room record, and the six classes every closing value is sorted into      |
 | `contract-archaeology.md`                         | 416   | What the Backend actually publishes, read before anything was built                |
-| `deliverable-manifest.md`                         | 1051  | This file                                                                          |
+| `deliverable-manifest.md`                         | 1062  | This file                                                                          |
 | `developer-guide.md`                              | 228   | `DOC-002` — the developer half                                                     |
 | `evidence/change-log.md`                          | 1135  | `DOC-002` — the change-log half; its rows are scraped by a test                    |
-| `evidence/evidence-manifest.json`                 | 171   | `QA-005` — a SHA-256 digest of every document in this directory                    |
+| `evidence/evidence-manifest.json`                 | 175   | `QA-005` — a SHA-256 digest of every document in this directory                    |
 | `evidence/closing-value-ledger.json`              | 907   | Every closing value on the two evidence pages, classified, with its authority      |
 | `evidence/lifecycle-ledger.json`                  | 72    | The closure lifecycle's observations and the state this repository declares        |
 | `evidence/local-run-ledger.json`                  | 64    | What a tier DID when it was run — written only by `record:p1-27-run`               |
@@ -852,6 +852,17 @@ editing whichever number is nearer to hand.
 
 ## 13. What this manifest does not establish
 
+**Citation coverage.** The line numbers cited by this phase's records drift, because
+the files they point into keep growing under numbers that were correct on the day
+they were written. The named `client.ts` scope — ten citations, 23 occurrences —
+has been repaired and anchored to the symbols it cites, and no `action-result.ts`
+citation was repaired; broader citation integrity across
+these records remains **PARTIAL, with known drift**, and some citations are left
+stale deliberately because their surrounding claim has been superseded. What was
+measured, what was repaired, what was deliberately not, and what was never
+assessed are in [`citation-integrity-report.md`](citation-integrity-report.md).
+**None of that makes this phase's documentation verified.**
+
 | not established                                                                            | what would establish it                                                                                                                                                                                                                                                                                                                                                                                                   |
 | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | That the five merges in §4 are two-parent merge commits                                    | A `git` command, which this document's own production rules forbid. `owner-acceptance-fail-remediation.md` states it for #200 and #201; nothing in the repository states it for #198, #199 or #202                                                                                                                                                                                                                        |
@@ -984,8 +995,8 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files apps/web/src/features/vehicles = 23 -->
 <!-- derived: files p1-27-frontend-gate = 147 -->
 <!-- derived: files p1-27-frontend-gate:trees = 5 -->
-<!-- derived: tracked docs/phase-1/phase-1-27 = 41 -->
-<!-- derived: tracked docs/phase-1/phase-1-27:md = 31 -->
+<!-- derived: tracked docs/phase-1/phase-1-27 = 42 -->
+<!-- derived: tracked docs/phase-1/phase-1-27:md = 32 -->
 <!-- derived: tracked docs/product = 14 -->
 <!-- derived: commands registered = 175 -->
 <!-- derived: commands required = 94 -->
@@ -1005,10 +1016,10 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/clean-room-evidence.md = 379 -->
 <!-- derived: lines docs/phase-1/phase-1-27/closure-record.md = 114 -->
 <!-- derived: lines docs/phase-1/phase-1-27/contract-archaeology.md = 416 -->
-<!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 1051 -->
+<!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 1062 -->
 <!-- derived: lines docs/phase-1/phase-1-27/developer-guide.md = 228 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/change-log.md = 1135 -->
-<!-- derived: lines docs/phase-1/phase-1-27/evidence/evidence-manifest.json = 171 -->
+<!-- derived: lines docs/phase-1/phase-1-27/evidence/evidence-manifest.json = 175 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/closing-value-ledger.json = 907 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/lifecycle-ledger.json = 72 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/local-run-ledger.json = 64 -->

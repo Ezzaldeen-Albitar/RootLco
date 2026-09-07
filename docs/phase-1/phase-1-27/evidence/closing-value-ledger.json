@@ -184,8 +184,8 @@
       "class": "DERIVABLE_GIT",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Tracked files under `docs/phase-1/phase-1-27`        | 41                                          |",
-      "value": "41",
+      "locator": "| Tracked files under `docs/phase-1/phase-1-27`        | 42                                          |",
+      "value": "42",
       "binding": {
         "kind": "git",
         "op": "trackedFiles",
@@ -198,8 +198,8 @@
       "class": "DERIVABLE_GIT",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Tracked `.md` files under the same directory         | 31                                          |",
-      "value": "31",
+      "locator": "| Tracked `.md` files under the same directory         | 32                                          |",
+      "value": "32",
       "binding": {
         "kind": "git",
         "op": "trackedFiles",
