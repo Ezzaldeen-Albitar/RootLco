@@ -74,9 +74,67 @@ production is authorized) is:
 
 No claim is made that this schedule is currently operating.
 
+## Addendum, 2026-09-07 — a dump does not carry database-level settings
+
+_Added after the fact; nothing above is rewritten. The figures and the PASS
+recorded in this document stand as measured in Phase 1-12._
+
+The contract above says a backup is verified against **control totals and the
+schema hash** on restore. That is necessary and it is **not sufficient**, and
+the nightly `backup-restore-drill` proved so on 2026-09-06.
+
+`supabase/migrations/0001_extensions.sql` runs `ALTER DATABASE <current> SET
+search_path TO "$user", public, extensions`. That setting lives in
+`pg_db_role_setting`, which belongs to the **cluster**, not to the database's own
+contents. **A custom-format `pg_dump` taken without `--create` — which is the
+command recorded above — does not carry it**, and a restore into a database made
+with a bare `CREATE DATABASE` therefore comes up without it.
+
+What the drill measured: integrity matched exactly, **254 of 254 tables and 202
+of 202 rows**, while the schema hash differed. The restore was **faithful** —
+with the search paths equalised, both schema inventories were byte-identical
+across **9,683 rows**. The hash moved only because three objects **render**
+differently under a different search path: a check constraint on
+`iam.user_accounts` and the trigram index operator classes on `inv.item_master`
+and `shared.search_metadata`.
+
+**The operational consequence, which is what a recovery needs to know.** The
+restored database is not broken on arrival: existing objects are bound by
+identifier and keep working, which is why the row counts and the application
+smoke queries all passed. But anything executed **after** the restore that
+relies on an unqualified name resolved through `extensions` — `citext`,
+`gin_trgm_ops`, `gist_trgm_ops` — will fail or resolve wrongly. **Restoring the
+dump is not on its own enough to rebuild a working database. The database-level
+settings must be re-applied as a step of the recovery**, read from the source
+cluster's `pg_db_role_setting` (or captured alongside the dump), because the
+archive does not contain them.
+
+Two mechanical options, either of which closes the gap for a real recovery:
+
+- take the backup with `pg_dump --create`, so the archive carries the
+  `CREATE DATABASE` and its settings; or
+- re-apply them explicitly after `CREATE DATABASE`, one
+  `ALTER DATABASE <target> SET <name> = <value>` per row of the source's
+  `pg_db_role_setting` where `setrole = 0`.
+
+`scripts/ci/backup-restore-drill.mjs` now does the second, **before**
+`pg_restore` runs, and then asserts that the restored database's set of
+database-level settings **equals** the source's — failing when it does not, and
+reporting both sets. The schema-hash equality assertion was left exactly as it
+was, so it still catches genuine structural loss.
+
+This addendum does not change the Phase 1-12 status. It records a
+**disaster-recovery gap in the contract** that the Phase 1-12 drill did not
+measure and the nightly drill has since closed. See
+`docs/engineering/ci-automation/nightly-assurance.md` §"Backup and restore" and
+`docs/phase-1/phase-1-30/change-control-2026-09-06.md` CC-17.
+
 ## Status
 
 **Status: PASS (validation drill).** A real custom-format `pg_dump` (2,941,202 bytes, 1,123 ms,
 SHA-256 recorded) was produced from the canonical source state and encrypted with AES-256-CBC /
 PBKDF2 using an ephemeral, unstored passphrase. All artifacts were removed; nothing committed.
 Restore verification and corruption detection are recorded in `restore-evidence.md`.
+
+**2026-09-07:** still PASS as measured, and now qualified — see the addendum above. A restore of
+this dump must **re-apply the database-level settings**, which the dump does not carry.
