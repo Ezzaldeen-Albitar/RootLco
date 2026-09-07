@@ -38,6 +38,21 @@ the integrated acceptance on a fresh organisation is the step W9 owes.
 Operations: 352 at P1-30's start → 356 (A1) → 368 (A2) → **373** (#322). Migrations 136 → **137**
 (#321). Permission codes **118** throughout. Administrator bundle 48 → 65 (#321) → **67** (#322).
 
+**Amendment A1, 2026-09-07 — re-measured on protected `develop` `3d752119`.** The table and totals
+above were verified at `159727b1` and stand as that measurement. Seven pull requests have landed
+since the closure head (#333 … #339), and four of the case counts above have moved. Counted by
+running the files today: `inventory.dom.test.tsx` 30 → **37** (#335, which replaced the W4 category
+filter with a list, CC-16), `inventory-setup.dom.test.tsx` 17 → **29** (#335),
+`inventory-opening-stock.dom.test.tsx` 14 → **25** (#335 and #339), and the shared
+`inventory-api.test.ts` 38 → **45** (#339, the opening batch read back);
+`inventory-parts.dom.test.tsx` 22 and `inventory-movements.dom.test.tsx` 12 are unmoved. Of the
+totals: operations **373 → 375** (`node scripts/p1-24-operation-register.mjs --check` reports 375
+operations, all covered, reconciled against 375 OpenAPI operations — the two opening-batch reads
+#334 published); migrations **137 → 138** (#338's opening-cell uniqueness); permission codes **118**
+and the administrator bundle **67** are unmoved, counted in
+`supabase/seeds/04_iam_permission_catalog.sql` and `bootstrap-roles.ts`. The per-wave rows and
+sections below are left as written — each is its own wave's record, and this note is the correction.
+
 ---
 
 ## A0 — preflight (#310, `f6381020`)

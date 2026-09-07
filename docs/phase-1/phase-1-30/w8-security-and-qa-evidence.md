@@ -9,6 +9,12 @@ repository; the definitions below transpose P1-28's (`docs/phase-1/phase-1-28/ca
 lines 172-212), the only in-repo precedent, onto P1-30's surface. Every figure is today's; a
 number in this prose describes a run, and the gate's own derivation is the authority.
 
+**Amendment A1, 2026-09-07.** Eleven is the W8 row's count, not the register's. The canonical plan's
+§0 also names **two DevOps tasks**, and its §4 assigns them to no W-item; the P1-28 range this
+record transposes from holds their definitions (`P1-28-DO-001`, `P1-28-DO-002`). The two rows below
+and §12-§13 were added by this amendment, on the same transposition and with the same caveat; the
+sentence above and the title line are left as written.
+
 | item    | P1-30 definition                                                                | evidence | state       |
 | ------- | ------------------------------------------------------------------------------- | -------- | ----------- |
 | SEC-001 | least-privilege permission and resolved-scope enforcement on every P1-30 screen | §1       | held        |
@@ -20,6 +26,8 @@ number in this prose describes a run, and the gate's own derivation is the autho
 | QA-003  | tenant / company / branch isolation                                             | §7       | held, 1 obs |
 | QA-004  | concurrency, idempotency and record-version sourcing                            | §8       | held        |
 | QA-005  | regression and immutable evidence packaging                                     | §9       | held        |
+| DO-001  | continuous-integration quality gate and gate-metadata co-maintenance            | §12      | held, 1 obs |
+| DO-002  | structured logging, monitoring and pipeline wiring                              | §13      | held, 1 obs |
 | DOC-001 | canonical plan, wave records and traceability synchronised                      | §10      | done        |
 | DOC-002 | operator / developer guidance and the change record                             | §11      | done        |
 
@@ -105,6 +113,14 @@ inventory-setup 17, inventory-opening-stock 14 — every route page rendered beh
 session with a throwing `notFound`, LTR and RTL. Web tier at
 `de7ce932`: **130 files, 3490 tests, 0 failed** (hosted run 34038179042).
 
+**Amendment A1, 2026-09-07.** The figures above are `de7ce932`'s and stand as that measurement.
+Four have moved since, on `3d752119`, counted by running the six inventory files today:
+`inventory.dom` 30 → **37** (37 reported by the runner, being 35 `it(` blocks and one two-case
+`it.each`), `inventory-setup` 17 → **29**, `inventory-opening-stock` 14 → **25**, and the shared
+`inventory-api` adapter suite 38 → **45**; the other five files ran to 133 in one pass, which is
+exactly 45 + 22 + 12 + 29 + 25. `inventory-parts` 22 and `inventory-movements` 12 are unmoved. The
+web-tier total above is not re-measured here and is `de7ce932`'s.
+
 ## 6. QA-002 — API contract, error paths and replay shapes
 
 Adapter suites (executed cases today): services-api 17, pricing-api 16, quotations-api 14,
@@ -170,3 +186,58 @@ records named above and in the memory of the gates: a new operation moves the P1
 pin, the wire-shape buckets, the route/operation/status pins, the P1-19 and P1-21 inventories, the
 run ledger and its locators — listed in `wave-records.md` and the #322 record so the next wave
 does not rediscover them.
+
+## 12. DO-001 — continuous-integration quality gate and gate-metadata co-maintenance (added 2026-09-07, A1)
+
+- **Three P1-30 gates exist and can go red.** `check-p1-30-server-arithmetic.mjs` (A0, #310, added
+  before any screen existed), `check-p1-30-access.mjs` and `check-p1-30-payload-parity.mjs` (W1,
+  #314). Each is registered `tier: 'required'` in the command register
+  (`scripts/ci/check-command-coverage.mjs`) and listed in `verify:policies` (`package.json`), and
+  each carries a red-proof under `tests/ci/`: `p1-30-server-arithmetic.test.ts`,
+  `p1-30-access-gate.test.ts`, `p1-30-payload-parity.test.ts` and `p1-30-payload-extraction.test.ts`.
+- **Three ownership lanes carried the phase.** `p1-30-frontend` and `p1-30-backend` (#310) and
+  `p1-30-tenant-bootstrap` (#321), declared in
+  `.github/ci-baselines/phase-ownership-profiles.json` and resolved by
+  `scripts/ci/check-phase-ownership.mjs`, with no broad `remediation/p1-30-` rule, so an unmapped
+  branch is refused rather than judged loosely; 0 violations on every P1-30 pull request
+  (`wave-records.md`).
+- **Gate metadata travelled with the change that needed it**, which is the P1-28 DO-001 rule.
+  `P1_30_AREAS` in the arithmetic gate is hand-listed and holds twelve entries today, six feature
+  trees and six route segments; `P1_30_DOMAINS` in the parity gate documents itself as growing per
+  wave and reads `svc, quo, inv, sal`; the access gate derives its segments from the operation
+  register and learned to union the arithmetic gate's at W2; the web test-count floor was raised
+  through its own rule at W2. Beside the phase, on a `chore/` lane, the comment-blind
+  `defineOperation` parser fix (#312).
+- **Observation, recorded and not hidden → CC-25.** No hosted job names a P1-30 gate. All three
+  reach hosted CI only through `hosted-clean-room` → `verify:workspaces` → `verify:policies`. That
+  satisfies the command register's reach rule and is enforcement, but it is not the shape P1-28
+  required of its own gates, which `_reusable-node-quality.yml` names one by one in `static-quality`
+  (four) and `web-quality` (three). P1-29's three gates sit in the same position. Named follow-on:
+  name the six in a fast always-required job, with a derivation test in the `p1-28-devops-gate`
+  shape — never by demoting them to `informational`. Repository tooling, `chore/`, owned by no phase.
+
+## 13. DO-002 — structured logging, monitoring and pipeline wiring (added 2026-09-07, A1)
+
+- **The logging surface is the API's own correlation reference, rendered wherever a P1-30 screen
+  fails.** The feature trees' shared primitive renders `outcome.correlationId` inside a
+  `role="alert"` (`apps/web/src/features/payments/components/shared.tsx`), and 23 files across the
+  six P1-30 trees reference it — services 2, pricing 4, quotations 4, inventory 6, billing 4,
+  payments 3. Each DOM suite asserts it per screen. The integrated acceptance carries the API's own
+  correlation id on every HTTP step it records: 71 in `w9-acceptance-record.md` §2, 92 in the
+  re-run recorded in its §7.1.
+- **Pipeline wiring refuses what it cannot place.** The three P1-30 branch prefixes resolve to their
+  profiles and no broad rule exists, so `docs/p1-30-w8-wave-records` (#324) mapped to no profile and
+  `static-quality` refused to judge it; the identical commit re-landed as
+  `feature/p1-30-w8-wave-records` (#325, `de7ce932`). Hosted run ids are recorded per wave in
+  `wave-records.md`; the run ledger holds by design only the closing pair; the genesis suite was
+  isolated for the hosted clean room (CC-01, #322).
+- **Monitoring was reported rather than worked around.** The `nightly-assurance` failure on `main`
+  was found while preparing the promotion and is recorded in `closure-record.md` §4, with its two
+  causes and their owner, outside this phase.
+- **Observation, recorded and not hidden → CC-26.** The correlation rule is held per screen by DOM
+  assertion, not derived. `apps/web/tests/p1-28-observability.test.ts` sweeps roots derived from the
+  sealed P1-28 plan and classifies only `ErrorState` and `BackendUnavailableState`; not one file in
+  the six P1-30 feature trees uses either component, so extending those roots would both edit a
+  sealed artefact and measure nothing. Named follow-on: a P1-30 sibling sweep over the six trees
+  classifying P1-30's own failure primitives in both directions — present on a backend failure,
+  absent on a client-side gate. Frontend, first P1-31 touch, beside CC-15.
