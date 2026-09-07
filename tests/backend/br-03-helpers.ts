@@ -296,13 +296,32 @@ export function liveAvailabilityCount(profileId: string): Promise<number> {
  * Deletes rather than soft-deletes on purpose. A soft delete is the PRODUCT
  * behaviour under test; a fixture reset that used it would leave rows the next
  * test's counts would have to know about.
+ *
+ * Every delete is bounded to this suite's fixture tenants. The local PostgreSQL
+ * is one shared container serving every worktree and the acceptance environment,
+ * so an unbounded sweep here destroys another workstream's rows — or, when one of
+ * them has a child the reset does not unwind, fails on that foreign key and takes
+ * the whole suite with it.
  */
 export async function resetRoster(): Promise<void> {
-  await admin.query('DELETE FROM tech.technician_certification_details');
-  await admin.query('DELETE FROM tech.technician_certifications');
-  await admin.query('DELETE FROM tech.technician_skills');
-  await admin.query('DELETE FROM tech.technician_availability');
-  await admin.query('DELETE FROM tech.technician_profiles');
+  const tenants = [TENANT_A, TENANT_B];
+  await admin.query(
+    'DELETE FROM tech.technician_certification_details WHERE tenant_id = ANY($1::uuid[])',
+    [tenants]
+  );
+  await admin.query(
+    'DELETE FROM tech.technician_certifications WHERE tenant_id = ANY($1::uuid[])',
+    [tenants]
+  );
+  await admin.query('DELETE FROM tech.technician_skills WHERE tenant_id = ANY($1::uuid[])', [
+    tenants,
+  ]);
+  await admin.query('DELETE FROM tech.technician_availability WHERE tenant_id = ANY($1::uuid[])', [
+    tenants,
+  ]);
+  await admin.query('DELETE FROM tech.technician_profiles WHERE tenant_id = ANY($1::uuid[])', [
+    tenants,
+  ]);
 }
 
 /** The restricted certificate number, read as the owner and never through RLS. */
