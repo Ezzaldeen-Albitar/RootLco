@@ -904,13 +904,30 @@ describe('P1-29 W4 — access to the workspace itself', () => {
       (await json<Items<QueueEntry>>(ownQueue)).items.map((entry) => entry.jobId)
     ).not.toContain(seeded.jobId);
 
-    // Naming this tenant's branch as the target answers the EMPTY queue — byte-
-    // identical to "no profile", which is the route's documented posture: a
-    // distinct refusal would tell a prober that the pair exists somewhere.
+    // Naming this tenant's branch as the target is REFUSED (CC-14), not answered
+    // with the empty queue this suite measured before. `tech.technician-me-queue`
+    // passes `scopeTargetOption(raw)`, so the pre-handler resolves the pair to a
+    // branch visible to the caller inside its OWN tenant and refuses first. The
+    // posture the old comment described — say nothing about whether the pair
+    // exists — is preserved and strengthened: the refusal is identical for this
+    // real foreign pair and for one that exists nowhere, so a prober still learns
+    // nothing, and the application layer now decides rather than leaving an empty
+    // page to stand in for a decision.
     authAsSubject(TECH_B.subject, TENANT_B);
     const foreign = await meQueue({ companyId: COMPANY_A1, branchId: BRANCH_A1 });
-    expect(foreign.status).toBe(200);
-    expect((await json<Items<QueueEntry>>(foreign)).items).toEqual([]);
+    expect(foreign.status).toBe(403);
+    const foreignProblem = (await foreign.json()) as Record<string, unknown>;
+    expect(foreignProblem.code).toBe('ERR-IAM-001');
+
+    authAsSubject(TECH_B.subject, TENANT_B);
+    const nowhere = await meQueue({ companyId: randomUUID(), branchId: randomUUID() });
+    expect(nowhere.status).toBe(403);
+    expect({ ...((await nowhere.json()) as Record<string, unknown>), correlationId: null }).toEqual(
+      {
+        ...foreignProblem,
+        correlationId: null,
+      }
+    );
 
     // The job's reads are invisible from there.
     authAsSubject(TECH_B.subject, TENANT_B);

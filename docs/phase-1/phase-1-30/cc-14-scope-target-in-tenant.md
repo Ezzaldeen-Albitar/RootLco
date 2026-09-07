@@ -115,6 +115,7 @@ excludes `BRANCH_A1` is refused.
 
 End to end — `p1-30-a2-inventory-reads` (location list, reservation list), `p1-19-work-order-reads`,
 `p1-27-reception-reads`, `br-03-technician-roster`, `br-06-work-execution-controls`,
+`p1-29-w4-technician-workspace` (W4-8, `tech.technician-me-queue`),
 `pre-p1-29-wave-c-company-rbac` (W32), `p1-30-a2-published-reads` (receipt list) and
 `p1-21-inventory-reads` (H6 and the mixed-grant corner) now assert the exact 403 and its code, each
 with a nowhere-pair companion whose problem document is compared whole with the correlation id
