@@ -212,7 +212,15 @@ describe('the API application lives in the workspace', () => {
     // `payments`, and the price-rule collection), so a slice that published a read
     // by creating a redundant second module for a path would move this count and
     // not the other.
-    expect(routeFiles.length).toBe(296);
+    //
+    // 299 with the P1-31 delivery read seam (P-2 … P-5): six operations over
+    // THREE new files. `/deliveries/{deliveryId}`,
+    // `/deliveries/{deliveryId}/status-history` and
+    // `/work-orders/{workOrderId}/delivery` are new modules; the receiver,
+    // checklist-result and signature reads were added as GETs beside the POSTs
+    // that already owned their paths, so they move the operation count and not
+    // this one — six and three, the same asymmetry again.
+    expect(routeFiles.length).toBe(299);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -233,7 +241,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 375 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 381 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -272,7 +280,10 @@ describe('the API application lives in the workspace', () => {
     // and NOT the module count, while the id-addressed detail is a new module and
     // moves both — two operations over one new module, and the two numbers move by
     // different amounts again.
-    expect(report.operations).toHaveLength(375);
+    // 381 with the P1-31 delivery read seam (P-2 … P-5): six operations over three
+    // new modules, because three of the six co-locate a GET on a path a POST
+    // already owned.
+    expect(report.operations).toHaveLength(381);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the

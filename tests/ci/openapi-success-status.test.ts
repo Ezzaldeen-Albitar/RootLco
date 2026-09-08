@@ -59,7 +59,7 @@ describe('every operation publishes the success status it returns', () => {
     // the original defect, so the scanner reports rather than assumes — and this
     // asserts it had nothing to report.
     expect(unresolved).toEqual([]);
-    expect(actual.size).toBe(375);
+    expect(actual.size).toBe(381);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -89,7 +89,11 @@ describe('every operation publishes the success status it returns', () => {
     expect(counts[202]).toBe(1);
     // The two P1-30 opening-batch reads (S-17) are GETs returning 200, so
     // 264 -> 266 while 201 and 202 are unchanged.
-    expect(counts[200]).toBe(266);
+    // The six P1-31 delivery reads (P-2 … P-5) are GETs returning 200 as well, so
+    // 266 -> 272 with 201 and 202 again unchanged. That the 201 count did NOT move
+    // is the assertion carrying weight: a read seam that had accidentally shipped
+    // a write would show up here and nowhere else in this file.
+    expect(counts[200]).toBe(272);
   });
 
   it('reads the handler, not the declaration', () => {
