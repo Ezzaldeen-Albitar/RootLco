@@ -109,6 +109,102 @@
  * The bundle is written ONCE, at provisioning. Organisations created before this
  * slice keep the set they were given; bringing them forward is a backfill
  * decision, recorded as a residual rather than performed here.
+ *
+ * ## The P1-31 delivery, warranty and reporting block (prerequisite P-1)
+ *
+ * The same closure a third time, in a third namespace. The P1-31 A0 preflight
+ * (`docs/phase-1/phase-1-31/a0-preflight.md`, prerequisite P-1) measured that
+ * neither bootstrap role held ANY `sal.delivery`, `wty.`, `rpt.` or `iam.audit`
+ * code, and `ins_role_permissions_delegable` admits a mapping only when the
+ * acting administrator already holds the code being mapped. So no principal in
+ * an organisation created by `platform.organization-provision` could hold one,
+ * or ever be granted one — closing all sixteen P1-31 scope items and the audit
+ * screen that already ships.
+ *
+ * The six codes added below are DERIVED by the rule the P1-30 A0 matrix set:
+ * a code is proposed only when a SHIPPED operation declares it, and each is
+ * already a row in the permission catalogue seed — this slice mints nothing and
+ * adds no migration. Declaration is the NECESSARY condition, not the sufficient
+ * one: `rpt.export` clears it and is still withheld (CC-04 below). Each one,
+ * with the operation that declares it:
+ *
+ *  - `sal.delivery.manage` — `sal.delivery-create`, `sal.delivery-receiver-verify`,
+ *    `sal.delivery-checklist-record`, `sal.delivery-signature-attach`, and the
+ *    INSERT half of `ins_authorized_receivers_gated` / the signatures policy.
+ *  - `sal.delivery.view` — the eligibility read and the SELECT half of
+ *    `sel_authorized_receivers_gated` and `sel_delivery_signatures_gated`. Not
+ *    bookkeeping: `sal.complete_delivery` is `SECURITY INVOKER` and two of its
+ *    three gates read those tables, so a holder without it is told there is no
+ *    authorized receiver for a delivery whose receiver is verified. A0 measured
+ *    the eligibility read failing on this ONE code, the bundle already holding
+ *    its companion `sal.finance.view`.
+ *  - `sal.delivery.complete` — `sal.delivery-complete`, and the sole overridable
+ *    blocker (`financial_balance_outstanding`, `OVERRIDABLE_BLOCKERS`). The
+ *    high-risk authority is held on the same reasoning as `wo.work_order.close`
+ *    and `qms.quality_control.finalize`, which the bundle already carries: an
+ *    administrator can build a delivery-officer role only out of codes it holds.
+ *  - `wty.warranty.issue` — `wty.warranty-generate` and `wty.warranty-detail`
+ *    (the detail read reuses the write code deliberately, because the catalogue
+ *    seeds no `wty` read code; P1-31 P-7 owns minting one).
+ *  - `rpt.report.read` — `rpt.report-catalogue` and `rpt.report-read`.
+ *  - `iam.audit.view` — `iam.audit-event-list`, `iam.audit-event-detail` and the
+ *    four `sel_*_permitted` audit policies. The Audit Log screen already ships.
+ *
+ * ### Three of the nine are DELIBERATELY EXCLUDED (P1-31 CC-01, CC-02, CC-04)
+ *
+ * Two of the three are excluded because nothing declares them; the third is
+ * excluded although something does. The kinds are not the same and are not
+ * recorded as though they were.
+ *
+ * `wty.policy.manage` and `rpt.report.configure` are seeded catalogue codes that
+ * NO operation declares and NO row-level-security predicate names — a search of
+ * `apps/api/src` and `supabase/` finds each only in the catalogue seed itself.
+ * Holding them would confer nothing today, which is precisely why they are not
+ * held: the administrator bundle is the delegation ceiling of the whole tenant,
+ * and a code with no measured need is authority granted on speculation.
+ *
+ * They are also the codes their own contracts ask to be granted deliberately.
+ * `wty.warranty-detail` records that borrowing `wty.policy.manage` for a read
+ * "would be worse: it grants coverage administration"; the report-configuration
+ * repository names `rpt.report.configure` as the authority for writes that do
+ * not exist. A0 records both surfaces as absent — P-10 (PPD-04, the warranty
+ * policy and coverage tables have no writer) and P-11 (the report-configuration
+ * tables have no writer, no seed, and the definition view's `executable` is the
+ * literal `false`).
+ *
+ * CONSEQUENCE, stated rather than hidden: when P-10 and P-11 publish those
+ * writers, a fresh administrator will be refused by `ERR-IAM-001` on the write
+ * AND unable to delegate it, and the slice that publishes them owns the
+ * widening — exactly the `inv.item.manage` sequence, excluded here while no
+ * route declared it and added by #322 on the day three routes did.
+ *
+ * `rpt.export` is the third, and it is excluded on DIFFERENT grounds — least
+ * privilege, by an explicit Owner decision of 2026-09-08 (CC-04). Two shipped
+ * operations do declare it, `shared.export-authorize` and
+ * `shared.export-catalogue`, so the "nothing declares it" rule above would have
+ * carried it. What that rule does not weigh is REACH: `rpt.export` is not a
+ * P1-31 code at all but the platform-wide export switch of P1-15, and the
+ * bundle already holds the entitlements all three registered resources use
+ * (`shared.document.read`, `org.branch.read`) and the sensitive-field second
+ * permission (`iam.sensitive.view`). Carrying it would therefore let the
+ * administrator of a one-day-old organisation authorize bulk export of
+ * documents, outbound messages and branch data, sensitive fields included,
+ * before anyone had decided that it should.
+ *
+ * Excluding it delays nothing that this phase can reach. The reporting items
+ * that would consume an export are blocked on P-11 and P-12 regardless — there
+ * is no report engine and no `POST /reports/{reportCode}:export` route — so the
+ * only capability withheld today is the one described above. CONSEQUENCE, on
+ * the same terms as CC-01 and CC-02: a freshly provisioned administrator is
+ * refused `ERR-IAM-001` by `shared.export-catalogue` and
+ * `shared.export-authorize`, and cannot delegate the code to anyone. It is
+ * revisitable — when the export contract exists and the need is demonstrated,
+ * the slice that publishes it owns the widening.
+ *
+ * The bundle is still written ONCE, at provisioning. The pilot organisation and
+ * every other organisation provisioned before this slice keep the set they were
+ * given; the backfill remains the unperformed decision recorded above and as
+ * P1-31 A0 decision D-2.
  */
 
 export interface BootstrapRoleDefinition {
@@ -130,7 +226,7 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
   code: 'tenant_administrator',
   name: 'Tenant Administrator',
   description:
-    'Tenant administration established at provisioning: session reachability, IAM administration, the organisation reads the workshop screens require, and every code the P1-29 and P1-30 personas need, so that they can be delegated.',
+    'Tenant administration established at provisioning: session reachability, IAM administration, the organisation reads the workshop screens require, and every code the P1-29, P1-30 and P1-31 personas need, so that they can be delegated.',
   permissionCodes: Object.freeze([
     // Session reachability and IAM administration (direct).
     'iam.user.read',
@@ -218,5 +314,21 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     'sal.finance.view',
     'sal.payment.record',
     'sal.payment.allocate',
+    // The P1-31 delivery, warranty and reporting chain (prerequisite P-1). Held
+    // to be exercised and to be delegated to a delivery officer, a warranty
+    // clerk and a reporting reader; each is declared by a SHIPPED operation and
+    // each already exists in the permission catalogue seed — none is minted
+    // here. Three of the nine are deliberately EXCLUDED: `wty.policy.manage`
+    // and `rpt.report.configure` because no operation declares them and no
+    // policy predicate names them (P1-31 CC-01, CC-02), and `rpt.export` —
+    // which two shipped operations DO declare — on least-privilege grounds by
+    // Owner decision, because it is the platform-wide export switch and the
+    // bundle already holds every entitlement it pairs with (P1-31 CC-04).
+    'sal.delivery.manage',
+    'sal.delivery.view',
+    'sal.delivery.complete',
+    'wty.warranty.issue',
+    'rpt.report.read',
+    'iam.audit.view',
   ]),
 });
