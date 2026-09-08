@@ -143,9 +143,8 @@
  *    high-risk authority is held on the same reasoning as `wo.work_order.close`
  *    and `qms.quality_control.finalize`, which the bundle already carries: an
  *    administrator can build a delivery-officer role only out of codes it holds.
- *  - `wty.warranty.issue` — `wty.warranty-generate` and `wty.warranty-detail`
- *    (the detail read reuses the write code deliberately, because the catalogue
- *    seeds no `wty` read code; P1-31 P-7 owns minting one).
+ *  - `wty.warranty.issue` — `wty.warranty-generate`. It also gated
+ *    `wty.warranty-detail` until 2026-09-08; see the P-7 entry below.
  *  - `rpt.report.read` — `rpt.report-catalogue` and `rpt.report-read`.
  *  - `iam.audit.view` — `iam.audit-event-list`, `iam.audit-event-detail` and the
  *    four `sel_*_permitted` audit policies. The Audit Log screen already ships.
@@ -205,6 +204,34 @@
  * every other organisation provisioned before this slice keep the set they were
  * given; the backfill remains the unperformed decision recorded above and as
  * P1-31 A0 decision D-2.
+ *
+ * ## The seventh P1-31 code: `wty.warranty.read` (prerequisite P-7, CC-07)
+ *
+ * The warranty read seam mints ONE permission — the only shipping insert this
+ * phase makes into `iam.permissions` — and the bundle carries it. The reasoning is
+ * the same rule, applied rather than reflexed:
+ *
+ *  - **Declared by shipped operations**, the necessary condition: `wty.warranty-list`
+ *    (new) and `wty.warranty-detail` (re-pointed from the write code it was wrongly
+ *    gated on). That is two declarers, where CC-01 and CC-02 withhold codes with
+ *    zero.
+ *  - **Reach, the question CC-04 added**, and it is the opposite answer.
+ *    `rpt.export` is a platform-wide switch over every registered export resource;
+ *    `wty.warranty.read` reads warranty records, their coverage terms and their
+ *    covered jobs and parts in ONE schema. `wty` has 80 columns, all classified
+ *    `internal` and none `restricted`, and NOT ONE is monetary — so the code
+ *    confers no money, no restricted identifier and no write of any kind.
+ *  - **Withholding it would REMOVE a capability**, which none of CC-01, CC-02 or
+ *    CC-04 does. A freshly provisioned administrator can read a warranty today,
+ *    through `wty.warranty.issue`, which this bundle already holds. Re-pointing
+ *    the detail read without carrying the read code would take that away — a
+ *    regression dressed as least privilege. Least privilege here means the
+ *    administrator reads warranties under a READ code instead of an ISSUE code,
+ *    not that it stops reading them.
+ *
+ * Nothing is withdrawn: `wty.warranty.issue` stays, because
+ * `wty.warranty-generate` still declares it and an administrator that could not
+ * hold it could not delegate a warranty clerk.
  */
 
 export interface BootstrapRoleDefinition {
@@ -316,10 +343,11 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     'sal.payment.allocate',
     // The P1-31 delivery, warranty and reporting chain (prerequisite P-1). Held
     // to be exercised and to be delegated to a delivery officer, a warranty
-    // clerk and a reporting reader; each is declared by a SHIPPED operation and
-    // each already exists in the permission catalogue seed — none is minted
-    // here. Three of the nine are deliberately EXCLUDED: `wty.policy.manage`
-    // and `rpt.report.configure` because no operation declares them and no
+    // clerk and a reporting reader; each is declared by a SHIPPED operation.
+    // The six P-1 codes all pre-existed in the permission catalogue seed and P-1
+    // minted nothing; the seventh, added by P-7 below, is the phase's one minted
+    // code. Three of P-1's nine candidates are deliberately EXCLUDED:
+    // `wty.policy.manage` and `rpt.report.configure` because no operation declares them and no
     // policy predicate names them (P1-31 CC-01, CC-02), and `rpt.export` —
     // which two shipped operations DO declare — on least-privilege grounds by
     // Owner decision, because it is the platform-wide export switch and the
@@ -328,6 +356,13 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     'sal.delivery.view',
     'sal.delivery.complete',
     'wty.warranty.issue',
+    // P1-31 prerequisite P-7 (CC-07), the phase's ONLY minted code. Declared by
+    // `wty.warranty-list` and by `wty.warranty-detail`, which was re-pointed off
+    // the write code above on the same day. Carried rather than withheld because
+    // withholding it would REMOVE a capability this bundle already confers —
+    // the administrator can read a warranty today through `wty.warranty.issue`
+    // — which is the one thing CC-01, CC-02 and CC-04 never do.
+    'wty.warranty.read',
     'rpt.report.read',
     'iam.audit.view',
   ]),

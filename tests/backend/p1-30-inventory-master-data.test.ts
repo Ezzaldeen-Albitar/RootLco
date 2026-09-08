@@ -409,9 +409,10 @@ describe('declarations', () => {
     expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toContain(APPROVE);
     expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toContain(MANAGE);
     // 73 since the P1-31 P-1 widening added six delivery, warranty and
-    // reporting codes (`rpt.export` withheld by Owner decision, P1-31 CC-04);
-    // the two inventory codes this case owns are unaffected.
-    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(73);
+    // reporting codes (`rpt.export` withheld by Owner decision, P1-31 CC-04),
+    // and 74 since P1-31 P-7 minted and carried `wty.warranty.read` (CC-07);
+    // the two inventory codes this case owns are unaffected by both.
+    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(74);
   });
 });
 

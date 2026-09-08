@@ -37,6 +37,13 @@
  * in this file. `P1-22-L-01`.
  */
 import { Repository } from '@/server/db/repository';
+import {
+  buildPageWithCursors,
+  keysetFragment,
+  type OrderingContract,
+  type Page,
+  type PageRequest,
+} from '@/server/db/pagination';
 import type { DbHandle } from '@/server/db/transaction';
 
 /**
@@ -68,6 +75,30 @@ export const MAX_COVERED_ITEMS = 500;
  * a caller-safe conflict rather than as a second live warranty.
  */
 export const MAX_WARRANTIES_PER_DELIVERY = 200;
+
+/**
+ * A branch's warranty records, newest first (P1-31 prerequisite P-6).
+ *
+ * `start_date` and not `created_at`: it is the business day the coverage began,
+ * `wty.issue_warranty` binds it to the delivery's `delivered_at::date` (M-wty-2),
+ * the freeze guard makes it immutable, and it is the column
+ * `listWarrantiesForDelivery` already orders this same table on — so a screen
+ * that reads a delivery's warranties and then the branch's sees ONE ordering
+ * rather than two.
+ *
+ * It is a `date`, so many rows legitimately share a sort value; the `id`
+ * tie-break in `keysetFragment` is what makes the order total. That is a
+ * different problem from `P1-27-INT-006`, which is about a timestamp cursor
+ * TRUNCATED below the stored precision: a `YYYY-MM-DD` text rendering of a
+ * `date` loses nothing, so no `cursorTimestamp()` is needed or used here.
+ *
+ * The key is qualified so a cursor minted here cannot be replayed against
+ * another list.
+ */
+export const WARRANTY_ORDER: OrderingContract = Object.freeze({
+  key: 'wty.warranty_records:start_date_desc',
+  direction: 'desc',
+});
 
 export interface WarrantyPolicyRow {
   readonly id: string;
@@ -330,6 +361,40 @@ export class WarrantyRepository extends Repository {
   }
 
   /**
+   * The SET form of `findPolicy` — several policies by id, in one statement.
+   *
+   * Exists for `listWarranties`: every record cites a policy, and a list that
+   * published a bare `policyId` would publish an identifier no caller can
+   * resolve, because no operation lists warranty policies (**PPD-04** / P-10).
+   * Resolving them one row at a time would be a statement per row, so the page's
+   * distinct policies are read ONCE and the rows are labelled from the result —
+   * the pattern `PaymentReadService.listReceipts` already uses for payment
+   * methods.
+   *
+   * The predicate is `findPolicy`'s, generalised from `= $3` to `= ANY($3)`, and
+   * it filters neither `status` nor `deleted_at` for exactly `findPolicy`'s
+   * reasons: an archived or soft-deleted policy still explains a warranty record
+   * that already cites it, and dropping it here would leave a row on the page
+   * with no policy at all.
+   */
+  public async findPolicies(
+    db: DbHandle,
+    companyId: string,
+    policyIds: readonly string[]
+  ): Promise<readonly WarrantyPolicyRow[]> {
+    if (policyIds.length === 0) return [];
+    const context = this.assertContext(db);
+    const result = await this.run<PolicySql>(
+      db,
+      `SELECT ${POLICY_COLUMNS}
+         FROM wty.warranty_policies
+        WHERE tenant_id = $1 AND company_id = $2 AND id = ANY($3::uuid[])`,
+      [context.principal.tenantId, companyId, [...policyIds]]
+    );
+    return result.rows.map(toPolicy);
+  }
+
+  /**
    * One live policy by its code, within a company.
    *
    * `deleted_at IS NULL` mirrors `uq_warranty_policies_code`, which is a PARTIAL
@@ -560,6 +625,97 @@ export class WarrantyRepository extends Repository {
       ]
     );
     return { record, items: items.rows.map(toItem) };
+  }
+
+  /**
+   * A branch's warranty records, newest first (P1-31 prerequisite P-6).
+   *
+   * ## Why this did not already exist
+   *
+   * Every warranty read in this file is addressed by something the caller must
+   * already hold — a record id, an idempotency key, a delivery id. There was no
+   * way to reach a warranty from a branch, so `GET /api/v1/warranties`, which the
+   * chapter declares, had nothing to publish (**VHM-06 / WF-26**). This query and
+   * its filters are new; the row mapper is `toRecord`, unchanged.
+   *
+   * ## Scope
+   *
+   * `company_id` and `branch_id` are bound predicates and the caller has already
+   * authorized them. `sel_warranty_records_scope` narrows on
+   * `iam.allowed_branch_ids()` — the permission-blind union of every active grant
+   * — so without the explicit pair a caller holding `wty.warranty.read` in one
+   * branch would read every branch it holds any grant in (P1-18-A-01). RLS
+   * remains the guarantee; the predicate is the intent, and it keeps the plan on
+   * the tenant-leading composite indexes.
+   *
+   * ## The vehicle filter costs no column
+   *
+   * `wty.warranty_records.vehicle_id` is NOT NULL and `ix_warranty_records_vehicle
+   * (tenant_id, vehicle_id)` already covers it, which is the fact A0 records under
+   * P-6. It is the ONLY filter offered: the chapter names no other, and a
+   * parameter nobody asked for is a contract to keep for ever.
+   *
+   * ## Ordering and `deleted_at`
+   *
+   * `WARRANTY_ORDER` — `(start_date DESC, id DESC)`, the ordering
+   * `listWarrantiesForDelivery` already uses. The branch predicate is served by
+   * `uq_warranty_records_scope_id (tenant_id, company_id, branch_id, id)` and the
+   * vehicle filter by `ix_warranty_records_vehicle`; no index leads on
+   * `(tenant, company, branch, start_date)`, so the ordering is a sort over the
+   * narrowed set. Adding one would be a migration, and P-6 demonstrates no need
+   * for a schema change — a branch's warranty records are bounded by its
+   * deliveries.
+   *
+   * `deleted_at IS NULL` is filtered, as it is in `findWarrantyRecord` and
+   * `listWarrantiesForDelivery`: a list feeds no primitive, so publishing rows
+   * the tenant has deleted and leaving the caller to guess would be the only
+   * dishonest option.
+   */
+  public async listWarranties(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly vehicleId?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<WarrantyRecordRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.vehicleId ?? null,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'start_date', id: 'id' },
+      WARRANTY_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<RecordSql>(
+      db,
+      `SELECT ${RECORD_COLUMNS}
+         FROM wty.warranty_records
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+          AND deleted_at IS NULL
+          AND ($4::uuid IS NULL OR vehicle_id = $4)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => {
+        const item = toRecord(row);
+        // `start_date` is already rendered `YYYY-MM-DD` by `RECORD_COLUMNS`, and
+        // a `date` has no sub-second component to lose — so unlike every
+        // timestamp cursor in this repository it needs no `cursorTimestamp()`.
+        return { item, sortValue: item.startDate, id: item.id };
+      }),
+      request,
+      WARRANTY_ORDER
+    );
   }
 
   /**

@@ -220,7 +220,12 @@ describe('the API application lives in the workspace', () => {
     // checklist-result and signature reads were added as GETs beside the POSTs
     // that already owned their paths, so they move the operation count and not
     // this one — six and three, the same asymmetry again.
-    expect(routeFiles.length).toBe(299);
+    //
+    // 300 with the P1-31 warranty read seam (P-6, P-7): ONE new module,
+    // `/warranties`, beside the `/warranties/{warrantyId}` module that already
+    // existed — one operation over one new file, so both counts move by one and
+    // the asymmetry above is absent this time rather than merely unstated.
+    expect(routeFiles.length).toBe(300);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -241,7 +246,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 381 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 382 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -283,7 +288,11 @@ describe('the API application lives in the workspace', () => {
     // 381 with the P1-31 delivery read seam (P-2 … P-5): six operations over three
     // new modules, because three of the six co-locate a GET on a path a POST
     // already owned.
-    expect(report.operations).toHaveLength(381);
+    // 382 with the P1-31 warranty read seam (P-6, P-7): one new operation,
+    // `wty.warranty-list`. The re-point of `wty.warranty-detail` onto the minted
+    // `wty.warranty.read` changes a declaration and not a count, which is why the
+    // permission gates and not this one are what prove it.
+    expect(report.operations).toHaveLength(382);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the

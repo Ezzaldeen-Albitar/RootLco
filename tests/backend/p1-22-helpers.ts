@@ -105,6 +105,18 @@ export const DELIVERY_VIEW = 'sal.delivery.view';
 export const POLICY_MANAGE = 'wty.policy.manage';
 export const WARRANTY_ISSUE = 'wty.warranty.issue';
 /**
+ * Minted by P1-31 prerequisite P-7 (2026-09-08).
+ *
+ * `wty.warranty-detail` used to declare `wty.warranty.issue`, so a caller holding
+ * the twelve codes below could read a warranty because it could create one. It now
+ * declares this read code, and the unrestricted principals hold it for the same
+ * reason they hold the other eleven: they model an operator with the full `sal`/`wty`
+ * authority, which after the re-point includes reading a warranty. The DENIAL cases
+ * are unaffected — `SAL_READER` holds neither code, and
+ * `tests/backend/p1-31-warranty-read-seam.test.ts` owns the read-code proof.
+ */
+export const WARRANTY_READ = 'wty.warranty.read';
+/**
  * Held so a `sal`/`wty` principal may read the work order a warranty cites.
  *
  * `wty.warranty-generate` reaches the work-order module's line port to decide covered
@@ -128,6 +140,7 @@ const ALL_SAL_WTY = [
   DELIVERY_VIEW,
   POLICY_MANAGE,
   WARRANTY_ISSUE,
+  WARRANTY_READ,
   WORK_ORDER_READ,
 ];
 
@@ -145,6 +158,7 @@ const CATALOGUE: readonly (readonly [string, string])[] = [
   [DELIVERY_VIEW, 'sal'],
   [POLICY_MANAGE, 'wty'],
   [WARRANTY_ISSUE, 'wty'],
+  [WARRANTY_READ, 'wty'],
 ];
 
 /** An unrelated permission used only to widen a grant union. Never authority. */

@@ -25,10 +25,11 @@
  *   adjudication to P1-22 in four places — measured against the deployed DDL, the
  *   P1-22 mandate's "warranty generation" is the reading that matches reality.
  * - **No policy or coverage administration.** Creating a policy or a coverage row
- *   needs `wty.policy.manage`, and the P1-22 operation inventory registers two
- *   warranty operations, both under `wty.warranty.issue`. Coverage terms are
- *   operator configuration; this module reads them and refuses when they are
- *   missing, rather than authoring them.
+ *   needs `wty.policy.manage`, which no operation in this repository declares
+ *   (**PPD-04**, P1-31 prerequisite P-10). Coverage terms are operator
+ *   configuration; this module reads them and refuses when they are missing,
+ *   rather than authoring them. `findPolicies` resolves the policies a warranty
+ *   list cites and authors none.
  * - **No status advance.** `wty.warranty_records.status` may legally move to
  *   `active`, `expired` or `voided`, and nothing in this phase moves it: expiry is a
  *   function of `expiry_date` and `odometer_limit`, which any reader can evaluate,
@@ -55,7 +56,11 @@ export type {
   WarrantyRecordWithItems,
 } from './data/warranty-repository';
 
-export { MAX_COVERED_ITEMS, MAX_WARRANTIES_PER_DELIVERY } from './data/warranty-repository';
+export {
+  MAX_COVERED_ITEMS,
+  MAX_WARRANTIES_PER_DELIVERY,
+  WARRANTY_ORDER,
+} from './data/warranty-repository';
 
 export type {
   GenerateWarrantyInput,
@@ -63,6 +68,7 @@ export type {
   WarrantyDeliveryFacts,
   WarrantyItemView,
   WarrantyPolicyView,
+  WarrantyRecordListView,
   WarrantyView,
 } from './application/warranty-service';
 
@@ -88,11 +94,18 @@ export {
 /**
  * Composition root: constructs the module's services once per process.
  *
- * One service over one repository. There is no split by authority to make, because
- * both operations answer to the same permission — the catalogue contains no
- * `wty.warranty.read`, so `wty.warranty-detail` reuses `wty.warranty.issue` rather
- * than borrowing `wty.policy.manage`, which would hand coverage administration to a
- * caller who only needs to read a record.
+ * One service over one repository. The authorities are now SPLIT — P1-31
+ * prerequisite P-7 minted `wty.warranty.read`, so the two reads declare it and
+ * `wty.warranty-generate` alone keeps `wty.warranty.issue` — but the split is made
+ * at the route, where the permission is declared, and not by a second class. The
+ * three methods share one repository and one `toView` mapper, and separating them
+ * would duplicate that mapper to no end.
+ *
+ * Until 2026-09-08 the detail read was gated on `wty.warranty.issue`, the authority
+ * to CREATE a warranty, because the catalogue seeded no `wty` read code at all;
+ * borrowing `wty.policy.manage` instead would have handed coverage administration
+ * to a caller who only needs to look at a record. Both readings are now moot: the
+ * least-privilege read code exists.
  */
 export const warrantyModule = composeModule({
   module: 'warranty',

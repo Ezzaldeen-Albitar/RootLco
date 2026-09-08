@@ -314,6 +314,7 @@ export const ROUTE_TEMPLATES = Object.freeze([
   '/vehicles/{vehicleId}/plates',
   '/vehicles/{vehicleId}/relationships',
   '/vehicles/{vehicleId}/status',
+  '/warranties',
   '/warranties/{warrantyId}',
   '/work-order-catalogue',
   '/work-orders',

@@ -435,7 +435,11 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
     // and `rpt.report.configure` because no operation declares them (CC-01,
     // CC-02), and `rpt.export` — which two shipped operations do declare —
     // withheld on least-privilege grounds by Owner decision (CC-04).
-    expect(expected).toHaveLength(73);
+    // 74 with `wty.warranty.read`, minted by P1-31 prerequisite P-7 and carried
+    // because withholding it while the warranty detail read was re-pointed off
+    // `wty.warranty.issue` would REMOVE a capability this bundle already confers
+    // (CC-07). It is the only code any P1-31 slice mints.
+    expect(expected).toHaveLength(74);
     expect(expected.some((c) => c.includes('*'))).toBe(false);
     expect(expected.some((c) => c.startsWith('platform.'))).toBe(false);
     expect(new Set(expected).size).toBe(expected.length);

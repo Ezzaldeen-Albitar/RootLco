@@ -1,9 +1,9 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 28,
-    "publicApi": 28,
-    "operationDepth": 28,
+    "registered": 29,
+    "publicApi": 29,
+    "operationDepth": 29,
     "invocationOnly": 0,
     "pending": 0,
     "unitOnly": 0,
@@ -1042,7 +1042,11 @@
       "method": "GET",
       "path": "/warranties/{warrantyId}",
       "public": false,
-      "files": ["tests/backend/p1-22-warranty.test.ts", "tests/backend/p1-22-isolation.test.ts"],
+      "files": [
+        "tests/backend/p1-22-warranty.test.ts",
+        "tests/backend/p1-22-isolation.test.ts",
+        "tests/backend/p1-31-warranty-read-seam.test.ts"
+      ],
       "referenced": true,
       "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
       "declared": ["denial"],
@@ -1107,6 +1111,40 @@
         "idempotency",
         "isolation",
         "outbox",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "wty.warranty-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/warranties",
+      "public": false,
+      "files": ["tests/backend/p1-31-warranty-read-seam.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "pagination"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant",
+        "pagination"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
         "route",
         "service",
         "success"

@@ -9,13 +9,13 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 381   |
+| Public operations        | 382   |
 | Domains (modules)        | 20    |
-| OpenAPI paths            | 298   |
-| OpenAPI operations       | 381   |
+| OpenAPI paths            | 299   |
+| OpenAPI operations       | 382   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
-| Permission codes seeded  | 118   |
+| Permission codes seeded  | 119   |
 | Audit actions catalogued | 216   |
 | Domain events catalogued | 50    |
 | Structured error codes   | 28    |
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 381        |
+| Covered           | 382        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -52,7 +52,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | shared-services | 28         | 28      | 18     | 18      | 6          | 6               |
 | technician      | 18         | 18      | 12     | 12      | 4          | 5               |
 | vehicle         | 27         | 27      | 12     | 12      | 12         | 0               |
-| warranty        | 2          | 2       | 1      | 1       | 1          | 0               |
+| warranty        | 3          | 3       | 1      | 1       | 1          | 0               |
 | work-order      | 38         | 38      | 19     | 20      | 17         | 8               |
 
 ## Operations
@@ -438,8 +438,9 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `wo.work-order-list`                                | GET    | `/api/v1/work-orders`                                                               | branch  | `wo.work_order.read`                                                 | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `wo.work-order-timeline`                            | GET    | `/api/v1/work-orders/{workOrderId}/timeline`                                        | branch  | `wo.work_order.read`                                                 | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `wo.work-order-transition`                          | POST   | `/api/v1/work-orders/{workOrderId}/transition`                                      | branch  | `wo.work_order.transition`                                           | wo.work_order.state_changed                  | yes  | yes | audit authorization concurrency cross-tenant denial idempotency isolation outbox rollback route service stale-version success | Covered |
-| `wty.warranty-detail`                               | GET    | `/api/v1/warranties/{warrantyId}`                                                   | branch  | `wty.warranty.issue`                                                 | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
+| `wty.warranty-detail`                               | GET    | `/api/v1/warranties/{warrantyId}`                                                   | branch  | `wty.warranty.read`                                                  | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `wty.warranty-generate`                             | POST   | `/api/v1/deliveries/{deliveryId}/warranties`                                        | branch  | `wty.warranty.issue`                                                 | wty.warranty.issued                          | yes  | —   | audit authorization cross-tenant denial idempotency isolation outbox route service success                                    | Covered |
+| `wty.warranty-list`                                 | GET    | `/api/v1/warranties`                                                                | branch  | `wty.warranty.read`                                                  | —                                            | —    | —   | authorization cross-tenant denial isolation pagination route service success                                                  | Covered |
 
 ## Event coverage matrix
 
