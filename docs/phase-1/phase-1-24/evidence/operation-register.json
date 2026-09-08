@@ -10331,6 +10331,7 @@
       "tests": [
         "tests/backend/p1-15-operation-routes.test.ts",
         "tests/backend/p1-15-templates-transitions-export.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/ci/p1-27-frontend-gate.test.ts",
         "tests/foundation/p1-15-catalogs.test.ts"
       ],
