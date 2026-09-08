@@ -156,6 +156,14 @@ interface Citation {
   readonly file: string;
   readonly from: number;
   readonly to: number;
+  /**
+   * The symbol the citation says its range contains, when it names one.
+   *
+   * `null` for a legacy citation, and legacy is not a lesser citizen: the three
+   * checks above apply to an anchored and an unanchored citation identically.
+   * An anchor buys one additional check and takes nothing away.
+   */
+  readonly anchor: string | null;
 }
 
 /*
@@ -205,6 +213,151 @@ const NARROW_PATTERN = new RegExp(
   'g'
 );
 
+/**
+ * ## The anchor, and the drift it exists to stop
+ *
+ * A line number answers "where was this when it was written". It cannot answer
+ * "is it still there", and the difference is the whole history of this file:
+ * twenty-three citations in these records were re-pinned in one commit because
+ * the files beneath them had grown, and every one of them had been correct on
+ * the day it was typed. Nothing detected the drift, because a line number that
+ * still exists is indistinguishable from a line number that still means
+ * something.
+ *
+ * So a citation may now name the construct it points at:
+ *
+ *     lib/api/client.ts:806-807#state.conflict.blocked.title
+ *     apps/web/src/lib/api/client.ts:503#isAbort
+ *
+ * and the check becomes falsifiable: the cited range must literally contain the
+ * token. When the file grows and the range slides off, the token stops being
+ * inside it and the gate says so, naming the lines where the token now is.
+ *
+ * ## What this proves, and what it emphatically does not
+ *
+ * LOCATION ONLY. It proves a citation still points at the construct it names.
+ * It cannot prove the sentence beside the citation is true, and the distinction
+ * is not theoretical in this corpus: several cells point at code that still
+ * exists while describing behaviour that was later changed. `H-02` is the
+ * clearest. `task-matrix-verdicts.json` cells 250 and 276 both read "Resolves
+ * to `state.conflict.title` (`lib/api/client.ts:369`, en.json:706); no bespoke
+ * copy. Finding `H-02`" — and `adversarial-round-five.md:131` records `H-02` as
+ * FIXED, closed by `fd511409`, with `apps/web/src/lib/api/client.ts:803-807`
+ * now choosing `state.conflict.title` for `ERR-CON-001` alone and
+ * `state.conflict.blocked.title` for every other code. The cells describe the
+ * behaviour from before the fix. An anchor on either of them would pass, and
+ * would be right to pass: the construct is where the citation says it is. Those
+ * cells were deliberately left unanchored and unrepaired, because repairing a
+ * claim is a judgement and this file makes none.
+ *
+ * Read a green result here as "every anchored citation still points at its
+ * construct", never as "the records are true".
+ *
+ * ## Why the anchor is read separately from the patterns
+ *
+ * `CITATION_PATTERN` and `NARROW_PATTERN` stop at the digits and are left
+ * exactly as they were. The anchor is read from the text FOLLOWING a match
+ * rather than by widening the pattern, so an anchored citation is harvested
+ * byte-for-byte identically to the unanchored spelling — same file, same
+ * `from`, same `to`, same population. The `H-19` superset assertion, the
+ * anti-vacuity floor and the three existing cases keep measuring precisely what
+ * they measured before; adding an optional group to a pattern that other cases
+ * assert counts over would have put that at risk for no gain.
+ *
+ * The token accepts word characters, `.`, `$`, `-` and `#`. The `#` is in the
+ * set so a private class member can be anchored — `client.ts:428-520##request`
+ * — where the FIRST `#` is the delimiter and `#request` is the token.
+ */
+const ANCHOR_TOKEN_CHARACTER = String.raw`[\w.$#-]`;
+
+/** The anchor that follows a citation, when a well-formed one does. */
+const ANCHOR_SUFFIX = new RegExp(String.raw`^#(${ANCHOR_TOKEN_CHARACTER}+)`);
+
+/**
+ * A `#` that opens no token: `client.ts:759#`, `client.ts:759# `, ``client.ts:759#` ``.
+ *
+ * A SEPARATE detector, and separate on purpose. Written as an optional group on
+ * the harvest — `(?:#(TOKEN))?` — a malformed anchor is simply not captured,
+ * the citation is read as legacy, and the strongest check in this file silently
+ * declines to run on the one citation whose author was trying to invoke it. A
+ * typo would buy a weaker gate and report nothing. This regex therefore asks
+ * the opposite question — is there a `#` here that is NOT a token — and its
+ * answer is an error rather than an absence.
+ */
+const MALFORMED_ANCHOR_PATTERN = new RegExp(
+  String.raw`((?:${SEGMENT}\/)*${SEGMENT}\.${EXTENSION}):(\d+)(?:-(\d+))?#(?!${ANCHOR_TOKEN_CHARACTER})`,
+  'g'
+);
+
+/** One citation as it appears in a single cell, before a task and field are attached. */
+interface Harvested {
+  readonly file: string;
+  readonly from: number;
+  readonly to: number;
+  readonly anchor: string | null;
+}
+
+/**
+ * Every citation in one piece of text, with its anchor when it carries one.
+ *
+ * Exported shape rather than an inline loop so the deterministic fixture below
+ * exercises the REAL harvest against literal strings. A fixture that reimplemented
+ * the parse would prove the fixture.
+ */
+function harvest(text: string, pattern: RegExp = CITATION_PATTERN): Harvested[] {
+  const out: Harvested[] = [];
+  for (const m of text.matchAll(new RegExp(pattern.source, 'g'))) {
+    const tail = text.slice((m.index ?? 0) + m[0].length);
+    const anchored = ANCHOR_SUFFIX.exec(tail);
+    out.push({
+      file: m[1] as string,
+      from: Number(m[2]),
+      to: Number(m[3] ?? m[2]),
+      anchor: anchored === null ? null : (anchored[1] as string),
+    });
+  }
+  return out;
+}
+
+/** Every `#` in one piece of text that follows a citation and opens no token. */
+function malformedAnchorsIn(text: string): string[] {
+  return [...text.matchAll(MALFORMED_ANCHOR_PATTERN)].map((m) => m[0]);
+}
+
+/** Does the cited range literally contain the token the citation names? */
+function anchorHolds(anchor: string, from: number, to: number, body: readonly string[]): boolean {
+  return body
+    .slice(from - 1, to)
+    .join('\n')
+    .includes(anchor);
+}
+
+/** Every line of a file on which the token appears, so a failure is also the repair. */
+function anchorSightings(anchor: string, body: readonly string[]): number[] {
+  const seen: number[] = [];
+  body.forEach((line, index) => {
+    if (line.includes(anchor)) seen.push(index + 1);
+  });
+  return seen;
+}
+
+/**
+ * The identity of a protected anchor: WHICH claim names WHICH symbol in WHICH file.
+ *
+ * The line number is deliberately absent. Re-anchoring a citation onto the same
+ * construct after the file grew is the correct maintenance action and must not
+ * disturb the baseline; moving the anchor onto a DIFFERENT symbol, or deleting
+ * it, is a change of claim and must.
+ */
+function anchorIdentity(parts: {
+  readonly task: string;
+  readonly field: string;
+  readonly file: string;
+  readonly anchor: string;
+}): string {
+  return `${parts.task} | ${parts.field} | ${parts.file} | ${parts.anchor}`;
+}
+
 function rows(): Record<string, unknown>[] {
   const parsed = JSON.parse(readFileSync(MATRIX, 'utf8')) as
     { tasks?: Record<string, unknown>[] } | Record<string, unknown>[];
@@ -222,10 +375,22 @@ function citations(pattern: RegExp): Citation[] {
     const task = String(row.TASK_ID ?? '?');
     for (const [field, value] of Object.entries(row)) {
       if (typeof value !== 'string') continue;
-      for (const m of value.matchAll(new RegExp(pattern.source, 'g'))) {
-        const from = Number(m[2]);
-        out.push({ task, field, file: m[1] as string, from, to: Number(m[3] ?? m[2]) });
+      for (const found of harvest(value, pattern)) {
+        out.push({ task, field, ...found });
       }
+    }
+  }
+  return out;
+}
+
+/** Every malformed anchor in the matrix, located well enough to be repaired. */
+function malformedAnchors(): string[] {
+  const out: string[] = [];
+  for (const row of rows()) {
+    const task = String(row.TASK_ID ?? '?');
+    for (const [field, value] of Object.entries(row)) {
+      if (typeof value !== 'string') continue;
+      for (const text of malformedAnchorsIn(value)) out.push(`${task}.${field} -> ${text}`);
     }
   }
   return out;
@@ -233,6 +398,31 @@ function citations(pattern: RegExp): Citation[] {
 
 const ALL = citations(CITATION_PATTERN);
 const NARROW = citations(NARROW_PATTERN);
+const ANCHORED = ALL.filter(
+  (c): c is Citation & { anchor: string } => typeof c.anchor === 'string'
+);
+const MALFORMED = malformedAnchors();
+
+/**
+ * The anchors this repository refuses to lose, keyed by identity.
+ *
+ * Follows the convention of its neighbours in `.github/ci-baselines/`: prose
+ * fields stating what the file is and why it exists, a policy, and the data.
+ */
+interface AnchorBaseline {
+  readonly anchors: ReadonlyArray<{
+    readonly key: string;
+    readonly task: string;
+    readonly field: string;
+    readonly file: string;
+    readonly anchor: string;
+    readonly why: string;
+  }>;
+}
+
+const ANCHOR_BASELINE = JSON.parse(
+  readFileSync(join(ROOT, '.github', 'ci-baselines', 'p1-27-citation-anchors.json'), 'utf8')
+) as AnchorBaseline;
 
 describe('P1-27 — every matrix citation resolves', () => {
   it('finds citations at all, so nothing below passes over an empty list', () => {
@@ -346,6 +536,200 @@ describe('P1-27 — every matrix citation resolves', () => {
     }
     expect(offenders, 'a matrix cell cites a range of a test file that asserts nothing').toEqual(
       []
+    );
+  });
+
+  it('an anchored citation still contains the symbol it names', () => {
+    /*
+     * The fourth check, and the only one that can detect drift rather than
+     * absence. The three above ask whether a target exists; this one asks
+     * whether the target is still the thing the sentence beside it is about.
+     *
+     * The message carries the repair. A drifted anchor is almost always a
+     * WORKING citation that slid by a few lines when the file grew, so the
+     * lines where the token now lives are the new range — naming them means the
+     * next author does not have to re-run the search this case has already run.
+     * When the token is nowhere in the file at all, that is a different fault
+     * (renamed or deleted construct, or an anchor typed against the wrong file)
+     * and it is reported as a different sentence, because the repair is
+     * different too: it is a judgement about the claim, not a line number.
+     *
+     * Anti-vacuity sits inside this case rather than beside it. An empty
+     * `ANCHORED` would make `offenders` trivially empty and this case would
+     * report a clean anchor corpus while reading none.
+     */
+    const offenders: string[] = [];
+    for (const c of ANCHORED) {
+      const path = resolveCited(c.file);
+      if (path === null) continue;
+      const body = lines(path);
+      if (anchorHolds(c.anchor, c.from, c.to, body)) continue;
+      const where = anchorSightings(c.anchor, body);
+      const at = `${c.task}.${c.field} -> ${c.file}:${c.from}-${c.to}#${c.anchor}`;
+      offenders.push(
+        where.length === 0
+          ? `${at} — \`${c.anchor}\` appears NOWHERE in ${c.file}; the construct was renamed or removed, or the anchor names the wrong file`
+          : `${at} — \`${c.anchor}\` is not in the cited range; it is at ${where.length > 6 ? `${where.slice(0, 6).join(', ')}, … (${where.length} lines)` : where.join(', ')}`
+      );
+    }
+    expect(
+      ANCHORED.length,
+      'no anchored citation was read, so this case asserted nothing'
+    ).toBeGreaterThan(0);
+    expect(
+      offenders,
+      'an anchored matrix citation no longer contains the symbol it names — the range drifted'
+    ).toEqual([]);
+  });
+
+  it('refuses a malformed anchor instead of reading the citation as legacy', () => {
+    /*
+     * The failure mode this stops is silent DOWNGRADE. `client.ts:759#` is a
+     * citation whose author reached for the anchor check and mistyped; read
+     * through an optional group it is a perfectly ordinary legacy citation, and
+     * the strongest check in this file declines to run on it while reporting
+     * green. A gate that quietly does less on a typo is worse than one that
+     * does less always, because nobody can see the difference.
+     */
+    expect(
+      MALFORMED,
+      'a citation is followed by a `#` that opens no anchor token; either complete the anchor ' +
+        'or remove the `#` — it must not fall back to an unanchored citation'
+    ).toEqual([]);
+  });
+
+  it('keeps every anchor the baseline protects, by identity and not by count', () => {
+    /*
+     * The ratchet. `.github/ci-baselines/p1-27-citation-anchors.json` names the
+     * anchors that must go on existing and go on resolving.
+     *
+     * Keyed by TASK_ID, field, cited file and token — and NOT by line number,
+     * which is the entire point: re-anchoring `client.ts:806-807#foo` to
+     * `client.ts:812-813#foo` after the file grows is the maintenance this
+     * mechanism is FOR, and it must not read as a loss. Moving the anchor onto
+     * a different symbol, or deleting it, is a change of claim and does.
+     *
+     * An aggregate cannot satisfy this. A count-based ratchet is payable in the
+     * wrong currency: delete the anchor from the row that mattered, add one to a
+     * row that did not, and the total is restored while the protection is gone.
+     * Every key is looked for individually, so the only thing that discharges an
+     * entry is that entry.
+     *
+     * There is NO `--update` flag and nothing regenerates this file. Removing a
+     * protected anchor is a hand edit to a committed baseline, reviewed like any
+     * other. That is deliberate friction: the twenty-three drifted citations
+     * this mechanism was built for were all produced by a regeneration nobody
+     * read.
+     */
+    const present = new Map(ANCHORED.map((c) => [anchorIdentity(c), c]));
+
+    const inconsistent = ANCHOR_BASELINE.anchors.filter((e) => e.key !== anchorIdentity(e));
+    expect(
+      inconsistent.map((e) => e.key),
+      'a baseline entry`s `key` disagrees with its own task/field/file/anchor fields, so it ' +
+        'protects something other than what it reads as protecting'
+    ).toEqual([]);
+
+    const missing: string[] = [];
+    const drifted: string[] = [];
+    for (const entry of ANCHOR_BASELINE.anchors) {
+      const found = present.get(entry.key);
+      if (found === undefined) {
+        missing.push(`${entry.key} — ${entry.why}`);
+        continue;
+      }
+      const path = resolveCited(found.file);
+      if (path === null || !anchorHolds(found.anchor, found.from, found.to, lines(path))) {
+        drifted.push(`${entry.key} — present at :${found.from}-${found.to} but not resolving`);
+      }
+    }
+
+    expect(
+      ANCHOR_BASELINE.anchors.length,
+      'the anchor baseline is empty, so this ratchet protects nothing'
+    ).toBeGreaterThan(0);
+    expect(
+      missing,
+      'a protected citation anchor is gone from the matrix. Adding an anchor elsewhere does not ' +
+        'pay for it. If the removal is intended, edit .github/ci-baselines/p1-27-citation-anchors.json ' +
+        'by hand and say why in the commit'
+    ).toEqual([]);
+    expect(drifted, 'a protected citation anchor is present but no longer resolves').toEqual([]);
+  });
+
+  it('discriminates: proves the anchor check on literal text, not only on the records', () => {
+    /*
+     * Deterministic, for the reason `H-19` is proved deterministically a few
+     * cases above: a proof that lives only on the live documents evaporates the
+     * moment the documents are rewritten, and these documents are rewritten
+     * often. The three properties are asserted against literal strings and a
+     * literal body, so they hold whatever the matrix later says.
+     *
+     * The fourth assertion is the one that protects the three EXISTING checks:
+     * an anchored citation must harvest to the same file and the same range as
+     * the unanchored spelling of the same citation. If that ever stops being
+     * true, `ALL.length`, the anti-vacuity floor and the `H-19` superset
+     * assertion have quietly begun measuring a different population.
+     */
+    const body = [
+      "import { join } from 'node:path';", // 1
+      '', // 2
+      'export function violationKeysOf(problem: ProblemDetails): string[] {', // 3
+      '  return problem.violations.map((v) => v.key);', // 4
+      '}', // 5
+    ];
+
+    // A valid anchor over a range that really holds the token.
+    const good = harvest('proved at `lib/api/client.ts:3-4#violationKeysOf` today.');
+    expect(good, 'the anchor was not read off a well-formed citation').toEqual([
+      { file: 'lib/api/client.ts', from: 3, to: 4, anchor: 'violationKeysOf' },
+    ]);
+    expect(anchorHolds('violationKeysOf', 3, 4, body)).toBe(true);
+
+    // The same token, a range it is not in — the drift case, which must FAIL.
+    expect(anchorHolds('violationKeysOf', 1, 2, body)).toBe(false);
+    expect(
+      anchorSightings('violationKeysOf', body),
+      'the failure message must be able to name where the token really is'
+    ).toEqual([3]);
+
+    // A token that is nowhere in the file at all — reported, not crashed.
+    expect(anchorHolds('fieldErrorsOf', 1, 5, body)).toBe(false);
+    expect(anchorSightings('fieldErrorsOf', body)).toEqual([]);
+
+    // A private member: the FIRST `#` delimits, the rest is the token.
+    expect(harvest('`lib/api/client.ts:428-520##request` holds it.')).toEqual([
+      { file: 'lib/api/client.ts', from: 428, to: 520, anchor: '#request' },
+    ]);
+
+    // Malformed. It must be REJECTED, and must not pass as a legacy citation.
+    for (const cell of [
+      'see `lib/api/client.ts:759#`',
+      'see lib/api/client.ts:759# for the mapping',
+      'see `lib/api/client.ts:759#` for the mapping',
+    ]) {
+      expect(harvest(cell)[0]?.anchor, `${cell}: a broken anchor was captured as one`).toBe(null);
+      expect(
+        malformedAnchorsIn(cell),
+        `${cell}: a broken anchor was silently downgraded to a legacy citation`
+      ).not.toEqual([]);
+    }
+    expect(
+      malformedAnchorsIn('see `lib/api/client.ts:759#state.denied.title` for the mapping'),
+      'a well-formed anchor must not be reported as malformed'
+    ).toEqual([]);
+
+    // The existing three checks must see an anchored citation exactly as they
+    // see the unanchored one: same file, same from, same to, same population.
+    const anchoredCell = 'a `lib/api/client.ts:806-807#state.conflict.blocked.title` b';
+    const plainCell = 'a `lib/api/client.ts:806-807` b';
+    const strip = (h: Harvested[]) => h.map(({ file, from, to }) => ({ file, from, to }));
+    expect(
+      strip(harvest(anchoredCell)),
+      'an anchor changed what the unmodified patterns harvest'
+    ).toEqual(strip(harvest(plainCell)));
+    expect(harvest(anchoredCell, NARROW_PATTERN).length).toBe(
+      harvest(plainCell, NARROW_PATTERN).length
     );
   });
 });

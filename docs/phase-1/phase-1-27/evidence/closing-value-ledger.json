@@ -104,8 +104,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Root unit tier — tests executed             | 3250  | `--record unit`, from the `vitest` JSON report                     |",
-      "value": "3250",
+      "locator": "| Root unit tier — tests executed             | 3258  | `--record unit`, from the `vitest` JSON report                     |",
+      "value": "3258",
       "binding": {
         "kind": "run",
         "tier": "unit",
@@ -118,8 +118,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Root unit tier — files the run reported     | 119   | the same report, cross-checked against the tier's include rule      |",
-      "value": "119",
+      "locator": "| Root unit tier — files the run reported     | 120   | the same report, cross-checked against the tier's include rule      |",
+      "value": "120",
       "binding": {
         "kind": "run",
         "tier": "unit",
@@ -184,8 +184,8 @@
       "class": "DERIVABLE_GIT",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Tracked files under `docs/phase-1/phase-1-27`        | 41                                          |",
-      "value": "41",
+      "locator": "| Tracked files under `docs/phase-1/phase-1-27`        | 42                                          |",
+      "value": "42",
       "binding": {
         "kind": "git",
         "op": "trackedFiles",
@@ -198,8 +198,8 @@
       "class": "DERIVABLE_GIT",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Tracked `.md` files under the same directory         | 31                                          |",
-      "value": "31",
+      "locator": "| Tracked `.md` files under the same directory         | 32                                          |",
+      "value": "32",
       "binding": {
         "kind": "git",
         "op": "trackedFiles",

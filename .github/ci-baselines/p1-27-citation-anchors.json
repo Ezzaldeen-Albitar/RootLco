@@ -1,0 +1,92 @@
+{
+  "what": "The citation anchors in docs/phase-1/phase-1-27/task-matrix.json that must not be lost. An anchor is the `#SYMBOL` suffix on a citation — `lib/api/client.ts:806-807#state.conflict.blocked.title` — and it is what makes a line number falsifiable: the cited range must literally contain the token, so a range that slides off when the file grows stops passing instead of silently describing different code.",
+  "why": "Twenty-three citations in the P1-27 records were re-pinned in one commit because the files beneath them had grown. Every one had been correct when it was written, and nothing detected the drift, because a line number that still exists is indistinguishable from a line number that still means something. The anchors below are the ones that turn that from an unnoticed decay into a failing check. Without this file the anchors are optional decoration: dropping one back to a bare `file:line` costs nothing, breaks no test, and removes the only check that can see drift on that row.",
+  "policy": "tests/ci/p1-27-matrix-citations.test.ts fails when any entry below is absent from the matrix, and separately when an entry is present but its token is no longer inside its cited range. Entries are matched by IDENTITY — TASK_ID, field, cited file, token — and every one is looked for individually, so an aggregate count cannot discharge them: deleting the anchor from the row that mattered and adding one to a row that did not restores the total and still fails.",
+  "whyTheLineNumberIsNotPartOfTheKey": "Re-anchoring a citation onto the same construct after the file grew is the correct maintenance action and must not read as a loss. `client.ts:806-807#state.conflict.blocked.title` becoming `client.ts:812-813#state.conflict.blocked.title` is the mechanism working. Moving the anchor onto a DIFFERENT symbol, or deleting it, is a change of claim and is what this file refuses.",
+  "howToChange": "By hand, in a reviewed diff, in the commit that changes the citation. There is deliberately no `--update` flag and nothing regenerates this file: the twenty-three drifted citations this mechanism was built for were produced by a regeneration nobody read, and a baseline that can be re-derived from the tree it is meant to constrain constrains nothing. Adding an anchor to a new row is welcome and does not require an entry here; adding the entry is what makes it protected.",
+  "whatThisDoesNotProve": "LOCATION ONLY. A passing anchor proves a citation still points at the construct it names. It does NOT prove the sentence beside the citation is true, and in this corpus the difference is real: `task-matrix-verdicts.json` cells 250 and 276 cite `lib/api/client.ts:369` and describe a 409 that resolves to `state.conflict.title` with no bespoke copy, while `adversarial-round-five.md:131` records that finding — `H-02` — as FIXED, closed by `fd511409`, with the code now choosing `state.conflict.title` for `ERR-CON-001` alone. Those cells describe behaviour from before the fix. An anchor on them would pass and would be right to pass. Repairing a claim is a judgement; this file makes none. RESIDUAL, WITHIN A FILE: because the identity key deliberately omits the line range, a protected anchor can be re-pointed to ANY range in the same file that contains its token, and this check will still pass. The room is measured, not hypothetical — in `apps/web/src/lib/api/client.ts` the token `idempotencyKey` occurs on 6 lines, `ProblemDetails` on 5, `violationKeysOf` on 4 and `isAbort` on 2, so each of those anchors has that many landing places it could be moved between silently. The trade-off is deliberate: putting the line in the key would make every legitimate re-anchoring after the file grows a baseline edit, which is the maintenance action `whyTheLineNumberIsNotPartOfTheKey` exists to keep cheap. What IS blocked is the swap — dropping one anchor and adding another, or moving an anchor onto a different symbol — because every entry is matched individually by TASK_ID, field, file and token. What is NOT blocked is a within-file slide onto another occurrence of the same token.",
+  "corpus": "docs/phase-1/phase-1-27/task-matrix.json only. That is the file the gate reads, and it is narrower than the set of documents that carry anchors — task-matrix-verdicts.json and three markdown records carry the other thirteen of the twenty-three. tests/ci/p1-27-citation-anchor-repairs.test.ts covers those by an explicit list as a bounded one-off; widening this gate's corpus is recorded there as follow-up work.",
+  "establishedBy": "Generated once from docs/phase-1/phase-1-27/task-matrix.json at the head that introduced the anchor check, then committed and asserted against. Ten anchors, all resolving at that head.",
+  "anchors": [
+    {
+      "key": "FE-020 | ROUND5_FINDING_IDS | lib/api/client.ts | state.conflict.blocked.title",
+      "task": "FE-020",
+      "field": "ROUND5_FINDING_IDS",
+      "file": "lib/api/client.ts",
+      "anchor": "state.conflict.blocked.title",
+      "why": "The row states `H-09` is closed by the 409 choosing its sentence from the catalog code. The anchor is the chooser itself; without it the citation is a line number in a file that grows every wave."
+    },
+    {
+      "key": "SEC-003 | NEGATIVE_OR_MUTATION_PROOF | lib/api/client.ts | state.denied.title",
+      "task": "SEC-003",
+      "field": "NEGATIVE_OR_MUTATION_PROOF",
+      "file": "lib/api/client.ts",
+      "anchor": "state.denied.title",
+      "why": "The mutation described is remapping `forbidden` away from this key. A citation that no longer lands on the mapping cannot be checked against the mutation it describes."
+    },
+    {
+      "key": "QA-002 | IMPLEMENTATION_SURFACES | lib/api/client.ts | ProblemDetails",
+      "task": "QA-002",
+      "field": "IMPLEMENTATION_SURFACES",
+      "file": "lib/api/client.ts",
+      "anchor": "ProblemDetails",
+      "why": "The declared error contract. This row exists because the previous declaration named a shape the API does not publish, so the citation pointing at the current one is the row's whole subject."
+    },
+    {
+      "key": "QA-002 | IMPLEMENTATION_SURFACES | lib/api/client.ts | violationKeysOf",
+      "task": "QA-002",
+      "field": "IMPLEMENTATION_SURFACES",
+      "file": "lib/api/client.ts",
+      "anchor": "violationKeysOf",
+      "why": "The reader of `violations`. The defect this row records was that it read the wrong field, so the citation must land on the function rather than near it."
+    },
+    {
+      "key": "QA-002 | CONFLICT_STATE | lib/api/client.ts | state.conflict.blocked.title",
+      "task": "QA-002",
+      "field": "CONFLICT_STATE",
+      "file": "lib/api/client.ts",
+      "anchor": "state.conflict.blocked.title",
+      "why": "The row delegates its conflict copy to QA-004 by citing the chooser. A drifted citation would delegate to nothing."
+    },
+    {
+      "key": "QA-004 | IMPLEMENTATION_SURFACES | lib/api/client.ts | state.conflict.blocked.title",
+      "task": "QA-004",
+      "field": "IMPLEMENTATION_SURFACES",
+      "file": "lib/api/client.ts",
+      "anchor": "state.conflict.blocked.title",
+      "why": "The surface this task owns. It is cited as a range covering the conflict-copy region, and the token is what identifies the region as that one."
+    },
+    {
+      "key": "QA-004 | CONFLICT_STATE | lib/api/client.ts | state.conflict.blocked.title",
+      "task": "QA-004",
+      "field": "CONFLICT_STATE",
+      "file": "lib/api/client.ts",
+      "anchor": "state.conflict.blocked.title",
+      "why": "Described in the cell itself as the strongest evidence on the row: one sentence for `ERR-CON-001` and another for every other 409. The anchor is the second sentence's key."
+    },
+    {
+      "key": "DOC-001 | NEGATIVE_OR_MUTATION_PROOF | apps/web/src/lib/api/client.ts | setTimeout",
+      "task": "DOC-001",
+      "field": "NEGATIVE_OR_MUTATION_PROOF",
+      "file": "apps/web/src/lib/api/client.ts",
+      "anchor": "setTimeout",
+      "why": "One of five re-run mutations. The mutation is emptying this callback, so a citation that no longer contains it names a place the mutation was not applied."
+    },
+    {
+      "key": "DOC-001 | NEGATIVE_OR_MUTATION_PROOF | apps/web/src/lib/api/client.ts | isAbort",
+      "task": "DOC-001",
+      "field": "NEGATIVE_OR_MUTATION_PROOF",
+      "file": "apps/web/src/lib/api/client.ts",
+      "anchor": "isAbort",
+      "why": "Single-line citation of the cancellation flag the mutation pins to false. A single line is exactly where drift is hardest to notice by eye."
+    },
+    {
+      "key": "DOC-001 | NEGATIVE_OR_MUTATION_PROOF | apps/web/src/lib/api/client.ts | idempotencyKey",
+      "task": "DOC-001",
+      "field": "NEGATIVE_OR_MUTATION_PROOF",
+      "file": "apps/web/src/lib/api/client.ts",
+      "anchor": "idempotencyKey",
+      "why": "The mutation overwrites the caller's key here. The three replay cases the cell counts are only attributable to this range while the range is this one."
+    }
+  ]
+}
