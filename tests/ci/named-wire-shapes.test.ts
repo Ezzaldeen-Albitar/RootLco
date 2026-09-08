@@ -85,8 +85,14 @@ describe('every route body serialises a named type', () => {
     // 375 with the P1-30 opening-batch reads (S-17): the list serialises
     // `Page<OpeningBatchListView>` and the detail `OpeningBatchDetailView`, both
     // NAMED interfaces, so `named` moves by two and `composed` does not.
-    expect(summary.bodies).toBe(375);
-    expect(summary.named).toBe(322);
+    // 381 with the P1-31 delivery read seam (P-2 … P-5): six GETs, every one of
+    // them NAMED, so `named` moves by six and `composed` does not. Four of the
+    // six needed a named envelope minted for them — `DeliveryReceiverEnvelope`,
+    // `DeliveryChecklistResultsEnvelope`, `DeliverySignaturesEnvelope` and
+    // `DeliveryStatusHistoryEnvelope` exist because THIS gate refused the inline
+    // return types the slice first wrote, which is the gate doing its job.
+    expect(summary.bodies).toBe(381);
+    expect(summary.named).toBe(328);
     expect(summary.composed).toBe(53);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

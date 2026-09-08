@@ -1,8 +1,13 @@
 # P1-31 — change-control dispositions of 2026-09-08
 
-**Status:** OPEN · **Authority:** prerequisite **P-1** of
-[`a0-preflight.md`](./a0-preflight.md) ("Widen the provisioning bundle to carry the nine P1-31
-codes") · **Baseline:** protected `develop` `0cface1c`, `main` `1262de74`
+**Status:** OPEN · **Authority:** prerequisites **P-1** ("Widen the provisioning bundle to carry the
+nine P1-31 codes") and, from section 7 onward, **P-2** … **P-5** (the delivery read seam) of
+[`a0-preflight.md`](./a0-preflight.md) · **Baseline:** protected `develop` `0cface1c`, `main`
+`1262de74`
+
+Sections 1–6 were written by the P-1 slice and are unchanged. Sections 7–11 were added by the
+P-2 … P-5 slice on 2026-09-08; identifiers continue in the same P1-31 namespace, so the register
+now runs **CC-01 … CC-06**.
 
 This register is opened by the P-1 slice so that a permission deliberately WITHHELD from the
 provisioning bundle is filed with its consequence rather than granted quietly, and so that the slice
@@ -96,3 +101,80 @@ The two pre-existing bundle pins move with it: `tests/backend/p1-29-w9-owner-boo
 Prerequisites **P-2** … **P-14** and **P-16** of the A0 preflight are untouched. Widening the bundle
 makes the P1-31 surface REACHABLE by authorization; it does not create the delivery read seam, the
 warranty list, the report engine or the export route those items also need.
+
+---
+
+# P-2 … P-5 — the delivery read seam, of 2026-09-08
+
+**Authority:** prerequisites **P-2**, **P-3**, **P-4** and **P-5** of
+[`a0-preflight.md`](./a0-preflight.md) · **Baseline:** protected `develop` `8052841a` (PR #347, the
+P-1 provisioning-bundle slice; second parent `0766979f`'s successor on this register's own lane),
+`main` `1262de74` — untouched.
+
+Six operations were published over reads that, with one exception, already existed. This section
+files the two things that are NOT what the governing precedent describes, so that a later reader
+finds the reason rather than inferring one.
+
+## 7. What was published
+
+| operation                            | path                                               | prerequisite | over                                                      |
+| ------------------------------------ | -------------------------------------------------- | ------------ | --------------------------------------------------------- |
+| `sal.work-order-delivery-read`       | `GET /work-orders/{workOrderId}/delivery`          | **P-2**      | `DeliveryRepository.findLiveDeliveryForWorkOrder`         |
+| `sal.delivery-read`                  | `GET /deliveries/{deliveryId}`                     | **P-3**      | `DeliveryRepository.findDelivery`                         |
+| `sal.delivery-receiver-read`         | `GET /deliveries/{deliveryId}/authorized-receiver` | **P-4**      | `DeliveryRepository.findReceiver`                         |
+| `sal.delivery-checklist-result-list` | `GET /deliveries/{deliveryId}/checklist-results`   | **P-4**      | a NEW set query over `sal.delivery_checklist_results`     |
+| `sal.delivery-signature-list`        | `GET /deliveries/{deliveryId}/signatures`          | **P-4**      | a NEW set query over `sal.delivery_signatures`            |
+| `sal.delivery-status-history`        | `GET /deliveries/{deliveryId}/status-history`      | **P-5**      | a NEW query and mapper over `sal.delivery_status_history` |
+
+All six declare `sal.delivery.view` and `scope: 'branch'`, and none declares an audit class. The
+permission was verified against `supabase/seeds/04_iam_permission_catalog.sql` line 71 before it was
+used; **no permission was minted** and the catalogue is byte-identical. **No migration was added** —
+every table, index and policy these reads use already existed, and `sal.delivery_status_history`
+already carried `ix_delivery_status_history_delivery` on exactly the predicate and ordering used.
+
+## 8. Dispositions
+
+| id        | finding                                                                               | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | owner / slice                      | status |
+| --------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ------ |
+| **CC-05** | three of the six reads are **not pure publications** of an existing repository method | The governing precedent is `sal.work-order-invoice-read`, whose docblock states the rule: "This publishes the existing read; it adds no query and no second mapper." Three of the six meet it exactly. Three do not, for reasons that are properties of the repository rather than of this slice. (a) `findChecklistResult` is addressed by `(delivery, templateItemId)` and answers "was this ONE item already recorded" for the write path — and the checklist TEMPLATE has no HTTP surface at all (**PPD-12** / **P-9**), so no caller can discover a `template_item_id` to put in a path. (b) `findSignature` is a REPLAY PROBE on the exact `(delivery, signerRole, signatureDocumentVersionId)` triple, so a caller must already hold the document-version id — the unrecoverable-identifier problem restated, not a read of the signatures; `hasSignature` is a boolean. (c) `sal.delivery_status_history` was read by **nothing** anywhere in `apps/api/src`, which is the finding P-5 cites, so there was no read to publish at all | **accepted, and recorded rather than presented as a publication.** Each of the three route docblocks says in its own words that it is not a pure publication and why. What the rule protects is preserved: **no second mapper and no second wire contract**. The two list reads reuse `toChecklistResult` and `toDeliverySignature`; the checklist row is WIDENED by two joined template columns (`itemCode`, `label`) rather than given a parallel shape, and `itemCode` is already on the write response so publishing it is contract parity. Only the status-history read adds a row shape, because nothing had ever read that table. The read views are named `…RecordView` and spell every shared field exactly as the write views do, so a screen sees one shape | this slice                         | closed |
+| **CC-06** | the checklist-results read does **not** close **P1-27-INT-088**                       | INT-088's three limbs are about the GAP side of the checklist: the eligibility read returns mandatory-and-unsatisfied items only, capped at 20, with `missingCount` computed and then dropped before the wire. A fourth fact recorded by A0 is that the gap scan is **company-scoped rather than template-scoped**, because the delivery record carries no template reference. This slice publishes the RESULTS — the complementary set — and touches none of that                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | **open, unchanged, and stated so it cannot be read as closed.** A reader who sees a checklist read published might reasonably assume the finding was addressed; it was not. The gap side stays exactly as recorded, and closing it needs a decision about the missing template reference on the delivery record, which is a schema question and therefore not this lane's                                                                                                                                                                                                                                                                                                                                                                                              | P1-22 under Field 13, with **P-9** | open   |
+
+## 9. What this slice did NOT do
+
+- **No write path was touched.** No eligibility rule, no state machine, no maker-and-checker
+  behaviour, and no existing operation's declaration changed. The three GETs appended to existing
+  route files are additive exports beside untouched POSTs.
+- **No permission was minted, and no migration was added.** See section 7.
+- **No screen was touched.** This is the `p1-31-backend` lane; `apps/web` changed only through the
+  GENERATED idempotency manifest, which every published operation moves.
+- **`sal.delivery.read` was not resolved.** **RES-05** / **P-8** stays open and
+  `validate:permission-parity` still reports it as declared open debt owned by the delivery
+  Frontend. This slice deliberately did not re-point the navigation gate: that is a Frontend-profile
+  edit and would have been a screen change on a backend lane.
+- **No canonical task was closed.** P-2 … P-5 are execution prerequisites, not among the 29.
+
+## 10. Proof
+
+`tests/backend/p1-31-delivery-read-seam.test.ts`, 26 cases on real rows arranged through the real
+write routes. The claim under test is RECOVERY rather than "these routes answer 200", so every
+recovery case resets the authenticator after the writes and re-authenticates before it reads.
+
+| case                       | proves                                                                                                                                                                                                                                                                                     |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **the six registrations**  | all six declare `sal.delivery.view`, `scope: 'branch'`, `GET` and `auditClass: 'none'` — so a later edit cannot quietly widen the gate                                                                                                                                                     |
+| **recovery by work order** | a delivery created through `POST /deliveries` is found again from the WORK ORDER alone, after the creating session is gone. Nothing from the create response addresses the read                                                                                                            |
+| **the record**             | every field reads back, `recordVersion` is published in the body AND as the ETag, and `deliveredAt` / `finalOdometerReadingId` are both NULL on an uncompleted delivery                                                                                                                    |
+| **the receiver**           | the row, with its partner and its identity-evidence REFERENCE — not the boolean blocker; and `receiver: null` at 200 before verification                                                                                                                                                   |
+| **the checklist results**  | both recorded results, each with the template item's code and label                                                                                                                                                                                                                        |
+| **the signatures**         | both signatures, and the serialised response contains no `storageKey`, `contentType`, `sha256`, `bytes` or data URI                                                                                                                                                                        |
+| **the status history**     | `ready` → `receiver_verified` → `signed`, newest first, the oldest row already the origin with a NULL `from_status`, and no synthesised `origin` block                                                                                                                                     |
+| **the handover**           | `SAL_READER` — which holds `sal.delivery.view` and NOT `sal.delivery.manage`, so it could not have written any of these rows — performs all five reads. This is the case the phase exists for                                                                                              |
+| **401 / 403 / 404 / 403**  | unauthenticated; `SAL_NO_DELIVERY_VIEW` refused `ERR-IAM-001` on every read; another tenant answered `ERR-RES-001` and never a 403, so existence is not revealed; and BOTH isolation layers separately — RLS 404, then `authorizeScope` 403                                                |
+| **paging**                 | two pages disjoint on all three paged reads, over rows written in one transaction that share their timestamp to the microsecond (`P1-27-INT-006`); a malformed cursor is `ERR-PAG-001`/400, an unknown parameter `ERR-VAL-001`/422, and a cursor minted for one list is refused by another |
+| **no money**               | every response is walked for a JSON number under any money-shaped key. There is none, because a delivery record has no amount column and `finalOdometerReadingId` is a reading REFERENCE                                                                                                   |
+
+## 11. What P-2 … P-5 do not close
+
+Prerequisites **P-6** … **P-16** are untouched. The delivery record is now recoverable and readable;
+warranty, the report engine, the export route, the checklist-template writer, the warranty-policy
+writer, the navigation gate and the documentation corrections all remain as A0 measured them.

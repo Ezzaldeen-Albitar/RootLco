@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 375,
-    "openapiPaths": 295,
-    "openapiOperations": 375,
+    "operations": 381,
+    "openapiPaths": 298,
+    "openapiOperations": 381,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -14,7 +14,7 @@
     "auditActions": 216
   },
   "counts": {
-    "Covered": 375
+    "Covered": 381
   },
   "operations": [
     {
@@ -9065,6 +9065,46 @@
       "file": "apps/api/src/app/api/v1/deliveries/[deliveryId]/checklist-results/route.ts"
     },
     {
+      "id": "sal.delivery-checklist-result-list",
+      "domain": "delivery",
+      "method": "GET",
+      "route": "/api/v1/deliveries/{deliveryId}/checklist-results",
+      "permissions": ["sal.delivery.view"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/deliveries/{deliveryId}/checklist-results",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial",
+        "pagination"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-31-delivery-read-seam.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/deliveries/[deliveryId]/checklist-results/route.ts"
+    },
+    {
       "id": "sal.delivery-complete",
       "domain": "delivery",
       "method": "POST",
@@ -9109,7 +9149,8 @@
       "tests": [
         "tests/backend/p1-22-concurrency.test.ts",
         "tests/backend/p1-22-delivery.test.ts",
-        "tests/backend/p1-22-invoice-lifecycle.test.ts"
+        "tests/backend/p1-22-invoice-lifecycle.test.ts",
+        "tests/backend/p1-31-delivery-read-seam.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/deliveries/[deliveryId]/completion/route.ts"
@@ -9195,6 +9236,82 @@
       "file": "apps/api/src/app/api/v1/deliveries/[deliveryId]/eligibility/route.ts"
     },
     {
+      "id": "sal.delivery-read",
+      "domain": "delivery",
+      "method": "GET",
+      "route": "/api/v1/deliveries/{deliveryId}",
+      "permissions": ["sal.delivery.view"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/deliveries/{deliveryId}",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-31-delivery-read-seam.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/deliveries/[deliveryId]/route.ts"
+    },
+    {
+      "id": "sal.delivery-receiver-read",
+      "domain": "delivery",
+      "method": "GET",
+      "route": "/api/v1/deliveries/{deliveryId}/authorized-receiver",
+      "permissions": ["sal.delivery.view"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/deliveries/{deliveryId}/authorized-receiver",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-31-delivery-read-seam.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/deliveries/[deliveryId]/authorized-receiver/route.ts"
+    },
+    {
       "id": "sal.delivery-receiver-verify",
       "domain": "delivery",
       "method": "POST",
@@ -9277,6 +9394,86 @@
       "tests": ["tests/backend/p1-22-delivery.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/deliveries/[deliveryId]/signatures/route.ts"
+    },
+    {
+      "id": "sal.delivery-signature-list",
+      "domain": "delivery",
+      "method": "GET",
+      "route": "/api/v1/deliveries/{deliveryId}/signatures",
+      "permissions": ["sal.delivery.view"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/deliveries/{deliveryId}/signatures",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial",
+        "pagination"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-31-delivery-read-seam.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/deliveries/[deliveryId]/signatures/route.ts"
+    },
+    {
+      "id": "sal.delivery-status-history",
+      "domain": "delivery",
+      "method": "GET",
+      "route": "/api/v1/deliveries/{deliveryId}/status-history",
+      "permissions": ["sal.delivery.view"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/deliveries/{deliveryId}/status-history",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial",
+        "pagination"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-31-delivery-read-seam.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/deliveries/[deliveryId]/status-history/route.ts"
     },
     {
       "id": "sal.invoice-cancel",
@@ -9767,6 +9964,44 @@
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/payments/route.ts"
+    },
+    {
+      "id": "sal.work-order-delivery-read",
+      "domain": "delivery",
+      "method": "GET",
+      "route": "/api/v1/work-orders/{workOrderId}/delivery",
+      "permissions": ["sal.delivery.view"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/work-orders/{workOrderId}/delivery",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-31-delivery-read-seam.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/delivery/route.ts"
     },
     {
       "id": "sal.work-order-invoice-read",
