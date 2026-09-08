@@ -429,8 +429,11 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
     // 48 before the P1-30 corrective slices; 65 with the seventeen commercial
     // codes F-01 proved no tenant could otherwise ever hold; 67 with
     // inv.item.manage and inv.adjustment.approve, without which no item
-    // could be catalogued and no stock could ever appear.
-    expect(expected).toHaveLength(67);
+    // could be catalogued and no stock could ever appear; 74 with the seven
+    // P1-31 delivery, warranty and reporting codes of prerequisite P-1 — seven
+    // of the nine A0 named, `wty.policy.manage` and `rpt.report.configure`
+    // deliberately excluded because no operation declares them.
+    expect(expected).toHaveLength(74);
     expect(expected.some((c) => c.includes('*'))).toBe(false);
     expect(expected.some((c) => c.startsWith('platform.'))).toBe(false);
     expect(new Set(expected).size).toBe(expected.length);
@@ -577,7 +580,9 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
         [result.body.ownerAccountId, 'active']
       )
     ).toBe(2);
-    expect(await codesOfRole(result.body.tenantAdministratorRoleId)).toHaveLength(67);
+    expect(await codesOfRole(result.body.tenantAdministratorRoleId)).toHaveLength(
+      TENANT_ADMINISTRATOR_ROLE.permissionCodes.length
+    );
   });
 
   it('W9-B9 an active tenant cannot reopen the bootstrap write window', async () => {
@@ -627,7 +632,18 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
       ])) ?? -1,
     ];
     const before = await counts();
-    expect(before).toEqual([1, 1, 2, 70, 2]);
+    // The mapping count is the two bootstrap roles' sets summed, DERIVED rather
+    // than transcribed: it was the literal 70 and had to be corrected when the
+    // P1-31 P-1 widening moved the administrator set from 67 to 74. A literal
+    // here says nothing about which role changed, and it drifts silently in the
+    // direction of whoever edits it last.
+    expect(before).toEqual([
+      1,
+      1,
+      2,
+      FIRST_OWNER_ROLE.permissionCodes.length + TENANT_ADMINISTRATOR_ROLE.permissionCodes.length,
+      2,
+    ]);
 
     asHolder();
     const replay = await provision('b10', {}, key);

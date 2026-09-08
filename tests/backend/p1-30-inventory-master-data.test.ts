@@ -408,7 +408,9 @@ describe('declarations', () => {
   it('MD-B1 the administrator bundle now holds inv.adjustment.approve', () => {
     expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toContain(APPROVE);
     expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toContain(MANAGE);
-    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(67);
+    // 74 since the P1-31 P-1 widening added seven delivery, warranty and
+    // reporting codes; the two inventory codes this case owns are unaffected.
+    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(74);
   });
 });
 
