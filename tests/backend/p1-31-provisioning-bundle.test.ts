@@ -9,26 +9,40 @@
  * CLOSURE, not an inconvenience: no principal in an organisation created by the
  * shipped operation could hold a P1-31 code, or ever be granted one.
  *
- * Seven of the nine are added. Two are deliberately EXCLUDED — `wty.policy.manage`
- * and `rpt.report.configure`, which no operation declares and no policy predicate
- * names (P1-31 CC-01, CC-02). This suite proves the split on real rows rather
- * than on the constant:
+ * SIX of the nine are added. THREE are deliberately EXCLUDED, and they are not
+ * excluded for the same reason:
  *
- *   P31-B1  the bundle's delta is exactly the seven, nothing else moved, and
- *           every one of the seven is declared by a REGISTERED operation while
- *           each excluded code is declared by none
+ *  - `wty.policy.manage` and `rpt.report.configure` — no operation declares them
+ *    and no policy predicate names them (P1-31 CC-01, CC-02).
+ *  - `rpt.export` — two shipped operations DO declare it. It is withheld on
+ *    least-privilege grounds by an explicit Owner decision (P1-31 CC-04): it is
+ *    the platform-wide export switch, and the bundle already holds every
+ *    entitlement it pairs with, so carrying it would let a one-day-old
+ *    administrator authorize bulk export of documents, outbound messages and
+ *    branch data including sensitive fields.
+ *
+ * The distinction is proved, not asserted: B1 reads the operation register and
+ * requires ZERO declarers for the first two and MORE THAN ZERO for the third.
+ * This suite proves the split on real rows rather than on the constant:
+ *
+ *   P31-B1  the bundle's delta is exactly the six, nothing else moved, every one
+ *           of the six is declared by a REGISTERED operation, the two undeclared
+ *           exclusions are declared by none, and the by-decision exclusion IS
+ *           declared — so the two kinds cannot be confused with each other
  *   P31-B2  an organisation created by the SHIPPED provisioning operation gives
- *           its administrator role all seven, and neither excluded code
- *   P31-B3  the Owner of that organisation effectively holds all seven, and the
- *           role holds nothing beyond the server-owned bundle
- *   P31-B4  the Owner can MAP each of the seven onto a role it creates — the
+ *           its administrator role all six, and none of the three exclusions
+ *   P31-B3  the Owner of that organisation effectively holds all six, holds no
+ *           excluded code, and the role holds nothing beyond the bundle
+ *   P31-B4  the Owner can MAP each of the six onto a role it creates — the
  *           exact act `ins_role_permissions_delegable` refused before
- *   P31-B5  each EXCLUDED code is refused, with the registered refusal:
- *           403 ERR-IAM-001, `requiredPermissions` naming the withheld code
+ *   P31-B5  each of the THREE EXCLUDED codes is refused, with the registered
+ *           refusal: 403 ERR-IAM-001, `requiredPermissions` naming the code
  *   P31-B6  delegation is still held-only — three codes outside the bundle that
  *           were refused before are refused now, by the same failure
- *   P31-B7  three shipped reads gated on added codes answer for the provisioned
+ *   P31-B7  two shipped reads gated on added codes answer for the provisioned
  *           Owner, including the audit list the shipped Audit Log screen calls
+ *   P31-B8  the SHIPPED export route refuses that same Owner with the registered
+ *           refusal — the consequence CC-04 states, measured rather than assumed
  *
  * Operations exercised: platform.organization-provision, iam.role-create,
  * iam.role-permission-add, iam.audit-event-list, rpt.report-catalogue,
@@ -83,7 +97,7 @@ import {
 } from '@/app/api/v1/exports/resources/route';
 
 /**
- * The seven codes prerequisite P-1 adds. Written out rather than derived from
+ * The six codes prerequisite P-1 adds. Written out rather than derived from
  * the constant under test: a list computed from the thing it checks proves
  * nothing.
  */
@@ -93,12 +107,27 @@ const ADDED = Object.freeze([
   'sal.delivery.complete',
   'wty.warranty.issue',
   'rpt.report.read',
-  'rpt.export',
   'iam.audit.view',
 ]);
 
-/** The two of the nine deliberately withheld — P1-31 CC-01 and CC-02. */
-const EXCLUDED = Object.freeze(['wty.policy.manage', 'rpt.report.configure']);
+/**
+ * Withheld because NOTHING declares them — P1-31 CC-01 and CC-02. Holding
+ * either would confer nothing today and pre-grant an authority its own contract
+ * asks to be granted deliberately.
+ */
+const EXCLUDED_UNDECLARED = Object.freeze(['wty.policy.manage', 'rpt.report.configure']);
+
+/**
+ * Withheld although shipped operations DO declare it — P1-31 CC-04, an explicit
+ * Owner decision of 2026-09-08 on least-privilege grounds. `rpt.export` is the
+ * platform-wide export switch of P1-15, not a P1-31 code, and the bundle already
+ * holds every entitlement it pairs with (`shared.document.read`,
+ * `org.branch.read`, `iam.sensitive.view`).
+ */
+const EXCLUDED_BY_DECISION = Object.freeze(['rpt.export']);
+
+/** Every withheld code, whatever the ground: the bundle must carry none of them. */
+const EXCLUDED = Object.freeze([...EXCLUDED_UNDECLARED, ...EXCLUDED_BY_DECISION]);
 
 /** The bundle before this slice: 48 → 65 (#321) → 67 (#322). */
 const BUNDLE_BEFORE = 67;
@@ -348,7 +377,7 @@ afterAll(async () => {
 }, 60_000);
 
 describe('P1-31 P-1 — the derivation', () => {
-  it('P31-B1 the delta is exactly the seven, each declared by a registered operation, and the two exclusions by none', () => {
+  it('P31-B1 the delta is exactly the six, each declared by a registered operation, the two undeclared exclusions by none, and the by-decision exclusion by some', () => {
     const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
 
     // The delta, stated two ways so neither can drift alone.
@@ -374,26 +403,46 @@ describe('P1-31 P-1 — the derivation', () => {
       register.operations.filter((op) => op.permissions.includes(code)).map((op) => op.id);
 
     for (const code of ADDED) expect(declarersOf(code).length).toBeGreaterThan(0);
-    for (const code of EXCLUDED) expect(declarersOf(code)).toEqual([]);
 
-    // The four routes the added codes are held FOR, by id, so a rename cannot
+    // CC-01 and CC-02: withheld BECAUSE nothing declares them. If an operation
+    // ever declares one, this case fails and the exclusion must be re-decided.
+    for (const code of EXCLUDED_UNDECLARED) expect(declarersOf(code)).toEqual([]);
+
+    // CC-04 is the opposite measurement, and the reason the two kinds are kept
+    // apart: `rpt.export` IS declared by shipped operations and is withheld
+    // anyway, on least-privilege grounds by Owner decision. Asserting the
+    // declarers by NAME means the day the export contract arrives and the set
+    // changes, this case makes the Owner look at the exclusion again.
+    for (const code of EXCLUDED_BY_DECISION) {
+      expect(declarersOf(code).length).toBeGreaterThan(0);
+    }
+    expect(declarersOf('rpt.export').sort()).toEqual([
+      'shared.export-authorize',
+      'shared.export-catalogue',
+    ]);
+
+    // The routes the added codes are held FOR, by id, so a rename cannot
     // quietly leave the bundle carrying a code nothing declares.
     expect(AUDIT_EVENT_LIST_OPERATION.permissions).toContain('iam.audit.view');
     expect(REPORT_CATALOGUE_OPERATION.permissions).toContain('rpt.report.read');
-    expect(EXPORT_CATALOGUE_OPERATION.permissions).toContain('rpt.export');
     expect(ROLE_PERMISSION_ADD_OPERATION.id).toBe('iam.role-permission-add');
     expect(ROLE_CREATE_OPERATION.id).toBe('iam.role-create');
+
+    // The withheld code's own route, by id and by declared permission: the
+    // refusal B8 measures is this operation's, not an incidental 403.
+    expect(EXPORT_CATALOGUE_OPERATION.id).toBe('shared.export-catalogue');
+    expect(EXPORT_CATALOGUE_OPERATION.permissions).toEqual(['rpt.export']);
   });
 });
 
 describe('P1-31 P-1 — an organisation created by the shipped provisioning operation', () => {
-  it('P31-B2 its administrator role holds all seven, and neither excluded code', async () => {
+  it('P31-B2 its administrator role holds all six, and none of the three excluded codes', async () => {
     const codes = await codesOfRole(probe.tenantAdministratorRoleId);
     for (const code of ADDED) expect(codes).toContain(code);
     for (const code of EXCLUDED) expect(codes).not.toContain(code);
   });
 
-  it('P31-B3 the Owner effectively holds all seven, and the role holds nothing beyond the bundle', async () => {
+  it('P31-B3 the Owner effectively holds all six, no excluded code, and the role holds nothing beyond the bundle', async () => {
     const held = await codesHeldBy(probe.ownerAccountId);
     for (const code of ADDED) expect(held).toContain(code);
     for (const code of EXCLUDED) expect(held).not.toContain(code);
@@ -405,7 +454,7 @@ describe('P1-31 P-1 — an organisation created by the shipped provisioning oper
     );
   });
 
-  it('P31-B4 the Owner can map each of the seven onto a role it creates', async () => {
+  it('P31-B4 the Owner can map each of the six onto a role it creates', async () => {
     const roleId = await newRole(probe, 'delivery_officer');
     for (const permissionCode of ADDED) {
       const mapped = await mapCode(probe, roleId, permissionCode);
@@ -415,7 +464,7 @@ describe('P1-31 P-1 — an organisation created by the shipped provisioning oper
     for (const code of ADDED) expect(codes).toContain(code);
   });
 
-  it('P31-B5 each deliberately excluded code is refused, with the registered refusal', async () => {
+  it('P31-B5 each of the three deliberately excluded codes is refused, with the registered refusal', async () => {
     const roleId = await newRole(probe, 'warranty_clerk');
     for (const permissionCode of EXCLUDED) {
       const refused = await mapCode(probe, roleId, permissionCode);
@@ -443,7 +492,7 @@ describe('P1-31 P-1 — an organisation created by the shipped provisioning oper
     expect(await codesOfRole(roleId)).toEqual([]);
   });
 
-  it('P31-B7 three shipped reads gated on the added codes answer for the provisioned Owner', async () => {
+  it('P31-B7 two shipped reads gated on the added codes answer for the provisioned Owner', async () => {
     asOwnerOf(probe);
     const audit = await call<{ items: unknown[] }>(auditEventListRoute, {
       path: `/audit-events?from=${encodeURIComponent(
@@ -459,13 +508,32 @@ describe('P1-31 P-1 — an organisation created by the shipped provisioning oper
       method: 'GET',
     });
     expect(reports.status).toBe(200);
+  });
 
+  it('P31-B8 the shipped export route refuses the provisioned Owner — rpt.export is neither held nor delegable (CC-04)', async () => {
+    // NOT HELD. Read from the rows the shipped provisioning operation wrote,
+    // both at the role and through the Owner's active grants, so this is a
+    // measurement of the organisation rather than of the constant.
+    const roleCodes = await codesOfRole(probe.tenantAdministratorRoleId);
+    const heldCodes = await codesHeldBy(probe.ownerAccountId);
+    for (const code of EXCLUDED_BY_DECISION) {
+      expect(roleCodes).not.toContain(code);
+      expect(heldCodes).not.toContain(code);
+    }
+
+    // THE RESULTING REFUSAL IS THE REGISTERED ONE. `shared.export-catalogue` is
+    // a route that already ships and whose only declared permission is the
+    // withheld code, so the consequence CC-04 accepts is observed here on the
+    // real route rather than reasoned about: 403, ERR-IAM-001, and the required
+    // permission named — the same shape B5 proves for CC-01 and CC-02.
     asOwnerOf(probe);
-    const exports = await call<{ resources: unknown[] }>(exportCatalogueRoute, {
-      path: '/exports/resources',
-      method: 'GET',
-    });
-    expect(exports.status).toBe(200);
-    expect(Array.isArray(exports.body.resources)).toBe(true);
+    const exports = await call<{ code?: string; requiredPermissions?: string[] }>(
+      exportCatalogueRoute,
+      { path: '/exports/resources', method: 'GET' }
+    );
+    expect(exports.status).toBe(403);
+    expect(exports.body.code).toBe('ERR-IAM-001');
+    expect(exports.body.requiredPermissions).toEqual(EXPORT_CATALOGUE_OPERATION.permissions);
+    expect(exports.body.requiredPermissions).toEqual(['rpt.export']);
   });
 });

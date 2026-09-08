@@ -429,11 +429,13 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
     // 48 before the P1-30 corrective slices; 65 with the seventeen commercial
     // codes F-01 proved no tenant could otherwise ever hold; 67 with
     // inv.item.manage and inv.adjustment.approve, without which no item
-    // could be catalogued and no stock could ever appear; 74 with the seven
-    // P1-31 delivery, warranty and reporting codes of prerequisite P-1 — seven
-    // of the nine A0 named, `wty.policy.manage` and `rpt.report.configure`
-    // deliberately excluded because no operation declares them.
-    expect(expected).toHaveLength(74);
+    // could be catalogued and no stock could ever appear; 73 with the SIX
+    // P1-31 delivery, warranty and reporting codes of prerequisite P-1 — six
+    // of the nine A0 named. Three are deliberately excluded: `wty.policy.manage`
+    // and `rpt.report.configure` because no operation declares them (CC-01,
+    // CC-02), and `rpt.export` — which two shipped operations do declare —
+    // withheld on least-privilege grounds by Owner decision (CC-04).
+    expect(expected).toHaveLength(73);
     expect(expected.some((c) => c.includes('*'))).toBe(false);
     expect(expected.some((c) => c.startsWith('platform.'))).toBe(false);
     expect(new Set(expected).size).toBe(expected.length);
@@ -634,9 +636,10 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
     const before = await counts();
     // The mapping count is the two bootstrap roles' sets summed, DERIVED rather
     // than transcribed: it was the literal 70 and had to be corrected when the
-    // P1-31 P-1 widening moved the administrator set from 67 to 74. A literal
+    // P1-31 P-1 widening moved the administrator set from 67 to 73. A literal
     // here says nothing about which role changed, and it drifts silently in the
-    // direction of whoever edits it last.
+    // direction of whoever edits it last — as it would have again when the
+    // Owner's CC-04 decision took `rpt.export` back out.
     expect(before).toEqual([
       1,
       1,
