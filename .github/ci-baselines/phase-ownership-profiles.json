@@ -120,6 +120,11 @@
       "why": "A repository-wide CI change owned by no phase: the nightly assurance workflow itself — the migration-immutability base a scheduled or dispatched run derives, the history the compatibility cells fetch for the seal fixtures they run, the PostgreSQL client major the backup drill pairs with its server, and the commit-bound exclusions the historical credential-shape scanner reads. It runs nightly over the whole repository and belongs to no lane, so it carries the workflows, the ci-baselines map, the scripts/ci gates, their suites and the ci-automation records — and, by that profile, no product source, migration or seed. A family prefix rather than one branch name, because the nightly is repaired more than once and the next repair should not need a second rule."
     },
     {
+      "branchPrefix": "chore/p1-27-citation-",
+      "profile": "repository-tooling",
+      "why": "the P1-27 citation-anchor gate and its suite, plus the phase records whose counts it moves — a repository-wide gate owned by no phase, carrying no Frontend source"
+    },
+    {
       "branchPrefix": "feature/pre-p1-29-backend-",
       "profile": "pre-p1-29-backend",
       "why": "The Backend lane of PRE-P1-29. Listed BEFORE the initiative branch so a lane branch is judged by its lane rather than by the wider integration profile — first match wins, and the narrower rule must be reachable."
