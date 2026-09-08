@@ -60,18 +60,41 @@ export type {
   AuthorizedReceiverRow,
   ChecklistGapReport,
   ChecklistGapRow,
+  ChecklistResultDetailRow,
   ChecklistResultRow,
   ChecklistTemplateItemRow,
   DeliveryRecordRow,
   DeliveryScope,
   DeliverySignatureRow,
+  DeliveryStatusHistoryRow,
 } from './data/delivery-repository';
 
 export type {
+  /**
+   * The P1-31 read-seam projections (prerequisites P-2 … P-5).
+   *
+   * Named with a `…RecordView` suffix rather than colliding with the write path's
+   * `DeliveryView`, `AuthorizedReceiverView`, `ChecklistResultView` and
+   * `SignatureView` — but every field they share is spelled IDENTICALLY (`id`,
+   * `deliveryRecordId`, `itemCode`, `signatureDocumentVersionId`, …), so a screen
+   * that renders a created delivery and a read one handles one shape. The write
+   * views differ only by carrying `replayed`, which is a fact about a request and
+   * not about a row, and so has no honest value on a read.
+   */
+  AuthorizedReceiverRecordView,
+  ChecklistResultRecordView,
   ComposedEligibility,
+  DeliveryChecklistResultsEnvelope,
   DeliveryForWarranty,
+  DeliveryReceiverEnvelope,
+  DeliveryRecordView,
+  DeliverySignatureRecordView,
+  DeliverySignaturesEnvelope,
+  DeliveryStatusHistoryEntryView,
+  DeliveryStatusHistoryEnvelope,
   EligibilityFact,
   EligibilityView,
+  WorkOrderDeliveryView,
 } from './application/delivery-read-service';
 
 export type {

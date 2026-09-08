@@ -1,9 +1,9 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 22,
-    "publicApi": 22,
-    "operationDepth": 22,
+    "registered": 28,
+    "publicApi": 28,
+    "operationDepth": 28,
     "invocationOnly": 0,
     "pending": 0,
     "unitOnly": 0,
@@ -152,6 +152,40 @@
       "unitOnly": false
     },
     {
+      "id": "sal.delivery-checklist-result-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/deliveries/{deliveryId}/checklist-results",
+      "public": false,
+      "files": ["tests/backend/p1-31-delivery-read-seam.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "pagination"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial",
+        "pagination"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "sal.delivery-complete",
       "surface": "public-api",
       "method": "POST",
@@ -278,6 +312,70 @@
       "unitOnly": false
     },
     {
+      "id": "sal.delivery-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/deliveries/{deliveryId}",
+      "public": false,
+      "files": ["tests/backend/p1-31-delivery-read-seam.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "sal.delivery-receiver-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/deliveries/{deliveryId}/authorized-receiver",
+      "public": false,
+      "files": ["tests/backend/p1-31-delivery-read-seam.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "sal.delivery-receiver-verify",
       "surface": "public-api",
       "method": "POST",
@@ -359,6 +457,74 @@
         "denial",
         "idempotency",
         "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "sal.delivery-signature-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/deliveries/{deliveryId}/signatures",
+      "public": false,
+      "files": ["tests/backend/p1-31-delivery-read-seam.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "pagination"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial",
+        "pagination"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "sal.delivery-status-history",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/deliveries/{deliveryId}/status-history",
+      "public": false,
+      "files": ["tests/backend/p1-31-delivery-read-seam.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "pagination"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial",
+        "pagination"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
         "route",
         "service",
         "success"
@@ -798,6 +964,38 @@
         "denial",
         "isolation",
         "pagination",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "sal.work-order-delivery-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/work-orders/{workOrderId}/delivery",
+      "public": false,
+      "files": ["tests/backend/p1-31-delivery-read-seam.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
         "route",
         "service",
         "success"

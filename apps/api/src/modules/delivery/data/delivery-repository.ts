@@ -29,18 +29,46 @@
  *    `$2::numeric` in SQL. Nothing in this module converts an odometer value or any
  *    amount to `number`.
  *
- * ## There is no pagination in this file, and that is deliberate
+ * ## Pagination arrived with the P1-31 read seam, and only where a set is unbounded
  *
- * The delivery module registers six operations and not one of them is a list
- * (`docs/phase-1/phase-1-22/operation-inventory.md` §delivery). So no
- * `OrderingContract` is declared: an ordering contract exists to make a cursor
- * verifiable, and a cursor nothing issues is a contract nothing can honour. Where a
- * set could grow without bound — `sal.delivery_signatures` has no unique constraint
- * on `(delivery_record_id, signer_role)`, so one delivery may carry any number of
- * rows — the read is an EXISTS probe or a `LIMIT`-bounded sample, never an unbounded
- * SELECT.
+ * Until P1-31 this file carried no `OrderingContract` at all, because the module
+ * registered six operations and not one of them was a list. That paragraph is now
+ * superseded rather than deleted, because the reasoning it gave still governs which
+ * of the new reads is paged: an ordering contract exists to make a cursor
+ * verifiable, so one is declared exactly where a caller can issue a cursor.
+ *
+ * Three sets are now readable and each is treated by its own bound:
+ *
+ *  - `sal.delivery_signatures` has **no** unique constraint on
+ *    `(delivery_record_id, signer_role)` — the table's own comment says corrections
+ *    are made by appending — so one delivery may carry any number of rows. It is
+ *    keyset-paged under `SIGNATURE_ORDER`, never selected whole.
+ *  - `sal.delivery_status_history` is append-only and grows by one row per
+ *    transition, with no ceiling in the DDL. Keyset-paged under
+ *    `STATUS_HISTORY_ORDER`.
+ *  - `sal.delivery_checklist_results` is bounded per delivery by
+ *    `uq_delivery_checklist_results_item` — at most one row per template item — but
+ *    the template itself is unbounded, so the set is bounded only by a number this
+ *    module does not control. Keyset-paged under `CHECKLIST_RESULT_ORDER` for that
+ *    reason, not for symmetry.
+ *
+ * Every cursor sort value is minted by `cursorTimestamp()` in SQL at MICROSECOND
+ * precision. A JS `Date` truncates to milliseconds and silently SKIPS rows sharing
+ * the boundary row's millisecond (`P1-27-INT-006`) — and these three tables are
+ * exactly where that bites, because a delivery's rows are frequently written inside
+ * one transaction and therefore share `transaction_timestamp()` to the microsecond.
+ *
+ * The `LIMIT`-bounded mandatory-gap sample below is unchanged and is still NOT a
+ * page: it answers a refusal message, issues no cursor, and its bound is a constant.
  */
 import { Repository } from '@/server/db/repository';
+import {
+  buildPageWithCursors,
+  cursorTimestamp,
+  keysetFragment,
+  type Page,
+  type PageRequest,
+} from '@/server/db/pagination';
 import type { DbHandle } from '@/server/db/transaction';
 
 /**
@@ -158,6 +186,46 @@ export interface DeliverySignatureRow {
   readonly signedAt: Date;
 }
 
+/**
+ * A recorded checklist result WITH the template item's code and label.
+ *
+ * A widening of `ChecklistResultRow`, not a parallel shape: it extends it and its
+ * mapper is `toChecklistResult` plus the two joined columns.
+ *
+ * The two extra fields are here because the checklist TEMPLATE has no HTTP surface
+ * at all (**PPD-12** / prerequisite P-9), so a caller cannot resolve a
+ * `template_item_id` to anything a person can read. The write path already returns
+ * `itemCode` on a recorded result, so publishing it on the read is contract PARITY
+ * rather than a new field.
+ */
+export interface ChecklistResultDetailRow extends ChecklistResultRow {
+  readonly itemCode: string;
+  readonly label: string;
+}
+
+/**
+ * One row of the append-only delivery status ledger.
+ *
+ * `sal.delivery_status_history` is written on every transition and, until P1-31,
+ * was read by nothing anywhere in `apps/api/src` (**P1-27-INT-089**). This is the
+ * only row shape in this file that is NEW rather than published, because there was
+ * no existing read to publish.
+ *
+ * `actorId` and `occurredAt` are both server-stamped by
+ * `shared.stamp_status_history` and the table holds SELECT and INSERT grants only,
+ * so a row here is the record of a transition rather than a reconstruction of one.
+ * `actor_id` is NOT NULL in the DDL and is typed accordingly.
+ */
+export interface DeliveryStatusHistoryRow {
+  readonly id: string;
+  readonly deliveryRecordId: string;
+  readonly fromStatus: string | null;
+  readonly toStatus: string;
+  readonly reason: string | null;
+  readonly actorId: string;
+  readonly occurredAt: Date;
+}
+
 /** A mandatory item with no satisfying result — one entry of the `checklist_incomplete` reason. */
 export interface ChecklistGapRow {
   readonly templateItemId: string;
@@ -176,6 +244,36 @@ export interface ChecklistGapReport {
 
 /** How many gap rows a report carries. Bounded so a huge template cannot become a huge response. */
 const GAP_SAMPLE_LIMIT = 20;
+
+// ---------------------------------------------------------------------------
+// Ordering contracts (P1-31 read seam).
+//
+// Each key names the table and the direction, so a cursor minted for one list can
+// never be spent on another: `decodeCursor` compares the key against the contract
+// and refuses a mismatch with ERR-PAG-001.
+//
+// All three are newest-first. That is the operator's reading order for an
+// append-only ledger, and it puts the row a screen needs — the latest signature,
+// the current status — on the first page rather than behind a cursor walk.
+// ---------------------------------------------------------------------------
+
+/** A delivery's checklist results, newest first. */
+export const CHECKLIST_RESULT_ORDER = Object.freeze({
+  key: 'sal.delivery_checklist_results:created_at_desc',
+  direction: 'desc' as const,
+});
+
+/** A delivery's signatures, newest first. */
+export const SIGNATURE_ORDER = Object.freeze({
+  key: 'sal.delivery_signatures:signed_at_desc',
+  direction: 'desc' as const,
+});
+
+/** A delivery's status ledger, newest transition first. */
+export const STATUS_HISTORY_ORDER = Object.freeze({
+  key: 'sal.delivery_status_history:occurred_at_desc',
+  direction: 'desc' as const,
+});
 
 // ---------------------------------------------------------------------------
 // SQL shapes and mappers. snake_case in, camelCase out, one mapper per shape.
@@ -317,6 +415,26 @@ const toChecklistGap = (r: ChecklistGapSql): ChecklistGapRow => ({
   templateId: r.template_id,
   itemCode: r.item_code,
   label: r.label,
+});
+
+interface DeliveryStatusHistorySql {
+  id: string;
+  delivery_record_id: string;
+  from_status: string | null;
+  to_status: string;
+  reason: string | null;
+  actor_id: string;
+  occurred_at: Date;
+}
+
+const toDeliveryStatusHistory = (r: DeliveryStatusHistorySql): DeliveryStatusHistoryRow => ({
+  id: r.id,
+  deliveryRecordId: r.delivery_record_id,
+  fromStatus: r.from_status,
+  toStatus: r.to_status,
+  reason: r.reason,
+  actorId: r.actor_id,
+  occurredAt: r.occurred_at,
 });
 
 export class DeliveryRepository extends Repository {
@@ -570,6 +688,91 @@ export class DeliveryRepository extends Repository {
     return row.id;
   }
 
+  /**
+   * The delivery's status ledger, newest transition first (P1-31 P-5,
+   * **P1-27-INT-089**).
+   *
+   * ## This one had nothing to publish
+   *
+   * `appendStatusHistory` above is the only method that has ever touched
+   * `sal.delivery_status_history`: the table is written on every transition and,
+   * before this, was read by nothing anywhere in `apps/api/src`. So unlike the other
+   * P1-31 reads there was no existing query to put a route in front of, and this
+   * query and `toDeliveryStatusHistory` are both new. That is recorded rather than
+   * glossed.
+   *
+   * ## The ledger is the record, not a reconstruction
+   *
+   * The table holds SELECT and INSERT grants only — no UPDATE, no DELETE, for any
+   * application role — and `shared.stamp_status_history` sets `actor_id` and
+   * `occurred_at` from the session context. So a row cannot be back-dated or
+   * re-attributed after the fact.
+   *
+   * ## The origin row is here, unlike the work-order ledger
+   *
+   * `wo.job_status_history` and `wo.work_order_status_history` are written by AFTER
+   * UPDATE triggers, so their oldest row is the first TRANSITION and their readers
+   * must publish a separate `origin` block for the initial state. This table has no
+   * trigger: `sal.delivery_records` has no AFTER UPDATE history emitter and every
+   * advance appends its own row, `from_status` included. The oldest row is
+   * therefore already the origin and no `origin` block is synthesised.
+   *
+   * `ix_delivery_status_history_delivery` is
+   * `(tenant_id, company_id, branch_id, delivery_record_id, occurred_at DESC, seq DESC)`,
+   * which the predicate and the ordering below lead on exactly.
+   *
+   * The keyset tie-breaks on `id` rather than the `seq` identity column, because
+   * `keysetFragment` compares `(sort, id)` and `Cursor.i` is validated as an
+   * identifier. `seq` orders identically within one `occurred_at`, so the only cost
+   * is that two rows sharing a microsecond are ordered by uuid instead of by
+   * insertion — and `cursorTimestamp` keeps that pair on the same page rather than
+   * skipping one.
+   */
+  public async listStatusHistory(
+    db: DbHandle,
+    scope: DeliveryScope,
+    deliveryRecordId: string,
+    request: PageRequest
+  ): Promise<Page<DeliveryStatusHistoryRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      scope.companyId,
+      scope.branchId,
+      deliveryRecordId,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'occurred_at', id: 'id' },
+      STATUS_HISTORY_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<DeliveryStatusHistorySql & { sort_value: string }>(
+      db,
+      `SELECT id, delivery_record_id, from_status, to_status, reason, actor_id, occurred_at,
+              ${cursorTimestamp('occurred_at')} AS sort_value
+         FROM sal.delivery_status_history
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+          AND delivery_record_id = $4
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: toDeliveryStatusHistory(row),
+        // `occurred_at` defaults to `now()`, so the receiver-verify and
+        // signature-attach transitions of one request share it to the microsecond
+        // (`P1-27-INT-006`).
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      STATUS_HISTORY_ORDER
+    );
+  }
+
   // -------------------------------------------------------------------------
   // Authorized receiver
   // -------------------------------------------------------------------------
@@ -714,6 +917,92 @@ export class DeliveryRepository extends Repository {
       ]
     );
     return row ? toChecklistResult(row) : null;
+  }
+
+  /**
+   * Every checklist result recorded against one delivery, newest first (P1-31 P-4).
+   *
+   * ## Why this is a new query rather than a published one
+   *
+   * `findChecklistResult` above is addressed by `(delivery, templateItemId)` and
+   * answers "was this ONE item already recorded" for the write path. Publishing it
+   * as it stands would hand a screen a read it cannot address: the checklist
+   * TEMPLATE has no HTTP surface at all (**PPD-12** / prerequisite P-9), so no
+   * caller can discover a `template_item_id` to put in the path. The set read is
+   * therefore the smallest read that makes recorded results reachable, and it
+   * reuses `toChecklistResult` — one wire contract for this row, not two.
+   *
+   * ## The predicates
+   *
+   * `company_id` AND `branch_id` are bound because the caller has already read the
+   * delivery row they came from. `ix_delivery_checklist_results_delivery` is
+   * `(tenant_id, company_id, branch_id, delivery_record_id)` and leads on exactly
+   * those four.
+   *
+   * **`deleted_at IS NULL` IS filtered here**, unlike `findChecklistResult`. The two
+   * reads answer different questions and the difference is deliberate: the write
+   * path must see a soft-deleted row because `uq_delivery_checklist_results_item` is
+   * non-partial and that row still occupies the slot, whereas this read answers
+   * "what has been recorded", and a withdrawn result is not a recorded one. The
+   * mandatory-gap mirror filters it for the same reason `sal.complete_delivery`
+   * does.
+   */
+  public async listChecklistResults(
+    db: DbHandle,
+    scope: DeliveryScope,
+    deliveryRecordId: string,
+    request: PageRequest
+  ): Promise<Page<ChecklistResultDetailRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      scope.companyId,
+      scope.branchId,
+      deliveryRecordId,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'r.created_at', id: 'r.id' },
+      CHECKLIST_RESULT_ORDER,
+      values.length + 1
+    );
+    // An INNER join, and it is TOTAL: `fk_delivery_checklist_results_item` is
+    // `(tenant_id, company_id, template_item_id) ON DELETE RESTRICT`, so the item
+    // row cannot be missing. It deliberately carries NO `ti.deleted_at` predicate —
+    // the gap mirror filters that because `sal.complete_delivery` does, but a result
+    // recorded against an item that was later soft-deleted is still a recorded fact
+    // and dropping it here would hide it.
+    const result = await this.run<
+      ChecklistResultSql & { item_code: string; label: string; sort_value: string }
+    >(
+      db,
+      `SELECT r.id, r.company_id, r.branch_id, r.delivery_record_id, r.template_item_id,
+              r.outcome, r.waiver_reason, r.recorded_by, r.record_version,
+              ti.item_code, ti.label,
+              ${cursorTimestamp('r.created_at')} AS sort_value
+         FROM sal.delivery_checklist_results r
+         JOIN sal.delivery_checklist_template_items ti
+           ON ti.tenant_id = r.tenant_id AND ti.company_id = r.company_id
+          AND ti.id = r.template_item_id
+        WHERE r.tenant_id = $1 AND r.company_id = $2 AND r.branch_id = $3
+          AND r.delivery_record_id = $4 AND r.deleted_at IS NULL
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: { ...toChecklistResult(row), itemCode: row.item_code, label: row.label },
+        // `created_at` is not published on the row, so the cursor value cannot be
+        // re-derived from the response — which is precisely what
+        // `buildPageWithCursors` exists for.
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      CHECKLIST_RESULT_ORDER
+    );
   }
 
   /**
@@ -895,6 +1184,81 @@ export class DeliveryRepository extends Repository {
       ]
     );
     return row ? toDeliverySignature(row) : null;
+  }
+
+  /**
+   * Every signature bound to one delivery, newest first (P1-31 P-4).
+   *
+   * ## Why this is a new query rather than a published one
+   *
+   * `findSignature` above is a REPLAY PROBE addressed by the exact
+   * `(delivery, signerRole, signatureDocumentVersionId)` triple, so a caller must
+   * already hold the document-version id to use it — which is the unrecoverable
+   * identifier problem restated, not a read of the signatures. `hasSignature` is a
+   * boolean. Neither answers "which signatures does this delivery carry", which is
+   * what **P-4** requires and what the delivery document (FE-007) is composed from.
+   * This reuses `toDeliverySignature`: no second mapper, no second wire contract.
+   *
+   * ## Paged, because the set has no ceiling
+   *
+   * There is no unique constraint on `(delivery_record_id, signer_role)` — the
+   * table's comment records that corrections are made by appending — so a delivery
+   * may carry any number of rows and an unbounded SELECT is not available. Keyset,
+   * so the page boundary is stable while rows are appended underneath it.
+   *
+   * **No `deleted_at` predicate, and none is possible**: the table has SELECT and
+   * INSERT grants only and carries no `deleted_at` column at all. A signature can
+   * never be edited or withdrawn, which is the property that makes the document
+   * reference worth binding.
+   *
+   * The row carries `signatureDocumentVersionId` and **never bytes**. Fetching that
+   * document is not offered here and is not offered anywhere in this module.
+   */
+  public async listSignatures(
+    db: DbHandle,
+    scope: DeliveryScope,
+    deliveryRecordId: string,
+    request: PageRequest
+  ): Promise<Page<DeliverySignatureRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      scope.companyId,
+      scope.branchId,
+      deliveryRecordId,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'signed_at', id: 'id' },
+      SIGNATURE_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<DeliverySignatureSql & { sort_value: string }>(
+      db,
+      `SELECT id, company_id, branch_id, delivery_record_id, signer_role,
+              signature_document_version_id, signed_at,
+              ${cursorTimestamp('signed_at')} AS sort_value
+         FROM sal.delivery_signatures
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+          AND delivery_record_id = $4
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: toDeliverySignature(row),
+        // NOT `row.signed_at.toISOString()`: `signed_at` defaults to `now()`, so
+        // several signatures attached in one transaction share the value to the
+        // microsecond and a millisecond-truncated cursor would skip them
+        // (`P1-27-INT-006`).
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      SIGNATURE_ORDER
+    );
   }
 
   /**

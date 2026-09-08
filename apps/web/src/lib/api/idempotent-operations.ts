@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 13, export 1, financial 14, none 160, privileged 174, security 13.
+ * Currently approval 13, export 1, financial 14, none 166, privileged 174, security 13.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 375 of them. */
+/** Every operation the contract publishes. 381 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -605,11 +605,32 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'privileged',
   },
   {
+    template: '/deliveries/{deliveryId}',
+    method: 'GET',
+    operationId: 'sal.delivery-read',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/deliveries/{deliveryId}/authorized-receiver',
+    method: 'GET',
+    operationId: 'sal.delivery-receiver-read',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
     template: '/deliveries/{deliveryId}/authorized-receiver',
     method: 'POST',
     operationId: 'sal.delivery-receiver-verify',
     idempotent: true,
     auditClass: 'privileged',
+  },
+  {
+    template: '/deliveries/{deliveryId}/checklist-results',
+    method: 'GET',
+    operationId: 'sal.delivery-checklist-result-list',
+    idempotent: false,
+    auditClass: 'none',
   },
   {
     template: '/deliveries/{deliveryId}/checklist-results',
@@ -634,10 +655,24 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
   },
   {
     template: '/deliveries/{deliveryId}/signatures',
+    method: 'GET',
+    operationId: 'sal.delivery-signature-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/deliveries/{deliveryId}/signatures',
     method: 'POST',
     operationId: 'sal.delivery-signature-attach',
     idempotent: true,
     auditClass: 'privileged',
+  },
+  {
+    template: '/deliveries/{deliveryId}/status-history',
+    method: 'GET',
+    operationId: 'sal.delivery-status-history',
+    idempotent: false,
+    auditClass: 'none',
   },
   {
     template: '/deliveries/{deliveryId}/warranties',
@@ -2540,6 +2575,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     template: '/work-orders/{workOrderId}/closure-eligibility',
     method: 'GET',
     operationId: 'wo.work-order-closure-eligibility',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/work-orders/{workOrderId}/delivery',
+    method: 'GET',
+    operationId: 'sal.work-order-delivery-read',
     idempotent: false,
     auditClass: 'none',
   },

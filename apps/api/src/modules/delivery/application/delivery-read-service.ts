@@ -54,6 +54,12 @@ import {
   type BlockerCode,
   type EligibilityDecision,
 } from '../domain/delivery';
+import { pageRequest, type Page, type PageRequest } from '@/server/db/pagination';
+import {
+  CHECKLIST_RESULT_ORDER,
+  SIGNATURE_ORDER,
+  STATUS_HISTORY_ORDER,
+} from '../data/delivery-repository';
 import type {
   ChecklistGapRow,
   DeliveryRecordRow,
@@ -117,6 +123,154 @@ export interface ComposedEligibility {
   readonly checklistGaps: readonly ChecklistGapRow[];
 }
 
+/**
+ * The delivery record itself (P1-31 P-3).
+ *
+ * Every timestamp crosses the wire as an ISO-8601 string, matching
+ * `DeliveryForWarranty` below rather than emitting a `Date` the serialiser would
+ * render differently.
+ *
+ * **There is no money on this projection and none is omitted.** A delivery record
+ * carries no amount column of any kind: `finalOdometerReadingId` is a reference to a
+ * `veh.odometer_readings` row and NOT an odometer value, so the decimal-string rule
+ * has nothing to apply to here. The reading's value is read through the vehicle
+ * odometer-history operation, which is where that `numeric(12,1)` already crosses
+ * as a string.
+ *
+ * `deliveringEmployeeId` is published as the bare identifier the column holds.
+ * `sal.delivery_records.delivering_employee_id` is NOT NULL **with no foreign key**
+ * and nothing in this platform resolves it to a name — an unlabelled register row
+ * in `docs/product/owner-workflow-requirements.md` and Owner requirement
+ * OWR-2026-09-06-G-10 both record that, and G-10 is Undecided. This read publishes
+ * what the column holds and invents no identity for it.
+ */
+export interface DeliveryRecordView {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly workOrderId: string;
+  readonly receptionVisitId: string;
+  readonly vehicleId: string;
+  readonly deliveringEmployeeId: string;
+  readonly status: string;
+  readonly deliveredAt: string | null;
+  /** A `veh.odometer_readings` id. NOT a reading value. */
+  readonly finalOdometerReadingId: string | null;
+  /** The value `sal.delivery-complete`'s mandatory `If-Match` takes. */
+  readonly recordVersion: number;
+}
+
+/**
+ * The live delivery a work order has, or the fact that it has none (P1-31 P-2).
+ *
+ * Shaped on `WorkOrderInvoiceView`, the read this one is modelled after, for the
+ * same reason: absence is a 200 with `delivery: null`, and a work order the caller
+ * cannot see is `ERR-RES-001`. Collapsing those two would answer "no delivery" for a
+ * work order in a branch the caller cannot see — an existence oracle disguised as an
+ * empty result.
+ */
+export interface WorkOrderDeliveryView {
+  readonly workOrderId: string;
+  readonly delivery: DeliveryRecordView | null;
+}
+
+/**
+ * The verified receiver of a delivery, as a ROW (P1-31 P-4).
+ *
+ * Until now this row existed on the read side only as the boolean
+ * `receiver_not_verified` blocker, so a screen could learn *whether* a receiver was
+ * verified and never *who*.
+ *
+ * `identityEvidenceDocumentVersionId` is a REFERENCE and nothing more. No identity
+ * document content is read, stored, logged or returned by this module, and the whole
+ * row is gated by `sal.delivery.view` in `sel_authorized_receivers_gated` — which is
+ * precisely why the reference alone is treated as sensitive.
+ */
+export interface AuthorizedReceiverRecordView {
+  readonly id: string;
+  readonly deliveryRecordId: string;
+  readonly receiverPartnerId: string;
+  readonly identityEvidenceDocumentVersionId: string | null;
+  readonly verifiedBy: string;
+  readonly verifiedAt: string;
+  readonly recordVersion: number;
+}
+
+/** A delivery's checklist result, as recorded (P1-31 P-4). */
+export interface ChecklistResultRecordView {
+  readonly id: string;
+  readonly deliveryRecordId: string;
+  readonly templateItemId: string;
+  /** The template item code, as the write path already returns it. */
+  readonly itemCode: string;
+  /** The item label, so a result is renderable while the template has no surface. */
+  readonly label: string;
+  readonly outcome: string;
+  readonly waiverReason: string | null;
+  readonly recordedBy: string;
+  readonly recordVersion: number;
+}
+
+/**
+ * A delivery signature (P1-31 P-4).
+ *
+ * `signatureDocumentVersionId` is a reference to a `shared.document_versions` row
+ * and **raw signature bytes never appear here**. Nor is a download offered:
+ * `shared.guard_document_version_transition` requires a clean scan record to reach
+ * `accepted`, no scanner is provisioned, and `DOWNLOADABLE_STATES` is `['accepted']`
+ * — so a retrieval path would be a contract that always fails (`P1-22-L-04`).
+ */
+export interface DeliverySignatureRecordView {
+  readonly id: string;
+  readonly deliveryRecordId: string;
+  readonly signerRole: string;
+  readonly signatureDocumentVersionId: string;
+  readonly signedAt: string;
+}
+
+/** One transition of the append-only delivery ledger (P1-31 P-5). */
+export interface DeliveryStatusHistoryEntryView {
+  readonly id: string;
+  readonly fromStatus: string | null;
+  readonly toStatus: string;
+  readonly reason: string | null;
+  readonly actorId: string;
+  readonly occurredAt: string;
+}
+
+/**
+ * The four envelopes the subresource reads answer with.
+ *
+ * Named and exported rather than written inline at the return type, because
+ * `scripts/ci/check-named-wire-shapes.mjs` refuses an anonymous type on the wire:
+ * an unnamed shape cannot be referenced by a contract document, a frontend adapter
+ * or a review, so it is a wire contract nobody can cite.
+ *
+ * Each carries `deliveryId` beside its payload so a response is self-identifying
+ * when it is cached, logged or composed into a delivery document, and so `null` or
+ * an empty page is never a bare answer with no subject.
+ */
+export interface DeliveryReceiverEnvelope {
+  readonly deliveryId: string;
+  /** `null` before verification — the normal state of a fresh delivery, not a refusal. */
+  readonly receiver: AuthorizedReceiverRecordView | null;
+}
+
+export interface DeliveryChecklistResultsEnvelope {
+  readonly deliveryId: string;
+  readonly results: Page<ChecklistResultRecordView>;
+}
+
+export interface DeliverySignaturesEnvelope {
+  readonly deliveryId: string;
+  readonly signatures: Page<DeliverySignatureRecordView>;
+}
+
+export interface DeliveryStatusHistoryEnvelope {
+  readonly deliveryId: string;
+  readonly transitions: Page<DeliveryStatusHistoryEntryView>;
+}
+
 /** The delivery projection the `warranty` module is allowed to see. */
 export interface DeliveryForWarranty {
   readonly id: string;
@@ -128,6 +282,27 @@ export interface DeliveryForWarranty {
   readonly deliveredAt: string | null;
   readonly finalOdometerReadingId: string | null;
 }
+
+/**
+ * `DeliveryRecordRow` → `DeliveryView`. ONE mapper for this row shape.
+ *
+ * `readDelivery` and `readWorkOrderDelivery` both go through it, so the delivery a
+ * screen reads by id and the delivery it reaches through a work order are the same
+ * wire contract rather than two that can drift.
+ */
+const toDeliveryView = (row: DeliveryRecordRow): DeliveryRecordView => ({
+  id: row.id,
+  companyId: row.companyId,
+  branchId: row.branchId,
+  workOrderId: row.workOrderId,
+  receptionVisitId: row.receptionVisitId,
+  vehicleId: row.vehicleId,
+  deliveringEmployeeId: row.deliveringEmployeeId,
+  status: row.status,
+  deliveredAt: row.deliveredAt === null ? null : row.deliveredAt.toISOString(),
+  finalOdometerReadingId: row.finalOdometerReadingId,
+  recordVersion: row.recordVersion,
+});
 
 export class DeliveryReadService {
   public constructor(private readonly repository: DeliveryRepository) {}
@@ -156,6 +331,252 @@ export class DeliveryReadService {
     }
     await authorizeScope({ companyId: row.companyId, branchId: row.branchId });
     return row;
+  }
+
+  // -------------------------------------------------------------------------
+  // The P1-31 read seam (prerequisites P-2 … P-5 of `docs/phase-1/phase-1-31/
+  // a0-preflight.md`).
+  //
+  // Six operations that make an already-created delivery RECOVERABLE. Before them
+  // the record was write-only after creation: five of six delivery operations were
+  // writes, the single read returned blockers rather than the record, and a second
+  // create answered ERR-RES-002 naming only the work order — so the delivery id was
+  // unrecoverable once the create response was gone.
+  //
+  // Every one of them is scoped the same way and it is the only way this module
+  // scopes an id-addressed read: read the row, then `authorizeScope` against the
+  // row's OWN company and branch. `scope: 'branch'` is inert without a target,
+  // because `requiresScopedEvaluation` returns false on an empty one whatever the
+  // declaration says, and RLS cannot contain that — `app.branch_ids` is the
+  // permission-blind union of every active grant, so visibility is not authority
+  // (P1-18-A-01). No caller-supplied company or branch is read anywhere below.
+  // -------------------------------------------------------------------------
+
+  /**
+   * `sal.delivery-read` — the delivery record (P-3).
+   *
+   * Publishes `DeliveryRepository.findDelivery` through the existing
+   * `requireDelivery`, which already decides the uniform 404 and then re-authorizes.
+   * It adds no query and no second mapper.
+   *
+   * `recordVersion` is published in the body and as the ETag by the route, for the
+   * same reason the eligibility read publishes it: `sal.delivery-complete` is
+   * version-guarded and `parseIfMatch` accepts only an exact positive integer, so a
+   * caller needs a current version to act at all.
+   */
+  public async readDelivery(
+    db: DbHandle,
+    deliveryId: string,
+    authorizeScope: ScopeAuthorizer
+  ): Promise<DeliveryRecordView> {
+    return toDeliveryView(await this.requireDelivery(db, deliveryId, authorizeScope));
+  }
+
+  /**
+   * `sal.work-order-delivery-read` — the live delivery a work order has (P-2).
+   *
+   * ## This is the recovery seam
+   *
+   * `findLiveDeliveryForWorkOrder` has existed since P1-22 with exactly one caller:
+   * the duplicate-create refusal in `DeliveryService`, which is not reachable by a
+   * screen and which answers `ERR-RES-002` naming only the work order. So the
+   * delivery id could not be discovered once the create response was lost. This
+   * publishes that existing read unchanged — no new query, no second mapper — and
+   * that is the whole fix.
+   *
+   * ## At most one row, by partial unique index
+   *
+   * `uq_delivery_records_work_order_active` (`status <> 'exception' AND deleted_at
+   * IS NULL`) makes the live delivery for a work order unique, and the query mirrors
+   * that predicate exactly. So this is a singleton read: no pagination, no ordering
+   * contract, no cursor — there is no ordered set to page.
+   *
+   * A delivery marked `exception` is therefore reported as `null`, deliberately: the
+   * index permits a new delivery for that work order, so "the live delivery" is
+   * absent in the only sense the schema recognises.
+   *
+   * ## Absence is a 200, not a 404
+   *
+   * A visible work order with no live delivery answers
+   * `{ workOrderId, delivery: null }`. A work order that is not visible answers
+   * `ERR-RES-001`, decided by `requireWorkOrder` BEFORE any scope decision. The
+   * work-order module is asked for the row rather than this module reading
+   * `wo.work_orders`, which it may not do (ADR-001 rule 3) and which is also where
+   * the company and branch the delivery query predicates on come from.
+   */
+  public async readWorkOrderDelivery(
+    db: DbHandle,
+    workOrderId: string,
+    authorizeScope: ScopeAuthorizer
+  ): Promise<WorkOrderDeliveryView> {
+    const workOrder = await workOrderModule().workOrders.requireWorkOrder(
+      db,
+      workOrderId,
+      authorizeScope
+    );
+    const scope: DeliveryScope = {
+      companyId: workOrder.companyId,
+      branchId: workOrder.branchId,
+    };
+    const delivery = await this.repository.findLiveDeliveryForWorkOrder(db, scope, workOrder.id);
+    return {
+      workOrderId: workOrder.id,
+      delivery: delivery === null ? null : toDeliveryView(delivery),
+    };
+  }
+
+  /**
+   * `sal.delivery-receiver-read` — the verified receiver, as a row (P-4).
+   *
+   * Publishes `DeliveryRepository.findReceiver`, which the eligibility composition
+   * already calls and then collapses into the boolean `receiver_not_verified`
+   * blocker. No new query, no second mapper.
+   *
+   * Absence is a 200 with `receiver: null`, not a 404, and for the same reason as
+   * the work-order read above: the DELIVERY's visibility is the not-found decision,
+   * and it has already been made by `requireDelivery`. A 404 here would say nothing
+   * a caller who just read the delivery does not already know, and would make "no
+   * receiver yet" — the normal state of a fresh delivery — indistinguishable from a
+   * scope refusal.
+   *
+   * `findReceiver` carries **no `deleted_at` predicate**, transcribed from
+   * `sal.complete_delivery`'s own receiver gate, which has none either. That is
+   * deliberate and is preserved here: a read that filtered it would report no
+   * receiver for a delivery the primitive would happily complete.
+   */
+  public async readReceiver(
+    db: DbHandle,
+    deliveryId: string,
+    authorizeScope: ScopeAuthorizer
+  ): Promise<DeliveryReceiverEnvelope> {
+    const delivery = await this.requireDelivery(db, deliveryId, authorizeScope);
+    const scope: DeliveryScope = { companyId: delivery.companyId, branchId: delivery.branchId };
+    const row = await this.repository.findReceiver(db, scope, delivery.id);
+    return {
+      deliveryId: delivery.id,
+      receiver:
+        row === null
+          ? null
+          : {
+              id: row.id,
+              deliveryRecordId: row.deliveryRecordId,
+              receiverPartnerId: row.receiverPartnerId,
+              identityEvidenceDocumentVersionId: row.identityEvidenceDocumentVersionId,
+              verifiedBy: row.verifiedBy,
+              verifiedAt: row.verifiedAt.toISOString(),
+              recordVersion: row.recordVersion,
+            },
+    };
+  }
+
+  /**
+   * `sal.delivery-checklist-result-list` — what has been recorded (P-4).
+   *
+   * The eligibility read publishes the GAPS — mandatory items with no satisfying
+   * result, capped at 20, with `missingCount` computed and then dropped
+   * (**P1-27-INT-088**). This publishes the RESULTS, which is the opposite set and
+   * the one a delivery document is composed from. It does not close INT-088: the gap
+   * side is untouched by this slice and remains as recorded.
+   *
+   * Paged, because the checklist template is unbounded and this module owns no
+   * ceiling on it.
+   */
+  public async readChecklistResults(
+    db: DbHandle,
+    deliveryId: string,
+    page: { limit?: number | undefined; cursor?: string | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<DeliveryChecklistResultsEnvelope> {
+    const delivery = await this.requireDelivery(db, deliveryId, authorizeScope);
+    const scope: DeliveryScope = { companyId: delivery.companyId, branchId: delivery.branchId };
+    const request: PageRequest = pageRequest(CHECKLIST_RESULT_ORDER, page);
+    const rows = await this.repository.listChecklistResults(db, scope, delivery.id, request);
+    return {
+      deliveryId: delivery.id,
+      results: {
+        ...rows,
+        items: rows.items.map((row) => ({
+          id: row.id,
+          deliveryRecordId: row.deliveryRecordId,
+          templateItemId: row.templateItemId,
+          itemCode: row.itemCode,
+          label: row.label,
+          outcome: row.outcome,
+          waiverReason: row.waiverReason,
+          recordedBy: row.recordedBy,
+          recordVersion: row.recordVersion,
+        })),
+      },
+    };
+  }
+
+  /**
+   * `sal.delivery-signature-list` — the signatures bound to a delivery (P-4).
+   *
+   * The eligibility read publishes only `signature_missing`, a boolean over
+   * `hasSignature`. This publishes the rows.
+   *
+   * Every entry carries a `shared.document_versions` REFERENCE and no bytes, and no
+   * download is offered from here — see `DeliverySignatureView`.
+   */
+  public async readSignatures(
+    db: DbHandle,
+    deliveryId: string,
+    page: { limit?: number | undefined; cursor?: string | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<DeliverySignaturesEnvelope> {
+    const delivery = await this.requireDelivery(db, deliveryId, authorizeScope);
+    const scope: DeliveryScope = { companyId: delivery.companyId, branchId: delivery.branchId };
+    const request: PageRequest = pageRequest(SIGNATURE_ORDER, page);
+    const rows = await this.repository.listSignatures(db, scope, delivery.id, request);
+    return {
+      deliveryId: delivery.id,
+      signatures: {
+        ...rows,
+        items: rows.items.map((row) => ({
+          id: row.id,
+          deliveryRecordId: row.deliveryRecordId,
+          signerRole: row.signerRole,
+          signatureDocumentVersionId: row.signatureDocumentVersionId,
+          signedAt: row.signedAt.toISOString(),
+        })),
+      },
+    };
+  }
+
+  /**
+   * `sal.delivery-status-history` — the append-only transition ledger (P-5,
+   * **P1-27-INT-089**).
+   *
+   * `sal.delivery_status_history` is written on every transition and was read
+   * nowhere. Newest first; the oldest row is already the origin, because every
+   * advance appends its own row with its `from_status` rather than relying on an
+   * AFTER UPDATE trigger — so no synthetic `origin` block is published.
+   */
+  public async readStatusHistory(
+    db: DbHandle,
+    deliveryId: string,
+    page: { limit?: number | undefined; cursor?: string | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<DeliveryStatusHistoryEnvelope> {
+    const delivery = await this.requireDelivery(db, deliveryId, authorizeScope);
+    const scope: DeliveryScope = { companyId: delivery.companyId, branchId: delivery.branchId };
+    const request: PageRequest = pageRequest(STATUS_HISTORY_ORDER, page);
+    const rows = await this.repository.listStatusHistory(db, scope, delivery.id, request);
+    return {
+      deliveryId: delivery.id,
+      transitions: {
+        ...rows,
+        items: rows.items.map((row) => ({
+          id: row.id,
+          fromStatus: row.fromStatus,
+          toStatus: row.toStatus,
+          reason: row.reason,
+          actorId: row.actorId,
+          occurredAt: row.occurredAt.toISOString(),
+        })),
+      },
+    };
   }
 
   /**

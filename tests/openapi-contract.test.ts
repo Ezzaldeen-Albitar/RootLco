@@ -348,6 +348,11 @@ import '@/app/api/v1/external-purchase-parts/route';
 // documents that agree with each other and disagree with the code.
 // `scripts/ci/check-route-registry-parity.mjs` is what catches that, and it named all
 // twenty of these before they were added.
+// P1-31 P-2: the live delivery a work order has, on the invoice read's own
+// shape one directory over. Without this import the operation is registered by
+// the route and ABSENT from the generated document — the false-green class
+// CSA-14 closed, which the P1-24 register reconciliation now catches.
+import '@/app/api/v1/work-orders/[workOrderId]/delivery/route';
 import '@/app/api/v1/work-orders/[workOrderId]/invoice/route';
 import '@/app/api/v1/work-orders/[workOrderId]/invoice-preview/route';
 import '@/app/api/v1/invoices/route';
@@ -362,7 +367,9 @@ import '@/app/api/v1/payments/[paymentId]/route';
 import '@/app/api/v1/payments/[paymentId]/allocations/route';
 import '@/app/api/v1/payment-methods/route';
 import '@/app/api/v1/deliveries/route';
+import '@/app/api/v1/deliveries/[deliveryId]/route';
 import '@/app/api/v1/deliveries/[deliveryId]/eligibility/route';
+import '@/app/api/v1/deliveries/[deliveryId]/status-history/route';
 import '@/app/api/v1/deliveries/[deliveryId]/authorized-receiver/route';
 import '@/app/api/v1/deliveries/[deliveryId]/checklist-results/route';
 import '@/app/api/v1/deliveries/[deliveryId]/signatures/route';

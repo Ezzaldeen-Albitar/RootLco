@@ -35,13 +35,16 @@
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
-import { parseOrFail, schemas } from '@/server/http/validation';
+import { parseOrFail, schemas, searchParamsToObject } from '@/server/http/validation';
 import { SIGNER_ROLES, deliveryModule } from '@/modules/delivery';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ deliveryId: schemas.uuid }).strict();
+const PageQuery = z
+  .object({ cursor: schemas.cursor.optional(), limit: schemas.limit.optional() })
+  .strict();
 
 export const SignBody = z
   .object({
@@ -98,5 +101,86 @@ export async function POST(
       return { status: 201, body: signature };
     },
     { params: raw, body }
+  );
+}
+
+/**
+ * GET — the signatures bound to a delivery (Phase 1-31, prerequisite P-4).
+ *
+ * ## No signature read existed
+ *
+ * `findSignature` is a REPLAY PROBE addressed by the exact
+ * `(delivery, signerRole, signatureDocumentVersionId)` triple, so a caller must
+ * already hold the document-version id to use it — the unrecoverable-identifier
+ * problem restated, not a read of the signatures. `hasSignature` is a boolean, and
+ * the eligibility read publishes only `signature_missing` from it. Neither answers
+ * "which signatures does this delivery carry", which is what the delivery document
+ * (FE-007) is composed from and what a handover audit asks.
+ *
+ * **This is not a pure publication, and that is stated rather than implied**: the set
+ * read is a new query. It reuses `toDeliverySignature`, so there is no second mapper
+ * and no second wire contract for this row.
+ *
+ * ## Paged, because the set has no ceiling
+ *
+ * There is deliberately no unique constraint on `(delivery_record_id, signer_role)` —
+ * the table's own comment records that corrections are made by APPENDING a new row —
+ * so a delivery may carry any number of signatures and an unbounded SELECT is not
+ * available. Keyset, newest first, so a correction appended underneath a reader does
+ * not shift the page boundary. The cursor is minted by `cursorTimestamp('signed_at')`
+ * at microsecond precision, because `signed_at` defaults to `now()` and several
+ * signatures attached in one transaction share it exactly (`P1-27-INT-006`).
+ *
+ * ## References, never bytes — and no download
+ *
+ * Each entry carries `signatureDocumentVersionId`, a `shared.document_versions`
+ * reference whose sha256 anchors the signature. Raw signature data appears nowhere in
+ * this module. No retrieval path is offered here or anywhere else in it: the
+ * documented reason is `P1-22-L-04` — `shared.guard_document_version_transition`
+ * requires a clean scan record to reach `accepted`, no scanner is provisioned, and
+ * `DOWNLOADABLE_STATES` is `['accepted']`, so a download route would be a contract
+ * that always fails.
+ *
+ * ## Permission
+ *
+ * `sal.delivery.view`, which is the code `sel_delivery_signatures_gated` itself names
+ * on SELECT — so the application gate and the row-level gate are the same code rather
+ * than two that can drift.
+ */
+export const DELIVERY_SIGNATURE_LIST_OPERATION = defineOperation({
+  id: 'sal.delivery-signature-list',
+  module: 'delivery',
+  method: 'GET',
+  path: '/deliveries/{deliveryId}/signatures',
+  summary: 'List the signatures bound to a delivery, newest first.',
+  permissions: ['sal.delivery.view'],
+  scope: 'branch',
+  auditClass: 'none',
+  rateLimitPolicy: 'expensive-read',
+  cacheCategory: 'never',
+});
+
+export async function GET(
+  request: Request,
+  route: { params: Promise<{ deliveryId: string }> }
+): Promise<Response> {
+  const raw = await route.params;
+  const rawQuery = searchParamsToObject(new URL(request.url).searchParams);
+  return handleOperation(
+    DELIVERY_SIGNATURE_LIST_OPERATION,
+    request,
+    async ({ db, authorizeScope }) => {
+      const params = parseOrFail(Params, raw, 'path');
+      const query = parseOrFail(PageQuery, rawQuery, 'query');
+      return {
+        body: await deliveryModule().reads.readSignatures(
+          db,
+          params.deliveryId,
+          { cursor: query.cursor, limit: query.limit },
+          authorizeScope
+        ),
+      };
+    },
+    { params: raw }
   );
 }
