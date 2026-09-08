@@ -645,6 +645,74 @@ export const PROFILES = {
         'its own bucket',
     },
   },
+  'p1-31-frontend': {
+    why:
+      'the Frontend lane of P1-31: the vehicle-delivery, warranty, operational-dashboard and ' +
+      'reporting screens. Declared under its own name rather than borrowed from p1-30-frontend, ' +
+      'which would also have permitted the diff: that profile describes the commercial screens ' +
+      'that render server arithmetic, and this phase renders a delivery custody chain and a ' +
+      'report catalogue, so borrowing it would have declared nothing about this one. The A0 ' +
+      'preflight travels on this lane: it adds these profiles (tooling) and the canonical plan ' +
+      'and preflight records (docs), and no screen',
+    allowed: ['web', 'docs', 'tooling', 'tests', 'rootConfig'],
+    forbidden: {
+      apiSource:
+        'a Frontend phase must not change API source — route it through the Backend lane. P1-31 ' +
+        'Field 13 says the same thing in the plan: backend work is not new feature development ' +
+        'here, and a defect returns to the owning backend phase under change control',
+      apiConfig: 'a Frontend phase must not change API workspace configuration',
+      webGenerated:
+        'the idempotent-operations manifest is GENERATED from the Backend register — a screen ' +
+        'that hand-edits it desynchronises the two, and the register is not on this side of the ' +
+        'lane',
+      webContract:
+        'that allow-list holds six frozen P1-28 files. A P1-31 mirror is new source under ' +
+        'apps/web and travels as web',
+      migrations: 'a screen must not carry a migration',
+      dbSeeds:
+        'a screen must not seed a permission — and P1-31 needs two of them minted (a warranty ' +
+        'read code, and whatever resolves RES-05), which is exactly why they travel on the ' +
+        'Backend lane where the operation that uses them is reviewed',
+      supabase: 'a Frontend phase must not change the database',
+    },
+  },
+  'p1-31-backend': {
+    why:
+      'the Backend prerequisite lane of P1-31: the read seams and configuration writers the A0 ' +
+      'preflight proved missing (docs/phase-1/phase-1-31/a0-preflight.md), one branch per seam, ' +
+      'with the permission seeds and generated manifest they need. Field 13 of the chapter routes ' +
+      'them here rather than into the screens: backend capability is not new feature development ' +
+      'in P1-31, and a defect found by the Frontend returns to its owning backend phase under ' +
+      'change control',
+    allowed: [
+      'apiSource',
+      'migrations',
+      // A seam that needs a least-privilege READ code mints it in the only
+      // shipping insert into iam.permissions, supabase/seeds/04_iam_permission_catalog.sql.
+      // P1-31 needs at least one: the warranty detail read is gated on the WRITE
+      // code `wty.warranty.issue` because the catalogue seeds no `wty` read code.
+      'dbSeeds',
+      // The idempotent-operations manifest is GENERATED from the Backend
+      // register; a slice that publishes an operation must regenerate it.
+      'webGenerated',
+      'docs',
+      'tooling',
+      'tests',
+      'rootConfig',
+    ],
+    forbidden: {
+      web:
+        'the P1-31 Backend lane is Backend-only — the screens are a separate change under ' +
+        'p1-31-frontend, so no screen ships against a contract nobody reviewed',
+      webContract:
+        'the contract-mirror allow-list names P1-28 files. A P1-31 operation has no row in it, ' +
+        "so a Backend slice reaching for one is reaching for another phase's sealed artefact",
+      apiConfig: 'P1-31 must not change API workspace configuration',
+      supabase:
+        'P1-31 must not change the database HARNESS — the migrations and the permission ' +
+        'catalogue it does need travel under their own buckets',
+    },
+  },
   'p1-09-database-seed': {
     why:
       'a missed P1-09 DATABASE seed obligation, repaired after the fact: one declared seed file ' +
