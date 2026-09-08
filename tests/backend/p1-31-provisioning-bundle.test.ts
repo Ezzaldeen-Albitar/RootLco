@@ -111,6 +111,23 @@ const ADDED = Object.freeze([
 ]);
 
 /**
+ * The ONE code prerequisite P-7 adds, on the slice that mints it.
+ *
+ * Kept apart from `ADDED` above rather than folded into it, because the two
+ * widenings answer different questions and this file's narrative is P-1's. P-1
+ * carried six codes the catalogue ALREADY held and minted nothing; P-7 mints
+ * `wty.warranty.read` — the phase's only insert into `iam.permissions` — and
+ * carries it because withholding it while re-pointing `wty.warranty-detail` off
+ * `wty.warranty.issue` would REMOVE a capability this bundle already confers
+ * (P1-31 CC-07). Its own proof is `tests/backend/p1-31-warranty-read-seam.test.ts`;
+ * what this file owes is the arithmetic.
+ */
+const ADDED_BY_P7 = Object.freeze(['wty.warranty.read']);
+
+/** Every code the two P1-31 widenings added. */
+const ADDED_ALL = Object.freeze([...ADDED, ...ADDED_BY_P7]);
+
+/**
  * Withheld because NOTHING declares them — P1-31 CC-01 and CC-02. Holding
  * either would confer nothing today and pre-grant an authority its own contract
  * asks to be granted deliberately.
@@ -377,13 +394,13 @@ afterAll(async () => {
 }, 60_000);
 
 describe('P1-31 P-1 — the derivation', () => {
-  it('P31-B1 the delta is exactly the six, each declared by a registered operation, the two undeclared exclusions by none, and the by-decision exclusion by some', () => {
+  it('P31-B1 the delta is exactly the six of P-1 plus the one P-7 mints, each declared by a registered operation, the two undeclared exclusions by none, and the by-decision exclusion by some', () => {
     const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
 
     // The delta, stated two ways so neither can drift alone.
-    expect(bundle).toHaveLength(BUNDLE_BEFORE + ADDED.length);
-    expect(bundle.filter((code) => !ADDED.includes(code))).toHaveLength(BUNDLE_BEFORE);
-    for (const code of ADDED) expect(bundle.filter((c) => c === code)).toHaveLength(1);
+    expect(bundle).toHaveLength(BUNDLE_BEFORE + ADDED_ALL.length);
+    expect(bundle.filter((code) => !ADDED_ALL.includes(code))).toHaveLength(BUNDLE_BEFORE);
+    for (const code of ADDED_ALL) expect(bundle.filter((c) => c === code)).toHaveLength(1);
     for (const code of EXCLUDED) expect(bundle).not.toContain(code);
     expect(new Set(bundle).size).toBe(bundle.length);
     expect(bundle.some((c) => c.includes('*'))).toBe(false);
@@ -402,7 +419,7 @@ describe('P1-31 P-1 — the derivation', () => {
     const declarersOf = (code: string): string[] =>
       register.operations.filter((op) => op.permissions.includes(code)).map((op) => op.id);
 
-    for (const code of ADDED) expect(declarersOf(code).length).toBeGreaterThan(0);
+    for (const code of ADDED_ALL) expect(declarersOf(code).length).toBeGreaterThan(0);
 
     // CC-01 and CC-02: withheld BECAUSE nothing declares them. If an operation
     // ever declares one, this case fails and the exclusion must be re-decided.
@@ -438,13 +455,13 @@ describe('P1-31 P-1 — the derivation', () => {
 describe('P1-31 P-1 — an organisation created by the shipped provisioning operation', () => {
   it('P31-B2 its administrator role holds all six, and none of the three excluded codes', async () => {
     const codes = await codesOfRole(probe.tenantAdministratorRoleId);
-    for (const code of ADDED) expect(codes).toContain(code);
+    for (const code of ADDED_ALL) expect(codes).toContain(code);
     for (const code of EXCLUDED) expect(codes).not.toContain(code);
   });
 
   it('P31-B3 the Owner effectively holds all six, no excluded code, and the role holds nothing beyond the bundle', async () => {
     const held = await codesHeldBy(probe.ownerAccountId);
-    for (const code of ADDED) expect(held).toContain(code);
+    for (const code of ADDED_ALL) expect(held).toContain(code);
     for (const code of EXCLUDED) expect(held).not.toContain(code);
 
     // Nothing was permitted BEYOND the seven: the role's rows are exactly the
@@ -454,14 +471,14 @@ describe('P1-31 P-1 — an organisation created by the shipped provisioning oper
     );
   });
 
-  it('P31-B4 the Owner can map each of the six onto a role it creates', async () => {
+  it('P31-B4 the Owner can map each added code onto a role it creates', async () => {
     const roleId = await newRole(probe, 'delivery_officer');
-    for (const permissionCode of ADDED) {
+    for (const permissionCode of ADDED_ALL) {
       const mapped = await mapCode(probe, roleId, permissionCode);
       expect({ permissionCode, status: mapped.status }).toEqual({ permissionCode, status: 201 });
     }
     const codes = await codesOfRole(roleId);
-    for (const code of ADDED) expect(codes).toContain(code);
+    for (const code of ADDED_ALL) expect(codes).toContain(code);
   });
 
   it('P31-B5 each of the three deliberately excluded codes is refused, with the registered refusal', async () => {

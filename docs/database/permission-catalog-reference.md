@@ -25,7 +25,7 @@ this document following it. A seed change and a regeneration of this file are on
 
 That gate exists because nothing was watching. This document was reconciled by hand on 2026-07-22
 (Phase 1-14, finding PC-2) against a seed holding 43 codes, and then stood still through six phases
-while the seed grew to 118. It listed no `tech.` code at all — not even `tech.technician.read`,
+while the seed grew to 119. It listed no `tech.` code at all — not even `tech.technician.read`,
 which Phase 1-19 seeded. `tests/db/iam-seeds.test.ts` is the assertion usually credited with
 covering this, and it does not: it asserts a FLOOR — at least 19 codes across `org` and `iam`, valid
 risk levels, no wildcard — which every one of those six phases satisfied while the drift
@@ -41,9 +41,9 @@ each such case in a comment beside the row.
 
 | Measure                               | Value |
 | ------------------------------------- | ----- |
-| Permission codes seeded               | 118   |
+| Permission codes seeded               | 119   |
 | Domains                               | 18    |
-| Risk `low`                            | 22    |
+| Risk `low`                            | 23    |
 | Risk `medium`                         | 50    |
 | Risk `high`                           | 46    |
 | Risk `critical`                       | 0     |
@@ -71,7 +71,7 @@ each such case in a comment beside the row.
 | `tech`     | 5     | 2     | 2        | 1      | 0          |
 | `veh`      | 7     | 1     | 5        | 1      | 0          |
 | `wo`       | 9     | 1     | 5        | 3      | 0          |
-| `wty`      | 2     | 0     | 2        | 0      | 0          |
+| `wty`      | 3     | 1     | 2        | 0      | 0          |
 
 ## Catalog
 
@@ -201,6 +201,7 @@ by" column would be a guess dressed as a derivation. Read the seed for it.
 | `wo.work_order.transition`                    | wo       | medium | Move a work order through its configured states                                        |
 | `wty.policy.manage`                           | wty      | medium | Manage warranty policies and coverage                                                  |
 | `wty.warranty.issue`                          | wty      | medium | Issue warranty records                                                                 |
+| `wty.warranty.read`                           | wty      | low    | Read warranty records, coverage terms and covered items                                |
 
 ## Baseline roles (provisioning-time, configuration-led)
 

@@ -59,7 +59,7 @@ describe('every operation publishes the success status it returns', () => {
     // the original defect, so the scanner reports rather than assumes — and this
     // asserts it had nothing to report.
     expect(unresolved).toEqual([]);
-    expect(actual.size).toBe(381);
+    expect(actual.size).toBe(382);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -93,7 +93,11 @@ describe('every operation publishes the success status it returns', () => {
     // 266 -> 272 with 201 and 202 again unchanged. That the 201 count did NOT move
     // is the assertion carrying weight: a read seam that had accidentally shipped
     // a write would show up here and nowhere else in this file.
-    expect(counts[200]).toBe(272);
+    // The P1-31 warranty list (P-6) is one more GET returning 200, so 272 -> 273
+    // with 201 and 202 unchanged for the third time. P-7 re-points an existing
+    // read's PERMISSION and publishes no operation, so it moves nothing here — a
+    // slice that had smuggled a write in beside the re-point would.
+    expect(counts[200]).toBe(273);
   });
 
   it('reads the handler, not the declaration', () => {

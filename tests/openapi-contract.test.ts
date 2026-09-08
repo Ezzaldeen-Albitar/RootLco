@@ -375,6 +375,10 @@ import '@/app/api/v1/deliveries/[deliveryId]/checklist-results/route';
 import '@/app/api/v1/deliveries/[deliveryId]/signatures/route';
 import '@/app/api/v1/deliveries/[deliveryId]/completion/route';
 import '@/app/api/v1/deliveries/[deliveryId]/warranties/route';
+// P1-31 prerequisite P-6, the warranty read seam. Imported for the reason every
+// line here is: the registry is populated by import side effect, so an unimported
+// route is simply ABSENT from the generated document rather than reported missing.
+import '@/app/api/v1/warranties/route';
 import '@/app/api/v1/warranties/[warrantyId]/route';
 
 // --- PRE-P1-29-BR-04 inspection-template authoring -------------------------

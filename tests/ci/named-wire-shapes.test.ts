@@ -91,8 +91,11 @@ describe('every route body serialises a named type', () => {
     // `DeliveryChecklistResultsEnvelope`, `DeliverySignaturesEnvelope` and
     // `DeliveryStatusHistoryEnvelope` exist because THIS gate refused the inline
     // return types the slice first wrote, which is the gate doing its job.
-    expect(summary.bodies).toBe(381);
-    expect(summary.named).toBe(328);
+    // 382 with the P1-31 warranty list (P-6): one GET serialising
+    // `Page<WarrantyRecordListView>`, a NAMED interface, so `named` moves by one
+    // and `composed` does not.
+    expect(summary.bodies).toBe(382);
+    expect(summary.named).toBe(329);
     expect(summary.composed).toBe(53);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

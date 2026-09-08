@@ -72,6 +72,27 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- Phase 1-11 — Warranty (wty)
   ('wty.policy.manage',        'wty', 'Manage warranty policies and coverage',      'medium', '00000000-0000-4000-8000-000000000001'),
   ('wty.warranty.issue',       'wty', 'Issue warranty records',                     'medium', '00000000-0000-4000-8000-000000000001'),
+  -- P1-31 prerequisite P-7. The wty domain shipped with two WRITE codes and no
+  -- read code at all, so the warranty detail read was gated on wty.warranty.issue
+  -- — the authority to CREATE a warranty — and its own docblock recorded the
+  -- reason: the catalogue defined no wty.warranty.read, and borrowing
+  -- wty.policy.manage instead "would be worse: it grants coverage administration
+  -- to a caller who only needs to look at a record". Reading a warranty and
+  -- issuing one are different authorities, exactly as they are at
+  -- wo.work_order.read, rec.reception.read, apt.appointment.read and
+  -- quo.quotation.read, each of which was minted for this same reason.
+  --
+  -- Deliberately LEAST PRIVILEGE: it authorizes reading warranty records, the
+  -- coverage terms they cite and the jobs and parts they cover, and nothing else.
+  -- It implies no issue, no policy or coverage administration and no status
+  -- change; wty.warranty.issue and wty.policy.manage keep every write they gate.
+  --
+  -- Risk 'low', beside the other domain read codes. wty has 80 columns, all
+  -- classified 'internal' and none 'restricted', and NOT ONE of them is monetary
+  -- — no amount, no currency and no cap in any unit of account — so this code
+  -- exposes no money and no restricted identifier. That is why it is not
+  -- 'medium' like svc.price.read, whose subject is commercially sensitive.
+  ('wty.warranty.read',        'wty', 'Read warranty records, coverage terms and covered items', 'low', '00000000-0000-4000-8000-000000000001'),
   -- Phase 1-11 — Reporting configuration (rpt)
   ('rpt.report.configure',     'rpt', 'Manage report configurations',              'medium', '00000000-0000-4000-8000-000000000001'),
   ('rpt.export',               'rpt', 'Export report data (audited downstream)',    'high',   '00000000-0000-4000-8000-000000000001'),

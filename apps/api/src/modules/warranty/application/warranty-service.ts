@@ -59,8 +59,10 @@ import type { DbHandle } from '@/server/db/transaction';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { deliveryModule } from '@/modules/delivery';
 import { workOrderModule, type LineRow } from '@/modules/work-order';
+import { pageRequest, type Page, type PageRequest } from '@/server/db/pagination';
 import {
   MAX_COVERED_ITEMS,
+  WARRANTY_ORDER,
   type WarrantyCoverageRow,
   type WarrantyPolicyRow,
   type WarrantyRecordItemRow,
@@ -182,6 +184,48 @@ export interface WarrantyView {
   readonly recordVersion: number;
   /** True when an idempotent replay returned the warranty that already existed. */
   readonly replayed: boolean;
+}
+
+/**
+ * One warranty record on a list page (P1-31 prerequisite P-6).
+ *
+ * Every field is spelled exactly as `WarrantyView` spells it, and carries the
+ * same meaning — `odometerLimit` is the record's ABSOLUTE ceiling here too, never
+ * the coverage's relative allowance — so a screen that lists warranties and then
+ * opens one sees ONE shape rather than two.
+ *
+ * What it does not carry, and why:
+ *
+ *  - **No coverage terms and no covered items.** Both are `WarrantyView`'s, and
+ *    both are already published by `wty.warranty-detail`. Repeating them per row
+ *    would mean a statement per row for the items and a second wire contract for
+ *    the terms.
+ *  - **`policy` IS carried.** It is not decoration: no operation lists warranty
+ *    policies (**PPD-04** / P-10), so a bare `policyId` would be an identifier no
+ *    caller could resolve — the unrecoverable-identifier defect this phase keeps
+ *    finding. The block is `WarrantyPolicyView`, the detail read's own shape.
+ *  - **No money, in any field.** `wty` has 80 columns and not one is an amount, a
+ *    currency or a cap in any unit of account, so a "covered value" would be a
+ *    fabricated business fact. `odometerAtIssue` and `odometerLimit` are distance
+ *    readings and are exact decimal STRINGS, never floats.
+ *  - **No `replayed`.** That flag reports an idempotent write returning an
+ *    existing record; a read replays nothing.
+ */
+export interface WarrantyRecordListView {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly vehicleId: string;
+  readonly workOrderId: string;
+  readonly deliveryRecordId: string;
+  readonly status: string;
+  readonly startDate: string;
+  readonly expiryDate: string;
+  readonly odometerAtIssue: string;
+  /** ABSOLUTE ceiling, or null when the coverage sets no distance limit. */
+  readonly odometerLimit: string | null;
+  readonly policy: WarrantyPolicyView;
+  readonly recordVersion: number;
 }
 
 /**
@@ -492,6 +536,93 @@ export class WarrantyService {
       });
     }
     return this.toView(record, policy, coverage, found.items, false);
+  }
+
+  // -------------------------------------------------------------------------
+  // `wty.warranty-list`
+  // -------------------------------------------------------------------------
+
+  /**
+   * A branch's warranty records, newest first (P1-31 prerequisite P-6).
+   *
+   * ## Scope is authorized BEFORE any row is read
+   *
+   * `companyId` and `branchId` are required and `authorizeScope` runs first, for
+   * two reasons. `sel_warranty_records_scope` narrows on the permission-blind
+   * `iam.allowed_branch_ids()` union, so an optional pair would let a caller
+   * holding the code in one branch read every branch it holds any grant in
+   * (P1-18-A-01). And authorizing first stops the empty/non-empty difference from
+   * reporting whether a branch issues warranties at all — a caller with no grant
+   * in the target scope is refused, never handed an empty page.
+   *
+   * That is the opposite order from `readWarranty`, deliberately: there the row
+   * is read first because the record's OWN company and branch are the only honest
+   * authorization target, and a caller-supplied one would be the input a scoped
+   * authorization exists to stop trusting. A list has no row to take a scope
+   * from, so the caller must name one and the server must refuse it.
+   *
+   * ## Policies, once per page
+   *
+   * The distinct policies the page cites are read in ONE statement and the rows
+   * are labelled from the result — the pattern `listReceipts` uses for payment
+   * methods. A record whose policy does not come back is an inconsistency and not
+   * a 404, exactly as in `readWarranty`: `fk_warranty_records_policy` is a
+   * composite key into the record's own company, which the caller has just been
+   * authorized for, so the row cannot legitimately be invisible.
+   */
+  public async listWarranties(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly vehicleId?: string | undefined;
+    },
+    page: { readonly cursor?: string | undefined; readonly limit?: number | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<Page<WarrantyRecordListView>> {
+    await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
+
+    const request: PageRequest = pageRequest(WARRANTY_ORDER, page);
+    const result = await this.repository.listWarranties(db, filter, request);
+    const policies = new Map<string, WarrantyPolicyRow>(
+      (
+        await this.repository.findPolicies(db, filter.companyId, [
+          ...new Set(result.items.map((row) => row.policyId)),
+        ])
+      ).map((row) => [row.id, row])
+    );
+
+    return {
+      ...result,
+      items: result.items.map((record) => {
+        const policy = policies.get(record.policyId);
+        if (policy === undefined) {
+          throw new AppFailure('ERR-SYS-001', {
+            message: 'A warranty record cites a policy row that is not readable',
+          });
+        }
+        return {
+          id: record.id,
+          companyId: record.companyId,
+          branchId: record.branchId,
+          vehicleId: record.vehicleId,
+          workOrderId: record.workOrderId,
+          deliveryRecordId: record.deliveryRecordId,
+          status: record.status,
+          startDate: record.startDate,
+          expiryDate: record.expiryDate,
+          odometerAtIssue: record.odometerAtIssue,
+          odometerLimit: record.odometerLimit,
+          policy: {
+            id: policy.id,
+            policyCode: policy.policyCode,
+            name: policy.name,
+            status: policy.status,
+          },
+          recordVersion: record.recordVersion,
+        };
+      }),
+    };
   }
 
   // -------------------------------------------------------------------------
