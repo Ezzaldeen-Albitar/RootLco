@@ -217,7 +217,7 @@ documents" in the `QA-005` row above from Wave 14 until this pass, against a
 manifest that had grown to 36 — the same number the change log had already
 corrected without this page following. The marker holds it now.
 
-<!-- derived: manifest fileCount = 40 -->
+<!-- derived: manifest fileCount = 41 -->
 
 ---
 

@@ -163,8 +163,8 @@ different tree is not evidence about this one.
 | Web test files under `apps/web/tests`       | 130    | a walk of the tree                                                 |
 | Web tier — tests executed                   | 3552  | `--record web`, from the `vitest` JSON report                      |
 | Web tier — files the run reported           | 130    | the same report, cross-checked against the walk above              |
-| Root unit tier — tests executed             | 3250  | `--record unit`, from the `vitest` JSON report                     |
-| Root unit tier — files the run reported     | 119   | the same report, cross-checked against the tier's include rule      |
+| Root unit tier — tests executed             | 3258  | `--record unit`, from the `vitest` JSON report                     |
+| Root unit tier — files the run reported     | 120   | the same report, cross-checked against the tier's include rule      |
 | Committed web floor (`minTests`)            | 3050  | `.github/ci-baselines/test-count-baseline.json`                    |
 | Committed unit floor (`minTests`)           | 1050  | the same baseline                                                  |
 | Migrations on disk                          | 138   | a walk of `supabase/migrations`                                    |
@@ -179,8 +179,8 @@ the tree was running.
 
 | measure                                             | value                                      |
 | --------------------------------------------------- | ------------------------------------------- |
-| Tracked files under `docs/phase-1/phase-1-27`        | 41                                          |
-| Tracked `.md` files under the same directory         | 31                                          |
+| Tracked files under `docs/phase-1/phase-1-27`        | 42                                          |
+| Tracked `.md` files under the same directory         | 32                                          |
 | Migrations tracked by git at `HEAD`                  | 138                                         |
 | `CODE_CANDIDATE_SHA`                                 | `501f5f0d48d7b8cafc12dad51f6c501534b66a18`  |
 | Executable paths changed, candidate to accepted `develop` | 0                                      |

@@ -5,10 +5,10 @@
   "whatThisProves": "An evidence document cannot be edited without this file changing in the same diff. Digests are over file BYTES, so an encoding change counts as a change.",
   "whatThisDoesNotProve": "This is not a tamper-proof seal. Anyone able to edit a document is able to re-run the generator and commit both. It removes SILENT revision, not revision.",
   "selfExclusion": "This manifest is the only path excluded from its own digest set, because a file containing its own hash has no fixed point. tests/ci/p1-27-evidence-manifest.test.ts asserts the exclusion is exactly this one path.",
-  "fileCount": 40,
+  "fileCount": 41,
   "files": {
     "docs/phase-1/phase-1-27/adversarial-round-five.md": {
-      "sha256": "41255ce58b5fc691fe51bb8fc85e72764c2e4a4a2ae6f2bceba8464c662e577b",
+      "sha256": "c546f8f803c6b5f09ac7d73e8e6443b41ff41f344df5968828be31569bd9b39b",
       "bytes": 549224
     },
     "docs/phase-1/phase-1-27/adversarial-round-four.md": {
@@ -31,8 +31,12 @@
       "sha256": "40cfb5c7d7ecf25def728eed6f7bc43b55252fdf9a27531d95ccc14e24c23bba",
       "bytes": 17702
     },
+    "docs/phase-1/phase-1-27/citation-integrity-report.md": {
+      "sha256": "2287dd4d86e18fa02650ab562ea2f043f709769d7a1eb8539be7f87a017b433c",
+      "bytes": 15409
+    },
     "docs/phase-1/phase-1-27/clean-room-evidence.md": {
-      "sha256": "5f70ad263ac7f6ce1625cf5f58cef920f5cadba2d25e80821bb2dd8591c6dbc4",
+      "sha256": "20d48551fd31f04d3ec49f7ded9922ebeb59ce7cf5b7e731fc38f0c8cd0c8813",
       "bytes": 23735
     },
     "docs/phase-1/phase-1-27/closure-record.md": {
@@ -48,19 +52,19 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "0277881239c3c97c23fd6d64c1dafd33b52d4b24020ef4e1dd2ca83bb39324e5",
-      "bytes": 148839
+      "sha256": "d4153c6cf460cc2a4ecfb77d5ac8e658eb6fde5cc00ad29eeaf3ab5852771947",
+      "bytes": 149608
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
       "sha256": "bc98ee5da71a3c4db635f4222c4e55b875610a6db9d81f6fcf643aee0c4858e1",
       "bytes": 13668
     },
     "docs/phase-1/phase-1-27/evidence/change-log.md": {
-      "sha256": "3f1b69d53ad91e9c117cc88747c424b9494ae49278e6989e6ab454b9d4a887aa",
+      "sha256": "b28fa45433347db8eab804c31d33ca92e0a1707e4cbd4410f8167dfac84da36a",
       "bytes": 81669
     },
     "docs/phase-1/phase-1-27/evidence/closing-value-ledger.json": {
-      "sha256": "0ef8a0040ecee7d18e135b08a8a5e9fbfb1b05a5751cd57f4dff8c3d9db14942",
+      "sha256": "8a8f2a40bc723d918f3e7f2970fdc124256b0b9bac655b5b7dd82700384613ae",
       "bytes": 50345
     },
     "docs/phase-1/phase-1-27/evidence/lifecycle-ledger.json": {
@@ -68,11 +72,11 @@
       "bytes": 9208
     },
     "docs/phase-1/phase-1-27/evidence/local-run-ledger.json": {
-      "sha256": "4d02699d474821c841de2291d587fc24cc0157e2fbd415b5f75c8005e405264c",
+      "sha256": "5ea934d91759c27dcaff63bd0e94a9d23ac516ef513907ff6ee50741d1f4f88e",
       "bytes": 2581
     },
     "docs/phase-1/phase-1-27/evidence/task-traceability.md": {
-      "sha256": "4dcc2609b17b70d10e5fe78571d83b676c451e43023c3bafc15d34b71c4c9853",
+      "sha256": "1e7e981377d2be091feb9d16b07e2d1b2c4d132c5603d5f3efb785d909a19aa4",
       "bytes": 114007
     },
     "docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json": {
@@ -96,8 +100,8 @@
       "bytes": 76545
     },
     "docs/phase-1/phase-1-27/finding-phase-disposition.md": {
-      "sha256": "4a9de8c56071059f04bbb17680b2a3cc5ae141fbe3fcf5d7f51b60d2b179a758",
-      "bytes": 160578
+      "sha256": "756d1b0e96e07691831060bc094bae66a801b428d77172cd740c74d5794ab06d",
+      "bytes": 160653
     },
     "docs/phase-1/phase-1-27/finding-task-map.json": {
       "sha256": "bc3336d8650e4e9142bd8f845c0b1970317225e05e275b7d52303d2c9ab5e14a",
@@ -112,8 +116,8 @@
       "bytes": 7737
     },
     "docs/phase-1/phase-1-27/independent-task-audit.md": {
-      "sha256": "5b897b86b0fef50bdc34fe77eacfe9c850cf22fa24f59711ca7a45bf76e70f6e",
-      "bytes": 26588
+      "sha256": "f24824c139fd6b6553066ee5efebf1e1c8de71538d80aad2c611ad8636a3a1bd",
+      "bytes": 26611
     },
     "docs/phase-1/phase-1-27/installed-chrome-review.md": {
       "sha256": "6732c2397af280b3eb1ab55f2252ce147d80102b50c15b643089f4d365843e8d",
@@ -156,12 +160,12 @@
       "bytes": 187802
     },
     "docs/phase-1/phase-1-27/task-matrix-verdicts.json": {
-      "sha256": "3208b70e3d82d43254d541dafd516b9105cf2b88de196d7ab8f5905b8ce4e929",
-      "bytes": 264217
+      "sha256": "913053728bc0a637ecdf38497ca6b5d77eacc0de9ec192f867007ae265d3db24",
+      "bytes": 264434
     },
     "docs/phase-1/phase-1-27/task-matrix.json": {
-      "sha256": "444ccda6d965a817b2cbad510a074fad637a9fca9691a8a7bf827b9c5f6c6b4b",
-      "bytes": 283618
+      "sha256": "2c9a7b98f2c958bb6e926d09f8493ccccd8dff60887ab8a55e563c8f001ac804",
+      "bytes": 283835
     },
     "docs/phase-1/phase-1-27/task-register.md": {
       "sha256": "9a395590ce32260cef2878e06077138a7a5d30663ffe5dd86e9ddb723e00fd04",
