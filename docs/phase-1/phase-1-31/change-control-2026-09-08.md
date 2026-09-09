@@ -664,3 +664,80 @@ The full record is [`warranty-policy-seam.md`](./warranty-policy-seam.md). In sh
 | **P10-3** | company-wide authority from three sides — a branch-scoped holder refused every write while still reading; a company-scoped holder admitted in its company and refused in another                       |
 | **P10-4** | the overlap invariant in all three limbs, including a refused reactivation leaving the archived row's version untouched                                                                                |
 | **P10-5** | the bundle delta is exactly one code, measured against the generated P1-24 register: zero declarers for what stays excluded, more than zero for every added code                                       |
+
+# P-11 (1/4) — the report engine, of 2026-09-09
+
+Owner decision **D-4** of 2026-09-09 released the engine half of prerequisite **P-11**. Sections
+30–33 were added by that slice on branch `remediation/p1-31-backend-report-engine-work-orders`,
+based on protected `develop` `249c6428`. The design record is
+[`report-engine-seam.md`](./report-engine-seam.md).
+
+**CC-23 is PROVISIONAL.** Four P1-31 branches are open at the same time and each allocates the next
+free identifier against the register it can see: **CC-19** on #357, **CC-20** on the P-11
+configuration-writer branch, **CC-21** on the P-9b branch and **CC-22** on the FE-015 branch. None
+of those had merged into `develop` when this section was written, so the number below must be
+re-checked before this branch merges — the same renumbering the P-9 and P-8 slices each performed
+once.
+
+## 30. What was published, and what was minted
+
+| published                                                                            | minted  |
+| ------------------------------------------------------------------------------------ | ------- |
+| 1 operation, 1 route module, 1 path, 0 audit actions, 4 module files, 2 module ports | nothing |
+| register 397 → **398** operations, 309 → **310** paths, 227 audit actions unchanged  | nothing |
+| bundle unchanged at 75 codes                                                         | nothing |
+
+- **`rpt.report-run` — `GET /reports/{reportCode}/rows`**, declaring `rpt.report.read` at
+  `scope: 'branch'`, `auditClass: 'none'`, `expensive-read`, `cacheCategory: 'never'`.
+- **The dataset registry**, `apps/api/src/modules/reporting/domain/report-datasets.ts`, holding
+  exactly one entry: `work_orders_by_status`. The binding it implements is
+  **OWR-2026-09-06-A-12** — a report code binds to a CODE-REGISTERED dataset — and not a schema
+  column, because `rpt` still has none.
+- **Two module ports.** `workOrderModule().reportPort` answers for `wo.*`, which is that module's
+  private schema; `iamOrganizationContext().branches` answers for the branch name and timezone the
+  period is resolved in. The second is a THIRD composition root in the iam module, beside
+  `iamDirectory`, so a report run does not boot `installIamRuntime()`.
+- **`executable` stopped being a literal.** It is now `REPORT_DATASETS` membership on both existing
+  catalogue operations, and the catalogue publishes `source` and `titleKey` beside it.
+- **Nothing was minted.** No permission, no seed row, no migration, no audit action, no bundle
+  change. `rpt.report.read` and `wo.work_order.read` are both existing catalogue rows.
+
+## 31. Dispositions
+
+| id        | finding                                                                                                 | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | owner / slice | status |
+| --------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------ |
+| **CC-23** | two engineering decisions were taken that the Owner has not confirmed, and both are visible in the wire | **(a) Timezone.** `org.branches.timezone_name` and `org.tenants.default_timezone` both exist and are both foreign keys into `shared.timezones`; NO query in the platform buckets by either one today, so there was no precedent to follow and nothing to match. **(b) The catalogue merge.** `rpt.report_configurations` has no seed and, until the P-11 writer slice lands, no writer — so a rule that made a configuration row a PRECONDITION would leave every report unreachable in every tenant | **taken, implemented, and recorded as OPEN.** (a) A branch-scoped report resolves its period bounds in the BRANCH's timezone, because "opened on the 3rd" is a claim about the day where the workshop is; reversing it is one lookup in `ReportRunService.run` plus the case that proves the boundary. (b) A configuration row is CUSTOMIZATION of a report the platform implements, not a precondition for it existing: baselines are visible to every tenant marked `source: 'platform'`, and a tenant row of the same code overrides scope, export permission and parameter schema. Both are written up in the seam record with the alternative and its cost | Owner         | open   |
+
+## 32. What this slice did NOT do
+
+- **No migration and no schema change.** `rpt` is exactly as P1-11 left it; every statement uses a
+  grant and a policy that already existed.
+- **No permission was minted and no bundle changed.** `rpt.report.configure` stays excluded on
+  **CC-02**'s unchanged grounds and `rpt.export` on **CC-04**'s Owner decision, so the two
+  deliberate exclusions the P-10 slice recorded remain exactly two.
+- **No export path of any kind.** A platform baseline publishes `exportPermissionCode: null` rather
+  than naming `rpt.export`, because naming a code would advertise a path prerequisite P-12 has not
+  built.
+- **The other three baseline reports are not implemented.** The registry holds one entry and a case
+  asserts that it holds exactly one, so the gap cannot close itself quietly.
+- **No configuration WRITER.** `rpt.report_configurations` still has no seed and no writer on this
+  branch; that is the other half of P-11 and it is a separate open pull request.
+- **Bilingual state labels were not invented.** `wo.work_order_states.name` is a single `text`
+  column, so the report publishes the label the catalogue holds and the seam record names the schema
+  change a translated one would need.
+- **`apps/web/src` was not edited** except through `lib/api/idempotent-operations.ts`, which a
+  repository script regenerates and which every published operation moves.
+- **No allow-list was widened and no gate was suppressed.** `check-p1-30-payload-parity.mjs` does
+  not hold `rpt` operations to a mirror at all, and this is a GET with no body, so no `PENDING`
+  entry was added: declaring one would be a claim about a gate that does not look here.
+
+## 33. Proof
+
+| id        | what was shown                                                                                                                                                                                           |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **P11-1** | `tests/backend/p1-31-report-engine-work-orders.test.ts` — the rows, the counts, the period, the cells, the authorization, the code and the paging, on real work orders in a branch this suite owns       |
+| **P11-2** | the two permissions from BOTH sides: a principal holding `rpt.report.read` alone is refused naming `wo.work_order.read`, one holding `wo.work_order.read` alone is refused naming `rpt.report.read`      |
+| **P11-3** | the half-open period in the BRANCH zone, on two orders one local minute apart: 23:30 on the last included day is in, 00:00 on the excluded day is out, and a UTC reading of the same period would differ |
+| **P11-4** | the counts are the SELECTION's and not the page's — a one-row page still reports three states, and both pages carry identical counts                                                                     |
+| **P11-5** | branch isolation with RLS reach deliberately widened into the refused branch, so the refusal is the scoped permission evaluation and not an empty result set                                             |
+| **P11-6** | `executable` in both limbs: true for the registered baseline, false for a PUBLISHED tenant row whose code the engine does not implement                                                                  |
