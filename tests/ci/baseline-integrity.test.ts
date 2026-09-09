@@ -8,9 +8,12 @@
  * noticing is a gate with an off switch nobody can see.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { evaluate as evaluateCoverage } from '../../scripts/ci/coverage-gate.mjs';
+import { API_SRC_PATH } from '../../scripts/lib/repository-paths.mjs';
+import rootConfig from '../../vitest.config';
+import backendConfig from '../../vitest.config.backend';
 
 const read = (name: string) =>
   JSON.parse(readFileSync(join(__dirname, '../../.github/ci-baselines', name), 'utf8'));
@@ -353,5 +356,162 @@ describe('committed baselines', () => {
     expect(baseline.migrationCount).toBeTypeOf('number');
     expect(baseline.migrationCount).toBeGreaterThan(0);
     expect(baseline.forbiddenMigrationPrefix).toBeTruthy();
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * The coverage DENOMINATOR, pinned for the root and backend tiers.
+ * ------------------------------------------------------------------ */
+
+/**
+ * ## The defect these cases exist for
+ *
+ * A coverage baseline guards the NUMERATOR. Nothing guarded the denominator.
+ *
+ * Vitest 3 spelled the untested-file guarantee `coverage.all: true`: every file
+ * matching `include` sat in the denominator whether a test imported it or not.
+ * Vitest 4 REMOVED that option and moved the guarantee onto `coverage.include`
+ * itself. So the include list is now the only thing deciding what "total" means,
+ * and narrowing it does not look like a regression — it looks like an
+ * improvement. Drop a root and the files under it stop existing: they are not
+ * reported as a gap, they are subtracted from the total, and every percentage in
+ * `coverage-baseline.unit.json` and `coverage-baseline.backend.json` RISES.
+ *
+ * `apps/web` documented that hazard and pinned its own list in
+ * `apps/web/tests/security.test.ts`. The repository-root and backend lists had
+ * no equivalent, so those two tiers could have been narrowed silently. These
+ * cases are that equivalent.
+ *
+ * ## Why the expansion is checked and not only the literal
+ *
+ * Pinning the literal alone would pass on a pattern that matches nothing —
+ * `.../cache/**` vs `.../caches/**` reads the same at a glance and measures a
+ * different amount of nothing. So each root is also expanded against the tree,
+ * and the union is required to cover EVERY `.ts` file beneath the roots. A
+ * pattern that stops matching a file that exists fails here rather than
+ * appearing as a coverage improvement three weeks later.
+ */
+
+const ROOT_DIRECTORY = join(__dirname, '..', '..');
+
+/** Repository-relative POSIX paths of every `.ts` file under a directory. */
+function typeScriptFilesUnder(relativeDirectory: string): string[] {
+  const absolute = join(ROOT_DIRECTORY, relativeDirectory);
+  const found: string[] = [];
+  const walk = (directory: string, prefix: string): void => {
+    for (const entry of readdirSync(directory).sort()) {
+      const child = join(directory, entry);
+      const relative = `${prefix}/${entry}`;
+      if (statSync(child).isDirectory()) walk(child, relative);
+      else if (entry.endsWith('.ts')) found.push(relative);
+    }
+  };
+  walk(absolute, relativeDirectory);
+  return found;
+}
+
+/**
+ * The include lists as they must be spelled. Written out in full rather than
+ * derived from the config, because a list derived from the thing it guards
+ * agrees with every narrowing.
+ */
+const ROOT_COVERAGE_INCLUDE = [
+  `${API_SRC_PATH}/config/**/*.ts`,
+  `${API_SRC_PATH}/lib/logging/**/*.ts`,
+  `${API_SRC_PATH}/server/errors/**/*.ts`,
+  `${API_SRC_PATH}/server/observability/**/*.ts`,
+  `${API_SRC_PATH}/server/cache/**/*.ts`,
+  `${API_SRC_PATH}/server/http/rate-limit.ts`,
+  `${API_SRC_PATH}/server/http/trusted-proxy.ts`,
+  `${API_SRC_PATH}/server/http/validation.ts`,
+  `${API_SRC_PATH}/server/db/pagination.ts`,
+  `${API_SRC_PATH}/server/db/concurrency.ts`,
+  `${API_SRC_PATH}/server/worker/backoff.ts`,
+];
+
+const BACKEND_COVERAGE_INCLUDE = [
+  `${API_SRC_PATH}/modules/**/*.ts`,
+  `${API_SRC_PATH}/server/**/*.ts`,
+];
+
+type CoverageBlock = { provider?: string; include?: string[]; exclude?: string[] } | undefined;
+
+const rootCoverage = rootConfig.test?.coverage as CoverageBlock;
+const backendCoverage = backendConfig.test?.coverage as CoverageBlock;
+
+describe('the coverage include lists are pinned, because they are the denominator', () => {
+  it('the root tier still declares every one of its eleven include entries', () => {
+    expect(rootCoverage?.provider).toBe('v8');
+    expect(rootCoverage?.include).toEqual(ROOT_COVERAGE_INCLUDE);
+  });
+
+  it('the backend tier still declares both of its include roots', () => {
+    expect(backendCoverage?.provider).toBe('v8');
+    expect(backendCoverage?.include).toEqual(BACKEND_COVERAGE_INCLUDE);
+  });
+
+  it('constrains every directory root to TypeScript rather than leaving a bare `**`', () => {
+    // A bare `**` admits anything that appears under the root — a generated
+    // artefact, a stray `.md` the provider then fails to parse. `**/*.ts` says
+    // what the tier measures. Single-file entries are exempt by construction.
+    for (const pattern of [...ROOT_COVERAGE_INCLUDE, ...BACKEND_COVERAGE_INCLUDE]) {
+      const ok =
+        pattern.endsWith('/**/*.ts') || (pattern.endsWith('.ts') && !pattern.includes('*'));
+      expect(ok, `\`${pattern}\` is neither a \`**/*.ts\` root nor a single file`).toBe(true);
+    }
+  });
+
+  it('leaves no TypeScript file under a root outside the root that claims it', () => {
+    /*
+     * The narrowing test. Every `.ts` file beneath a declared directory root
+     * must be matched by that root, so replacing `**\/*.ts` with `*.ts`, or
+     * deleting a root outright, fails here instead of shrinking a denominator.
+     */
+    const roots = [...ROOT_COVERAGE_INCLUDE, ...BACKEND_COVERAGE_INCLUDE]
+      .filter((pattern) => pattern.endsWith('/**/*.ts'))
+      .map((pattern) => pattern.slice(0, -'/**/*.ts'.length));
+    expect(roots.length).toBe(7);
+    for (const root of roots) {
+      const files = typeScriptFilesUnder(root);
+      expect(files.length, `${root} contains no TypeScript file`).toBeGreaterThan(0);
+      for (const file of files) {
+        expect(file.startsWith(`${root}/`), `${file} is not covered by \`${root}/**/*.ts\``).toBe(
+          true
+        );
+      }
+    }
+  });
+
+  it('measures the same 19 unit-tier files the unit baseline was established on', () => {
+    // `coverage-baseline.unit.json` records 407/449 lines across 19 instrumented
+    // files. If this count moves without that document moving, the baseline is
+    // describing a tier that no longer exists.
+    const directoryFiles = ROOT_COVERAGE_INCLUDE.filter((p) => p.endsWith('/**/*.ts')).flatMap(
+      (pattern) => typeScriptFilesUnder(pattern.slice(0, -'/**/*.ts'.length))
+    );
+    const singleFiles = ROOT_COVERAGE_INCLUDE.filter((p) => !p.includes('*'));
+    expect(new Set([...directoryFiles, ...singleFiles]).size).toBe(19);
+  });
+
+  it('measures the same 271 backend files the backend baseline was established on', () => {
+    /*
+     * 272 `.ts` files under the two roots, less `server/openapi/document.ts`,
+     * which `exclude` removes — 271, which is what
+     * `coverage-baseline.backend.json` records and what BOTH sides of the
+     * vitest 3 -> 4 control run measured. `modules/README.md` is the only
+     * non-TypeScript file under either root and the `**\/*.ts` spelling is what
+     * now keeps it, and anything like it, out by construction rather than by
+     * the provider failing to parse it.
+     */
+    const files = BACKEND_COVERAGE_INCLUDE.flatMap((pattern) =>
+      typeScriptFilesUnder(pattern.slice(0, -'/**/*.ts'.length))
+    );
+    expect(files.filter((file) => file.endsWith('.d.ts'))).toEqual([]);
+    expect(files.length).toBe(272);
+    expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
+    const instrumented = files.filter(
+      (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
+    );
+    expect(instrumented.length).toBe(271);
   });
 });
