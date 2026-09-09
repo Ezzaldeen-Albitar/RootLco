@@ -36,10 +36,13 @@
  *
  * ## Permission
  *
- * `sal.delivery.view`. Not `sal.delivery.read`, which is named by `navigation.ts`
- * and absent from the seeded catalogue (**RES-05**). Not `sal.delivery.manage`
- * either: the eligibility read records why a read on this surface must be holdable
- * by the completing principal, and this record read is that read's companion.
+ * `sal.delivery.view`. Not `sal.delivery.read`, which `navigation.ts` named while it
+ * was absent from the seeded catalogue (**RES-05**) — that navigation entry is
+ * re-pointed at `sal.delivery.view` by P1-31 prerequisite P-8, so the mismatch is
+ * closed on the navigation side and this route's declared code is unchanged by it.
+ * Not `sal.delivery.manage` either: the eligibility read records why a read on this
+ * surface must be holdable by the completing principal, and this record read is that
+ * read's companion.
  *
  * ## Money
  *
