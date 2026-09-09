@@ -380,7 +380,7 @@ moved 67 → 74. A second `--all` run immediately afterwards reported **0 widene
 # The delivery navigation gate — P-8 (RES-05)
 
 Sections 21–23 were added by the **P-8** slice on 2026-09-09; identifiers continue in the same
-P1-31 namespace, so the register now runs **CC-01 … CC-18**. **Baseline:** protected `develop`
+P1-31 namespace, so the register now runs **CC-01 … CC-19**. **Baseline:** protected `develop`
 `f4309a8e`, `main` `1262de74` — untouched. This slice is Frontend, tooling and documentation only:
 it adds no operation, no route, no permission, no seed row and no migration.
 
@@ -669,14 +669,16 @@ The full record is [`warranty-policy-seam.md`](./warranty-policy-seam.md). In sh
 
 # The delivery detail screen and the P-16 gate
 
-Sections 29–32 were added by the **delivery detail screen** slice on 2026-09-09; identifiers
+Sections 30–33 were added by the **delivery detail screen** slice on 2026-09-09; identifiers
 continue in the same P1-31 namespace. **Baseline:** protected `develop` `0272390b`, `main`
-`1262de74` — untouched. Sections 25–28 and **CC-14** belong to the P-9 checklist-template seam,
-which merged into `develop` after this branch was cut; **CC-15** is provisional on the open
-warranty-policy pull request. This slice therefore continues at section 29 and at **CC-16**. This slice is Frontend, tooling, tests and documentation only: it adds no
-operation, no route, no permission, no seed row, no migration, and **no write of any kind**.
+`1262de74` — untouched. `develop` now holds sections 1–29 and **CC-01 … CC-18**: sections 25–28
+and **CC-14** belong to the P-9 checklist-template seam, and section 29 with **CC-15 … CC-18** to
+the P-10 warranty-policy seam, both of which merged after this branch was cut. This slice
+therefore continues at section 30 and at **CC-19**. This slice is Frontend, tooling, tests and
+documentation only: it adds no operation, no route, no permission, no seed row, no migration, and
+**no write of any kind**.
 
-## 29. What was delivered
+## 30. What was delivered
 
 The first P1-31 screen: `/delivery/{deliveryId}`, a read-only view of one vehicle handover, built on
 the six reads the P-2 … P-5 seam published plus the work-order lookup.
@@ -694,7 +696,7 @@ A section on the work-order detail screen reads `sal.work-order-delivery-read` a
 that no handover exists or links to it. It is rendered only when the caller holds
 `sal.delivery.view`, so a caller without it issues no request at all.
 
-## 30. The five properties this slice is accountable for
+## 31. The five properties this slice is accountable for
 
 **The page decides before it reads.** `sal.delivery.view` is tested and returned on before
 `readDelivery` is called. The proof is mechanical in two places: `check-p1-31-access.mjs` (P-16)
@@ -725,20 +727,19 @@ code and `finalOdometerReadingId` is a reference to a reading rather than a read
 therefore adds **no** area to the server-arithmetic gate; the first money-bearing P1-31 screen adds
 one, and that is a condition on that screen rather than a gap in this one.
 
-## 31. Dispositions
+## 32. Dispositions
 
-| id                        | finding                                                                                               | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | owner / slice | status |
-| ------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------ |
-| **CC-16** _(provisional)_ | the P1-31 read seam had no consumer, and no gate judged a page under the singular `/delivery` segment | Six delivery reads and the work-order lookup were published by P-2 … P-5 and called by nothing, which is the _declared but never wired_ shape this programme's own archaeology names as its dominant defect class. Separately, the P1-30 gate-before-read check derives `deliveries` from the register while the committed navigation href is `/delivery`, so the first P1-31 screen would have been judged by no gate at all (**A0 DO-001**, **D-15**) | **closed by this slice.** FE-002 release checks, FE-003 authorized receiver, FE-006 signatures, the FE-004 **results** list and the FE-007 status ledger are delivered as the delivery detail screen, with an entry section on the work-order detail. **P-16** ships as `scripts/ci/check-p1-31-access.mjs`, a sibling of the P1-29 and P1-30 checks scoped by an explicit allow-list of P1-31 operation ids and by the named dashboard areas `delivery`, `warranty`, `reports`; it is wired into `verify:policies` and the command-coverage registry, and mutation-proved by `tests/ci/p1-31-access-gate.test.ts`. **D-15** is answered by precedent. **No grant changed, and no write shipped** | this slice    | closed |
+| id        | finding                                                                                               | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | owner / slice | status |
+| --------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------ |
+| **CC-19** | the P1-31 read seam had no consumer, and no gate judged a page under the singular `/delivery` segment | Six delivery reads and the work-order lookup were published by P-2 … P-5 and called by nothing, which is the _declared but never wired_ shape this programme's own archaeology names as its dominant defect class. Separately, the P1-30 gate-before-read check derives `deliveries` from the register while the committed navigation href is `/delivery`, so the first P1-31 screen would have been judged by no gate at all (**A0 DO-001**, **D-15**) | **closed by this slice.** FE-002 release checks, FE-003 authorized receiver, FE-006 signatures, the FE-004 **results** list and the FE-007 status ledger are delivered as the delivery detail screen, with an entry section on the work-order detail. **P-16** ships as `scripts/ci/check-p1-31-access.mjs`, a sibling of the P1-29 and P1-30 checks scoped by an explicit allow-list of P1-31 operation ids and by the named dashboard areas `delivery`, `warranty`, `reports`; it is wired into `verify:policies` and the command-coverage registry, and mutation-proved by `tests/ci/p1-31-access-gate.test.ts`. **D-15** is answered by precedent. **No grant changed, and no write shipped** | this slice    | closed |
 
-**Identifier note.** **CC-16** is marked _provisional_ deliberately. This branch was cut at
-`develop` `0272390b`, which carried **CC-01 … CC-13**; the P-9 slice then merged and took
-**CC-14**, and **CC-15** is provisional on the warranty-policy pull request that is still open. The
-head of this register is therefore not knowable from this branch's base, so the number and the
-section range are to be re-checked against `develop` before this branch merges, and corrected here
-if either has moved.
+**Identifier note.** **CC-19** is this slice’s id. This branch was cut at `develop` `0272390b`,
+which carried **CC-01 … CC-13**; the P-9 slice then merged and took **CC-14**, and the P-10
+warranty-policy slice merged and took **CC-15 … CC-18** in its section 29. The number and the
+section range were re-checked against `develop` when this branch was brought up to date, and both
+have moved: this slice is **CC-19** at sections 30–33.
 
-## 32. What this slice did NOT do
+## 33. What this slice did NOT do
 
 - **No write.** Creating a delivery, confirming a receiver, recording a checklist result, attaching
   a signature and completing a handover are separate tasks with their own authority. No adapter, no

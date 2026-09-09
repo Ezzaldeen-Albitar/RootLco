@@ -180,7 +180,7 @@ this phase:
   widening a closed phase's derivation changes a gate that phase's closure rests on.
 
 So: the href stays `/delivery`, and P1-31 ships a sibling. Recorded on the D-15 entry of
-`a0-preflight.md` and as **CC-16** in `change-control-2026-09-08.md`.
+`a0-preflight.md` and as **CC-19** in `change-control-2026-09-08.md`.
 
 ---
 
