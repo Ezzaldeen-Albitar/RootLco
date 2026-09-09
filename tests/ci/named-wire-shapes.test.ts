@@ -100,8 +100,11 @@ describe('every route body serialises a named type', () => {
     // `ChecklistTemplateDetailView` exist because this gate refuses an inline return
     // type; the six commands serialise `ChecklistTemplateView` and
     // `ChecklistTemplateItemView`, which is the same pair the reads publish.
-    expect(summary.bodies).toBe(390);
-    expect(summary.named).toBe(337);
+    // 391 with the P1-31 delivery LIST (P-2b): one GET serialising
+    // `Page<DeliveryRecordView>` — the same named interface `sal.delivery-read`
+    // already publishes, so no new shape was minted — and `composed` does not move.
+    expect(summary.bodies).toBe(391);
+    expect(summary.named).toBe(338);
     expect(summary.composed).toBe(53);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

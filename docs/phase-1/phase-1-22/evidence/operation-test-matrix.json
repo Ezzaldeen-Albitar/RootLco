@@ -1,9 +1,9 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 37,
-    "publicApi": 37,
-    "operationDepth": 37,
+    "registered": 38,
+    "publicApi": 38,
+    "operationDepth": 38,
     "invocationOnly": 0,
     "pending": 0,
     "unitOnly": 0,
@@ -603,6 +603,40 @@
         "cross-tenant",
         "denial",
         "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "sal.delivery-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/deliveries",
+      "public": false,
+      "files": ["tests/backend/p1-31-delivery-list-seam.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "pagination"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant",
+        "pagination"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
         "route",
         "service",
         "success"

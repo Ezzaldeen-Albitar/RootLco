@@ -252,7 +252,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 390 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 391 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -300,7 +300,11 @@ describe('the API application lives in the workspace', () => {
     // permission gates and not this one are what prove it.
     // 390 with the P1-31 checklist template seam (P-9): eight operations over five
     // new modules, for the reason stated above the route-module count.
-    expect(report.operations).toHaveLength(390);
+    // 391 with the P1-31 delivery list (P-2b): ONE operation over NO new module, a
+    // GET co-located on the `/deliveries` collection the create already owned — so
+    // the route-module count above does not move at all, which is the asymmetry
+    // both numbers exist to expose.
+    expect(report.operations).toHaveLength(391);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the
