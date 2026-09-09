@@ -664,3 +664,82 @@ The full record is [`warranty-policy-seam.md`](./warranty-policy-seam.md). In sh
 | **P10-3** | company-wide authority from three sides — a branch-scoped holder refused every write while still reading; a company-scoped holder admitted in its company and refused in another                       |
 | **P10-4** | the overlap invariant in all three limbs, including a refused reactivation leaving the archived row's version untouched                                                                                |
 | **P10-5** | the bundle delta is exactly one code, measured against the generated P1-24 register: zero declarers for what stays excluded, more than zero for every added code                                       |
+
+---
+
+## 30. What the FE-015 slice changed — the audit report, and the phase records
+
+**Slice:** `feature/p1-31-audit-report-and-phase-records`, ownership profile `p1-31-frontend`.
+**Baseline:** protected `develop` **249c6428** (PR #356 merge). This is the phase's **first
+Frontend slice**: sections 1–29 are backend seams, documentation corrections and CI ownership.
+
+### 30.1 Identifier allocation — provisional, and why
+
+`develop` carries **CC-01 … CC-18**. Three lanes are open at the same time as this one and each
+will allocate before or after it depending on merge order:
+
+| id        | lane                                    | state at 249c6428 |
+| --------- | --------------------------------------- | ----------------- |
+| **CC-19** | the delivery detail screen (PR #357)    | open              |
+| **CC-20** | the reporting writer (P-11)             | open              |
+| **CC-21** | the checklist-template migration (P-9b) | open              |
+
+So this slice takes **CC-22 provisionally**. **The identifier must be re-checked against `develop`
+before this branch merges**, and renumbered if any of the three lanes lands with a different
+allocation. A register whose identifiers collide is worse than one that renumbers.
+
+### 30.2 What changed
+
+**D-6 is answered: the shipped Audit Log screen IS "audit report" (FE-015), completed as a report.**
+The screen already existed and already refused to offer an export. What it did not do was let an
+operator ask a question: it sent the mandatory window and nothing else, so finding one action inside
+a quarter meant reading the pages.
+
+Three of the list operation's six filter parameters are now surfaced as controls — the action, the
+record type and the actor — and travel to the operation under the names its own allow-list publishes.
+The window and its 92-day bound are untouched, the permission is untouched, and **no export control
+was added**.
+
+The criteria apply on submit rather than on each keystroke. The read is rate-limited as an expensive
+one and is itself an audited act, so a criterion typed character by character would record a dozen
+reads of the audit trail for one question.
+
+Two records were also written: [`task-matrix.md`](./task-matrix.md), which states where each of the
+twenty-nine canonical tasks stands and what proves it, and
+[`d4-report-definitions.md`](./d4-report-definitions.md), which maps the Owner's four baseline
+reports to the contracts that can serve them and names the prerequisites that do not exist yet.
+
+### 30.3 Dispositions
+
+| id        | finding                                                                                                     | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                            | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | owner / slice    | status |
+| --------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- | ------ |
+| **CC-22** | two of the operation's six filter parameters cannot be sent from a client, so FE-015 surfaces three of five | The company and branch parameters are on the route's allow-list and are resource selectors there — the operation declares scope `tenant`, so they filter within an already-resolved scope rather than asserting one. But the web query builder refuses **both names outright** (`P1-27-SEC-001`), and the single narrow exception that exists is pinned by a test to one operation by name. Sending them needs either a widening of that refusal or a third builder | **withheld, and recorded rather than worked around.** The three remaining criteria were surfaced and the two were not. Building a private query string inside the screen's own adapter would have sent them while bypassing the one guard whose entire purpose is refusing those names, which is a security-boundary change made invisibly. **The question is put to the Owner and the reviewer, not answered here:** is the refusal widened for an operation whose scope is `tenant` and whose company and branch parameters are selectors, and if so, through which door? | Owner / reviewer | open   |
+
+### 30.4 What this slice did NOT do
+
+- **No export, and no step toward one.** No control, no client-side extraction, no new operation. The
+  route's own docblock states export is out of scope, and the screen still says so in both languages.
+- **No permission changed.** The screen gates on the same code it has always gated on, and the route
+  page still decides before it reads.
+- **The default window was not changed.** **D-11** — whether the seven-day default is ratified,
+  deferred or changed — **stays open**, and the preflight's warning that shipping FE-015 without it
+  carries the decision into a second phase is now realised rather than avoided. The window itself is
+  proven by test to be seven days and server-computed.
+- **No backend source was touched.** A Frontend lane may not, and nothing here needed it: every
+  criterion surfaced was already a bound parameter of the existing operation.
+- **No canonical task was marked done.** The task matrix records FE-015 as `in open PR`, and its
+  rule 2 keeps `end-to-end verified` unreachable until a phase acceptance record exists. None does.
+- **No figure appears in the D-4 record.** Every unknown in it is written as a named prerequisite.
+- **No report engine, registry or run operation was written.** D-4 is a mapping; P-11's engine half
+  has not begun.
+
+### 30.5 Proof
+
+| id        | what was shown                                                                                                                                                                    |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **F15-1** | `apps/web/tests/audit-log.dom.test.tsx` — each criterion reaching the adapter under the published name, alone and together, with the window carried with it                       |
+| **F15-2** | a malformed actor identifier refused **before** any request is made, and named on the field rather than returned as a refusal about a parameter the operator never saw            |
+| **F15-3** | clearing returns the read to the unfiltered one and empties the controls; applying resets the page, because a cursor from an unfiltered set is meaningless against a filtered one |
+| **F15-4** | every criterion and both buttons named in Arabic, rendered right-to-left                                                                                                          |
+| **F15-5** | the no-export notice present in both languages, and no control or link that would produce one                                                                                     |
+| **F15-6** | the route page refusing without the audit code **and issuing no read**, and reading a seven-day server-computed window with it                                                    |
