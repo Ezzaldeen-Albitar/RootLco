@@ -137,8 +137,8 @@ sit in the tree looking like coverage while running nowhere.
 
 ## Current tree
 
-The live web suite holds **133 web test files**, every one matched by a `vitest`
-project, and the current tree executes **3612** tests. Both are derived on every
+The live web suite holds **132 web test files**, every one matched by a `vitest`
+project, and the current tree executes **3598** tests. Both are derived on every
 run of `npm run validate:p1-27-closing-values` rather than recorded by hand.
 
 That executed figure is the one a test reads. It used to read the `Web tier` row
@@ -149,20 +149,20 @@ comparing a live baseline against a record of a head the branch had left behind.
 The superseded figures are left exactly as they were, because they are a true
 account of that head; what moved is which number the check consults.
 
-**The 3612 is local, and it is pending attestation by this pull request's hosted
-run.** It is the output of
-`node scripts/ci/check-p1-27-closing-values.mjs --record web` against this tree,
-recorded in `evidence/local-run-ledger.json` with the commit it was taken at and
-with no provenance block, which is what marks it local. When this pull request's
-hosted run completes the tier is re-recorded from it, with hosted provenance.
+**The 3598 is HOSTED, and it is the binding measurement.** It is the output of
+`node scripts/ci/check-p1-27-closing-values.mjs --record web --hosted-run`
+against this pull request's own run and recorded in
+`evidence/local-run-ledger.json` with a provenance block naming the run, the
+job, the artifact and that artifact's digest, and the head that run describes —
+this head. That block is what marks it hosted; a record without one is local.
 
 ### `DERIVABLE_LOCAL` — a command in this repository answers it
 
 | measure                                    | value | the command that decides it                                       |
 | ------------------------------------------ | ----- | ------------------------------------------------------------------ |
-| Web test files under `apps/web/tests`       | 133    | a walk of the tree                                                 |
-| Web tier — tests executed                   | 3612  | `--record web`, from the `vitest` JSON report                      |
-| Web tier — files the run reported           | 133    | the same report, cross-checked against the walk above              |
+| Web test files under `apps/web/tests`       | 132    | a walk of the tree                                                 |
+| Web tier — tests executed                   | 3598  | `--record web`, from the `vitest` JSON report                      |
+| Web tier — files the run reported           | 132    | the same report, cross-checked against the walk above              |
 | Root unit tier — tests executed             | 3277  | `--record unit`, from the `vitest` JSON report                     |
 | Root unit tier — files the run reported     | 121   | the same report, cross-checked against the tier's include rule      |
 | Committed web floor (`minTests`)            | 3050  | `.github/ci-baselines/test-count-baseline.json`                    |

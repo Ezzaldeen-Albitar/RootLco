@@ -692,7 +692,7 @@ under-report itself by seven files.
 | `evidence/evidence-manifest.json`                 | 175   | `QA-005` — a SHA-256 digest of every document in this directory                    |
 | `evidence/closing-value-ledger.json`              | 907   | Every closing value on the two evidence pages, classified, with its authority      |
 | `evidence/lifecycle-ledger.json`                  | 72    | The closure lifecycle's observations and the state this repository declares        |
-| `evidence/local-run-ledger.json`                  | 38    | What a tier DID when it was run — written only by `record:p1-27-run`               |
+| `evidence/local-run-ledger.json`                  | 64    | What a tier DID when it was run — written only by `record:p1-27-run`               |
 | `evidence/task-traceability.md`                   | 437   | Every task, the operations it calls, the files it produced, the named proof        |
 | `evidence/test-catalogue-traceability.md`         | 406   | `DOC-001` — the 29 canonical `TC-P1-27-*` ids bound to executable tests            |
 | `evidence/test-catalogue-traceability.json`       | 863   | Its machine-readable form, checked by `validate:p1-27-doc-counts`                  |
@@ -746,7 +746,7 @@ document says so in its own header.**
 | `workshop/inspection-and-diagnostics.md`              | 901   |
 | `workshop/parts-and-procurement-flow.md`              | 798   |
 | `workshop/department-task-assignment.md`              | 751   |
-| `workshop/reception-media-checklist.md`               | 563   |
+| `workshop/reception-media-checklist.md`               | 678   |
 | `vehicle-catalogue/catalogue-architecture.md`         | 1029  |
 | `vehicle-catalogue/manual-entry-policy.md`            | 656   |
 | `vehicle-catalogue/provider-evaluation.md`            | 648   |
@@ -1022,7 +1022,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/evidence-manifest.json = 175 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/closing-value-ledger.json = 907 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/lifecycle-ledger.json = 72 -->
-<!-- derived: lines docs/phase-1/phase-1-27/evidence/local-run-ledger.json = 38 -->
+<!-- derived: lines docs/phase-1/phase-1-27/evidence/local-run-ledger.json = 64 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/task-traceability.md = 437 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json = 863 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.md = 406 -->
@@ -1058,5 +1058,5 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/product/workshop/inspection-and-diagnostics.md = 901 -->
 <!-- derived: lines docs/product/workshop/parts-and-procurement-flow.md = 798 -->
 <!-- derived: lines docs/product/workshop/pricing-payment-and-delivery.md = 1137 -->
-<!-- derived: lines docs/product/workshop/reception-media-checklist.md = 563 -->
+<!-- derived: lines docs/product/workshop/reception-media-checklist.md = 678 -->
 <!-- derived: lines docs/product/workshop/vehicle-history-model.md = 1039 -->
