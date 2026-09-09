@@ -92,11 +92,18 @@ let runtime: Pool;
 
 /** A second company in tenant A, so the report's branch is this suite's alone. */
 const COMPANY_R = 'f1310000-0000-4000-8000-0000000000c1';
-/** The reported branch. `Asia/Riyadh` is UTC+3 all year — no DST to reason about. */
+/** The reported branch. Its zone is the only non-UTC row `shared.timezones` seeds. */
 const BRANCH_R1 = 'f1310000-0000-4000-8000-0000000000b1';
 /** A sibling branch, for the containment case. Same company, same timezone. */
 const BRANCH_R2 = 'f1310000-0000-4000-8000-0000000000b2';
-const BRANCH_TIMEZONE = 'Asia/Riyadh';
+/**
+ * `Asia/Amman` — chosen because `supabase/seeds/01_reference_data.sql` seeds exactly
+ * two zones, `UTC` and this one, and `fk_branches_timezone` refuses anything else.
+ * A non-UTC branch is the whole point: with a UTC branch this suite could not tell a
+ * BRANCH reading of a calendar day from a server reading of one, and a case that
+ * cannot fail for the reason it names is not a case.
+ */
+const BRANCH_TIMEZONE = 'Asia/Amman';
 
 const REPORT_CODE = 'work_orders_by_status';
 /** A code the tenant has published a configuration for and the engine does not implement. */
@@ -114,16 +121,30 @@ const FROM = '2027-03-02';
 /** First day EXCLUDED — the day after the last one reported. */
 const TO = '2027-03-04';
 
-/** Local 2027-03-01 23:59:59 (+03) — one second before the period opens. */
-const BEFORE_PERIOD = '2027-03-01T20:59:59.000Z';
-/** Local 2027-03-02 00:00:00 (+03) — the first included instant. */
-const FIRST_INSTANT = '2027-03-01T21:00:00.000Z';
-/** Local 2027-03-02 12:00:00 (+03) — the middle of the period. */
-const MIDDLE_INSTANT = '2027-03-02T09:00:00.000Z';
-/** Local 2027-03-03 23:30:00 (+03) — the last evening, and still included. */
-const LATE_INSTANT = '2027-03-03T20:30:00.000Z';
-/** Local 2027-03-04 00:00:00 (+03) — the first excluded instant. */
-const AFTER_PERIOD = '2027-03-03T21:00:00.000Z';
+/*
+ * The five instants are RESOLVED FROM THE DATABASE rather than written down here.
+ *
+ * The zone offset is a property of the deployed tzdata, not of this file: Jordan
+ * abolished its summer clock in 2022, and a Postgres carrying older tzdata would
+ * place these March days an hour away. Hard-coding the UTC instants would make the
+ * suite assert the tzdata rather than the query, and would fail it on a database
+ * that is correct. So the bounds are read back with the same expression the
+ * repository uses, and the fixtures are placed relative to them.
+ *
+ * `periodOpens` is local midnight on FROM; `periodCloses` is local midnight on TO,
+ * which is the first EXCLUDED instant.
+ */
+let periodOpens = '';
+let periodCloses = '';
+/** One second before the period opens. */
+let beforePeriod = '';
+/** Local 12:00 on the first included day. */
+let middleInstant = '';
+/** Local 23:30 on the last included day — the late case. */
+let lateInstant = '';
+
+const shift = (iso: string, milliseconds: number): string =>
+  new Date(new Date(iso).getTime() + milliseconds).toISOString();
 
 // ---- Principals -------------------------------------------------------------
 
@@ -449,19 +470,30 @@ beforeAll(async () => {
   runtime = runtimeAppPool(6);
   __setPrimaryPoolForTests(runtime);
 
-  const before = await seedWorkOrder({ openedAt: BEFORE_PERIOD });
+  const bounds = await admin.query<{ opens: Date; closes: Date }>(
+    `SELECT (($1::date)::timestamp AT TIME ZONE $3) AS opens,
+            (($2::date)::timestamp AT TIME ZONE $3) AS closes`,
+    [FROM, TO, BRANCH_TIMEZONE]
+  );
+  periodOpens = (bounds.rows[0]?.opens ?? new Date(0)).toISOString();
+  periodCloses = (bounds.rows[0]?.closes ?? new Date(0)).toISOString();
+  beforePeriod = shift(periodOpens, -1000);
+  middleInstant = shift(periodOpens, 12 * 60 * 60 * 1000);
+  lateInstant = shift(periodCloses, -30 * 60 * 1000);
+
+  const before = await seedWorkOrder({ openedAt: beforePeriod });
   excludedBefore = before.workOrderId;
-  const first = await seedWorkOrder({ openedAt: FIRST_INSTANT });
+  const first = await seedWorkOrder({ openedAt: periodOpens });
   firstOrder = first.workOrderId;
-  const middle = await seedWorkOrder({ openedAt: MIDDLE_INSTANT });
+  const middle = await seedWorkOrder({ openedAt: middleInstant });
   middleOrder = middle.workOrderId;
   middleVehicleId = middle.vehicleId;
   middlePartnerId = middle.partnerId;
-  const late = await seedWorkOrder({ openedAt: LATE_INSTANT });
+  const late = await seedWorkOrder({ openedAt: lateInstant });
   lateOrder = late.workOrderId;
-  const after = await seedWorkOrder({ openedAt: AFTER_PERIOD });
+  const after = await seedWorkOrder({ openedAt: periodCloses });
   excludedAfter = after.workOrderId;
-  const sibling = await seedWorkOrder({ openedAt: MIDDLE_INSTANT, branchId: BRANCH_R2 });
+  const sibling = await seedWorkOrder({ openedAt: middleInstant, branchId: BRANCH_R2 });
   otherBranchOrder = sibling.workOrderId;
 
   // States taken through the REAL graph, because `state` is not immutable and the
@@ -559,21 +591,32 @@ describe('rpt.report-run — the period is half-open in the BRANCH timezone', ()
     expect(view.period).toEqual({ from: FROM, to: TO, timezone: BRANCH_TIMEZONE });
   });
 
+  it('is anchored to the branch zone and not to the server one', () => {
+    // NON-VACUITY, and it comes first. Every boundary case below would pass just as
+    // happily if the bounds had been resolved in UTC — unless the zone actually
+    // moves them. Local midnight in the branch zone is NOT midnight UTC, so a UTC
+    // reading of this period selects a different set of instants.
+    expect(periodOpens).not.toBe(`${FROM}T00:00:00.000Z`);
+    expect(periodCloses).not.toBe(`${TO}T00:00:00.000Z`);
+    // And the period is two whole days, however the offset falls.
+    expect(new Date(periodCloses).getTime() - new Date(periodOpens).getTime()).toBe(
+      2 * 24 * 60 * 60 * 1000
+    );
+  });
+
   it('includes 23:30 on the last day and excludes 00:00 on the next one', async () => {
     authAs(RPT_FULL);
     const ids = (await body(await report())).rows.items.map((row) => cellValue(row, 'workOrder'));
-    // Local 2027-03-03 23:30 (+03). Under a server-timezone reading — the same
-    // instant is 20:30 UTC on the 3rd — this one is included either way; the pair
-    // below is what separates the two readings.
+    // Local 23:30 on the last included day: inside, by thirty minutes.
     expect(ids).toContain(lateOrder);
-    // Local 2027-03-04 00:00 (+03) = 21:00 UTC on the 3rd. A UTC reading of the
-    // same period would include it; the branch reading must not.
+    // Local 00:00 on the EXCLUDED day. `to` is exclusive, so this instant is the
+    // first one outside the period — and under a UTC reading of the same two
+    // calendar days it would fall inside.
     expect(ids).not.toContain(excludedAfter);
-    // Local 2027-03-01 23:59:59 (+03) = 20:59:59 UTC. One second before the
-    // period opens, and excluded for that reason and no other.
+    // One second before the period opens, excluded for that reason and no other.
     expect(ids).not.toContain(excludedBefore);
-    // Local 2027-03-02 00:00:00 (+03), the first included instant — the boundary
-    // is inclusive at the bottom, which is the other half of half-open.
+    // The first included instant — the boundary is inclusive at the bottom, which
+    // is the other half of half-open.
     expect(ids).toContain(firstOrder);
   });
 
@@ -610,7 +653,7 @@ describe('rpt.report-run — the cells a client renders', () => {
     expect(cellValue(row, 'customer')).toBe(middlePartnerId);
     expect(cellLabel(row, 'customer')).not.toBeNull();
     expect(cellValue(row, 'vehicle')).toBe(middleVehicleId);
-    expect(cellValue(row, 'openedAt')).toBe(MIDDLE_INSTANT);
+    expect(cellValue(row, 'openedAt')).toBe(middleInstant);
     // The state cell carries both halves: the catalogue code a client filters on
     // and the catalogue name a human reads.
     expect(cellValue(row, 'state')).toBe('open');
@@ -674,14 +717,23 @@ describe('rpt.report-run — authorization', () => {
     expect(ids).not.toContain(otherBranchOrder);
   });
 
-  it('answers a foreign tenant branch as not found rather than as a report', async () => {
+  it('refuses a foreign tenant branch before the report is ever run', async () => {
     authAs(RPT_TENANT_B);
-    // Unrestricted IN ITS OWN TENANT, so both permission checks pass on scope
-    // alone — `iam.has_permission_in_scope` does not know whose branch this is.
-    // What refuses it is the branch resolution, under tenant-narrowed RLS.
+    // Unrestricted IN ITS OWN TENANT, so BOTH permission checks pass on scope
+    // alone: `iam.has_permission_in_scope` short-circuits on an unrestricted
+    // grant before any `org.*` row is read, and does not know whose branch this
+    // is. What refuses it is `requireScopeTargetInTenant` (P1-30 CC-14), the
+    // platform probe that resolves the (company, branch) pair under the caller's
+    // OWN RLS — so the refusal arrives before the handler, and the run service's
+    // own null-branch refusal is never reached through this route.
+    //
+    // ERR-IAM-001 and not ERR-RES-001, deliberately: a not-found would confirm
+    // the existence boundary the uniform denial exists to hide. The refusal is
+    // identical for a foreign tenant's real pair, a pair that exists nowhere and
+    // an in-tenant pair belonging to another company.
     const denied = await report();
-    expect(denied.status).toBe(404);
-    expect(((await denied.json()) as Problem).code).toBe('ERR-RES-001');
+    expect(denied.status).toBe(403);
+    expect(((await denied.json()) as Problem).code).toBe('ERR-IAM-001');
   });
 });
 

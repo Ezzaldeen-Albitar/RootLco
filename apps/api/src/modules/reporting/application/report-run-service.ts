@@ -47,6 +47,17 @@
  * code. With the dataset check first, only a caller who could have read the data
  * anyway learns anything.
  *
+ * ## The branch resolution is DEFENCE IN DEPTH, not the tenant boundary
+ *
+ * Stated so it is not mistaken for the control. `requireScopeTargetInTenant`
+ * (`server/auth/authorization.ts`, P1-30 CC-14) already resolves the caller's
+ * (company, branch) pair under the caller's own RLS BEFORE this handler runs, and
+ * refuses a foreign, missing or out-of-company pair with `ERR-IAM-001`. So the
+ * `ERR-RES-001` below is not reachable through the published route for a
+ * fully-specified pair — the suite proves the 403 arrives first. It is kept
+ * because this service is callable without that pre-handler probe, and a read
+ * that assumed its caller had been checked would be a read with no floor.
+ *
  * ## The period is a calendar range in the BRANCH's timezone
  *
  * `from` is the first day included and `to` is the first day EXCLUDED — the day
@@ -319,7 +330,9 @@ export class ReportRunService extends ApplicationService {
     });
     if (branch === null) {
       // Absent, deleted, in another company or outside this caller's RLS reach
-      // all answer identically.
+      // all answer identically. Defence in depth: the route's own
+      // `requireScopeTargetInTenant` probe has already refused every one of those
+      // with ERR-IAM-001 before this point — see the file header.
       throw new AppFailure('ERR-RES-001', { message: 'Report not found.' });
     }
 
