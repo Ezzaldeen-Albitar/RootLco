@@ -155,6 +155,7 @@ export default async function WorkOrderDetailPage({
       canReadStock={holds(session.permissions, WORK_ORDER_DETAIL_PERMISSIONS.stockRead)}
       canReadInvoice={holds(session.permissions, WORK_ORDER_DETAIL_PERMISSIONS.invoiceRead)}
       canReadDelivery={holds(session.permissions, DELIVERY_PERMISSIONS.view)}
+      canManageDelivery={holds(session.permissions, DELIVERY_PERMISSIONS.manage)}
     />
   );
 }

@@ -40,13 +40,21 @@ import { pageMetadata } from '@/lib/page-metadata';
  * the rest of the handover still renders. Gating the whole page on it would hide
  * the custody chain from everyone who is not in finance.
  *
- * `sal.delivery.complete` is computed for the same reason and gates nothing at
- * all in this slice: it decides only whether the eligibility panel says the one
- * overridable reason may be overridden by the reader or by somebody else. No
- * write exists here for it to authorise.
+ * `sal.delivery.complete` is computed for the same reason, and it now authorises
+ * something: it decides whether the release control is drawn at all, and whether
+ * the eligibility panel says the one overridable reason may be overridden by the
+ * reader or by somebody else.
  *
- * **Both are affordances, never enforcement.** Every read is decided again by the
- * backend against the actual record.
+ * `sal.delivery.manage` is the third, and it is deliberately a SEPARATE
+ * capability rather than folded into the other two. It is the code every
+ * preparation act declares — confirming who may receive the vehicle, recording a
+ * checklist result, adding a signature — and it is not the code that releases
+ * the vehicle. Resolving each control against the code ITS OWN operation
+ * declares is what stops a screen offering a button whose only outcome is a
+ * denial.
+ *
+ * **All three are affordances, never enforcement.** Every read and every write is
+ * decided again by the backend against the actual record.
  */
 export default async function DeliveryDetailPage({
   params,
@@ -145,6 +153,7 @@ export default async function DeliveryDetailPage({
       delivery={record.data}
       canReadFinance={holds(session.permissions, DELIVERY_PERMISSIONS.financeView)}
       canComplete={holds(session.permissions, DELIVERY_PERMISSIONS.complete)}
+      canManage={holds(session.permissions, DELIVERY_PERMISSIONS.manage)}
     />
   );
 }
