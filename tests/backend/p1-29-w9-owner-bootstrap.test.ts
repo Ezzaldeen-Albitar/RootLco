@@ -431,10 +431,11 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
     // inv.item.manage and inv.adjustment.approve, without which no item
     // could be catalogued and no stock could ever appear; 73 with the SIX
     // P1-31 delivery, warranty and reporting codes of prerequisite P-1 — six
-    // of the nine A0 named. Three are deliberately excluded: `wty.policy.manage`
-    // and `rpt.report.configure` because no operation declares them (CC-01,
-    // CC-02), and `rpt.export` — which two shipped operations do declare —
-    // withheld on least-privilege grounds by Owner decision (CC-04).
+    // of the nine A0 named. Three were deliberately excluded at that point:
+    // `wty.policy.manage` and `rpt.report.configure` because no operation declared
+    // them (CC-01, CC-02), and `rpt.export` — which two shipped operations do
+    // declare — withheld on least-privilege grounds by Owner decision (CC-04).
+    // `rpt.export` is the only one of the three still withheld.
     // 74 with `wty.warranty.read`, minted by P1-31 prerequisite P-7 and carried
     // because withholding it while the warranty detail read was re-pointed off
     // `wty.warranty.issue` would REMOVE a capability this bundle already confers
@@ -445,7 +446,13 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
     // Withholding it now would leave a fresh administrator unable to issue any
     // warranty at all, because generation refuses a company with no active policy.
     // It was already a catalogue row; nothing is minted by that widening.
-    expect(expected).toHaveLength(75);
+    // 76 with `rpt.report.configure`, which P1-31 prerequisite P-11 moved OUT of
+    // the exclusions on the same rule: CC-02 withheld it because no operation
+    // declared it, and P-11 published seven. Withholding it now would leave a
+    // fresh administrator with an empty report catalogue it could never fill,
+    // because both published report reads filter on `status = 'published'` and no
+    // other code can set that value. It too was already a catalogue row.
+    expect(expected).toHaveLength(76);
     expect(expected.some((c) => c.includes('*'))).toBe(false);
     expect(expected.some((c) => c.startsWith('platform.'))).toBe(false);
     expect(new Set(expected).size).toBe(expected.length);

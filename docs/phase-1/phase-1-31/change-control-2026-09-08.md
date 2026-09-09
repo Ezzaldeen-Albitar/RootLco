@@ -380,7 +380,7 @@ moved 67 → 74. A second `--all` run immediately afterwards reported **0 widene
 # The delivery navigation gate — P-8 (RES-05)
 
 Sections 21–23 were added by the **P-8** slice on 2026-09-09; identifiers continue in the same
-P1-31 namespace, so the register now runs **CC-01 … CC-19**. **Baseline:** protected `develop`
+P1-31 namespace, so the register now runs **CC-01 … CC-20**. **Baseline:** protected `develop`
 `f4309a8e`, `main` `1262de74` — untouched. This slice is Frontend, tooling and documentation only:
 it adds no operation, no route, no permission, no seed row and no migration.
 
@@ -764,3 +764,84 @@ have moved: this slice is **CC-19** at sections 30–33.
   crumb but the last must carry an `href`. A two-crumb trail here would have to link `/delivery`,
   which has no page. The screen therefore renders one crumb, the page's docblock says why, and the
   list crumb arrives with FE-001.
+
+---
+
+## 34. What P-11 changed — the report configuration seam, writer half
+
+**Slice:** `remediation/p1-31-backend-report-configuration-seam`, ownership profile `p1-31-backend`.
+**Baseline:** branched from protected `develop` **5cd06fbd**, brought forward onto **249c6428**,
+which carries the P-10 warranty policy and coverage seam (**#356**, section 29, **CC-15 … CC-18**),
+and then merged with `develop` **fc58f1c2**, which carries the delivery detail screen and the P-16
+gate (**#357**, sections 30–33, **CC-19**).
+
+`develop` holds sections 1–33 and **CC-01 … CC-19**. This section therefore continues at **34**,
+and its disposition stays at **CC-20**.
+
+The full record is [`report-configuration-seam.md`](./report-configuration-seam.md). In short:
+
+- **The writer half of P-11 is closed by seven operations.** `rpt.report_configurations` and
+  `rpt.report_configuration_versions` carried `INSERT` and `UPDATE` grants and policies from P1-11
+  and had **no writer anywhere in `apps/api/src`**, while both P1-23 reads filter on
+  `status = 'published'` — so every tenant's report catalogue was empty and permanently so.
+- **All seven declare `rpt.report.configure`, reads included.** Drafts, archived definitions and
+  versions must stay hidden from a `rpt.report.read` holder, who sees published definitions through
+  `/reports`. That is a deliberate departure from the P-9 and P-10 seams, where the read code and
+  the write code differ, and it departs because the rows are different rows.
+- **`rpt.report.configure` is declared for the first time.** It has been a seeded catalogue row
+  since P1-08, named by no operation and by no policy predicate. **Nothing was minted**: no seed
+  row, no migration, no new code, no schema change of any kind.
+- **CC-02 is closed on its own terms, and the bundle moves 74 → 76 on the merged tree.** CC-02
+  withheld the code BECAUSE nothing declared it and stated the rule for lifting it — "the slice
+  that publishes them owns the widening", the `inv.item.manage` sequence of #322. Seven operations
+  now declare it. With CC-01 closed by P-10 the same day, `rpt.export` is the ONLY deliberate
+  exclusion left, on CC-04's Owner decision.
+- **The ENGINE is not published, deliberately.** `executable` stays the literal `false`.
+
+### 34.1 What was published, and what was minted
+
+| published                                                                            | minted  |
+| ------------------------------------------------------------------------------------ | ------- |
+| 7 operations, 5 route modules, 5 paths, 5 audit actions, 1 application service       | nothing |
+| register 397 → **404** operations, 309 → **314** paths, 227 → **232** audit actions  | nothing |
+| bundle 74 → **76** codes on the merged tree, all of them pre-existing catalogue rows | nothing |
+
+### 34.2 Disposition
+
+| id        | finding                                                                                                                  | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | owner / slice         | status |
+| --------- | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------- | ------ |
+| **CC-20** | organisations provisioned BEFORE the P-10 and P-11 widenings hold neither new code, and cannot delegate either authority | The bundle is written ONCE, inside `platform.organization-provision`, and nothing re-applies it. Every organisation provisioned on the 48-, 65-, 67-, 73- or 74-code bundle holds no `wty.policy.manage` and no `rpt.report.configure`, so its administrator is refused the new writes with `ERR-IAM-001`, and `ins_role_permissions_delegable` admits a mapping only when the acting administrator already holds the code. This is **CC-03**, **CC-08** and **CC-16** restated for a fourth widening | **accepted, with the remedy named and NOT performed here.** `scripts/platform/backfill-tenant-administrator-bundle.mjs` parses `bootstrap-roles.ts` at run time and needs no edit to carry the code. **ONE run after merge covers BOTH newly approved codes** — it is not one run each, and it is not a repeat of the #350 backfill, which carried the P-1 and P-7 widenings and is complete. The script preserves tenant customizations and denials. It is an OPERATOR ACT on a privileged connection, so it requires a run against each environment after this branch merges; this slice did not run it and does not claim it was run anywhere | operator, after merge | open   |
+
+### 34.3 What this slice did NOT do
+
+- **No migration and no schema change.** Both tables, both RLS policy sets and every grant are
+  exactly as P1-11 left them; the statements use grants that already existed. There is a single
+  `name` column and no second one was added.
+- **No permission was minted and no seed changed.** `rpt.report.configure` was already a catalogue
+  row, and this slice is the first thing to declare it.
+- **No reporting ENGINE.** `ReportDefinitionView.executable` is untouched and still the literal
+  `false`, because the frozen schema binds no data source to a report code. The Owner's D-4
+  decision of 2026-09-09 — a baseline of four reports with their field-to-contract mapping to
+  follow — is RECORDED in the seam document and implemented nowhere: no seed, no constant, no
+  migration and no test names those codes.
+- **No rule the schema does not encode.** There is no "a configuration must have a published
+  version before it may be published" rule; the two statuses are independent in the schema and are
+  independent here.
+- **No `parameter_schema` vocabulary.** The shape is bounded; what a key MEANS is deferred to D-4
+  and the engine slice.
+- **No removal of any kind.** `deleted_at` exists on the configuration table and this surface never
+  sets it; retirement is `status = 'archived'`.
+- **The backfill was not run**, and no claim is made that any environment carries either code.
+- **`apps/web/src` was not edited** except through `lib/api/idempotent-operations.ts`, which a
+  repository script regenerates and which every published operation moves.
+- **No allow-list was widened and no gate was suppressed.**
+
+### 34.4 Proof
+
+| id        | what was shown                                                                                                                                         |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **P11-A** | `tests/backend/p1-31-report-configuration-seam.test.ts` — every configuration and version authored THROUGH THE ROUTES, with no admin SQL seeding       |
+| **P11-B** | the closure end to end: a definition created as a draft, versioned, published, and only then visible to `GET /reports` — with `executable: false`      |
+| **P11-C** | tenant-wide authority from two sides — a `rpt.report.read`-only caller refused all seven, and a branch-scoped configure holder refused by the re-check |
+| **P11-D** | the publication invariants: one published version at a time, a second refused, and a published version immutable through the mapped freeze refusal     |
+| **P11-E** | the bundle delta measured against the generated P1-24 register, with the undeclared-exclusion list now empty and asserted empty                        |

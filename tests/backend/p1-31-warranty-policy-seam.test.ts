@@ -1304,13 +1304,16 @@ describe('P-10 the provisioning bundle', () => {
     // CC-01 withheld the code BECAUSE no operation declared it, and stated that "the
     // slice that publishes them owns the widening". Five operations now declare it.
     expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toContain(POLICY_MANAGE);
-    // Nothing else moved, and nothing is duplicated.
-    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(75);
+    // Nothing else moved, and nothing is duplicated. 75 when this slice landed;
+    // 76 once P-11 carried `rpt.report.configure` on the same rule the same day,
+    // closing CC-02 — which is why the assertion below is now a POSITIVE one.
+    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(76);
     expect(new Set(TENANT_ADMINISTRATOR_ROLE.permissionCodes).size).toBe(
       TENANT_ADMINISTRATOR_ROLE.permissionCodes.length
     );
-    // `rpt.report.configure` stays excluded: nothing declares it (CC-02).
-    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).not.toContain('rpt.report.configure');
+    // `rpt.report.configure` left the exclusions when P-11 published the seven
+    // operations that declare it (CC-02, closed on the same terms as CC-01 here).
+    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toContain('rpt.report.configure');
     // `rpt.export` stays excluded on least-privilege grounds by Owner decision (CC-04).
     expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).not.toContain('rpt.export');
   });
