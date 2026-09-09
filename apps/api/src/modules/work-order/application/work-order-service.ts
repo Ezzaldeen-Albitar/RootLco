@@ -324,7 +324,7 @@ const toSummary = (
  * Resolved through the RECEPTION module's port rather than by writing `rec`/`crm`
  * SQL in the work-order repository, on the `OpenInventoryCommitments` precedent.
  */
-async function withPartyContext(
+export async function withPartyContext(
   db: DbHandle,
   rows: readonly WorkOrderRow[]
 ): Promise<readonly WorkOrderSummary[]> {

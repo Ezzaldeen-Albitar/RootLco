@@ -98,6 +98,38 @@ export interface WorkOrderListFilter {
   readonly customerId?: string | undefined;
 }
 
+/**
+ * What the report engine's status summary selects (P1-31 P-11).
+ *
+ * A separate type from `WorkOrderListFilter` rather than an extension of it: the
+ * board's bounds are optional INSTANTS compared closed on both ends, and these
+ * are required calendar DATES compared half-open in a named zone. Sharing one
+ * type would invite a caller to pass one where the other is meant, and the two
+ * disagree about the last microsecond of the last day.
+ */
+export interface WorkOrderStatusSummaryFilter {
+  readonly companyId: string;
+  readonly branchId: string;
+  /** Inclusive first day, `YYYY-MM-DD`, in `timezoneName`. */
+  readonly from: string;
+  /** EXCLUSIVE day, `YYYY-MM-DD` — the day after the last one reported. */
+  readonly toExclusive: string;
+  /** An `org.branches.timezone_name` value. Bound as a parameter, never inlined. */
+  readonly timezoneName: string;
+}
+
+/** One state's count over the whole scoped selection, not over a page. */
+export interface WorkOrderStateCountRow {
+  readonly state: string;
+  readonly total: number;
+}
+
+/** The aggregate and the page it accompanies, from one call. */
+export interface WorkOrderStatusSummaryRows {
+  readonly counts: readonly WorkOrderStateCountRow[];
+  readonly page: Page<WorkOrderRow>;
+}
+
 export interface JobRow {
   readonly id: string;
   readonly workOrderId: string;
@@ -587,6 +619,125 @@ export class WorkOrderRepository extends Repository {
       sortValue: row.openedAt.toISOString(),
       id: row.id,
     }));
+  }
+
+  /**
+   * The work orders OPENED in a calendar period in one branch, plus the count of
+   * each state over the whole selection (P1-31 P-11, the report engine).
+   *
+   * ## Two statements, and why the counts are not derived from the page
+   *
+   * A report shows a page of rows AND a total per state. Counting the page would
+   * answer for at most `limit` rows and call it the branch's position, which is
+   * the P1-28 round-two defect — a paged read answering for the whole set. The
+   * aggregate therefore runs over the SAME predicate without the keyset window,
+   * in SQL, so it is the count of the selection and not of a page.
+   *
+   * States with no rows are absent from the aggregate — `GROUP BY` cannot emit a
+   * group with no members. Filling them in at zero needs the tenant's state
+   * catalogue, which is the service's job and not this query's.
+   *
+   * ## The period is HALF-OPEN, and the existing filter could not be reused
+   *
+   * `listWorkOrders` compares `opened_at <= openedTo`, a CLOSED upper bound, and
+   * that is correct for the board's instant-valued filter. A calendar report
+   * needs `[from, to)`: a closed bound over a DAY either includes an instant that
+   * belongs to the next day or excludes the last microsecond of the last one,
+   * and both are wrong in a way that only shows up as a count that does not add
+   * up. `to` is therefore the EXCLUSIVE day — the day after the last one
+   * reported — and the run service and the route both say so to the caller.
+   *
+   * ## The bounds are resolved in the BRANCH's timezone
+   *
+   * `opened_at` is `timestamptz`; a calendar day is not. `$4::date AT TIME ZONE
+   * $6` is local midnight in the named zone expressed as an instant, so "orders
+   * opened on the 3rd" means the 3rd where the workshop is, not where the server
+   * is. The zone name is a bind PARAMETER, never interpolated, and it reaches
+   * this method from `org.branches.timezone_name`, which
+   * `fk_branches_timezone_name` constrains to a `shared.timezones` row.
+   */
+  async statusSummary(
+    db: DbHandle,
+    filter: WorkOrderStatusSummaryFilter,
+    page: PageRequest
+  ): Promise<WorkOrderStatusSummaryRows> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.from,
+      filter.toExclusive,
+      filter.timezoneName,
+    ];
+    // One predicate, written once and used by both statements. A second copy is
+    // how an aggregate and its rows come to answer for different selections.
+    const scope = `tenant_id = $1 AND company_id = $2 AND branch_id = $3
+          AND deleted_at IS NULL
+          AND opened_at >= (($4::date)::timestamp AT TIME ZONE $6)
+          AND opened_at <  (($5::date)::timestamp AT TIME ZONE $6)`;
+
+    const counts = await this.run<{ state: string; total: number }>(
+      db,
+      `SELECT state, count(*)::int AS total
+         FROM wo.work_orders
+        WHERE ${scope}
+        GROUP BY state
+        ORDER BY state`,
+      values
+    );
+
+    const keyset = keysetFragment(
+      page,
+      { sort: 'opened_at', id: 'id' },
+      WORK_ORDER_LIST_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<{
+      id: string;
+      company_id: string;
+      branch_id: string;
+      reception_visit_id: string;
+      vehicle_id: string;
+      kind: string;
+      state: string;
+      parts_forward_state: string;
+      display_number: string | null;
+      opened_at: Date;
+      created_by: string | null;
+      record_version: number;
+    }>(
+      db,
+      `SELECT id, company_id, branch_id, reception_visit_id, vehicle_id, kind, state,
+              parts_forward_state, display_number, opened_at, created_by, record_version
+         FROM wo.work_orders
+        WHERE ${scope}
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    const rows: WorkOrderRow[] = result.rows.map((row) => ({
+      id: row.id,
+      companyId: row.company_id,
+      branchId: row.branch_id,
+      receptionVisitId: row.reception_visit_id,
+      vehicleId: row.vehicle_id,
+      kind: row.kind,
+      state: row.state,
+      partsForwardState: row.parts_forward_state,
+      displayNumber: row.display_number,
+      openedAt: row.opened_at,
+      createdBy: row.created_by,
+      recordVersion: row.record_version,
+    }));
+    return {
+      counts: counts.rows.map((row) => ({ state: row.state, total: row.total })),
+      page: buildPage(rows, page, WORK_ORDER_LIST_ORDER, (row) => ({
+        sortValue: row.openedAt.toISOString(),
+        id: row.id,
+      })),
+    };
   }
 
   /**
