@@ -52,7 +52,7 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "d14227407bfa10163eb28208f81a92b6116ff5f05cf5c2805f2b0f8b278c1f9e",
+      "sha256": "4acdc594f445535a9a7efb5060206509d3976cc69cbd3c9bf72ccf958d188d52",
       "bytes": 149608
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
@@ -72,7 +72,7 @@
       "bytes": 9208
     },
     "docs/phase-1/phase-1-27/evidence/local-run-ledger.json": {
-      "sha256": "3c597534667b68da5435e6df9317b38403247469061df208ad55ecd5449bb90d",
+      "sha256": "12672b2a958d1c0f94c816f4f567487d5dd567cba44c95585177d77d0b788d2a",
       "bytes": 2581
     },
     "docs/phase-1/phase-1-27/evidence/task-traceability.md": {
@@ -156,7 +156,7 @@
       "bytes": 62211
     },
     "docs/phase-1/phase-1-27/risk-register.md": {
-      "sha256": "8f5e64506d63562fe09d00da4f58e60a812eeb05f16c79a7152428aa3e453c72",
+      "sha256": "b1b3e0f8f06b8b2d00087d4575bbaf1ee56f564a59611908e8759f74d083dc03",
       "bytes": 187802
     },
     "docs/phase-1/phase-1-27/task-matrix-verdicts.json": {
