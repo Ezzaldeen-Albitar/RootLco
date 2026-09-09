@@ -380,7 +380,7 @@ moved 67 → 74. A second `--all` run immediately afterwards reported **0 widene
 # The delivery navigation gate — P-8 (RES-05)
 
 Sections 21–23 were added by the **P-8** slice on 2026-09-09; identifiers continue in the same
-P1-31 namespace, so the register now runs **CC-01 … CC-12**. **Baseline:** protected `develop`
+P1-31 namespace, so the register now runs **CC-01 … CC-13**. **Baseline:** protected `develop`
 `f4309a8e`, `main` `1262de74` — untouched. This slice is Frontend, tooling and documentation only:
 it adds no operation, no route, no permission, no seed row and no migration.
 
@@ -440,3 +440,71 @@ stops reproducing:
 | **P8-2** | `validate:permission-parity` passes with an EMPTY debt register, which the gate itself would refuse if the removed entry still reproduced                        |
 | **P8-3** | the widened assertion reads the seed file itself (119 codes parsed) rather than a transcription of it, so no copied list can drift away from the catalogue       |
 | **P8-4** | the unit tier stays at 3264 tests and the web tier at 3552 — the false green was closed by widening an assertion, not by adding one                              |
+
+---
+
+## 24. The documentation-corrections slice — prerequisites P-13 and P-14
+
+Added on 2026-09-09 by `remediation/p1-31-backend-documentation-corrections`, on the
+`p1-31-backend` lane. It changes comments and records only: **no behaviour changed, no operation was
+declared, widened or withdrawn, no permission code was minted, granted or revoked, and no migration,
+seed, policy or grant was touched.**
+
+**P-13 — four rows of [`operation-inventory.md`](../phase-1-22/operation-inventory.md) corrected**
+against the `defineOperation(...).permissions` of the routes themselves, each cross-checked against
+the generated `docs/phase-1/phase-1-22/evidence/endpoint-inventory.md`:
+
+| operation                       | the inventory said                          | the route declares                                               |
+| ------------------------------- | ------------------------------------------- | ---------------------------------------------------------------- |
+| `sal.delivery-eligibility-read` | `sal.delivery.manage`, `sal.finance.view`   | `sal.delivery.view`, `sal.finance.view`                          |
+| `sal.delivery-receiver-verify`  | `sal.delivery.manage`                       | `sal.delivery.manage`, `sal.delivery.view`                       |
+| `sal.delivery-signature-attach` | `sal.delivery.manage`                       | `sal.delivery.manage`, `sal.delivery.view`                       |
+| `sal.delivery-complete`         | `sal.delivery.complete`, `sal.finance.view` | `sal.delivery.complete`, `sal.delivery.view`, `sal.finance.view` |
+
+The table's other two rows — `sal.delivery-create` and `sal.delivery-checklist-record` — already
+agreed with the code and were left alone, and so was the paragraph beneath the table: it says only
+that the eligibility read and the completion both require `sal.finance.view` "in addition to their
+delivery authority", which is as true after the correction as before it, so there was no stale prose
+to rewrite.
+
+**P-14 — the retrievability claim corrected in every LIVE copy.** The `P1-22-L-04` section of
+`apps/api/src/app/api/v1/deliveries/[deliveryId]/signatures/route.ts`, the
+`sal.delivery.signature_recorded` description in `apps/api/src/server/auth/audit-actions.ts` and the
+"No signature retrieval" bullet of the P1-22 operation inventory each asserted that no application
+path could move a document version to `accepted`. Each now quotes `AttachmentService.requestDownload`
+rather than paraphrasing it, and the measurement behind the correction is
+`supabase/migrations/20260815090000_shared_reception_evidence_foundation.sql`, which adds
+`ins_file_scan_results_scanner`, `upd_document_versions_lifecycle`, `GRANT INSERT ON
+shared.file_scan_results` and `GRANT UPDATE(status) ON shared.document_versions`. A grep afterwards
+found eight further live copies of the same claim — the signature-LIST docblock in that route file,
+`modules/delivery/{index.ts, data/delivery-repository.ts, application/delivery-read-service.ts,
+application/delivery-service.ts (twice)}` and the two `note:` strings for
+`sal.delivery-signature-list` and `sal.delivery-signature-attach` in
+`scripts/check-operation-test-coverage.mjs` — and all of them were corrected in this same pull
+request, to the same framing and with no behaviour change (**CC-13**).
+`docs/phase-1/phase-1-22/contract-archaeology.md` and `docs/phase-1/phase-1-22/blocker-treatment.md`
+are **deliberately untouched**: they are historical P1-22 records of what was measured then, and
+editing them would rewrite a finding rather than correct a claim.
+
+**The P-8 deferral.** The two delivery-read docblocks that explain why they do not declare
+`sal.delivery.read` — `deliveries/[deliveryId]/route.ts` and
+`work-orders/[workOrderId]/delivery/route.ts` — now record that P1-31 prerequisite P-8 re-points the
+navigation entry at `sal.delivery.view` (**RES-05**), with the surrounding rationale kept. This
+branch therefore merges AFTER the P-8 pull request.
+
+| id        | finding                                                                                                                | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | owner / slice     | status |
+| --------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | ------ |
+| **CC-13** | the corrected retrievability claim survived in six further LIVE source docblocks and two gate-register `note:` strings | P-14 was scoped to five copies of `P1-22-L-04`. A grep over the tree returned more: besides the three live copies corrected first and the two historical records left as written, the same "no scanner is provisioned / acceptance is unreachable" assertion appeared in the signature-LIST docblock of the SAME route file, in `modules/delivery/{application/delivery-read-service.ts, application/delivery-service.ts (twice), data/delivery-repository.ts, index.ts}`, and in the `sal.delivery-signature-list` and `sal.delivery-signature-attach` `note:` strings of `scripts/check-operation-test-coverage.mjs` | **closed — all eight were corrected in THIS pull request**, in a follow-up commit, comment-and-string only with no behaviour change, each restating the same corrected framing as the route: a bound version is refused with `ERR-DOC-001` while it is not `accepted`, which is a state check rather than an impossibility, and the module offering no retrieval path is a scope statement. The two `note:` strings keep their coverage purpose and lost only the false factual clause; `validate:operation-coverage` was re-run. The two historical P1-22 records remain untouched for the reason given above | P-14, this branch | closed |
+
+**One further live copy sits in an Owner document, and was left to the Owner.** The same stale
+retrievability claim is still asserted in `docs/product/workshop/reception-media-checklist.md` —
+the state table at lines ~205–206, which calls the `Accepted` state "Unreachable", the sentence
+beneath it describing the best reachable state as "registered, pending, never downloadable", and
+§5.3, whose heading states the same thing. It was **not** edited on this branch: product workshop
+documents under `docs/product/` are Owner-input, and this lane corrects source docblocks and phase
+records only. The Owner is asked either to correct that passage or to authorise the correction on a
+later lane.
+
+**Identifier note:** **CC-13** is this slice's id. `develop` now holds **CC-01 … CC-12** in this
+register, `CC-12` having been taken by the merged P-8 slice, so this slice continues the sequence
+at **CC-13**.
