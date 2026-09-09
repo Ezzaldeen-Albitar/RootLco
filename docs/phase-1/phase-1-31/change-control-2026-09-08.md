@@ -8,8 +8,9 @@ nine P1-31 codes") and, from section 7 onward, **P-2** … **P-5** (the delivery
 Sections 1–6 were written by the P-1 slice and are unchanged. Sections 7–11 were added by the
 P-2 … P-5 slice on 2026-09-08, and sections 12–16 by the P-6 / P-7 slice on the same day;
 sections 17–20 were added by the **D-2 backfill** slice after #349 merged, which is also where
-**CC-03** and **CC-08** are answered rather than merely restated. Identifiers continue in the same
-P1-31 namespace, so the register now runs **CC-01 … CC-11**.
+**CC-03** and **CC-08** are answered rather than merely restated; sections 21–23 were added by the
+**P-8** slice on 2026-09-09. Identifiers continue in the same P1-31 namespace, so the register now
+runs **CC-01 … CC-12**.
 Where an identifier from another phase's register is cited it carries its phase prefix — the
 **P1-30 CC-08** and **P1-30 CC-12** below are that phase's rows, not this one's.
 
@@ -376,7 +377,73 @@ moved 67 → 74. A second `--all` run immediately afterwards reported **0 widene
 
 ---
 
-## 21. The documentation-corrections slice — prerequisites P-13 and P-14
+# The delivery navigation gate — P-8 (RES-05)
+
+Sections 21–23 were added by the **P-8** slice on 2026-09-09; identifiers continue in the same
+P1-31 namespace, so the register now runs **CC-01 … CC-12**. **Baseline:** protected `develop`
+`f4309a8e`, `main` `1262de74` — untouched. This slice is Frontend, tooling and documentation only:
+it adds no operation, no route, no permission, no seed row and no migration.
+
+## 21. What changed
+
+`apps/web/src/config/navigation.ts` gated `/delivery` on **`sal.delivery.read`**, a code the
+catalogue does not contain — the second and last entry of the permission-parity gate's open-debt
+register, and the finding A0 carries as **RES-05** / **P-8**. The entry now gates on
+**`sal.delivery.view`**, and stays `status: 'planned'` because the screen itself is FE-001.
+
+The rule applied is the one the permission-reuse register states and the billing entry already
+follows: where an executable reference names a `.read` code the catalogue never seeded, the
+**reference is corrected** and the code is not minted. `sal.delivery.view` is not a substitute
+chosen for convenience — it is the code every shipped delivery read declares, and WFP-15's entry
+criterion names it. Decision **D-9** is therefore answered for the delivery half by precedent, and
+recorded as such in `a0-preflight.md`; its warranty half was already answered by P-7's minted
+`wty.warranty.read`.
+
+Two consequences travel in the same commit, because the gate fails closed when a registered entry
+stops reproducing:
+
+- `scripts/ci/check-permission-parity.mjs` — `KNOWN_UNCATALOGUED` is now **empty**, with the
+  delivery entry's departure recorded in the comment beside the `sal.invoice.read` note that
+  preceded it. The mechanism, the floors and every other list are untouched, and a NEW uncatalogued
+  reference still fails hard.
+- `apps/web/tests/navigation.test.ts` — the catalogue assertion was scoped to the `administration`
+  group and compared against a **transcribed** set of seven codes, so it was green over a defect in
+  another group. That is the false green A0 records on the P-8 row. It now reads
+  `supabase/seeds/04_iam_permission_catalog.sql` itself and asserts every gated entry in every
+  group, `planned` ones included. The `it` block was widened rather than duplicated, so the web
+  tier's test count does not move.
+
+## 22. Dispositions
+
+| id        | finding                                                              | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | disposition                                                                                                                                                                                                                                                                                                                                                                                       | owner / slice | status |
+| --------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------ |
+| **CC-12** | two Backend docblocks still say navigation names `sal.delivery.read` | `apps/api/src/app/api/v1/deliveries/[deliveryId]/route.ts:39` and `apps/api/src/app/api/v1/work-orders/[workOrderId]/delivery/route.ts:44` describe the navigation gate as it was before this slice. They are prose in `apps/api`, which the `p1-31-frontend` ownership profile does not admit — the `apiSource` bucket is Backend-owned, and a Frontend branch that edited them would be refused by `check-phase-ownership.mjs` for a reason the tooling is right about: a Frontend lane must not carry API source | **deferred, deliberately, and named rather than left to be discovered.** No behaviour depends on either sentence — both routes declare their permissions in `defineOperation`, and the parity gate reads declarations, not comments. The correction belongs to the documentation lane **P-13 / P-14** already open for stale source prose in `apps/api`, which owns the profile that can carry it | P-13 / P-14   | open   |
+
+## 23. What this slice did NOT do
+
+- **No grant was broadened.** No seed row, no bundle change, no role, no policy. A principal that
+  could see the delivery entry before this commit could see it only by holding a code that exists in
+  no catalogue — that is, no principal could. After it, the entry is visible to a holder of
+  `sal.delivery.view`, which is exactly the audience the delivery reads already answer.
+- **No screen was built and no entry became available.** `/delivery` is still `planned`; the
+  `planned` assertion in the same test is unchanged, and FE-001 remains ahead.
+- **No permission was minted.** P-7 is the phase's only shipping insert into `iam.permissions`, and
+  this slice does not join it.
+- **The parity gate's mechanism was not touched** — only its data. Emptying the register is a
+  measurement of the repository, not a widening of an allowance.
+
+### Proof
+
+| id       | what was shown                                                                                                                                                   |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **P8-1** | every navigation `permission` in every group — 26 distinct codes — is present in the catalogue seed; before the change exactly one, `sal.delivery.read`, was not |
+| **P8-2** | `validate:permission-parity` passes with an EMPTY debt register, which the gate itself would refuse if the removed entry still reproduced                        |
+| **P8-3** | the widened assertion reads the seed file itself (119 codes parsed) rather than a transcription of it, so no copied list can drift away from the catalogue       |
+| **P8-4** | the unit tier stays at 3264 tests and the web tier at 3552 — the false green was closed by widening an assertion, not by adding one                              |
+
+---
+
+## 24. The documentation-corrections slice — prerequisites P-13 and P-14
 
 Added on 2026-09-09 by `remediation/p1-31-backend-documentation-corrections`, on the
 `p1-31-backend` lane. It changes comments and records only: **no behaviour changed, no operation was
