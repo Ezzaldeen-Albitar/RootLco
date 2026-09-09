@@ -1,8 +1,8 @@
 # P1-31 — task matrix
 
 **Status:** OPEN · **Authority:** the canonical chapter's five task tables, reproduced in
-[`canonical-plan.md`](./canonical-plan.md) · **Measured at:** protected `develop` `249c6428`
-(PR #356 merge), 2026-09-09 · **Companion records:** [`a0-preflight.md`](./a0-preflight.md)
+[`canonical-plan.md`](./canonical-plan.md) · **Measured at:** protected `develop` `fc58f1c2`
+(PR #357 merge), brought into this branch 2026-09-10 · **Companion records:** [`a0-preflight.md`](./a0-preflight.md)
 (readiness), [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) (dispositions),
 [`d4-report-definitions.md`](./d4-report-definitions.md) (the reporting mapping)
 
@@ -14,7 +14,7 @@ have since been removed, and removing an obstacle is not the same event as finis
 ## Two rules govern every row below
 
 1. **A prerequisite closes no canonical task.** P-1 … P-16 are execution prerequisites and change
-   requests against owning backend phases under Field 13. Ten of them have merged. Not one canonical
+   requests against owning backend phases under Field 13. Fourteen of them have merged. Not one canonical
    task moved to `Done` because of it, and the chapter's own `Status` column still reads `Planned`
    for all twenty-nine — this record changes no chapter status and claims no authority to.
 2. **No task reaches `end-to-end verified` until a P1-31 acceptance record exists.** None does.
@@ -36,24 +36,24 @@ have since been removed, and removing an obstacle is not the same event as finis
 
 ## Field 14 — Frontend (16 tasks)
 
-| Task ID      | Task name               | State               | Proving artefact                                                                                        | Next dependency                                                                                                           |
-| ------------ | ----------------------- | ------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| P1-31-FE-001 | Ready-for-delivery list | not started         | none                                                                                                    | the readiness-queue read `GET /api/v1/delivery-readiness` (D-3, decided 2026-09-09) — a NEW backend seam, not P-2 or P-2b |
-| P1-31-FE-002 | delivery eligibility    | in open PR          | PR #357 — the eligibility panel of the delivery detail screen, read-only                                | #357 merging, then an entry point from FE-001                                                                             |
-| P1-31-FE-003 | authorized receiver     | in open PR          | PR #357 — the receiver read rendered as a row rather than a blocker; the read landed in P-4 (#348)      | #357 merging; the verify command has no screen                                                                            |
-| P1-31-FE-004 | delivery checklist      | prerequisite landed | P-9 (#355) publishes eight template operations; PR #357 renders checklist results, read-only            | a template authoring screen — nothing consumes the eight write operations today                                           |
-| P1-31-FE-005 | final odometer          | prerequisite landed | none — the write is a field of `sal.delivery-complete`, the read-back is `veh.vehicle-odometer-history` | a completion surface. The route accepts two decimals where the column holds one, recorded in the preflight                |
-| P1-31-FE-006 | delivery signatures     | in open PR          | PR #357 — signatures **read**; the read landed in P-4 (#348)                                            | a capture surface. Acceptance is image-only, and no capture control exists anywhere                                       |
-| P1-31-FE-007 | delivery document       | not started         | none                                                                                                    | **D-7** — client-composed print view or stored document version. The composition changes with the answer                  |
-| P1-31-FE-008 | warranty record         | prerequisite landed | P-10 (#356) — seven policy and coverage operations, on `/warranty-policies/{policyId}/coverage-windows` | a policy administration screen and an issue surface; no screen consumes any of the seven                                  |
-| P1-31-FE-009 | warranty history        | prerequisite landed | P-6 (#349) — the warranty read seam                                                                     | a screen. The status-history table still has no reader anywhere (**CC-10**, unchanged)                                    |
-| P1-31-FE-010 | operational dashboard   | not started         | none                                                                                                    | the report engine (P-11, engine half) **and** an approved metric definition — D-4 covers four reports, not a dashboard    |
-| P1-31-FE-011 | work-order reports      | not started         | [`d4-report-definitions.md`](./d4-report-definitions.md) — the mapping only, no code                    | the report engine (P-11) and the named work-order status-summary read                                                     |
-| P1-31-FE-012 | technician reports      | not started         | [`d4-report-definitions.md`](./d4-report-definitions.md) — the mapping only, no code                    | the report engine (P-11) and a labour-totals port that computes duration server-side                                      |
-| P1-31-FE-013 | inventory reports       | not started         | [`d4-report-definitions.md`](./d4-report-definitions.md) — the mapping only, no code                    | the report engine (P-11), the enriched movement rows and the grouped summary read                                         |
-| P1-31-FE-014 | invoice/payment reports | not started         | [`d4-report-definitions.md`](./d4-report-definitions.md) — the mapping only, no code                    | the report engine (P-11) and a read that carries the restricted amount fields under both permission codes                 |
-| P1-31-FE-015 | audit report            | in open PR          | this branch — the criteria the list operation publishes, surfaced on the shipped screen; no export      | this branch merging; **D-11** on the seven-day default window; the company and branch criteria (see the branch record)    |
-| P1-31-FE-016 | branch pilot summary    | not started         | none                                                                                                    | **D-5** — nothing in the repository defines what it is                                                                    |
+| Task ID      | Task name               | State                      | Proving artefact                                                                                                | Next dependency                                                                                                                                                |
+| ------------ | ----------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P1-31-FE-001 | Ready-for-delivery list | not started                | none                                                                                                            | the readiness-queue read `GET /api/v1/delivery-readiness` (D-3, decided 2026-09-09) — a NEW backend seam, not P-2 or P-2b, in preparation with no pull request |
+| P1-31-FE-002 | delivery eligibility    | merged (read-only/partial) | #357 (merged) — the eligibility panel of the delivery detail screen, read-only                                  | an entry point from FE-001; the delivery write paths are in open PR #362                                                                                       |
+| P1-31-FE-003 | authorized receiver     | merged (read-only/partial) | #357 (merged) — the receiver read rendered as a row rather than a blocker; the read landed in P-4 (#348)        | the verify command still has no screen on `develop`; its write path is in open PR #362                                                                         |
+| P1-31-FE-004 | delivery checklist      | prerequisite landed        | P-9 (#355) publishes eight template operations; #357 (merged) renders checklist results, read-only              | a template authoring screen — nothing on `develop` consumes the eight write operations; result recording is in open PR #362                                    |
+| P1-31-FE-005 | final odometer          | prerequisite landed        | none — the write is a field of `sal.delivery-complete`, the read-back is `veh.vehicle-odometer-history`         | a completion surface, in open PR #362. The route accepts two decimals where the column holds one, recorded in the preflight                                    |
+| P1-31-FE-006 | delivery signatures     | merged (read-only/partial) | #357 (merged) — signatures **read**; the read landed in P-4 (#348)                                              | a capture surface. Acceptance is image-only; no capture control exists on `develop`, and the attach path is in open PR #362                                    |
+| P1-31-FE-007 | delivery document       | not started                | none                                                                                                            | **D-7** — client-composed print view or stored document version. The composition changes with the answer                                                       |
+| P1-31-FE-008 | warranty record         | prerequisite landed        | P-10 (#356) — seven policy and coverage operations, on `/warranty-policies/{policyId}/coverage-windows`         | a policy administration screen and an issue surface; no screen consumes any of the seven                                                                       |
+| P1-31-FE-009 | warranty history        | prerequisite landed        | P-6 (#349) — the warranty read seam                                                                             | a screen. The status-history table still has no reader anywhere (**CC-10**, unchanged)                                                                         |
+| P1-31-FE-010 | operational dashboard   | not started                | none                                                                                                            | the report engine (P-11, engine half) **and** an approved metric definition — D-4 covers four reports, not a dashboard                                         |
+| P1-31-FE-011 | work-order reports      | not started                | [`d4-report-definitions.md`](./d4-report-definitions.md) — the mapping only, no code                            | the report engine (P-11) and the named work-order status-summary read                                                                                          |
+| P1-31-FE-012 | technician reports      | not started                | [`d4-report-definitions.md`](./d4-report-definitions.md) — the mapping only, no code                            | the report engine (P-11) and a labour-totals port that computes duration server-side                                                                           |
+| P1-31-FE-013 | inventory reports       | not started                | [`d4-report-definitions.md`](./d4-report-definitions.md) — the mapping only, no code                            | the report engine (P-11), the enriched movement rows and the grouped summary read                                                                              |
+| P1-31-FE-014 | invoice/payment reports | not started                | [`d4-report-definitions.md`](./d4-report-definitions.md) — the mapping only, no code                            | the report engine (P-11) and a read that carries the restricted amount fields under both permission codes                                                      |
+| P1-31-FE-015 | audit report            | in open PR                 | this pull request (#360) — the criteria the list operation publishes, surfaced on the shipped screen; no export | #360 merging; **D-11** on the seven-day default window; the company and branch criteria (see **CC-22**)                                                        |
+| P1-31-FE-016 | branch pilot summary    | not started                | none                                                                                                            | **D-5** — nothing in the repository defines what it is                                                                                                         |
 
 ## Field 15 — Security (4 tasks)
 
@@ -76,10 +76,10 @@ have since been removed, and removing an obstacle is not the same event as finis
 
 ## Field 17 — DevOps (2 tasks)
 
-| Task ID      | Task name                                         | State       | Proving artefact                                                                                            | Next dependency                                                            |
-| ------------ | ------------------------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| P1-31-DO-001 | Continuous-integration quality gate               | in open PR  | PR #357 — the P-16 gate-before-read extension and its `validate:p1-31-access` command. **Not on `develop`** | #357 merging; then the command must join the aggregate that runs it        |
-| P1-31-DO-002 | Structured logging, monitoring, and alert routing | not started | none                                                                                                        | a decision about what this phase adds over the platform's existing logging |
+| Task ID      | Task name                                         | State                      | Proving artefact                                                                                                          | Next dependency                                                                                            |
+| ------------ | ------------------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| P1-31-DO-001 | Continuous-integration quality gate               | merged (read-only/partial) | #357 (merged) — the P-16 gate-before-read extension and its `validate:p1-31-access` command, which `verify:policies` runs | the phase’s remaining screens: the gate judges an explicit allow-list, so each new one must be added to it |
+| P1-31-DO-002 | Structured logging, monitoring, and alert routing | not started                | none                                                                                                                      | a decision about what this phase adds over the platform's existing logging                                 |
 
 ## Field 18 — Documentation (2 tasks)
 
@@ -94,29 +94,29 @@ Two prerequisites were added after the A0 preflight was written and carry a `b` 
 number is reused: **P-2b** (a delivery-record list, distinct from P-2's by-work-order lookup) and
 **P-9b** (a migration the checklist-template seam needs). Neither is a canonical task either.
 
-| #        | Prerequisite                                        | State                     | Where                                                                 |
-| -------- | --------------------------------------------------- | ------------------------- | --------------------------------------------------------------------- |
-| **P-1**  | Widen the provisioning bundle                       | merged                    | #347, with the D-2 backfill in #350                                   |
-| **P-2**  | A delivery read that yields the delivery id         | merged                    | #348                                                                  |
-| **P-2b** | `GET /api/v1/deliveries` — the delivery-record list | in open PR                | #358. It is the record list, **not** the readiness queue FE-001 needs |
-| **P-3**  | `GET /deliveries/{deliveryId}`                      | merged                    | #348                                                                  |
-| **P-4**  | The three delivery subresource reads                | merged                    | #348                                                                  |
-| **P-5**  | A delivery status-history read                      | merged                    | #348                                                                  |
-| **P-6**  | `GET /api/v1/warranties`                            | merged                    | #349                                                                  |
-| **P-7**  | A warranty read permission code                     | merged                    | #349                                                                  |
-| **P-8**  | Resolve the delivery navigation code — RES-05       | merged                    | #353                                                                  |
-| **P-9**  | A delivery-checklist template writer                | merged                    | #355 — eight operations                                               |
-| **P-9b** | The migration the template seam needs               | in progress               | branch open, no pull request recorded here                            |
-| **P-10** | A warranty-policy and coverage writer               | merged                    | #356 — seven operations, segment `coverage-windows` (**CC-15**)       |
-| **P-11** | A report-configuration writer and a report engine   | in progress (writer half) | branch open for the writer. **The engine half has not begun**         |
-| **P-12** | The report export operation                         | not started               | no route, and no entry in the export resource registry                |
-| **P-13** | Correct four stale permission rows                  | merged                    | #354                                                                  |
-| **P-14** | Correct the stale signatures docblock               | merged                    | #354                                                                  |
-| **P-15** | The `p1-31` ownership rules and profiles            | merged                    | #346, on the A0 lane                                                  |
-| **P-16** | Extend the gate-before-read check                   | in open PR                | #357                                                                  |
+| #        | Prerequisite                                        | State                    | Where                                                                 |
+| -------- | --------------------------------------------------- | ------------------------ | --------------------------------------------------------------------- |
+| **P-1**  | Widen the provisioning bundle                       | merged                   | #347, with the D-2 backfill in #350                                   |
+| **P-2**  | A delivery read that yields the delivery id         | merged                   | #348                                                                  |
+| **P-2b** | `GET /api/v1/deliveries` — the delivery-record list | in open PR               | #358. It is the record list, **not** the readiness queue FE-001 needs |
+| **P-3**  | `GET /deliveries/{deliveryId}`                      | merged                   | #348                                                                  |
+| **P-4**  | The three delivery subresource reads                | merged                   | #348                                                                  |
+| **P-5**  | A delivery status-history read                      | merged                   | #348                                                                  |
+| **P-6**  | `GET /api/v1/warranties`                            | merged                   | #349                                                                  |
+| **P-7**  | A warranty read permission code                     | merged                   | #349                                                                  |
+| **P-8**  | Resolve the delivery navigation code — RES-05       | merged                   | #353                                                                  |
+| **P-9**  | A delivery-checklist template writer                | merged                   | #355 — eight operations                                               |
+| **P-9b** | The migration the template seam needs               | in preparation           | no pull request open                                                  |
+| **P-10** | A warranty-policy and coverage writer               | merged                   | #356 — seven operations, segment `coverage-windows` (**CC-15**)       |
+| **P-11** | A report-configuration writer and a report engine   | in open PR (writer half) | #361 — the writer. **The engine half has not begun**                  |
+| **P-12** | The report export operation                         | not started              | no route, and no entry in the export resource registry                |
+| **P-13** | Correct four stale permission rows                  | merged                   | #354                                                                  |
+| **P-14** | Correct the stale signatures docblock               | merged                   | #354                                                                  |
+| **P-15** | The `p1-31` ownership rules and profiles            | merged                   | #346, on the A0 lane                                                  |
+| **P-16** | Extend the gate-before-read check                   | merged                   | #357 — run by `verify:policies`                                       |
 
-**Ten merged, three in an open pull request, two in progress, two not started.** Read against rule 1:
-that is fifteen prerequisites moved and **zero** canonical tasks closed.
+**Fourteen merged, two in an open pull request, one in preparation, one not started.** Read against
+rule 1: that is seventeen prerequisites moved and **zero** canonical tasks closed.
 
 ## Owner decisions this matrix is waiting on
 

@@ -781,14 +781,14 @@ holds sections 30–33.
 identifier and it is free at that head**, so the id this branch reserved provisionally stands. What
 moved is the heading: the lanes that allocate around this one have claimed section numbers.
 
-| id        | lane                                       | state at fc58f1c2                |
-| --------- | ------------------------------------------ | -------------------------------- |
-| **CC-19** | the delivery detail screen (PR #357)       | merged, sections 30–33           |
-| **CC-20** | the reporting writer (P-11, PR #361)       | open, claims section 34          |
-| **CC-21** | the checklist-template migration (P-9b)    | open, claims section 35          |
-| **CC-22** | this slice                                 | this branch, section 36          |
-| **CC-24** | the readiness seam                         | in preparation                   |
-| **CC-25** | the delivery write paths (PR #362)         | open, on a stacked base          |
+| id        | lane                                    | state at fc58f1c2       |
+| --------- | --------------------------------------- | ----------------------- |
+| **CC-19** | the delivery detail screen (PR #357)    | merged, sections 30–33  |
+| **CC-20** | the reporting writer (P-11, PR #361)    | open, claims section 34 |
+| **CC-21** | the checklist-template migration (P-9b) | open, claims section 35 |
+| **CC-22** | this slice                              | this branch, section 36 |
+| **CC-24** | the readiness seam                      | in preparation          |
+| **CC-25** | the delivery write paths (PR #362)      | open, on a stacked base |
 
 So this slice takes **section 36 provisionally** and **CC-22 firmly**. Neither PR #361 nor P-9b has
 merged, so a lane landing out of order moves this heading rather than this identifier. **The section
