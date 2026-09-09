@@ -330,19 +330,23 @@ engineering, and none is one of the 29. Each is phrased as a question with its c
   eligibility)? _Consequence:_ the second answer removes FE-001's backend prerequisite entirely, at
   the cost of accepting that no work-order state means "ready for delivery" and that the closed flag
   is true for cancelled work orders too.
+  _Decided by the Owner on 2026-09-09 — see [`owner-decisions-2026-09-09.md`](./owner-decisions-2026-09-09.md)._
 - **D-4 — Who supplies the approved report definitions and KPI definitions?** The report catalogue
   service states in its own source that inventing a report-code-to-data-source binding would mean
   inventing a business report definition the Product Owner has not approved. _Consequence:_ if none
   can be supplied, the Owner must decide whether Field 7's "or the work is deliberately limited to
   decision-neutral foundations" scopes FE-010…FE-014 and FE-016 out of this phase.
+  _Decided by the Owner on 2026-09-09 — see [`owner-decisions-2026-09-09.md`](./owner-decisions-2026-09-09.md)._
 - **D-5 — What is a "branch pilot summary" (FE-016)?** _Consequence:_ nothing in the repository
   defines its content or its tenancy posture, and a pilot-specific reading collides with Field 4's
   "never a hard-coded owner or product-specific branch". Without an answer FE-016 cannot be
   specified, let alone built.
+  _Decided by the Owner on 2026-09-09 — see [`owner-decisions-2026-09-09.md`](./owner-decisions-2026-09-09.md)._
 - **D-6 — Does "audit report" (FE-015) mean the shipped Audit Log screen, or an exportable
   artefact?** _Consequence:_ if the shipped screen satisfies it, FE-015 is the phase's one class-A
   item. If an export is required, it needs both a route and a new entry in the export resource
   registry, and the audit route's own declaration that export is out of scope must be revisited.
+  _Decided by the Owner on 2026-09-09 — see [`owner-decisions-2026-09-09.md`](./owner-decisions-2026-09-09.md)._
 - **D-7 — Is "delivery document" (FE-007) a client-composed print view or a stored document
   version?** _Consequence:_ the client-composed reading follows the pattern P1-28 and P1-30
   established and needs no backend print route. The stored reading inherits the image-only
