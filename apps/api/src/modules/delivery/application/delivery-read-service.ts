@@ -658,7 +658,9 @@ export class DeliveryReadService {
       {
         blocker: 'checklist_incomplete',
         established: true,
-        source: 'sal.delivery_checklist_template_items ∖ sal.delivery_checklist_results',
+        source:
+          'sal.delivery_checklist_template_items ⋈ sal.delivery_checklist_templates ' +
+          '∖ sal.delivery_checklist_results',
       },
       { blocker: 'receiver_not_verified', established: true, source: 'sal.authorized_receivers' },
       { blocker: 'signature_missing', established: true, source: 'sal.delivery_signatures' }

@@ -1431,7 +1431,7 @@ export class DeliveryRepository extends Repository {
   /**
    * The mandatory-checklist shortfall, transcribed from `sal.complete_delivery`.
    *
-   * Two details of the primitive's predicate are counter-intuitive and are reproduced
+   * Three details of the primitive's predicate are counter-intuitive and are reproduced
    * rather than corrected:
    *
    *  1. **The item scan is COMPANY-scoped, not template-scoped.** The function counts
@@ -1443,6 +1443,21 @@ export class DeliveryRepository extends Repository {
    *     template-scoped mirror would report eligible and then be refused at the call.
    *  2. **Items filter `deleted_at IS NULL` and so do results.** A soft-deleted item
    *     stops being mandatory; a soft-deleted result stops satisfying its item.
+   *  3. **Only an ACTIVE, non-deleted TEMPLATE is in force.** The join onto
+   *     `sal.delivery_checklist_templates` is new in P1-31 P-9b (migration
+   *     20260909090000, closing CC-14) and lands in the same commit as the
+   *     primitive's. Before it, deactivating or soft-deleting a template withdrew
+   *     nothing from the gate and the operator's only remedy was withdrawing each
+   *     item. The join is on `(tenant_id, company_id, id)` — the scoped unique key
+   *     `uq_delivery_checklist_templates_scope_id` — so it cannot cross a tenant or a
+   *     company, and it is INNER because the item's foreign key makes the template
+   *     reference mandatory.
+   *
+   * The company-wide scan therefore stays exactly as wide as it was; what narrowed is
+   * which templates count as in force. The standing rule is unchanged and is the reason
+   * this file moves in lockstep with the migration rather than ahead of it: the mirror
+   * must never be BETTER than the primitive, or the eligibility read reports a delivery
+   * eligible that `sal.complete_delivery` then refuses with 23514.
    *
    * The count is the gate. The sample is `LIMIT`-bounded so a company with a large
    * mandatory template cannot turn a refusal message into an unbounded response.
@@ -1454,8 +1469,13 @@ export class DeliveryRepository extends Repository {
   ): Promise<ChecklistGapReport> {
     const context = this.assertContext(db);
     const values = [context.principal.tenantId, scope.companyId, scope.branchId, deliveryRecordId];
+    const source = `sal.delivery_checklist_template_items ti
+              JOIN sal.delivery_checklist_templates t
+                ON t.tenant_id = ti.tenant_id AND t.company_id = ti.company_id
+               AND t.id = ti.template_id`;
     const predicate = `ti.tenant_id = $1 AND ti.company_id = $2 AND ti.is_mandatory
           AND ti.deleted_at IS NULL
+          AND t.status = 'active' AND t.deleted_at IS NULL
           AND NOT EXISTS (
             SELECT 1
               FROM sal.delivery_checklist_results r
@@ -1466,7 +1486,7 @@ export class DeliveryRepository extends Repository {
     const counted = await this.runOne<{ missing: number }>(
       db,
       `SELECT count(*)::int AS missing
-         FROM sal.delivery_checklist_template_items ti
+         FROM ${source}
         WHERE ${predicate}`,
       values
     );
@@ -1476,7 +1496,7 @@ export class DeliveryRepository extends Repository {
     const sample = await this.run<ChecklistGapSql>(
       db,
       `SELECT ti.id AS template_item_id, ti.template_id, ti.item_code, ti.label
-         FROM sal.delivery_checklist_template_items ti
+         FROM ${source}
         WHERE ${predicate}
         ORDER BY ti.template_id, ti.sort_order, ti.item_code
         LIMIT $5`,
