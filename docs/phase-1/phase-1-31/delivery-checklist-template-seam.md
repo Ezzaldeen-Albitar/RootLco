@@ -3,14 +3,14 @@
 What was published, why each shape is the shape it is, what was proved on real rows, and the
 completion-gate defect the slice measured and did not fix.
 
-|                              |                                                                                                                                  |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| **Phase**                    | P1-31 — Vehicle Delivery, Warranty, and Reporting Frontend                                                                       |
-| **Authority**                | Prerequisite **P-9** of [`a0-preflight.md`](./a0-preflight.md), Artefact 4 — **PPD-12**                                          |
-| **Lane**                     | `remediation/p1-31-backend-checklist-template-seam`, ownership profile `p1-31-backend`                                           |
-| **Baseline**                 | protected `develop` **f4309a8e**; `main` `1262de74`, untouched                                                                   |
-| **Change control**           | [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) — **CC-15** (provisional; two lanes are open ahead of this one) |
-| **Closes no canonical task** | P-9 is an execution prerequisite. The 29 remain 29, each still owing its own evidence under Field 7, Field 27 and Field 32       |
+|                              |                                                                                                                            |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| **Phase**                    | P1-31 — Vehicle Delivery, Warranty, and Reporting Frontend                                                                 |
+| **Authority**                | Prerequisite **P-9** of [`a0-preflight.md`](./a0-preflight.md), Artefact 4 — **PPD-12**                                    |
+| **Lane**                     | `remediation/p1-31-backend-checklist-template-seam`, ownership profile `p1-31-backend`                                     |
+| **Baseline**                 | protected `develop` **f4309a8e**; `main` `1262de74`, untouched                                                             |
+| **Change control**           | [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) — **CC-14**                                               |
+| **Closes no canonical task** | P-9 is an execution prerequisite. The 29 remain 29, each still owing its own evidence under Field 7, Field 27 and Field 32 |
 
 ---
 
@@ -170,7 +170,7 @@ templates would report a delivery ELIGIBLE that `sal.complete_delivery` then ref
 transaction — the repository's own rule, written above that method: "a mirror that improved on the
 primitive would report a delivery as eligible that the primitive then refuses". Fixing the behaviour
 means replacing the protected function, which is a forward migration and a schema decision this
-prerequisite does not sanction; it is filed as **CC-15**.
+prerequisite does not sanction; it is filed as **CC-14**.
 
 What this slice does give an operator is the remedy that works today: **withdraw the ITEM.**
 `sal.delivery-checklist-template-item-remove` sets exactly the column the primitive filters on, and
@@ -213,7 +213,7 @@ product" is the claim under test.
   caller can now resolve a `template_item_id` to a code and a label — and touches none of the three.
 - **The company-wide mandatory scan.** Closing it needs a template reference on
   `sal.delivery_records`, which is a schema question and therefore not this lane's.
-- **The inactive-template gate**, section 8, filed as **CC-15**. It needs a forward migration
+- **The inactive-template gate**, section 8, filed as **CC-14**. It needs a forward migration
   replacing `sal.complete_delivery`.
 - **Bilingual names.** The table has one `name` column and one `label` column and no locale column,
   so an Arabic label cannot be stored. Adding one is a migration; the surface publishes what the
