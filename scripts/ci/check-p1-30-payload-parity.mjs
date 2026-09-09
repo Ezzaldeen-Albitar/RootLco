@@ -85,6 +85,11 @@ export const BODYLESS = Object.freeze({
   // The amount was fixed at request time; the approval names the note in the path.
   'sal.credit-note-approve':
     'the approval carries nothing but the credit note in the path and the caller as approver',
+  // The withdrawal names the template and the item in the path and the caller as the
+  // actor; there is no field a body could carry. It entered this scope because it is a
+  // `sal` DELETE (P1-31 P-9), not because a P1-30 screen sends it.
+  'sal.delivery-checklist-template-item-remove':
+    'the withdrawal carries nothing but the template and item in the path and the caller as actor',
 });
 
 /** Field-level omissions the web side has decided, with reasons. Empty today. */
@@ -134,6 +139,23 @@ export const PENDING_MIRRORS = Object.freeze({
     'PENDING: no P1-30 screen sends this (FE-008…FE-021 do not render deliveries); a later phase owes the mirror',
   'sal.delivery-signature-attach':
     'PENDING: no P1-30 screen sends this (FE-008…FE-021 do not render deliveries); a later phase owes the mirror',
+  // The P1-31 checklist TEMPLATE writes (prerequisite P-9). They are `sal` writes, so
+  // they entered this gate's scope the moment they were registered, and no P1-30
+  // screen sends any of them — FE-008…FE-021 render no delivery configuration. The
+  // screen that will is P1-31 FE-004, whose lane is `p1-31-frontend`; a Backend lane
+  // may not write a web contract, and mirroring them here would be a shape with no
+  // consumer. The lifecycle still binds: the moment that screen's mirror declares the
+  // interface, the entry is STALE and this gate fails until it is deleted.
+  'sal.delivery-checklist-template-create':
+    'PENDING: no P1-30 screen sends this (P1-31 FE-004 owes the mirror, on the frontend lane)',
+  'sal.delivery-checklist-template-rename':
+    'PENDING: no P1-30 screen sends this (P1-31 FE-004 owes the mirror, on the frontend lane)',
+  'sal.delivery-checklist-template-status-set':
+    'PENDING: no P1-30 screen sends this (P1-31 FE-004 owes the mirror, on the frontend lane)',
+  'sal.delivery-checklist-template-item-create':
+    'PENDING: no P1-30 screen sends this (P1-31 FE-004 owes the mirror, on the frontend lane)',
+  'sal.delivery-checklist-template-item-update':
+    'PENDING: no P1-30 screen sends this (P1-31 FE-004 owes the mirror, on the frontend lane)',
 });
 
 const problems = [];

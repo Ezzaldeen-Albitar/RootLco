@@ -1636,6 +1636,56 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'The vehicle was handed over, custody was released and a final odometer reading was captured. sal.complete_delivery enforces receiver, mandatory checklist and at least one signature — and checks no work-order state, no quality control and NO FINANCIAL BALANCE, so the financial blocker recorded here is enforced by the application alone. An override of it is recorded with its reason in the details.',
   },
 
+  // ---- Phase 1-31 P-9 — the delivery checklist TEMPLATE (sal) ----
+  //
+  // `privileged` like the rest of the delivery block, and for a sharper reason than
+  // the handover actions: `sal.complete_delivery` counts mandatory checklist items by
+  // (tenant, company) across every template, so one row written by these actions can
+  // block or unblock the handover of every vehicle in a company. Configuration with
+  // that reach is recorded.
+  {
+    code: 'sal.delivery_checklist_template.created',
+    class: 'privileged',
+    entityType: 'sal.delivery_checklist_template',
+    description:
+      'A delivery checklist template was created for one company, with its items in the same transaction. The template and its items had no write path anywhere in the product until P1-31 (PPD-12), so a tenant provisioned through the product had an empty handover checklist and no way to fill it. The record names how many items arrived and how many of them are mandatory.',
+  },
+  {
+    code: 'sal.delivery_checklist_template.renamed',
+    class: 'privileged',
+    entityType: 'sal.delivery_checklist_template',
+    description:
+      'A delivery checklist template was renamed. The template code is not editable and is not part of this action: recorded handover outcomes point at ITEMS by id, and a re-coded template would be a different configuration wearing the old one identity.',
+  },
+  {
+    code: 'sal.delivery_checklist_template.status_changed',
+    class: 'privileged',
+    entityType: 'sal.delivery_checklist_template',
+    description:
+      'A delivery checklist template was retired or restored. Retiring does NOT stop its mandatory items gating a handover: sal.complete_delivery filters the ITEM deleted_at column and never joins the parent template, so an inactive template with a mandatory item still blocks every delivery in that company until each one records a passed or waived outcome.',
+  },
+  {
+    code: 'sal.delivery_checklist_template.item_added',
+    class: 'privileged',
+    entityType: 'sal.delivery_checklist_template_item',
+    description:
+      'An item was added to a delivery checklist template. A mandatory item is a company-wide gate rather than a template-scoped one, because a delivery record carries no template reference, so the record names the mandatory flag explicitly.',
+  },
+  {
+    code: 'sal.delivery_checklist_template.item_updated',
+    class: 'privileged',
+    entityType: 'sal.delivery_checklist_template_item',
+    description:
+      'The label, mandatory flag or order of a delivery checklist item was changed, with the previous value of each recorded beside the new one. The item code is not editable, because every recorded outcome points at the row by id.',
+  },
+  {
+    code: 'sal.delivery_checklist_template.item_removed',
+    class: 'privileged',
+    entityType: 'sal.delivery_checklist_template_item',
+    description:
+      'A delivery checklist item was withdrawn. A soft delete performed by UPDATE, because the table carries no DELETE grant for any application role and the results foreign key is ON DELETE RESTRICT; every outcome already recorded against the item stays readable, and the item stops gating completion.',
+  },
+
   // ---- Phase 1-22 — Warranty (wty) ----
   {
     code: 'wty.warranty.issued',

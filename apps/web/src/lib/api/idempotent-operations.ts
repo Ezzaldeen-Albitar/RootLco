@@ -10,7 +10,7 @@
  * The backend requires an `Idempotency-Key` header on every operation it
  * registers as idempotent, and answers `400 ERR-INT-002` without one — before
  * authorization is evaluated. That set is NOT "the POST operations": it is
- * currently 164 operations (PATCH 3, POST 155, PUT 6).
+ * currently 167 operations (PATCH 3, POST 158, PUT 6).
  *
  * The client used to infer the answer from the HTTP method, which was wrong for
  * every non-POST member of that set. This table is the contract instead of a
@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 13, export 1, financial 14, none 167, privileged 174, security 13.
+ * Currently approval 13, export 1, financial 14, none 169, privileged 180, security 13.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 382 of them. */
+/** Every operation the contract publishes. 390 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -678,6 +678,62 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     template: '/deliveries/{deliveryId}/warranties',
     method: 'POST',
     operationId: 'wty.warranty-generate',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/delivery-checklist-templates',
+    method: 'GET',
+    operationId: 'sal.delivery-checklist-template-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/delivery-checklist-templates',
+    method: 'POST',
+    operationId: 'sal.delivery-checklist-template-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/delivery-checklist-templates/{templateId}',
+    method: 'GET',
+    operationId: 'sal.delivery-checklist-template-read',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/delivery-checklist-templates/{templateId}',
+    method: 'PATCH',
+    operationId: 'sal.delivery-checklist-template-rename',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/delivery-checklist-templates/{templateId}/items',
+    method: 'POST',
+    operationId: 'sal.delivery-checklist-template-item-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/delivery-checklist-templates/{templateId}/items/{itemId}',
+    method: 'DELETE',
+    operationId: 'sal.delivery-checklist-template-item-remove',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/delivery-checklist-templates/{templateId}/items/{itemId}',
+    method: 'PATCH',
+    operationId: 'sal.delivery-checklist-template-item-update',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/delivery-checklist-templates/{templateId}/status',
+    method: 'POST',
+    operationId: 'sal.delivery-checklist-template-status-set',
     idempotent: true,
     auditClass: 'privileged',
   },
