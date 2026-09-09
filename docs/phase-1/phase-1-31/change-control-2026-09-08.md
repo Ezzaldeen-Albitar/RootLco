@@ -764,3 +764,86 @@ have moved: this slice is **CC-19** at sections 30–33.
   crumb but the last must carry an `href`. A two-crumb trail here would have to link `/delivery`,
   which has no page. The screen therefore renders one crumb, the page's docblock says why, and the
   list crumb arrives with FE-001.
+
+# The delivery execution slice — FE-002 … FE-006 write paths
+
+Sections 34–37 were added by the **delivery execution** slice on 2026-09-09, on
+`feature/p1-31-delivery-execution`, which is **stacked on** the delivery detail screen (PR #357) and
+merges after it. The full record is `delivery-execution-screen.md`.
+
+**Baseline:** the detail-screen branch at `626b0d8a`. Protected `develop` and `main` are untouched.
+
+**Identifier — provisional.** This slice takes **CC-25**, counted forward from the highest identifier
+this branch can see. It is marked **provisional** and deliberately so: two P1-31 lanes are open at
+once and the number is decided by what has merged into `develop` by the time this branch is brought
+up to date. **Re-check it before merge**, exactly as the previous slice re-checked and moved its own.
+
+This slice is Frontend, tooling, tests and documentation only. It adds no operation, no route, no
+permission, no seed row and no migration, and it touches neither `apps/api/**` nor `supabase/**`.
+
+## 34. What was delivered
+
+Five write paths on the handover screen, each gated on the code its own operation declares:
+
+| action                    | operation                       | authority                                                        |
+| ------------------------- | ------------------------------- | ---------------------------------------------------------------- |
+| Start the handover        | `sal.delivery-create`           | `sal.delivery.manage`                                            |
+| Confirm the receiver      | `sal.delivery-receiver-verify`  | `sal.delivery.manage`, `sal.delivery.view`                       |
+| Record a checklist result | `sal.delivery-checklist-record` | `sal.delivery.manage`                                            |
+| Add a signature           | `sal.delivery-signature-attach` | `sal.delivery.manage`, `sal.delivery.view`                       |
+| Release the vehicle       | `sal.delivery-complete`         | `sal.delivery.complete`, `sal.delivery.view`, `sal.finance.view` |
+
+Plus the configuration read the checklist needs — the ACTIVE templates and their items, assembled in
+one Server Action from the two P-9 template reads, because no operation publishes "the checklist of
+this handover" and the completion evaluates mandatory items by COMPANY rather than by template.
+
+## 35. The properties this slice is accountable for
+
+1. **A control is absent, never present-and-refused,** for a caller without the code its operation
+   declares. Measured for all five.
+2. **The release quotes the version the ELIGIBILITY read published,** never one a preparation step
+   answered with, and a stale version is re-attempted exactly once against a version read again.
+3. **The browser decides no eligibility.** The release button is enabled from what the server
+   published and from nothing else; the completion recomposes the whole decision in its own
+   transaction, and a blocked release renders the re-read blocker list rather than a sentence this
+   tier composed. The blockers are not in the refusal at all — `problemFor` carries no service prose.
+4. **The odometer holds to the COLUMN, not the route.** The route admits two decimals; the column
+   holds one, so the form refuses the second digit and says so in its own help text.
+5. **The waiver rule is a biconditional in the form as well as in the database.** A reason appears
+   only for a waiver, is required there, and is never sent with any other outcome.
+
+## 36. Dispositions
+
+- **CC-25 (provisional) — the delivering employee stays a typed identifier.**
+  `delivering_employee_id` has no foreign key and **OWR-2026-09-06-G-10** is Undecided. A picker fed
+  from the technician roster would assert that the person handing a vehicle over is a technician —
+  the very question G-10 leaves open — and would couple opening a handover to `tech.technician.read`,
+  which `sal.delivery-create` does not declare. The field is explicit, required and default-free, and
+  changes shape when the Owner decides.
+- **CC-25 (provisional) — the receiver's identity evidence is NOT captured, and the missing category
+  is a new backend prerequisite.** The optional evidence field needs a document category that admits
+  a person's proof of identity. The seven seeded categories are all reception categories and the only
+  one whose purpose is an identity document is the VIN evidence category; filing a person's identity
+  document there would be a classification defect. A seed is not on this lane. The field is omitted
+  and the prerequisite is recorded.
+- **The signature capture reuses the seeded signature category and the ONE approved file input.**
+  The document is captured against `rec.reception_visits`, the visit the handover closes and the only
+  linkable entity type in this chain's reach; `sal.delivery_records` is not one.
+  `no-unapproved-file-input` names one path and this slice did not widen it.
+- **The delivery tree joined the form-reset inventory in the change that gave it a form,** rather
+  than after the next audit round found it uncovered.
+
+## 37. What this slice did NOT do
+
+- **No end-to-end verification, and none is claimed.** Every request shape is asserted against a
+  replaced transport; every rendering against a replaced adapter. What is owed is an authenticated
+  browser proof on a freshly provisioned organisation, and it is not in this change.
+- **No list screen.** FE-001 waits on the readiness contract the Owner's **D-3** answer routes to the
+  owning prerequisite lane. `/delivery` still has no page and the navigation entry stays `planned`.
+- **No template administration screen.** Two template reads are consumed; no template write is sent,
+  and the five template-write entries stay marked as owed in the payload-parity gate.
+- **No delivery document.** **D-7** is open and no document or print operation exists.
+- **No permission minted and no grant changed.** The three codes consulted are already seeded and are
+  already declared by the operations that use them.
+- **No task-matrix row updated here.** `task-matrix.md` does not exist on this base; the row update
+  follows on the branch that owns it.
