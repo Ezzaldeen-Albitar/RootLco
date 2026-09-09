@@ -9,11 +9,9 @@
  * CLOSURE, not an inconvenience: no principal in an organisation created by the
  * shipped operation could hold a P1-31 code, or ever be granted one.
  *
- * SEVEN of the nine are added. TWO are deliberately EXCLUDED, and they are not
- * excluded for the same reason:
+ * EIGHT of the nine are added. ONE is deliberately EXCLUDED, and the ground it
+ * is excluded on is not the ground the other two were:
  *
- *  - `wty.policy.manage` — no operation declares it and no policy predicate
- *    names it (P1-31 CC-01).
  *  - `rpt.export` — two shipped operations DO declare it. It is withheld on
  *    least-privilege grounds by an explicit Owner decision (P1-31 CC-04): it is
  *    the platform-wide export switch, and the bundle already holds every
@@ -21,29 +19,33 @@
  *    administrator authorize bulk export of documents, outbound messages and
  *    branch data including sensitive fields.
  *
- * `rpt.report.configure` was the third, withheld on the first ground (CC-02)
- * until P1-31 prerequisite P-11 published seven operations declaring it on
- * 2026-09-09. CC-02 stated the rule this file now records the other side of —
- * "the slice that publishes them owns the widening" — so the code moved out of
- * the exclusions and into the added set, and B1's register measurement is what
- * proves it moved for the stated reason rather than by preference.
+ * `wty.policy.manage` and `rpt.report.configure` were the other two, both
+ * withheld because NOTHING declared them (CC-01, CC-02) — and both released on
+ * 2026-09-09, by P1-31 prerequisite P-10 publishing five operations that declare
+ * the first and prerequisite P-11 publishing seven that declare the second. CC-01
+ * and CC-02 stated the rule this file now records the other side of — "the slice
+ * that publishes them owns the widening" — so both codes moved out of the
+ * exclusions and into the added set, and B1's register measurement is what proves
+ * they moved for the stated reason rather than by preference. The undeclared
+ * exclusion list is now EMPTY, which B1 asserts rather than leaves implied: an
+ * empty list would otherwise make its "zero declarers" loop vacuous.
  *
  * The distinction is proved, not asserted: B1 reads the operation register and
  * requires ZERO declarers for the remaining undeclared exclusion, MORE THAN ZERO
  * for the by-decision one, and MORE THAN ZERO for every added code.
  * This suite proves the split on real rows rather than on the constant:
  *
- *   P31-B1  the bundle's delta is exactly the eight, nothing else moved, every
- *           one of the eight is declared by a REGISTERED operation, the undeclared
- *           exclusion is declared by none, and the by-decision exclusion IS
- *           declared — so the two kinds cannot be confused with each other
+ *   P31-B1  the bundle's delta is exactly the nine, nothing else moved, every
+ *           one of the nine is declared by a REGISTERED operation, the undeclared
+ *           exclusion list is EMPTY, and the by-decision exclusion IS declared —
+ *           so the two kinds cannot be confused with each other
  *   P31-B2  an organisation created by the SHIPPED provisioning operation gives
  *           its administrator role all eight, and neither exclusion
  *   P31-B3  the Owner of that organisation effectively holds all eight, holds no
  *           excluded code, and the role holds nothing beyond the bundle
- *   P31-B4  the Owner can MAP each of the eight onto a role it creates — the
+ *   P31-B4  the Owner can MAP each of the nine onto a role it creates — the
  *           exact act `ins_role_permissions_delegable` refused before
- *   P31-B5  each of the TWO EXCLUDED codes is refused, with the registered
+ *   P31-B5  the ONE remaining EXCLUDED code is refused, with the registered
  *           refusal: 403 ERR-IAM-001, `requiredPermissions` naming the code
  *   P31-B6  delegation is still held-only — three codes outside the bundle that
  *           were refused before are refused now, by the same failure
@@ -150,21 +152,39 @@ const ADDED_BY_P7 = Object.freeze(['wty.warranty.read']);
  */
 const ADDED_BY_P11 = Object.freeze(['rpt.report.configure']);
 
-/** Every code the three P1-31 widenings added. */
-const ADDED_ALL = Object.freeze([...ADDED, ...ADDED_BY_P7, ...ADDED_BY_P11]);
+/**
+ * The ONE code prerequisite P-10 adds, on the slice that publishes its writers.
+ *
+ * Kept apart from both lists above for the same reason they are kept apart from
+ * each other: this widening answers a third question. `wty.policy.manage` has been
+ * a catalogue code since P1-08 that NO operation declared, and CC-01 withheld it on
+ * exactly that ground while stating the rule for lifting it — the `inv.item.manage`
+ * sequence, excluded while no route declared it and added by #322 on the day three
+ * routes did. P-10 published five operations that declare it, so the ground is gone
+ * and the code is carried. Withholding it now would leave a freshly provisioned
+ * administrator unable to issue ANY warranty, because generation refuses a company
+ * with no active policy and no other code can create one. Its own proof is
+ * `tests/backend/p1-31-warranty-policy-seam.test.ts`; what this file owes is the
+ * arithmetic and the register measurement.
+ */
+const ADDED_BY_P10 = Object.freeze(['wty.policy.manage']);
+
+/** Every code the four P1-31 widenings added. */
+const ADDED_ALL = Object.freeze([...ADDED, ...ADDED_BY_P7, ...ADDED_BY_P10, ...ADDED_BY_P11]);
 
 /**
- * Withheld because NOTHING declares it — P1-31 CC-01. Holding it would confer
- * nothing today and pre-grant an authority its own contract asks to be granted
- * deliberately.
+ * Withheld because NOTHING declares it — P1-31 CC-01 and CC-02. This list is now
+ * EMPTY, and it is kept rather than deleted because the RULE it encodes is what
+ * both codes left under.
  *
- * `rpt.report.configure` was the second member of this list until 2026-09-09
- * (CC-02). It left because P-11 published its writers, which is the ONLY way a
- * code may leave this list: B1 asserts zero declarers for everything still in it
- * and more than zero for everything in `ADDED_ALL`, so a code moved for any other
- * reason fails there.
+ * `wty.policy.manage` left on 2026-09-09 when P-10 published its writers, and
+ * `rpt.report.configure` the same day when P-11 published its own. That is the
+ * ONLY way a code may leave this list: B1 asserts zero declarers for everything
+ * still in it and more than zero for everything in `ADDED_ALL`, so a code moved
+ * for any other reason fails there. B1 also asserts the list is EMPTY, so that is
+ * measured rather than silently making its loop vacuous.
  */
-const EXCLUDED_UNDECLARED = Object.freeze(['wty.policy.manage']);
+const EXCLUDED_UNDECLARED: readonly string[] = Object.freeze([]);
 
 /**
  * Withheld although shipped operations DO declare it — P1-31 CC-04, an explicit
@@ -426,7 +446,7 @@ afterAll(async () => {
 }, 60_000);
 
 describe('P1-31 P-1 — the derivation', () => {
-  it('P31-B1 the delta is exactly the six of P-1, the one P-7 mints and the one P-11 unblocks, each declared by a registered operation, the undeclared exclusion by none, and the by-decision exclusion by some', () => {
+  it('P31-B1 the delta is exactly the six of P-1, the one P-7 mints and the two P-10 and P-11 unblock, each declared by a registered operation, with the undeclared exclusion list empty and the by-decision exclusion declared by some', () => {
     const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
 
     // The delta, stated two ways so neither can drift alone.
@@ -453,10 +473,12 @@ describe('P1-31 P-1 — the derivation', () => {
 
     for (const code of ADDED_ALL) expect(declarersOf(code).length).toBeGreaterThan(0);
 
-    // CC-01: withheld BECAUSE nothing declares it. If an operation ever declares
-    // it, this case fails and the exclusion must be re-decided — which is exactly
-    // what happened to `rpt.report.configure` under CC-02, and why it is now in
-    // `ADDED_BY_P11` above and asserted to HAVE declarers rather than none.
+    // CC-01 and CC-02: withheld BECAUSE nothing declared them. Both were released
+    // on 2026-09-09 by the slices that published their writers, so the list is
+    // empty and the loop below has nothing to iterate. The emptiness is therefore
+    // asserted FIRST: without it the loop would pass vacuously and would go on
+    // passing if a code were quietly returned to the list.
+    expect(EXCLUDED_UNDECLARED).toEqual([]);
     for (const code of EXCLUDED_UNDECLARED) expect(declarersOf(code)).toEqual([]);
 
     // CC-04 is the opposite measurement, and the reason the two kinds are kept
@@ -487,18 +509,18 @@ describe('P1-31 P-1 — the derivation', () => {
 });
 
 describe('P1-31 P-1 — an organisation created by the shipped provisioning operation', () => {
-  it('P31-B2 its administrator role holds all eight added codes, and neither excluded code', async () => {
+  it('P31-B2 its administrator role holds all nine added codes, and not the excluded one', async () => {
     const codes = await codesOfRole(probe.tenantAdministratorRoleId);
     for (const code of ADDED_ALL) expect(codes).toContain(code);
     for (const code of EXCLUDED) expect(codes).not.toContain(code);
   });
 
-  it('P31-B3 the Owner effectively holds all eight, no excluded code, and the role holds nothing beyond the bundle', async () => {
+  it('P31-B3 the Owner effectively holds all nine, no excluded code, and the role holds nothing beyond the bundle', async () => {
     const held = await codesHeldBy(probe.ownerAccountId);
     for (const code of ADDED_ALL) expect(held).toContain(code);
     for (const code of EXCLUDED) expect(held).not.toContain(code);
 
-    // Nothing was permitted BEYOND the eight: the role's rows are exactly the
+    // Nothing was permitted BEYOND the nine: the role's rows are exactly the
     // server-owned bundle, so a code that is not in the constant is not held.
     expect(await codesOfRole(probe.tenantAdministratorRoleId)).toEqual(
       [...TENANT_ADMINISTRATOR_ROLE.permissionCodes].sort()
@@ -515,7 +537,7 @@ describe('P1-31 P-1 — an organisation created by the shipped provisioning oper
     for (const code of ADDED_ALL) expect(codes).toContain(code);
   });
 
-  it('P31-B5 each of the two deliberately excluded codes is refused, with the registered refusal', async () => {
+  it('P31-B5 the deliberately excluded code is refused, with the registered refusal', async () => {
     const roleId = await newRole(probe, 'warranty_clerk');
     for (const permissionCode of EXCLUDED) {
       const refused = await mapCode(probe, roleId, permissionCode);
@@ -576,7 +598,7 @@ describe('P1-31 P-1 — an organisation created by the shipped provisioning oper
     // a route that already ships and whose only declared permission is the
     // withheld code, so the consequence CC-04 accepts is observed here on the
     // real route rather than reasoned about: 403, ERR-IAM-001, and the required
-    // permission named — the same shape B5 proves for CC-01.
+    // permission named — the same shape B5 proves for the same code.
     asOwnerOf(probe);
     const exports = await call<{ code?: string; requiredPermissions?: string[] }>(
       exportCatalogueRoute,

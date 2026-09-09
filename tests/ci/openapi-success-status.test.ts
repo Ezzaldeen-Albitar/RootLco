@@ -85,14 +85,19 @@ describe('every operation publishes the success status it returns', () => {
     // 250 -> 262 while 201 and 202 are unchanged. Asserted as three independent
     // numbers: a slice that shipped a write mislabelled as a read would move the
     // 200 count and leave 201 short, which a single total could not show.
-    // The P1-31 checklist template seam (P-9) publishes eight operations: the two
-    // creates return 201 (108 -> 110) and the other six — two reads, the rename, the
-    // status flip, the item edit and the item withdrawal — return 200.
-    // The P1-31 report configuration seam (P-11) publishes seven more: its two
-    // creates — the configuration and the version — return 201 as well (110 -> 112)
-    // and the other five — the two reads, the edit, the status flip and the
-    // publication — return 200.
-    expect(counts[201]).toBe(112);
+    // The P1-31 warranty policy and coverage seam (P-10) publishes seven
+    // operations: the two creates return 201 (108 -> 110) and the other five — the
+    // two reads, the rename, the policy status flip and the coverage status flip —
+    // return 200.
+    // The P1-31 checklist template seam (P-9), merged alongside it, publishes eight
+    // more: its two creates return 201 as well (110 -> 112) and the other six — two
+    // reads, the rename, the status flip, the item edit and the item withdrawal —
+    // return 200.
+    // The P1-31 report configuration seam (P-11) publishes seven more again: its two
+    // creates — the configuration and the version — return 201 (112 -> 114) and the
+    // other five — the two reads, the edit, the status flip and the publication —
+    // return 200.
+    expect(counts[201]).toBe(114);
     expect(counts[202]).toBe(1);
     // The two P1-30 opening-batch reads (S-17) are GETs returning 200, so
     // 264 -> 266 while 201 and 202 are unchanged.
@@ -104,11 +109,12 @@ describe('every operation publishes the success status it returns', () => {
     // with 201 and 202 unchanged for the third time. P-7 re-points an existing
     // read's PERMISSION and publishes no operation, so it moves nothing here — a
     // slice that had smuggled a write in beside the re-point would.
-    // 273 -> 279 with P-9's six 200s, then 279 -> 284 with P-11's five. The 201
-    // count moving by exactly two across each slice is the assertion carrying weight
-    // here: a command that had silently shipped as a read, or a read as a create,
-    // would show up in this pair and nowhere else.
-    expect(counts[200]).toBe(284);
+    // 273 -> 278 with P-10's five 200s, then 278 -> 284 with P-9's six, then
+    // 284 -> 289 with P-11's five. The 201 count moving by exactly two per slice —
+    // six across the three — is the assertion carrying weight here: a command that
+    // had silently shipped as a read, or a read as a create, would show up in this
+    // pair and nowhere else.
+    expect(counts[200]).toBe(289);
   });
 
   it('reads the handler, not the declaration', () => {

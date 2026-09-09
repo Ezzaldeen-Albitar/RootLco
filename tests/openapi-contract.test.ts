@@ -400,6 +400,15 @@ import '@/app/api/v1/report-configurations/[configurationId]/status/route';
 import '@/app/api/v1/report-configurations/[configurationId]/versions/route';
 import '@/app/api/v1/report-configurations/[configurationId]/versions/[versionId]/publish/route';
 
+// P1-31 prerequisite P-10, the warranty POLICY and COVERAGE seam (PPD-04). Imported
+// for the same reason: an unimported route is simply ABSENT from the generated
+// document rather than reported as missing.
+import '@/app/api/v1/warranty-policies/route';
+import '@/app/api/v1/warranty-policies/[policyId]/route';
+import '@/app/api/v1/warranty-policies/[policyId]/status/route';
+import '@/app/api/v1/warranty-policies/[policyId]/coverage-windows/route';
+import '@/app/api/v1/warranty-policies/[policyId]/coverage-windows/[coverageId]/status/route';
+
 // --- PRE-P1-29-BR-04 inspection-template authoring -------------------------
 // The authoring surface for `dia.inspection_templates`, `dia.template_versions`
 // and `dia.template_items`, which held zero rows and had no write path at all.

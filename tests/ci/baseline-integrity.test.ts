@@ -507,17 +507,20 @@ describe('the coverage include lists are pinned, because they are the denominato
       typeScriptFilesUnder(pattern.slice(0, -'/**/*.ts'.length))
     );
     expect(files.filter((file) => file.endsWith('.d.ts'))).toEqual([]);
-    expect(files.length).toBe(276);
+    expect(files.length).toBe(277);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
     );
     /*
-     * 275, four more than the 271 the hosted run that established
-     * `coverage-baseline.backend.json` measured, and the difference is four files:
+     * 276, five more than the 271 the hosted run that established
+     * `coverage-baseline.backend.json` measured, and the difference is five files:
      * `modules/delivery/application/checklist-template-service.ts`, added by the
-     * P1-31 checklist template seam (P-9), and the three the P1-31 report
-     * configuration seam (P-11) adds — `modules/reporting/domain/report-configuration.ts`,
+     * P1-31 checklist template seam (P-9);
+     * `modules/warranty/application/warranty-policy-service.ts`, added by the
+     * P1-31 warranty policy and coverage seam (P-10); and the three the P1-31
+     * report configuration seam (P-11) adds —
+     * `modules/reporting/domain/report-configuration.ts`,
      * `modules/reporting/data/report-configuration-repository.ts` and
      * `modules/reporting/application/report-configuration-service.ts`. The
      * denominator is SUPPOSED to grow with the tier's source; what this case
@@ -526,6 +529,6 @@ describe('the coverage include lists are pinned, because they are the denominato
      * untouched: re-establishing them needs a hosted measurement run, which
      * neither slice performed and neither claims.
      */
-    expect(instrumented.length).toBe(275);
+    expect(instrumented.length).toBe(276);
   });
 });

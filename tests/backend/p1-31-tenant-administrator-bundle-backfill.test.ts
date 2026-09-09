@@ -101,15 +101,19 @@ import {
 } from '@/app/api/v1/warranties/[warrantyId]/route';
 
 /**
- * The eight codes the three P1-31 widenings added (#322 P-1's six, #349 P-7's
- * one, and P-11's one). Written out rather than derived: removing these from a
- * freshly provisioned role reproduces the 67-code bundle the real organisations
- * hold, and a list computed from the constant under test would prove nothing.
+ * The nine codes the four P1-31 widenings added (#322 P-1's six, #349 P-7's one,
+ * P-10's one and P-11's one). Written out rather than derived: removing these
+ * from a freshly provisioned role reproduces the 67-code bundle the real
+ * organisations hold, and a list computed from the constant under test would
+ * prove nothing.
  *
- * `rpt.report.configure` joined on 2026-09-09 when P-11 published the seven
- * operations that declare it, closing CC-02. It is the reason this backfill owes
- * a THIRD operator run: an organisation provisioned on the 74-code bundle can
- * open the report catalogue and can put nothing in it, because both published
+ * `wty.policy.manage` joined on 2026-09-09 when P-10 published the five
+ * operations that declare it, closing CC-01, and `rpt.report.configure` the same
+ * day when P-11 published the seven that declare it, closing CC-02. Together they
+ * are the reason this backfill owes a THIRD operator run — ONE run covering both
+ * codes, not one each. An organisation provisioned on the 74-code bundle can read
+ * a warranty and cannot configure the policy any warranty must be issued under,
+ * and can open the report catalogue and put nothing in it, because both published
  * report reads filter on published status and no other code can set that value.
  */
 const P1_31_ADDED = Object.freeze([
@@ -120,10 +124,11 @@ const P1_31_ADDED = Object.freeze([
   'rpt.report.read',
   'iam.audit.view',
   'wty.warranty.read',
+  'wty.policy.manage',
   'rpt.report.configure',
 ]);
 
-/** The bundle before the three P1-31 widenings. Unchanged by all three. */
+/** The bundle before the four P1-31 widenings. Unchanged by all four. */
 const BUNDLE_BEFORE = 67;
 
 /** A real catalogue code the bundle deliberately does NOT carry (P1-31 CC-04). */

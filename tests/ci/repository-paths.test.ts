@@ -226,17 +226,22 @@ describe('the API application lives in the workspace', () => {
     // existed — one operation over one new file, so both counts move by one and
     // the asymmetry above is absent this time rather than merely unstated.
     //
-    // 305 with the P1-31 checklist template seam (P-9): eight operations over FIVE
-    // new modules. The collection module co-locates the list and the create, the
-    // id-addressed module the detail and the rename, and the item module the edit and
-    // the withdrawal — eight and five, the same asymmetry, because three paths carry
-    // two verbs each.
+    // 305 with the P1-31 warranty policy and coverage seam (P-10): seven
+    // operations over FIVE new modules. The collection module co-locates the list
+    // and the create and the id-addressed module the detail and the rename, so two
+    // paths carry two verbs each — seven and five, the same asymmetry.
     //
-    // 310 with the P1-31 report configuration seam (P-11): seven operations over
-    // FIVE new modules. The collection module co-locates the list and the create
-    // and the id-addressed module the read and the edit, so two paths carry two
-    // verbs each — seven and five, the same asymmetry.
-    expect(routeFiles.length).toBe(310);
+    // 310 with the P1-31 checklist template seam (P-9) merged alongside it: eight
+    // operations over FIVE more new modules. The collection module co-locates the
+    // list and the create, the id-addressed module the detail and the rename, and
+    // the item module the edit and the withdrawal — eight and five, the same
+    // asymmetry, because three paths carry two verbs each.
+    //
+    // 315 with the P1-31 report configuration seam (P-11): seven operations over
+    // FIVE more new modules. The collection module co-locates the list and the
+    // create and the id-addressed module the read and the edit, so two paths carry
+    // two verbs each — seven and five, the same asymmetry.
+    expect(routeFiles.length).toBe(315);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -303,11 +308,13 @@ describe('the API application lives in the workspace', () => {
     // `wty.warranty-list`. The re-point of `wty.warranty-detail` onto the minted
     // `wty.warranty.read` changes a declaration and not a count, which is why the
     // permission gates and not this one are what prove it.
-    // 390 with the P1-31 checklist template seam (P-9): eight operations over five
-    // new modules, for the reason stated above the route-module count.
-    // 397 with the P1-31 report configuration seam (P-11): seven operations over
+    // 389 with the P1-31 warranty policy and coverage seam (P-10): seven
+    // operations over five new modules, and 397 with the P1-31 checklist template
+    // seam (P-9) merged alongside it: eight operations over five more new modules,
+    // for the reason stated above the route-module count.
+    // 404 with the P1-31 report configuration seam (P-11): seven operations over
     // five more new modules, for the same reason.
-    expect(report.operations).toHaveLength(397);
+    expect(report.operations).toHaveLength(404);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the
