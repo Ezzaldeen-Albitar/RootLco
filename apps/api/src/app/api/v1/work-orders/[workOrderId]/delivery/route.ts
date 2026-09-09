@@ -42,9 +42,11 @@
  *
  * `sal.delivery.view`, the code the eligibility read already declares and the only
  * delivery READ code the catalogue seeds. **NOT `sal.delivery.read`**: `navigation.ts`
- * names that code but it is absent from the seeded catalogue (**RES-05**), so
- * declaring it would gate this route on a permission no actor can hold. A navigation
- * label is not authorization truth.
+ * named that code while it was absent from the seeded catalogue (**RES-05**), and
+ * declaring it here would have gated this route on a permission no actor can hold.
+ * P1-31 prerequisite P-8 re-points that navigation entry at `sal.delivery.view`, which
+ * closes the mismatch where it was — on the navigation side — and leaves this route's
+ * declared code untouched. A navigation label is not authorization truth.
  *
  * ## Money
  *

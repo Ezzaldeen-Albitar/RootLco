@@ -380,7 +380,7 @@ moved 67 → 74. A second `--all` run immediately afterwards reported **0 widene
 # The delivery navigation gate — P-8 (RES-05)
 
 Sections 21–23 were added by the **P-8** slice on 2026-09-09; identifiers continue in the same
-P1-31 namespace, so the register now runs **CC-01 … CC-12**. **Baseline:** protected `develop`
+P1-31 namespace, so the register now runs **CC-01 … CC-18**. **Baseline:** protected `develop`
 `f4309a8e`, `main` `1262de74` — untouched. This slice is Frontend, tooling and documentation only:
 it adds no operation, no route, no permission, no seed row and no migration.
 
@@ -443,17 +443,161 @@ stops reproducing:
 
 ---
 
+## 24. The documentation-corrections slice — prerequisites P-13 and P-14
+
+Added on 2026-09-09 by `remediation/p1-31-backend-documentation-corrections`, on the
+`p1-31-backend` lane. It changes comments and records only: **no behaviour changed, no operation was
+declared, widened or withdrawn, no permission code was minted, granted or revoked, and no migration,
+seed, policy or grant was touched.**
+
+**P-13 — four rows of [`operation-inventory.md`](../phase-1-22/operation-inventory.md) corrected**
+against the `defineOperation(...).permissions` of the routes themselves, each cross-checked against
+the generated `docs/phase-1/phase-1-22/evidence/endpoint-inventory.md`:
+
+| operation                       | the inventory said                          | the route declares                                               |
+| ------------------------------- | ------------------------------------------- | ---------------------------------------------------------------- |
+| `sal.delivery-eligibility-read` | `sal.delivery.manage`, `sal.finance.view`   | `sal.delivery.view`, `sal.finance.view`                          |
+| `sal.delivery-receiver-verify`  | `sal.delivery.manage`                       | `sal.delivery.manage`, `sal.delivery.view`                       |
+| `sal.delivery-signature-attach` | `sal.delivery.manage`                       | `sal.delivery.manage`, `sal.delivery.view`                       |
+| `sal.delivery-complete`         | `sal.delivery.complete`, `sal.finance.view` | `sal.delivery.complete`, `sal.delivery.view`, `sal.finance.view` |
+
+The table's other two rows — `sal.delivery-create` and `sal.delivery-checklist-record` — already
+agreed with the code and were left alone, and so was the paragraph beneath the table: it says only
+that the eligibility read and the completion both require `sal.finance.view` "in addition to their
+delivery authority", which is as true after the correction as before it, so there was no stale prose
+to rewrite.
+
+**P-14 — the retrievability claim corrected in every LIVE copy.** The `P1-22-L-04` section of
+`apps/api/src/app/api/v1/deliveries/[deliveryId]/signatures/route.ts`, the
+`sal.delivery.signature_recorded` description in `apps/api/src/server/auth/audit-actions.ts` and the
+"No signature retrieval" bullet of the P1-22 operation inventory each asserted that no application
+path could move a document version to `accepted`. Each now quotes `AttachmentService.requestDownload`
+rather than paraphrasing it, and the measurement behind the correction is
+`supabase/migrations/20260815090000_shared_reception_evidence_foundation.sql`, which adds
+`ins_file_scan_results_scanner`, `upd_document_versions_lifecycle`, `GRANT INSERT ON
+shared.file_scan_results` and `GRANT UPDATE(status) ON shared.document_versions`. A grep afterwards
+found eight further live copies of the same claim — the signature-LIST docblock in that route file,
+`modules/delivery/{index.ts, data/delivery-repository.ts, application/delivery-read-service.ts,
+application/delivery-service.ts (twice)}` and the two `note:` strings for
+`sal.delivery-signature-list` and `sal.delivery-signature-attach` in
+`scripts/check-operation-test-coverage.mjs` — and all of them were corrected in this same pull
+request, to the same framing and with no behaviour change (**CC-13**).
+`docs/phase-1/phase-1-22/contract-archaeology.md` and `docs/phase-1/phase-1-22/blocker-treatment.md`
+are **deliberately untouched**: they are historical P1-22 records of what was measured then, and
+editing them would rewrite a finding rather than correct a claim.
+
+**The P-8 deferral.** The two delivery-read docblocks that explain why they do not declare
+`sal.delivery.read` — `deliveries/[deliveryId]/route.ts` and
+`work-orders/[workOrderId]/delivery/route.ts` — now record that P1-31 prerequisite P-8 re-points the
+navigation entry at `sal.delivery.view` (**RES-05**), with the surrounding rationale kept. This
+branch therefore merges AFTER the P-8 pull request.
+
+| id        | finding                                                                                                                | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | owner / slice     | status |
+| --------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | ------ |
+| **CC-13** | the corrected retrievability claim survived in six further LIVE source docblocks and two gate-register `note:` strings | P-14 was scoped to five copies of `P1-22-L-04`. A grep over the tree returned more: besides the three live copies corrected first and the two historical records left as written, the same "no scanner is provisioned / acceptance is unreachable" assertion appeared in the signature-LIST docblock of the SAME route file, in `modules/delivery/{application/delivery-read-service.ts, application/delivery-service.ts (twice), data/delivery-repository.ts, index.ts}`, and in the `sal.delivery-signature-list` and `sal.delivery-signature-attach` `note:` strings of `scripts/check-operation-test-coverage.mjs` | **closed — all eight were corrected in THIS pull request**, in a follow-up commit, comment-and-string only with no behaviour change, each restating the same corrected framing as the route: a bound version is refused with `ERR-DOC-001` while it is not `accepted`, which is a state check rather than an impossibility, and the module offering no retrieval path is a scope statement. The two `note:` strings keep their coverage purpose and lost only the false factual clause; `validate:operation-coverage` was re-run. The two historical P1-22 records remain untouched for the reason given above | P-14, this branch | closed |
+
+**One further live copy sits in an Owner document, and was left to the Owner.** The same stale
+retrievability claim is still asserted in `docs/product/workshop/reception-media-checklist.md` —
+the state table at lines ~205–206, which calls the `Accepted` state "Unreachable", the sentence
+beneath it describing the best reachable state as "registered, pending, never downloadable", and
+§5.3, whose heading states the same thing. It was **not** edited on this branch: product workshop
+documents under `docs/product/` are Owner-input, and this lane corrects source docblocks and phase
+records only. The Owner is asked either to correct that passage or to authorise the correction on a
+later lane.
+
+**Identifier note:** **CC-13** is this slice's id. `develop` now holds **CC-01 … CC-12** in this
+register, `CC-12` having been taken by the merged P-8 slice, so this slice continues the sequence
+at **CC-13**.
+
+---
+
+---
+
+# P-9 — the delivery checklist template seam, of 2026-09-09
+
+Sections 25-28 were added by the **P-9** slice on 2026-09-09; its identifier is **CC-14**.
+`develop` holds **CC-01 … CC-13**, `CC-12` having been taken by the P-8 slice and `CC-13` by the
+documentation-corrections slice, so this slice continues the sequence at **CC-14**.
+**Baseline:** protected `develop` `f4309a8e` (PR #350, the D-2 bundle backfill), `main` `1262de74` —
+untouched.
+
+## 25. What was published
+
+Eight operations under `/api/v1/delivery-checklist-templates`, closing **PPD-12**: the checklist
+template and template-item tables carried INSERT and UPDATE grants and policies from P1-11 and **no
+code anywhere in `apps/api/src` had ever written either one**, so a tenant provisioned through the
+product had an empty handover checklist and no way to fill it.
+
+| operation                                     | method | path                                         | guards                         |
+| --------------------------------------------- | ------ | -------------------------------------------- | ------------------------------ |
+| `sal.delivery-checklist-template-list`        | GET    | `/delivery-checklist-templates`              | paged                          |
+| `sal.delivery-checklist-template-read`        | GET    | `/delivery-checklist-templates/{templateId}` | -                              |
+| `sal.delivery-checklist-template-create`      | POST   | `/delivery-checklist-templates`              | `idempotent`, 201              |
+| `sal.delivery-checklist-template-rename`      | PATCH  | `/delivery-checklist-templates/{templateId}` | `versionGuarded`               |
+| `sal.delivery-checklist-template-status-set`  | POST   | `.../{templateId}/status`                    | `idempotent`, `versionGuarded` |
+| `sal.delivery-checklist-template-item-create` | POST   | `.../{templateId}/items`                     | `idempotent`, 201              |
+| `sal.delivery-checklist-template-item-update` | PATCH  | `.../{templateId}/items/{itemId}`            | `versionGuarded`               |
+| `sal.delivery-checklist-template-item-remove` | DELETE | `.../{templateId}/items/{itemId}`            | soft delete                    |
+
+Reads declare `sal.delivery.view`, commands `sal.delivery.manage` - both already seeded and both
+already in the provisioning bundle through P-1. **No permission was minted, no seed changed, no
+bundle changed, and no migration was added.** The register moves **382 -> 390** operations,
+**299 -> 304** paths, **216 -> 222** audit actions. Full record:
+[`delivery-checklist-template-seam.md`](./delivery-checklist-template-seam.md).
+
+## 26. Dispositions
+
+| id        | finding                                                                                   | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | owner / slice                                            | status |
+| --------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- | ------ |
+| **CC-14** | an **INACTIVE** checklist template still blocks a handover, and this slice did not fix it | `sal.complete_delivery` (`supabase/migrations/20260724094000_sal_delivery.sql`, section 8) counts mandatory items with `ti.company_id = ... AND ti.is_mandatory AND ti.deleted_at IS NULL`. It never joins `sal.delivery_checklist_templates` and reads no template `status`, so deactivating a template leaves its mandatory items gating every delivery in that company. The application mirror in `DeliveryRepository.mandatoryChecklistGaps` reproduces the primitive exactly, including this. Proved on real rows in `COMPANY_A9`: an inactive template's mandatory item produces `checklist_incomplete` naming the item | **open, and deliberately NOT mirrored away.** Filtering inactive templates in the mirror alone would report a delivery ELIGIBLE that the primitive then refuses inside the transaction, which is the failure the repository's own rule about mirrors exists to prevent. Correcting the behaviour means replacing a protected function - a forward migration - which this prerequisite does not sanction and which the shared acceptance database could not receive without a migration run. **The operator remedy that works today is published by this slice:** the item-withdrawal route sets exactly the column the primitive filters on, and the suite proves the blocker clears | a later `sal` migration slice, with P1-22 under Field 13 | open   |
+
+## 27. What this slice did NOT do
+
+- **No permission was minted and no bundle changed.** Both codes are seeded and both are already in
+  the tenant administrator bundle; the count stays at 74.
+- **No migration, and no schema change of any kind.** Every statement uses a grant and a policy that
+  have existed since P1-11.
+- **No screen.** `apps/web` is unchanged except through the GENERATED idempotency manifest, which
+  every published operation moves. The request-payload mirror for the five body-carrying writes is
+  owed by the `p1-31-frontend` lane that builds FE-004; they are declared `PENDING` in
+  `scripts/ci/check-p1-30-payload-parity.mjs`, whose lifecycle fails the moment a mirror exists and
+  the entry is not deleted.
+- **No delivery write path, eligibility rule, state machine or gate behaviour changed.** The
+  eligibility mirror is byte-for-byte as it was; CC-14 records why.
+- **P1-27-INT-088 is not closed.** The GAP side keeps all three limbs. What changed is that a caller
+  can now resolve a `template_item_id` to a code and a label, which is the half of **CC-06** the
+  read seam said it could not supply.
+- **No canonical task was closed.** P-9 is an execution prerequisite; the 29 remain 29.
+
+## 28. Proof
+
+`tests/backend/p1-31-delivery-checklist-template-seam.test.ts`, **27 cases on real rows**, every one
+of which authors what it reads **through the published routes** - unlike every suite before it, this
+one seeds neither checklist table by admin SQL, because that seeding is the measurement PPD-12
+records.
+
+| case group             | proves                                                                                                                                                                                                                                                                        |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| registrations          | the eight ids, their permissions, `scope`, audit class and each guard flag - and that the withdrawal is deliberately not version-guarded                                                                                                                                      |
+| create                 | header and items in one transaction; duplicate template code 409; a body repeating an item code refused with NOTHING written; a company outside the tenant refused by the FK; `status` and `id` unexpressible; replay under one key creates one template and one audit record |
+| reads                  | detail in checklist order to `SAL_READER`, which holds no manage code; list paged and the two pages disjoint; a caller without `sal.delivery.view` refused both; another tenant 404                                                                                           |
+| company-wide authority | `SAL_SCOPED_A2` (branch-scoped) refused every write and still able to READ; `SAL_COMPANY_SCOPED` admitted in `COMPANY_A1` and refused in `COMPANY_A9`; a reader refused all six commands; a foreign tenant 404 on a write                                                     |
+| version guards         | `If-Match` absent 428, stale 409 with the row unchanged, success advancing the version by exactly one; the ITEM version is not the template's; a one-field patch leaves the others untouched                                                                                  |
+| withdrawal             | soft delete with the row still present, the item gone from the detail read, the code re-addable, and a second withdrawal answering the uniform 404                                                                                                                            |
+| **the gate**           | an inactive template's mandatory item still produces `checklist_incomplete` naming the item, and withdrawing the item clears it - **CC-14**, measured rather than argued                                                                                                      |
+
+---
+
 ## 29. What P-10 changed — the warranty policy and coverage seam (PPD-04)
 
 **Slice:** `remediation/p1-31-backend-warranty-policy-seam`, ownership profile `p1-31-backend`.
-**Baseline:** protected `develop` **99dc6f41**, which is an ancestor of the current tip.
+**Baseline:** protected `develop` **5cd06fbd**, merged into this branch, which carries the
+documentation-corrections slice (**#354**, section 24, **CC-13**) and the P-9 checklist-template
+seam (**#355**, sections 25–28, **CC-14**).
 
-**The numbering here is PROVISIONAL and assumes a merge order.** Two lanes are open ahead of this
-one: the documentation-corrections slice (**#354**, section 24, **CC-13**), which is already on
-`develop`, and the P-9 checklist-template seam (**#355**, sections 25–28, **CC-14**), which is
-not. This section is written as **29** and its dispositions as **CC-15 … CC-18** on the assumption
-that both land first, and it is re-checked against `develop` before merge — exactly as #355's own
-section was renumbered when #354 took CC-13.
+Both lanes that were open ahead of this one have landed, so the numbering is settled rather than
+assumed: `develop` holds sections 1–28 and **CC-01 … CC-14**, and this section continues at **29**
+with its dispositions at **CC-15 … CC-18**.
 
 The full record is [`warranty-policy-seam.md`](./warranty-policy-seam.md). In short:
 
@@ -477,14 +621,14 @@ The full record is [`warranty-policy-seam.md`](./warranty-policy-seam.md). In sh
 | published                                                                           | minted  |
 | ----------------------------------------------------------------------------------- | ------- |
 | 7 operations, 5 route modules, 5 paths, 5 audit actions, 1 application service      | nothing |
-| register 382 → **389** operations, 299 → **304** paths, 216 → **221** audit actions | nothing |
+| register 390 → **397** operations, 304 → **309** paths, 222 → **227** audit actions | nothing |
 | bundle 74 → **75** codes, all of them pre-existing catalogue rows                   | nothing |
 
 ### 29.2 Dispositions
 
 | id        | finding                                                                                                                   | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | owner / slice         | status |
 | --------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ------ |
-| **CC-15** | the coverage URL segment is `coverage-windows`, because a directory named `coverage` cannot be tracked                    | `.gitignore:45` carries the root-unanchored rule `coverage/`, which git applies at EVERY depth. A route directory at `apps/api/src/app/api/v1/warranty-policies/[policyId]/coverage/` is therefore skipped by `git add` in silence — measured rather than predicted: the first staging of this slice tracked three of its five route modules, and `check-api-backend-only.mjs` reported 303 handlers where 305 exist. Untracked files are invisible to every gate that enumerates through `git ls-files`, which is the encoding gate, both secret scanners, the scope-exclusion guard and the no-fake-data guard           | **renamed, deliberately, rather than excepted.** The alternative was a negation entry in `.gitignore` for one source directory: a config exception every future reader has to be told about, sitting one edit away from re-ignoring real coverage output. `coverage-windows` is the phrase the module prose already uses for an effective-dated row, so the URL and the docblocks agree and nothing has to be explained. **Consequence, accepted and named:** the published path is `/warranty-policies/{policyId}/coverage-windows`, and FE-008 / FE-009 must be built against it                                                                                                                                        | this slice            | closed |
+| **CC-15** | the coverage URL segment is `coverage-windows`, because a directory named `coverage` cannot be tracked                    | `.gitignore:45` carries the root-unanchored rule `coverage/`, which git applies at EVERY depth. A route directory at `apps/api/src/app/api/v1/warranty-policies/[policyId]/coverage/` is therefore skipped by `git add` in silence — measured rather than predicted: the first staging of this slice tracked three of its five route modules, and `check-api-backend-only.mjs` reported 303 handlers where 305 then existed. Untracked files are invisible to every gate that enumerates through `git ls-files`, which is the encoding gate, both secret scanners, the scope-exclusion guard and the no-fake-data guard    | **renamed, deliberately, rather than excepted.** The alternative was a negation entry in `.gitignore` for one source directory: a config exception every future reader has to be told about, sitting one edit away from re-ignoring real coverage output. `coverage-windows` is the phrase the module prose already uses for an effective-dated row, so the URL and the docblocks agree and nothing has to be explained. **Consequence, accepted and named:** the published path is `/warranty-policies/{policyId}/coverage-windows`, and FE-008 / FE-009 must be built against it                                                                                                                                        | this slice            | closed |
 | **CC-16** | organisations provisioned BEFORE this slice cannot administer warranty policies, and cannot delegate the authority either | The bundle is written ONCE, inside `platform.organization-provision`, and nothing re-applies it. Every organisation provisioned on the 48-, 65-, 67-, 73- or 74-code bundle holds no `wty.policy.manage`, so from this commit its administrator is refused all five new writes with `ERR-IAM-001`, and `ins_role_permissions_delegable` admits a mapping only when the acting administrator already holds the code. This is **CC-03** and **CC-08** restated for a third widening — and unlike CC-08 it WITHHOLDS something new rather than withdrawing something old, because the five operations did not exist yesterday | **accepted, with the remedy named and NOT performed here.** `scripts/platform/backfill-tenant-administrator-bundle.mjs`, built for **CC-11**, parses `bootstrap-roles.ts` at run time and therefore needs no edit to carry this code; `tests/backend/p1-31-tenant-administrator-bundle-backfill.test.ts` moved its eight-code list with the reason. It is an OPERATOR ACT on a privileged connection — `iam.role_permissions` is `FORCE ROW LEVEL SECURITY` and `ins_role_permissions_platform_bootstrap` admits the platform role only while the tenant is `provisioning` — so it requires a run against each environment **after this branch merges**. This slice did not run it and does not claim it was run anywhere | operator, after merge | open   |
 | **CC-17** | the coverage status command is version-guarded and NOT idempotent, alone among the five writes                            | `ex_warranty_coverage_no_overlap` is PARTIAL on `status = active`, so an archived window sits outside it and its days may be re-covered while it is archived. Reactivating it then raises `23P01`. No status command in the P-9 precedent can fail that way, so that precedent declares BOTH guards on its own status route and this one cannot follow it                                                                                                                                                                                                                                                                  | **accepted, and the divergence from the precedent recorded rather than left to look like an oversight.** An idempotency reservation replays a STORED result: a second submission would be handed a success computed before the replacement row existed, which is the one outcome a caller must not receive here. The version guard already makes a duplicate submission safe — the second one loses on `record_version`. The suite proves the sequence on real rows and asserts the archived row unchanged after a refused reactivation, so a refused reactivation burns no version                                                                                                                                       | this slice            | closed |
 | **CC-18** | the coverage CHECK constraints are unreachable through the published routes, so their error mapping is untested           | `ck_warranty_coverage_scope`, `ck_warranty_coverage_duration`, `ck_warranty_coverage_odometer` and `ck_warranty_coverage_effective` are each mirrored by the request schema, so no request that reaches the database can violate one. `WarrantyPolicyService` maps `23514` to `ERR-VAL-001` by reading the violated constraint NAME, on the `INVOICE_UNIQUE_INDEX` pattern, and nothing reachable through the routes can exercise it                                                                                                                                                                                       | **kept, and declared untested rather than removed or claimed.** Removing it would leave a `23514` surfacing as `ERR-SYS-001` — a 500 telling a caller its request broke the server when the server in fact refused it — on the day the boundary and a column disagree, which is exactly when it is needed. The suite asserts the BOUNDARY refusal for each of the four values, and the suite header states in terms that the mapping is NOT claimed to have been exercised. Reaching it would need a test calling the repository beneath the route, which asserts nothing about the published surface                                                                                                                     | this slice            | closed |

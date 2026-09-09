@@ -3,14 +3,14 @@
 What was published, why each shape is the shape it is, what was proved on real rows, and the
 one operator act this slice creates and does not perform.
 
-|                              |                                                                                                                                                                  |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Phase**                    | P1-31 — Vehicle Delivery, Warranty, and Reporting Frontend                                                                                                       |
-| **Authority**                | Prerequisite **P-10** of [`a0-preflight.md`](./a0-preflight.md), Artefact 4 — **PPD-04**                                                                         |
-| **Lane**                     | `remediation/p1-31-backend-warranty-policy-seam`, ownership profile `p1-31-backend`                                                                              |
-| **Baseline**                 | protected `develop` **99dc6f41**; `main` untouched                                                                                                               |
-| **Change control**           | [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) — **CC-15 … CC-18** (provisional; two lanes are open ahead, and CC-16 is the operator backfill) |
-| **Closes no canonical task** | P-10 is an execution prerequisite. The 29 remain 29, each still owing its own evidence                                                                           |
+|                              |                                                                                                                       |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **Phase**                    | P1-31 — Vehicle Delivery, Warranty, and Reporting Frontend                                                            |
+| **Authority**                | Prerequisite **P-10** of [`a0-preflight.md`](./a0-preflight.md), Artefact 4 — **PPD-04**                              |
+| **Lane**                     | `remediation/p1-31-backend-warranty-policy-seam`, ownership profile `p1-31-backend`                                   |
+| **Baseline**                 | protected `develop` **99dc6f41**; `main` untouched                                                                    |
+| **Change control**           | [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) — **CC-15 … CC-18** (CC-16 is the operator backfill) |
+| **Closes no canonical task** | P-10 is an execution prerequisite. The 29 remain 29, each still owing its own evidence                                |
 
 ---
 
@@ -50,7 +50,8 @@ Two reads declare `wty.warranty.read` with `auditClass: 'none'`; five commands d
 | `wty.warranty-coverage-create`     | POST   | `.../{policyId}/coverage-windows`                     | `idempotent`, 201              |
 | `wty.warranty-coverage-status-set` | POST   | `.../{policyId}/coverage-windows/{coverageId}/status` | `versionGuarded`               |
 
-The register moves 382 → **389** operations, 299 → **304** paths, 216 → **221** audit actions.
+The register moves 390 → **397** operations, 304 → **309** paths, 222 → **227** audit actions,
+measured after the P-9 checklist-template seam (#355) merged ahead of this slice.
 Five route modules; two of them carry two verbs, which is why the two counts move by seven and
 five.
 

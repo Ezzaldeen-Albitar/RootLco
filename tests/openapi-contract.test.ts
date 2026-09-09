@@ -375,6 +375,16 @@ import '@/app/api/v1/deliveries/[deliveryId]/checklist-results/route';
 import '@/app/api/v1/deliveries/[deliveryId]/signatures/route';
 import '@/app/api/v1/deliveries/[deliveryId]/completion/route';
 import '@/app/api/v1/deliveries/[deliveryId]/warranties/route';
+
+// P1-31 prerequisite P-9 — the delivery checklist TEMPLATE surface (PPD-12). Imported
+// for the reason every line above is: the registry is populated by import side effect,
+// so an unimported route is simply ABSENT from the generated document rather than
+// reported as missing.
+import '@/app/api/v1/delivery-checklist-templates/route';
+import '@/app/api/v1/delivery-checklist-templates/[templateId]/route';
+import '@/app/api/v1/delivery-checklist-templates/[templateId]/status/route';
+import '@/app/api/v1/delivery-checklist-templates/[templateId]/items/route';
+import '@/app/api/v1/delivery-checklist-templates/[templateId]/items/[itemId]/route';
 // P1-31 prerequisite P-6, the warranty read seam. Imported for the reason every
 // line here is: the registry is populated by import side effect, so an unimported
 // route is simply ABSENT from the generated document rather than reported missing.

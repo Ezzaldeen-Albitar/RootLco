@@ -38,9 +38,14 @@
  * Signatures and identity evidence are `shared.document_versions` REFERENCES. No
  * method fetches bytes, no audit detail carries them, no event payload mentions them
  * in the clear, and no log line names a document, a receiver or a delivery id. There
- * is deliberately no retrieval path: `DOWNLOADABLE_STATES` is `['accepted']`, no
- * application path can accept a version because no scanner is provisioned, so a
- * download method would be a contract that always fails (P1-22-L-04). **No claim is
+ * is deliberately no retrieval path in this module, and that is a scope boundary
+ * rather than an impossibility: the shared attachment path's `requestDownload` refuses
+ * a version with `ERR-DOC-001` while it is not `accepted`, which is a state check.
+ * P1-22 recorded the rest as "no application path can produce acceptance"
+ * (P1-22-L-04); that is no longer the rule, because
+ * `20260815090000_shared_reception_evidence_foundation.sql` adds `GRANT INSERT ON
+ * shared.file_scan_results` and `GRANT UPDATE(status) ON shared.document_versions`
+ * (corrected by P1-31 prerequisite P-14). **No claim is
  * made anywhere in this module that a stored signature is biometric, verified, or
  * legally binding.** It records that a document was bound to a handover, and nothing
  * more.
@@ -1160,12 +1165,18 @@ export class DeliveryService {
    *     code for a version that exists and is visible but whose state does not permit
    *     the action.
    *
-   * `accepted` is deliberately NOT required, and the reason is structural rather than
-   * lax: `shared.guard_document_version_transition` needs a clean scan record to reach
-   * `accepted`, no scanner is provisioned anywhere in the platform, and no application
-   * path can therefore accept a version (P1-22-L-04). Requiring it would make every
-   * signature and every identity attachment impossible while appearing to be the
-   * stricter choice. `sal.delivery_signatures`' own foreign key accepts any status, so
+   * `accepted` is deliberately NOT required, and the reason is a timing one rather than
+   * laxity. P1-22 recorded it as "no application path can accept a version"
+   * (P1-22-L-04); that is no longer the rule, because
+   * `20260815090000_shared_reception_evidence_foundation.sql` adds `GRANT INSERT ON
+   * shared.file_scan_results` and `GRANT UPDATE(status) ON shared.document_versions`, so
+   * `registerVersionAndScan` can produce a verdict. What remains true is that
+   * `shared.document_versions.status` starts at `pending` and
+   * `shared.guard_document_version_transition` needs a clean scan record to reach
+   * `accepted`, so requiring `accepted` at BIND time would refuse a version whose
+   * verdict has not landed yet, while appearing to be the stricter choice. The
+   * `accepted` requirement belongs to the download path, not to binding. Corrected by
+   * P1-31 prerequisite P-14; nothing on this path changed behaviour. `sal.delivery_signatures`' own foreign key accepts any status, so
    * this rule — registered, in scope, not refused — is the whole of the application's
    * contribution, and it is stated rather than implied.
    *
