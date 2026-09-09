@@ -126,6 +126,41 @@ export class ReportCatalogueRepository extends Repository {
     }));
   }
 
+  /**
+   * The published configurations for a BOUNDED set of codes (P1-31 P-11).
+   *
+   * Used by the catalogue list to decide which code-registered baseline entries
+   * a tenant has published a configuration for — a tenant row overrides the
+   * baseline, and the baseline must not then appear twice.
+   *
+   * Unpaginated, and unlike the list above that is safe rather than an
+   * inconsistency: the codes come from `REPORT_DATASETS`, an in-code frozen
+   * object, so the result set is bounded by the SOURCE TREE and not by anything
+   * a tenant writes. That is the same argument `shared.export-catalogue` makes
+   * for returning a static array, and it is the argument `listPublished` cannot
+   * make.
+   */
+  async findPublishedByCodes(
+    db: DbHandle,
+    reportCodes: readonly string[]
+  ): Promise<readonly ReportConfigurationRow[]> {
+    if (reportCodes.length === 0) return [];
+    const context = this.assertContext(db);
+    const result = await this.run<ReportConfigurationRow>(
+      db,
+      `SELECT ${COLUMNS}
+         FROM rpt.report_configurations c
+         ${PUBLISHED_VERSION}
+        WHERE c.tenant_id = $1
+          AND c.report_code = ANY($2::text[])
+          AND c.status = 'published'
+          AND c.deleted_at IS NULL
+        ORDER BY c.report_code`,
+      [context.principal.tenantId, [...reportCodes]]
+    );
+    return result.rows;
+  }
+
   /** One published report definition by its stable code. */
   async findPublishedByCode(
     db: DbHandle,
