@@ -107,8 +107,12 @@ describe('every route body serialises a named type', () => {
     // this gate refuses an inline return type; the six commands serialise
     // `ChecklistTemplateView` and `ChecklistTemplateItemView`, which is the same
     // pair the reads publish.
-    expect(summary.bodies).toBe(397);
-    expect(summary.named).toBe(344);
+    // 398 with the P1-31 delivery-readiness queue (Owner decision D-3): ONE
+    // further operation, a GET returning `Page<DeliveryReadinessRowView>` — a
+    // NAMED interface, because this gate refuses an inline return type — so
+    // `named` moves by one and `composed` does not.
+    expect(summary.bodies).toBe(398);
+    expect(summary.named).toBe(345);
     expect(summary.composed).toBe(53);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

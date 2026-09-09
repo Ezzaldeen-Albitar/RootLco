@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 397,
-    "openapiPaths": 309,
-    "openapiOperations": 397,
+    "operations": 398,
+    "openapiPaths": 310,
+    "openapiOperations": 398,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -14,7 +14,7 @@
     "auditActions": 227
   },
   "counts": {
-    "Covered": 397
+    "Covered": 398
   },
   "operations": [
     {
@@ -9581,9 +9581,52 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-31-delivery-read-seam.test.ts"],
+      "tests": [
+        "tests/backend/p1-31-delivery-read-seam.test.ts",
+        "tests/backend/p1-31-delivery-readiness-seam.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/deliveries/[deliveryId]/route.ts"
+    },
+    {
+      "id": "sal.delivery-readiness-list",
+      "domain": "delivery",
+      "method": "GET",
+      "route": "/api/v1/delivery-readiness",
+      "permissions": ["sal.delivery.view", "wo.work_order.read", "sal.finance.view"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/delivery-readiness",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant",
+        "pagination"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-31-delivery-readiness-seam.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/delivery-readiness/route.ts"
     },
     {
       "id": "sal.delivery-receiver-read",

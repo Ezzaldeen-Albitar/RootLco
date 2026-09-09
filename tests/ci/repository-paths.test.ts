@@ -236,7 +236,13 @@ describe('the API application lives in the workspace', () => {
     // list and the create, the id-addressed module the detail and the rename, and
     // the item module the edit and the withdrawal — eight and five, the same
     // asymmetry, because three paths carry two verbs each.
-    expect(routeFiles.length).toBe(310);
+    //
+    // 311 with the P1-31 delivery-readiness queue (Owner decision D-3): ONE
+    // operation over ONE new module, `/delivery-readiness`. It is a top-level
+    // resource rather than a segment under `/deliveries`, on the `/damaged-stock`
+    // precedent, so it adds a module rather than a verb on an existing one — both
+    // counts move by one and the asymmetry is absent this time.
+    expect(routeFiles.length).toBe(311);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -257,7 +263,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 397 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 398 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -307,7 +313,9 @@ describe('the API application lives in the workspace', () => {
     // operations over five new modules, and 397 with the P1-31 checklist template
     // seam (P-9) merged alongside it: eight operations over five more new modules,
     // for the reason stated above the route-module count.
-    expect(report.operations).toHaveLength(397);
+    // 398 with the P1-31 delivery-readiness queue (Owner decision D-3): one
+    // operation over one new module, so both counts move by one.
+    expect(report.operations).toHaveLength(398);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the

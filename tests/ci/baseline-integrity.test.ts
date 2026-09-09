@@ -507,7 +507,7 @@ describe('the coverage include lists are pinned, because they are the denominato
       typeScriptFilesUnder(pattern.slice(0, -'/**/*.ts'.length))
     );
     expect(files.filter((file) => file.endsWith('.d.ts'))).toEqual([]);
-    expect(files.length).toBe(274);
+    expect(files.length).toBe(275);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -518,13 +518,15 @@ describe('the coverage include lists are pinned, because they are the denominato
      * `modules/warranty/application/warranty-policy-service.ts`, added by the
      * P1-31 warranty policy and coverage seam (P-10), and
      * `modules/delivery/application/checklist-template-service.ts`, added by the
-     * P1-31 checklist template seam (P-9) — 273 once both are present. The
-     * denominator is SUPPOSED to grow with the tier's source; what this case
-     * defends is that it only ever grows because a file was added, never because
-     * the include list quietly narrowed. The baseline's percentage floors are
-     * untouched: re-establishing them needs a hosted measurement run, which
-     * neither slice performed and neither claims.
+     * P1-31 checklist template seam (P-9) — 273 once both are present, and 274
+     * with `modules/delivery/application/delivery-readiness-service.ts`, added by
+     * the P1-31 delivery-readiness queue (Owner decision D-3). The denominator is
+     * SUPPOSED to grow with the tier's source; what this case defends is that it
+     * only ever grows because a file was added, never because the include list
+     * quietly narrowed. The baseline's percentage floors are untouched:
+     * re-establishing them needs a hosted measurement run, which none of these
+     * slices performed and none claims.
      */
-    expect(instrumented.length).toBe(273);
+    expect(instrumented.length).toBe(274);
   });
 });
