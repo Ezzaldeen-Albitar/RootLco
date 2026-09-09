@@ -407,8 +407,15 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         key: 'delivery',
         labelKey: 'nav.delivery',
         icon: 'delivery',
+        // `/delivery`: still planned (the screen is FE-001). P1-31 P-8 re-pointed
+        // this gate at `sal.delivery.view`, the code every shipped delivery read
+        // declares; `sal.delivery.read`, named here until then, exists in no
+        // catalogue (RES-05) — the seeds carry `sal.delivery.manage`, `.complete`
+        // and `.view` only, and the rule is to correct the reference, never to seed
+        // a `.read` code. See the permission-reuse register under
+        // docs/phase-1/pre-p1-29-multi-tenant-admin-rbac-workflow/.
         href: '/delivery',
-        permission: 'sal.delivery.read',
+        permission: 'sal.delivery.view',
         status: 'planned',
         scope: 'branch',
       },
