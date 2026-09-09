@@ -664,3 +664,78 @@ The full record is [`warranty-policy-seam.md`](./warranty-policy-seam.md). In sh
 | **P10-3** | company-wide authority from three sides — a branch-scoped holder refused every write while still reading; a company-scoped holder admitted in its company and refused in another                       |
 | **P10-4** | the overlap invariant in all three limbs, including a refused reactivation leaving the archived row's version untouched                                                                                |
 | **P10-5** | the bundle delta is exactly one code, measured against the generated P1-24 register: zero declarers for what stays excluded, more than zero for every added code                                       |
+
+---
+
+# The delivery-readiness queue — Owner decision D-3, of 2026-09-09
+
+## 30. What D-3 changed
+
+**Slice:** `remediation/p1-31-backend-delivery-readiness-seam`, ownership profile `p1-31-backend`.
+**Baseline:** protected `develop` **249c6428**.
+
+The full record is [`delivery-readiness-seam.md`](./delivery-readiness-seam.md). In short:
+
+- **The Owner's D-3 decision of 2026-09-09** separates the OPERATIONAL ready-for-delivery queue from
+  the delivery-record list. `GET /api/v1/deliveries` (PR #358) lists delivery RECORDS, so a work
+  order that is finished, quality-signed, paid and unencumbered is invisible to it precisely because
+  nobody has opened a handover yet — which is when it is most worth showing. This queue lists the
+  work orders that satisfy the authoritative SERVER eligibility rules, **including eligible work
+  orders with no delivery record**.
+- **One operation.** `GET /api/v1/delivery-readiness` maps to `sal.delivery-readiness-list`, a
+  top-level resource on the `/damaged-stock` precedent rather than a static sibling of
+  `{deliveryId}`.
+- **FOUR of the eight blocker codes**, and the other four are ABSENT rather than reported as
+  satisfied: `delivery_state_invalid`, `checklist_incomplete`, `receiver_not_verified` and
+  `signature_missing` are counted against a delivery row's id and are unaskable for a work order
+  that has none. The four that remain come from the SAME private readers the eligibility
+  composition uses, through a new `composeWorkOrderFacts`, restating none of them.
+- **No new work-order status**, **no browser-side eligibility**, **no broadening of finance
+  permissions** — the three constraints D-3 came with, honoured in sections 3 and 4 of the record.
+- **Nothing was minted.** No migration, no schema change, no seed, no permission, no audit action.
+
+### 30.1 What was published, and what was minted
+
+| published                                                                         | minted  |
+| --------------------------------------------------------------------------------- | ------- |
+| 1 operation, 1 route module, 1 path, 1 application service, 1 work-order port     | nothing |
+| register 397 to **398** operations, 309 to **310** paths, audit actions unchanged | nothing |
+
+### 30.2 Dispositions
+
+| id                    | finding                                                                                                                      | measured                                                                                                                                                                                                                                                                                                                                               | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | owner / slice | status |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------- | ------ |
+| **CC-24 provisional** | no batch variant of the four fact sources exists, so a page of N costs about **5N** round trips and the page must stay small | `qualityModule().gate.evaluate`, billing's `openReceivableForWorkOrder`, inventory's `reads.openCommitmentsFor` and this module's `findLiveDeliveryForWorkOrder` each answer for ONE work order. There is no batched form of any of them anywhere in `apps/api/src`, so twenty rows cost on the order of a hundred round trips plus the candidate page | **accepted, with the page bounded and the remedy NAMED but not performed.** The default page is 20 and the maximum 50, below the platform 50/100, and the maximum is refused at the BOUNDARY rather than clamped by `resolveLimit` — returning fewer rows than were asked for is right for a cheap list and wrong for one that fans out per row. **Batch fact ports in `quality`, `billing` and `inventory` are the named prerequisite of any larger page.** They are not built here: three modules' public surfaces are not this slice's to change, and inventing a batch port per module with no consumer contract is how one surface ends up with two readers that disagree | later slice   | open   |
+
+**The identifier is provisional.** CC-19 (#357), CC-20 (the P-11 writer), CC-21 (P-9b), CC-22
+(#360) and CC-23 (report engine 1) are allocated on lanes that had not merged into `develop`
+**249c6428** when this section was written, so **CC-24 must be re-checked against `develop` before
+this branch merges** and renumbered if any of those lanes lands with a different allocation.
+
+### 30.3 What this slice did NOT do
+
+- **No migration and no schema change.** The one new SQL predicate is a parameter on the existing
+  work-order list query; every statement uses grants that already existed.
+- **No permission was minted and no seed changed.** All three declared codes are pre-existing
+  catalogue rows already carried by the tenant administrator bundle, so no widening obliges an
+  operator act and no backfill is owed.
+- **No work-order status was added.** "Ready" is composed on every read and is written nowhere.
+- **No gate was weakened.** This is a read and it gates nothing: `sal.complete_delivery`,
+  `composeFor` and the eligibility route are untouched, and the four delivery-bound blockers are
+  still enforced exactly where they were.
+- **`apps/web/src` was not edited** except through `lib/api/idempotent-operations.ts`, which a
+  repository script regenerates and which every published operation moves.
+- **No allow-list was widened and no gate suppressed.** `check-p1-30-payload-parity.mjs` filters its
+  scope to `WRITE_METHODS`, so a GET is outside it and no `PENDING` entry was added: declaring one
+  would be a claim about a gate that does not look here.
+- **FE-001 is not built**, and the batch fact ports of CC-24 are not built.
+
+### 30.4 Proof
+
+| id       | what was shown                                                                                                                                                                                                                                                                  |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D3-1** | `tests/backend/p1-31-delivery-readiness-seam.test.ts` — every fixture arranged THROUGH shipped routes: reception conversion, four transition edges, the closure command, `sal.issue_invoice`, the payment and allocation routes, the delivery routes. Nothing planted by UPDATE |
+| **D3-2** | the D-3 claim itself: a closed, settled, unencumbered work order with NO delivery record is returned ready, with no blockers                                                                                                                                                    |
+| **D3-3** | the `cancelled` trap proved rather than assumed — `is_closed` AND `is_cancellation` read off the real catalogue row, then the exclusion asserted                                                                                                                                |
+| **D3-4** | a HANDED-OVER work order raises no blocker and is still not ready, so an empty blocker list is proved insufficient to infer readiness                                                                                                                                           |
+| **D3-5** | the three declared permissions proved necessary and sufficient from four sides, with `sal.finance.view` refused at the operation rather than answered with a softened fact                                                                                                      |
