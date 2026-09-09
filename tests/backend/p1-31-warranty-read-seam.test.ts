@@ -602,8 +602,13 @@ describe('P-7 the minted read code', () => {
     expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toContain(WARRANTY_READ);
     // Nothing is withdrawn: `wty.warranty-generate` still declares the issue code.
     expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toContain(WARRANTY_ISSUE);
-    // Still excluded, unchanged by this slice (CC-01).
-    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).not.toContain(POLICY_MANAGE);
+    // `wty.policy.manage` was still excluded when P-7 landed (CC-01). P-10
+    // published the five operations that declare it on 2026-09-09 and carried it
+    // into the bundle on CC-01's own terms, so the bundle holds it now. This
+    // slice's claim is unaffected either way: the two reads declare
+    // `wty.warranty.read`, and the case above proves a holder of ONLY
+    // `wty.policy.manage` is refused them.
+    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toContain(POLICY_MANAGE);
     expect(new Set(TENANT_ADMINISTRATOR_ROLE.permissionCodes).size).toBe(
       TENANT_ADMINISTRATOR_ROLE.permissionCodes.length
     );
