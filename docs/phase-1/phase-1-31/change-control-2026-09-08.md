@@ -8,8 +8,9 @@ nine P1-31 codes") and, from section 7 onward, **P-2** … **P-5** (the delivery
 Sections 1–6 were written by the P-1 slice and are unchanged. Sections 7–11 were added by the
 P-2 … P-5 slice on 2026-09-08, and sections 12–16 by the P-6 / P-7 slice on the same day;
 sections 17–20 were added by the **D-2 backfill** slice after #349 merged, which is also where
-**CC-03** and **CC-08** are answered rather than merely restated. Identifiers continue in the same
-P1-31 namespace, so the register now runs **CC-01 … CC-11**.
+**CC-03** and **CC-08** are answered rather than merely restated; sections 21–23 were added by the
+**P-8** slice on 2026-09-09. Identifiers continue in the same P1-31 namespace, so the register now
+runs **CC-01 … CC-12**.
 Where an identifier from another phase's register is cited it carries its phase prefix — the
 **P1-30 CC-08** and **P1-30 CC-12** below are that phase's rows, not this one's.
 
@@ -376,15 +377,151 @@ moved 67 → 74. A second `--all` run immediately afterwards reported **0 widene
 
 ---
 
+# The delivery navigation gate — P-8 (RES-05)
+
+Sections 21–23 were added by the **P-8** slice on 2026-09-09; identifiers continue in the same
+P1-31 namespace, so the register now runs **CC-01 … CC-13**. **Baseline:** protected `develop`
+`f4309a8e`, `main` `1262de74` — untouched. This slice is Frontend, tooling and documentation only:
+it adds no operation, no route, no permission, no seed row and no migration.
+
+## 21. What changed
+
+`apps/web/src/config/navigation.ts` gated `/delivery` on **`sal.delivery.read`**, a code the
+catalogue does not contain — the second and last entry of the permission-parity gate's open-debt
+register, and the finding A0 carries as **RES-05** / **P-8**. The entry now gates on
+**`sal.delivery.view`**, and stays `status: 'planned'` because the screen itself is FE-001.
+
+The rule applied is the one the permission-reuse register states and the billing entry already
+follows: where an executable reference names a `.read` code the catalogue never seeded, the
+**reference is corrected** and the code is not minted. `sal.delivery.view` is not a substitute
+chosen for convenience — it is the code every shipped delivery read declares, and WFP-15's entry
+criterion names it. Decision **D-9** is therefore answered for the delivery half by precedent, and
+recorded as such in `a0-preflight.md`; its warranty half was already answered by P-7's minted
+`wty.warranty.read`.
+
+Two consequences travel in the same commit, because the gate fails closed when a registered entry
+stops reproducing:
+
+- `scripts/ci/check-permission-parity.mjs` — `KNOWN_UNCATALOGUED` is now **empty**, with the
+  delivery entry's departure recorded in the comment beside the `sal.invoice.read` note that
+  preceded it. The mechanism, the floors and every other list are untouched, and a NEW uncatalogued
+  reference still fails hard.
+- `apps/web/tests/navigation.test.ts` — the catalogue assertion was scoped to the `administration`
+  group and compared against a **transcribed** set of seven codes, so it was green over a defect in
+  another group. That is the false green A0 records on the P-8 row. It now reads
+  `supabase/seeds/04_iam_permission_catalog.sql` itself and asserts every gated entry in every
+  group, `planned` ones included. The `it` block was widened rather than duplicated, so the web
+  tier's test count does not move.
+
+## 22. Dispositions
+
+| id        | finding                                                              | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | disposition                                                                                                                                                                                                                                                                                                                                                                                       | owner / slice | status |
+| --------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------ |
+| **CC-12** | two Backend docblocks still say navigation names `sal.delivery.read` | `apps/api/src/app/api/v1/deliveries/[deliveryId]/route.ts:39` and `apps/api/src/app/api/v1/work-orders/[workOrderId]/delivery/route.ts:44` describe the navigation gate as it was before this slice. They are prose in `apps/api`, which the `p1-31-frontend` ownership profile does not admit — the `apiSource` bucket is Backend-owned, and a Frontend branch that edited them would be refused by `check-phase-ownership.mjs` for a reason the tooling is right about: a Frontend lane must not carry API source | **deferred, deliberately, and named rather than left to be discovered.** No behaviour depends on either sentence — both routes declare their permissions in `defineOperation`, and the parity gate reads declarations, not comments. The correction belongs to the documentation lane **P-13 / P-14** already open for stale source prose in `apps/api`, which owns the profile that can carry it | P-13 / P-14   | open   |
+
+## 23. What this slice did NOT do
+
+- **No grant was broadened.** No seed row, no bundle change, no role, no policy. A principal that
+  could see the delivery entry before this commit could see it only by holding a code that exists in
+  no catalogue — that is, no principal could. After it, the entry is visible to a holder of
+  `sal.delivery.view`, which is exactly the audience the delivery reads already answer.
+- **No screen was built and no entry became available.** `/delivery` is still `planned`; the
+  `planned` assertion in the same test is unchanged, and FE-001 remains ahead.
+- **No permission was minted.** P-7 is the phase's only shipping insert into `iam.permissions`, and
+  this slice does not join it.
+- **The parity gate's mechanism was not touched** — only its data. Emptying the register is a
+  measurement of the repository, not a widening of an allowance.
+
+### Proof
+
+| id       | what was shown                                                                                                                                                   |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **P8-1** | every navigation `permission` in every group — 26 distinct codes — is present in the catalogue seed; before the change exactly one, `sal.delivery.read`, was not |
+| **P8-2** | `validate:permission-parity` passes with an EMPTY debt register, which the gate itself would refuse if the removed entry still reproduced                        |
+| **P8-3** | the widened assertion reads the seed file itself (119 codes parsed) rather than a transcription of it, so no copied list can drift away from the catalogue       |
+| **P8-4** | the unit tier stays at 3264 tests and the web tier at 3552 — the false green was closed by widening an assertion, not by adding one                              |
+
+---
+
+## 24. The documentation-corrections slice — prerequisites P-13 and P-14
+
+Added on 2026-09-09 by `remediation/p1-31-backend-documentation-corrections`, on the
+`p1-31-backend` lane. It changes comments and records only: **no behaviour changed, no operation was
+declared, widened or withdrawn, no permission code was minted, granted or revoked, and no migration,
+seed, policy or grant was touched.**
+
+**P-13 — four rows of [`operation-inventory.md`](../phase-1-22/operation-inventory.md) corrected**
+against the `defineOperation(...).permissions` of the routes themselves, each cross-checked against
+the generated `docs/phase-1/phase-1-22/evidence/endpoint-inventory.md`:
+
+| operation                       | the inventory said                          | the route declares                                               |
+| ------------------------------- | ------------------------------------------- | ---------------------------------------------------------------- |
+| `sal.delivery-eligibility-read` | `sal.delivery.manage`, `sal.finance.view`   | `sal.delivery.view`, `sal.finance.view`                          |
+| `sal.delivery-receiver-verify`  | `sal.delivery.manage`                       | `sal.delivery.manage`, `sal.delivery.view`                       |
+| `sal.delivery-signature-attach` | `sal.delivery.manage`                       | `sal.delivery.manage`, `sal.delivery.view`                       |
+| `sal.delivery-complete`         | `sal.delivery.complete`, `sal.finance.view` | `sal.delivery.complete`, `sal.delivery.view`, `sal.finance.view` |
+
+The table's other two rows — `sal.delivery-create` and `sal.delivery-checklist-record` — already
+agreed with the code and were left alone, and so was the paragraph beneath the table: it says only
+that the eligibility read and the completion both require `sal.finance.view` "in addition to their
+delivery authority", which is as true after the correction as before it, so there was no stale prose
+to rewrite.
+
+**P-14 — the retrievability claim corrected in every LIVE copy.** The `P1-22-L-04` section of
+`apps/api/src/app/api/v1/deliveries/[deliveryId]/signatures/route.ts`, the
+`sal.delivery.signature_recorded` description in `apps/api/src/server/auth/audit-actions.ts` and the
+"No signature retrieval" bullet of the P1-22 operation inventory each asserted that no application
+path could move a document version to `accepted`. Each now quotes `AttachmentService.requestDownload`
+rather than paraphrasing it, and the measurement behind the correction is
+`supabase/migrations/20260815090000_shared_reception_evidence_foundation.sql`, which adds
+`ins_file_scan_results_scanner`, `upd_document_versions_lifecycle`, `GRANT INSERT ON
+shared.file_scan_results` and `GRANT UPDATE(status) ON shared.document_versions`. A grep afterwards
+found eight further live copies of the same claim — the signature-LIST docblock in that route file,
+`modules/delivery/{index.ts, data/delivery-repository.ts, application/delivery-read-service.ts,
+application/delivery-service.ts (twice)}` and the two `note:` strings for
+`sal.delivery-signature-list` and `sal.delivery-signature-attach` in
+`scripts/check-operation-test-coverage.mjs` — and all of them were corrected in this same pull
+request, to the same framing and with no behaviour change (**CC-13**).
+`docs/phase-1/phase-1-22/contract-archaeology.md` and `docs/phase-1/phase-1-22/blocker-treatment.md`
+are **deliberately untouched**: they are historical P1-22 records of what was measured then, and
+editing them would rewrite a finding rather than correct a claim.
+
+**The P-8 deferral.** The two delivery-read docblocks that explain why they do not declare
+`sal.delivery.read` — `deliveries/[deliveryId]/route.ts` and
+`work-orders/[workOrderId]/delivery/route.ts` — now record that P1-31 prerequisite P-8 re-points the
+navigation entry at `sal.delivery.view` (**RES-05**), with the surrounding rationale kept. This
+branch therefore merges AFTER the P-8 pull request.
+
+| id        | finding                                                                                                                | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | owner / slice     | status |
+| --------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | ------ |
+| **CC-13** | the corrected retrievability claim survived in six further LIVE source docblocks and two gate-register `note:` strings | P-14 was scoped to five copies of `P1-22-L-04`. A grep over the tree returned more: besides the three live copies corrected first and the two historical records left as written, the same "no scanner is provisioned / acceptance is unreachable" assertion appeared in the signature-LIST docblock of the SAME route file, in `modules/delivery/{application/delivery-read-service.ts, application/delivery-service.ts (twice), data/delivery-repository.ts, index.ts}`, and in the `sal.delivery-signature-list` and `sal.delivery-signature-attach` `note:` strings of `scripts/check-operation-test-coverage.mjs` | **closed — all eight were corrected in THIS pull request**, in a follow-up commit, comment-and-string only with no behaviour change, each restating the same corrected framing as the route: a bound version is refused with `ERR-DOC-001` while it is not `accepted`, which is a state check rather than an impossibility, and the module offering no retrieval path is a scope statement. The two `note:` strings keep their coverage purpose and lost only the false factual clause; `validate:operation-coverage` was re-run. The two historical P1-22 records remain untouched for the reason given above | P-14, this branch | closed |
+
+**One further live copy sits in an Owner document, and was left to the Owner.** The same stale
+retrievability claim is still asserted in `docs/product/workshop/reception-media-checklist.md` —
+the state table at lines ~205–206, which calls the `Accepted` state "Unreachable", the sentence
+beneath it describing the best reachable state as "registered, pending, never downloadable", and
+§5.3, whose heading states the same thing. It was **not** edited on this branch: product workshop
+documents under `docs/product/` are Owner-input, and this lane corrects source docblocks and phase
+records only. The Owner is asked either to correct that passage or to authorise the correction on a
+later lane.
+
+**Identifier note:** **CC-13** is this slice's id. `develop` now holds **CC-01 … CC-12** in this
+register, `CC-12` having been taken by the merged P-8 slice, so this slice continues the sequence
+at **CC-13**.
+
+---
+
+---
+
 # P-9 — the delivery checklist template seam, of 2026-09-09
 
-Sections 21-24 were added by the **P-9** slice. Its identifier is **CC-15 and is PROVISIONAL**: two
+Sections 25-28 were added by the **P-9** slice. Its identifier is **CC-15 and is PROVISIONAL**: two
 P1-31 lanes are open at the time of writing and are expected to take CC-13 and CC-14, so this row is
 to be re-checked against `develop` before merge and renumbered if either landed differently.
 **Baseline:** protected `develop` `f4309a8e` (PR #350, the D-2 bundle backfill), `main` `1262de74` —
 untouched.
 
-## 21. What was published
+## 25. What was published
 
 Eight operations under `/api/v1/delivery-checklist-templates`, closing **PPD-12**: the checklist
 template and template-item tables carried INSERT and UPDATE grants and policies from P1-11 and **no
@@ -408,13 +545,13 @@ bundle changed, and no migration was added.** The register moves **382 -> 390** 
 **299 -> 304** paths, **216 -> 222** audit actions. Full record:
 [`delivery-checklist-template-seam.md`](./delivery-checklist-template-seam.md).
 
-## 22. Dispositions
+## 26. Dispositions
 
 | id        | finding                                                                                   | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | owner / slice                                            | status |
 | --------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- | ------ |
 | **CC-15** | an **INACTIVE** checklist template still blocks a handover, and this slice did not fix it | `sal.complete_delivery` (`supabase/migrations/20260724094000_sal_delivery.sql`, section 8) counts mandatory items with `ti.company_id = ... AND ti.is_mandatory AND ti.deleted_at IS NULL`. It never joins `sal.delivery_checklist_templates` and reads no template `status`, so deactivating a template leaves its mandatory items gating every delivery in that company. The application mirror in `DeliveryRepository.mandatoryChecklistGaps` reproduces the primitive exactly, including this. Proved on real rows in `COMPANY_A9`: an inactive template's mandatory item produces `checklist_incomplete` naming the item | **open, and deliberately NOT mirrored away.** Filtering inactive templates in the mirror alone would report a delivery ELIGIBLE that the primitive then refuses inside the transaction, which is the failure the repository's own rule about mirrors exists to prevent. Correcting the behaviour means replacing a protected function - a forward migration - which this prerequisite does not sanction and which the shared acceptance database could not receive without a migration run. **The operator remedy that works today is published by this slice:** the item-withdrawal route sets exactly the column the primitive filters on, and the suite proves the blocker clears | a later `sal` migration slice, with P1-22 under Field 13 | open   |
 
-## 23. What this slice did NOT do
+## 27. What this slice did NOT do
 
 - **No permission was minted and no bundle changed.** Both codes are seeded and both are already in
   the tenant administrator bundle; the count stays at 74.
@@ -432,7 +569,7 @@ bundle changed, and no migration was added.** The register moves **382 -> 390** 
   read seam said it could not supply.
 - **No canonical task was closed.** P-9 is an execution prerequisite; the 29 remain 29.
 
-## 24. Proof
+## 28. Proof
 
 `tests/backend/p1-31-delivery-checklist-template-seam.test.ts`, **27 cases on real rows**, every one
 of which authors what it reads **through the published routes** - unlike every suite before it, this

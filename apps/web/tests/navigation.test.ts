@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   NAVIGATION,
@@ -142,27 +144,30 @@ describe('the navigation model', () => {
     ]);
   });
 
-  it('gates every P1-26 entry on a permission that exists in the platform catalogue', () => {
+  it('gates every entry on a permission that exists in the platform catalogue', () => {
     // `org.settings.read` was the previous Settings gate and is in NO catalogue
     // and NO operation — so "unknown means denied" hid the entry from every
-    // actor who ever existed (finding P1-26-F-011). These are the codes seeded
-    // by supabase/seeds/04_iam_permission_catalog.sql that P1-26's operations
-    // actually require.
-    const CATALOGUE = new Set([
-      'iam.user.read',
-      'iam.role.read',
-      'iam.approval.manage',
-      'iam.audit.view',
-      'org.tenant.read',
-      'org.settings.manage',
-      'org.tax.manage',
-    ]);
-    const administration = NAVIGATION.find((group) => group.key === 'administration');
-    expect(administration).toBeDefined();
-    const entries = flattenNavigation([administration!]);
-    for (const entry of entries) {
-      if (entry.permission === null) continue;
-      expect(CATALOGUE.has(entry.permission), `${entry.key} → ${entry.permission}`).toBe(true);
+    // actor who ever existed (finding P1-26-F-011).
+    //
+    // This assertion was scoped to the `administration` group and to a copied
+    // list of seven codes, so it was green over `sal.delivery.read` — a code in
+    // no catalogue, on the delivery entry, in another group (RES-05). P1-31 P-8
+    // widened it: EVERY gated entry in EVERY group, including `planned` ones,
+    // read against the seed itself rather than against a transcription of it.
+    const seed = readFileSync(
+      join(__dirname, '..', '..', '..', 'supabase', 'seeds', '04_iam_permission_catalog.sql'),
+      'utf8'
+    );
+    // Only a VALUES row begins with `('code',`; the seed's prose comments begin
+    // with `--` and are therefore never read as codes.
+    const CATALOGUE = new Set(
+      [...seed.matchAll(/^\s*\('([a-z0-9_]+(?:\.[a-z0-9_]+)+)'\s*,/gm)].map((m) => m[1])
+    );
+    expect(CATALOGUE.size, 'the catalogue seed parsed to nothing').toBeGreaterThan(100);
+    const gated = ALL.filter((entry) => entry.permission !== null);
+    expect(gated.length, 'no gated navigation entry was examined').toBeGreaterThan(0);
+    for (const entry of gated) {
+      expect(CATALOGUE.has(entry.permission!), `${entry.key} → ${entry.permission}`).toBe(true);
     }
   });
 

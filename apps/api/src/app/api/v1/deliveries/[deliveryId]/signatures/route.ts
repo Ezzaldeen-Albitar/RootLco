@@ -18,19 +18,32 @@
  * records that a document was bound to a handover. It does not assert that the mark in
  * that document is a particular person's, nor that it satisfies any signature law.
  *
- * ## Bound but never retrievable — P1-22-L-04
+ * ## Bound, and downloadable only once accepted — P1-22-L-04, corrected here
  *
  * `sal.delivery_signatures` accepts ANY `document_versions` row regardless of status,
  * while `shared.document_versions.status` defaults to `'pending'` and
- * `DOWNLOADABLE_STATES` is `['accepted']`. **No application path can produce
- * acceptance**: `shared.file_scan_results` is granted to no role in any form,
- * `shared.guard_document_version_transition` requires a clean scan, and the only runtime
- * UPDATE policy pins `pending → rejected`.
+ * `DOWNLOADABLE_STATES` is `['accepted']`. P1-22 recorded the rest of the rule as "no
+ * application path can produce acceptance" — `shared.file_scan_results` granted to no
+ * role, the only runtime UPDATE policy pinning `pending → rejected`. **That is no longer
+ * the rule the attachment service implements**, and this docblock said so for longer than
+ * it was true: `20260815090000_shared_reception_evidence_foundation.sql` adds
+ * `ins_file_scan_results_scanner`, `upd_document_versions_lifecycle`, `GRANT INSERT ON
+ * shared.file_scan_results` and `GRANT UPDATE(status) ON shared.document_versions`.
  *
- * So binding works and download always fails with `ERR-DOC-001`. This phase therefore
- * ships NO signature-retrieval endpoint: an endpoint that fails on every call is worse
- * than an absent one, because it reads as a capability. The limitation is carried
- * forward rather than papered over.
+ * `AttachmentService.requestDownload` carries today's rule, and it is quoted rather than
+ * paraphrased. It records that the state check "used to be 'no path in this phase can
+ * accept a version', which was true when nothing could produce a verdict.
+ * `registerVersionAndScan` now can", and that what it rests on instead is: "an accepted
+ * version passed `scanning` with an exclusively clean verdict, enforced by
+ * `shared.guard_document_version_transition` rather than by this method; and a rejected or
+ * quarantined version is terminal, so it can never become downloadable later".
+ *
+ * So a version bound here is refused with `ERR-DOC-001` while it is not `accepted`, and
+ * that refusal is a state check rather than an impossibility. This route still ships NO
+ * signature-retrieval endpoint of its own — retrieval of a `shared.document_versions` row
+ * is the shared attachment path's contract, not this module's — but that is now a scope
+ * statement and no longer a claim that retrieval could never work. Corrected by P1-31
+ * prerequisite P-14; nothing on this path changed behaviour.
  */
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
@@ -131,15 +144,19 @@ export async function POST(
  * at microsecond precision, because `signed_at` defaults to `now()` and several
  * signatures attached in one transaction share it exactly (`P1-27-INT-006`).
  *
- * ## References, never bytes — and no download
+ * ## References, never bytes — and no download offered by this module
  *
  * Each entry carries `signatureDocumentVersionId`, a `shared.document_versions`
  * reference whose sha256 anchors the signature. Raw signature data appears nowhere in
- * this module. No retrieval path is offered here or anywhere else in it: the
- * documented reason is `P1-22-L-04` — `shared.guard_document_version_transition`
- * requires a clean scan record to reach `accepted`, no scanner is provisioned, and
- * `DOWNLOADABLE_STATES` is `['accepted']`, so a download route would be a contract
- * that always fails.
+ * this module. No retrieval path is offered here, and that is a scope statement rather
+ * than an impossibility: `AttachmentService.requestDownload` refuses a version with
+ * `ERR-DOC-001` while it is not `accepted`, which is a state check. P1-22 recorded the
+ * rest as "no application path can produce acceptance" (`P1-22-L-04`); that is no longer
+ * the rule, because `20260815090000_shared_reception_evidence_foundation.sql` adds
+ * `GRANT INSERT ON shared.file_scan_results` and `GRANT UPDATE(status) ON
+ * shared.document_versions`, so `registerVersionAndScan` can produce a verdict.
+ * Retrieval of a `shared.document_versions` row is the shared attachment path's
+ * contract, not this module's. Corrected by P1-31 prerequisite P-14.
  *
  * ## Permission
  *

@@ -190,11 +190,14 @@ export interface AuthorizedReceiverRow {
  *
  * `signatureDocumentVersionId` is a reference to a `shared.document_versions` row.
  * **Raw signature bytes never appear here, or anywhere in this module.** There is
- * also no retrieval method: `shared.guard_document_version_transition` requires a
- * clean scan record to reach `accepted`, no scanner is provisioned, and
- * `DOWNLOADABLE_STATES` is `['accepted']` — so a download path would be a contract
- * that always fails (`P1-22-L-04`). The reference is returned; fetching it is not
- * offered.
+ * also no retrieval method here, and that is a scope boundary rather than an
+ * impossibility: fetching belongs to the shared attachment path, whose
+ * `requestDownload` refuses a version with `ERR-DOC-001` while it is not `accepted` —
+ * a state check. P1-22 recorded the rest as "no application path can produce
+ * acceptance" (`P1-22-L-04`); `20260815090000_shared_reception_evidence_foundation.sql`
+ * adds `GRANT INSERT ON shared.file_scan_results` and `GRANT UPDATE(status) ON
+ * shared.document_versions`, so that is no longer the rule. The reference is returned;
+ * fetching it is not offered by this repository. Corrected by P1-31 prerequisite P-14.
  *
  * The table is append-only by grant (SELECT + INSERT, no UPDATE, no DELETE), which
  * is why there is no `recordVersion` and no `deleted_at` on it.

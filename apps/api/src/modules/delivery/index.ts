@@ -22,12 +22,15 @@
  *   own one — and the `sal.finance.view` gating that makes the check honest lives on
  *   the tables billing owns.
  * - **It does not retrieve a signature or an identity document.** Both are
- *   `shared.document_versions` REFERENCES. There is no download path, and that is
- *   structural rather than an omission: `DOWNLOADABLE_STATES` is `['accepted']`,
- *   `shared.guard_document_version_transition` requires a clean scan record to reach
- *   `accepted`, and no scanner is provisioned anywhere in the platform — so a
- *   retrieval method would be a contract that always fails (`P1-22-L-04`). Raw
- *   signature bytes are never read, stored, logged or forwarded by any code here.
+ *   `shared.document_versions` REFERENCES. There is no download path here, and that is
+ *   a scope boundary rather than an impossibility: retrieval belongs to the shared
+ *   attachment path, whose `requestDownload` refuses a version with `ERR-DOC-001` while
+ *   it is not `accepted` — a state check. P1-22 recorded the rest as "no application
+ *   path can produce acceptance" (`P1-22-L-04`); that is no longer the rule, because
+ *   `20260815090000_shared_reception_evidence_foundation.sql` adds `GRANT INSERT ON
+ *   shared.file_scan_results` and `GRANT UPDATE(status) ON shared.document_versions`.
+ *   Raw signature bytes are never read, stored, logged or forwarded by any code here.
+ *   Corrected by P1-31 prerequisite P-14.
  * - **It makes no claim about a signature's validity.** Nothing here asserts that a
  *   bound document is biometric, verified against a specimen, or legally binding. It
  *   records that an immutable version was bound to a handover by a named actor at a

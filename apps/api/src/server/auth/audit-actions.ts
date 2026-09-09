@@ -1626,7 +1626,7 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     class: 'privileged',
     entityType: 'sal.delivery_signature',
     description:
-      'A handover signature was bound to a delivery by document-version reference. The reference only: no signature bytes enter the audit record, the event payload or any log line, and this platform makes no biometric or legal-validation claim about the image. The version can be bound but never downloaded, because no application path can move one to `accepted` (P1-22-L-04).',
+      'A handover signature was bound to a delivery by document-version reference. The reference only: no signature bytes enter the audit record, the event payload or any log line, and this platform makes no biometric or legal-validation claim about the image. The bound version is downloadable through the shared attachment path only once it is `accepted`, which per `AttachmentService.requestDownload` means it "passed `scanning` with an exclusively clean verdict"; while it is not, a download is refused with ERR-DOC-001. P1-22-L-04 recorded that acceptance was unreachable, which stopped being true when the scan path shipped; corrected by P1-31 prerequisite P-14.',
   },
   {
     code: 'sal.delivery.completed',
