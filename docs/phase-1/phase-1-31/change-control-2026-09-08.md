@@ -373,3 +373,78 @@ Run on 2026-09-08 by `platform.operator@rootlco.local`, `--all`, dry run first a
 `rootlco_w7b` 48 → 74 and `p30_acceptance_ac0zif` 65 → 74; the eighteen `p30_journey_*` organisations
 moved 67 → 74. A second `--all` run immediately afterwards reported **0 widened, 24 already current**
 — idempotency on the real rows rather than only in the suite.
+
+---
+
+# P-9 — the delivery checklist template seam, of 2026-09-09
+
+Sections 21-24 were added by the **P-9** slice. Its identifier is **CC-15 and is PROVISIONAL**: two
+P1-31 lanes are open at the time of writing and are expected to take CC-13 and CC-14, so this row is
+to be re-checked against `develop` before merge and renumbered if either landed differently.
+**Baseline:** protected `develop` `f4309a8e` (PR #350, the D-2 bundle backfill), `main` `1262de74` —
+untouched.
+
+## 21. What was published
+
+Eight operations under `/api/v1/delivery-checklist-templates`, closing **PPD-12**: the checklist
+template and template-item tables carried INSERT and UPDATE grants and policies from P1-11 and **no
+code anywhere in `apps/api/src` had ever written either one**, so a tenant provisioned through the
+product had an empty handover checklist and no way to fill it.
+
+| operation                                     | method | path                                         | guards                         |
+| --------------------------------------------- | ------ | -------------------------------------------- | ------------------------------ |
+| `sal.delivery-checklist-template-list`        | GET    | `/delivery-checklist-templates`              | paged                          |
+| `sal.delivery-checklist-template-read`        | GET    | `/delivery-checklist-templates/{templateId}` | -                              |
+| `sal.delivery-checklist-template-create`      | POST   | `/delivery-checklist-templates`              | `idempotent`, 201              |
+| `sal.delivery-checklist-template-rename`      | PATCH  | `/delivery-checklist-templates/{templateId}` | `versionGuarded`               |
+| `sal.delivery-checklist-template-status-set`  | POST   | `.../{templateId}/status`                    | `idempotent`, `versionGuarded` |
+| `sal.delivery-checklist-template-item-create` | POST   | `.../{templateId}/items`                     | `idempotent`, 201              |
+| `sal.delivery-checklist-template-item-update` | PATCH  | `.../{templateId}/items/{itemId}`            | `versionGuarded`               |
+| `sal.delivery-checklist-template-item-remove` | DELETE | `.../{templateId}/items/{itemId}`            | soft delete                    |
+
+Reads declare `sal.delivery.view`, commands `sal.delivery.manage` - both already seeded and both
+already in the provisioning bundle through P-1. **No permission was minted, no seed changed, no
+bundle changed, and no migration was added.** The register moves **382 -> 390** operations,
+**299 -> 304** paths, **216 -> 222** audit actions. Full record:
+[`delivery-checklist-template-seam.md`](./delivery-checklist-template-seam.md).
+
+## 22. Dispositions
+
+| id        | finding                                                                                   | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | owner / slice                                            | status |
+| --------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- | ------ |
+| **CC-15** | an **INACTIVE** checklist template still blocks a handover, and this slice did not fix it | `sal.complete_delivery` (`supabase/migrations/20260724094000_sal_delivery.sql`, section 8) counts mandatory items with `ti.company_id = ... AND ti.is_mandatory AND ti.deleted_at IS NULL`. It never joins `sal.delivery_checklist_templates` and reads no template `status`, so deactivating a template leaves its mandatory items gating every delivery in that company. The application mirror in `DeliveryRepository.mandatoryChecklistGaps` reproduces the primitive exactly, including this. Proved on real rows in `COMPANY_A9`: an inactive template's mandatory item produces `checklist_incomplete` naming the item | **open, and deliberately NOT mirrored away.** Filtering inactive templates in the mirror alone would report a delivery ELIGIBLE that the primitive then refuses inside the transaction, which is the failure the repository's own rule about mirrors exists to prevent. Correcting the behaviour means replacing a protected function - a forward migration - which this prerequisite does not sanction and which the shared acceptance database could not receive without a migration run. **The operator remedy that works today is published by this slice:** the item-withdrawal route sets exactly the column the primitive filters on, and the suite proves the blocker clears | a later `sal` migration slice, with P1-22 under Field 13 | open   |
+
+## 23. What this slice did NOT do
+
+- **No permission was minted and no bundle changed.** Both codes are seeded and both are already in
+  the tenant administrator bundle; the count stays at 74.
+- **No migration, and no schema change of any kind.** Every statement uses a grant and a policy that
+  have existed since P1-11.
+- **No screen.** `apps/web` is unchanged except through the GENERATED idempotency manifest, which
+  every published operation moves. The request-payload mirror for the five body-carrying writes is
+  owed by the `p1-31-frontend` lane that builds FE-004; they are declared `PENDING` in
+  `scripts/ci/check-p1-30-payload-parity.mjs`, whose lifecycle fails the moment a mirror exists and
+  the entry is not deleted.
+- **No delivery write path, eligibility rule, state machine or gate behaviour changed.** The
+  eligibility mirror is byte-for-byte as it was; CC-15 records why.
+- **P1-27-INT-088 is not closed.** The GAP side keeps all three limbs. What changed is that a caller
+  can now resolve a `template_item_id` to a code and a label, which is the half of **CC-06** the
+  read seam said it could not supply.
+- **No canonical task was closed.** P-9 is an execution prerequisite; the 29 remain 29.
+
+## 24. Proof
+
+`tests/backend/p1-31-delivery-checklist-template-seam.test.ts`, **27 cases on real rows**, every one
+of which authors what it reads **through the published routes** - unlike every suite before it, this
+one seeds neither checklist table by admin SQL, because that seeding is the measurement PPD-12
+records.
+
+| case group             | proves                                                                                                                                                                                                                                                                        |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| registrations          | the eight ids, their permissions, `scope`, audit class and each guard flag - and that the withdrawal is deliberately not version-guarded                                                                                                                                      |
+| create                 | header and items in one transaction; duplicate template code 409; a body repeating an item code refused with NOTHING written; a company outside the tenant refused by the FK; `status` and `id` unexpressible; replay under one key creates one template and one audit record |
+| reads                  | detail in checklist order to `SAL_READER`, which holds no manage code; list paged and the two pages disjoint; a caller without `sal.delivery.view` refused both; another tenant 404                                                                                           |
+| company-wide authority | `SAL_SCOPED_A2` (branch-scoped) refused every write and still able to READ; `SAL_COMPANY_SCOPED` admitted in `COMPANY_A1` and refused in `COMPANY_A9`; a reader refused all six commands; a foreign tenant 404 on a write                                                     |
+| version guards         | `If-Match` absent 428, stale 409 with the row unchanged, success advancing the version by exactly one; the ITEM version is not the template's; a one-field patch leaves the others untouched                                                                                  |
+| withdrawal             | soft delete with the row still present, the item gone from the detail read, the code re-addable, and a second withdrawal answering the uniform 404                                                                                                                            |
+| **the gate**           | an inactive template's mandatory item still produces `checklist_incomplete` naming the item, and withdrawing the item clears it - **CC-15**, measured rather than argued                                                                                                      |
