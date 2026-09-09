@@ -380,7 +380,7 @@ moved 67 → 74. A second `--all` run immediately afterwards reported **0 widene
 # The delivery navigation gate — P-8 (RES-05)
 
 Sections 21–23 were added by the **P-8** slice on 2026-09-09; identifiers continue in the same
-P1-31 namespace, so the register now runs **CC-01 … CC-14**. **Baseline:** protected `develop`
+P1-31 namespace, so the register now runs **CC-01 … CC-19**. **Baseline:** protected `develop`
 `f4309a8e`, `main` `1262de74` — untouched. This slice is Frontend, tooling and documentation only:
 it adds no operation, no route, no permission, no seed row and no migration.
 
@@ -588,20 +588,200 @@ records.
 
 ---
 
+## 29. What P-10 changed — the warranty policy and coverage seam (PPD-04)
+
+**Slice:** `remediation/p1-31-backend-warranty-policy-seam`, ownership profile `p1-31-backend`.
+**Baseline:** protected `develop` **5cd06fbd**, merged into this branch, which carries the
+documentation-corrections slice (**#354**, section 24, **CC-13**) and the P-9 checklist-template
+seam (**#355**, sections 25–28, **CC-14**).
+
+Both lanes that were open ahead of this one have landed, so the numbering is settled rather than
+assumed: `develop` holds sections 1–28 and **CC-01 … CC-14**, and this section continues at **29**
+with its dispositions at **CC-15 … CC-18**.
+
+The full record is [`warranty-policy-seam.md`](./warranty-policy-seam.md). In short:
+
+- **PPD-04 is closed by seven operations.** `wty.warranty_policies` and `wty.warranty_coverage`
+  carried `INSERT` and `UPDATE` grants and policies from P1-11 and had **no writer anywhere in
+  `apps/api/src`**, so `resolvePolicy` refused every company that had no active policy and
+  nothing could create one: a tenant provisioned through the product could never issue a warranty
+  at all. Two reads declare `wty.warranty.read`; five writes declare `wty.policy.manage`.
+- **`wty.policy.manage` is declared for the first time.** It has been a seeded catalogue row since
+  P1-08, named by no operation and by no policy predicate. **Nothing was minted**: no seed row, no
+  migration, no new code.
+- **CC-01 is closed on its own terms, and the bundle moves 74 → 75.** CC-01 withheld the code
+  BECAUSE nothing declared it, and stated the rule for lifting it — "the slice that publishes them
+  owns the widening", the `inv.item.manage` sequence of #322. Five operations now declare it.
+  `rpt.report.configure` stays excluded on CC-02's unchanged grounds and `rpt.export` on CC-04's
+  Owner decision, so **TWO** deliberate exclusions remain rather than three.
+- **The widening obliges an operator act after merge**, recorded as **CC-16** below.
+
+### 29.1 What was published, and what was minted
+
+| published                                                                           | minted  |
+| ----------------------------------------------------------------------------------- | ------- |
+| 7 operations, 5 route modules, 5 paths, 5 audit actions, 1 application service      | nothing |
+| register 390 → **397** operations, 304 → **309** paths, 222 → **227** audit actions | nothing |
+| bundle 74 → **75** codes, all of them pre-existing catalogue rows                   | nothing |
+
+### 29.2 Dispositions
+
+| id        | finding                                                                                                                   | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | owner / slice         | status |
+| --------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ------ |
+| **CC-15** | the coverage URL segment is `coverage-windows`, because a directory named `coverage` cannot be tracked                    | `.gitignore:45` carries the root-unanchored rule `coverage/`, which git applies at EVERY depth. A route directory at `apps/api/src/app/api/v1/warranty-policies/[policyId]/coverage/` is therefore skipped by `git add` in silence — measured rather than predicted: the first staging of this slice tracked three of its five route modules, and `check-api-backend-only.mjs` reported 303 handlers where 305 then existed. Untracked files are invisible to every gate that enumerates through `git ls-files`, which is the encoding gate, both secret scanners, the scope-exclusion guard and the no-fake-data guard    | **renamed, deliberately, rather than excepted.** The alternative was a negation entry in `.gitignore` for one source directory: a config exception every future reader has to be told about, sitting one edit away from re-ignoring real coverage output. `coverage-windows` is the phrase the module prose already uses for an effective-dated row, so the URL and the docblocks agree and nothing has to be explained. **Consequence, accepted and named:** the published path is `/warranty-policies/{policyId}/coverage-windows`, and FE-008 / FE-009 must be built against it                                                                                                                                        | this slice            | closed |
+| **CC-16** | organisations provisioned BEFORE this slice cannot administer warranty policies, and cannot delegate the authority either | The bundle is written ONCE, inside `platform.organization-provision`, and nothing re-applies it. Every organisation provisioned on the 48-, 65-, 67-, 73- or 74-code bundle holds no `wty.policy.manage`, so from this commit its administrator is refused all five new writes with `ERR-IAM-001`, and `ins_role_permissions_delegable` admits a mapping only when the acting administrator already holds the code. This is **CC-03** and **CC-08** restated for a third widening — and unlike CC-08 it WITHHOLDS something new rather than withdrawing something old, because the five operations did not exist yesterday | **accepted, with the remedy named and NOT performed here.** `scripts/platform/backfill-tenant-administrator-bundle.mjs`, built for **CC-11**, parses `bootstrap-roles.ts` at run time and therefore needs no edit to carry this code; `tests/backend/p1-31-tenant-administrator-bundle-backfill.test.ts` moved its eight-code list with the reason. It is an OPERATOR ACT on a privileged connection — `iam.role_permissions` is `FORCE ROW LEVEL SECURITY` and `ins_role_permissions_platform_bootstrap` admits the platform role only while the tenant is `provisioning` — so it requires a run against each environment **after this branch merges**. This slice did not run it and does not claim it was run anywhere | operator, after merge | open   |
+| **CC-17** | the coverage status command is version-guarded and NOT idempotent, alone among the five writes                            | `ex_warranty_coverage_no_overlap` is PARTIAL on `status = active`, so an archived window sits outside it and its days may be re-covered while it is archived. Reactivating it then raises `23P01`. No status command in the P-9 precedent can fail that way, so that precedent declares BOTH guards on its own status route and this one cannot follow it                                                                                                                                                                                                                                                                  | **accepted, and the divergence from the precedent recorded rather than left to look like an oversight.** An idempotency reservation replays a STORED result: a second submission would be handed a success computed before the replacement row existed, which is the one outcome a caller must not receive here. The version guard already makes a duplicate submission safe — the second one loses on `record_version`. The suite proves the sequence on real rows and asserts the archived row unchanged after a refused reactivation, so a refused reactivation burns no version                                                                                                                                       | this slice            | closed |
+| **CC-18** | the coverage CHECK constraints are unreachable through the published routes, so their error mapping is untested           | `ck_warranty_coverage_scope`, `ck_warranty_coverage_duration`, `ck_warranty_coverage_odometer` and `ck_warranty_coverage_effective` are each mirrored by the request schema, so no request that reaches the database can violate one. `WarrantyPolicyService` maps `23514` to `ERR-VAL-001` by reading the violated constraint NAME, on the `INVOICE_UNIQUE_INDEX` pattern, and nothing reachable through the routes can exercise it                                                                                                                                                                                       | **kept, and declared untested rather than removed or claimed.** Removing it would leave a `23514` surfacing as `ERR-SYS-001` — a 500 telling a caller its request broke the server when the server in fact refused it — on the day the boundary and a column disagree, which is exactly when it is needed. The suite asserts the BOUNDARY refusal for each of the four values, and the suite header states in terms that the mapping is NOT claimed to have been exercised. Reaching it would need a test calling the repository beneath the route, which asserts nothing about the published surface                                                                                                                     | this slice            | closed |
+
+### 29.3 What this slice did NOT do
+
+- **No migration and no schema change.** Both tables, both RLS policy sets and every grant are
+  exactly as P1-11 left them; the statements use grants that already existed.
+- **No permission was minted and no seed changed.** `wty.policy.manage` was already a catalogue
+  row, and this slice is the first thing to declare it.
+- **No coverage edit was published.** `tg_warranty_coverage_immutable` freezes `policy_id` and
+  `effective_from`, and re-closing `effective_to` in place would restate terms a customer is
+  already bound to — archive and add is the model, and the alternative needs a decision about
+  already-issued warranties that this prerequisite does not sanction.
+- **No removal of any kind.** `deleted_at` exists on both tables and this surface never sets it;
+  retirement is `status = 'archived'`, the column the issue path already reads.
+- **No warranty record was written, read or changed.** `wty.warranty_record_status_history` still
+  has no reader (**CC-10**, unchanged), and no claim surface exists (**P1-22-L-01**, unchanged).
+- **The backfill was not run**, and no claim is made that any environment carries the new code.
+- **`apps/web/src` was not edited** except through `lib/api/idempotent-operations.ts`, which a
+  repository script regenerates and which every published operation moves.
+- **No allow-list was widened and no gate was suppressed.** `check-p1-30-payload-parity.mjs` does
+  not hold `wty` writes to a mirror at all — `P1_30_DOMAINS` is `svc`, `quo`, `inv`, `sal` —
+  so no `PENDING` entry was added: declaring one would be a claim about a gate that does not look
+  here.
+
+### 29.4 Proof
+
+| id        | what was shown                                                                                                                                                                                         |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **P10-1** | `tests/backend/p1-31-warranty-policy-seam.test.ts` — **31 cases**, every policy and coverage row authored THROUGH THE ROUTES, with no admin SQL seeding of either table                                |
+| **P10-2** | the closure end to end in `COMPANY_A9`: refused as unconfigured, authored, issued with the very terms authored, archived, refused again — and a named archived policy refused differently, ERR-TRN-001 |
+| **P10-3** | company-wide authority from three sides — a branch-scoped holder refused every write while still reading; a company-scoped holder admitted in its company and refused in another                       |
+| **P10-4** | the overlap invariant in all three limbs, including a refused reactivation leaving the archived row's version untouched                                                                                |
+| **P10-5** | the bundle delta is exactly one code, measured against the generated P1-24 register: zero declarers for what stays excluded, more than zero for every added code                                       |
+
+---
+
+# The delivery detail screen and the P-16 gate
+
+Sections 30–33 were added by the **delivery detail screen** slice on 2026-09-09; identifiers
+continue in the same P1-31 namespace. **Baseline:** protected `develop` `0272390b`, `main`
+`1262de74` — untouched. `develop` now holds sections 1–29 and **CC-01 … CC-18**: sections 25–28
+and **CC-14** belong to the P-9 checklist-template seam, and section 29 with **CC-15 … CC-18** to
+the P-10 warranty-policy seam, both of which merged after this branch was cut. This slice
+therefore continues at section 30 and at **CC-19**. This slice is Frontend, tooling, tests and
+documentation only: it adds no operation, no route, no permission, no seed row, no migration, and
+**no write of any kind**.
+
+## 30. What was delivered
+
+The first P1-31 screen: `/delivery/{deliveryId}`, a read-only view of one vehicle handover, built on
+the six reads the P-2 … P-5 seam published plus the work-order lookup.
+
+| panel                   | read                                 | what it shows                                                                         |
+| ----------------------- | ------------------------------------ | ------------------------------------------------------------------------------------- |
+| Summary                 | `sal.delivery-read` (on the page)    | stage, handover moment, a link to the work order, and four labelled identifiers       |
+| Release checks (FE-002) | `sal.delivery-eligibility-read`      | whether the vehicle may be released, every reason it may not, and every composed fact |
+| Receiver (FE-003)       | `sal.delivery-receiver-read`         | the confirmed receiver, or the fact that there is none yet                            |
+| Signatures (FE-006)     | `sal.delivery-signature-list`        | role, moment, and the statement that the image is on file                             |
+| Checklist results       | `sal.delivery-checklist-result-list` | recorded results only, with a waiver's reason beside its outcome                      |
+| History (FE-007)        | `sal.delivery-status-history`        | the append-only transition ledger, read for the first time by any screen              |
+
+A section on the work-order detail screen reads `sal.work-order-delivery-read` and either states
+that no handover exists or links to it. It is rendered only when the caller holds
+`sal.delivery.view`, so a caller without it issues no request at all.
+
+## 31. The five properties this slice is accountable for
+
+**The page decides before it reads.** `sal.delivery.view` is tested and returned on before
+`readDelivery` is called. The proof is mechanical in two places: `check-p1-31-access.mjs` (P-16)
+judges the page's source, and `apps/web/tests/delivery.dom.test.tsx` invokes the route with a
+session that holds the financial and completion codes but NOT the delivery code, and requires both
+that the refusal renders and that every one of the six adapters is untouched.
+
+**The financial rule is respected rather than discovered.** `sal.delivery-eligibility-read` declares
+`sal.finance.view` in addition to `sal.delivery.view` and answers 403 without it. The page resolves
+that code and passes it down; the release-checks panel renders a scoped refusal and **issues no
+request**. Asking and rendering the refusal would put a denial in the backend's log for a decision
+the screen could make. The rest of the handover still renders, which is why the refusal is scoped to
+the panel rather than to the page.
+
+**"Could not be checked" is not "failed".** Five of the eight blocking reasons exist only because
+the application composes them, and each composed fact fails closed — a fact that could not be read
+counts as blocking. Rendering that as an observation would send an operator to chase a customer over
+a platform outage. Each fact is therefore drawn by its `established` flag, and the unreadable ones
+carry the source reference support needs.
+
+**Two references are sensitive and stay references.** The receiver's identity-evidence reference and
+each signature's document reference are named as "on file" and never printed, never linked and never
+fetched. The rendering test asserts that neither identifier appears anywhere in the rendered
+document.
+
+**No money crosses.** Not one delivery read carries an amount: `financial_balance_outstanding` is a
+code and `finalOdometerReadingId` is a reference to a reading rather than a reading. This feature
+therefore adds **no** area to the server-arithmetic gate; the first money-bearing P1-31 screen adds
+one, and that is a condition on that screen rather than a gap in this one.
+
+## 32. Dispositions
+
+| id        | finding                                                                                               | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | owner / slice | status |
+| --------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------ |
+| **CC-19** | the P1-31 read seam had no consumer, and no gate judged a page under the singular `/delivery` segment | Six delivery reads and the work-order lookup were published by P-2 … P-5 and called by nothing, which is the _declared but never wired_ shape this programme's own archaeology names as its dominant defect class. Separately, the P1-30 gate-before-read check derives `deliveries` from the register while the committed navigation href is `/delivery`, so the first P1-31 screen would have been judged by no gate at all (**A0 DO-001**, **D-15**) | **closed by this slice.** FE-002 release checks, FE-003 authorized receiver, FE-006 signatures, the FE-004 **results** list and the FE-007 status ledger are delivered as the delivery detail screen, with an entry section on the work-order detail. **P-16** ships as `scripts/ci/check-p1-31-access.mjs`, a sibling of the P1-29 and P1-30 checks scoped by an explicit allow-list of P1-31 operation ids and by the named dashboard areas `delivery`, `warranty`, `reports`; it is wired into `verify:policies` and the command-coverage registry, and mutation-proved by `tests/ci/p1-31-access-gate.test.ts`. **D-15** is answered by precedent. **No grant changed, and no write shipped** | this slice    | closed |
+
+**Identifier note.** **CC-19** is this slice’s id. This branch was cut at `develop` `0272390b`,
+which carried **CC-01 … CC-13**; the P-9 slice then merged and took **CC-14**, and the P-10
+warranty-policy slice merged and took **CC-15 … CC-18** in its section 29. The number and the
+section range were re-checked against `develop` when this branch was brought up to date, and both
+have moved: this slice is **CC-19** at sections 30–33.
+
+## 33. What this slice did NOT do
+
+- **No write.** Creating a delivery, confirming a receiver, recording a checklist result, attaching
+  a signature and completing a handover are separate tasks with their own authority. No adapter, no
+  form and no button for any of them exists in this slice, and `apps/web/tests/delivery-api.test.ts`
+  asserts that the transport's write path is never called.
+- **No list screen.** FE-001 waits on **D-3**. The navigation entry stays `status: 'planned'` and
+  the planned-list navigation test is untouched: `/delivery` still has no page, and the detail screen
+  is reached by address or from the work order.
+- **No permission minted, no grant changed, no seed row added.** The screen consults
+  `sal.delivery.view`, `sal.finance.view` and `sal.delivery.complete`, all of which the catalogue
+  already carries and all of which are declared by the operations it calls.
+- **No name invented for an identifier.** The delivering employee, the receiving partner, the
+  vehicle and the visit are rendered as labelled references. `OWR-2026-09-06-G-10` — whether the
+  delivering employee should resolve to a person at all — is **Undecided**, and a screen that
+  invented a lookup would be answering an Owner question by shipping.
+- **No arithmetic-gate area.** Nothing here renders a figure, so there is nothing for that gate to
+  judge and an area with no money in it would be a rule that passes vacuously.
+- **No change to any P1-29 or P1-30 gate.** P-16 is a sibling file with its own derivation; the
+  P1-29 and P1-30 checks are byte-identical on this branch.
+- **No ancestor breadcrumb, because there is no parent screen.** `apps/web/tests/shell.dom.test.tsx`
+  measures — rather than assumes — that no route-less ancestor crumb exists in this product: every
+  crumb but the last must carry an `href`. A two-crumb trail here would have to link `/delivery`,
+  which has no page. The screen therefore renders one crumb, the page's docblock says why, and the
+  list crumb arrives with FE-001.
+
 ---
 
 # P-2b — the branch delivery list, of 2026-09-09
 
-Sections 29-31 were added by the **P-2b** slice on 2026-09-09; its identifier is **CC-19,
-PROVISIONAL**. At this baseline `develop` holds **CC-01 … CC-14**, and **CC-15 … CC-18 are claimed by
-the open pull request #356**, which this branch does not contain. The number is therefore reserved
-rather than settled: **re-check it against `develop` before this branch merges**, and renumber if
-#356 lands with a different span — the P-9 and P-13/P-14 slices both had to renumber for exactly
-this reason, and both are recorded above.
-**Baseline:** protected `develop` `5cd06fbd` (PR #355, the P-9 template seam), `main` `1262de74` —
+Section 37 was added by the **P-2b** slice on 2026-09-09; its identifier is **CC-23**. The slice
+was written against `develop` `5cd06fbd`, where it reserved **CC-19**; the delivery detail screen
+(#357) took that number while this branch was open, so it is renumbered here — the P-9 and
+P-13/P-14 slices both had to renumber for exactly this reason, and both are recorded above. At this
+merge baseline `develop` holds sections 1—33 and **CC-01 … CC-19**, and **CC-20 … CC-22** are
+claimed by the open pull requests #361, #363 and #360, which this branch does not contain, so
+**re-check both the identifier and the section against `develop` before this branch merges**.
+**Baseline:** protected `develop` `4b753fcf`, merged into this branch; `main` `1262de74` —
 untouched.
 
-## 29. What was published
+## 37. The branch delivery list
+
+### 37.1 What was published
 
 **One operation**, `sal.delivery-list` — `GET /api/v1/deliveries` — the chapter first declared API,
 added to the route module `sal.delivery-create` already owned.
@@ -616,14 +796,14 @@ read; `status`, `workOrderId` and `vehicleId` are optional filters, each a colum
 paging is keyset on `sal.delivery_records:created_at_desc`. The response is `Page<DeliveryRecordView>`
 — the envelope `wty.warranty-list` returns, over the item `sal.delivery-read` already publishes.
 
-## 30. Dispositions
+### 37.2 Dispositions
 
 | id        | finding                                                                    | measured                                                                                                                                                                                                                                                                                        | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | owner                                                       | state          |
 | --------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | -------------- |
-| **CC-19** | **no index was added for the list ordering, and no migration was written** | `sal.delivery_records` carries `uq_delivery_records_scope_id (tenant, company, branch, id)` and three `ix_delivery_records_*` indexes; **none leads on `(tenant, company, branch, created_at)`**, so the newest-first ordering is a sort over the branch-narrowed set rather than an index walk | **accepted, on the `wty.warranty-list` precedent, which declined a migration on the same evidence and said so.** A branch deliveries are bounded by its work orders; this read has not demonstrated a cost that a schema change would buy. Recorded here so a later measurement can reverse it deliberately rather than discover it. **The permission was reused, not minted** — `sal.delivery.view`, the code every read on this seam declares — and no policy changed: `sel_delivery_records_scope` is a tenant/company/branch predicate with no permission term, so the declared code is the only application gate | a later `sal` performance slice, if measurement warrants it | open, recorded |
+| **CC-23** | **no index was added for the list ordering, and no migration was written** | `sal.delivery_records` carries `uq_delivery_records_scope_id (tenant, company, branch, id)` and three `ix_delivery_records_*` indexes; **none leads on `(tenant, company, branch, created_at)`**, so the newest-first ordering is a sort over the branch-narrowed set rather than an index walk | **accepted, on the `wty.warranty-list` precedent, which declined a migration on the same evidence and said so.** A branch deliveries are bounded by its work orders; this read has not demonstrated a cost that a schema change would buy. Recorded here so a later measurement can reverse it deliberately rather than discover it. **The permission was reused, not minted** — `sal.delivery.view`, the code every read on this seam declares — and no policy changed: `sel_delivery_records_scope` is a tenant/company/branch predicate with no permission term, so the declared code is the only application gate | a later `sal` performance slice, if measurement warrants it | open, recorded |
 | **D-3**   | the Owner decision behind scope item 1 is still a **proposal**             | A0 §D-3 asks whether "ready-for-delivery list" means delivery **records** or **work orders eligible to open one**. This slice publishes the first reading                                                                                                                                       | **recorded as pending, not resolved.** The read is a capability and commits nothing about the wording: if the Owner chooses the second reading, this list stays correct and FE-001 is built from a different one. Nothing in this slice asserts the decision was taken                                                                                                                                                                                                                                                                                                                                                | Owner, through the phase decision log                       | open           |
 
-## 31. What this slice did NOT do
+### 37.3 What this slice did NOT do
 
 - **No permission was minted, no seed changed and no bundle changed.** `sal.delivery.view` is
   seeded, is carried by the tenant administrator bundle, and is the code the other five delivery

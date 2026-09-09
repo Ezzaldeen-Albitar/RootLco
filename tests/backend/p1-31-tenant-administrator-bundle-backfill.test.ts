@@ -49,7 +49,7 @@
  * tenants THIS SUITE provisions through the shipped provisioning route and drops
  * afterwards. Nothing here reads or writes an organisation it did not create.
  * The stale state is constructed by removing, from the suite's own fresh
- * tenants, exactly the seven codes the two P1-31 widenings added — which
+ * tenants, exactly the eight codes the three P1-31 widenings added — which
  * reproduces the 67-code bundle those organisations really hold.
  *
  * Operations exercised: platform.organization-provision, iam.role-create,
@@ -101,10 +101,16 @@ import {
 } from '@/app/api/v1/warranties/[warrantyId]/route';
 
 /**
- * The seven codes the two P1-31 widenings added (#322 P-1's six, #349 P-7's
- * one). Written out rather than derived: removing these from a freshly
- * provisioned role reproduces the 67-code bundle the real organisations hold,
- * and a list computed from the constant under test would prove nothing.
+ * The eight codes the three P1-31 widenings added (#322 P-1's six, #349 P-7's
+ * one, and P-10's one). Written out rather than derived: removing these from a
+ * freshly provisioned role reproduces the 67-code bundle the real organisations
+ * hold, and a list computed from the constant under test would prove nothing.
+ *
+ * `wty.policy.manage` joined on 2026-09-09 when P-10 published the five
+ * operations that declare it, closing CC-01. It is the reason this backfill owes
+ * a THIRD operator run: an organisation provisioned on the 74-code bundle can
+ * read a warranty and cannot configure the policy any warranty must be issued
+ * under, and cannot delegate that authority either.
  */
 const P1_31_ADDED = Object.freeze([
   'sal.delivery.manage',
@@ -114,9 +120,10 @@ const P1_31_ADDED = Object.freeze([
   'rpt.report.read',
   'iam.audit.view',
   'wty.warranty.read',
+  'wty.policy.manage',
 ]);
 
-/** The bundle before the two P1-31 widenings. */
+/** The bundle before the three P1-31 widenings. Unchanged by all three. */
 const BUNDLE_BEFORE = 67;
 
 /** A real catalogue code the bundle deliberately does NOT carry (P1-31 CC-04). */
@@ -294,7 +301,7 @@ async function backfillAuditCount(tenantId: string): Promise<number> {
   return rows[0]?.n ?? 0;
 }
 
-/** Removes the seven P1-31 codes, reproducing the 67-code bundle on a fresh role. */
+/** Removes the eight P1-31 codes, reproducing the 67-code bundle on a fresh role. */
 async function makeStale(tenant: Provisioned): Promise<void> {
   await admin.query(
     `DELETE FROM iam.role_permissions
@@ -462,7 +469,7 @@ describe('P1-31 D-2 — the mechanism', () => {
   it('BF-7 the tool widens to the constant the provisioning path writes, and the two cannot drift', () => {
     expect([...parsedBundle].sort()).toEqual([...TENANT_ADMINISTRATOR_ROLE.permissionCodes].sort());
     expect(parsedBundle).toHaveLength(TENANT_ADMINISTRATOR_ROLE.permissionCodes.length);
-    // The seven this backfill exists to deliver are in it, and the withheld
+    // The eight this backfill exists to deliver are in it, and the withheld
     // export code is not: a backfill must never widen past the bundle.
     for (const code of P1_31_ADDED) expect(parsedBundle).toContain(code);
     expect(parsedBundle).not.toContain(CUSTOMISATION_CODE);

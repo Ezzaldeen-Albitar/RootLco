@@ -94,17 +94,24 @@ describe('every route body serialises a named type', () => {
     // 382 with the P1-31 warranty list (P-6): one GET serialising
     // `Page<WarrantyRecordListView>`, a NAMED interface, so `named` moves by one
     // and `composed` does not.
-    // 390 with the P1-31 checklist TEMPLATE seam (P-9): eight operations, two GETs
-    // and six writes, every one of them NAMED, so `named` moves by eight and
-    // `composed` does not. `ChecklistTemplateListView` and
-    // `ChecklistTemplateDetailView` exist because this gate refuses an inline return
-    // type; the six commands serialise `ChecklistTemplateView` and
-    // `ChecklistTemplateItemView`, which is the same pair the reads publish.
-    // 391 with the P1-31 delivery LIST (P-2b): one GET serialising
+    // 389 with the P1-31 warranty POLICY and COVERAGE seam (P-10): seven
+    // operations, two GETs and five writes, every one of them NAMED, so `named`
+    // moves by seven and `composed` does not. `WarrantyPolicyListView` and
+    // `WarrantyPolicyDetailView` exist because this gate refuses an inline return
+    // type; the five commands serialise `WarrantyPolicySummaryView` and
+    // `WarrantyCoverageTermsView`, which is the same pair the reads publish.
+    // 397 with the P1-31 checklist TEMPLATE seam (P-9) merged alongside it: eight
+    // further operations, two GETs and six writes, every one of them NAMED, so
+    // `named` moves by eight again and `composed` still does not.
+    // `ChecklistTemplateListView` and `ChecklistTemplateDetailView` exist because
+    // this gate refuses an inline return type; the six commands serialise
+    // `ChecklistTemplateView` and `ChecklistTemplateItemView`, which is the same
+    // pair the reads publish.
+    // 398 with the P1-31 delivery LIST (P-2b): one GET serialising
     // `Page<DeliveryRecordView>` — the same named interface `sal.delivery-read`
     // already publishes, so no new shape was minted — and `composed` does not move.
-    expect(summary.bodies).toBe(391);
-    expect(summary.named).toBe(338);
+    expect(summary.bodies).toBe(398);
+    expect(summary.named).toBe(345);
     expect(summary.composed).toBe(53);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

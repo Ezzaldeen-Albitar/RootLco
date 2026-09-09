@@ -443,6 +443,11 @@ const EXPECTED_AUDIT_ACTIONS = [
   'wo.work_order.service_line_recorded',
   'wo.work_order.state_changed',
   'wty.warranty.issued',
+  'wty.warranty_policy.coverage_added',
+  'wty.warranty_policy.coverage_status_changed',
+  'wty.warranty_policy.created',
+  'wty.warranty_policy.renamed',
+  'wty.warranty_policy.status_changed',
 ];
 
 /**

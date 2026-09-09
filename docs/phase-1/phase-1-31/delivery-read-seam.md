@@ -8,7 +8,7 @@ What was published, why each shape is the shape it is, and what was proved on re
 | **Authority**                | Prerequisites **P-2**, **P-2b**, **P-3**, **P-4** and **P-5** of [`a0-preflight.md`](./a0-preflight.md), Artefact 4             |
 | **Lane**                     | `remediation/p1-31-backend-…`, ownership profile `p1-31-backend`                                                                |
 | **Baseline**                 | protected `develop` **8052841a**; `main` `1262de74`, untouched                                                                  |
-| **Change control**           | [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) §7–§11 — **CC-05**, **CC-06**; P-2b adds **CC-19**             |
+| **Change control**           | [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) §7–§11 — **CC-05**, **CC-06**; P-2b adds **CC-23**             |
 | **Closes no canonical task** | P-2 … P-5 are execution prerequisites. The 29 remain 29, each still owing its own evidence under Field 7, Field 27 and Field 32 |
 
 ---
