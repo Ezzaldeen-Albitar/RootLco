@@ -1644,6 +1644,49 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'A warranty record was generated from a committed delivery. Every term is configuration: duration, odometer limit and covered scope come from the wty.warranty_coverage row effective at the delivery date, and the backend defaults none of them. Records generation only — P1-22 implements no claim intake or adjudication, because no claim table exists in any schema (P1-22-L-01).',
   },
+
+  // ---- Phase 1-31 P-10 — warranty POLICY and COVERAGE administration (wty) ----
+  //
+  // `privileged` for a sharper reason than the generation action above: the rows these
+  // actions write are what generation READS. One coverage window decides the duration
+  // and the distance allowance of every warranty issued in every branch of a company
+  // for the days it covers, and archiving a company's only active policy stops
+  // warranties being issued there at all. Configuration with that reach is recorded.
+  {
+    code: 'wty.warranty_policy.created',
+    class: 'privileged',
+    entityType: 'wty.warranty_policy',
+    description:
+      'A warranty policy was created for one company, with its effective-dated coverage in the same transaction. Neither table had a write path anywhere in the product until P1-31 (PPD-04), so a tenant provisioned through the product could never issue a warranty: generation refuses a company with no active policy and nothing could create one. The record names how many coverage windows arrived with the header, because a policy with none cannot issue anything.',
+  },
+  {
+    code: 'wty.warranty_policy.renamed',
+    class: 'privileged',
+    entityType: 'wty.warranty_policy',
+    description:
+      'A warranty policy was renamed. The policy code is not editable and is not part of this action: every warranty record cites its policy by id for the life of the warranty, and a re-coded policy would be a different configuration wearing the old one identity.',
+  },
+  {
+    code: 'wty.warranty_policy.status_changed',
+    class: 'privileged',
+    entityType: 'wty.warranty_policy',
+    description:
+      'A warranty policy was archived or restored. Archiving removes it from the active-policy set that generation resolves against, so archiving a company only active policy makes every subsequent generation that names no policy refuse as unconfigured. It does NOT touch the coverage rows: the issue primitive filters coverage on the coverage own status and never reads the policy status, so the application rule that refuses an archived policy is the only defence at issue time.',
+  },
+  {
+    code: 'wty.warranty_policy.coverage_added',
+    class: 'privileged',
+    entityType: 'wty.warranty_coverage',
+    description:
+      'An effective-dated coverage window was added to a warranty policy. The record names the covered scope, the duration in months, the distance allowance and both ends of the window, because those four values ARE the terms every warranty issued under this policy in that window will carry. At most one active window may cover a scope on any day, which the database enforces with an exclusion constraint (BR-WTY-001).',
+  },
+  {
+    code: 'wty.warranty_policy.coverage_status_changed',
+    class: 'privileged',
+    entityType: 'wty.warranty_coverage',
+    description:
+      'A warranty coverage window was archived or reactivated. Archiving is what withdraws those terms from future generation while leaving every warranty already issued under them readable and intact. A reactivation can be refused when a newer window has since covered the same days for the same scope, because two active windows would make the terms a customer receives depend on which row the database returned first.',
+  },
 ]);
 
 const BY_CODE: ReadonlyMap<string, AuditActionDefinition> = new Map(
