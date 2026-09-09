@@ -215,10 +215,14 @@ export interface ChecklistResultRecordView {
  * A delivery signature (P1-31 P-4).
  *
  * `signatureDocumentVersionId` is a reference to a `shared.document_versions` row
- * and **raw signature bytes never appear here**. Nor is a download offered:
- * `shared.guard_document_version_transition` requires a clean scan record to reach
- * `accepted`, no scanner is provisioned, and `DOWNLOADABLE_STATES` is `['accepted']`
- * — so a retrieval path would be a contract that always fails (`P1-22-L-04`).
+ * and **raw signature bytes never appear here**. Nor is a download offered by this
+ * module, which is a scope boundary rather than an impossibility: the shared
+ * attachment path's `requestDownload` refuses a version with `ERR-DOC-001` while it is
+ * not `accepted` — a state check. P1-22 recorded the rest as "no application path can
+ * produce acceptance" (`P1-22-L-04`); that is no longer the rule, because
+ * `20260815090000_shared_reception_evidence_foundation.sql` adds `GRANT INSERT ON
+ * shared.file_scan_results` and `GRANT UPDATE(status) ON shared.document_versions`.
+ * Corrected by P1-31 prerequisite P-14.
  */
 export interface DeliverySignatureRecordView {
   readonly id: string;

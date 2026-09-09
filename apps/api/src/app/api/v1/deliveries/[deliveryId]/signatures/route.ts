@@ -144,15 +144,19 @@ export async function POST(
  * at microsecond precision, because `signed_at` defaults to `now()` and several
  * signatures attached in one transaction share it exactly (`P1-27-INT-006`).
  *
- * ## References, never bytes — and no download
+ * ## References, never bytes — and no download offered by this module
  *
  * Each entry carries `signatureDocumentVersionId`, a `shared.document_versions`
  * reference whose sha256 anchors the signature. Raw signature data appears nowhere in
- * this module. No retrieval path is offered here or anywhere else in it: the
- * documented reason is `P1-22-L-04` — `shared.guard_document_version_transition`
- * requires a clean scan record to reach `accepted`, no scanner is provisioned, and
- * `DOWNLOADABLE_STATES` is `['accepted']`, so a download route would be a contract
- * that always fails.
+ * this module. No retrieval path is offered here, and that is a scope statement rather
+ * than an impossibility: `AttachmentService.requestDownload` refuses a version with
+ * `ERR-DOC-001` while it is not `accepted`, which is a state check. P1-22 recorded the
+ * rest as "no application path can produce acceptance" (`P1-22-L-04`); that is no longer
+ * the rule, because `20260815090000_shared_reception_evidence_foundation.sql` adds
+ * `GRANT INSERT ON shared.file_scan_results` and `GRANT UPDATE(status) ON
+ * shared.document_versions`, so `registerVersionAndScan` can produce a verdict.
+ * Retrieval of a `shared.document_versions` row is the shared attachment path's
+ * contract, not this module's. Corrected by P1-31 prerequisite P-14.
  *
  * ## Permission
  *
