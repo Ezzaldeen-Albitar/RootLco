@@ -7,6 +7,9 @@
 and deliberately did not fix.
 **Migration:** `supabase/migrations/20260909090000_sal_complete_delivery_active_template_gate.sql`
 (139).
+**Recorded as:** **CC-21** at section 35 of
+[`change-control-2026-09-08.md`](./change-control-2026-09-08.md) — provisional until the open #361
+warranty-policy slice takes **CC-20** and section 34 at merge.
 
 ## 1. The problem
 

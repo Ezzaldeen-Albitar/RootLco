@@ -766,3 +766,61 @@ have moved: this slice is **CC-19** at sections 30–33.
   crumb but the last must carry an `href`. A two-crumb trail here would have to link `/delivery`,
   which has no page. The screen therefore renders one crumb, the page's docblock says why, and the
   list crumb arrives with FE-001.
+
+## 35. P-9b — the completion gate honours the template lifecycle
+
+**Branch:** `remediation/p1-31-backend-complete-delivery-template-gate`, ownership profile
+`p1-31-backend`. **Owner approval:** 2026-09-09. **Baseline:** protected `develop` `fc58f1c2`,
+`main` `1262de74` — untouched; this branch carries the merge of that `develop` head. `develop`
+holds sections 1–33 and **CC-01 … CC-19**, sections 30–33 and **CC-19** being the delivery detail
+screen (#357). **CC-20** and section 34 are claimed by the open warranty-policy screen slice
+(#361), which was branched first and merges first; this slice therefore records itself at section
+**35** and at **CC-21**, and both are **provisional** until that ordering is settled at merge — the
+identifier note below says how to check.
+
+The full record is
+[`p9b-complete-delivery-template-gate.md`](./p9b-complete-delivery-template-gate.md); this section
+is the register entry rather than a second copy of it.
+
+**What was delivered.** One forward migration and its lockstep mirror.
+`supabase/migrations/20260909090000_sal_complete_delivery_active_template_gate.sql` (**139**)
+re-issues `sal.complete_delivery(uuid, numeric, text, uuid)` with an identical signature,
+`SECURITY INVOKER`, `SET search_path = ''` and identical `REVOKE`/`GRANT` lines, changing only the
+mandatory-item count: it joins `sal.delivery_checklist_templates` on the scoped unique key
+`(tenant_id, company_id, id)` and requires `t.status = 'active' AND t.deleted_at IS NULL`.
+`DeliveryRepository.mandatoryChecklistGaps` takes the same join in the same commit, in both the
+count and the sample, so the mirror is still never better than the primitive — the rule that made
+**CC-14** unfixable inside the P-9 seam. **No object, no permission, no bundle, no route, no
+operation, no audit action and no seed row**; the register stays at **397** operations and
+`apps/web` is untouched.
+
+**Derived pins moved 138 -> 139** with the migration count: the schema baseline's `migrationCount`,
+carrying a `structuralTotalsNote139` that records tables 254, functions 533, policies 695, triggers
+560 and `security_definer` 0 unmoved and `schemaHash` unmoved at
+`8302f675153bb681b3dc92c47029c0a4391ed040ad7ce09f83a067f03285dac6` — MEASURED before and after the
+migration was applied, because `schema-inventory.mjs` hashes function identity and not body; the
+migration-tail assertion in `tests/db/p1-15-shared-services-runtime-capabilities.test.ts`, widened
+from eight named files to nine rather than slid; and the P1-27 closing-value ledger and evidence
+manifest, which carry the count as a derived figure.
+
+**Proof.** `tests/db/sal-delivery.test.ts` gains five cases and runs **11**: the gate still refuses
+while the template is ACTIVE and lets the handover through once it is deactivated; a SOFT-DELETED
+template lets it through while the item row survives; a REACTIVATED template gates again; a
+WITHDRAWN item under an active template stays excluded, which is the pre-existing rule; and a
+mandatory item of a SECOND active template is counted until that template is retired.
+`tests/backend/p1-31-delivery-checklist-template-seam.test.ts` moves **27 -> 28**: the single case
+that recorded the defect is replaced by a pair — one that gates, stops on deactivation and gates
+again on reactivation, and one that counts no template of another company and none of another
+tenant — so the gate cannot be removed and called a fix, and the scoped join is asserted rather
+than assumed.
+
+| id        | finding                                                                                            | measured                                                                                                                                                                                                                                                                                                                                                                                                    | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | owner / slice | status |
+| --------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------ |
+| **CC-21** | closing **CC-14** required replacing a protected function, which no earlier P1-31 slice sanctioned | The completion gate read the checklist ITEM's `deleted_at` and never the parent template's `status` or `deleted_at`, so deactivating a template withdrew nothing and soft-deleting one left its items refusing handovers from behind a row no read returns. Correcting the mirror alone would have reported a handover eligible that `sal.complete_delivery` then refuses inside the transaction with 23514 | **closed by this slice**, under Owner approval of 2026-09-09 and on the Field 13 route that returns a defect found by the Frontend to its owning backend phase under change control. Migration 139 and the mirror move together, and `passAllMandatory` in `tests/db/p1-11-helpers.ts` takes the same predicate so a fixture cannot satisfy an item the gate no longer asks about. Rollback-safe: one `CREATE OR REPLACE FUNCTION` under an unchanged identity, writing no state | this slice    | closed |
+
+**Identifier note.** **CC-21** and section **35** are **provisional**. This branch was cut before
+the warranty-policy screen slice merged; that slice holds **CC-20** at section 34 on open PR #361.
+If it merges first, these numbers stand as written; if it does not, the id and the section are
+re-checked against `develop` before this branch merges and moved down by one. The check is the last
+`## 3…` heading and the last `CC-` id in this file, exactly as the **CC-19** note describes, and the
+word **provisional** is removed by that same check rather than by assumption.
