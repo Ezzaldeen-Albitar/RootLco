@@ -508,3 +508,102 @@ later lane.
 **Identifier note:** **CC-13** is this slice's id. `develop` now holds **CC-01 … CC-12** in this
 register, `CC-12` having been taken by the merged P-8 slice, so this slice continues the sequence
 at **CC-13**.
+
+---
+
+# The delivery detail screen and the P-16 gate
+
+Sections 29–32 were added by the **delivery detail screen** slice on 2026-09-09; identifiers
+continue in the same P1-31 namespace. **Baseline:** protected `develop` `0272390b`, `main`
+`1262de74` — untouched. Sections 25–28 and **CC-14** belong to the P-9 checklist-template seam,
+which merged into `develop` after this branch was cut; **CC-15** is provisional on the open
+warranty-policy pull request. This slice therefore continues at section 29 and at **CC-16**. This slice is Frontend, tooling, tests and documentation only: it adds no
+operation, no route, no permission, no seed row, no migration, and **no write of any kind**.
+
+## 29. What was delivered
+
+The first P1-31 screen: `/delivery/{deliveryId}`, a read-only view of one vehicle handover, built on
+the six reads the P-2 … P-5 seam published plus the work-order lookup.
+
+| panel                   | read                                 | what it shows                                                                         |
+| ----------------------- | ------------------------------------ | ------------------------------------------------------------------------------------- |
+| Summary                 | `sal.delivery-read` (on the page)    | stage, handover moment, a link to the work order, and four labelled identifiers       |
+| Release checks (FE-002) | `sal.delivery-eligibility-read`      | whether the vehicle may be released, every reason it may not, and every composed fact |
+| Receiver (FE-003)       | `sal.delivery-receiver-read`         | the confirmed receiver, or the fact that there is none yet                            |
+| Signatures (FE-006)     | `sal.delivery-signature-list`        | role, moment, and the statement that the image is on file                             |
+| Checklist results       | `sal.delivery-checklist-result-list` | recorded results only, with a waiver's reason beside its outcome                      |
+| History (FE-007)        | `sal.delivery-status-history`        | the append-only transition ledger, read for the first time by any screen              |
+
+A section on the work-order detail screen reads `sal.work-order-delivery-read` and either states
+that no handover exists or links to it. It is rendered only when the caller holds
+`sal.delivery.view`, so a caller without it issues no request at all.
+
+## 30. The five properties this slice is accountable for
+
+**The page decides before it reads.** `sal.delivery.view` is tested and returned on before
+`readDelivery` is called. The proof is mechanical in two places: `check-p1-31-access.mjs` (P-16)
+judges the page's source, and `apps/web/tests/delivery.dom.test.tsx` invokes the route with a
+session that holds the financial and completion codes but NOT the delivery code, and requires both
+that the refusal renders and that every one of the six adapters is untouched.
+
+**The financial rule is respected rather than discovered.** `sal.delivery-eligibility-read` declares
+`sal.finance.view` in addition to `sal.delivery.view` and answers 403 without it. The page resolves
+that code and passes it down; the release-checks panel renders a scoped refusal and **issues no
+request**. Asking and rendering the refusal would put a denial in the backend's log for a decision
+the screen could make. The rest of the handover still renders, which is why the refusal is scoped to
+the panel rather than to the page.
+
+**"Could not be checked" is not "failed".** Five of the eight blocking reasons exist only because
+the application composes them, and each composed fact fails closed — a fact that could not be read
+counts as blocking. Rendering that as an observation would send an operator to chase a customer over
+a platform outage. Each fact is therefore drawn by its `established` flag, and the unreadable ones
+carry the source reference support needs.
+
+**Two references are sensitive and stay references.** The receiver's identity-evidence reference and
+each signature's document reference are named as "on file" and never printed, never linked and never
+fetched. The rendering test asserts that neither identifier appears anywhere in the rendered
+document.
+
+**No money crosses.** Not one delivery read carries an amount: `financial_balance_outstanding` is a
+code and `finalOdometerReadingId` is a reference to a reading rather than a reading. This feature
+therefore adds **no** area to the server-arithmetic gate; the first money-bearing P1-31 screen adds
+one, and that is a condition on that screen rather than a gap in this one.
+
+## 31. Dispositions
+
+| id                        | finding                                                                                               | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | owner / slice | status |
+| ------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------ |
+| **CC-16** _(provisional)_ | the P1-31 read seam had no consumer, and no gate judged a page under the singular `/delivery` segment | Six delivery reads and the work-order lookup were published by P-2 … P-5 and called by nothing, which is the _declared but never wired_ shape this programme's own archaeology names as its dominant defect class. Separately, the P1-30 gate-before-read check derives `deliveries` from the register while the committed navigation href is `/delivery`, so the first P1-31 screen would have been judged by no gate at all (**A0 DO-001**, **D-15**) | **closed by this slice.** FE-002 release checks, FE-003 authorized receiver, FE-006 signatures, the FE-004 **results** list and the FE-007 status ledger are delivered as the delivery detail screen, with an entry section on the work-order detail. **P-16** ships as `scripts/ci/check-p1-31-access.mjs`, a sibling of the P1-29 and P1-30 checks scoped by an explicit allow-list of P1-31 operation ids and by the named dashboard areas `delivery`, `warranty`, `reports`; it is wired into `verify:policies` and the command-coverage registry, and mutation-proved by `tests/ci/p1-31-access-gate.test.ts`. **D-15** is answered by precedent. **No grant changed, and no write shipped** | this slice    | closed |
+
+**Identifier note.** **CC-16** is marked _provisional_ deliberately. This branch was cut at
+`develop` `0272390b`, which carried **CC-01 … CC-13**; the P-9 slice then merged and took
+**CC-14**, and **CC-15** is provisional on the warranty-policy pull request that is still open. The
+head of this register is therefore not knowable from this branch's base, so the number and the
+section range are to be re-checked against `develop` before this branch merges, and corrected here
+if either has moved.
+
+## 32. What this slice did NOT do
+
+- **No write.** Creating a delivery, confirming a receiver, recording a checklist result, attaching
+  a signature and completing a handover are separate tasks with their own authority. No adapter, no
+  form and no button for any of them exists in this slice, and `apps/web/tests/delivery-api.test.ts`
+  asserts that the transport's write path is never called.
+- **No list screen.** FE-001 waits on **D-3**. The navigation entry stays `status: 'planned'` and
+  the planned-list navigation test is untouched: `/delivery` still has no page, and the detail screen
+  is reached by address or from the work order.
+- **No permission minted, no grant changed, no seed row added.** The screen consults
+  `sal.delivery.view`, `sal.finance.view` and `sal.delivery.complete`, all of which the catalogue
+  already carries and all of which are declared by the operations it calls.
+- **No name invented for an identifier.** The delivering employee, the receiving partner, the
+  vehicle and the visit are rendered as labelled references. `OWR-2026-09-06-G-10` — whether the
+  delivering employee should resolve to a person at all — is **Undecided**, and a screen that
+  invented a lookup would be answering an Owner question by shipping.
+- **No arithmetic-gate area.** Nothing here renders a figure, so there is nothing for that gate to
+  judge and an area with no money in it would be a rule that passes vacuously.
+- **No change to any P1-29 or P1-30 gate.** P-16 is a sibling file with its own derivation; the
+  P1-29 and P1-30 checks are byte-identical on this branch.
+- **No ancestor breadcrumb, because there is no parent screen.** `apps/web/tests/shell.dom.test.tsx`
+  measures — rather than assumes — that no route-less ancestor crumb exists in this product: every
+  crumb but the last must carry an `href`. A two-crumb trail here would have to link `/delivery`,
+  which has no page. The screen therefore renders one crumb, the page's docblock says why, and the
+  list crumb arrives with FE-001.
