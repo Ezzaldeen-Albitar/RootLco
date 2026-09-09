@@ -149,7 +149,17 @@ survive IEEE-754, which does not apply to an `integer`. The suite walks every re
 number under any money-shaped key and asserts there is none, so a future field cannot introduce a
 float here either.
 
-## 8. The completion-gate finding — measured, recorded, NOT fixed
+## 8. The completion-gate finding — measured, recorded, NOT fixed here; CLOSED by P-9b
+
+> **Closed by P-9b (Owner approval 2026-09-09).** The finding below is left exactly as it was
+> measured, because it is the record of what this slice proved. What has since changed is the
+> primitive: migration `20260909090000_sal_complete_delivery_active_template_gate.sql` joins
+> `sal.delivery_checklist_templates` into the mandatory-item count and admits an item only when its
+> template is `status = 'active'` and `deleted_at IS NULL`, and
+> `DeliveryRepository.mandatoryChecklistGaps` gains the same join in the same commit. The full
+> record is [`p9b-complete-delivery-template-gate.md`](./p9b-complete-delivery-template-gate.md);
+> **CC-14** is closed there. The `after this slice` column of the table below is therefore the
+> state as of P-9 and not the state today — the `after P-9b` column is.
 
 **An INACTIVE template still blocks a handover.**
 
@@ -158,11 +168,12 @@ mandatory items with `ti.tenant_id = … AND ti.company_id = … AND ti.is_manda
 IS NULL`. It never joins `sal.delivery_checklist_templates` and reads no template `status`. So
 deactivating a template does not withdraw its items from the completion gate:
 
-| state                                         | before this slice | after this slice |
-| --------------------------------------------- | ----------------- | ---------------- |
-| item of an `active` template, mandatory       | blocks            | blocks           |
-| item of an **`inactive`** template, mandatory | **blocks**        | **blocks**       |
-| item soft-deleted (`deleted_at` set)          | does not block    | does not block   |
+| state                                          | before this slice | after this slice | after P-9b         |
+| ---------------------------------------------- | ----------------- | ---------------- | ------------------ |
+| item of an `active` template, mandatory        | blocks            | blocks           | blocks             |
+| item of an **`inactive`** template, mandatory  | **blocks**        | **blocks**       | **does not block** |
+| item of a **soft-deleted** template, mandatory | blocks            | blocks           | **does not block** |
+| item soft-deleted (`deleted_at` set)           | does not block    | does not block   | does not block     |
 
 The application mirror in `DeliveryRepository.mandatoryChecklistGaps` reproduces the primitive
 exactly, including this, and **was deliberately not "corrected"**. A mirror that filtered inactive
@@ -180,7 +191,8 @@ clears the blocker.
 
 ## 9. What was proved, on real rows
 
-`tests/backend/p1-31-delivery-checklist-template-seam.test.ts` — **27 cases, all passing**. Every
+`tests/backend/p1-31-delivery-checklist-template-seam.test.ts` — **27 cases** as this slice left
+it; the suite holds **28** since P-9b replaced case 6 below with an inverted pair. Every
 row the suite reads was authored **through the published routes**; unlike every suite before it,
 this one seeds neither table by admin SQL, because "a checklist can be configured through the
 product" is the claim under test.
@@ -203,7 +215,10 @@ product" is the claim under test.
    the body and replays it as a plain result, which is a platform contract rather than a property of
    this route.)
 6. **The gate finding**, as section 8 describes, in `COMPANY_A9` so that no other suite's in-flight
-   delivery can see the mandatory item, which is withdrawn inside the same case.
+   delivery can see the mandatory item, which is withdrawn inside the same case. **Replaced by
+   P-9b** with two cases that prove the closure instead: an active template gates, deactivation
+   clears, reactivation gates again and withdrawing the item still clears; and neither another
+   company's nor another tenant's template is ever counted.
 
 ## 10. What this does not close
 
@@ -213,15 +228,20 @@ product" is the claim under test.
   caller can now resolve a `template_item_id` to a code and a label — and touches none of the three.
 - **The company-wide mandatory scan.** Closing it needs a template reference on
   `sal.delivery_records`, which is a schema question and therefore not this lane's.
-- **The inactive-template gate**, section 8, filed as **CC-14**. It needs a forward migration
-  replacing `sal.complete_delivery`.
+- ~~**The inactive-template gate**, section 8, filed as **CC-14**. It needs a forward migration
+  replacing `sal.complete_delivery`.~~ **Closed by P-9b** — that forward migration is
+  `20260909090000_sal_complete_delivery_active_template_gate.sql`. The entry stays here, struck
+  rather than deleted, because what this slice could not close is part of its record.
 - **Bilingual names.** The table has one `name` column and one `label` column and no locale column,
   so an Arabic label cannot be stored. Adding one is a migration; the surface publishes what the
   column holds and invents nothing.
 - **Template removal.** There is no delete and no soft delete for a TEMPLATE, only deactivation.
-  A soft-deleted template would not withdraw its items from the completion gate either — the
+  ~~A soft-deleted template would not withdraw its items from the completion gate either — the
   primitive filters the ITEM's `deleted_at`, not the parent's — so a route that appeared to retire a
-  checklist would leave it gating every handover in the company.
+  checklist would leave it gating every handover in the company.~~ **After P-9b the second sentence
+  no longer holds:** the primitive reads the parent's `deleted_at` as well, so a soft-deleted
+  template does withdraw its items. The route still does not exist — publishing one is a separate
+  decision — but the obstacle that made publishing it unsafe is gone.
 - **FE-004 itself.** `apps/web` is unchanged except through the generated idempotency manifest, which
   every published operation moves. The screen is a later slice on the `p1-31-frontend` lane, and it
   is that lane which owes the request-payload mirror; the five body-carrying writes are declared
