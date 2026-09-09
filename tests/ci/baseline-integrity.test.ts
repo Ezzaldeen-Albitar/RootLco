@@ -507,7 +507,7 @@ describe('the coverage include lists are pinned, because they are the denominato
       typeScriptFilesUnder(pattern.slice(0, -'/**/*.ts'.length))
     );
     expect(files.filter((file) => file.endsWith('.d.ts'))).toEqual([]);
-    expect(files.length).toBe(274);
+    expect(files.length).toBe(278);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -524,7 +524,18 @@ describe('the coverage include lists are pinned, because they are the denominato
      * the include list quietly narrowed. The baseline's percentage floors are
      * untouched: re-establishing them needs a hosted measurement run, which
      * neither slice performed and neither claims.
+     *
+     * 277 with the P1-31 report engine (P-11): four more files, and each one is a
+     * layer this slice needed rather than a file it chose to add —
+     * `modules/reporting/domain/report-datasets.ts` (the dataset registry, which
+     * must be database-free to satisfy boundary rule B5),
+     * `modules/reporting/application/report-run-service.ts` (the resolvers, which
+     * are I/O and therefore may not sit beside the registry),
+     * `modules/work-order/application/work-order-report-port.ts` (the owning
+     * module answering for `wo.*`) and
+     * `modules/iam/data/branch-context-repository.ts` (the branch timezone the
+     * period is resolved in). The floors are untouched for the reason above.
      */
-    expect(instrumented.length).toBe(273);
+    expect(instrumented.length).toBe(277);
   });
 });

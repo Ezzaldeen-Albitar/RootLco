@@ -2129,14 +2129,25 @@ export const MANIFEST = {
   // why the namespace joined DERIVED_PREFIXES in this phase and not earlier: a
   // prefix with nothing behind it reports a vacuous 0/0 block.
   'rpt.report-catalogue': {
-    files: ['tests/backend/p1-23-reporting.test.ts'],
+    files: [
+      'tests/backend/p1-23-reporting.test.ts',
+      'tests/backend/p1-31-report-engine-work-orders.test.ts',
+    ],
     required: ['cross-tenant'],
-    note: "published definitions only; a draft and an archived report are proven invisible, and another tenant's catalogue is proven unreachable",
+    note: "published definitions only; a draft and an archived report are proven invisible, and another tenant's catalogue is proven unreachable. P1-31 P-11 added the second file and the MERGE it proves: the page carries the code-registered baselines first, marked source platform, then the tenant's own published rows by code, marked source tenant; a tenant row whose code is registered suppresses its baseline and keeps its own scope, export permission and parameter schema, because a configuration row is customization of a report the platform implements and not a precondition for it existing. executable is no longer the literal false but REPORT_DATASETS membership, and the suite asserts both limbs on real rows - true for work_orders_by_status, false for a published tenant row whose code the engine does not implement",
   },
   'rpt.report-read': {
-    files: ['tests/backend/p1-23-reporting.test.ts'],
+    files: [
+      'tests/backend/p1-23-reporting.test.ts',
+      'tests/backend/p1-31-report-engine-work-orders.test.ts',
+    ],
     required: ['denial', 'cross-tenant'],
-    note: "a draft, an archived report, a foreign tenant's report and a code that never existed all answer ERR-RPT-001 identically, so the catalogue cannot be used to enumerate configured report codes; the per-report export permission is projected rather than reinvented",
+    note: "a draft, an archived report, a foreign tenant's report and a code that never existed all answer ERR-RPT-001 identically, so the catalogue cannot be used to enumerate configured report codes; the per-report export permission is projected rather than reinvented. P1-31 P-11: a REGISTERED code with no configuration row now answers the baseline definition rather than ERR-RES-001 - the same customization rule the list applies - and the four indistinguishable refusals above are unchanged because none of those codes is registered; the baseline projects a null exportPermissionCode rather than naming rpt.export, which P-12 has not built",
+  },
+  'rpt.report-run': {
+    files: ['tests/backend/p1-31-report-engine-work-orders.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'pagination'],
+    note: "P1-31 prerequisite P-11, engine slice 1 of 4. The first operation in the platform that RUNS a report: P1-23 published executable: false because the frozen rpt schema binds no data source to a report code, and the binding comes from OWR-2026-09-06-A-12 - a report code binds to a CODE-REGISTERED dataset - rather than from a column. TWO permission checks and they are different questions: the route declares rpt.report.read at scope branch, and the service then evaluates the dataset's own read code, wo.work_order.read, against the SAME company and branch through callerHoldsPermission, answering the uniform ERR-IAM-001. The suite proves both sides with two principals that are each other's counterfactual - one holds rpt.report.read alone and is refused, one holds wo.work_order.read alone and is refused - so collapsing the two codes into one turns both cases red in opposite directions. scope branch is not a preference: requiresScopedEvaluation returns false for a tenant-scoped operation whatever target it is given, so a tenant-scoped run would be decided scope-blind and app.branch_ids is the permission-blind union of every grant (P1-18-A-01); the isolation case is a caller granted only in a second branch whose RLS reach still covers the first. The period is HALF-OPEN [from, to) resolved in the BRANCH timezone rather than the server's - listWorkOrders' own openedTo is CLOSED and was deliberately not reused - and the suite proves it on two rows a single second apart in local time, one at 23:30 on the last included day and one at 00:00 on the excluded day. The counts are computed in SQL over the WHOLE selection and never over the page, on the P1-28 round-two rule that a paged read must not answer for a set; states with no rows appear at zero, from the tenant's own state catalogue. The cursor is the work-order list contract, so a foreign cursor is ERR-PAG-001 and not a page of something else. auditClass none, so no audit evidence is declared; it is a GET, so neither idempotency nor stale-version is",
   },
   // ---- P1-23 document surface ----------------------------------------------
   'shared.document-read': {

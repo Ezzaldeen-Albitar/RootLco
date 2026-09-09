@@ -9,10 +9,10 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 397   |
+| Public operations        | 398   |
 | Domains (modules)        | 20    |
-| OpenAPI paths            | 309   |
-| OpenAPI operations       | 397   |
+| OpenAPI paths            | 310   |
+| OpenAPI operations       | 398   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 119   |
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 397        |
+| Covered           | 398        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -47,7 +47,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | quality         | 15         | 15      | 7      | 8       | 7          | 2               |
 | quotation       | 10         | 10      | 5      | 5       | 5          | 2               |
 | reception       | 71         | 71      | 43     | 43      | 36         | 22              |
-| reporting       | 2          | 2       | 0      | 0       | 0          | 0               |
+| reporting       | 3          | 3       | 0      | 0       | 0          | 0               |
 | service-catalog | 9          | 9       | 6      | 6       | 6          | 2               |
 | shared-services | 28         | 28      | 18     | 18      | 6          | 6               |
 | technician      | 18         | 18      | 12     | 12      | 4          | 5               |
@@ -283,6 +283,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `rec.reception-signature-list`                      | GET    | `/api/v1/receptions/{receptionId}/signatures`                                       | branch  | `rec.reception.read`                                                 | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `rpt.report-catalogue`                              | GET    | `/api/v1/reports`                                                                   | tenant  | `rpt.report.read`                                                    | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `rpt.report-read`                                   | GET    | `/api/v1/reports/{reportCode}`                                                      | tenant  | `rpt.report.read`                                                    | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
+| `rpt.report-run`                                    | GET    | `/api/v1/reports/{reportCode}/rows`                                                 | branch  | `rpt.report.read`                                                    | —                                              | —    | —   | authorization cross-tenant denial isolation pagination route service success                                                  | Covered |
 | `sal.credit-note-approve`                           | POST   | `/api/v1/credit-notes/{creditNoteId}/approval`                                      | branch  | `sal.credit.manage`<br>`sal.finance.view`                            | sal.credit_note.approved                       | yes  | —   | audit authorization cross-tenant denial idempotency isolation outbox route service success                                    | Covered |
 | `sal.credit-note-create`                            | POST   | `/api/v1/invoices/{invoiceId}/credit-notes`                                         | branch  | `sal.credit.manage`<br>`sal.finance.view`                            | sal.credit_note.requested                      | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `sal.delivery-checklist-record`                     | POST   | `/api/v1/deliveries/{deliveryId}/checklist-results`                                 | branch  | `sal.delivery.manage`                                                | sal.delivery.checklist_recorded                | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |

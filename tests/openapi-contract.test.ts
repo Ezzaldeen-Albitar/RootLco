@@ -87,6 +87,11 @@ import '@/app/api/v1/attachments/links/[linkId]/route';
 import '@/app/api/v1/qc-checks/route';
 import '@/app/api/v1/reports/route';
 import '@/app/api/v1/reports/[reportCode]/route';
+
+// P1-31 prerequisite P-11 — the report RUN operation. Imported for the reason every
+// line here is: the registry is populated by import side effect, so an unimported
+// route is simply ABSENT from the generated document rather than reported missing.
+import '@/app/api/v1/reports/[reportCode]/rows/route';
 import '@/app/api/v1/notifications/route';
 import '@/app/api/v1/notifications/[notificationId]/route';
 import '@/app/api/v1/notifications/[notificationId]/deliveries/route';
