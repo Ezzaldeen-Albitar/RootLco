@@ -241,7 +241,7 @@ disposition row names P1-22 (decision D-1).
 | **P-13** | Correct four stale permission rows                          | Documentation — P1-22                  | The P1-22 operation inventory disagrees with the code on eligibility, receiver-verify, signature-attach and complete. The OpenAPI document matches the code. **RESOLVED** by `remediation/p1-31-backend-documentation-corrections` (PR #354): the four rows now carry the codes the routes declare                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Any frontend deriving its gates from that inventory       |
 | **P-14** | Correct the stale P1-22-L-04 docblock                       | Backend — documentation in source      | The signatures route states a rule the attachment service no longer implements, and the download docblock in the same service says so. **RESOLVED** by `remediation/p1-31-backend-documentation-corrections` (PR #354) in three live copies; the two historical P1-22 records are left as written, and further copies are recorded as CC-13                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | FE-006, FE-007                                            |
 | **P-15** | Add the `p1-31` ownership rules and profiles                | CI tooling — travels on A0's own lane  | `.github/ci-baselines/phase-ownership-profiles.json` and the profiles in `scripts/ci/check-phase-ownership.mjs`. **Closed by this preflight** — see [Ownership rules added](#ownership-rules-added-by-this-preflight)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Every pull request in every lane                          |
-| **P-16** | Extend or sibling the gate-before-read check                | CI tooling                             | That check owns the plural `deliveries` and `warranties` segments through an id namespace that excludes `rpt.` entirely, while the href already committed in navigation is the singular `/delivery`. Both P1-31 entry points escape it as things stand                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | DO-001, SEC-001                                           |
+| **P-16** | Extend or sibling the gate-before-read check                | CI tooling                             | That check owns the plural `deliveries` and `warranties` segments through an id namespace that excludes `rpt.` entirely, while the href already committed in navigation is the singular `/delivery`. Both P1-31 entry points escape it as things stand. **Resolved** on `feature/p1-31-delivery-detail-screen` (PR #357): `scripts/ci/check-p1-31-access.mjs` is a SIBLING, not a widening — P1-30 already owns the whole `sal.`/`wty.` namespaces, so the scope is an explicit allow-list of the operation ids P1-31 published, and the dashboard areas `delivery`, `warranty` and `reports` are named beside the derived roots. It reuses `judgePage`, refuses a stale allow-list entry, and — because it ships beside a screen rather than ahead of one — refuses a run that examines no page                                                                                                                                              | DO-001, SEC-001                                           |
 
 **None of P-1 through P-16 is a canonical task.** Each is either an execution prerequisite of this
 phase or a change request against an owning backend phase under Field 13. Closing one closes no task.
@@ -330,19 +330,23 @@ engineering, and none is one of the 29. Each is phrased as a question with its c
   eligibility)? _Consequence:_ the second answer removes FE-001's backend prerequisite entirely, at
   the cost of accepting that no work-order state means "ready for delivery" and that the closed flag
   is true for cancelled work orders too.
+  _Decided by the Owner on 2026-09-09 — see [`owner-decisions-2026-09-09.md`](./owner-decisions-2026-09-09.md)._
 - **D-4 — Who supplies the approved report definitions and KPI definitions?** The report catalogue
   service states in its own source that inventing a report-code-to-data-source binding would mean
   inventing a business report definition the Product Owner has not approved. _Consequence:_ if none
   can be supplied, the Owner must decide whether Field 7's "or the work is deliberately limited to
   decision-neutral foundations" scopes FE-010…FE-014 and FE-016 out of this phase.
+  _Decided by the Owner on 2026-09-09 — see [`owner-decisions-2026-09-09.md`](./owner-decisions-2026-09-09.md)._
 - **D-5 — What is a "branch pilot summary" (FE-016)?** _Consequence:_ nothing in the repository
   defines its content or its tenancy posture, and a pilot-specific reading collides with Field 4's
   "never a hard-coded owner or product-specific branch". Without an answer FE-016 cannot be
   specified, let alone built.
+  _Decided by the Owner on 2026-09-09 — see [`owner-decisions-2026-09-09.md`](./owner-decisions-2026-09-09.md)._
 - **D-6 — Does "audit report" (FE-015) mean the shipped Audit Log screen, or an exportable
   artefact?** _Consequence:_ if the shipped screen satisfies it, FE-015 is the phase's one class-A
   item. If an export is required, it needs both a route and a new entry in the export resource
   registry, and the audit route's own declaration that export is out of scope must be revisited.
+  _Decided by the Owner on 2026-09-09 — see [`owner-decisions-2026-09-09.md`](./owner-decisions-2026-09-09.md)._
 - **D-7 — Is "delivery document" (FE-007) a client-composed print view or a stored document
   version?** _Consequence:_ the client-composed reading follows the pattern P1-28 and P1-30
   established and needs no backend print route. The stored reading inherits the image-only
@@ -380,9 +384,15 @@ engineering, and none is one of the 29. Each is phrased as a question with its c
   violated; P1-25's gate record logs the document re-synchronisation as non-blocking for a phase gate
   but blocking before production release or formal external delivery.
 - **D-15 — Will the delivery href be `/delivery` or `/deliveries`, and should P1-31 ship a sibling
-  gate-before-read check?** _Consequence:_ the existing check owns the plural segment and excludes
-  the reporting namespace entirely, so as things stand P1-31's first screen and every reporting page
-  escape it.
+  gate-before-read check?** **DECIDED BY PRECEDENT**, on
+  `feature/p1-31-delivery-detail-screen`, and recorded rather than escalated because neither half
+  was open to the phase: the href `/delivery` is already committed in `navigation.ts` and is the
+  address the P-8 slice merged, so changing it would be a change request against merged work rather
+  than a decision; and P1-29 and P1-30 each shipped their OWN gate-before-read check for exactly the
+  reason that widening a closed phase's derivation changes a gate that phase's closure rests on. So
+  the href stays `/delivery` and P1-31 ships a sibling, `scripts/ci/check-p1-31-access.mjs` (P-16).
+  _Consequence of the old state, now closed:_ the existing checks own the plural segment and exclude
+  the reporting namespace entirely, so P1-31's first screen and every reporting page escaped them.
 - **D-16 — Which task owns TC-P1-31-001 and TC-P1-31-002, and where do TC-WTY-001, TC-RPT-001 and
   TC-QMS-001 live?** All five return zero files from the repository, and the testing-plan document
   Field 9 names does not exist here. _Consequence:_ every one of the 29 task rows cites a test case

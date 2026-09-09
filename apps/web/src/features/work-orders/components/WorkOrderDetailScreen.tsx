@@ -16,6 +16,7 @@ import type {
   WorkOrderJob,
   WorkOrderReachableState,
 } from '../work-orders-contract';
+import { WorkOrderDeliveryPanel } from '@/features/delivery/components/WorkOrderDeliveryPanel';
 import { JobBlockersPanel } from '@/features/quality/components/JobBlockersPanel';
 import { WorkOrderHistorySection } from '@/features/quality/components/WorkOrderHistorySection';
 import { JobPanel } from './JobPanel';
@@ -62,6 +63,7 @@ export function WorkOrderDetailScreen({
   canReadQuotations = false,
   canReadStock = false,
   canReadInvoice = false,
+  canReadDelivery = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -82,6 +84,13 @@ export function WorkOrderDetailScreen({
   readonly canReadStock?: boolean;
   /** P1-30 W6: the link into this work order's invoice. Optional so earlier callers stand. */
   readonly canReadInvoice?: boolean;
+  /**
+   * P1-31: whether this work order's handover section is rendered AND read.
+   *
+   * Optional so earlier callers stand, and false by default so the read is
+   * never issued by a caller that has not resolved the authority for it.
+   */
+  readonly canReadDelivery?: boolean;
 }) {
   const [detail, setDetail] = useState<WorkOrderDetail>(initial);
   const [reloadError, setReloadError] = useState<string | null>(null);
@@ -173,6 +182,10 @@ export function WorkOrderDetailScreen({
             {translate(messages, 'workOrders.detail.invoiceLink')}
           </Link>
         </p>
+      ) : null}
+
+      {canReadDelivery ? (
+        <WorkOrderDeliveryPanel locale={locale} messages={messages} workOrderId={workOrder.id} />
       ) : null}
 
       <LifecyclePanel
