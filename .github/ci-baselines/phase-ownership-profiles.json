@@ -125,6 +125,11 @@
       "why": "the P1-27 citation-anchor gate and its suite, plus the phase records whose counts it moves — a repository-wide gate owned by no phase, carrying no Frontend source"
     },
     {
+      "branchPrefix": "chore/repository-governance-",
+      "profile": "repository-tooling",
+      "why": "Repository governance and instruction documents that belong to no phase: the tracked portable CLAUDE.md, CONTRIBUTING policy paragraphs, and factual corrections to product workshop documents authorised by the Owner (2026-09-09). Docs, tooling, tests and rootConfig only, like every other repository-tooling rule. Listed among the repository-tooling rules so first-match ordering is unchanged for the phase prefixes."
+    },
+    {
       "branchPrefix": "chore/dependency-security-",
       "profile": "dependency-security",
       "why": "an upstream advisory remediation — the npm manifests in every workspace that declares an affected package, the single root lockfile, and the maintenance record"
