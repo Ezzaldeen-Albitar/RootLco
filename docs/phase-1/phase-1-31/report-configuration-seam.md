@@ -3,14 +3,14 @@
 What was published, why each shape is the shape it is, what was proved on real rows, and the two
 things this slice deliberately leaves undone: the reporting engine, and the operator backfill.
 
-|                              |                                                                                                        |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------ |
-| **Phase**                    | P1-31 — Vehicle Delivery, Warranty, and Reporting Frontend                                             |
-| **Authority**                | Prerequisite **P-11** of [`a0-preflight.md`](./a0-preflight.md) — the WRITER half only                 |
-| **Lane**                     | `remediation/p1-31-backend-report-configuration-seam`, ownership profile `p1-31-backend`               |
-| **Baseline**                 | protected `develop` **249c6428** (P-10, #356) merged into this branch; `main` untouched                |
-| **Change control**           | [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) — section 30, **CC-20** (provisional) |
-| **Closes no canonical task** | P-11 is an execution prerequisite. The 29 remain 29, each still owing its own evidence                 |
+|                              |                                                                                                    |
+| ---------------------------- | -------------------------------------------------------------------------------------------------- |
+| **Phase**                    | P1-31 — Vehicle Delivery, Warranty, and Reporting Frontend                                         |
+| **Authority**                | Prerequisite **P-11** of [`a0-preflight.md`](./a0-preflight.md) — the WRITER half only             |
+| **Lane**                     | `remediation/p1-31-backend-report-configuration-seam`, ownership profile `p1-31-backend`           |
+| **Baseline**                 | protected `develop` **fc58f1c2** (#357, after P-10 #356) merged into this branch; `main` untouched |
+| **Change control**           | [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) — section 34, **CC-20**           |
+| **Closes no canonical task** | P-11 is an execution prerequisite. The 29 remain 29, each still owing its own evidence             |
 
 ---
 
