@@ -585,3 +585,55 @@ records.
 | version guards         | `If-Match` absent 428, stale 409 with the row unchanged, success advancing the version by exactly one; the ITEM version is not the template's; a one-field patch leaves the others untouched                                                                                  |
 | withdrawal             | soft delete with the row still present, the item gone from the detail read, the code re-addable, and a second withdrawal answering the uniform 404                                                                                                                            |
 | **the gate**           | an inactive template's mandatory item still produces `checklist_incomplete` naming the item, and withdrawing the item clears it - **CC-14**, measured rather than argued                                                                                                      |
+
+---
+
+---
+
+# P-2b — the branch delivery list, of 2026-09-09
+
+Sections 29-31 were added by the **P-2b** slice on 2026-09-09; its identifier is **CC-19,
+PROVISIONAL**. At this baseline `develop` holds **CC-01 … CC-14**, and **CC-15 … CC-18 are claimed by
+the open pull request #356**, which this branch does not contain. The number is therefore reserved
+rather than settled: **re-check it against `develop` before this branch merges**, and renumber if
+#356 lands with a different span — the P-9 and P-13/P-14 slices both had to renumber for exactly
+this reason, and both are recorded above.
+**Baseline:** protected `develop` `5cd06fbd` (PR #355, the P-9 template seam), `main` `1262de74` —
+untouched.
+
+## 29. What was published
+
+**One operation**, `sal.delivery-list` — `GET /api/v1/deliveries` — the chapter first declared API,
+added to the route module `sal.delivery-create` already owned.
+
+The P-2 … P-5 seam made a delivery recoverable from an identifier the caller already held. It left
+the SET unreadable: nothing in the product answered _which deliveries does this branch have_, so
+scope item 1 and FE-001 still had no read. This is that read. The slice record is
+[`delivery-read-seam.md`](./delivery-read-seam.md) §10.
+
+`companyId` and `branchId` are required and are the authorization target, checked before any row is
+read; `status`, `workOrderId` and `vehicleId` are optional filters, each a column of the record;
+paging is keyset on `sal.delivery_records:created_at_desc`. The response is `Page<DeliveryRecordView>`
+— the envelope `wty.warranty-list` returns, over the item `sal.delivery-read` already publishes.
+
+## 30. Dispositions
+
+| id        | finding                                                                    | measured                                                                                                                                                                                                                                                                                        | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | owner                                                       | state          |
+| --------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | -------------- |
+| **CC-19** | **no index was added for the list ordering, and no migration was written** | `sal.delivery_records` carries `uq_delivery_records_scope_id (tenant, company, branch, id)` and three `ix_delivery_records_*` indexes; **none leads on `(tenant, company, branch, created_at)`**, so the newest-first ordering is a sort over the branch-narrowed set rather than an index walk | **accepted, on the `wty.warranty-list` precedent, which declined a migration on the same evidence and said so.** A branch deliveries are bounded by its work orders; this read has not demonstrated a cost that a schema change would buy. Recorded here so a later measurement can reverse it deliberately rather than discover it. **The permission was reused, not minted** — `sal.delivery.view`, the code every read on this seam declares — and no policy changed: `sel_delivery_records_scope` is a tenant/company/branch predicate with no permission term, so the declared code is the only application gate | a later `sal` performance slice, if measurement warrants it | open, recorded |
+| **D-3**   | the Owner decision behind scope item 1 is still a **proposal**             | A0 §D-3 asks whether "ready-for-delivery list" means delivery **records** or **work orders eligible to open one**. This slice publishes the first reading                                                                                                                                       | **recorded as pending, not resolved.** The read is a capability and commits nothing about the wording: if the Owner chooses the second reading, this list stays correct and FE-001 is built from a different one. Nothing in this slice asserts the decision was taken                                                                                                                                                                                                                                                                                                                                                | Owner, through the phase decision log                       | open           |
+
+## 31. What this slice did NOT do
+
+- **No permission was minted, no seed changed and no bundle changed.** `sal.delivery.view` is
+  seeded, is carried by the tenant administrator bundle, and is the code the other five delivery
+  reads already declare.
+- **No migration, no policy and no grant.** Every statement runs on grants that have existed since
+  P1-11, under the existing `sel_delivery_records_scope`.
+- **No second mapper.** Rows come back through `toDeliveryView`, so the listed delivery and the read
+  delivery are one wire contract; the suite asserts the two responses are equal rather than similar.
+- **No screen.** `apps/web` changes only through the generated idempotency manifest, which every
+  published operation moves. FE-001 belongs to the frontend lane.
+- **No tenant-wide reading.** The company/branch pair is required, so no caller can read deliveries
+  across branches, and none is offered.
+- **CC-14 is untouched.** The inactive-template gate finding stands exactly as recorded in §26.

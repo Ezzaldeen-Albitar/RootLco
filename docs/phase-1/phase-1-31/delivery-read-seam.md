@@ -1,14 +1,14 @@
-# P1-31 — the delivery read seam (P-2, P-3, P-4, P-5)
+# P1-31 — the delivery read seam (P-2, P-2b, P-3, P-4, P-5)
 
 What was published, why each shape is the shape it is, and what was proved on real rows.
 
 |                              |                                                                                                                                 |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | **Phase**                    | P1-31 — Vehicle Delivery, Warranty, and Reporting Frontend                                                                      |
-| **Authority**                | Prerequisites **P-2**, **P-3**, **P-4** and **P-5** of [`a0-preflight.md`](./a0-preflight.md), Artefact 4                       |
+| **Authority**                | Prerequisites **P-2**, **P-2b**, **P-3**, **P-4** and **P-5** of [`a0-preflight.md`](./a0-preflight.md), Artefact 4             |
 | **Lane**                     | `remediation/p1-31-backend-…`, ownership profile `p1-31-backend`                                                                |
 | **Baseline**                 | protected `develop` **8052841a**; `main` `1262de74`, untouched                                                                  |
-| **Change control**           | [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) §7–§11 — **CC-05**, **CC-06**                                  |
+| **Change control**           | [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) §7–§11 — **CC-05**, **CC-06**; P-2b adds **CC-19**             |
 | **Closes no canonical task** | P-2 … P-5 are execution prerequisites. The 29 remain 29, each still owing its own evidence under Field 7, Field 27 and Field 32 |
 
 ---
@@ -155,6 +155,10 @@ slice was set:
 
 ## 9. What this does not close
 
+This section was written before the **list limb** existed. It was published on 2026-09-09 as
+**P-2b** (§10), whose §10.6 records what it in turn leaves open. Every bullet below is unaffected
+by it, including the last one: there is still no screen.
+
 - **P1-27-INT-088** — the checklist gap side is untouched. **CC-06**.
 - **RES-05 / P-8** — `sal.delivery.read` in navigation is still a code the catalogue does not seed.
 - **P-6 … P-16** — warranty reads and the warranty read code, the checklist-template writer, the
@@ -166,3 +170,114 @@ slice was set:
   dependency G-14.
 - **No screen exists.** `apps/web` is unchanged except through the generated idempotency manifest,
   which every published operation moves. The screens are a later slice.
+
+---
+
+## 10. P-2b — the branch list
+
+Added **2026-09-09**, off protected `develop` **5cd06fbd**, on the same lane and the same ownership
+profile. It is the last limb of this seam rather than a new one, which is why it is recorded here.
+
+### 10.1 What was still missing
+
+Every read in §2 is addressed by an identifier the caller must already hold — the delivery own id, or
+its work order id. Recovery was solved; **enumeration was not**. Nothing anywhere in the product
+answered _which deliveries does this branch have_, so the delivery-records reading that the Owner
+decision **D-3** describes had no read behind it, and FE-001 had nothing to list.
+
+### 10.2 The operation
+
+| operation           | path          | over                                     | prereq   |
+| ------------------- | ------------- | ---------------------------------------- | -------- |
+| `sal.delivery-list` | `/deliveries` | a NEW branch-wide query, existing mapper | **P-2b** |
+
+`GET /api/v1/deliveries?companyId&branchId&status?&workOrderId?&vehicleId?&cursor?&limit?`,
+declaring `sal.delivery.view`, `scope: 'branch'`, `auditClass: 'none'`,
+`rateLimitPolicy: 'expensive-read'`, `cacheCategory: 'never'`. The response is
+`Page<DeliveryRecordView>` — `{ items, nextCursor, hasMore }` — the envelope `wty.warranty-list`
+returns, and the item is the shape `sal.delivery-read` already publishes.
+
+The GET is declared in the route module the POST already owned, so the register moves 390 → **391**
+operations over **no new route module**. The two counts move by different amounts, which is exactly
+the asymmetry `tests/ci/repository-paths.test.ts` asserts both of them for.
+
+**Half of the `sal.work-order-invoice-read` rule holds and half does not**, and the route docblock
+says which. Every finder in `DeliveryRepository` is addressed by an identifier, so there was no
+branch-wide read to publish and **the query is new**. The mapper is not: rows come back through
+`toDeliveryView`, so a listed delivery and a read one are one wire contract.
+
+### 10.3 Authorization order — the reverse of §4, deliberately
+
+`companyId` and `branchId` are REQUIRED and are the `authorizationTarget`, and `authorizeScope` runs
+**before any row is read**. §4 records the opposite order for the five id-addressed reads, and both
+are justified against **P1-18-A-01**: an id-addressed read has no scope to name until the row has
+been read, so the row OWN pair is the only honest target; a list has no row to take a scope from, so
+the caller must name one and the server must refuse it.
+
+Two consequences. `sel_delivery_records_scope` narrows on the permission-blind allowed-branch union,
+so an optional pair would let a caller holding `sal.delivery.view` in one branch read every branch
+it holds any grant in. And authorizing first stops the empty/non-empty difference from reporting
+whether a branch has deliveries at all.
+
+No policy changed. `sel_delivery_records_scope` is a tenant/company/branch predicate with no
+permission term, so the declared code is the only application gate on these rows.
+
+### 10.4 Filters, ordering, and the index that was NOT added
+
+Three filters, each a column of the record: `status`, validated at the boundary against
+`DELIVERY_STATUSES` — the module transcription of `ck_delivery_records_status` — so an unknown value
+is refused rather than answered with an empty page that reads as "none"; plus `workOrderId` and
+`vehicleId`, both covered by indexes the table already has. `.strict()`, so an unknown parameter is
+`ERR-VAL-001` (422) and a malformed cursor stays a distinguishable `ERR-PAG-001` (400).
+
+Ordering is `sal.delivery_records:created_at_desc` with the `id` tie-break making it total.
+`created_at` and **not** `delivered_at`: the latter is NULL until the handover completes and cannot
+order a set most of whose rows have not delivered, and the table carries no scheduled date of any
+kind. The cursor sort value is minted by `cursorTimestamp()` at microsecond precision for the reason
+§6 gives.
+
+**No index and no migration.** Nothing leads on `(tenant, company, branch, created_at)`, so the sort
+runs over the already-narrowed branch set. That is the decision `wty.warranty-list` took on the same
+evidence, and it is recorded rather than glossed: a branch deliveries are bounded by its work
+orders, and this read has not demonstrated the cost of a schema change.
+
+Soft-deleted rows are excluded, as `findDelivery` excludes them.
+
+### 10.5 What was proved, on real rows
+
+`tests/backend/p1-31-delivery-list-seam.test.ts` — **17 cases**, all passing. Four deliveries in the
+branch under test (two `ready` opened through the real `POST /deliveries`, one `delivered` driven
+through `sal.complete_delivery`, one opened and then soft-deleted) and one in a second scope.
+
+1. **Read by someone who could not have written it.** `SAL_READER` holds `sal.delivery.view` and not
+   `sal.delivery.manage`; it lists the branch, newest first, and the row it reads is `toEqual` the
+   one `sal.delivery-read` returns for the same delivery — one mapper, asserted rather than claimed.
+2. **The filters filter, with their complements.** `status`, `workOrderId` and `vehicleId` each
+   return the expected subset while the same list without them carries the rows the filter dropped;
+   an unmatched vehicle and an unrepresented status are **200 with an empty page**, never a 404.
+3. **The soft-deleted row is absent from every page**, and an admin read confirms it is still in the
+   table — so the absence is the predicate and not a fixture that never arrived.
+4. **Refused correctly.** No `sal.delivery.view` → 403 `ERR-IAM-001` naming that code;
+   unauthenticated → 401; a scope target that is absent, half-given, unknown-keyed or carries an
+   out-of-vocabulary status → 422 `ERR-VAL-001`.
+5. **Tenancy and scope.** A tenant-B principal holding every `sal` code is refused the named pair
+   with 403, **identically to a pair that does not exist**, so the answer carries no existence. A
+   caller granted in another branch is refused; so is the caller whose permission-blind branch union
+   makes the rows RLS-visible — that refusal is `authorizeScope` and nothing else.
+6. **Paging.** The branch is walked one row at a time to exhaustion; the walk repeats nothing, skips
+   nothing, and equals the branch live rows exactly as an admin read holds them. A malformed cursor
+   is 400 `ERR-PAG-001`, an oversized page and an unknown parameter are 422, and a cursor minted for
+   the status-history contract is refused.
+
+### 10.6 What P-2b still does not close
+
+- **No screen.** `apps/web` is unchanged except through the generated idempotency manifest. FE-001
+  is a later slice on the frontend lane.
+- **D-3 is a proposal, not an approval.** "Delivery records" as the reading of that scope item is
+  recorded as pending the Owner; publishing the read commits nothing about the wording.
+- **RES-05 / P-8** — `sal.delivery.read` is still a navigation code the catalogue does not seed. The
+  list declares `sal.delivery.view`, as every read on this seam does.
+- **No tenant-wide list.** The pair is required, so there is no cross-branch reading of deliveries
+  and none is offered.
+- **The delivering employee still has no identity** (§9), and the list publishes the bare identifier
+  the column holds.
