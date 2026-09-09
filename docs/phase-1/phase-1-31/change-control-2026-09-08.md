@@ -373,3 +373,56 @@ Run on 2026-09-08 by `platform.operator@rootlco.local`, `--all`, dry run first a
 `rootlco_w7b` 48 → 74 and `p30_acceptance_ac0zif` 65 → 74; the eighteen `p30_journey_*` organisations
 moved 67 → 74. A second `--all` run immediately afterwards reported **0 widened, 24 already current**
 — idempotency on the real rows rather than only in the suite.
+
+---
+
+## 21. The documentation-corrections slice — prerequisites P-13 and P-14
+
+Added on 2026-09-09 by `remediation/p1-31-backend-documentation-corrections`, on the
+`p1-31-backend` lane. It changes comments and records only: **no behaviour changed, no operation was
+declared, widened or withdrawn, no permission code was minted, granted or revoked, and no migration,
+seed, policy or grant was touched.**
+
+**P-13 — four rows of [`operation-inventory.md`](../phase-1-22/operation-inventory.md) corrected**
+against the `defineOperation(...).permissions` of the routes themselves, each cross-checked against
+the generated `docs/phase-1/phase-1-22/evidence/endpoint-inventory.md`:
+
+| operation                       | the inventory said                          | the route declares                                               |
+| ------------------------------- | ------------------------------------------- | ---------------------------------------------------------------- |
+| `sal.delivery-eligibility-read` | `sal.delivery.manage`, `sal.finance.view`   | `sal.delivery.view`, `sal.finance.view`                          |
+| `sal.delivery-receiver-verify`  | `sal.delivery.manage`                       | `sal.delivery.manage`, `sal.delivery.view`                       |
+| `sal.delivery-signature-attach` | `sal.delivery.manage`                       | `sal.delivery.manage`, `sal.delivery.view`                       |
+| `sal.delivery-complete`         | `sal.delivery.complete`, `sal.finance.view` | `sal.delivery.complete`, `sal.delivery.view`, `sal.finance.view` |
+
+The table's other two rows — `sal.delivery-create` and `sal.delivery-checklist-record` — already
+agreed with the code and were left alone, and so was the paragraph beneath the table: it says only
+that the eligibility read and the completion both require `sal.finance.view` "in addition to their
+delivery authority", which is as true after the correction as before it, so there was no stale prose
+to rewrite.
+
+**P-14 — the retrievability claim corrected in three LIVE copies.** The `P1-22-L-04` section of
+`apps/api/src/app/api/v1/deliveries/[deliveryId]/signatures/route.ts`, the
+`sal.delivery.signature_recorded` description in `apps/api/src/server/auth/audit-actions.ts` and the
+"No signature retrieval" bullet of the P1-22 operation inventory each asserted that no application
+path could move a document version to `accepted`. Each now quotes `AttachmentService.requestDownload`
+rather than paraphrasing it, and the measurement behind the correction is
+`supabase/migrations/20260815090000_shared_reception_evidence_foundation.sql`, which adds
+`ins_file_scan_results_scanner`, `upd_document_versions_lifecycle`, `GRANT INSERT ON
+shared.file_scan_results` and `GRANT UPDATE(status) ON shared.document_versions`.
+`docs/phase-1/phase-1-22/contract-archaeology.md` and `docs/phase-1/phase-1-22/blocker-treatment.md`
+are **deliberately untouched**: they are historical P1-22 records of what was measured then, and
+editing them would rewrite a finding rather than correct a claim.
+
+**The P-8 deferral.** The two delivery-read docblocks that explain why they do not declare
+`sal.delivery.read` — `deliveries/[deliveryId]/route.ts` and
+`work-orders/[workOrderId]/delivery/route.ts` — now record that P1-31 prerequisite P-8 re-points the
+navigation entry at `sal.delivery.view` (**RES-05**), with the surrounding rationale kept. This
+branch therefore merges AFTER the P-8 pull request.
+
+| id        | finding                                                                                        | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                               | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                               | owner / slice                        | status |
+| --------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | ------ |
+| **CC-14** | the corrected retrievability claim survives, uncorrected, in six further LIVE source docblocks | P-14 was scoped to five copies of `P1-22-L-04`. A grep over the tree returns more: besides the three live copies corrected here and the two historical records left as written, the same "no scanner is provisioned / acceptance is unreachable" assertion appears in the signature-LIST docblock of the SAME route file, in `modules/delivery/{application/delivery-read-service.ts, application/delivery-service.ts (twice), data/delivery-repository.ts, index.ts}` | **open, and scoped out deliberately rather than silently.** Correcting them is comment-only work of the same kind, but it reaches five module files this prerequisite does not name, and two `note:` strings in `scripts/check-operation-test-coverage.mjs` restate the claim as well — that file is a gate register, so widening the slice to it is a decision, not a tidy-up. Recorded here so the follow-up is one list rather than a second discovery | a later delivery documentation slice | open   |
+
+**Identifier note:** **CC-14** is allocated provisionally. `develop` at `f4309a8e` holds
+**CC-01 … CC-11** in this register and no `CC-12` or `CC-13`; **CC-12** is expected from the open
+P-8 slice. The id is re-checked against `develop`'s register before this branch merges.
