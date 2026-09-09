@@ -94,8 +94,14 @@ describe('every route body serialises a named type', () => {
     // 382 with the P1-31 warranty list (P-6): one GET serialising
     // `Page<WarrantyRecordListView>`, a NAMED interface, so `named` moves by one
     // and `composed` does not.
-    expect(summary.bodies).toBe(382);
-    expect(summary.named).toBe(329);
+    // 389 with the P1-31 warranty POLICY and COVERAGE seam (P-10): seven
+    // operations, two GETs and five writes, every one of them NAMED, so `named`
+    // moves by seven and `composed` does not. `WarrantyPolicyListView` and
+    // `WarrantyPolicyDetailView` exist because this gate refuses an inline return
+    // type; the five commands serialise `WarrantyPolicySummaryView` and
+    // `WarrantyCoverageTermsView`, which is the same pair the reads publish.
+    expect(summary.bodies).toBe(389);
+    expect(summary.named).toBe(336);
     expect(summary.composed).toBe(53);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);
