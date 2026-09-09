@@ -125,6 +125,11 @@
       "why": "the P1-27 citation-anchor gate and its suite, plus the phase records whose counts it moves — a repository-wide gate owned by no phase, carrying no Frontend source"
     },
     {
+      "branchPrefix": "chore/dependency-security-",
+      "profile": "dependency-security",
+      "why": "an upstream advisory remediation — the npm manifests in every workspace that declares an affected package, the single root lockfile, and the maintenance record"
+    },
+    {
       "branchPrefix": "feature/pre-p1-29-backend-",
       "profile": "pre-p1-29-backend",
       "why": "The Backend lane of PRE-P1-29. Listed BEFORE the initiative branch so a lane branch is judged by its lane rather than by the wider integration profile — first match wins, and the narrower rule must be reachable."

@@ -327,6 +327,31 @@ export const PROFILES = {
       supabase: 'a repository tooling change must not change the database',
     },
   },
+  'dependency-security': {
+    why:
+      'a dependency-advisory remediation — the npm manifests and the single root lockfile, in ' +
+      'every workspace that declares an affected package, plus the maintenance record. It ' +
+      'belongs to no phase because an upstream advisory lands on `develop` and every open ' +
+      'branch at once, and it declares itself rather than borrowing a phase profile that would ' +
+      'say nothing about it',
+    // `web` is allowed because it is the narrowest bucket that reaches
+    // apps/web/package.json: there is no `webConfig`, and introducing one would
+    // silently re-classify that manifest out from under every existing Frontend
+    // profile. `apiConfig` carries apps/api/package.json for the same reason,
+    // and `rootConfig` carries the root manifest, the lockfile and the
+    // ci-baselines record.
+    allowed: ['rootConfig', 'web', 'apiConfig', 'docs', 'tooling', 'tests'],
+    forbidden: {
+      apiSource: 'a version move that needs an API source change is a phase change, not a bump',
+      webGenerated:
+        'no dependency version decides the generated Frontend contract manifest — a regenerated ' +
+        'manifest here would mean something else changed',
+      webContract: 'nor a contract mirror: an advisory publishes no operation',
+      migrations: 'a dependency bump carries no migration',
+      dbSeeds: 'nor a seed',
+      supabase: 'nor any other database change',
+    },
+  },
   'api-boundary': {
     why: 'the pre-P1-26 API file-boundary remediation',
     allowed: [

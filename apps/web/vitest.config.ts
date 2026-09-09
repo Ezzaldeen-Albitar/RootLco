@@ -92,15 +92,21 @@ export default defineConfig({
       reporter: ['text-summary', 'json-summary', 'json'],
       reportsDirectory: 'coverage/web',
       /**
-       * Files no test imports are still measured, at 0%. Without this a screen
+       * Files no test imports are still measured, at 0%. Without that a screen
        * nothing loads simply leaves the denominator, and the tier reports a
        * flattering number for the small part of itself it happens to touch.
        * It also arms the trap this project has already written down: a
        * percentage can FALL because v8 newly ENTERS code that was never loaded
-       * before. With `all`, that code was in the denominator all along, so the
+       * before. Because the untouched code is in the denominator all along, the
        * fall shows up as the coverage work it is rather than as a surprise.
+       *
+       * Vitest 4 REMOVED `coverage.all`, which used to carry that guarantee.
+       * The `include` list below now carries it instead: when a whole tier is
+       * run, the provider adds every file matching `include` that no test
+       * loaded, at zero, before the report is written. So the guarantee did not
+       * weaken — it moved, and it is `include` that must never be narrowed.
+       * `apps/web/tests/security.test.ts` pins `include` for exactly that reason.
        */
-      all: true,
       include: [...COVERAGE_INCLUDE],
       exclude: [...COVERAGE_EXCLUDE],
     },
