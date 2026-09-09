@@ -493,7 +493,7 @@ describe('the coverage include lists are pinned, because they are the denominato
     expect(new Set([...directoryFiles, ...singleFiles]).size).toBe(19);
   });
 
-  it('measures the same 271 backend files the backend baseline was established on', () => {
+  it('measures the backend files the include list admits, and no others', () => {
     /*
      * 272 `.ts` files under the two roots, less `server/openapi/document.ts`,
      * which `exclude` removes — 271, which is what
@@ -507,11 +507,24 @@ describe('the coverage include lists are pinned, because they are the denominato
       typeScriptFilesUnder(pattern.slice(0, -'/**/*.ts'.length))
     );
     expect(files.filter((file) => file.endsWith('.d.ts'))).toEqual([]);
-    expect(files.length).toBe(272);
+    expect(files.length).toBe(274);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
     );
-    expect(instrumented.length).toBe(271);
+    /*
+     * 273, two more than the 271 the hosted run that established
+     * `coverage-baseline.backend.json` measured, and the difference is two files:
+     * `modules/warranty/application/warranty-policy-service.ts`, added by the
+     * P1-31 warranty policy and coverage seam (P-10), and
+     * `modules/delivery/application/checklist-template-service.ts`, added by the
+     * P1-31 checklist template seam (P-9) — 273 once both are present. The
+     * denominator is SUPPOSED to grow with the tier's source; what this case
+     * defends is that it only ever grows because a file was added, never because
+     * the include list quietly narrowed. The baseline's percentage floors are
+     * untouched: re-establishing them needs a hosted measurement run, which
+     * neither slice performed and neither claims.
+     */
+    expect(instrumented.length).toBe(273);
   });
 });

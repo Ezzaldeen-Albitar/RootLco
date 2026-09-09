@@ -1636,6 +1636,56 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'The vehicle was handed over, custody was released and a final odometer reading was captured. sal.complete_delivery enforces receiver, mandatory checklist and at least one signature — and checks no work-order state, no quality control and NO FINANCIAL BALANCE, so the financial blocker recorded here is enforced by the application alone. An override of it is recorded with its reason in the details.',
   },
 
+  // ---- Phase 1-31 P-9 — the delivery checklist TEMPLATE (sal) ----
+  //
+  // `privileged` like the rest of the delivery block, and for a sharper reason than
+  // the handover actions: `sal.complete_delivery` counts mandatory checklist items by
+  // (tenant, company) across every template, so one row written by these actions can
+  // block or unblock the handover of every vehicle in a company. Configuration with
+  // that reach is recorded.
+  {
+    code: 'sal.delivery_checklist_template.created',
+    class: 'privileged',
+    entityType: 'sal.delivery_checklist_template',
+    description:
+      'A delivery checklist template was created for one company, with its items in the same transaction. The template and its items had no write path anywhere in the product until P1-31 (PPD-12), so a tenant provisioned through the product had an empty handover checklist and no way to fill it. The record names how many items arrived and how many of them are mandatory.',
+  },
+  {
+    code: 'sal.delivery_checklist_template.renamed',
+    class: 'privileged',
+    entityType: 'sal.delivery_checklist_template',
+    description:
+      'A delivery checklist template was renamed. The template code is not editable and is not part of this action: recorded handover outcomes point at ITEMS by id, and a re-coded template would be a different configuration wearing the old one identity.',
+  },
+  {
+    code: 'sal.delivery_checklist_template.status_changed',
+    class: 'privileged',
+    entityType: 'sal.delivery_checklist_template',
+    description:
+      'A delivery checklist template was retired or restored. Retiring does NOT stop its mandatory items gating a handover: sal.complete_delivery filters the ITEM deleted_at column and never joins the parent template, so an inactive template with a mandatory item still blocks every delivery in that company until each one records a passed or waived outcome.',
+  },
+  {
+    code: 'sal.delivery_checklist_template.item_added',
+    class: 'privileged',
+    entityType: 'sal.delivery_checklist_template_item',
+    description:
+      'An item was added to a delivery checklist template. A mandatory item is a company-wide gate rather than a template-scoped one, because a delivery record carries no template reference, so the record names the mandatory flag explicitly.',
+  },
+  {
+    code: 'sal.delivery_checklist_template.item_updated',
+    class: 'privileged',
+    entityType: 'sal.delivery_checklist_template_item',
+    description:
+      'The label, mandatory flag or order of a delivery checklist item was changed, with the previous value of each recorded beside the new one. The item code is not editable, because every recorded outcome points at the row by id.',
+  },
+  {
+    code: 'sal.delivery_checklist_template.item_removed',
+    class: 'privileged',
+    entityType: 'sal.delivery_checklist_template_item',
+    description:
+      'A delivery checklist item was withdrawn. A soft delete performed by UPDATE, because the table carries no DELETE grant for any application role and the results foreign key is ON DELETE RESTRICT; every outcome already recorded against the item stays readable, and the item stops gating completion.',
+  },
+
   // ---- Phase 1-22 — Warranty (wty) ----
   {
     code: 'wty.warranty.issued',
@@ -1643,6 +1693,49 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     entityType: 'wty.warranty_record',
     description:
       'A warranty record was generated from a committed delivery. Every term is configuration: duration, odometer limit and covered scope come from the wty.warranty_coverage row effective at the delivery date, and the backend defaults none of them. Records generation only — P1-22 implements no claim intake or adjudication, because no claim table exists in any schema (P1-22-L-01).',
+  },
+
+  // ---- Phase 1-31 P-10 — warranty POLICY and COVERAGE administration (wty) ----
+  //
+  // `privileged` for a sharper reason than the generation action above: the rows these
+  // actions write are what generation READS. One coverage window decides the duration
+  // and the distance allowance of every warranty issued in every branch of a company
+  // for the days it covers, and archiving a company's only active policy stops
+  // warranties being issued there at all. Configuration with that reach is recorded.
+  {
+    code: 'wty.warranty_policy.created',
+    class: 'privileged',
+    entityType: 'wty.warranty_policy',
+    description:
+      'A warranty policy was created for one company, with its effective-dated coverage in the same transaction. Neither table had a write path anywhere in the product until P1-31 (PPD-04), so a tenant provisioned through the product could never issue a warranty: generation refuses a company with no active policy and nothing could create one. The record names how many coverage windows arrived with the header, because a policy with none cannot issue anything.',
+  },
+  {
+    code: 'wty.warranty_policy.renamed',
+    class: 'privileged',
+    entityType: 'wty.warranty_policy',
+    description:
+      'A warranty policy was renamed. The policy code is not editable and is not part of this action: every warranty record cites its policy by id for the life of the warranty, and a re-coded policy would be a different configuration wearing the old one identity.',
+  },
+  {
+    code: 'wty.warranty_policy.status_changed',
+    class: 'privileged',
+    entityType: 'wty.warranty_policy',
+    description:
+      'A warranty policy was archived or restored. Archiving removes it from the active-policy set that generation resolves against, so archiving a company only active policy makes every subsequent generation that names no policy refuse as unconfigured. It does NOT touch the coverage rows: the issue primitive filters coverage on the coverage own status and never reads the policy status, so the application rule that refuses an archived policy is the only defence at issue time.',
+  },
+  {
+    code: 'wty.warranty_policy.coverage_added',
+    class: 'privileged',
+    entityType: 'wty.warranty_coverage',
+    description:
+      'An effective-dated coverage window was added to a warranty policy. The record names the covered scope, the duration in months, the distance allowance and both ends of the window, because those four values ARE the terms every warranty issued under this policy in that window will carry. At most one active window may cover a scope on any day, which the database enforces with an exclusion constraint (BR-WTY-001).',
+  },
+  {
+    code: 'wty.warranty_policy.coverage_status_changed',
+    class: 'privileged',
+    entityType: 'wty.warranty_coverage',
+    description:
+      'A warranty coverage window was archived or reactivated. Archiving is what withdraws those terms from future generation while leaving every warranty already issued under them readable and intact. A reactivation can be refused when a newer window has since covered the same days for the same scope, because two active windows would make the terms a customer receives depend on which row the database returned first.',
   },
 ]);
 

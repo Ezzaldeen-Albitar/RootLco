@@ -356,6 +356,12 @@ const EXPECTED_AUDIT_ACTIONS = [
   'sal.delivery.created',
   'sal.delivery.receiver_verified',
   'sal.delivery.signature_recorded',
+  'sal.delivery_checklist_template.created',
+  'sal.delivery_checklist_template.item_added',
+  'sal.delivery_checklist_template.item_removed',
+  'sal.delivery_checklist_template.item_updated',
+  'sal.delivery_checklist_template.renamed',
+  'sal.delivery_checklist_template.status_changed',
   'sal.invoice.created',
   'sal.invoice.issued',
   'sal.invoice.voided',
@@ -437,6 +443,11 @@ const EXPECTED_AUDIT_ACTIONS = [
   'wo.work_order.service_line_recorded',
   'wo.work_order.state_changed',
   'wty.warranty.issued',
+  'wty.warranty_policy.coverage_added',
+  'wty.warranty_policy.coverage_status_changed',
+  'wty.warranty_policy.created',
+  'wty.warranty_policy.renamed',
+  'wty.warranty_policy.status_changed',
 ];
 
 /**

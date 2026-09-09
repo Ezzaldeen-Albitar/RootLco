@@ -149,33 +149,46 @@
  *  - `iam.audit.view` — `iam.audit-event-list`, `iam.audit-event-detail` and the
  *    four `sel_*_permitted` audit policies. The Audit Log screen already ships.
  *
- * ### Three of the nine are DELIBERATELY EXCLUDED (P1-31 CC-01, CC-02, CC-04)
+ * ### CC-01 IS NOW CLOSED; TWO exclusions remain (P1-31 CC-02, CC-04)
  *
- * Two of the three are excluded because nothing declares them; the third is
- * excluded although something does. The kinds are not the same and are not
- * recorded as though they were.
+ * The three were excluded on two different grounds, and the kinds were never
+ * recorded as though they were the same. Two were excluded because nothing
+ * declared them; the third is excluded although something does.
  *
- * `wty.policy.manage` and `rpt.report.configure` are seeded catalogue codes that
- * NO operation declares and NO row-level-security predicate names — a search of
- * `apps/api/src` and `supabase/` finds each only in the catalogue seed itself.
- * Holding them would confer nothing today, which is precisely why they are not
- * held: the administrator bundle is the delegation ceiling of the whole tenant,
- * and a code with no measured need is authority granted on speculation.
+ * `wty.policy.manage` was the first of the undeclared pair, and **P-10 closed
+ * it on 2026-09-09 exactly as CC-01 said it would.** The code is now declared by
+ * five registered operations — `wty.warranty-policy-create`,
+ * `wty.warranty-policy-rename`, `wty.warranty-policy-status-set`,
+ * `wty.warranty-coverage-create` and `wty.warranty-coverage-status-set` — which
+ * publish the warranty policy and coverage write surface PPD-04 measured as
+ * absent. So the ground for withholding it is gone, and the rule CC-01 stated
+ * applies: "the slice that publishes them owns the widening". It is held below.
  *
- * They are also the codes their own contracts ask to be granted deliberately.
- * `wty.warranty-detail` records that borrowing `wty.policy.manage` for a read
- * "would be worse: it grants coverage administration"; the report-configuration
- * repository names `rpt.report.configure` as the authority for writes that do
- * not exist. A0 records both surfaces as absent — P-10 (PPD-04, the warranty
- * policy and coverage tables have no writer) and P-11 (the report-configuration
- * tables have no writer, no seed, and the definition view's `executable` is the
- * literal `false`).
+ * Withholding it now would be worse than withholding it was: `resolvePolicy`
+ * refuses a company with no active warranty policy, so an administrator who
+ * could not create one could never issue a warranty in a freshly provisioned
+ * organisation, and could not delegate the authority to anyone either.
+ * EXISTING organisations do not gain it automatically — this constant is read
+ * at provisioning time — so `scripts/platform/backfill-tenant-administrator-bundle.mjs`
+ * owes them an operator run, exactly as it did for the P-1 and P-7 widenings.
  *
- * CONSEQUENCE, stated rather than hidden: when P-10 and P-11 publish those
- * writers, a fresh administrator will be refused by `ERR-IAM-001` on the write
- * AND unable to delegate it, and the slice that publishes them owns the
+ * `rpt.report.configure` is the one that stays on those grounds. It is a seeded
+ * catalogue code that NO operation declares and NO row-level-security predicate
+ * names — a search of `apps/api/src` and `supabase/` finds it only in the
+ * catalogue seed itself. Holding it would confer nothing today, which is
+ * precisely why it is not held: the administrator bundle is the delegation
+ * ceiling of the whole tenant, and a code with no measured need is authority
+ * granted on speculation. The report-configuration repository names it as the
+ * authority for writes that do not exist, and A0 records that surface as absent
+ * under P-11 — no writer, no seed, and the definition view's `executable` is the
+ * literal `false`.
+ *
+ * CONSEQUENCE, stated rather than hidden: until P-11 publishes that writer, a
+ * fresh administrator is refused by `ERR-IAM-001` on a report-configuration
+ * write AND unable to delegate it, and the slice that publishes it owns the
  * widening — exactly the `inv.item.manage` sequence, excluded here while no
- * route declared it and added by #322 on the day three routes did.
+ * route declared it and added by #322 on the day three routes did, and exactly
+ * the sequence P-10 has now completed for `wty.policy.manage`.
  *
  * `rpt.export` is the third, and it is excluded on DIFFERENT grounds — least
  * privilege, by an explicit Owner decision of 2026-09-08 (CC-04). Two shipped
@@ -346,12 +359,14 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     // clerk and a reporting reader; each is declared by a SHIPPED operation.
     // The six P-1 codes all pre-existed in the permission catalogue seed and P-1
     // minted nothing; the seventh, added by P-7 below, is the phase's one minted
-    // code. Three of P-1's nine candidates are deliberately EXCLUDED:
-    // `wty.policy.manage` and `rpt.report.configure` because no operation declares them and no
-    // policy predicate names them (P1-31 CC-01, CC-02), and `rpt.export` —
-    // which two shipped operations DO declare — on least-privilege grounds by
-    // Owner decision, because it is the platform-wide export switch and the
-    // bundle already holds every entitlement it pairs with (P1-31 CC-04).
+    // code, and the eighth is added by P-10 below. TWO of P-1's nine candidates
+    // remain deliberately EXCLUDED: `rpt.report.configure` because no operation
+    // declares it and no policy predicate names it (P1-31 CC-02), and
+    // `rpt.export` — which two shipped operations DO declare — on
+    // least-privilege grounds by Owner decision, because it is the platform-wide
+    // export switch and the bundle already holds every entitlement it pairs with
+    // (P1-31 CC-04). The third, `wty.policy.manage`, WAS excluded on CC-02's
+    // grounds and is now held: see P-10 below.
     'sal.delivery.manage',
     'sal.delivery.view',
     'sal.delivery.complete',
@@ -363,6 +378,16 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     // the administrator can read a warranty today through `wty.warranty.issue`
     // — which is the one thing CC-01, CC-02 and CC-04 never do.
     'wty.warranty.read',
+    // P1-31 prerequisite P-10 (CC-01, now CLOSED). Declared by the five write
+    // operations that publish the warranty policy and coverage surface PPD-04
+    // measured as absent. Excluded until 2026-09-09 on the "nothing declares it"
+    // rule, and carried the moment that stopped being true — the same sequence
+    // `inv.item.manage` went through in #322. Withholding it now would leave a
+    // freshly provisioned administrator unable to issue ANY warranty, because
+    // warranty generation refuses a company that has no active policy and no
+    // other code can create one. The code was already in the catalogue seed;
+    // nothing is minted here.
+    'wty.policy.manage',
     'rpt.report.read',
     'iam.audit.view',
   ]),

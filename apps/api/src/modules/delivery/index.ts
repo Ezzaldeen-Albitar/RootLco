@@ -56,6 +56,7 @@
  */
 import { composeModule } from '@/server/layering';
 import { DeliveryRepository } from './data/delivery-repository';
+import { ChecklistTemplateService } from './application/checklist-template-service';
 import { DeliveryReadService } from './application/delivery-read-service';
 import { DeliveryService } from './application/delivery-service';
 
@@ -66,6 +67,7 @@ export type {
   ChecklistResultDetailRow,
   ChecklistResultRow,
   ChecklistTemplateItemRow,
+  ChecklistTemplateRow,
   DeliveryRecordRow,
   DeliveryScope,
   DeliverySignatureRow,
@@ -101,6 +103,23 @@ export type {
 } from './application/delivery-read-service';
 
 export type {
+  /**
+   * The P1-31 checklist TEMPLATE surface (prerequisite P-9, PPD-12).
+   *
+   * `ChecklistTemplateItemView` spells `itemCode` and `label` exactly as the
+   * checklist-RESULT read spells them, so a screen that renders the template and a
+   * screen that renders what was recorded against it handle one shape.
+   */
+  ChecklistTemplateDetailView,
+  ChecklistTemplateItemView,
+  ChecklistTemplateListView,
+  ChecklistTemplateView,
+  CreateChecklistTemplateInput,
+  CreateChecklistTemplateItemInput,
+  UpdateChecklistTemplateItemInput,
+} from './application/checklist-template-service';
+
+export type {
   AttachSignatureInput,
   AuthorizedReceiverView,
   ChecklistResultView,
@@ -115,11 +134,17 @@ export type {
 
 export {
   BLOCKER_CODES,
+  CHECKLIST_CODE,
   CHECKLIST_OUTCOMES,
   CHECKLIST_SATISFYING_OUTCOMES,
+  CHECKLIST_TEMPLATE_STATUSES,
   DELIVERY_STATUSES,
   DeliveryRuleError,
+  MAX_ITEM_LABEL,
   MAX_REASON,
+  MAX_SORT_ORDER,
+  MAX_TEMPLATE_NAME,
+  MIN_SORT_ORDER,
   ODOMETER_UNITS,
   ODOMETER_VALUE,
   OVERRIDABLE_BLOCKERS,
@@ -134,6 +159,7 @@ export {
   withOverrides,
   type BlockerCode,
   type ChecklistOutcome,
+  type ChecklistTemplateStatus,
   type DeliveryStatus,
   type EligibilityDecision,
   type OdometerUnit,
@@ -143,9 +169,17 @@ export {
 /**
  * Composition root: constructs the module's services once per process.
  *
- * Two services over ONE repository. The split is by direction rather than by
- * authority: `reads` composes eligibility and answers the cross-module
- * `deliveryForWarranty` question, `deliveries` performs the five commands — and
+ * THREE services over ONE repository, and the third arrived with P1-31 P-9.
+ *
+ * The first two split by direction rather than by authority: `reads` composes
+ * eligibility and answers the cross-module `deliveryForWarranty` question,
+ * `deliveries` performs the five commands. `checklistTemplates` splits on neither —
+ * it owns the two CONFIGURATION tables in both directions, because what they hold is
+ * authored before any delivery exists, under company-wide authority, and touches no
+ * delivery record, no status machine and no custody fact. Folding it into
+ * `deliveries` would put "which items does this company check" and "hand this vehicle
+ * over" behind one object.
+ *
  * `deliveries` DEPENDS ON `reads` rather than re-deriving the blocker set, so the
  * `GET .../eligibility` answer and the gate actually applied at completion are the
  * same code reading the same tables. Two implementations would be two chances for the
@@ -163,6 +197,13 @@ export const deliveryModule = composeModule({
     return {
       reads,
       deliveries: new DeliveryService(repository, reads),
+      // A THIRD accessor, added by P1-31 P-9 for the checklist TEMPLATE tables.
+      // Configuration rather than a handover command: authored long before a
+      // delivery exists, under company-wide authority, touching no delivery record
+      // and no status machine. `serviceCatalogModule().catalogWrites` is the
+      // precedent for a second write service inside one module; the SQL stays in
+      // the one repository above for the reason stated below it.
+      checklistTemplates: new ChecklistTemplateService(repository),
     };
   },
 });
