@@ -473,7 +473,7 @@ const INSTRUMENTED = globSync([...COVERAGE_INCLUDE], { cwd: join(__dirname, '..'
   .sort();
 
 const coverageOptions = webConfig.test?.coverage as
-  { provider?: string; all?: boolean; reporter?: string[] } | undefined;
+  { provider?: string; include?: string[]; reporter?: string[] } | undefined;
 
 describe('the web tier declares a coverage measurement', () => {
   it('declares it at the ROOT of the config, with the API tier’s provider', () => {
@@ -485,7 +485,17 @@ describe('the web tier declares a coverage measurement', () => {
   });
 
   it('measures files no test imports, so an unloaded screen cannot leave the denominator', () => {
-    expect(coverageOptions?.all).toBe(true);
+    // Vitest 3 spelled this guarantee `coverage.all: true`. Vitest 4 removed
+    // that option and gave the job to `coverage.include`: on a full-tier run the
+    // provider adds every file matching `include` that no test loaded, at 0%,
+    // before writing the report. So the thing to pin is no longer a boolean —
+    // it is that `include` is DECLARED and still lists the four instrumented
+    // roots. An empty or absent `include` would silently return the tier to
+    // "only what a test happened to import", which is the flattering
+    // measurement this assertion exists to refuse.
+    expect(coverageOptions?.include).toBeDefined();
+    expect(coverageOptions?.include).toEqual([...COVERAGE_INCLUDE]);
+    expect(coverageOptions?.include?.length).toBeGreaterThan(0);
   });
 
   it('declares coverage on NO project, because a project-level block is ignored in silence', () => {

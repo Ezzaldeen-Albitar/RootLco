@@ -40,12 +40,29 @@ export default defineConfig({
       // pure-logic modules the unit tier actually exercises; the database-bound
       // paths are covered by `test:backend`, whose coverage is not merged here
       // because a merged number across two runners would overstate both.
+      //
+      // `include` IS LOAD-BEARING, and it became more so at vitest 4. Vitest 3
+      // spelled the untested-file guarantee `coverage.all: true`; vitest 4
+      // REMOVED that option and gave the job to `include`. On a full-tier run
+      // the provider now adds every file matching these patterns that no test
+      // loaded, at 0%, before writing the report. So NARROWING THIS LIST SHRINKS
+      // THE DENOMINATOR: a file dropped from it does not appear as a gap, it
+      // stops existing, and every percentage above rises for no reason anybody
+      // can see in a diff. `tests/ci/baseline-integrity.test.ts` pins the list
+      // for exactly that reason.
+      //
+      // Each directory root is spelled `**/*.ts` rather than a bare `**`. That
+      // is a constraint on what may enter the measurement, not a narrowing of
+      // it: every file under these five roots is already `.ts`, none is `.d.ts`,
+      // and the instrumented count is unchanged at 19. What it buys is that a
+      // stray non-TypeScript file added under one of them cannot silently join
+      // the denominator or fail the provider's parser.
       include: [
-        `${API_SRC_PATH}/config/**`,
-        `${API_SRC_PATH}/lib/logging/**`,
-        `${API_SRC_PATH}/server/errors/**`,
-        `${API_SRC_PATH}/server/observability/**`,
-        `${API_SRC_PATH}/server/cache/**`,
+        `${API_SRC_PATH}/config/**/*.ts`,
+        `${API_SRC_PATH}/lib/logging/**/*.ts`,
+        `${API_SRC_PATH}/server/errors/**/*.ts`,
+        `${API_SRC_PATH}/server/observability/**/*.ts`,
+        `${API_SRC_PATH}/server/cache/**/*.ts`,
         `${API_SRC_PATH}/server/http/rate-limit.ts`,
         `${API_SRC_PATH}/server/http/trusted-proxy.ts`,
         `${API_SRC_PATH}/server/http/validation.ts`,

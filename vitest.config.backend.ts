@@ -35,7 +35,26 @@ export default defineConfig({
       // The modules whose behaviour only exists once a real PostgreSQL is
       // attached. Anything measurable without a database belongs to the unit
       // tier's include list, not here.
-      include: [`${API_SRC_PATH}/modules/**`, `${API_SRC_PATH}/server/**`],
+      //
+      // `include` IS LOAD-BEARING, and it became more so at vitest 4. Vitest 3
+      // spelled the untested-file guarantee `coverage.all: true`; vitest 4
+      // REMOVED that option and gave the job to `include`. On a full-tier run
+      // the provider now adds every file matching these patterns that no test
+      // loaded, at 0%, before writing the report. So NARROWING THIS LIST SHRINKS
+      // THE DENOMINATOR: a file dropped from it does not appear as a gap, it
+      // stops existing, and the tier's percentages rise for no reason anybody
+      // can see in a diff. `tests/ci/baseline-integrity.test.ts` pins the list
+      // for exactly that reason.
+      //
+      // Each root is spelled `**/*.ts` rather than a bare `**`. That is a
+      // constraint on what may enter the measurement, not a narrowing of it:
+      // `git ls-files apps/api/src/modules apps/api/src/server` is 272 `.ts`
+      // files, zero `.d.ts`, and one `.md` (`modules/README.md`) that the
+      // provider already leaves out, so the instrumented count is unchanged at
+      // 271 — the 272 minus `server/openapi/document.ts`, excluded below. What
+      // it buys is that a stray non-TypeScript file added under either root
+      // cannot silently join the denominator or fail the provider's parser.
+      include: [`${API_SRC_PATH}/modules/**/*.ts`, `${API_SRC_PATH}/server/**/*.ts`],
       exclude: [`${API_SRC_PATH}/server/openapi/**`, '**/*.d.ts'],
     },
   },
