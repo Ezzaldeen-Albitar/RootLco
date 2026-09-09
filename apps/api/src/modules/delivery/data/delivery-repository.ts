@@ -130,6 +130,29 @@ export interface ChecklistTemplateItemRow {
   readonly recordVersion: number;
 }
 
+/**
+ * One checklist template header (P1-31 prerequisite P-9, **PPD-12**).
+ *
+ * COMPANY-scoped like its items and for the same reason: the table has a
+ * `company_id`, no `branch_id`, and an RLS policy with no branch clause. So one
+ * template is shared by every branch of a company, which is why the write surface
+ * over it requires authority for the COMPANY rather than for a branch.
+ *
+ * `status` is `active` or `inactive` (`ck_delivery_checklist_templates_status`) and
+ * `templateCode` matches `^[a-z][a-z0-9_]{1,62}$`. Neither the code nor the company
+ * can be edited afterwards — `tg_delivery_checklist_templates_immutable` freezes
+ * `tenant_id`, `company_id`, `created_at` and `created_by`, and the code is held by
+ * `uq_delivery_checklist_templates_code` while the row is not soft-deleted.
+ */
+export interface ChecklistTemplateRow {
+  readonly id: string;
+  readonly companyId: string;
+  readonly templateCode: string;
+  readonly name: string;
+  readonly status: string;
+  readonly recordVersion: number;
+}
+
 export interface ChecklistResultRow {
   readonly id: string;
   readonly companyId: string;
@@ -275,6 +298,18 @@ export const STATUS_HISTORY_ORDER = Object.freeze({
   direction: 'desc' as const,
 });
 
+/**
+ * The company's checklist templates, newest first (P1-31 prerequisite P-9).
+ *
+ * Paged for the reason the three ledgers above are: the set has no ceiling in the
+ * DDL, and it is the operator who decides how many templates a company keeps. The
+ * ITEMS of one template are deliberately NOT paged — see `listTemplateItems`.
+ */
+export const CHECKLIST_TEMPLATE_ORDER = Object.freeze({
+  key: 'sal.delivery_checklist_templates:created_at_desc',
+  direction: 'desc' as const,
+});
+
 // ---------------------------------------------------------------------------
 // SQL shapes and mappers. snake_case in, camelCase out, one mapper per shape.
 // ---------------------------------------------------------------------------
@@ -323,6 +358,24 @@ interface ChecklistTemplateItemSql {
   sort_order: number;
   record_version: number;
 }
+
+interface ChecklistTemplateSql {
+  id: string;
+  company_id: string;
+  template_code: string;
+  name: string;
+  status: string;
+  record_version: number;
+}
+
+const toChecklistTemplate = (r: ChecklistTemplateSql): ChecklistTemplateRow => ({
+  id: r.id,
+  companyId: r.company_id,
+  templateCode: r.template_code,
+  name: r.name,
+  status: r.status,
+  recordVersion: r.record_version,
+});
 
 const toChecklistTemplateItem = (r: ChecklistTemplateItemSql): ChecklistTemplateItemRow => ({
   id: r.id,
@@ -850,6 +903,325 @@ export class DeliveryRepository extends Repository {
       throw new Error('delivery: INSERT INTO sal.authorized_receivers returned no id');
     }
     return row.id;
+  }
+
+  // -------------------------------------------------------------------------
+  // Checklist templates (P1-31 prerequisite P-9, PPD-12)
+  //
+  // Both tables held SELECT, INSERT and UPDATE grants and an INSERT and an UPDATE
+  // policy from the day they landed in P1-11, and no code anywhere in `apps/api`
+  // had ever written either one: the only method that touched them was
+  // `findTemplateItem`, a per-item existence probe for the write path. So the
+  // statements below use grants that already exist, and this slice adds no
+  // migration.
+  //
+  // NEITHER TABLE HAS A DELETE GRANT OR A DELETE POLICY, for either application
+  // role. Removal is therefore a soft delete performed by UPDATE — the shape
+  // `tech.technician_skills` already uses — and a hard delete is refused by the
+  // database however it is asked for.
+  // -------------------------------------------------------------------------
+
+  /**
+   * The checklist templates visible to the caller, newest first.
+   *
+   * Predicated on `tenant_id` only, with no company term, and that is deliberate:
+   * a caller may configure more than one company, the path names none, and
+   * `sel_delivery_checklist_templates_scope` narrows to
+   * `iam.allowed_company_ids()` — so the set is exactly the templates of the
+   * companies the caller's grants reach. Every row carries its own `companyId`, so
+   * a reader can tell which company a template belongs to rather than inferring it.
+   *
+   * Soft-deleted rows are excluded. Inactive ones are NOT: a configuration list
+   * that hid retired templates would make the restore command unreachable, which
+   * is the trap `apt.catalogue-source-channel-status-set` records for its own
+   * catalogue.
+   */
+  public async listTemplates(
+    db: DbHandle,
+    request: PageRequest
+  ): Promise<Page<ChecklistTemplateRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [context.principal.tenantId];
+    const keyset = keysetFragment(
+      request,
+      { sort: 't.created_at', id: 't.id' },
+      CHECKLIST_TEMPLATE_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<ChecklistTemplateSql & { sort_value: string }>(
+      db,
+      `SELECT t.id, t.company_id, t.template_code, t.name, t.status, t.record_version,
+              ${cursorTimestamp('t.created_at')} AS sort_value
+         FROM sal.delivery_checklist_templates t
+        WHERE t.tenant_id = $1 AND t.deleted_at IS NULL
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        // `created_at` is not published on the row, so the cursor value cannot be
+        // re-derived from the response — which is what `buildPageWithCursors` is for.
+        item: toChecklistTemplate(row),
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      CHECKLIST_TEMPLATE_ORDER
+    );
+  }
+
+  /**
+   * One template, or null for absent-and-out-of-scope alike.
+   *
+   * Predicated on `tenant_id` and `id` only, for the reason `findDelivery` states:
+   * a lookup addressed solely by id has no company to narrow by yet — the row is
+   * where the company comes from, and every command over it re-authorizes against
+   * that company the moment it is read.
+   */
+  public async findTemplate(
+    db: DbHandle,
+    templateId: string
+  ): Promise<ChecklistTemplateRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ChecklistTemplateSql>(
+      db,
+      `SELECT id, company_id, template_code, name, status, record_version
+         FROM sal.delivery_checklist_templates
+        WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+      [context.principal.tenantId, templateId]
+    );
+    return row ? toChecklistTemplate(row) : null;
+  }
+
+  /**
+   * Every live item of one template, in checklist order.
+   *
+   * **Deliberately unpaged**, on the `dia.template-version-item-list` precedent:
+   * the order IS the checklist, so a page boundary would cut a checklist in half.
+   * The set is bounded by authoring rather than by a constraint, and the ordering
+   * is `(sort_order, item_code)` — `sort_order` alone is not unique, so the code
+   * breaks the tie and the answer is stable between two reads.
+   */
+  public async listTemplateItems(
+    db: DbHandle,
+    companyId: string,
+    templateId: string
+  ): Promise<readonly ChecklistTemplateItemRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<ChecklistTemplateItemSql>(
+      db,
+      `SELECT id, company_id, template_id, item_code, label, is_mandatory, sort_order,
+              record_version
+         FROM sal.delivery_checklist_template_items
+        WHERE tenant_id = $1 AND company_id = $2 AND template_id = $3 AND deleted_at IS NULL
+        ORDER BY sort_order, item_code`,
+      [context.principal.tenantId, companyId, templateId]
+    );
+    return result.rows.map(toChecklistTemplateItem);
+  }
+
+  /**
+   * Creates a template header. The caller supplies the company; nothing defaults it.
+   *
+   * `status` is not accepted: the column defaults to `active` and a template born
+   * `inactive` is one whose items gate nothing while it cannot be offered either.
+   * A duplicate `template_code` raises `23505` on
+   * `uq_delivery_checklist_templates_code`, and a company outside the caller's own
+   * tenant raises `23503` on `fk_delivery_checklist_templates_company`, whose
+   * tenant half comes from the session context rather than from the request — so
+   * the tenant boundary here is the foreign key, not a predicate this file writes.
+   */
+  public async insertTemplate(
+    db: DbHandle,
+    input: { readonly companyId: string; readonly templateCode: string; readonly name: string }
+  ): Promise<ChecklistTemplateRow> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ChecklistTemplateSql>(
+      db,
+      `INSERT INTO sal.delivery_checklist_templates
+         (tenant_id, company_id, template_code, name, created_by)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, company_id, template_code, name, status, record_version`,
+      [
+        context.principal.tenantId,
+        input.companyId,
+        input.templateCode,
+        input.name,
+        context.principal.userId,
+      ]
+    );
+    if (!row) {
+      throw new Error('delivery: INSERT INTO sal.delivery_checklist_templates returned no row');
+    }
+    return toChecklistTemplate(row);
+  }
+
+  /** Creates one item on a template. `23505` is a duplicate `item_code` in it. */
+  public async insertTemplateItem(
+    db: DbHandle,
+    input: {
+      readonly companyId: string;
+      readonly templateId: string;
+      readonly itemCode: string;
+      readonly label: string;
+      readonly isMandatory: boolean;
+      readonly sortOrder: number;
+    }
+  ): Promise<ChecklistTemplateItemRow> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ChecklistTemplateItemSql>(
+      db,
+      `INSERT INTO sal.delivery_checklist_template_items
+         (tenant_id, company_id, template_id, item_code, label, is_mandatory, sort_order,
+          created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, company_id, template_id, item_code, label, is_mandatory, sort_order,
+                 record_version`,
+      [
+        context.principal.tenantId,
+        input.companyId,
+        input.templateId,
+        input.itemCode,
+        input.label,
+        input.isMandatory,
+        input.sortOrder,
+        context.principal.userId,
+      ]
+    );
+    if (!row) {
+      throw new Error(
+        'delivery: INSERT INTO sal.delivery_checklist_template_items returned no row'
+      );
+    }
+    return toChecklistTemplateItem(row);
+  }
+
+  /**
+   * Renames a template under its expected version, or returns null.
+   *
+   * Null means the `record_version` predicate did not match. Every other reason for
+   * zero rows — absent, another tenant's, soft-deleted — is excluded by the service
+   * reading the row first, so the caller may report the concurrency loss and
+   * nothing else. `record_version` is not computed as `expectedVersion + 1`: the
+   * row the trigger produced is returned, so the next `If-Match` is the database's
+   * answer rather than this module's assumption.
+   */
+  public async renameTemplate(
+    db: DbHandle,
+    companyId: string,
+    templateId: string,
+    expectedVersion: number,
+    name: string
+  ): Promise<ChecklistTemplateRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ChecklistTemplateSql>(
+      db,
+      `UPDATE sal.delivery_checklist_templates
+          SET name = $5
+        WHERE tenant_id = $1 AND company_id = $2 AND id = $3 AND deleted_at IS NULL
+          AND record_version = $4
+       RETURNING id, company_id, template_code, name, status, record_version`,
+      [context.principal.tenantId, companyId, templateId, expectedVersion, name]
+    );
+    return row ? toChecklistTemplate(row) : null;
+  }
+
+  /** Activates or deactivates a template under its expected version, or returns null. */
+  public async setTemplateStatus(
+    db: DbHandle,
+    companyId: string,
+    templateId: string,
+    expectedVersion: number,
+    status: string
+  ): Promise<ChecklistTemplateRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ChecklistTemplateSql>(
+      db,
+      `UPDATE sal.delivery_checklist_templates
+          SET status = $5
+        WHERE tenant_id = $1 AND company_id = $2 AND id = $3 AND deleted_at IS NULL
+          AND record_version = $4
+       RETURNING id, company_id, template_code, name, status, record_version`,
+      [context.principal.tenantId, companyId, templateId, expectedVersion, status]
+    );
+    return row ? toChecklistTemplate(row) : null;
+  }
+
+  /**
+   * Edits one item under its expected version, or returns null.
+   *
+   * The version compared is the ITEM's own `record_version`, never the template's.
+   * A `null` in a patch field means "not supplied" and is applied by `COALESCE`, so
+   * a request carrying only `label` cannot silently reset `is_mandatory` to its
+   * default. `item_code` and `template_id` are absent from the statement:
+   * `tg_delivery_checklist_template_items_immutable` freezes the template binding,
+   * and a re-coded item would be a different item wearing the old one's identity —
+   * every recorded result points at the row by id.
+   */
+  public async updateTemplateItem(
+    db: DbHandle,
+    companyId: string,
+    itemId: string,
+    expectedVersion: number,
+    patch: {
+      readonly label: string | null;
+      readonly isMandatory: boolean | null;
+      readonly sortOrder: number | null;
+    }
+  ): Promise<ChecklistTemplateItemRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ChecklistTemplateItemSql>(
+      db,
+      `UPDATE sal.delivery_checklist_template_items
+          SET label = COALESCE($5, label),
+              is_mandatory = COALESCE($6, is_mandatory),
+              sort_order = COALESCE($7, sort_order)
+        WHERE tenant_id = $1 AND company_id = $2 AND id = $3 AND deleted_at IS NULL
+          AND record_version = $4
+       RETURNING id, company_id, template_id, item_code, label, is_mandatory, sort_order,
+                 record_version`,
+      [
+        context.principal.tenantId,
+        companyId,
+        itemId,
+        expectedVersion,
+        patch.label,
+        patch.isMandatory,
+        patch.sortOrder,
+      ]
+    );
+    return row ? toChecklistTemplateItem(row) : null;
+  }
+
+  /**
+   * Withdraws one item. Soft delete: recorded results stay readable.
+   *
+   * An UPDATE and not a DELETE, because there is no DELETE grant and no DELETE
+   * policy on this table for any application role — and because
+   * `fk_delivery_checklist_results_item` is `ON DELETE RESTRICT`, so a hard removal
+   * would be refused by any item a handover has ever recorded an outcome for. The
+   * checklist-result list read deliberately carries no `ti.deleted_at` predicate,
+   * so a result recorded against a withdrawn item is still readable afterwards.
+   *
+   * `uq_delivery_checklist_template_items_code` is partial on `deleted_at IS NULL`,
+   * so the code returns to the template and may be added again.
+   */
+  public async softDeleteTemplateItem(
+    db: DbHandle,
+    companyId: string,
+    itemId: string
+  ): Promise<boolean> {
+    const context = this.assertContext(db);
+    const result = await this.run(
+      db,
+      `UPDATE sal.delivery_checklist_template_items
+          SET deleted_at = now(), deleted_by = $4
+        WHERE tenant_id = $1 AND company_id = $2 AND id = $3 AND deleted_at IS NULL`,
+      [context.principal.tenantId, companyId, itemId, context.principal.userId]
+    );
+    return (result.rowCount ?? 0) === 1;
   }
 
   // -------------------------------------------------------------------------
