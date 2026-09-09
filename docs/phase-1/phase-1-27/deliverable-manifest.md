@@ -746,7 +746,7 @@ document says so in its own header.**
 | `workshop/inspection-and-diagnostics.md`              | 901   |
 | `workshop/parts-and-procurement-flow.md`              | 798   |
 | `workshop/department-task-assignment.md`              | 751   |
-| `workshop/reception-media-checklist.md`               | 563   |
+| `workshop/reception-media-checklist.md`               | 678   |
 | `vehicle-catalogue/catalogue-architecture.md`         | 1029  |
 | `vehicle-catalogue/manual-entry-policy.md`            | 656   |
 | `vehicle-catalogue/provider-evaluation.md`            | 648   |
@@ -1058,5 +1058,5 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/product/workshop/inspection-and-diagnostics.md = 901 -->
 <!-- derived: lines docs/product/workshop/parts-and-procurement-flow.md = 798 -->
 <!-- derived: lines docs/product/workshop/pricing-payment-and-delivery.md = 1137 -->
-<!-- derived: lines docs/product/workshop/reception-media-checklist.md = 563 -->
+<!-- derived: lines docs/product/workshop/reception-media-checklist.md = 678 -->
 <!-- derived: lines docs/product/workshop/vehicle-history-model.md = 1039 -->
