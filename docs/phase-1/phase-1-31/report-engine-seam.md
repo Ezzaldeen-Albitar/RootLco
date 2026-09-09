@@ -87,6 +87,15 @@ unrestricted grant satisfies `iam.has_permission_in_scope` for a branch id that 
 resolving the branch first would let a caller holding only `rpt.report.read` distinguish a real
 branch from an invented one by the error code.
 
+**The tenant boundary is a control that already existed, and the run does not restate it.**
+`requireScopeTargetInTenant` (P1-30 **CC-14**) resolves the caller's (company, branch) pair under the
+caller's own RLS before the handler runs, and refuses a foreign tenant's real pair, a pair that exists
+nowhere, an in-tenant pair belonging to another company and a soft-deleted branch — all with the same
+`ERR-IAM-001`, deliberately not a 404. So the run service's own `ERR-RES-001` for an unresolvable
+branch is **unreachable through the published route** for a fully-specified pair; the suite measures
+that the 403 arrives first. It is kept as defence in depth because the service is callable without
+that pre-handler probe. This was written the other way round first, and the live run corrected it.
+
 ## 5. The timezone decision — OPEN, for the Owner to confirm
 
 **Decided here:** a branch-scoped report resolves its period bounds and its day bucketing in the
@@ -99,6 +108,10 @@ and both are foreign keys into `shared.timezones`:
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `org.branches.timezone_name` (**chosen**) | the report is branch-scoped; "orders opened on the 3rd" is a claim about the day where the workshop is              |
 | `org.tenants.default_timezone`            | one tenant-wide calendar makes two branches' reports addable; a branch report would then not match the branch's day |
+
+**Only two zones are seeded.** `supabase/seeds/01_reference_data.sql` ships `UTC` and `Asia/Amman`,
+and `fk_branches_timezone` refuses anything else — so a branch's zone is one of two values today
+whichever column a report reads, and the decision is about which COLUMN, not about which zone.
 
 **No query in the platform buckets by either column today**, so nothing was matched and nothing was
 broken. If the Owner prefers the tenant default, the change is one lookup in `ReportRunService.run`
