@@ -59,7 +59,7 @@ describe('every operation publishes the success status it returns', () => {
     // the original defect, so the scanner reports rather than assumes — and this
     // asserts it had nothing to report.
     expect(unresolved).toEqual([]);
-    expect(actual.size).toBe(397);
+    expect(actual.size).toBe(404);
   });
 
   it('agrees with the committed contract for every operation', () => {
