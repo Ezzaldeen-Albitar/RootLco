@@ -439,6 +439,23 @@ export const REGISTER = Object.freeze([
     why: 'every in-scope P1-30 write has a mirror that matches its zod schema, or a declared reason not to',
   },
   {
+    name: 'validate:p1-31-access',
+    owner: ROOT,
+    tier: 'required',
+    // `gate-before-read` for P1-31 route pages, and a sibling rather than a
+    // widening: P1-29's and P1-30's derivations are what those phases' closures
+    // rest on. Its scope is an explicit ALLOW-LIST of the operation ids P1-31
+    // published, because P1-30 already owns the whole `sal.`/`wty.` namespaces
+    // and a namespace regular expression here would claim P1-30's work or
+    // nothing. Its dashboard areas are named as well as derived, because the
+    // committed href is the SINGULAR `/delivery` while every delivery operation
+    // is addressed under `deliveries` — the exact reason the first P1-31 screen
+    // escaped the P1-30 gate. Unlike its siblings it ships BESIDE a screen, so a
+    // run over the application root that examines zero pages is a red rather
+    // than a notice. Mutation-proved by tests/ci/p1-31-access-gate.test.ts.
+    why: 'every P1-31 route page denies and returns on a permission before its first awaited read',
+  },
+  {
     name: 'validate:p1-28-access',
     owner: ROOT,
     tier: 'required',
