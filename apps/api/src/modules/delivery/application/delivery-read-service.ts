@@ -57,6 +57,7 @@ import {
 import { pageRequest, type Page, type PageRequest } from '@/server/db/pagination';
 import {
   CHECKLIST_RESULT_ORDER,
+  DELIVERY_RECORD_ORDER,
   SIGNATURE_ORDER,
   STATUS_HISTORY_ORDER,
 } from '../data/delivery-repository';
@@ -427,6 +428,52 @@ export class DeliveryReadService {
       workOrderId: workOrder.id,
       delivery: delivery === null ? null : toDeliveryView(delivery),
     };
+  }
+
+  /**
+   * `sal.delivery-list` — a branch's delivery records, newest first (P-2b).
+   *
+   * ## Scope is authorized BEFORE any row is read
+   *
+   * The exact opposite order from every other read on this seam, and deliberately
+   * so. An id-addressed read has no scope to name until the row has been read, so
+   * `requireDelivery` reads first and authorizes against the row's OWN company and
+   * branch. A list has no row to take a scope from, so the caller must name one and
+   * the server must refuse it before reading anything.
+   *
+   * Two things follow. `sel_delivery_records_scope` narrows on the permission-blind
+   * union of the caller's allowed branches, so an optional pair would let a caller
+   * holding `sal.delivery.view` in one branch read every branch it holds any grant
+   * in (P1-18-A-01). And authorizing first stops the empty/non-empty difference from
+   * reporting whether a branch has deliveries at all — a caller with no grant in the
+   * named scope is refused, never handed an empty page.
+   *
+   * Client-asserted scope is never authoritative: the pair names a target and
+   * `authorizeScope` decides. RLS stays default-deny underneath and narrows again on
+   * the caller's own grants.
+   *
+   * ## One mapper
+   *
+   * Rows come back through `toDeliveryView`, the same mapper `sal.delivery-read` and
+   * `sal.work-order-delivery-read` use, so a listed delivery and a read one are one
+   * wire contract rather than two that can drift.
+   */
+  public async listDeliveries(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly status?: string | undefined;
+      readonly workOrderId?: string | undefined;
+      readonly vehicleId?: string | undefined;
+    },
+    page: { readonly cursor?: string | undefined; readonly limit?: number | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<Page<DeliveryRecordView>> {
+    await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
+    const request: PageRequest = pageRequest(DELIVERY_RECORD_ORDER, page);
+    const result = await this.repository.listDeliveries(db, filter, request);
+    return { ...result, items: result.items.map(toDeliveryView) };
   }
 
   /**
