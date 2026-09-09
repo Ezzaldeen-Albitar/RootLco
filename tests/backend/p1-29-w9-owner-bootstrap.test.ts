@@ -439,7 +439,14 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
     // because withholding it while the warranty detail read was re-pointed off
     // `wty.warranty.issue` would REMOVE a capability this bundle already confers
     // (CC-07). It is the only code any P1-31 slice mints.
-    expect(expected).toHaveLength(74);
+    // 75 with `rpt.report.configure`, which P1-31 prerequisite P-11 moved OUT of
+    // the exclusions: CC-02 withheld it because no operation declared it and said
+    // the slice that published one would own the widening, and P-11 published
+    // seven. Withholding it now would leave a fresh administrator with an empty
+    // report catalogue it could never fill, because both published report reads
+    // filter on `status = 'published'` and no other code can set that value. It
+    // was already a catalogue row; nothing is minted by that widening.
+    expect(expected).toHaveLength(75);
     expect(expected.some((c) => c.includes('*'))).toBe(false);
     expect(expected.some((c) => c.startsWith('platform.'))).toBe(false);
     expect(new Set(expected).size).toBe(expected.length);

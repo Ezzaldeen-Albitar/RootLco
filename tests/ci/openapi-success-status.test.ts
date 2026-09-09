@@ -59,7 +59,7 @@ describe('every operation publishes the success status it returns', () => {
     // the original defect, so the scanner reports rather than assumes — and this
     // asserts it had nothing to report.
     expect(unresolved).toEqual([]);
-    expect(actual.size).toBe(390);
+    expect(actual.size).toBe(397);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -88,7 +88,11 @@ describe('every operation publishes the success status it returns', () => {
     // The P1-31 checklist template seam (P-9) publishes eight operations: the two
     // creates return 201 (108 -> 110) and the other six — two reads, the rename, the
     // status flip, the item edit and the item withdrawal — return 200.
-    expect(counts[201]).toBe(110);
+    // The P1-31 report configuration seam (P-11) publishes seven more: its two
+    // creates — the configuration and the version — return 201 as well (110 -> 112)
+    // and the other five — the two reads, the edit, the status flip and the
+    // publication — return 200.
+    expect(counts[201]).toBe(112);
     expect(counts[202]).toBe(1);
     // The two P1-30 opening-batch reads (S-17) are GETs returning 200, so
     // 264 -> 266 while 201 and 202 are unchanged.
@@ -100,10 +104,11 @@ describe('every operation publishes the success status it returns', () => {
     // with 201 and 202 unchanged for the third time. P-7 re-points an existing
     // read's PERMISSION and publishes no operation, so it moves nothing here — a
     // slice that had smuggled a write in beside the re-point would.
-    // 273 -> 279 with P-9's six 200s. The 201 count moving by exactly two is the
-    // assertion carrying weight here: a command that had silently shipped as a read,
-    // or a read as a create, would show up in this pair and nowhere else.
-    expect(counts[200]).toBe(279);
+    // 273 -> 279 with P-9's six 200s, then 279 -> 284 with P-11's five. The 201
+    // count moving by exactly two across each slice is the assertion carrying weight
+    // here: a command that had silently shipped as a read, or a read as a create,
+    // would show up in this pair and nowhere else.
+    expect(counts[200]).toBe(284);
   });
 
   it('reads the handler, not the declaration', () => {
