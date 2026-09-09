@@ -206,8 +206,8 @@ Withholding it now would be worse than withholding it was: `resolvePolicy` refus
 no active warranty policy, so an administrator who could not create one could never issue a
 warranty in a freshly provisioned organisation — and could not delegate the authority to anyone,
 because `ins_role_permissions_delegable` admits a mapping only when the acting administrator
-already holds the code. `rpt.report.configure` stays excluded on CC-02's unchanged grounds, and
-`rpt.export` on CC-04's Owner decision.
+already holds the code. `rpt.report.configure` was still excluded on CC-02's unchanged grounds when this slice was written, and left them the same day when P-11 published its writers; `rpt.export` remains withheld on
+CC-04's Owner decision.
 
 **EXISTING organisations do not gain the code.** The bundle is written ONCE, inside
 `platform.organization-provision`, and nothing re-applies it. Every organisation provisioned on the

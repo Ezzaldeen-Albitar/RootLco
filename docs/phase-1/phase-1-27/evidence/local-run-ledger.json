@@ -7,32 +7,58 @@
     "unit": {
       "command": "npx vitest run --reporter=json",
       "tests": 3277,
-      "passed": 3277,
+      "passed": 3274,
       "failed": 0,
-      "skipped": 0,
+      "skipped": 3,
       "files": 121,
       "exitCode": 0,
       "reporterSuccess": true,
       "failedSuites": [],
       "filesWithoutCases": [],
-      "measuredAtCommit": "972f97f76b56e967a88ceb43be5455df052b2045",
+      "measuredAtCommit": "615e33c840826b3d4741e503782ce87aba6a201d",
       "dirtyExecutablePaths": [],
-      "measuredAt": "2026-09-09T22:39:11.753Z"
+      "measuredAt": "2026-09-09T22:13:19Z",
+      "provenance": {
+        "source": "hosted",
+        "runId": "34410912008",
+        "runUrl": "https://github.com/Ezzaldeen-Albitar/RootLco/actions/runs/34410912008",
+        "workflow": "PR CI",
+        "job": "102664945031",
+        "jobName": "unit-tests-coverage / unit-coverage",
+        "step": "Unit tier with coverage",
+        "headSha": "615e33c840826b3d4741e503782ce87aba6a201d",
+        "artifact": "evidence-unit-coverage",
+        "artifactDigest": "sha256:203adcc7a70d1b1f5dcc7a494401ae1c2dcfdddd708e862ea2b72de78671384a",
+        "field": "vitest-unit.json"
+      }
     },
     "web": {
       "command": "npm run test --workspace @rootlco/web -- --reporter=json",
-      "tests": 3612,
-      "passed": 3612,
+      "tests": 3598,
+      "passed": 3598,
       "failed": 0,
       "skipped": 0,
-      "files": 133,
+      "files": 132,
       "exitCode": 0,
       "reporterSuccess": true,
       "failedSuites": [],
       "filesWithoutCases": [],
-      "measuredAtCommit": "972f97f76b56e967a88ceb43be5455df052b2045",
+      "measuredAtCommit": "615e33c840826b3d4741e503782ce87aba6a201d",
       "dirtyExecutablePaths": [],
-      "measuredAt": "2026-09-09T22:15:45.762Z"
+      "measuredAt": "2026-09-09T22:17:27Z",
+      "provenance": {
+        "source": "hosted",
+        "runId": "34410912008",
+        "runUrl": "https://github.com/Ezzaldeen-Albitar/RootLco/actions/runs/34410912008",
+        "workflow": "PR CI",
+        "job": "102664945175",
+        "jobName": "Web quality / web-quality",
+        "step": "Web component tier",
+        "headSha": "615e33c840826b3d4741e503782ce87aba6a201d",
+        "artifact": "evidence-web-quality",
+        "artifactDigest": "sha256:7524310cc984b2bc13c7927d6c64034a57ff48a85fbb430cf6077b8e37818f96",
+        "field": "apps/web/vitest-web.json"
+      }
     }
   }
 }

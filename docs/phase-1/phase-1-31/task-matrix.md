@@ -1,8 +1,8 @@
 # P1-31 — task matrix
 
 **Status:** OPEN · **Authority:** the canonical chapter's five task tables, reproduced in
-[`canonical-plan.md`](./canonical-plan.md) · **Measured at:** protected `develop` `fc58f1c2`
-(PR #357 merge), brought into this branch 2026-09-10 · **Companion records:** [`a0-preflight.md`](./a0-preflight.md)
+[`canonical-plan.md`](./canonical-plan.md) · **Measured at:** protected `develop` `0204f2d1`
+(PR #361 merge), brought into this branch 2026-09-10 · **Companion records:** [`a0-preflight.md`](./a0-preflight.md)
 (readiness), [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) (dispositions),
 [`d4-report-definitions.md`](./d4-report-definitions.md) (the reporting mapping)
 
@@ -14,7 +14,7 @@ have since been removed, and removing an obstacle is not the same event as finis
 ## Two rules govern every row below
 
 1. **A prerequisite closes no canonical task.** P-1 … P-16 are execution prerequisites and change
-   requests against owning backend phases under Field 13. Fourteen of them have merged. Not one canonical
+   requests against owning backend phases under Field 13. Fifteen of them have merged. Not one canonical
    task moved to `Done` because of it, and the chapter's own `Status` column still reads `Planned`
    for all twenty-nine — this record changes no chapter status and claims no authority to.
 2. **No task reaches `end-to-end verified` until a P1-31 acceptance record exists.** None does.
@@ -94,28 +94,28 @@ Two prerequisites were added after the A0 preflight was written and carry a `b` 
 number is reused: **P-2b** (a delivery-record list, distinct from P-2's by-work-order lookup) and
 **P-9b** (a migration the checklist-template seam needs). Neither is a canonical task either.
 
-| #        | Prerequisite                                        | State                    | Where                                                                 |
-| -------- | --------------------------------------------------- | ------------------------ | --------------------------------------------------------------------- |
-| **P-1**  | Widen the provisioning bundle                       | merged                   | #347, with the D-2 backfill in #350                                   |
-| **P-2**  | A delivery read that yields the delivery id         | merged                   | #348                                                                  |
-| **P-2b** | `GET /api/v1/deliveries` — the delivery-record list | in open PR               | #358. It is the record list, **not** the readiness queue FE-001 needs |
-| **P-3**  | `GET /deliveries/{deliveryId}`                      | merged                   | #348                                                                  |
-| **P-4**  | The three delivery subresource reads                | merged                   | #348                                                                  |
-| **P-5**  | A delivery status-history read                      | merged                   | #348                                                                  |
-| **P-6**  | `GET /api/v1/warranties`                            | merged                   | #349                                                                  |
-| **P-7**  | A warranty read permission code                     | merged                   | #349                                                                  |
-| **P-8**  | Resolve the delivery navigation code — RES-05       | merged                   | #353                                                                  |
-| **P-9**  | A delivery-checklist template writer                | merged                   | #355 — eight operations                                               |
-| **P-9b** | The migration the template seam needs               | in preparation           | no pull request open                                                  |
-| **P-10** | A warranty-policy and coverage writer               | merged                   | #356 — seven operations, segment `coverage-windows` (**CC-15**)       |
-| **P-11** | A report-configuration writer and a report engine   | in open PR (writer half) | #361 — the writer. **The engine half has not begun**                  |
-| **P-12** | The report export operation                         | not started              | no route, and no entry in the export resource registry                |
-| **P-13** | Correct four stale permission rows                  | merged                   | #354                                                                  |
-| **P-14** | Correct the stale signatures docblock               | merged                   | #354                                                                  |
-| **P-15** | The `p1-31` ownership rules and profiles            | merged                   | #346, on the A0 lane                                                  |
-| **P-16** | Extend the gate-before-read check                   | merged                   | #357 — run by `verify:policies`                                       |
+| #        | Prerequisite                                        | State                | Where                                                                          |
+| -------- | --------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------ |
+| **P-1**  | Widen the provisioning bundle                       | merged               | #347, with the D-2 backfill in #350                                            |
+| **P-2**  | A delivery read that yields the delivery id         | merged               | #348                                                                           |
+| **P-2b** | `GET /api/v1/deliveries` — the delivery-record list | in open PR           | #358. It is the record list, **not** the readiness queue FE-001 needs          |
+| **P-3**  | `GET /deliveries/{deliveryId}`                      | merged               | #348                                                                           |
+| **P-4**  | The three delivery subresource reads                | merged               | #348                                                                           |
+| **P-5**  | A delivery status-history read                      | merged               | #348                                                                           |
+| **P-6**  | `GET /api/v1/warranties`                            | merged               | #349                                                                           |
+| **P-7**  | A warranty read permission code                     | merged               | #349                                                                           |
+| **P-8**  | Resolve the delivery navigation code — RES-05       | merged               | #353                                                                           |
+| **P-9**  | A delivery-checklist template writer                | merged               | #355 — eight operations                                                        |
+| **P-9b** | The migration the template seam needs               | in open PR           | #363 — open; the checklist-template seam still waits on it                     |
+| **P-10** | A warranty-policy and coverage writer               | merged               | #356 — seven operations, segment `coverage-windows` (**CC-15**)                |
+| **P-11** | A report-configuration writer and a report engine   | merged (writer half) | #361 — the writer, on `develop` at 0204f2d1. **The engine half has not begun** |
+| **P-12** | The report export operation                         | not started          | no route, and no entry in the export resource registry                         |
+| **P-13** | Correct four stale permission rows                  | merged               | #354                                                                           |
+| **P-14** | Correct the stale signatures docblock               | merged               | #354                                                                           |
+| **P-15** | The `p1-31` ownership rules and profiles            | merged               | #346, on the A0 lane                                                           |
+| **P-16** | Extend the gate-before-read check                   | merged               | #357 — run by `verify:policies`                                                |
 
-**Fourteen merged, two in an open pull request, one in preparation, one not started.** Read against
+**Fifteen merged, two in an open pull request, none in preparation, one not started.** Read against
 rule 1: that is seventeen prerequisites moved and **zero** canonical tasks closed.
 
 ## Owner decisions this matrix is waiting on
