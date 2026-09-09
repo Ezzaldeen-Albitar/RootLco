@@ -10,7 +10,7 @@
  * The backend requires an `Idempotency-Key` header on every operation it
  * registers as idempotent, and answers `400 ERR-INT-002` without one — before
  * authorization is evaluated. That set is NOT "the POST operations": it is
- * currently 167 operations (PATCH 3, POST 158, PUT 6).
+ * currently 170 operations (PATCH 3, POST 161, PUT 6).
  *
  * The client used to infer the answer from the HTTP method, which was wrong for
  * every non-POST member of that set. This table is the contract instead of a
@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 13, export 1, financial 14, none 169, privileged 180, security 13.
+ * Currently approval 13, export 1, financial 14, none 171, privileged 185, security 13.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 390 of them. */
+/** Every operation the contract publishes. 397 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -2591,6 +2591,55 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     operationId: 'wty.warranty-detail',
     idempotent: false,
     auditClass: 'none',
+  },
+  {
+    template: '/warranty-policies',
+    method: 'GET',
+    operationId: 'wty.warranty-policy-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/warranty-policies',
+    method: 'POST',
+    operationId: 'wty.warranty-policy-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/warranty-policies/{policyId}',
+    method: 'GET',
+    operationId: 'wty.warranty-policy-read',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/warranty-policies/{policyId}',
+    method: 'PATCH',
+    operationId: 'wty.warranty-policy-rename',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/warranty-policies/{policyId}/coverage-windows',
+    method: 'POST',
+    operationId: 'wty.warranty-coverage-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/warranty-policies/{policyId}/coverage-windows/{coverageId}/status',
+    method: 'POST',
+    operationId: 'wty.warranty-coverage-status-set',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/warranty-policies/{policyId}/status',
+    method: 'POST',
+    operationId: 'wty.warranty-policy-status-set',
+    idempotent: true,
+    auditClass: 'privileged',
   },
   {
     template: '/work-order-catalogue',
