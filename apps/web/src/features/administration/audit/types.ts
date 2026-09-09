@@ -68,3 +68,33 @@ export interface AuditDetail extends AuditRow {
  */
 export const DEFAULT_WINDOW_DAYS = 7;
 export const MAX_WINDOW_DAYS = 92;
+
+/**
+ * The criteria the operator applies on top of the date window.
+ *
+ * Every name here is one of the route's own allow-list entries
+ * (`apps/api/src/app/api/v1/audit-events/route.ts`), which is a fixed set of
+ * bound parameters — action, entity type, entity id, actor, company, branch.
+ * There is no expression language behind it, so a name this screen invented
+ * would be dropped by the schema and the operator would see an unfiltered page
+ * that looks filtered.
+ *
+ * An empty string means "do not send this one". The query builder drops an
+ * empty value, so the absent criterion never travels as a blank parameter that
+ * the backend would have to interpret.
+ *
+ * `companyId` and `branchId` are deliberately NOT here. They are on the route's
+ * allow-list, but `query()` refuses both names outright
+ * (`apps/web/src/lib/api/read-operation.ts`, `P1-27-SEC-001`): the client never
+ * asserts a scope, and the one narrow exception that exists is pinned by name to
+ * a single operation. Surfacing them is a decision about that boundary, not a
+ * screen change, and it is recorded rather than taken here.
+ */
+export interface AuditFilters {
+  readonly action: string;
+  readonly entityType: string;
+  readonly actorId: string;
+}
+
+/** No criterion applied. The screen opens on this and returns to it on clear. */
+export const NO_AUDIT_FILTERS: AuditFilters = { action: '', entityType: '', actorId: '' };

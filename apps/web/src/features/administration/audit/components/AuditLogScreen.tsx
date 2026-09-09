@@ -11,7 +11,20 @@ import { translate } from '@/i18n/get-messages';
 import { formatDateTime } from '@/lib/format';
 import { useServerTable } from '../../shared/use-server-table';
 import { listAuditEvents, readAuditEvent } from '../api';
-import type { AuditDetail, AuditRow } from '../types';
+import { NO_AUDIT_FILTERS, type AuditDetail, type AuditFilters, type AuditRow } from '../types';
+
+/**
+ * The strict identifier shape, as the rest of Administration writes it. The
+ * backend's own schema refuses anything else with a 422, so a typo is caught
+ * here and named instead of arriving as a validation failure about a parameter
+ * the operator never saw.
+ */
+const IDENTIFIER = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const PRIMARY_BUTTON =
+  'rounded-lg bg-primary px-4 py-2 text-button font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring';
+const SECONDARY_BUTTON =
+  'rounded-lg border border-border bg-surface px-4 py-2 text-button text-text-secondary hover:bg-surface-subtle';
 
 /**
  * The audit log. Read-only, and it says so.
@@ -31,6 +44,20 @@ import type { AuditDetail, AuditRow } from '../types';
  * built here would be a client-side copy of restricted data leaving through a
  * path with no server-side authorization and no export audit — which is exactly
  * what the export policy exists to prevent.
+ *
+ * ## The criteria are the backend's, and they are applied on demand
+ *
+ * The list operation takes a fixed allow-list of bound parameters, and until now
+ * the screen surfaced none of them: it sent the window and nothing else, so an
+ * operator looking for one action in a quarter of records had to read the pages.
+ * The three surfaced here are the ones the client may send — see
+ * `AuditFilters` in `../types` for why the company and branch parameters are
+ * not among them.
+ *
+ * They apply on submit rather than on each keystroke. The read is rate-limited
+ * as an expensive one and is itself an audited act, so a criterion typed
+ * character by character would be a dozen recorded reads of the audit trail for
+ * one question.
  */
 export function AuditLogScreen({
   locale,
@@ -46,22 +73,39 @@ export function AuditLogScreen({
   const t = useCallback((key: string) => translate(messages, key as keyof Messages), [messages]);
 
   const [range, setRange] = useState({ from: initialFrom, to: initialTo });
+  // Two states, not one: `draft` is what the operator is typing and `applied`
+  // is what the last read was made with. Collapsing them would make every
+  // keystroke a request, and would also make the visible criteria disagree with
+  // the rows on screen while a page is in flight.
+  const [draft, setDraft] = useState<AuditFilters>(NO_AUDIT_FILTERS);
+  const [applied, setApplied] = useState<AuditFilters>(NO_AUDIT_FILTERS);
+  const [actorInvalid, setActorInvalid] = useState(false);
   const [detail, setDetail] = useState<AuditDetail | null>(null);
   const [detailBusy, setDetailBusy] = useState(false);
 
   const load = useCallback(
     (request: TableRequest, cursor: string | null) =>
-      listAuditEvents(request, cursor, {
-        from: `${range.from}T00:00:00.000Z`,
-        to: `${range.to}T23:59:59.999Z`,
-      }),
-    [range.from, range.to]
+      listAuditEvents(
+        request,
+        cursor,
+        {
+          from: `${range.from}T00:00:00.000Z`,
+          to: `${range.to}T23:59:59.999Z`,
+        },
+        applied
+      ),
+    [range.from, range.to, applied]
   );
 
   // The range is what `load` closes over, so it is what must invalidate the
   // held page. Without it the effect key never moved and changing the dates
-  // re-rendered the same rows (P1-26-F-019).
-  const table = useServerTable<AuditRow>(load, { loadKey: `${range.from}..${range.to}` });
+  // re-rendered the same rows (P1-26-F-019). The applied criteria close over it
+  // for the same reason, and they must also reset the page: page four of an
+  // unfiltered set is not page four of a filtered one, and a cursor taken from
+  // the first is meaningless against the second.
+  const table = useServerTable<AuditRow>(load, {
+    loadKey: `${range.from}..${range.to}#${applied.action}#${applied.entityType}#${applied.actorId}`,
+  });
 
   const columns: readonly Column<AuditRow>[] = [
     {
@@ -123,6 +167,71 @@ export function AuditLogScreen({
         />
         <p className="text-supporting text-text-muted">{t('audit.rangeHint')}</p>
       </div>
+
+      <form
+        aria-label={t('audit.filter.formLabel')}
+        className="flex flex-wrap items-start gap-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const actorId = draft.actorId.trim();
+          // Refused here rather than sent: the parameter is schema-checked, so
+          // a malformed one fails the WHOLE request and the operator is told
+          // the request was invalid without being told which box.
+          if (actorId.length > 0 && !IDENTIFIER.test(actorId)) {
+            setActorInvalid(true);
+            return;
+          }
+          setActorInvalid(false);
+          setApplied({
+            action: draft.action.trim(),
+            entityType: draft.entityType.trim(),
+            actorId,
+          });
+        }}
+      >
+        <TextField
+          label={t('audit.filter.action')}
+          spellCheck={false}
+          dir="ltr"
+          value={draft.action}
+          onChange={(event) => setDraft((current) => ({ ...current, action: event.target.value }))}
+        />
+        <TextField
+          label={t('audit.filter.entityType')}
+          spellCheck={false}
+          dir="ltr"
+          value={draft.entityType}
+          onChange={(event) =>
+            setDraft((current) => ({ ...current, entityType: event.target.value }))
+          }
+        />
+        <TextField
+          label={t('audit.filter.actor')}
+          description={t('audit.filter.identifierHelp')}
+          spellCheck={false}
+          dir="ltr"
+          value={draft.actorId}
+          onChange={(event) => setDraft((current) => ({ ...current, actorId: event.target.value }))}
+          error={actorInvalid ? t('audit.filter.idFormat') : undefined}
+        />
+        <div className="flex items-center gap-2 pt-6">
+          <button type="submit" className={PRIMARY_BUTTON}>
+            {t('audit.filter.apply')}
+          </button>
+          <button
+            type="button"
+            className={SECONDARY_BUTTON}
+            onClick={() => {
+              setDraft(NO_AUDIT_FILTERS);
+              setApplied(NO_AUDIT_FILTERS);
+              setActorInvalid(false);
+            }}
+          >
+            {t('audit.filter.clear')}
+          </button>
+        </div>
+        <p className="w-full text-caption text-text-muted">{t('audit.filter.hint')}</p>
+      </form>
 
       <p className="text-caption text-text-muted">
         {t('audit.readOnly')} {t('audit.viewedNotice')} {t('audit.noExport')}

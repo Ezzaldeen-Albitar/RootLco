@@ -5,7 +5,7 @@ import type { ApiFailureKind } from '@/lib/api/client';
 import type { TableRequest } from '@/components/data-table/table-state';
 import type { ServerPage, ServerPageStatus } from '../shared/use-server-table';
 import { query, type CursorPage } from '../shared/api';
-import type { AuditDetail, AuditRow } from './types';
+import type { AuditDetail, AuditFilters, AuditRow } from './types';
 
 /**
  * Reads for the audit log.
@@ -18,6 +18,24 @@ import type { AuditDetail, AuditRow } from './types';
  *
  * This file is `'use server'`, so it exports **only async functions**. Types and
  * the default window live in `types.ts` beside it.
+ *
+ * ## Why the criteria arrive as an argument and not in `request.filters`
+ *
+ * A `TableRequest` filter is URL state: a registered key plus a value drawn from
+ * a declared option set, written to browser history, proxy logs and the
+ * `Referer` header of every outbound request from the page
+ * (`components/data-table/table-state.ts`). None of the three criteria below has
+ * a declared option set — the action vocabulary lives in the backend's audit
+ * action registry, an entity type is free text, and an actor is an identifier —
+ * so serialising them would put an operator's typed value in exactly the places
+ * that module forbids. They travel to the API instead, which is one hop, and the
+ * screen holds them in memory.
+ *
+ * The earlier reading of `request.filters` for `action` had no control anywhere
+ * that could populate it: the table renders only chips for filters ALREADY
+ * applied, so the parameter was unreachable. It is replaced rather than kept
+ * beside the argument, because two sources for one criterion is a screen whose
+ * chip and whose field can disagree.
  */
 
 const STATUS_BY_KIND: Record<ApiFailureKind, ServerPageStatus> = {
@@ -39,12 +57,14 @@ const EMPTY = { rows: [], nextCursor: null, hasMore: false } as const;
 export async function listAuditEvents(
   request: TableRequest,
   cursor: string | null,
-  range: { readonly from: string; readonly to: string }
+  range: { readonly from: string; readonly to: string },
+  filters: AuditFilters
 ): Promise<ServerPage<AuditRow>> {
   const client = await authorizedClient();
   if (!client) return { ...EMPTY, status: 'expired', correlationId: null };
 
-  const action = request.filters.find((filter) => filter.key === 'action')?.value;
+  // `query` drops an empty value, so an unfilled criterion is absent from the
+  // request rather than sent as a blank the backend would have to interpret.
   const path =
     '/api/v1/audit-events' +
     query({
@@ -52,7 +72,9 @@ export async function listAuditEvents(
       to: range.to,
       cursor,
       limit: request.pageSize,
-      action,
+      action: filters.action,
+      entityType: filters.entityType,
+      actorId: filters.actorId,
     });
 
   const result = await client.get<CursorPage<AuditRow>>(path);
