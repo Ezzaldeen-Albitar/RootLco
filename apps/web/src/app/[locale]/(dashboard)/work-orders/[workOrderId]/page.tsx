@@ -9,6 +9,7 @@ import {
 } from '@/components/states/States';
 import { requireSession } from '@/features/authentication/api/session';
 import { holds } from '@/features/crm/permissions';
+import { DELIVERY_PERMISSIONS } from '@/features/delivery/delivery-contract';
 import { readWorkOrderDetail } from '@/features/work-orders/api';
 import { WorkOrderDetailScreen } from '@/features/work-orders/components/WorkOrderDetailScreen';
 import { WORK_ORDER_DETAIL_PERMISSIONS } from '@/features/work-orders/work-orders-contract';
@@ -40,6 +41,14 @@ import { pageMetadata } from '@/lib/page-metadata';
  * **These are affordances, never enforcement.** Every one of them is decided
  * again by the backend against the actual record; the screen only decides what
  * to offer.
+ *
+ * ## P1-31: the handover section is one of them
+ *
+ * `sal.delivery.view` is resolved here and passed down. Without it the delivery
+ * section is not rendered at all, so no request is issued for a handover the
+ * operator may not see — the page's own gate-before-read discipline, applied to
+ * a section that reads for itself. The code is imported from the delivery
+ * feature rather than restated here, so there is one authority for its spelling.
  */
 export default async function WorkOrderDetailPage({
   params,
@@ -145,6 +154,7 @@ export default async function WorkOrderDetailPage({
       canReadQuotations={holds(session.permissions, WORK_ORDER_DETAIL_PERMISSIONS.quotationRead)}
       canReadStock={holds(session.permissions, WORK_ORDER_DETAIL_PERMISSIONS.stockRead)}
       canReadInvoice={holds(session.permissions, WORK_ORDER_DETAIL_PERMISSIONS.invoiceRead)}
+      canReadDelivery={holds(session.permissions, DELIVERY_PERMISSIONS.view)}
     />
   );
 }
