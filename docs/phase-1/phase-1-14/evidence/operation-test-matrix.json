@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 397,
-    "publicApi": 397,
+    "registered": 404,
+    "publicApi": 404,
     "internal": 0,
-    "withRequiredEvidence": 397,
+    "withRequiredEvidence": 404,
     "invocationOnly": 0,
     "p1_15": {
       "registered": 28,

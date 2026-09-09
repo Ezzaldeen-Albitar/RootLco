@@ -9,14 +9,14 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 397   |
+| Public operations        | 404   |
 | Domains (modules)        | 20    |
-| OpenAPI paths            | 309   |
-| OpenAPI operations       | 397   |
+| OpenAPI paths            | 314   |
+| OpenAPI operations       | 404   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 119   |
-| Audit actions catalogued | 227   |
+| Audit actions catalogued | 232   |
 | Domain events catalogued | 50    |
 | Structured error codes   | 28    |
 
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 397        |
+| Covered           | 404        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |

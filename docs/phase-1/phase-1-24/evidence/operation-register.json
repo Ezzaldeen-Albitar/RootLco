@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 397,
-    "openapiPaths": 309,
-    "openapiOperations": 397,
+    "operations": 404,
+    "openapiPaths": 314,
+    "openapiOperations": 404,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -11,10 +11,10 @@
     "outboxForeignWriters": 0,
     "errorCodes": 28,
     "permissionCodes": 119,
-    "auditActions": 227
+    "auditActions": 232
   },
   "counts": {
-    "Covered": 397
+    "Covered": 404
   },
   "operations": [
     {
