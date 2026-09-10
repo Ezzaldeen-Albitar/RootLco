@@ -1177,7 +1177,7 @@ withheld pending the delivering-employee contract recorded as **CC-25** in §38.
 
 ### 38.3 Dispositions
 
-- **CC-25 — new-handover Start is withheld pending validated employee selection.** No raw employee UUID input or browser-callable Start adapter remains. The existing backend create contract is preserved; employee, authenticated actor and authorized receiver remain distinct. The Owner's employee-relation decision is still pending.
+- **CC-25 — new-handover Start is withheld pending validated employee selection.** No raw employee UUID input or browser-callable Start adapter remains. The existing backend create contract is preserved; employee, authenticated actor and authorized receiver remain distinct. The Owner answered the employee relation on 2026-09-10 (D-12, see [`owner-decisions-2026-09-10.md`](./owner-decisions-2026-09-10.md) §1): a tenant-owned employee identity with server-side validation, defined on the backend prerequisite lane. The Start control stays withheld until that contract exists.
 - **CC-26 — the receiver's identity evidence is NOT captured, and the missing category
   is a new backend prerequisite.** The optional evidence field needs a document category that admits
   a person's proof of identity. The seven seeded categories are all reception categories and the only

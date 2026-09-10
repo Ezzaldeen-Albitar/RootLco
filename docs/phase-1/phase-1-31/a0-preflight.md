@@ -352,6 +352,7 @@ engineering, and none is one of the 29. Each is phrased as a question with its c
   version?** _Consequence:_ the client-composed reading follows the pattern P1-28 and P1-30
   established and needs no backend print route. The stored reading inherits the image-only
   acceptance constraint, which means it cannot be a PDF today.
+  _Decided by the Owner on 2026-09-10 — see [`owner-decisions-2026-09-10.md`](./owner-decisions-2026-09-10.md)._
 - **D-8 — Does the Frontend dependency chain bind execution order, or is it planning notation?**
   _Consequence:_ read literally it serialises all sixteen Frontend items and places the
   already-shipped FE-015 fifteenth. Read as notation, the reporting group and FE-015 can proceed
@@ -371,10 +372,12 @@ engineering, and none is one of the 29. Each is phrased as a question with its c
 - **D-11 — Is P1-26-OD-007, the seven-day audit-log default window, ratified, deferred or changed?**
   _Consequence:_ FE-015 inherits whatever is decided, and shipping it without a decision carries the
   open decision forward into a second phase.
+  _Decided by the Owner on 2026-09-10 — see [`owner-decisions-2026-09-10.md`](./owner-decisions-2026-09-10.md)._
 - **D-12 — Is the delivering employee's name in P1-31's scope at all?** OWR-2026-09-06-G-10 is
   Undecided and its dependency G-14 is Undecided. _Consequence:_ G-10 itself records that placement
   of the backend slice is an Owner decision "because it changes the data model the Owner has been
   told is P1-31's".
+  _Decided by the Owner on 2026-09-10 — see [`owner-decisions-2026-09-10.md`](./owner-decisions-2026-09-10.md)._
 - **D-13 — Where is the P1-30 / P1-31 split for delivery and warranty?** WFP-15 records the owning
   Frontend phase as "P1-30 / P1-31 — the split is not established", corroborated in three further
   places. _Consequence:_ scheduling any delivery or warranty screen before this is answered risks
@@ -401,6 +404,16 @@ engineering, and none is one of the 29. Each is phrased as a question with its c
   convention question is where evidence lands, since Field 27 and Field 34 both require
   `_acceptance/`, which does not exist, while this repository's convention is
   `docs/phase-1/phase-1-NN/*acceptance*.md`.
+- **D-17 — In which timezone is a report period expressed, and is the period inclusive or
+  half-open?** _Consequence:_ without an answer, two reports over "the same day" can count a
+  boundary row twice or not at all, and a cross-branch total can silently add periods that are not
+  the same period.
+  _Decided by the Owner on 2026-09-10 — see [`owner-decisions-2026-09-10.md`](./owner-decisions-2026-09-10.md)._
+- **D-18 — Under which document category is the receiver's identity evidence filed, and is
+  collecting it mandatory?** _Consequence:_ the seeded categories are reception categories, so
+  without an answer the evidence is either not captured at all or filed under a category that does
+  not mean what it says.
+  _Decided by the Owner on 2026-09-10 — see [`owner-decisions-2026-09-10.md`](./owner-decisions-2026-09-10.md)._
 
 ---
 
