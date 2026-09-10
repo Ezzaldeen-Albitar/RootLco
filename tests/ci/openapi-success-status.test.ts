@@ -59,7 +59,7 @@ describe('every operation publishes the success status it returns', () => {
     // the original defect, so the scanner reports rather than assumes — and this
     // asserts it had nothing to report.
     expect(unresolved).toEqual([]);
-    expect(actual.size).toBe(404);
+    expect(actual.size).toBe(405);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -114,7 +114,8 @@ describe('every operation publishes the success status it returns', () => {
     // six across the three — is the assertion carrying weight here: a command that
     // had silently shipped as a read, or a read as a create, would show up in this
     // pair and nowhere else.
-    expect(counts[200]).toBe(289);
+    // The delivery list contributes one further 200 response.
+    expect(counts[200]).toBe(290);
   });
 
   it('reads the handler, not the declaration', () => {

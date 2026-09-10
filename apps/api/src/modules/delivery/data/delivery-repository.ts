@@ -313,6 +313,23 @@ export const CHECKLIST_TEMPLATE_ORDER = Object.freeze({
   direction: 'desc' as const,
 });
 
+/**
+ * A branch's delivery records, newest first (P1-31 prerequisite P-2b).
+ *
+ * `created_at` and not `delivered_at`: the column is NOT NULL on every row, where
+ * `delivered_at` is NULL until the handover completes, and a sort key that is null
+ * for most of the set cannot order it. `sal.delivery_records` carries no scheduled
+ * date of any kind, so `created_at` is the only total temporal order the table has.
+ *
+ * The cursor is minted by `cursorTimestamp()` at MICROSECOND precision, because
+ * `created_at` defaults to `now()` and two deliveries opened in one transaction
+ * share it exactly (`P1-27-INT-006`).
+ */
+export const DELIVERY_RECORD_ORDER = Object.freeze({
+  key: 'sal.delivery_records:created_at_desc',
+  direction: 'desc' as const,
+});
+
 // ---------------------------------------------------------------------------
 // SQL shapes and mappers. snake_case in, camelCase out, one mapper per shape.
 // ---------------------------------------------------------------------------
@@ -570,6 +587,95 @@ export class DeliveryRepository extends Repository {
       [context.principal.tenantId, scope.companyId, scope.branchId, workOrderId]
     );
     return row ? toDeliveryRecord(row) : null;
+  }
+
+  /**
+   * A branch's delivery records, newest first (P1-31 prerequisite P-2b).
+   *
+   * ## Scope
+   *
+   * `company_id` and `branch_id` are bound predicates and the service has already
+   * authorized the pair. `sel_delivery_records_scope` narrows on the
+   * permission-blind union of the caller's allowed companies and branches, so
+   * without the explicit pair a caller holding `sal.delivery.view` in one branch
+   * would read every branch it holds any grant in (P1-18-A-01). RLS remains the
+   * guarantee; the predicate is the intent.
+   *
+   * ## Three optional filters and no more
+   *
+   * `status`, `work_order_id` and `vehicle_id`, each expressed as
+   * `($n IS NULL OR col = $n)` so one statement serves every combination. All three
+   * are columns of this table — `status` is bounded by `ck_delivery_records_status`
+   * and validated against the same vocabulary at the boundary, and the other two are
+   * NOT NULL references — so no filter needs a new column and none is invented
+   * beyond what the record names.
+   *
+   * ## Ordering, and the index that was NOT added
+   *
+   * `DELIVERY_RECORD_ORDER` — `(created_at DESC, id DESC)`, with the `id` tie-break
+   * making the order total. The branch predicate is served by the table's
+   * tenant/company/branch-leading indexes and no index leads on
+   * `(tenant, company, branch, created_at)`, so the ordering is a sort over the
+   * already-narrowed set. `wty.warranty-list` declined a migration on exactly this
+   * reasoning and this list follows it: a branch's deliveries are bounded by its
+   * work orders, and a schema change would be a cost this read has not demonstrated.
+   *
+   * `deleted_at IS NULL` is filtered, as it is in `findDelivery`: a list feeds no
+   * primitive, so publishing rows the tenant has deleted would be the dishonest
+   * option.
+   */
+  public async listDeliveries(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly status?: string | undefined;
+      readonly workOrderId?: string | undefined;
+      readonly vehicleId?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<DeliveryRecordRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.status ?? null,
+      filter.workOrderId ?? null,
+      filter.vehicleId ?? null,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'created_at', id: 'id' },
+      DELIVERY_RECORD_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<DeliveryRecordSql & { sort_value: string }>(
+      db,
+      `SELECT ${DELIVERY_COLUMNS},
+              ${cursorTimestamp('created_at')} AS sort_value
+         FROM sal.delivery_records
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+          AND deleted_at IS NULL
+          AND ($4::text IS NULL OR status = $4)
+          AND ($5::uuid IS NULL OR work_order_id = $5)
+          AND ($6::uuid IS NULL OR vehicle_id = $6)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        // `created_at` is not published on the row, so the cursor value cannot be
+        // re-derived from the response — which is what `buildPageWithCursors` is for.
+        item: toDeliveryRecord(row),
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      DELIVERY_RECORD_ORDER
+    );
   }
 
   /**

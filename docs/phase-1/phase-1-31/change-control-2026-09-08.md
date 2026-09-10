@@ -952,3 +952,126 @@ There is no fabricated-success bootstrap: the existing live classification test 
 Final unit recording at `5dcb4d70fdc24cc441c0c3c2fdaa7b439f719e41` completed with **3277 passed, zero failed/skipped, 121 files, runner exit 0 and reporter success true**. The web record remained **3619 passed, zero failed/skipped, 133 files, runner exit 0 and reporter success true**. Both records report no dirty executable paths. The focused evidence suite had passed 113 tests across three files before this final run. All owned test processes were verified absent at terminal, and the heavy-test reservation was released before hosted CI.
 
 After the final run, the evidence manifest was regenerated from the actual ledger bytes. The standalone closing-values gate passed with zero problems, evidence validation passed for all 41 documents, and document-count validation passed all 151 claims across 32 documents.
+
+---
+
+# P-2b — the branch delivery list, of 2026-09-09
+
+Section 37 was added by the **P-2b** slice on 2026-09-09; its identifier is **CC-23**. The slice
+was written against `develop` `5cd06fbd`, where it reserved **CC-19**; the delivery detail screen
+(#357) took that number while this branch was open, so it is renumbered here — the P-9 and
+P-13/P-14 slices both had to renumber for exactly this reason, and both are recorded above. At the current integration baseline, #360 is merged at protected `develop`
+`f8958e77cd607b8d9a2ebd62eab08176d4c91cf0`. The report writer occupies section 34
+and CC-20; audit records occupy section 36 and CC-22; section 35 and CC-21 remain
+reserved for #363. This list retains section 37 and CC-23. `main` is untouched.
+
+## 37. The branch delivery list
+
+### 37.1 What was published
+
+**One operation**, `sal.delivery-list` — `GET /api/v1/deliveries` — the chapter first declared API,
+added to the route module `sal.delivery-create` already owned.
+
+The P-2 … P-5 seam made a delivery recoverable from an identifier the caller already held. It left
+the SET unreadable: nothing in the product answered _which deliveries does this branch have_, so
+scope item 1 and FE-001 still had no read. This is that read. The slice record is
+[`delivery-read-seam.md`](./delivery-read-seam.md) §10.
+
+`companyId` and `branchId` are required and are the authorization target, checked before any row is
+read; `status`, `workOrderId` and `vehicleId` are optional filters, each a column of the record;
+paging is keyset on `sal.delivery_records:created_at_desc`. The response is `Page<DeliveryRecordView>`
+— the envelope `wty.warranty-list` returns, over the item `sal.delivery-read` already publishes.
+
+### 37.2 Dispositions
+
+| id        | finding                                                                    | measured                                                                                                                                                                                                                                                                                        | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | owner                                                       | state          |
+| --------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | -------------- |
+| **CC-23** | **no index was added for the list ordering, and no migration was written** | `sal.delivery_records` carries `uq_delivery_records_scope_id (tenant, company, branch, id)` and three `ix_delivery_records_*` indexes; **none leads on `(tenant, company, branch, created_at)`**, so the newest-first ordering is a sort over the branch-narrowed set rather than an index walk | **accepted, on the `wty.warranty-list` precedent, which declined a migration on the same evidence and said so.** A branch deliveries are bounded by its work orders; this read has not demonstrated a cost that a schema change would buy. Recorded here so a later measurement can reverse it deliberately rather than discover it. **The permission was reused, not minted** — `sal.delivery.view`, the code every read on this seam declares — and no policy changed: `sel_delivery_records_scope` is a tenant/company/branch predicate with no permission term, so the declared code is the only application gate | a later `sal` performance slice, if measurement warrants it | open, recorded |
+| **D-3**   | Owner decision settled 2026-09-09                                          | The approved FE-001 surface is the work-order readiness queue, including work orders without a delivery record                                                                                                                                                                                  | This branch lists existing delivery records and remains a separate useful read. FE-001 uses the authoritative readiness seam; this list does not satisfy that contract. See owner-decisions-2026-09-09.md section 2                                                                                                                                                                                                                                                                                                                                                                                                   | Owner decision already recorded                             | settled        |
+
+### 37.3 What this slice did NOT do
+
+- **No permission was minted, no seed changed and no bundle changed.** `sal.delivery.view` is
+  seeded, is carried by the tenant administrator bundle, and is the code the other five delivery
+  reads already declare.
+- **No migration, no policy and no grant.** Every statement runs on grants that have existed since
+  P1-11, under the existing `sel_delivery_records_scope`.
+- **No second mapper.** Rows come back through `toDeliveryView`, so the listed delivery and the read
+  delivery are one wire contract; the suite asserts the two responses are equal rather than similar.
+- **No screen.** `apps/web` changes only through the generated idempotency manifest, which every
+  published operation moves. FE-001 belongs to the frontend lane.
+- **No tenant-wide reading.** The company/branch pair is required, so no caller can read deliveries
+  across branches, and none is offered.
+- **CC-14 is untouched.** The inactive-template gate finding stands exactly as recorded in §26.
+
+### 37.4 Integration verification, 2026-09-10
+
+The existing clean checkout switched from merged #360 to the preserved #358 branch
+at `9accee4dfc9ec9a851330fc903310a21e6723395`. It synced once to the actual
+protected develop merge `f8958e77cd607b8d9a2ebd62eab08176d4c91cf0`.
+The backend route, service, repository and existing seventeen-case contract suite
+merged without application conflicts. Conflicts in generated contracts/registers
+were resolved by their existing generators; three discovery assertions now pin
+the actual combined tree: 405 operations, 352 named bodies and 53 composed bodies,
+with zero anonymous or unresolved bodies. The status census contains 290 responses
+with status 200; no route module was added by this list.
+
+At the combined tree, OpenAPI generation/contract verification passed 4/4; the three
+discovery suites passed 29/29. Contract validators, root and API typechecks, API lint
+and format, and security checks passed. The discovery test title/comment correction
+that followed changes no assertion; the final unit run below will include it.
+The source commit precedes the final tier measurements. Their results and the
+seventeen-case backend rerun will be recorded from terminal evidence, not inferred.
+
+Existing #360 unit/web records and original #358 hosted provenance remain historical
+evidence. The repository-wide freshness validator expires both current tier records
+when any executable path changes, so both tiers require serial refresh at this
+settled source. Value bindings were reconciled and the manifest regenerated before
+those runs; only RUN_RECORD_STALE remains at this pre-record checkpoint. The local
+`verify:workspaces` aggregate is not run under the standing 2026-09-09 targeted-local
+plus required-hosted policy. Hosted builds, browser checks and required gates remain
+mandatory. Canonical DOCX synchronization remains the technical authority's
+administrative postmerge task; this slice changes no architecture.
+
+The targeted backend rerun at source `6af7fadabf8157d3798313d769d7670d85092159`
+passed all 17 cases in one file, actual runner exit 0, reporter success true. It ran
+only in newly created `p131_delivery_list_20260910` (OID 36455) on the coordinator's
+isolated loopback port 55432, cloned from the retained 138-migration baseline. Before
+and after guards verified container/database identity, all 255 retained-source table
+contents and all cluster role attributes/memberships unchanged; active source/clone
+connections were empty at release. The final connection closed at
+2026-09-10T08:39:51.337Z. The clone is retained. This is the selected backend contract
+suite, not a full backend tier or phase acceptance. Raw outputs and inventories are
+preserved in the coordinator's external delivery-list evidence bundle.
+
+The pre-unit evidence suite initially passed 112/113 and refused four current
+backend file-inventory annotations: the added delivery-list suite moves actual
+backend test files from 133 to 134 and all backend files from 142 to 143. Those
+four annotations in the deliverable manifest and risk register were corrected to
+actual discovery and the manifest regenerated. Historical executed-tier figures
+and their hosted provenance were not changed. The failed focused output is
+preserved externally; the full unit recorder did not run against this discrepancy.
+
+Final serial records at executable source
+`6af7fadabf8157d3798313d769d7670d85092159`: web 3619 passed across 133 files and
+unit 3277 passed across 121 files; both actual runner exit codes are zero, both
+reporters report success, and both records have no dirty executable paths. After
+the current inventory correction, the three evidence suites passed 113/113 before
+the full unit recorder. Root and API typechecks/lint/format, web typecheck/lint/format/
+style, contract validators and security checks passed. Web lint has zero errors and
+13 pre-existing unused-argument warnings. The final records and raw outputs are
+preserved in the external coordinator evidence bundle; no historical hosted result
+was converted into local or current-source proof.
+
+The separate read-only agent-assisted verification at that exact source found no
+blocking issue: the route, service, repository and seventeen-case suite are unchanged
+through the sync, and authorization-before-query, explicit scope predicates, existing
+RLS, mapper and pagination contracts remain intact. This documents technical
+self-review under the Solo Developer Review Policy, not independent human QA.
+
+All 19 protected-branch checks passed for the #360 merge
+`f8958e77cd607b8d9a2ebd62eab08176d4c91cf0`, including `protected-gate`. The first
+GitHub-only observer stopped on a DNS error without a failed gate; after its process
+was verified absent, one replacement observed the terminal success and retired.
+The dependency push hold is therefore satisfied. #358 still requires its own final
+head's hosted gates and coordinator merge review; no phase acceptance is implied.
