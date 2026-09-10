@@ -9,14 +9,14 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 405   |
+| Public operations        | 409   |
 | Domains (modules)        | 20    |
-| OpenAPI paths            | 314   |
-| OpenAPI operations       | 405   |
+| OpenAPI paths            | 317   |
+| OpenAPI operations       | 409   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
-| Permission codes seeded  | 119   |
-| Audit actions catalogued | 232   |
+| Permission codes seeded  | 121   |
+| Audit actions catalogued | 234   |
 | Domain events catalogued | 50    |
 | Structured error codes   | 28    |
 
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 405        |
+| Covered           | 409        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -38,7 +38,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | crm             | 29         | 29      | 15     | 15      | 15         | 0               |
 | delivery        | 21         | 21      | 11     | 11      | 8          | 4               |
 | diagnostics     | 23         | 23      | 15     | 15      | 14         | 4               |
-| iam             | 46         | 46      | 29     | 27      | 12         | 9               |
+| iam             | 50         | 50      | 31     | 29      | 13         | 10              |
 | inventory       | 24         | 24      | 13     | 14      | 11         | 0               |
 | meta            | 1          | 1       | 0      | 0       | 0          | 0               |
 | payments        | 5          | 5       | 2      | 2       | 2          | 0               |
@@ -203,6 +203,10 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `org.department-create`                             | POST   | `/api/v1/org/departments`                                                           | branch  | `org.department.manage`                                              | org.department.created                         | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `org.department-list`                               | GET    | `/api/v1/org/departments`                                                           | branch  | `org.department.read`                                                | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `org.department-update`                             | PATCH  | `/api/v1/org/departments/{departmentId}`                                            | branch  | `org.department.manage`                                              | org.department.updated                         | —    | yes | audit authorization cross-tenant denial isolation route service stale-version success                                         | Covered |
+| `org.employee-create`                               | POST   | `/api/v1/org/employees`                                                             | branch  | `org.employee.manage`                                                | org.employee.created                           | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
+| `org.employee-detail`                               | GET    | `/api/v1/org/employees/{employeeId}`                                                | branch  | `org.employee.read`                                                  | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
+| `org.employee-list`                                 | GET    | `/api/v1/org/employees`                                                             | branch  | `org.employee.read`                                                  | —                                              | —    | —   | authorization denial isolation route service success                                                                          | Covered |
+| `org.employee-status-set`                           | POST   | `/api/v1/org/employees/{employeeId}/status`                                         | branch  | `org.employee.manage`                                                | org.employee.status_changed                    | —    | yes | audit authorization cross-tenant denial isolation route service stale-version success                                         | Covered |
 | `platform.organization-lifecycle`                   | POST   | `/api/v1/platform/organizations/{tenantId}/status`                                  | tenant  | `platform.organization.lifecycle`                                    | org.tenant.status_changed                      | —    | —   | audit authorization cross-tenant denial route service success                                                                 | Covered |
 | `platform.organization-provision`                   | POST   | `/api/v1/platform/organizations`                                                    | tenant  | `platform.organization.provision`                                    | org.tenant.provisioned                         | yes  | —   | audit authorization denial idempotency route service success                                                                  | Covered |
 | `platform.organization-read`                        | GET    | `/api/v1/platform/organizations`                                                    | tenant  | `platform.organization.read`                                         | —                                              | —    | —   | authorization denial route service success                                                                                    | Covered |

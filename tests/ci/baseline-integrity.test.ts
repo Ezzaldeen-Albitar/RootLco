@@ -507,14 +507,14 @@ describe('the coverage include lists are pinned, because they are the denominato
       typeScriptFilesUnder(pattern.slice(0, -'/**/*.ts'.length))
     );
     expect(files.filter((file) => file.endsWith('.d.ts'))).toEqual([]);
-    expect(files.length).toBe(277);
+    expect(files.length).toBe(279);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
     );
     /*
-     * 276, five more than the 271 the hosted run that established
-     * `coverage-baseline.backend.json` measured, and the difference is five files:
+     * 278, seven more than the 271 the hosted run that established
+     * `coverage-baseline.backend.json` measured, and the difference is seven files:
      * `modules/delivery/application/checklist-template-service.ts`, added by the
      * P1-31 checklist template seam (P-9);
      * `modules/warranty/application/warranty-policy-service.ts`, added by the
@@ -522,13 +522,17 @@ describe('the coverage include lists are pinned, because they are the denominato
      * report configuration seam (P-11) adds —
      * `modules/reporting/domain/report-configuration.ts`,
      * `modules/reporting/data/report-configuration-repository.ts` and
-     * `modules/reporting/application/report-configuration-service.ts`. The
+     * `modules/reporting/application/report-configuration-service.ts`; and the two
+     * the P1-31 employee register (P-17) adds —
+     * `modules/iam/data/employee-repository.ts` and
+     * `modules/iam/application/employee-administration-service.ts`, taking it to
+     * 278. The
      * denominator is SUPPOSED to grow with the tier's source; what this case
      * defends is that it only ever grows because a file was added, never because
      * the include list quietly narrowed. The baseline's percentage floors are
      * untouched: re-establishing them needs a hosted measurement run, which
      * neither slice performed and neither claims.
      */
-    expect(instrumented.length).toBe(276);
+    expect(instrumented.length).toBe(278);
   });
 });

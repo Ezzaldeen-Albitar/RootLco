@@ -114,8 +114,12 @@ describe('every route body serialises a named type', () => {
     // return type; the five commands serialise `ReportConfigurationSummaryView` and
     // `ReportConfigurationVersionView`, which is the same pair the reads publish.
     // The delivery list adds one named 200 body on an existing route module.
-    expect(summary.bodies).toBe(405);
-    expect(summary.named).toBe(352);
+    // 409 with the P1-31 employee register (P-17): four operations, two GETs and
+    // two writes, every one of them serialising `EmployeeView` or
+    // `Page<EmployeeView>` — a NAMED interface either way — so `named` moves by
+    // four and `composed` does not.
+    expect(summary.bodies).toBe(409);
+    expect(summary.named).toBe(356);
     expect(summary.composed).toBe(53);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);
