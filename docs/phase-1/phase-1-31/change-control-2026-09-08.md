@@ -845,3 +845,110 @@ The full record is [`report-configuration-seam.md`](./report-configuration-seam.
 | **P11-C** | tenant-wide authority from two sides — a `rpt.report.read`-only caller refused all seven, and a branch-scoped configure holder refused by the re-check |
 | **P11-D** | the publication invariants: one published version at a time, a second refused, and a published version immutable through the mapped freeze refusal     |
 | **P11-E** | the bundle delta measured against the generated P1-24 register, with the undeclared-exclusion list now empty and asserted empty                        |
+
+---
+
+## 36. What the FE-015 slice changed — the audit report, and the phase records
+
+**Slice:** `feature/p1-31-audit-report-and-phase-records`, ownership profile `p1-31-frontend`.
+**Baseline:** protected `develop` **0204f2d1**, merged into this branch. This slice was cut at
+**249c6428** (PR #356) when sections 1–29 were backend seams, documentation corrections and CI
+ownership and no Frontend slice had landed; the delivery detail screen (PR #357) merged first and
+holds sections 30–33, and the report configuration seam (PR #361) merged next and holds section 34.
+
+### 36.1 Identifier allocation — CC-22 settled, the section number ahead of one remaining lane
+
+`develop` at **0204f2d1** carries **CC-01 … CC-20** across sections 1–34. **CC-22 is this slice's
+identifier and it is free at that head**, so the id this branch reserved provisionally stands. Of the
+two lanes that allocated between this one and the merged register, one has landed and one has not.
+
+| id        | lane                                             | state at 0204f2d1       |
+| --------- | ------------------------------------------------ | ----------------------- |
+| **CC-19** | the delivery detail screen (PR #357)             | merged, sections 30–33  |
+| **CC-20** | the reporting writer (P-11, PR #361)             | merged, section 34      |
+| **CC-21** | the checklist-template migration (P-9b, PR #363) | open, claims section 35 |
+| **CC-22** | this slice                                       | this branch, section 36 |
+| **CC-24** | the readiness seam                               | in preparation          |
+| **CC-25** | the delivery write paths (PR #362)               | open, on a stacked base |
+
+So this slice takes **section 36 provisionally** and **CC-22 firmly**. P-9b has not merged, so that
+one lane landing out of order moves this heading rather than this identifier. **The section number
+must be re-checked against `develop` before this branch merges**, and renumbered if P-9b lands with a
+different allocation. A register whose identifiers collide is worse than one that renumbers.
+
+### 36.2 What changed
+
+**D-6 is answered: the shipped Audit Log screen IS "audit report" (FE-015), completed as a report.**
+The screen already existed and already refused to offer an export. What it did not do was let an
+operator ask a question: it sent the mandatory window and nothing else, so finding one action inside
+a quarter meant reading the pages.
+
+The action, record type and actor criteria are surfaced alongside an optional named company/branch pair from the authorized organization directories. They travel under the list operation's published parameter names. Company selection prepares branch choices; it is not a company-only filter.
+The window and its 92-day bound are untouched, the permission is untouched, and **no export control
+was added**.
+
+The criteria apply on submit rather than on each keystroke. The read is rate-limited as an expensive
+one and is itself an audited act, so a criterion typed character by character would record a dozen
+reads of the audit trail for one question.
+
+Two records were also written: [`task-matrix.md`](./task-matrix.md), which states where each of the
+twenty-nine canonical tasks stands and what proves it, and
+[`d4-report-definitions.md`](./d4-report-definitions.md), which maps the Owner's four baseline
+reports to the contracts that can serve them and names the prerequisites that do not exist yet.
+
+### 36.3 Dispositions
+
+| id        | finding                                                          | measured                                                                                                                                                                                                                                        | disposition                                                                                                                                                                                                                                                                                                   | owner / slice   | status                     |
+| --------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- | -------------------------- |
+| **CC-22** | audit company/branch selectors were incorrectly declared blocked | The existing authorized `org.company-list` and `org.branch-list` directories publish names and the branch/company relationship. `branchTargetQuery` already accepts a separate resource pair while refusing scope names among ordinary filters. | Corrected in #360: paired named selectors, server-side directory membership and pair validation, then the existing paired query helper. Default `query()` and `companyFilterQuery` guards remain intact. Directory denial leaves the original audit search available. Company-only filtering is not provided. | Frontend / #360 | implemented, pending merge |
+
+### 36.4 What this slice did NOT do
+
+- **No export, and no step toward one.** No control, no client-side extraction, no new operation. The
+  route's own docblock states export is out of scope, and the screen still says so in both languages.
+- **No permission changed.** The screen gates on the same code it has always gated on, and the route
+  page still decides before it reads.
+- **The default window was not changed.** **D-11** — whether the seven-day default is ratified,
+  deferred or changed — **stays open**, and the preflight's warning that shipping FE-015 without it
+  carries the decision into a second phase is now realised rather than avoided. The window itself is
+  proven by test to be seven days and server-computed.
+- **No backend source was touched.** A Frontend lane may not, and nothing here needed it: every
+  criterion surfaced was already a bound parameter of the existing operation.
+- **No canonical task was marked done.** The task matrix records FE-015 as `in open PR`, and its
+  rule 2 keeps `end-to-end verified` unreachable until a phase acceptance record exists. None does.
+- **No figure appears in the D-4 record.** Every unknown in it is written as a named prerequisite.
+- **No report engine, registry or run operation was written.** D-4 is a mapping; P-11's engine half
+  has not begun.
+
+### 36.5 Proof
+
+| id        | what was shown                                                                                                                                                                    |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **F15-1** | `apps/web/tests/audit-log.dom.test.tsx` — each criterion reaching the adapter under the published name, alone and together, with the window carried with it                       |
+| **F15-2** | a malformed actor identifier refused **before** any request is made, and named on the field rather than returned as a refusal about a parameter the operator never saw            |
+| **F15-3** | clearing returns the read to the unfiltered one and empties the controls; applying resets the page, because a cursor from an unfiltered set is meaningless against a filtered one |
+| **F15-4** | every criterion and both buttons named in Arabic, rendered right-to-left                                                                                                          |
+| **F15-5** | the no-export notice present in both languages, and no control or link that would produce one                                                                                     |
+| **F15-6** | the route page refusing without the audit code **and issuing no read**, and reading a seven-day server-computed window with it                                                    |
+
+### 36.7 Integration correction — 2026-09-10
+
+The original CC-22 inference missed the existing scoped directory reads and paired resource-query contract. The current implementation uses those contracts within the Frontend lane and does not require a new Owner business decision. The server adapter rechecks selected company and branch membership and their relationship before issuing an audit read. Organization-directory refusal affects the selectors only. Audited list reads explicitly disable automatic retries.
+
+Targeted local checks and required hosted gates follow the standing verification policy. `verify:workspaces` is not run locally for this integration; production builds and browser smoke remain required hosted evidence. No database operation or database test is part of this frontend verification. Canonical DOCX synchronization remains an administrative post-merge responsibility of the technical authority; this slice changes no architecture.
+
+### 36.8 Technical review — 2026-09-10
+
+Agent-assisted technical self-review under the Solo Developer Review Policy covered source commit `5dcb4d70fdc24cc441c0c3c2fdaa7b439f719e41`: the paired selectors use authorized directory rows, the Server Action rechecks company membership and branch/company membership, the query is an additional filter under the audit operation's unchanged authorization/RLS, and directory refusal leaves unfiltered audit search usable. No export, permission, schema or query-guard change was introduced. A separately assigned agent performed a read-only review of that same source commit and reported no blocking finding; it did not run tests or change files. This is not independent human QA.
+
+Terminal targeted results at that source: `typecheck:web` passed; `lint:web` passed with 13 existing warnings; root and web format checks passed; `style:check:web` passed; `security:all` passed; web boundary, token, theme and brand validators passed. The focused audit/scope tests passed 81 cases across two files. The full web runner recorded 3619 passed, zero failed/skipped, 133 files, exit 0 and no dirty executable paths. The policy sequence passed every preceding validator and initially ended with only stale unit/web records from the earlier source; the final ledger and closing-values check resolve that evidence dependency. The unit runner's result is recorded in the generated ledger, not inferred from the web result.
+
+The first full unit record at that source was **red**: 3269 passed and eight failed across 121 files, with runner exit 1 (the recording wrapper itself returned 0). All eight failures were real-tree scan cases across six existing CI/foundation test files and took 35.7–127.7 seconds against the unchanged 30-second test limit. The JSON reporter preserved only `STACK_TRACE_ERROR`, so the original exception text does not establish a timeout by itself. With the host's heavy-test slot reserved, a diagnostic run of those exact six files using the default reporter passed all 243 tests in 75.66 seconds; the eight affected cases took 1.08–5.68 seconds. No source, expectation or timeout was changed. This supports a contention/timing explanation rather than a reproduced assertion defect. The failed raw report and diagnostic log were retained locally, and a serial full unit record was then taken; its terminal verdict is in the generated ledger. The passing web record was retained without rerunning it.
+
+A second full unit record, run with the exclusive heavy-test slot, recorded 3271 passed and six failed across 121 files (runner exit 1). The eight earlier real-tree timing cases passed. These six failures instead exposed an evidence sequencing error in this integration: the successful web measurement was 3619 while the current prose/classification bindings still said 3612, and the manifest still described the earlier document bytes. The unit record remained red. The authoritative prose and classification bindings were updated from the actual successful web record, then the manifest was regenerated before further unit verification. No generated run result was edited by hand.
+
+There is no fabricated-success bootstrap: the existing live classification test deliberately excludes `RUN_RECORD_*` because its own future verdict cannot be a prerequisite for running it. The focused evidence tests can therefore validate the corrected bindings/digests while the prior unit verdict remains red. After a successful full unit recording, the manifest must be regenerated again for the new ledger bytes and the standalone closing-values gate must pass. The two failed full-run reports remain retained locally as diagnostic evidence.
+
+Final unit recording at `5dcb4d70fdc24cc441c0c3c2fdaa7b439f719e41` completed with **3277 passed, zero failed/skipped, 121 files, runner exit 0 and reporter success true**. The web record remained **3619 passed, zero failed/skipped, 133 files, runner exit 0 and reporter success true**. Both records report no dirty executable paths. The focused evidence suite had passed 113 tests across three files before this final run. All owned test processes were verified absent at terminal, and the heavy-test reservation was released before hosted CI.
+
+After the final run, the evidence manifest was regenerated from the actual ledger bytes. The standalone closing-values gate passed with zero problems, evidence validation passed for all 41 documents, and document-count validation passed all 151 claims across 32 documents.
