@@ -15,6 +15,10 @@
  *  - **delivery/work-order coherence** — `sal.guard_delivery_coherence` (M-dlv-1)
  *    re-reads the work order and refuses any vehicle or visit that differs, which is
  *    why both are derived from the work-order port and never accepted from a caller;
+ *  - **the delivering employee is a real, live, same-branch identity** —
+ *    `fk_delivery_records_delivering_employee` and
+ *    `sal.stamp_delivering_employee_identity` (P1-31 P-17), which also stamps the
+ *    immutable display-name snapshot the handover history is read from;
  *  - **exactly one receiver per delivery** — `uq_authorized_receivers_delivery`;
  *  - **the receiver's authority at verification time** —
  *    `sal.guard_authorized_receiver` (M-dlv-2) requires a live
@@ -58,6 +62,7 @@ import type { DbHandle } from '@/server/db/transaction';
 import { callerHoldsPermission, type ScopeAuthorizer } from '@/server/auth/authorization';
 import { EVIDENCE_REFUSED_STATES, sharedServicesModule } from '@/modules/shared-services';
 import { workOrderModule } from '@/modules/work-order';
+import { iamRegistryModule } from '@/modules/iam';
 import {
   DeliveryRuleError,
   MAX_REASON,
@@ -88,6 +93,13 @@ export interface DeliveryView {
   readonly receptionVisitId: string;
   readonly vehicleId: string;
   readonly deliveringEmployeeId: string;
+  /**
+   * The `org.employees` display name as it stood when this delivery was created.
+   *
+   * Stamped by `sal.stamp_delivering_employee_identity` and never by this
+   * service: caller input is not authoritative for historical identity text.
+   */
+  readonly deliveringEmployeeDisplayName: string;
   readonly status: string;
   readonly deliveredAt: string | null;
   readonly finalOdometerReadingId: string | null;
@@ -146,7 +158,14 @@ export interface CompletionView {
 
 export interface CreateDeliveryInput {
   readonly workOrderId: string;
-  /** `delivering_employee_id` — NOT NULL, and the DDL gives it no foreign key. */
+  /**
+   * `delivering_employee_id` — an `org.employees` id.
+   *
+   * Bound by `fk_delivery_records_delivering_employee` on all four scope columns
+   * and re-checked by `sal.stamp_delivering_employee_identity` since P1-31
+   * prerequisite P-17. Before that the DDL gave it no foreign key at all, so any
+   * uuid was a legal handover officer.
+   */
   readonly deliveringEmployeeId: string;
   readonly idempotencyKey?: string | undefined;
 }
@@ -228,7 +247,24 @@ function toDomainFailure(error: unknown, what: string): never {
   }
   if (isSqlState(error, SQLSTATE.foreignKeyViolation)) {
     throw new AppFailure('ERR-RES-001', {
-      message: `${what} names a work order, visit, partner or document version that does not exist in scope`,
+      message: `${what} names a work order, visit, employee, partner or document version that does not exist in scope`,
+    });
+  }
+  /**
+   * `22023`, raised by `sal.stamp_delivering_employee_identity` and by nothing
+   * else on this path (P1-31 prerequisite P-17).
+   *
+   * A 422 rather than the 409 `23514` produces, because it is the REQUEST that is
+   * wrong: the caller named an employee who is not live, not active, or not of
+   * this delivery's branch, and the fix is to name a different one. The service
+   * pre-checks all three and reports them per rule, so reaching here means a
+   * concurrent retirement landed between the check and the insert — the trigger
+   * is the authority and this is its translation, not a second rule.
+   */
+  if (isSqlState(error, SQLSTATE.invalidParameterValue)) {
+    throw new AppFailure('ERR-VAL-001', {
+      message: `${what} names an employee who cannot be the delivering employee for this branch`,
+      safeDetails: { violations: [{ path: 'body.deliveringEmployeeId', rule: 'custom' }] },
     });
   }
   if (isSqlState(error, SQLSTATE.uniqueViolation)) {
@@ -268,6 +304,22 @@ function validate<T>(path: string, run: () => T): T {
   }
 }
 
+/**
+ * One shape for the three ways a delivering employee can be refused.
+ *
+ * The rule name is what a client branches on, so the three are DISTINCT values
+ * rather than one `custom`: "not found", "retired" and "wrong branch" need three
+ * different corrections from an operator. `custom` is reserved for the first,
+ * because it is the only one where naming a more specific rule would confirm
+ * that the id exists somewhere the caller cannot see.
+ */
+function employeeViolation(rule: string, message: string): AppFailure {
+  return new AppFailure('ERR-VAL-001', {
+    message,
+    safeDetails: { violations: [{ path: 'body.deliveringEmployeeId', rule }] },
+  });
+}
+
 const toDeliveryView = (row: DeliveryRecordRow, replayed: boolean): DeliveryView => ({
   id: row.id,
   companyId: row.companyId,
@@ -276,6 +328,7 @@ const toDeliveryView = (row: DeliveryRecordRow, replayed: boolean): DeliveryView
   receptionVisitId: row.receptionVisitId,
   vehicleId: row.vehicleId,
   deliveringEmployeeId: row.deliveringEmployeeId,
+  deliveringEmployeeDisplayName: row.deliveringEmployeeDisplayName,
   status: row.status,
   deliveredAt: row.deliveredAt === null ? null : row.deliveredAt.toISOString(),
   finalOdometerReadingId: row.finalOdometerReadingId,
@@ -381,6 +434,41 @@ export class DeliveryService {
       });
     }
 
+    /**
+     * The delivering employee is resolved BEFORE the insert (P1-31 P-17).
+     *
+     * `sal.stamp_delivering_employee_identity` enforces all three rules for every
+     * writer and is the authority; this is here so the caller is told WHICH rule
+     * they broke, in the field-level shape a form can render, instead of
+     * receiving one opaque refusal for three different mistakes.
+     *
+     * The lookup runs under the caller's own RLS, so an employee of another
+     * TENANT is simply not found — there is deliberately no separate answer for
+     * it, because a distinct refusal would confirm that the id exists somewhere.
+     */
+    const employee = await iamRegistryModule().employees.findAssignable(
+      db,
+      input.deliveringEmployeeId
+    );
+    if (employee === null) {
+      throw employeeViolation(
+        'custom',
+        'The delivering employee is not a live employee in this organisation'
+      );
+    }
+    if (employee.status !== 'active') {
+      throw employeeViolation(
+        'inactive_employee',
+        'The delivering employee has been retired and cannot be named on a new handover'
+      );
+    }
+    if (employee.companyId !== scope.companyId || employee.branchId !== scope.branchId) {
+      throw employeeViolation(
+        'employee_branch_mismatch',
+        "The delivering employee belongs to another branch than the work order's"
+      );
+    }
+
     let deliveryId: string;
     try {
       deliveryId = await this.repository.insertDelivery(db, {
@@ -439,6 +527,11 @@ export class DeliveryService {
           field: 'deliveringEmployeeId',
           classification: 'internal',
           value: delivery.deliveringEmployeeId,
+        },
+        {
+          field: 'deliveringEmployeeDisplayName',
+          classification: 'internal',
+          value: delivery.deliveringEmployeeDisplayName,
         },
         { field: 'status', classification: 'internal', value: delivery.status },
       ],

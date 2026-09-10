@@ -101,8 +101,20 @@ export interface DeliveryRecordRow {
   readonly receptionVisitId: string;
   /** Same provenance and the same guard. */
   readonly vehicleId: string;
-  /** `delivering_employee_id` — NOT NULL with **no** foreign key in the DDL. */
+  /**
+   * `delivering_employee_id` — an `org.employees` id, bound by
+   * `fk_delivery_records_delivering_employee` on all four scope columns since
+   * P1-31 prerequisite P-17. Before that it carried no foreign key at all.
+   */
   readonly deliveringEmployeeId: string;
+  /**
+   * The employee's display name as it stood when the handover was recorded.
+   *
+   * Server-stamped by `sal.stamp_delivering_employee_identity` and frozen by
+   * `tg_delivery_records_immutable`, so a later rename or retirement cannot
+   * rewrite what a customer already signed.
+   */
+  readonly deliveringEmployeeDisplayName: string;
   readonly status: string;
   readonly deliveredAt: Date | null;
   /** `veh.odometer_readings.id`, written only by `sal.complete_delivery`. */
@@ -335,8 +347,8 @@ export const DELIVERY_RECORD_ORDER = Object.freeze({
 // ---------------------------------------------------------------------------
 
 const DELIVERY_COLUMNS = `id, company_id, branch_id, work_order_id, reception_visit_id,
-  vehicle_id, delivering_employee_id, status, delivered_at, final_odometer_reading_id,
-  idempotency_key, record_version`;
+  vehicle_id, delivering_employee_id, delivering_employee_display_name, status,
+  delivered_at, final_odometer_reading_id, idempotency_key, record_version`;
 
 interface DeliveryRecordSql {
   id: string;
@@ -346,6 +358,7 @@ interface DeliveryRecordSql {
   reception_visit_id: string;
   vehicle_id: string;
   delivering_employee_id: string;
+  delivering_employee_display_name: string;
   status: string;
   delivered_at: Date | null;
   final_odometer_reading_id: string | null;
@@ -361,6 +374,7 @@ const toDeliveryRecord = (r: DeliveryRecordSql): DeliveryRecordRow => ({
   receptionVisitId: r.reception_visit_id,
   vehicleId: r.vehicle_id,
   deliveringEmployeeId: r.delivering_employee_id,
+  deliveringEmployeeDisplayName: r.delivering_employee_display_name,
   status: r.status,
   deliveredAt: r.delivered_at,
   finalOdometerReadingId: r.final_odometer_reading_id,

@@ -112,6 +112,7 @@ import {
   seedWorkOrderChain,
   type IssuedInvoice,
   type WorkOrderChain,
+  deliveringEmployeeForWorkOrder,
 } from './p1-22-helpers';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
 import { POST as CREATE_DELIVERY } from '@/app/api/v1/deliveries/route';
@@ -142,6 +143,8 @@ interface DeliveryBody {
   readonly receptionVisitId: string;
   readonly vehicleId: string;
   readonly deliveringEmployeeId: string;
+  /** The snapshot `sal.stamp_delivering_employee_identity` writes (P1-31 P-17). */
+  readonly deliveringEmployeeDisplayName: string;
   readonly status: string;
   readonly deliveredAt: string | null;
   readonly finalOdometerReadingId: string | null;
@@ -749,7 +752,10 @@ async function openDelivery(workOrderId: string): Promise<DeliveryBody> {
   // different work orders, visits, vehicles and customers, successfully.
   await linkSignatureDocumentToWorkOrder(workOrderId);
   authAs(SAL_FULL);
-  const response = await createDelivery({ workOrderId, deliveringEmployeeId: USER_A });
+  const response = await createDelivery({
+    workOrderId,
+    deliveringEmployeeId: await deliveringEmployeeForWorkOrder(workOrderId),
+  });
   if (response.status !== 201) {
     throw new Error(
       `fixture delivery for work order ${workOrderId} failed with ${response.status}: ` +
@@ -962,7 +968,7 @@ describe('sal.delivery-create', () => {
     authAs(SAL_FULL);
     const response = await createDelivery({
       workOrderId: chain.workOrderId,
-      deliveringEmployeeId: USER_A,
+      deliveringEmployeeId: await deliveringEmployeeForWorkOrder(chain.workOrderId),
     });
     expect(response.status).toBe(201);
     const delivery = await bodyOf<DeliveryBody>(response);
@@ -976,7 +982,14 @@ describe('sal.delivery-create', () => {
     expect(delivery.replayed).toBe(false);
     expect(delivery.companyId).toBe(chain.companyId);
     expect(delivery.branchId).toBe(chain.branchId);
-    expect(delivery.deliveringEmployeeId).toBe(USER_A);
+    // The employee identity P1-31 P-17 made mandatory, and the snapshot the database
+    // stamped from it. `deliveringEmployeeId` used to be a LOGIN ACCOUNT id with no
+    // foreign key behind it; it is now an `org.employees` row in this branch, and the
+    // name beside it was written by the trigger rather than by the caller.
+    expect(delivery.deliveringEmployeeId).toBe(
+      await deliveringEmployeeForWorkOrder(chain.workOrderId)
+    );
+    expect(delivery.deliveringEmployeeDisplayName).toBe('Fixture handover officer');
 
     // The decisive assertion: both are read off the WORK ORDER, compared against the
     // work-order row itself rather than against the reception fixture that produced it.
@@ -1019,7 +1032,7 @@ describe('sal.delivery-create', () => {
       authAs(SAL_FULL);
       const response = await createDelivery({
         workOrderId: chain.workOrderId,
-        deliveringEmployeeId: USER_A,
+        deliveringEmployeeId: await deliveringEmployeeForWorkOrder(chain.workOrderId),
         ...extra,
       });
       expect(response.status, JSON.stringify(extra)).toBe(422);
@@ -1040,7 +1053,7 @@ describe('sal.delivery-create', () => {
     authAs(SAL_FULL);
     const second = await createDelivery({
       workOrderId: chain.workOrderId,
-      deliveringEmployeeId: USER_A,
+      deliveringEmployeeId: await deliveringEmployeeForWorkOrder(chain.workOrderId),
     });
     // `uq_delivery_records_work_order_active` would raise `23505` and abort the
     // transaction — including the audit append — so the service checks first and the
@@ -1062,7 +1075,10 @@ describe('sal.delivery-create', () => {
   it('replays an idempotency key without opening a second delivery (idempotency)', async () => {
     const chain = await seedWorkOrderChain('dlv_create_replay');
     const key = randomUUID();
-    const payload = { workOrderId: chain.workOrderId, deliveringEmployeeId: USER_A };
+    const payload = {
+      workOrderId: chain.workOrderId,
+      deliveringEmployeeId: await deliveringEmployeeForWorkOrder(chain.workOrderId),
+    };
     const auditBefore = await auditTotalFor('sal.delivery.created');
 
     authAs(SAL_FULL);
@@ -1096,7 +1112,7 @@ describe('sal.delivery-create', () => {
     authAs(SAL_READER);
     const response = await createDelivery({
       workOrderId: chain.workOrderId,
-      deliveringEmployeeId: USER_A,
+      deliveringEmployeeId: await deliveringEmployeeForWorkOrder(chain.workOrderId),
     });
     expect(response.status).toBe(403);
     expect((await bodyOf<ProblemBody>(response)).code).toBe('ERR-IAM-001');
@@ -1118,7 +1134,7 @@ describe('sal.delivery-create', () => {
     authAs(SAL_PERMISSION_ELSEWHERE);
     const response = await createDelivery({
       workOrderId: chain.workOrderId,
-      deliveringEmployeeId: USER_A,
+      deliveringEmployeeId: await deliveringEmployeeForWorkOrder(chain.workOrderId),
     });
     expect(response.status).toBe(403);
     expect((await bodyOf<ProblemBody>(response)).code).toBe('ERR-IAM-001');
@@ -1137,7 +1153,7 @@ describe('sal.delivery-create', () => {
     authAs(SAL_TENANT_B);
     const response = await createDelivery({
       workOrderId: chain.workOrderId,
-      deliveringEmployeeId: USER_A,
+      deliveringEmployeeId: await deliveringEmployeeForWorkOrder(chain.workOrderId),
     });
     expect(response.status).toBe(404);
     expect((await bodyOf<ProblemBody>(response)).code).toBe('ERR-RES-001');

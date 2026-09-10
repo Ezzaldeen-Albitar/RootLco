@@ -89,6 +89,7 @@ import {
   linkSignatureDocumentToWorkOrder,
   seedWorkOrderChain,
   type WorkOrderChain,
+  deliveringEmployeeForWorkOrder,
 } from './p1-22-helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
@@ -153,6 +154,8 @@ interface DeliveryRecordBody {
   readonly receptionVisitId: string;
   readonly vehicleId: string;
   readonly deliveringEmployeeId: string;
+  /** The snapshot `sal.stamp_delivering_employee_identity` writes (P1-31 P-17). */
+  readonly deliveringEmployeeDisplayName: string;
   readonly status: string;
   readonly deliveredAt: string | null;
   readonly finalOdometerReadingId: string | null;
@@ -507,7 +510,10 @@ async function arrangeDelivery(tag: string): Promise<ArrangedDelivery> {
   await linkSignatureDocumentToWorkOrder(chain.workOrderId);
   authAs(SAL_FULL);
 
-  const created = await createDelivery(chain.workOrderId, randomUUID());
+  const created = await createDelivery(
+    chain.workOrderId,
+    await deliveringEmployeeForWorkOrder(chain.workOrderId)
+  );
   expect(created.status).toBe(201);
   const deliveryId = (await bodyOf<{ id: string }>(created)).id;
 
@@ -796,7 +802,10 @@ describe('P-4 and P-5 the subresource reads', () => {
   it(`${SEAM_OPERATION_IDS.receiver} answers 200 with receiver: null before verification`, async () => {
     const chain = await seedWorkOrderChain('p131_no_receiver');
     authAs(SAL_FULL);
-    const created = await createDelivery(chain.workOrderId, randomUUID());
+    const created = await createDelivery(
+      chain.workOrderId,
+      await deliveringEmployeeForWorkOrder(chain.workOrderId)
+    );
     expect(created.status).toBe(201);
     const deliveryId = (await bodyOf<{ id: string }>(created)).id;
 
