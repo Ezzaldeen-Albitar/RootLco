@@ -65,8 +65,10 @@
 --   * ON DELETE RESTRICT, and org.employees grants DELETE to no application
 --     role, so a handover officer cannot be erased out of a delivery's history.
 --   * The review table is READ-ONLY to the application: SELECT to app_runtime
---     and app_readonly, tenant-scoped and RLS-forced, and no role holds INSERT,
---     UPDATE or DELETE on it. It is written once, here.
+--     and app_readonly, tenant-scoped and RLS-forced, and no APPLICATION role
+--     holds INSERT, UPDATE or DELETE on it. The owner role that runs migrations
+--     keeps its own privileges on it, which is how the single write below
+--     reaches the table and how a test fixture is removed again.
 --
 -- Objects created
 --   Tables:      sal.delivery_legacy_identity_review
@@ -141,7 +143,7 @@ CREATE TABLE sal.delivery_legacy_identity_review (
 );
 
 COMMENT ON TABLE sal.delivery_legacy_identity_review IS
-  'P1-31 prerequisite P-17. One row per delivery whose pre-P-17 delivering_employee_id matched no same-tenant identity when the identity migration ran. Written once by that migration and by nothing else: the application holds SELECT only. It exists so an unresolved handover identity is VISIBLE to the Owner instead of being silently replaced by a fabricated person or by the migrating actor.';
+  'P1-31 prerequisite P-17. One row per delivery whose pre-P-17 delivering_employee_id matched no same-tenant identity when the identity migration ran. Written by that migration and by no application role: the application holds SELECT and nothing else. It exists so an unresolved handover identity is VISIBLE to the Owner instead of being silently replaced by a fabricated person or by the migrating actor.';
 COMMENT ON COLUMN sal.delivery_legacy_identity_review.legacy_value IS
   'The unconstrained uuid the delivery recorded before P-17, preserved exactly. sal.delivery_records still holds it; this is a pointer, not a replacement.';
 COMMENT ON COLUMN sal.delivery_legacy_identity_review.recorded_at IS
@@ -157,10 +159,18 @@ SELECT record.tenant_id, record.id, record.delivering_employee_id
       AND employee.id = record.delivering_employee_id
  );
 
--- RLS is enabled AFTER the insert above, deliberately. FORCE ROW LEVEL SECURITY
--- applies to the table owner too, and this table carries no INSERT policy for
--- anybody, so enabling it first would make the one honest write in its life
--- depend on the migrating role happening to be a superuser.
+-- Platform migrations run as the database owner role, which holds BYPASSRLS in
+-- the local Supabase stack and is a superuser in the plain postgres:17 CI
+-- container: the measured role landscape recorded in section 15 of
+-- docs/database/migration-standard.md, lines 364-369. That is the repository
+-- convention every migration here relies on, the mint in step 1 above included,
+-- which writes into org.employees after 20260910090000 enabled and FORCED row
+-- level security there with an INSERT policy addressed to app_runtime alone. So
+-- the statement order below is legibility rather than a load-bearing choice:
+-- the write above succeeds either way, and the write below would too. What is
+-- deliberately NOT used, here or anywhere in this repository, is
+-- SET row_security = off -- it raises 42501 for a role without BYPASSRLS, and
+-- tests/db/rls.test.ts asserts exactly that.
 ALTER TABLE sal.delivery_legacy_identity_review ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sal.delivery_legacy_identity_review FORCE  ROW LEVEL SECURITY;
 
