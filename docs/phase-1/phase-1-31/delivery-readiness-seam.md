@@ -7,34 +7,49 @@ leaves open.
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | **Decision closed** | **D-3** of 2026-09-09 — the operational ready-for-delivery queue, separate from the delivery-record list                                  |
 | **Lane**            | `p1-31-backend` — `remediation/p1-31-backend-delivery-readiness-seam`                                                                     |
-| **Baseline**        | protected `develop` **07193258** (cut at **249c6428**); `main` **1262de74**, untouched                                                    |
-| **Change control**  | **CC-24**, at section **39 provisional**, in [`change-control-2026-09-08.md`](./change-control-2026-09-08.md)                             |
+| **Baseline**        | protected `develop` **78d34fbc** (cut at **249c6428**); `main` **1262de74**, untouched                                                    |
+| **Change control**  | **CC-24**, at section **39**, in [`change-control-2026-09-08.md`](./change-control-2026-09-08.md)                                         |
 | **Canonical tasks** | **none.** D-3 is an Owner decision taken during the phase; the screen it unblocks is **FE-001**                                           |
 | **Records**         | this file. It is a sibling of the other seam records rather than a section of [`delivery-read-seam.md`](./delivery-read-seam.md) — see §9 |
 
 ---
 
-## 1. The measured problem
+## 1. The measured problem, and the Owner's answer
+
+**Measured facts (not part of the decision).** These are the facts the decision was taken against.
 
 `GET /api/v1/deliveries` lists delivery **records**. A delivery record exists because somebody has
 already started a handover. So the set that route can return excludes, by construction, every work
 order that is finished, quality-signed, paid and unencumbered but for which nobody has opened a
 delivery yet — which is the moment the vehicle is most worth showing to a service advisor.
 
-The Owner's D-3 decision names the missing set directly: the operational queue lists the work orders
-that satisfy the authoritative **server** delivery-eligibility rules, **including eligible work
-orders with no delivery record**, and it is separate from the delivery-record list published by
-PR #358.
+**The Owner's decision — D-3, settled 2026-09-09.** In the Owner's own words, recorded in
+[`owner-decisions-2026-09-09.md`](./owner-decisions-2026-09-09.md) §2:
 
-Three constraints came with it, and all three are honoured below: **no new work-order status**, **no
-browser-side eligibility**, and **no broadening of finance permissions**.
+> The operational **ready-for-delivery queue** is the set of work orders that satisfy the
+> **authoritative server delivery-eligibility rules**, and it INCLUDES eligible work orders that do
+> not yet have a delivery record. It is a different question from the delivery-record list, which is
+> a listing and history of records that already exist.
+
+The Owner attached five consequences to that answer. Three of them are constraints this slice is
+held to — **no new work-order status** is introduced merely so the screen has a name to filter on,
+**eligibility is not computed in the browser**, and **finance permissions are not broadened** to
+make the queue readable. The fourth records that `GET /api/v1/deliveries` (#358) is the
+delivery-record listing contract and does not close **FE-001**. The fifth requires the smallest
+missing server contract to be identified in the owning prerequisite lane rather than improvised by
+the screen that needs it.
+
+**Engineering consequence (not an Owner decision).** Everything from §2 onward is this slice's own
+engineering, chosen against that answer: the route shape and the operation identifier, which four of
+the eight blocker codes the queue can carry, the three permission codes it declares, the candidate
+predicate, the page default and ceiling, and the new work-order port. The Owner named none of it.
 
 ## 2. What was published
 
 | published                                                                       | minted  |
 | ------------------------------------------------------------------------------- | ------- |
 | 1 operation, 1 route module, 1 path, 1 application service, 1 work-order port   | nothing |
-| register 397 → **398** operations, 309 → **310** paths, audit actions unchanged | nothing |
+| register 405 → **406** operations, 314 → **315** paths, audit actions unchanged | nothing |
 
 `GET /api/v1/delivery-readiness?companyId&branchId&cursor&limit` → `sal.delivery-readiness-list`,
 `module: 'delivery'`, `scope: 'branch'`, `auditClass: 'none'`,
@@ -113,7 +128,11 @@ wire and a client renders them. There is no eligibility input on this path and n
 a caller able to ask for "only the ready ones" is a caller whose request has begun to influence what
 ready means.
 
-## 4. The permission decision
+## 4. The permission choice
+
+**Engineering consequence (not an Owner decision).** The Owner's constraint was that finance
+permissions are not broadened. Which codes this operation declares is this slice's own choice, made
+against that constraint and argued below.
 
 `sal.delivery.view`, `wo.work_order.read` **and** `sal.finance.view`. All three required.
 
@@ -205,6 +224,9 @@ has nothing to apply to.
 
 ## 8. What was proved, on real rows
 
+**Measured facts (not part of the decision).** What the suite asserts — and nothing about where or
+when it was last run, which is in §9 and on the pull request.
+
 `tests/backend/p1-31-delivery-readiness-seam.test.ts`. Every fixture is arranged **through shipped
 routes**: a work order comes from reception's conversion, reaches `closed` through the four
 transition edges and the closure command, its invoice is issued by `sal.issue_invoice` and settled
@@ -228,6 +250,10 @@ nulled fact for such a principal and the suite deliberately does not invent one 
 
 ## 9. What this does not close, and other honest limits
 
+- **Nothing here is claimed to be green on the current head.** This branch is not merged. The only
+  hosted results that exist for it were produced for the informational run on `176c5f4a`, before
+  `develop` **78d34fbc** was merged in, so they do not describe the head this record documents. The
+  tiers actually run for this head were run locally and are reported on the pull request.
 - **FE-001 is not built.** This is the server contract the screen needs, and nothing more. No file
   under `apps/web/src` was edited except `lib/api/idempotent-operations.ts`, which a repository
   script regenerates and which every published operation moves.

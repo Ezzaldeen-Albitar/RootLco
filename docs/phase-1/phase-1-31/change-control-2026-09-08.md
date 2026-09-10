@@ -1224,12 +1224,20 @@ the delivering-employee contract recorded as **CC-25** in §38.3.
 
 The full record is [`delivery-readiness-seam.md`](./delivery-readiness-seam.md). In short:
 
-- **The Owner's D-3 decision of 2026-09-09** separates the OPERATIONAL ready-for-delivery queue from
-  the delivery-record list. `GET /api/v1/deliveries` (PR #358) lists delivery RECORDS, so a work
-  order that is finished, quality-signed, paid and unencumbered is invisible to it precisely because
-  nobody has opened a handover yet — which is when it is most worth showing. This queue lists the
-  work orders that satisfy the authoritative SERVER eligibility rules, **including eligible work
-  orders with no delivery record**.
+**The Owner's decision (D-3, settled 2026-09-09), in the Owner's words.** The operational
+ready-for-delivery queue is the set of work orders that satisfy the AUTHORITATIVE SERVER
+delivery-eligibility rules, and it INCLUDES eligible work orders that do not yet have a delivery
+record; it is a different question from the delivery-record list, which lists records that already
+exist. The three constraints the Owner attached: **no new work-order status**, **eligibility is not
+computed in the browser**, **finance permissions are not broadened**.
+
+**Measured fact (not part of the decision).** `GET /api/v1/deliveries` (PR #358) lists delivery
+RECORDS, so a work order that is finished, quality-signed, paid and unencumbered is invisible to it
+precisely because nobody has opened a handover yet — which is when it is most worth showing.
+
+**Engineering consequence (not an Owner decision).** The points below are this slice's own choices,
+made against that answer. The Owner named none of them.
+
 - **One operation.** `GET /api/v1/delivery-readiness` maps to `sal.delivery-readiness-list`, a
   top-level resource on the `/damaged-stock` precedent rather than a static sibling of
   `{deliveryId}`.
@@ -1238,8 +1246,9 @@ The full record is [`delivery-readiness-seam.md`](./delivery-readiness-seam.md).
   `signature_missing` are counted against a delivery row's id and are unaskable for a work order
   that has none. The four that remain come from the SAME private readers the eligibility
   composition uses, through a new `composeWorkOrderFacts`, restating none of them.
-- **No new work-order status**, **no browser-side eligibility**, **no broadening of finance
-  permissions** — the three constraints D-3 came with, honoured in sections 3 and 4 of the record.
+- **The three Owner constraints are discharged** in sections 3 and 4 of the record: nothing writes a
+  status, no eligibility input crosses the wire, and requiring three codes narrows rather than
+  broadens.
 - **Nothing was minted.** No migration, no schema change, no seed, no permission, no audit action.
 
 ### 39.1 What was published, and what was minted
