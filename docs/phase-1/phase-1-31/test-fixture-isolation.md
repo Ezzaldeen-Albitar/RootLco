@@ -43,8 +43,9 @@ expected failing command's exit 1 is retained. Removing only those exact new fix
 IDs restored 10/10. This counterfactual explains the failure mechanisms without
 attributing historical shared data to any actor.
 
-The exact candidate 139-migration set and eight seeds replayed twice passed in a
-separate disposable database. Four candidate suites passed 73/73: IAM seeds 7,
+One clean replay of the exact candidate 139-migration set passed, followed by two
+applications of each of the eight seed files to verify idempotency in a separate
+disposable database. Four candidate suites passed 73/73: IAM seeds 7,
 empty-business-state 3, capability posture 52, and delivery 11. This is bounded
 candidate evidence, not a full database-tier or hosted-gate result. No valid replay
 or controlled witness proof was repeated for this integration.
@@ -60,8 +61,14 @@ is technical review, not independent human QA.
 
 The source correction is two test files, with 16 added and 46 removed lines. Installed
 Vitest, TypeScript, ESLint, Prettier, Next and PostgreSQL client versions match the
-unchanged lockfile. Final static and tier results are recorded only after their
-processes terminate. The required hosted database-security job runs the full database
+unchanged lockfile. At source `6e15d550e3fbc35c22213218c187af3015343646`, root
+typecheck, focused lint/format, security, encoding and documentation checks passed.
+The serial web record passed 3619/133 files, the three focused evidence suites
+passed 113/3 files, and the unit record passed 3277/121 files. Both full-tier
+runners exited zero with reporter success, no failed or empty suites, and no dirty
+executable paths. Raw JSON and process terminal evidence are retained. The unit
+run took about seven minutes while its P1-28 scratch Git fixtures progressed; it
+was not interrupted or rerun. The required hosted database-security job runs the full database
 tier; it remains pending until the PR's exact-head gates complete. Local full database
 replay is not required for these test-only edits under the standing targeted-local
 policy in CONTRIBUTING section 8.
