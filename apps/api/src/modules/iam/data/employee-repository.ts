@@ -9,15 +9,21 @@
  * both NOT NULL foreign keys into `iam.user_accounts`, so neither can hold a
  * person who has no reason to sign in.
  *
- * ## Every read is narrowed by RLS, never by a WHERE the caller can influence
+ * ## Every read is bounded by RLS, never by a WHERE the caller can influence
  *
- * `sel_employees_scope` carries the full
- * `tenant / allowed_company_ids / allowed_branch_ids` predicate and the session
- * GUCs behind it are pushed by `transaction.ts` from the resolved principal. The
- * `tenant_id = $1` in each statement below is a partition hint for the planner
- * and a second belt, not the control: re-implementing the reach rule here would
- * be wrong for the unrestricted case, where the allowed-ids list is empty and
- * means *everything* rather than *nothing*.
+ * `sel_employees_tenant` carries `tenant_id = iam.current_tenant_id()` and the
+ * session GUC behind it is pushed by `transaction.ts` from the resolved
+ * principal. The `tenant_id = $1` in each statement below is a partition hint
+ * for the planner and a second belt, not the control.
+ *
+ * That bound is the TENANT and deliberately not the branch. The Owner
+ * clarification of 2026-09-10 settled that an employee's home branch must not
+ * restrict authorized work in another branch, and the delivery module resolves
+ * a colleague through this same policy — a branch predicate here would make
+ * that impossible for every branch-restricted operator. Scope is enforced where
+ * it belongs instead: the LIST is filtered on the company/branch pair the route
+ * authorized, and the two row-addressed operations re-authorize the row's own
+ * pair in the service.
  *
  * ## There is no delete, and there is no `deleted_at` writer
  *

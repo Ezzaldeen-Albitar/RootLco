@@ -48,11 +48,13 @@ export const CreateBody = z
   .object({
     workOrderId: schemas.uuid,
     // Who is handing the vehicle over: an `org.employees` id. Since P1-31
-    // prerequisite P-17 the column carries a composite foreign key on all four
-    // scope columns and `sal.stamp_delivering_employee_identity` additionally
-    // requires the employee to be live, active and of this branch. The schema
-    // still asserts only the SHAPE — the identity is decided by the module and
-    // the database, not by a zod refinement that would drift from both.
+    // prerequisite P-17 the column carries a composite foreign key on
+    // `(tenant_id, delivering_employee_id)` and
+    // `sal.stamp_delivering_employee_identity` additionally requires the
+    // employee to be live and active. Their home branch is not part of the
+    // rule. The schema still asserts only the SHAPE — the identity is decided
+    // by the module and the database, not by a zod refinement that would drift
+    // from both.
     deliveringEmployeeId: schemas.uuid,
   })
   .strict();

@@ -15,10 +15,13 @@
  *  - **delivery/work-order coherence** — `sal.guard_delivery_coherence` (M-dlv-1)
  *    re-reads the work order and refuses any vehicle or visit that differs, which is
  *    why both are derived from the work-order port and never accepted from a caller;
- *  - **the delivering employee is a real, live, same-branch identity** —
+ *  - **the delivering employee is a real, live identity of this tenant** —
  *    `fk_delivery_records_delivering_employee` and
  *    `sal.stamp_delivering_employee_identity` (P1-31 P-17), which also stamps the
- *    immutable display-name snapshot the handover history is read from;
+ *    immutable display-name snapshot the handover history is read from. Their
+ *    home branch is deliberately NOT part of the rule: it is informational and
+ *    transferable, and a colleague may hand a vehicle over at another branch of
+ *    their own organisation (Owner clarification of 2026-09-10);
  *  - **exactly one receiver per delivery** — `uq_authorized_receivers_delivery`;
  *  - **the receiver's authority at verification time** —
  *    `sal.guard_authorized_receiver` (M-dlv-2) requires a live
@@ -98,8 +101,12 @@ export interface DeliveryView {
    *
    * Stamped by `sal.stamp_delivering_employee_identity` and never by this
    * service: caller input is not authoritative for historical identity text.
+   *
+   * `null` only on a delivery recorded before P1-31 prerequisite P-17 whose
+   * delivering employee id resolved to nobody. Every delivery this service
+   * creates carries a name, because the trigger stamps one or refuses the row.
    */
-  readonly deliveringEmployeeDisplayName: string;
+  readonly deliveringEmployeeDisplayName: string | null;
   readonly status: string;
   readonly deliveredAt: string | null;
   readonly finalOdometerReadingId: string | null;
@@ -161,10 +168,11 @@ export interface CreateDeliveryInput {
   /**
    * `delivering_employee_id` — an `org.employees` id.
    *
-   * Bound by `fk_delivery_records_delivering_employee` on all four scope columns
-   * and re-checked by `sal.stamp_delivering_employee_identity` since P1-31
+   * Bound by `fk_delivery_records_delivering_employee` on `(tenant_id, id)` and
+   * re-checked by `sal.stamp_delivering_employee_identity` since P1-31
    * prerequisite P-17. Before that the DDL gave it no foreign key at all, so any
-   * uuid was a legal handover officer.
+   * uuid was a legal handover officer. The key names the tenant and nothing
+   * narrower: the employee's home branch is not a restriction.
    */
   readonly deliveringEmployeeId: string;
   readonly idempotencyKey?: string | undefined;
@@ -255,15 +263,15 @@ function toDomainFailure(error: unknown, what: string): never {
    * else on this path (P1-31 prerequisite P-17).
    *
    * A 422 rather than the 409 `23514` produces, because it is the REQUEST that is
-   * wrong: the caller named an employee who is not live, not active, or not of
-   * this delivery's branch, and the fix is to name a different one. The service
-   * pre-checks all three and reports them per rule, so reaching here means a
-   * concurrent retirement landed between the check and the insert — the trigger
-   * is the authority and this is its translation, not a second rule.
+   * wrong: the caller named an employee who is not live in this tenant or is not
+   * active, and the fix is to name a different one. The service pre-checks both
+   * and reports them per rule, so reaching here means a concurrent retirement
+   * landed between the check and the insert — the trigger is the authority and
+   * this is its translation, not a second rule.
    */
   if (isSqlState(error, SQLSTATE.invalidParameterValue)) {
     throw new AppFailure('ERR-VAL-001', {
-      message: `${what} names an employee who cannot be the delivering employee for this branch`,
+      message: `${what} names an employee who cannot be the delivering employee`,
       safeDetails: { violations: [{ path: 'body.deliveringEmployeeId', rule: 'custom' }] },
     });
   }
@@ -305,13 +313,17 @@ function validate<T>(path: string, run: () => T): T {
 }
 
 /**
- * One shape for the three ways a delivering employee can be refused.
+ * One shape for the two ways a delivering employee can be refused.
  *
- * The rule name is what a client branches on, so the three are DISTINCT values
- * rather than one `custom`: "not found", "retired" and "wrong branch" need three
- * different corrections from an operator. `custom` is reserved for the first,
- * because it is the only one where naming a more specific rule would confirm
- * that the id exists somewhere the caller cannot see.
+ * The rule name is what a client branches on, so the two are DISTINCT values
+ * rather than one `custom`: "not found" and "retired" need different
+ * corrections from an operator — name somebody else, or reinstate this person.
+ * `custom` is reserved for the first, because naming a more specific rule there
+ * would confirm that the id exists somewhere the caller cannot see.
+ *
+ * There is deliberately no third rule for a branch. The Owner clarification of
+ * 2026-09-10 removed it: an employee's home branch is informational, and
+ * refusing a colleague sent to another site would be refusing authorized work.
  */
 function employeeViolation(rule: string, message: string): AppFailure {
   return new AppFailure('ERR-VAL-001', {
@@ -437,14 +449,17 @@ export class DeliveryService {
     /**
      * The delivering employee is resolved BEFORE the insert (P1-31 P-17).
      *
-     * `sal.stamp_delivering_employee_identity` enforces all three rules for every
+     * `sal.stamp_delivering_employee_identity` enforces both rules for every
      * writer and is the authority; this is here so the caller is told WHICH rule
      * they broke, in the field-level shape a form can render, instead of
-     * receiving one opaque refusal for three different mistakes.
+     * receiving one opaque refusal for two different mistakes.
      *
-     * The lookup runs under the caller's own RLS, so an employee of another
-     * TENANT is simply not found — there is deliberately no separate answer for
-     * it, because a distinct refusal would confirm that the id exists somewhere.
+     * The lookup runs under the caller's own RLS, whose scope for this register
+     * is the TENANT, so an employee of another tenant is simply not found —
+     * there is deliberately no separate answer for it, because a distinct
+     * refusal would confirm that the id exists somewhere. An employee whose home
+     * branch is a different one is NOT a refusal at all: nothing here reads that
+     * branch, and the port no longer publishes it.
      */
     const employee = await iamRegistryModule().employees.findAssignable(
       db,
@@ -460,12 +475,6 @@ export class DeliveryService {
       throw employeeViolation(
         'inactive_employee',
         'The delivering employee has been retired and cannot be named on a new handover'
-      );
-    }
-    if (employee.companyId !== scope.companyId || employee.branchId !== scope.branchId) {
-      throw employeeViolation(
-        'employee_branch_mismatch',
-        "The delivering employee belongs to another branch than the work order's"
       );
     }
 

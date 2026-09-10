@@ -146,7 +146,9 @@ export interface ComposedEligibility {
  * `docs/product/owner-workflow-requirements.md` behind Owner requirement
  * OWR-2026-09-06-G-10 recorded exactly that gap. The Owner decision of
  * 2026-09-10 closed it. This read still performs no join and invents no
- * identity: it publishes the id the row holds and the name the row holds.
+ * identity: it publishes the id the row holds and the name the row holds —
+ * including `null`, which is what a handover recorded before P-17 carries when
+ * its delivering employee id resolved to nobody.
  */
 export interface DeliveryRecordView {
   readonly id: string;
@@ -156,8 +158,12 @@ export interface DeliveryRecordView {
   readonly receptionVisitId: string;
   readonly vehicleId: string;
   readonly deliveringEmployeeId: string;
-  /** The stamped snapshot, not a resolved name. Immutable once written. */
-  readonly deliveringEmployeeDisplayName: string;
+  /**
+   * The stamped snapshot, not a resolved name. Immutable once written, and
+   * `null` on a pre-P-17 handover whose delivering identity was never resolved
+   * — the one thing this read will not do is invent a name for it.
+   */
+  readonly deliveringEmployeeDisplayName: string | null;
   readonly status: string;
   readonly deliveredAt: string | null;
   /** A `veh.odometer_readings` id. NOT a reading value. */

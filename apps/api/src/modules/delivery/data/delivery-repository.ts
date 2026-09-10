@@ -103,8 +103,10 @@ export interface DeliveryRecordRow {
   readonly vehicleId: string;
   /**
    * `delivering_employee_id` — an `org.employees` id, bound by
-   * `fk_delivery_records_delivering_employee` on all four scope columns since
-   * P1-31 prerequisite P-17. Before that it carried no foreign key at all.
+   * `fk_delivery_records_delivering_employee` on `(tenant_id, id)` since P1-31
+   * prerequisite P-17. Before that it carried no foreign key at all. The key
+   * names the tenant and nothing narrower: the employee home branch does not
+   * restrict which branch may name them.
    */
   readonly deliveringEmployeeId: string;
   /**
@@ -113,8 +115,13 @@ export interface DeliveryRecordRow {
    * Server-stamped by `sal.stamp_delivering_employee_identity` and frozen by
    * `tg_delivery_records_immutable`, so a later rename or retirement cannot
    * rewrite what a customer already signed.
+   *
+   * `null` only on a pre-P-17 delivery whose delivering employee id resolved to
+   * nobody; those rows are listed in `sal.delivery_legacy_identity_review`. The
+   * column is nullable so that history could be preserved untouched instead of
+   * being completed with a person nobody confirmed.
    */
-  readonly deliveringEmployeeDisplayName: string;
+  readonly deliveringEmployeeDisplayName: string | null;
   readonly status: string;
   readonly deliveredAt: Date | null;
   /** `veh.odometer_readings.id`, written only by `sal.complete_delivery`. */
@@ -358,7 +365,7 @@ interface DeliveryRecordSql {
   reception_visit_id: string;
   vehicle_id: string;
   delivering_employee_id: string;
-  delivering_employee_display_name: string;
+  delivering_employee_display_name: string | null;
   status: string;
   delivered_at: Date | null;
   final_odometer_reading_id: string | null;

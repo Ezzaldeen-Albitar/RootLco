@@ -33,6 +33,15 @@
  * the same question, and it is what stops the register becoming an existence
  * oracle for another tenant's roster.
  *
+ * Since the Owner clarification of 2026-09-10 that uniformity is the
+ * APPLICATION's work rather than a side effect of RLS. `sel_employees_tenant`
+ * reads tenant-wide — it has to, because an employee's home branch must not
+ * restrict authorized work in another branch, and the delivery module resolves
+ * a colleague from anywhere in the tenant through that same policy. So the two
+ * row-addressed operations here re-authorize the row's own company and branch
+ * and answer a scope refusal with the SAME not-found the register gives an
+ * absent id, instead of letting a 403 confirm that the employee exists.
+ *
  * ## What is deliberately NOT here
  *
  * No rename and no transfer. Both are legitimate acts and neither has an Owner
@@ -77,11 +86,16 @@ export type EmployeeView = EmployeeRow;
  * no `recordVersion`, because a caller deciding "may this person be named here"
  * has no use for either and publishing them would make this port a second read
  * surface for the register.
+ *
+ * It carries no `companyId` and no `branchId` either, and that omission is a
+ * rule rather than economy. The Owner clarification of 2026-09-10 settled that
+ * an employee's home branch never decides whether they may be named on work
+ * elsewhere in their own tenant, so a consumer of this port has no legitimate
+ * use for it — and a field that is present is a field a future rule can start
+ * comparing.
  */
 export interface EmployeeAssignmentView {
   readonly id: string;
-  readonly companyId: string;
-  readonly branchId: string;
   readonly displayName: string;
   readonly status: string;
 }
@@ -135,7 +149,10 @@ export class EmployeeAdministrationService {
     // BOTH halves of the pair, taken from the ROW. Passing only the branch would
     // leave the company unchecked, and `iam.has_permission_in_scope` treats an
     // absent company as unscoped.
-    await authorizeScope({ companyId: employee.companyId, branchId: employee.branchId });
+    await authorizeScopeAsNotFound(authorizeScope, {
+      companyId: employee.companyId,
+      branchId: employee.branchId,
+    });
     return employee;
   }
 
@@ -242,7 +259,10 @@ export class EmployeeAdministrationService {
   ): Promise<EmployeeView> {
     const current = await this.repository.readEmployee(db, employeeId);
     if (current === null) throw notFound();
-    await authorizeScope({ companyId: current.companyId, branchId: current.branchId });
+    await authorizeScopeAsNotFound(authorizeScope, {
+      companyId: current.companyId,
+      branchId: current.branchId,
+    });
 
     const updated = await this.repository.setStatus(db, employeeId, status, expectedVersion);
     if (updated === null) throw stale();
@@ -269,19 +289,21 @@ export class EmployeeAdministrationService {
   /**
    * The port another module calls to decide whether it may name this employee.
    *
-   * Returns `null` for absent, soft-deleted and unreachable alike, because the
-   * caller must not be able to tell them apart — and because the caller's own
-   * refusal is a field-level validation failure rather than a scope decision.
-   * Lifecycle and branch are returned rather than judged here: the delivery
-   * module needs to say WHICH rule was broken, and a boolean could not.
+   * Returns `null` for absent, soft-deleted and another tenant alike, because
+   * the caller must not be able to tell them apart — and because the caller's
+   * own refusal is a field-level validation failure rather than a scope
+   * decision. The scope is the TENANT: `sel_employees_tenant` is what bounds
+   * this read, and no branch or company predicate narrows it, because the home
+   * branch is not a restriction (Owner clarification of 2026-09-10).
+   *
+   * Lifecycle is returned rather than judged here: the delivery module needs to
+   * say WHICH rule was broken, and a boolean could not.
    */
   async findAssignable(db: DbHandle, employeeId: string): Promise<EmployeeAssignmentView | null> {
     const employee = await this.repository.readEmployee(db, employeeId);
     if (employee === null) return null;
     return {
       id: employee.id,
-      companyId: employee.companyId,
-      branchId: employee.branchId,
       displayName: employee.displayName,
       status: employee.status,
     };
@@ -300,6 +322,31 @@ function notFound(): AppFailure {
   return new AppFailure('ERR-RES-001', {
     message: 'The employee is not visible in this scope',
   });
+}
+
+/**
+ * Authorizes a row's own scope and reports a refusal as "not visible".
+ *
+ * `sel_employees_tenant` reads tenant-wide, so a row addressed by an
+ * administrator of another branch is now RETURNED by the repository and refused
+ * here. Letting the 403 through would answer two questions where the register
+ * answers one: it would confirm to any authenticated principal of the tenant
+ * that a given employee id exists. The scope decision is unchanged — only the
+ * shape of the refusal is, and it is the shape an absent id already gets.
+ *
+ * Only `ERR-IAM-001`, the scope denial `requireScopedPermissions` raises, is
+ * translated. Anything else is a fault and is rethrown untouched.
+ */
+async function authorizeScopeAsNotFound(
+  authorizeScope: ScopeAuthorizer,
+  target: AuthorizationTarget
+): Promise<void> {
+  try {
+    await authorizeScope(target);
+  } catch (error) {
+    if (error instanceof AppFailure && error.code === 'ERR-IAM-001') throw notFound();
+    throw error;
+  }
 }
 
 function stale(): AppFailure {

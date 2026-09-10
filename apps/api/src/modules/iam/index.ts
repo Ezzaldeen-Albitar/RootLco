@@ -99,9 +99,11 @@ export type { SettingView, TenantSettingsView } from './application/organization
  *
  * `EmployeeAssignmentView` is published for one caller and one purpose: the
  * delivery module decides whether a person may be named as the delivering
- * employee, and it must be able to say WHICH rule was broken — not visible,
- * retired, or another branch. A boolean port could not, and a delivery-side copy
- * of the register read would be a second identity model.
+ * employee, and it must be able to say WHICH rule was broken — not visible, or
+ * retired. A boolean port could not, and a delivery-side copy of the register
+ * read would be a second identity model. It carries no company and no branch,
+ * because the Owner clarification of 2026-09-10 made the home branch
+ * informational: there is no third rule for a consumer to apply.
  */
 export type {
   EmployeeAssignmentView,
