@@ -507,19 +507,23 @@ describe('the coverage include lists are pinned, because they are the denominato
       typeScriptFilesUnder(pattern.slice(0, -'/**/*.ts'.length))
     );
     expect(files.filter((file) => file.endsWith('.d.ts'))).toEqual([]);
-    expect(files.length).toBe(275);
+    expect(files.length).toBe(278);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
     );
     /*
-     * 273, two more than the 271 the hosted run that established
-     * `coverage-baseline.backend.json` measured, and the difference is two files:
-     * `modules/warranty/application/warranty-policy-service.ts`, added by the
-     * P1-31 warranty policy and coverage seam (P-10), and
+     * 277, six more than the 271 the hosted run that established
+     * `coverage-baseline.backend.json` measured, and the difference is six files:
      * `modules/delivery/application/checklist-template-service.ts`, added by the
-     * P1-31 checklist template seam (P-9) — 273 once both are present, and 274
-     * with `modules/delivery/application/delivery-readiness-service.ts`, added by
+     * P1-31 checklist template seam (P-9);
+     * `modules/warranty/application/warranty-policy-service.ts`, added by the
+     * P1-31 warranty policy and coverage seam (P-10); the three the P1-31
+     * report configuration seam (P-11) adds —
+     * `modules/reporting/domain/report-configuration.ts`,
+     * `modules/reporting/data/report-configuration-repository.ts` and
+     * `modules/reporting/application/report-configuration-service.ts`; and
+     * `modules/delivery/application/delivery-readiness-service.ts`, added by
      * the P1-31 delivery-readiness queue (Owner decision D-3). The denominator is
      * SUPPOSED to grow with the tier's source; what this case defends is that it
      * only ever grows because a file was added, never because the include list
@@ -527,6 +531,6 @@ describe('the coverage include lists are pinned, because they are the denominato
      * re-establishing them needs a hosted measurement run, which none of these
      * slices performed and none claims.
      */
-    expect(instrumented.length).toBe(274);
+    expect(instrumented.length).toBe(277);
   });
 });
