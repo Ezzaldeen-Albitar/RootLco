@@ -183,7 +183,9 @@ profile. It is the last limb of this seam rather than a new one, which is why it
 Every read in §2 is addressed by an identifier the caller must already hold — the delivery own id, or
 its work order id. Recovery was solved; **enumeration was not**. Nothing anywhere in the product
 answered _which deliveries does this branch have_, so the delivery-records reading that the Owner
-decision **D-3** describes had no read behind it, and FE-001 had nothing to list.
+original **D-3** proposal described had no read behind it. D-3 was subsequently settled
+on 2026-09-09: FE-001 is the work-order readiness queue, including work orders with no
+delivery record. This delivery-record list is a separate read, not that queue.
 
 ### 10.2 The operation
 
@@ -273,10 +275,11 @@ through `sal.complete_delivery`, one opened and then soft-deleted) and one in a 
 
 - **No screen.** `apps/web` is unchanged except through the generated idempotency manifest. FE-001
   is a later slice on the frontend lane.
-- **D-3 is a proposal, not an approval.** "Delivery records" as the reading of that scope item is
-  recorded as pending the Owner; publishing the read commits nothing about the wording.
-- **RES-05 / P-8** — `sal.delivery.read` is still a navigation code the catalogue does not seed. The
-  list declares `sal.delivery.view`, as every read on this seam does.
+- **D-3 is settled.** FE-001 requires the authoritative work-order readiness queue,
+  including work orders without delivery records. This operation lists existing records.
+  See `owner-decisions-2026-09-09.md` section 2.
+- **RES-05 / P-8 is closed on the merged navigation slice.** The list declares
+  `sal.delivery.view`, as every read on this seam does.
 - **No tenant-wide list.** The pair is required, so there is no cross-branch reading of deliveries
   and none is offered.
 - **The delivering employee still has no identity** (§9), and the list publishes the bare identifier

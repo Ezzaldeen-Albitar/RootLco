@@ -2138,6 +2138,54 @@ export const MANIFEST = {
     required: ['denial', 'cross-tenant'],
     note: "a draft, an archived report, a foreign tenant's report and a code that never existed all answer ERR-RPT-001 identically, so the catalogue cannot be used to enumerate configured report codes; the per-report export permission is projected rather than reinvented",
   },
+  // ---- P1-31 prerequisite P-11 - the report CONFIGURATION surface -----------
+  //
+  // Both rpt tables landed in P1-11 with INSERT and UPDATE grants and policies and
+  // NOTHING in apps/api/src had ever written either one, while rpt.report.configure
+  // sat in the permission catalogue declared by no operation and named by no policy
+  // predicate. The two P1-23 reads above filter on published status, so the only
+  // rows they could ever return were rows nothing could create: every tenant's
+  // report catalogue was empty and permanently so. Every row this suite reads was
+  // authored through the published routes, because that is the claim under test.
+  //
+  // The ENGINE is deliberately absent and is NOT claimed by any of these entries:
+  // executable stays the literal false, because the frozen schema binds no data
+  // source to a report code and choosing report definitions is an Owner decision.
+  'rpt.report-configuration-list': {
+    files: ['tests/backend/p1-31-report-configuration-seam.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'P1-31 prerequisite P-11. Paged keyset on rpt.report_configurations:created_at_desc with the cursor minted by cursorTimestamp at MICROSECOND precision (P1-27-INT-006), sorting on a column the response does not carry; the two pages are asserted disjoint, which matters here because a tenant initial report set is authored in one sitting. Ordered on created_at and NOT on report_code, which is what the P1-23 catalogue orders on: that read is a lookup where the code is the only order a caller can predict, and this one is an authoring list a person scrolls. ONE filter is offered, status, and it is OPTIONAL - the unfiltered list shows drafts AND archived rows, or the restore command would be unreachable, which is the trap apt.catalogue-source-channel-status-set records. THE PERMISSION IS THE CONFIGURE CODE ON A READ, which is the substantive access decision of this seam and is the opposite shape from P-9 and P-10: the rows carry drafts and withdrawn definitions that a rpt.report.read holder must not see, and that holder reads published definitions through rpt.report-catalogue. Denial is declared because a caller holding ONLY rpt.report.read is refused with ERR-IAM-001 naming rpt.report.configure, and a caller holding the configure code through a BRANCH-scoped grant is refused too - the table has no company and no branch, so the pre-handler check is scope-blind without the explicit tenant-wide re-check (P1-18-A-01)',
+  },
+  'rpt.report-configuration-read': {
+    files: ['tests/backend/p1-31-report-configuration-seam.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'P1-31 prerequisite P-11. Returns the configuration WITH its whole version history, deliberately UNPAGED on the dia.template-version-item-list precedent: a version exists because a person wrote one, so the set is bounded by authoring rather than by growth, and the history of a definition is read as one thing. Ordered by version_number ASCENDING, which uq_report_configuration_versions_number makes a total order on its own so no tie-break is offered; ascending because a history is read forwards, where the catalogue lateral orders descending because it is picking one row. Absent and out-of-scope answer ONE ERR-RES-001 decided before any authorization decision, so a foreign tenant learns nothing about existence. recordVersion is published in the body AND as the ETag, and the ETag is the CONFIGURATION version while each version row carries its own - the publish command wants the version one, and the suite proves the two are not interchangeable',
+  },
+  'rpt.report-configuration-create': {
+    files: ['tests/backend/p1-31-report-configuration-seam.test.ts'],
+    required: ['denial', 'cross-tenant', 'idempotency'],
+    note: 'P1-31 prerequisite P-11. Creates a DRAFT and deliberately does not create a version with it, which is where this seam departs from the P-9 and P-10 create-the-whole-thing-in-one-transaction shape: there the child rows are terms the parent is useless without, here an unversioned draft is the normal first step and ReportDefinitionView already publishes versionNumber null for it. The body refuses id, status and ownerUserId - the owner is the SESSION user, because a caller that could set it could author on someone else behalf. exportPermissionCode is REQUIRED because the column is NOT NULL with no default, and a code outside the platform permission catalogue is refused by fk_report_configurations_permission as ERR-VAL-001 naming the field rather than as a bare 23503. A duplicate report code is ERR-CON-001 with rule duplicate_code on the tenant-wide partial unique index. THE AUTHORITY IS TENANT-WIDE and it is measured, not chosen: the table has a tenant_id and NO company_id and NO branch_id, sel_report_configurations_scope is the tenant alone, so there is no scope target and requiresScopedEvaluation returns false whatever the declaration says - the suite proves a BRANCH-scoped holder of rpt.report.configure is refused every operation of the seam while RLS still shows it nothing it should not see. NOTHING WAS MINTED: rpt.report.configure has been a catalogue row since P1-08 and this seam is the first in the repository to declare it',
+  },
+  'rpt.report-configuration-update': {
+    files: ['tests/backend/p1-31-report-configuration-seam.test.ts'],
+    required: ['denial', 'stale-version'],
+    note: 'P1-31 prerequisite P-11. The name and the scope level, and nothing else. reportCode is absent because tg_report_configurations_immutable freezes it - the database rule, not this surface preference - and exportPermissionCode is absent for a sharper reason: it decides who may EXPORT the report contents, so re-pointing it is a privilege change wearing the clothes of an edit. status is absent because publishing a definition is its own command. Both fields are optional and at least one is required, because a body that changed nothing would still consume a record_version and write an audit record claiming an edit that did not happen; the field the caller omits is written back as it was read, which the suite proves by patching one and asserting the other unmoved. If-Match is REQUIRED and absent is ERR-CON-002; a stale version is ERR-CON-001 with the row asserted unchanged, and the new version is the DATABASE row rather than expectedVersion + 1',
+  },
+  'rpt.report-configuration-status-set': {
+    files: ['tests/backend/p1-31-report-configuration-seam.test.ts'],
+    required: ['denial', 'idempotency', 'stale-version'],
+    note: 'P1-31 prerequisite P-11. THIS IS THE COMMAND THAT MAKES A DEFINITION VISIBLE AT ALL: rpt.report-catalogue and rpt.report-read both filter on published status and nothing could set it before this seam existed, so every tenant report catalogue was empty whatever had been configured. Bidirectional across all three values of ck_report_configurations_status, on the apt.catalogue-source-channel-status-set precedent: uq_report_configurations_code names deleted_at and says nothing about status, so an archived configuration still holds its report code and an archive-only command would burn that code for the tenant permanently. IT ADDS NO RULE THE SCHEMA DOES NOT CARRY - in particular it does NOT require a published version before a configuration may be published, because nothing in the frozen schema says so and ReportDefinitionView already answers versionNumber null for exactly that state. The catalogue interplay is proved end to end on real rows: a configuration published with a published version appears in GET /reports carrying executable false, a draft one does not, and archiving removes it again',
+  },
+  'rpt.report-configuration-version-create': {
+    files: ['tests/backend/p1-31-report-configuration-seam.test.ts'],
+    required: ['denial', 'idempotency'],
+    note: 'P1-31 prerequisite P-11. Deliberately NOT version-guarded, on the svc.service-version-create and dia.template-version-create precedent: creating a draft does not mutate the configuration and there is no prior version of the thing being created to guard, so an If-Match would be a token about a row the request does not change. The write still takes FOR UPDATE on the configuration because version_number is unique per configuration and two concurrent creates must not compute the same next number - a lock for the correctness of the insert, not an optimistic guard. The suite proves the numbers are 1 then 2 on real rows. parameterSchema is bounded in SHAPE and undecided in VOCABULARY: a JSON object, at most 64 top-level keys, at most 16 KiB in the UTF-8 encoding of the serialized document, and NOTHING validated about what a key means - what a filter key means is part of the report definition the Owner has not approved, and validating a vocabulary here would be inventing the report. An omitted schema is the empty object the column already defaults to',
+  },
+  'rpt.report-configuration-version-publish': {
+    files: ['tests/backend/p1-31-report-configuration-seam.test.ts'],
+    required: ['denial', 'stale-version'],
+    note: 'P1-31 prerequisite P-11. The act the catalogue reads: its lateral picks the newest version whose OWN status is published. If-Match is the VERSION counter and not the configuration one - the opposite choice from svc.service-version-publish, whose guard is the parent because the protected function it calls locks the parent first, and there is no protected function here. TWO REFUSALS COME FROM THE DATABASE AND BOTH ARE MAPPED RATHER THAN LEFT AS A BARE SQLSTATE: a SECOND version published while one is live violates uq_report_configuration_versions_published and is reported as version_already_published, and REPUBLISHING the same version is an update of a published row, which rpt.guard_report_version_freeze raises as a check_violation and which is reported as version_immutable. The repository writes published_at = now() explicitly for exactly that reason - letting the trigger stamp the column would make a repeat publication a silent no-op that advanced record_version and told the caller nothing - and the suite proves the refusal on real rows with a CURRENT If-Match, so the freeze guard and not the version guard is what refuses it. Publishing a version does NOT publish its configuration and does NOT make the report runnable: executable stays the literal false',
+  },
   // ---- P1-23 document surface ----------------------------------------------
   'shared.document-read': {
     files: ['tests/backend/p1-23-document-retention.test.ts'],
