@@ -267,7 +267,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 398 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 406 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -321,7 +321,10 @@ describe('the API application lives in the workspace', () => {
     // five more new modules, for the same reason.
     // 405 with the P1-31 delivery-readiness queue (Owner decision D-3): one
     // operation over one new module, so both counts move by one.
-    expect(report.operations).toHaveLength(405);
+    // The delivery list adds one operation on the existing collection module.
+    // 406 at the integration of the two: the readiness queue is one operation over
+    // one NEW module, so both counts move by one there.
+    expect(report.operations).toHaveLength(406);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the

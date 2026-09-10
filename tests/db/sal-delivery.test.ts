@@ -27,6 +27,8 @@ import {
   seedCompletedDelivery,
   completeDelivery,
   seedPartner,
+  insertMandatoryChecklist,
+  passAllMandatory,
 } from './p1-11-helpers';
 import { seedVehicle } from './p1-10-helpers';
 
@@ -162,6 +164,121 @@ describe('p1-11 sal delivery / custody closure', () => {
         `UPDATE sal.delivery_signatures SET signer_role='witness' WHERE id=$1`,
         [sig]
       );
+    });
+  });
+});
+
+// ===========================================================================
+// P1-31 P-9b — only an ACTIVE, non-deleted template is in force
+// (migration 20260909090000_sal_complete_delivery_active_template_gate.sql,
+//  closing CC-14). Before it, `sal.complete_delivery` filtered mandatory items
+//  on the ITEM's deleted_at alone and never joined the parent template, so a
+//  template that had been retired — or soft-deleted, and therefore unreachable
+//  from every read — went on refusing every handover in the company.
+// ===========================================================================
+describe('p1-31 P-9b sal.complete_delivery template lifecycle gate', () => {
+  const deactivate = (c: { query: Client['query'] }, template: string): Promise<unknown> =>
+    c.query(`UPDATE sal.delivery_checklist_templates SET status='inactive' WHERE id=$1`, [
+      template,
+    ]);
+  const reactivate = (c: { query: Client['query'] }, template: string): Promise<unknown> =>
+    c.query(`UPDATE sal.delivery_checklist_templates SET status='active' WHERE id=$1`, [template]);
+  const softDelete = (c: { query: Client['query'] }, template: string): Promise<unknown> =>
+    c.query(
+      `UPDATE sal.delivery_checklist_templates SET deleted_at=now(), deleted_by=$2 WHERE id=$1`,
+      [template, USER_A]
+    );
+  const statusOf = async (c: { query: Client['query'] }, delivery: string): Promise<string> =>
+    (await c.query(`SELECT status FROM sal.delivery_records WHERE id=$1`, [delivery])).rows[0]
+      .status;
+
+  it('still refuses while the template is ACTIVE, and lets the handover through once it is deactivated', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const b = await buildReadyDelivery(c, 'p9bdeact', { addChecklistResults: false });
+
+      // The unmet mandatory item blocks, exactly as L-dlv-1 pins it. This half is the
+      // regression guard: the join must not have withdrawn an item that IS in force.
+      await expectFail(c, '23514', `SELECT sal.complete_delivery($1,100000,'km')`, [b.delivery]);
+
+      // Retiring the TEMPLATE — not the item — is now the operator's remedy.
+      await deactivate(c, b.template);
+      const odo = await completeDelivery(c, b.delivery, 100001);
+      expect(odo).toBeTruthy();
+      expect(await statusOf(c, b.delivery)).toBe('delivered');
+    });
+  });
+
+  it('lets the handover through when the template is SOFT-DELETED, and the item row survives', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const b = await buildReadyDelivery(c, 'p9bdel', { addChecklistResults: false });
+      await expectFail(c, '23514', `SELECT sal.complete_delivery($1,100000,'km')`, [b.delivery]);
+
+      await softDelete(c, b.template);
+      expect(await completeDelivery(c, b.delivery, 100002)).toBeTruthy();
+      expect(await statusOf(c, b.delivery)).toBe('delivered');
+
+      // A soft delete, so every outcome ever recorded against the item stays
+      // resolvable: the gate stopped counting the item, nothing was destroyed.
+      const items = await c.query(
+        `SELECT deleted_at FROM sal.delivery_checklist_template_items WHERE id=$1`,
+        [b.item]
+      );
+      expect(items.rows).toHaveLength(1);
+      expect(items.rows[0].deleted_at).toBeNull();
+    });
+  });
+
+  it('gates again once a deactivated template is REACTIVATED', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const b = await buildReadyDelivery(c, 'p9breact', { addChecklistResults: false });
+
+      await deactivate(c, b.template);
+      // Proved not-blocking at this point by the savepoint probe rather than by
+      // completing, because completing is terminal and the case needs the delivery
+      // back in `ready` to test reactivation on the SAME record.
+      await c.query('SAVEPOINT sp_p9b_reactivate');
+      expect(await completeDelivery(c, b.delivery, 100003)).toBeTruthy();
+      await c.query('ROLLBACK TO SAVEPOINT sp_p9b_reactivate');
+      expect(await statusOf(c, b.delivery)).toBe('ready');
+
+      await reactivate(c, b.template);
+      await expectFail(c, '23514', `SELECT sal.complete_delivery($1,100000,'km')`, [b.delivery]);
+
+      // And recording the result is what clears it, with the template in force.
+      await passAllMandatory(c, b.delivery);
+      expect(await completeDelivery(c, b.delivery, 100004)).toBeTruthy();
+      expect(await statusOf(c, b.delivery)).toBe('delivered');
+    });
+  });
+
+  it('keeps excluding a WITHDRAWN item under an active template (the pre-existing rule)', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const b = await buildReadyDelivery(c, 'p9bitem', { addChecklistResults: false });
+      await expectFail(c, '23514', `SELECT sal.complete_delivery($1,100000,'km')`, [b.delivery]);
+
+      // The template stays ACTIVE. The item's own deleted_at filter is untouched by
+      // this migration — the join ADDS a condition and removes none.
+      await c.query(
+        `UPDATE sal.delivery_checklist_template_items SET deleted_at=now(), deleted_by=$2 WHERE id=$1`,
+        [b.item, USER_A]
+      );
+      expect(await completeDelivery(c, b.delivery, 100005)).toBeTruthy();
+      expect(await statusOf(c, b.delivery)).toBe('delivered');
+    });
+  });
+
+  it('counts a mandatory item of a SECOND active template, and stops when that one is retired', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      // The scan stays COMPANY-wide across all templates — that is unchanged, and it
+      // is what makes template status the operator's only company-level remedy.
+      const b = await buildReadyDelivery(c, 'p9bsecond');
+      const second = await insertMandatoryChecklist(c, 'p9bsecond_x');
+
+      await expectFail(c, '23514', `SELECT sal.complete_delivery($1,100000,'km')`, [b.delivery]);
+
+      await deactivate(c, second.template);
+      expect(await completeDelivery(c, b.delivery, 100006)).toBeTruthy();
+      expect(await statusOf(c, b.delivery)).toBe('delivered');
     });
   });
 });

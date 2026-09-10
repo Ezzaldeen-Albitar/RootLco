@@ -7,8 +7,8 @@ leaves open.
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | **Decision closed** | **D-3** of 2026-09-09 — the operational ready-for-delivery queue, separate from the delivery-record list                                  |
 | **Lane**            | `p1-31-backend` — `remediation/p1-31-backend-delivery-readiness-seam`                                                                     |
-| **Baseline**        | protected `develop` **249c6428**; `main` **1262de74**, untouched                                                                          |
-| **Change control**  | **CC-24 provisional** in [`change-control-2026-09-08.md`](./change-control-2026-09-08.md)                                                 |
+| **Baseline**        | protected `develop` **07193258** (cut at **249c6428**); `main` **1262de74**, untouched                                                    |
+| **Change control**  | **CC-24**, at section **39 provisional**, in [`change-control-2026-09-08.md`](./change-control-2026-09-08.md)                             |
 | **Canonical tasks** | **none.** D-3 is an Owner decision taken during the phase; the screen it unblocks is **FE-001**                                           |
 | **Records**         | this file. It is a sibling of the other seam records rather than a section of [`delivery-read-seam.md`](./delivery-read-seam.md) — see §9 |
 

@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 405,
+    "operations": 406,
     "openapiPaths": 315,
-    "openapiOperations": 405,
+    "openapiOperations": 406,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -14,7 +14,7 @@
     "auditActions": 232
   },
   "counts": {
-    "Covered": 405
+    "Covered": 406
   },
   "operations": [
     {
@@ -9822,6 +9822,46 @@
       "file": "apps/api/src/app/api/v1/deliveries/[deliveryId]/eligibility/route.ts"
     },
     {
+      "id": "sal.delivery-list",
+      "domain": "delivery",
+      "method": "GET",
+      "route": "/api/v1/deliveries",
+      "permissions": ["sal.delivery.view"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/deliveries",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant",
+        "pagination"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-31-delivery-list-seam.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/deliveries/route.ts"
+    },
+    {
       "id": "sal.delivery-read",
       "domain": "delivery",
       "method": "GET",
@@ -9856,6 +9896,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-delivery-list-seam.test.ts",
         "tests/backend/p1-31-delivery-read-seam.test.ts",
         "tests/backend/p1-31-delivery-readiness-seam.test.ts"
       ],

@@ -59,7 +59,7 @@ describe('every operation publishes the success status it returns', () => {
     // the original defect, so the scanner reports rather than assumes — and this
     // asserts it had nothing to report.
     expect(unresolved).toEqual([]);
-    expect(actual.size).toBe(405);
+    expect(actual.size).toBe(406);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -116,7 +116,10 @@ describe('every operation publishes the success status it returns', () => {
     // pair and nowhere else.
     // 289 -> 290 with the P1-31 delivery-readiness queue (Owner decision D-3),
     // one more GET returning 200, with 201 and 202 unchanged this time.
-    expect(counts[200]).toBe(290);
+    // The delivery list contributes one further 200 response.
+    // 291 at the integration of the two: the readiness queue is a second GET
+    // returning 200, with 201 and 202 unchanged again.
+    expect(counts[200]).toBe(291);
   });
 
   it('reads the handler, not the declaration', () => {

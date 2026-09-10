@@ -117,8 +117,12 @@ describe('every route body serialises a named type', () => {
     // further operation, a GET returning `Page<DeliveryReadinessRowView>` — a
     // NAMED interface, because this gate refuses an inline return type — so
     // `named` moves by one again and `composed` still does not.
-    expect(summary.bodies).toBe(405);
-    expect(summary.named).toBe(352);
+    // The delivery list adds one named 200 body on an existing route module.
+    // 406 at the integration of the two: the delivery-record list (#358) and the
+    // readiness queue are separate operations on separate route modules, so both
+    // count, `named` moves by one for each and `composed` still does not.
+    expect(summary.bodies).toBe(406);
+    expect(summary.named).toBe(353);
     expect(summary.composed).toBe(53);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

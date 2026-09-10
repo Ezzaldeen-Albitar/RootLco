@@ -18,12 +18,10 @@ import {
   ensureOrgFixtures,
   ensureTestLogins,
   expectSqlState,
-  restoreSeededPermissionCatalog,
   runtimePool,
   withRolledBackTx,
 } from './helpers';
 
-const PERMISSION_ID = 'e9000000-0000-4000-8000-000000000001';
 const ROLE_ID = 'd9000000-0000-4000-8000-000000000001';
 const GRANT_ID = 'c9000000-0000-4000-8000-000000000001';
 const USER_WITH_PERMISSION = 'a9000000-0000-4000-8000-000000000001';
@@ -36,13 +34,12 @@ let admin: Pool;
 let runtime: Pool;
 
 async function seedSensitivePermissionFixture(): Promise<void> {
-  await admin.query(
-    `INSERT INTO iam.permissions
-       (id, permission_code, domain, description, risk_level, created_by)
-     VALUES ($1, 'iam.sensitive.view', 'iam', 'View sensitive fixture rows', 'high', $2)
-     ON CONFLICT (permission_code) DO NOTHING`,
-    [PERMISSION_ID, USER_A]
+  // This suite owns its role/grant fixtures, not the governed platform catalog.
+  // A missing seed is a setup failure; creating the code here would conceal it.
+  const permission = await admin.query(
+    `SELECT id FROM iam.permissions WHERE permission_code = 'iam.sensitive.view'`
   );
+  expect(permission.rows).toHaveLength(1);
   await admin.query(
     `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
      VALUES ($1, $2, 'sensitive_viewer', 'Sensitive viewer fixture', $3)
@@ -103,23 +100,11 @@ beforeAll(async () => {
 
 afterAll(async () => {
   try {
-    // The delete stays: iam.sensitive.view is a SEEDED code, and removing it is
-    // what keeps the sensitive-read gate honest for the next suite. It must run
-    // after cleanFixtures, which clears the role_permissions row referencing it
-    // (fk_role_permissions_permission is ON DELETE RESTRICT).
+    // Remove only the harness fixtures. Other tenants may reference the seeded
+    // permission, whose identity and metadata must survive this suite unchanged.
     await cleanFixtures(admin);
-    await admin.query(`DELETE FROM iam.permissions WHERE permission_code = 'iam.sensitive.view'`);
   } finally {
-    // Restore in finally, so a cleanFixtures failure cannot leave the platform
-    // catalog short a governed code — or, if this suite created the row itself
-    // (it inserts fixture wording when the seeded row is absent), leave that
-    // fixture wording behind as the catalog's definition of the code.
-    try {
-      await restoreSeededPermissionCatalog(admin);
-    } finally {
-      await runtime.end();
-      await admin.end();
-    }
+    await Promise.all([runtime.end(), admin.end()]);
   }
 });
 
