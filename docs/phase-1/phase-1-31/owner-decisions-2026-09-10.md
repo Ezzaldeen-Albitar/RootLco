@@ -62,10 +62,8 @@ What follows from it:
 ## 2. D-7 — the delivery document is a printable operational view
 
 The delivery document is a **permission-checked printable operational view**, composed on the client
-through the print approach the repository already uses: `apps/web/src/components/print/PrintDocument.tsx`,
-the print stylesheet `apps/web/src/styles/print/_index.scss`, and the `window.print()` pattern the
-invoice screen already follows. No backend print route and no new document operation is authorized
-by this answer.
+using the existing client-side print approach. No backend print route and no new document operation
+is authorized by this answer.
 
 - **Stored immutable document versions remain deferred.** If they are ever wanted they arrive
   through their own contract, deliberately, and not as a side effect of a print view.
@@ -75,12 +73,17 @@ by this answer.
 - The view is **permission-checked**: it shows a caller only what the reads they already hold
   publish.
 
+**Measured facts (not part of the decision).** These describe the client-side print approach as it
+stands.
+
+- The shared print wrapper is `apps/web/src/components/print/PrintDocument.tsx`.
+- The print stylesheet is `apps/web/src/styles/print/_index.scss`.
+- The `window.print()` pattern is the one the invoice screen already follows.
+
 ## 3. D-11 — the audit window is settled as it stands
 
 The **seven-day default window** in the web screen and the **92-day maximum** are ratified exactly
-as they are implemented, with the current server validation:
-`apps/api/src/modules/iam/application/audit-view-service.ts`, `MAX_RANGE_DAYS = 92`, refusing a
-wider range with `ERR-VAL-001`.
+as they are implemented, with the current server validation kept in force.
 
 - The default is **not** widened, and the cap is **not** raised, to make a screen more convenient.
 - The **server keeps the authority**.
