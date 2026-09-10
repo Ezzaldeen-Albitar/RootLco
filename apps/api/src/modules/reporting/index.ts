@@ -52,11 +52,16 @@ export {
   MAX_REPORT_NAME,
   REPORT_CODE_FORMAT,
   REPORT_CONFIGURATION_STATUSES,
+  REPORT_FILTER_NAMES,
+  REPORT_FILTER_TYPES,
   REPORT_SCOPE_LEVELS,
   REPORT_VERSION_STATUSES,
+  readReportParameterVocabulary,
 } from './domain/report-configuration';
 export type {
   ReportConfigurationStatus,
+  ReportFilterName,
+  ReportParameterVocabulary,
   ReportScopeLevel,
   ReportVersionStatus,
 } from './domain/report-configuration';

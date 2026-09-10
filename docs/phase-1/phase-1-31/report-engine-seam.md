@@ -88,13 +88,28 @@ configures a broader ceiling. The existing `parameter_schema` shape
 `{ filters: { name: { type } } }` is an explicit allowlist: every supplied report filter
 (`companyId`, `branchId`, `from`, `to`) must be listed, with the corresponding `uuid` or
 `date` type. The frozen database default `{}` adds no filter restriction; an explicit
-`{ filters: {} }` permits none. The configuration writer merged in PR #361 accepts bounded
-JSON objects while deferring vocabulary, so publication alone does not prove a restriction
-is understood by this engine. Pagination controls are transport parameters. Unknown schema properties,
-filter names, types, or constraints return `ERR-IAM-001` before any dataset read. This
+`{ filters: {} }` permits none. Pagination controls are transport parameters. Unknown schema
+properties, filter names, types, or constraints return `ERR-IAM-001` before any dataset read. This
 conservative behavior does not invent a general schema evaluator; supporting richer
 constraints requires an agreed executable vocabulary. A tenant restriction is never silently
 discarded in favor of registry defaults.
+
+**The writer now shares this vocabulary.** As merged, the configuration writer of PR #361 accepted
+any bounded JSON object and deferred vocabulary entirely, so publication alone did not prove a
+restriction this engine could evaluate — an administrator could publish `{ branchId: { type:
+'uuid' } }`, with the filter named at the top level rather than under `filters`, and every run of
+that report would then be refused with no authoring-time signal at all. The rules above are
+therefore no longer stated here in prose and separately in code. They live in
+`readReportParameterVocabulary`, in `apps/api/src/modules/reporting/domain/report-configuration.ts`,
+and BOTH this engine's `assertReportConfiguration` and the version-create route read that one
+function. A schema the engine would refuse is refused at authoring, where the person who wrote it
+can correct it.
+
+The engine's own behaviour did not change in the process, and that was a constraint rather than an
+accident: rows already published in tenant databases must keep the meaning they had, so
+`{ filters: {} }` is still honoured here as an allowlist permitting nothing. It is the WRITER that
+refuses to create another one. The vocabulary, the refusal messages and the reason both sides agree
+are recorded in [`report-configuration-seam.md`](./report-configuration-seam.md) section 7.
 
 Export remains unavailable for this dataset. The tenant's explicit export permission is
 preserved in catalogue metadata; read permission grants no export authority. P-12 must enforce
@@ -230,12 +245,12 @@ name instead of a bare id.
 
 ## 9. Named prerequisites — what a later slice will need
 
-| #   | prerequisite                                                                                                                                                                                                                                                                                    |
-| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | **Bilingual state labels need a schema change.** `wo.work_order_states.name` is a single `text` column (`supabase/migrations/20260722091000_wo_state_catalogs.sql`), so a client asking for Arabic cannot get a state label from this API. Inventing one here would be a fabricated translation |
-| 2   | **`countsByState` is dataset-specific and sits on the shared envelope.** The one dataset registered today groups by work-order state; the other three baseline reports group differently, and generalising the field is their work                                                              |
-| 3   | **Aggregate and batch ports for the other three reports.** Each needs its own port on its owning module, on the same rule this slice applied — the module that owns the tables answers for them                                                                                                 |
-| 4   | **Configuration-writer integration.** PR #361 has merged the writer; this branch will incorporate it at the coordinator's final dependency sync. Richer executable filter vocabulary remains explicit work.                                                                                     |
+| #   | prerequisite                                                                                                                                                                                                                                                                                                                                                      |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Bilingual state labels need a schema change.** `wo.work_order_states.name` is a single `text` column (`supabase/migrations/20260722091000_wo_state_catalogs.sql`), so a client asking for Arabic cannot get a state label from this API. Inventing one here would be a fabricated translation                                                                   |
+| 2   | **`countsByState` is dataset-specific and sits on the shared envelope.** The one dataset registered today groups by work-order state; the other three baseline reports group differently, and generalising the field is their work                                                                                                                                |
+| 3   | **Aggregate and batch ports for the other three reports.** Each needs its own port on its owning module, on the same rule this slice applied — the module that owns the tables answers for them                                                                                                                                                                   |
+| 4   | **Richer executable filter vocabulary.** The writer of PR #361 is integrated and now validates against this engine's vocabulary through one shared function, so the drift is closed. What remains open is the vocabulary's SIZE: four filter names, because four is what the engine implements. A fifth is a change to the engine and to the shared list together |
 
 ## 10. What this slice does NOT close
 

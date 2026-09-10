@@ -1,28 +1,24 @@
 import { AppFailure } from '@/server/errors/app-failure';
 import type { ReportConfigurationRow } from '../data/report-catalogue-repository';
 import type { ReportDatasetDefinition } from '../domain/report-datasets';
+import { readReportParameterVocabulary } from '../domain/report-configuration';
 
 const SCOPE_RANK: Readonly<Record<string, number>> = { branch: 1, company: 2, tenant: 3 };
-const FILTER_TYPES: Readonly<Record<string, string>> = {
-  companyId: 'uuid',
-  branchId: 'uuid',
-  from: 'date',
-  to: 'date',
-};
-
-function object(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 /**
  * A tenant configuration can narrow a registered report, never widen it.
  *
  * P1-23's existing schema shape is { filters: { name: { type } } }. There is
- * no approved general JSON-schema evaluator. The merged configuration writer
- * bounds object shape but defers vocabulary. This understood allowlist is
+ * no approved general JSON-schema evaluator. This understood allowlist is
  * executable; unfamiliar constraints fail closed rather than being discarded.
  * The schema default {} adds no restriction; filters: {} permits no filters.
  * Pagination is transport, not a report filter.
+ *
+ * The allowlist itself is NOT stated here. It is
+ * `readReportParameterVocabulary` in the domain, and the version writer reads
+ * the same function, so a schema this policy would refuse can no longer be
+ * published in the first place. Two copies of a vocabulary is how a tenant ends
+ * up holding a published definition every run of which is then refused.
  */
 export function assertReportConfiguration(
   row: ReportConfigurationRow | null,
@@ -37,23 +33,14 @@ export function assertReportConfiguration(
   const scope = SCOPE_RANK[definition.scope];
   if (ceiling === undefined || scope === undefined || scope > ceiling) deny();
 
-  const schema = row.parameter_schema;
-  if (!object(schema) || Object.keys(schema).some((key) => key !== 'filters')) deny();
+  const vocabulary = readReportParameterVocabulary(row.parameter_schema);
+  // Fails closed: a document the platform does not recognise is a restriction it
+  // cannot evaluate, never an absent one.
+  if (vocabulary.kind === 'unrecognised') deny();
   // The frozen publication contract accepts its default {}, with no allowlist.
-  if (Object.keys(schema).length === 0) return;
-  if (!object(schema.filters)) deny();
-  const allowed = schema.filters;
-  for (const [name, rule] of Object.entries(allowed)) {
-    if (
-      !Object.hasOwn(FILTER_TYPES, name) ||
-      !object(rule) ||
-      Object.keys(rule).some((key) => key !== 'type') ||
-      rule.type !== FILTER_TYPES[name]
-    ) {
-      deny();
-    }
-  }
-  if (Object.keys(filters).some((name) => !Object.hasOwn(allowed, name))) deny();
+  if (vocabulary.kind === 'unrestricted') return;
+  const allowed = new Set<string>(vocabulary.names);
+  if (Object.keys(filters).some((name) => !allowed.has(name))) deny();
 }
 
 function deny(): never {
