@@ -14,16 +14,24 @@
  *
  * The obligations, one describe block each:
  *
- *   1. `org.employees` is tenant-isolated by RLS, and a branch-scoped session
- *      cannot write into a branch it does not hold;
+ *   1. `org.employees` is tenant-isolated by RLS and READABLE across the tenant,
+ *      while a branch-scoped session still cannot write into a branch it does
+ *      not hold;
  *   2. no application role may DELETE an employee — retirement is a status;
  *   3. `sal.delivery_records.delivering_employee_id` refuses a uuid that names no
  *      employee, which is the state the column was in until this slice;
- *   4. the eligibility trigger refuses a RETIRED employee and an employee of
- *      ANOTHER BRANCH, and stamps the display-name snapshot from the row rather
+ *   4. the eligibility trigger refuses a RETIRED, a SOFT-DELETED and an
+ *      other-tenant employee, ACCEPTS one whose home branch is another branch of
+ *      the same tenant, and stamps the display-name snapshot from the row rather
  *      than from the caller;
- *   5. the migration's own backfill statement, read from the committed file, mints
- *      exactly one employee per legacy value and leaves the foreign key satisfiable.
+ *   5. the migration's own statements, read from the committed file, mint exactly
+ *      one employee per RESOLVABLE legacy value and leave an unresolvable one
+ *      untouched and listed for review.
+ *
+ * The read scope and the missing branch rule are both the Owner clarification of
+ * 2026-09-10: an employee's home branch is informational and transferable, and it
+ * must never become a restriction against authorized work in another branch of
+ * the same tenant.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -86,10 +94,25 @@ let runtime: Pool;
  * exactly one such statement.
  */
 function backfillStatement(): string {
+  return soleStatement('INSERT INTO org.employees');
+}
+
+/**
+ * The migration's OWN review statement, sliced out of the same file.
+ *
+ * Read for the same reason as the mint: what has to be proved is that the
+ * SHIPPED statement records an unresolvable legacy value instead of guessing a
+ * person for it, and a retyped copy would prove nothing about the shipped one.
+ */
+function reviewStatement(): string {
+  return soleStatement('INSERT INTO sal.delivery_legacy_identity_review');
+}
+
+function soleStatement(opening: string): string {
   const source = readFileSync(join(MIGRATION_DIR, BACKFILL_MIGRATION), 'utf8');
-  const start = source.indexOf('INSERT INTO org.employees');
+  const start = source.indexOf(opening);
   expect(start).toBeGreaterThan(-1);
-  expect(source.indexOf('INSERT INTO org.employees', start + 1)).toBe(-1);
+  expect(source.indexOf(opening, start + 1)).toBe(-1);
   const end = source.indexOf(';', start);
   expect(end).toBeGreaterThan(start);
   return source.slice(start, end + 1);
@@ -173,7 +196,7 @@ afterAll(async () => {
 });
 
 // ===========================================================================
-describe('1. org.employees is tenant-isolated and branch-scoped', () => {
+describe('1. org.employees is tenant-isolated, read tenant-wide and written scope-restricted', () => {
   it('Tenant A cannot see an employee of Tenant B, even addressing it directly', async () => {
     const foreign = (
       await admin.query<{ id: string }>(
@@ -209,6 +232,43 @@ describe('1. org.employees is tenant-isolated and branch-scoped', () => {
         [TENANT_B, COMPANY_B, BRANCH_B, USER_A]
       );
     });
+  });
+
+  it('a BRANCH-scoped session CAN READ an employee based in another branch of its tenant', async () => {
+    // The Owner clarification of 2026-09-10, at the primitive: `sel_employees_tenant`
+    // bounds the read at the TENANT and at nothing narrower, because a
+    // branch-restricted operator recording a handover has to be able to resolve a
+    // colleague based elsewhere. Without this the delivery trigger — which runs
+    // SECURITY INVOKER under this very session — would refuse that handover as an
+    // employee that does not exist, and the home branch would be a fence after all.
+    const elsewhere = await insertEmployee(
+      { query: admin.query.bind(admin) },
+      { branchId: BRANCH_A2, displayName: 'Officer based in the other branch' }
+    );
+    try {
+      await withRolledBackTx(
+        runtime,
+        { tenantId: TENANT_A, userId: USER_A, companyIds: [COMPANY_A1], branchIds: [BRANCH_A1] },
+        async (c) => {
+          const visible = await c.query<{ display_name: string }>(
+            `SELECT display_name FROM org.employees WHERE id = $1`,
+            [elsewhere]
+          );
+          expect(visible.rowCount).toBe(1);
+          expect(visible.rows[0]?.display_name).toBe('Officer based in the other branch');
+
+          // Readable is not writable. `upd_employees_scope` keeps its branch
+          // predicate, so administering this person is still somebody else's job.
+          const updated = await c.query(
+            `UPDATE org.employees SET status = 'inactive' WHERE id = $1`,
+            [elsewhere]
+          );
+          expect(updated.rowCount).toBe(0);
+        }
+      );
+    } finally {
+      await admin.query(`DELETE FROM org.employees WHERE id = $1`, [elsewhere]);
+    }
   });
 
   it('a BRANCH-scoped session cannot insert into a branch it does not hold', async () => {
@@ -343,20 +403,31 @@ describe('3. the delivering employee is a real identity', () => {
     });
   });
 
-  it('carries the composite foreign key on all four scope columns, ON DELETE RESTRICT', async () => {
-    const { rows } = await admin.query<{ definition: string }>(
-      `SELECT pg_get_constraintdef(c.oid) AS definition
+  it('carries the composite foreign key on (tenant_id, delivering_employee_id), ON DELETE RESTRICT', async () => {
+    const { rows } = await admin.query<{ definition: string; validated: boolean }>(
+      `SELECT pg_get_constraintdef(c.oid) AS definition, c.convalidated AS validated
          FROM pg_constraint c
         WHERE c.conname = 'fk_delivery_records_delivering_employee'`
     );
     expect(rows).toHaveLength(1);
     const definition = rows[0]?.definition ?? '';
-    expect(definition).toContain('tenant_id, company_id, branch_id, delivering_employee_id');
-    expect(definition).toContain('org.employees(tenant_id, company_id, branch_id, id)');
+    // The TENANT and nothing narrower. A four-column key would have made the
+    // employee's home branch a constraint on every delivery that names them,
+    // which is exactly what the Owner clarification of 2026-09-10 forbids.
+    expect(definition).toContain('tenant_id, delivering_employee_id');
+    expect(definition).toContain('org.employees(tenant_id, id)');
+    expect(definition).not.toContain('company_id');
     expect(definition).toContain('ON DELETE RESTRICT');
-    // NOT VALID would leave every pre-existing row unchecked, which is half of the
-    // defect this migration closes.
-    expect(definition).not.toContain('NOT VALID');
+
+    // This database resolved every legacy value it had — it had none — so the
+    // migration's DO block validated the key rather than leaving it enforcing
+    // only future rows. Read from `convalidated` rather than from the printed
+    // definition, because that is the catalogue's own answer.
+    expect(rows[0]?.validated).toBe(true);
+    const review = await admin.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM sal.delivery_legacy_identity_review`
+    );
+    expect(review.rows[0]?.n).toBe('0');
   });
 });
 
@@ -395,20 +466,63 @@ describe('4. the eligibility trigger, and the snapshot it stamps', () => {
     });
   });
 
-  it('refuses an employee of ANOTHER BRANCH (22023)', async () => {
+  it('ACCEPTS an employee based in ANOTHER BRANCH of the same tenant, and stamps them', async () => {
+    // This case asserted a refusal until the Owner clarification of 2026-09-10.
+    // The home branch is informational and transferable: refusing a colleague
+    // sent to another site would be refusing authorized work, so the trigger
+    // does not read the employee's branch at all and the key does not name it.
     await withRolledBackTx(runtime, ctxA, async (c) => {
       const { wo, visit, vehicle } = await makeWorkOrder(c, 'p17branch');
-      const employee = await insertEmployee(c, { branchId: BRANCH_A2 });
-      await expectFail(
-        c,
-        '22023',
-        `INSERT INTO sal.delivery_records
-           (tenant_id, company_id, branch_id, work_order_id, reception_visit_id, vehicle_id,
-            delivering_employee_id, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [TENANT_A, COMPANY_A1, BRANCH_A1, wo, visit, vehicle, employee, USER_A]
-      );
+      const employee = await insertEmployee(c, {
+        branchId: BRANCH_A2,
+        displayName: 'Officer based in the other branch',
+      });
+      const delivery = (
+        await c.query<{ id: string; branch_id: string; delivering_employee_display_name: string }>(
+          `INSERT INTO sal.delivery_records
+             (tenant_id, company_id, branch_id, work_order_id, reception_visit_id, vehicle_id,
+              delivering_employee_id, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+           RETURNING id, branch_id, delivering_employee_display_name`,
+          [TENANT_A, COMPANY_A1, BRANCH_A1, wo, visit, vehicle, employee, USER_A]
+        )
+      ).rows[0];
+      // Accepted, stamped from the employee's own row, and recorded in the
+      // WORK ORDER's branch: the employee's branch is not copied anywhere.
+      expect(delivery?.branch_id).toBe(BRANCH_A1);
+      expect(delivery?.delivering_employee_display_name).toBe('Officer based in the other branch');
     });
+  });
+
+  it('refuses an employee of ANOTHER TENANT (22023)', async () => {
+    // What replaced the branch rule. The lookup is bounded by tenant twice over —
+    // `sel_employees_tenant` and the trigger's own `tenant_id = NEW.tenant_id` —
+    // and answers absent, soft-deleted and foreign with ONE refusal, so a delivery
+    // insert cannot be used to probe another organisation's roster.
+    const foreign = (
+      await admin.query<{ id: string }>(
+        `INSERT INTO org.employees
+           (tenant_id, company_id, branch_id, display_name, created_by)
+         VALUES ($1,$2,$3,'Officer of the other tenant',$4) RETURNING id`,
+        [TENANT_B, COMPANY_B, BRANCH_B, SYS]
+      )
+    ).rows[0];
+    try {
+      await withRolledBackTx(runtime, ctxA, async (c) => {
+        const { wo, visit, vehicle } = await makeWorkOrder(c, 'p17foreign');
+        await expectFail(
+          c,
+          '22023',
+          `INSERT INTO sal.delivery_records
+             (tenant_id, company_id, branch_id, work_order_id, reception_visit_id, vehicle_id,
+              delivering_employee_id, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+          [TENANT_A, COMPANY_A1, BRANCH_A1, wo, visit, vehicle, foreign?.id, USER_A]
+        );
+      });
+    } finally {
+      await admin.query(`DELETE FROM org.employees WHERE id = $1`, [foreign?.id]);
+    }
   });
 
   it('stamps the snapshot from the ROW and throws away what the caller supplied', async () => {
@@ -513,10 +627,6 @@ describe('5. the backfill, replayed from the committed migration file', () => {
       await client.query(
         `DROP TRIGGER tg_delivery_records_delivering_employee ON sal.delivery_records`
       );
-      await client.query(
-        `ALTER TABLE sal.delivery_records
-           ALTER COLUMN delivering_employee_display_name DROP NOT NULL`
-      );
 
       const { wo, visit, vehicle } = await makeWorkOrder(
         { query: client.query.bind(client) },
@@ -532,8 +642,10 @@ describe('5. the backfill, replayed from the committed migration file', () => {
 
       const minted = await client.query(statement);
       // TWO legacy rows for the same person would still mint ONE employee: the
-      // statement is DISTINCT over the four scope columns, which is what makes the
-      // legacy uuid usable as a primary key.
+      // statement is DISTINCT ON (tenant, legacy value), which is what makes the
+      // legacy uuid usable as a primary key. The home branch it takes from the
+      // earliest of those rows is informational, so which one it picks is not a
+      // decision the migration has to defend — only that it picks exactly one.
       expect(minted.rowCount).toBe(1);
 
       const employee = await client.query<{
@@ -555,13 +667,17 @@ describe('5. the backfill, replayed from the committed migration file', () => {
       );
       expect(row?.display_name).toBe(account.rows[0]?.display_name);
 
-      // And the foreign key the migration adds next is now satisfiable, which is
-      // the property the backfill exists to establish.
+      // And the foreign key the migration adds next is now satisfiable AND
+      // validatable, which is the property the mint exists to establish.
       await client.query(
         `ALTER TABLE sal.delivery_records
            ADD CONSTRAINT fk_delivery_records_delivering_employee
-           FOREIGN KEY (tenant_id, company_id, branch_id, delivering_employee_id)
-           REFERENCES org.employees (tenant_id, company_id, branch_id, id) ON DELETE RESTRICT`
+           FOREIGN KEY (tenant_id, delivering_employee_id)
+           REFERENCES org.employees (tenant_id, id) ON DELETE RESTRICT NOT VALID`
+      );
+      await client.query(
+        `ALTER TABLE sal.delivery_records
+           VALIDATE CONSTRAINT fk_delivery_records_delivering_employee`
       );
     } finally {
       await client.query('ROLLBACK');
@@ -569,24 +685,112 @@ describe('5. the backfill, replayed from the committed migration file', () => {
     }
   });
 
-  it('refuses a dangling legacy value rather than guessing a person', async () => {
-    const source = readFileSync(join(MIGRATION_DIR, BACKFILL_MIGRATION), 'utf8');
-    // The refusal is the decision under test, and it is stated in SQL rather than
-    // in prose: a legacy value with no same-tenant account RAISES.
-    expect(source).toContain('P-17 migration refused');
-    expect(source).toContain("USING ERRCODE = 'foreign_key_violation'");
-    expect(source).toContain("USING ERRCODE = 'check_violation'");
+  it('leaves an UNRESOLVABLE legacy value untouched, lists it for review, and cannot validate the key', async () => {
+    const mint = backfillStatement();
+    const review = reviewStatement();
 
-    // The dangling probe itself, over the live table: there is none, and after the
-    // foreign key exists there cannot be.
+    const client = await admin.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `SELECT set_config('app.user_id',$1,true), set_config('app.tenant_id',$2,true)`,
+        [USER_A, TENANT_A]
+      );
+
+      // The pre-migration state again, and this time the legacy value names
+      // NOBODY — not an account, not an employee. This is the case the Owner
+      // clarification of 2026-09-10 settled: do not RAISE, do not substitute the
+      // actor, do not fabricate a person. Leave the history alone and report it.
+      await client.query(
+        `ALTER TABLE sal.delivery_records
+           DROP CONSTRAINT fk_delivery_records_delivering_employee`
+      );
+      await client.query(
+        `DROP TRIGGER tg_delivery_records_delivering_employee ON sal.delivery_records`
+      );
+
+      const { wo, visit, vehicle } = await makeWorkOrder(
+        { query: client.query.bind(client) },
+        'p17orphan'
+      );
+      const delivery = (
+        await client.query<{ id: string }>(
+          `INSERT INTO sal.delivery_records
+             (tenant_id, company_id, branch_id, work_order_id, reception_visit_id, vehicle_id,
+              delivering_employee_id, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+          [TENANT_A, COMPANY_A1, BRANCH_A1, wo, visit, vehicle, UNKNOWN_EMPLOYEE, USER_A]
+        )
+      ).rows[0];
+
+      // Nothing is minted for it — the mint joins iam.user_accounts and this
+      // value is in no such row.
+      const minted = await client.query(mint);
+      expect(minted.rowCount).toBe(0);
+
+      const recorded = await client.query(review);
+      expect(recorded.rowCount).toBe(1);
+      const listed = await client.query<{ legacy_value: string; delivery_id: string }>(
+        `SELECT delivery_id, legacy_value FROM sal.delivery_legacy_identity_review
+          WHERE delivery_id = $1`,
+        [delivery?.id]
+      );
+      expect(listed.rows[0]?.legacy_value).toBe(UNKNOWN_EMPLOYEE);
+
+      // The delivery itself is EXACTLY as it was: the same uuid, and no name
+      // invented for a person nobody identified.
+      const untouched = await client.query<{
+        delivering_employee_id: string;
+        delivering_employee_display_name: string | null;
+      }>(
+        `SELECT delivering_employee_id, delivering_employee_display_name
+           FROM sal.delivery_records WHERE id = $1`,
+        [delivery?.id]
+      );
+      expect(untouched.rows[0]?.delivering_employee_id).toBe(UNKNOWN_EMPLOYEE);
+      expect(untouched.rows[0]?.delivering_employee_display_name).toBeNull();
+
+      // And the key still lands, NOT VALID, so every FUTURE row is bound while
+      // the unresolved history survives. Validating it is what fails, which is
+      // precisely why the migration only validates when the review list is empty.
+      await client.query(
+        `ALTER TABLE sal.delivery_records
+           ADD CONSTRAINT fk_delivery_records_delivering_employee
+           FOREIGN KEY (tenant_id, delivering_employee_id)
+           REFERENCES org.employees (tenant_id, id) ON DELETE RESTRICT NOT VALID`
+      );
+      await expect(
+        client.query(
+          `ALTER TABLE sal.delivery_records
+             VALIDATE CONSTRAINT fk_delivery_records_delivering_employee`
+        )
+      ).rejects.toMatchObject({ code: '23503' });
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
+
+  it('states the no-guess rule in SQL rather than in prose, and this database is fully resolved', () => {
+    const source = readFileSync(join(MIGRATION_DIR, BACKFILL_MIGRATION), 'utf8');
+    // The decision under test, read from the shipped file: the migration adds the
+    // key NOT VALID and validates it only when nothing is unresolved. The refusal
+    // that used to be here — a RAISE on a dangling value — was removed with the
+    // Owner clarification of 2026-09-10, so its absence is asserted too.
+    expect(source).toContain('NOT VALID');
+    expect(source).toContain('VALIDATE CONSTRAINT fk_delivery_records_delivering_employee');
+    expect(source).toContain('RAISE NOTICE');
+    expect(source).not.toContain('P-17 migration refused');
+  });
+
+  it('has no unresolved delivering identity on this database', async () => {
+    // The probe itself, over the live table rather than over the file.
     const { rows } = await admin.query<{ n: string }>(
       `SELECT count(*)::text AS n
          FROM sal.delivery_records record
         WHERE NOT EXISTS (
           SELECT 1 FROM org.employees employee
            WHERE employee.tenant_id = record.tenant_id
-             AND employee.company_id = record.company_id
-             AND employee.branch_id = record.branch_id
              AND employee.id = record.delivering_employee_id
         )`
     );

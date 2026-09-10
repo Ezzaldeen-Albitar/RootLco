@@ -177,7 +177,7 @@ interface DeliveryBody {
   readonly workOrderId: string;
   readonly deliveringEmployeeId: string;
   /** The snapshot `sal.stamp_delivering_employee_identity` writes (P1-31 P-17). */
-  readonly deliveringEmployeeDisplayName: string;
+  readonly deliveringEmployeeDisplayName: string | null;
   readonly status: string;
 }
 

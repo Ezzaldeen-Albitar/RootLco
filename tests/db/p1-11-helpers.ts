@@ -430,9 +430,10 @@ export async function seedReversal(
  *
  * `delivering_employee_id` carried no foreign key until that slice, which is why
  * every fixture here used to pass `USER_A` — a LOGIN ACCOUNT id. It now points at
- * `org.employees` on all four scope columns and
+ * `org.employees` on `(tenant_id, id)` and
  * `sal.stamp_delivering_employee_identity` additionally requires the employee to
- * be live, active and of the delivery's own branch.
+ * be live and active. The employee's home branch is informational and is not
+ * compared with the delivery's (Owner clarification of 2026-09-10).
  *
  * Created INSIDE the caller's transaction, so it leaves with the rollback, and
  * with NO `user_account_id`: `uq_employees_user_account_live` admits one employee

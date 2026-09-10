@@ -373,6 +373,10 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('sal.delivery_signatures');
   await deleteFrom('sal.delivery_checklist_results');
   await deleteFrom('sal.delivery_status_history');
+  // Its own tenant FK is ON DELETE RESTRICT, so a review row would block the
+  // tenant delete below. Written only by migration 141, never by a suite, which
+  // is why this line is insurance rather than housekeeping.
+  await deleteFrom('sal.delivery_legacy_identity_review');
   await deleteFrom('sal.delivery_records');
   await deleteFrom('sal.delivery_checklist_template_items');
   await deleteFrom('sal.delivery_checklist_templates');

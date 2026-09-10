@@ -144,7 +144,7 @@ interface DeliveryBody {
   readonly vehicleId: string;
   readonly deliveringEmployeeId: string;
   /** The snapshot `sal.stamp_delivering_employee_identity` writes (P1-31 P-17). */
-  readonly deliveringEmployeeDisplayName: string;
+  readonly deliveringEmployeeDisplayName: string | null;
   readonly status: string;
   readonly deliveredAt: string | null;
   readonly finalOdometerReadingId: string | null;

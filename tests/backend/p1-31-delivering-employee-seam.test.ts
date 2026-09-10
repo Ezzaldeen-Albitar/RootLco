@@ -18,17 +18,23 @@
  * creates an employee with no `userAccountId` and then completes a handover with
  * them is the proof that the property is real rather than asserted.
  *
- * ## The three refusals are DISTINCT, and that is the substantive decision
+ * ## The two refusals are DISTINCT, and the branch is NOT one of them
  *
- * `sal.delivery-create` reports `inactive_employee`, `employee_branch_mismatch` and
- * a bare `custom` as three different rules on `body.deliveringEmployeeId`, because
- * an operator's correction differs in each case: reinstate, choose someone from
- * this branch, or check the id. `custom` is reserved for "not visible", because
- * naming a more specific rule there would confirm that an id exists somewhere the
- * caller cannot see.
+ * `sal.delivery-create` reports `inactive_employee` and a bare `custom` as two
+ * different rules on `body.deliveringEmployeeId`, because an operator's correction
+ * differs: reinstate this person, or check the id. `custom` is reserved for "not
+ * visible", because naming a more specific rule there would confirm that an id
+ * exists somewhere the caller cannot see.
+ *
+ * There is no third rule for a branch, and P17-D4 asserts the positive case that
+ * says so. The Owner clarification of 2026-09-10 settled that an employee's home
+ * branch is informational and transferable and must never become a restriction
+ * against authorized work in another branch of the same tenant — so a colleague
+ * based elsewhere handing a vehicle over is a SUCCESS here, not a denial. The
+ * refusal that case used to assert was removed with the rule.
  *
  * The trigger underneath is the authority and this suite treats it that way. The
- * application's three refusals are a translation of `sal.stamp_delivering_employee_identity`
+ * application's two refusals are a translation of `sal.stamp_delivering_employee_identity`
  * for a caller, not a second rule, and the database's own refusals — a foreign key
  * against a random uuid, a direct INSERT naming a retired employee — are pinned in
  * `tests/db/org-employees.test.ts` against the primitive rather than here.
@@ -141,7 +147,7 @@ interface DeliveryBody {
   readonly branchId: string;
   readonly workOrderId: string;
   readonly deliveringEmployeeId: string;
-  readonly deliveringEmployeeDisplayName: string;
+  readonly deliveringEmployeeDisplayName: string | null;
   readonly status: string;
 }
 
@@ -998,12 +1004,16 @@ describe('sal.delivery-create now names a real person', () => {
     expect(rows.rowCount).toBe(0);
   });
 
-  it('P17-D4 refuses an employee of ANOTHER BRANCH with rule employee_branch_mismatch (denial)', async () => {
+  it('P17-D4 ACCEPTS an active employee of another branch of the same tenant, and stamps them (success)', async () => {
+    // The Owner clarification of 2026-09-10, asserted as behaviour rather than
+    // as prose: an employee's home branch is informational, so sending a
+    // colleague from another site to hand a vehicle over is authorized work and
+    // not a refusal. This case replaced one that expected a refusal.
     const chain = await seedWorkOrderChain('p17_branch');
     const elsewhere = await authorEmployee({
       companyId: COMPANY_A9,
       branchId: BRANCH_A9,
-      displayName: 'Officer of the other branch',
+      displayName: 'Officer based at the other branch',
     });
 
     authAs(SAL_FULL);
@@ -1011,10 +1021,25 @@ describe('sal.delivery-create now names a real person', () => {
       workOrderId: chain.workOrderId,
       deliveringEmployeeId: elsewhere.id,
     });
-    expect(response.status).toBe(422);
-    expect(await violationsOf(response)).toEqual([
-      { path: 'body.deliveringEmployeeId', rule: 'employee_branch_mismatch' },
-    ]);
+    expect(response.status).toBe(201);
+    const delivery = await bodyOf<DeliveryBody>(response);
+    expect(delivery.deliveringEmployeeId).toBe(elsewhere.id);
+    expect(delivery.deliveringEmployeeDisplayName).toBe('Officer based at the other branch');
+
+    // The delivery stayed in the WORK ORDER's branch. The employee's own branch
+    // is not copied onto the record and does not move it.
+    const stored = await admin.query<{
+      branch_id: string;
+      delivering_employee_display_name: string;
+    }>(
+      `SELECT branch_id, delivering_employee_display_name
+         FROM sal.delivery_records WHERE id = $1`,
+      [delivery.id]
+    );
+    expect(stored.rows[0]?.branch_id).toBe(chain.branchId);
+    expect(stored.rows[0]?.delivering_employee_display_name).toBe(
+      'Officer based at the other branch'
+    );
   });
 
   it('P17-D5 refuses the ACTOR own user id, which every fixture used to pass (denial)', async () => {

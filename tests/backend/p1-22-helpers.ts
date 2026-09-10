@@ -784,9 +784,14 @@ export interface WorkOrderChain {
  * `sal.delivery_records.delivering_employee_id` carried NO foreign key until that
  * slice, which is why every fixture in this repository used to pass `USER_A` — a
  * LOGIN ACCOUNT id — as the person who handed the vehicle over. It now points at
- * `org.employees` on all four scope columns, and
+ * `org.employees` on `(tenant_id, id)`, and
  * `sal.stamp_delivering_employee_identity` additionally requires the employee to be
- * live, active and of the delivery's own branch. So a fixture must have one.
+ * live and active. So a fixture must have one.
+ *
+ * The fixture is still created in the delivery's own branch, which is normal
+ * rather than required: the home branch is informational since the Owner
+ * clarification of 2026-09-10, and the cross-branch case is asserted where it
+ * belongs, in `p1-31-delivering-employee-seam.test.ts`.
  *
  * Deliberately created with NO `user_account_id`. Two reasons, and both are
  * properties of the schema rather than preferences: `uq_employees_user_account_live`
