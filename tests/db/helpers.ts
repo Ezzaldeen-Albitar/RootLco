@@ -677,6 +677,10 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('org.storage_locations');
   await deleteFrom('org.warehouses');
   await deleteFrom('org.departments');
+  // AFTER sal.delivery_records above and BEFORE iam.user_accounts and org.branches:
+  // fk_delivery_records_delivering_employee is ON DELETE RESTRICT in one direction
+  // and fk_employees_user_account in the other, so this row sits between them.
+  await deleteFrom('org.employees');
   await deleteFrom('org.cost_centers');
   await deleteFrom('org.branch_status_history');
   await deleteFrom('org.branches');

@@ -649,6 +649,11 @@
       "searchable": false,
       "dataType": "timestamp with time zone"
     },
+    "sal.delivery_records.delivering_employee_display_name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
     "sal.delivery_records.delivering_employee_id": {
       "classification": "internal",
       "searchable": false,

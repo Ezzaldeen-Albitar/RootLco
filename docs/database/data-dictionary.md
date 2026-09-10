@@ -403,6 +403,28 @@ NOT claimed implemented here.
 | `archived_at`     | timestamp with time zone | YES  | —                 | internal       |
 | `archived_by`     | uuid                     | YES  | —                 | internal       |
 
+### `org.employees`
+
+**Scope:** tenant/company/branch · **Retention class:** operational · P1-31 P-17. The tenant-owned employee identity, distinct from the login account: `user_account_id` is NULLABLE, which is the property `tech.technician_profiles` and `iam.user_employee_links` could not offer. Not an HR record — no contract, salary, contact detail or document. Retirement is `status = 'inactive'`; no application role holds DELETE.
+
+| Column            | Type                     | Null | Default           | Classification |
+| ----------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`              | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`       | uuid                     | NO   | —                 | internal       |
+| `company_id`      | uuid                     | NO   | —                 | internal       |
+| `branch_id`       | uuid                     | NO   | —                 | internal       |
+| `display_name`    | text                     | NO   | —                 | internal       |
+| `user_account_id` | uuid                     | YES  | —                 | internal       |
+| `employment_ref`  | text                     | YES  | —                 | internal       |
+| `status`          | text                     | NO   | 'active'::text    | internal       |
+| `record_version`  | integer                  | NO   | 1                 | internal       |
+| `created_at`      | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`      | uuid                     | NO   | —                 | internal       |
+| `updated_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`      | uuid                     | YES  | —                 | internal       |
+| `deleted_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `deleted_by`      | uuid                     | YES  | —                 | internal       |
+
 ### `org.warehouses`
 
 **Scope:** tenant/company/branch · **Retention class:** operational · Structure only — NO stock columns in this phase.
@@ -4407,27 +4429,28 @@ Tenant-configurable delivery checklist template.
 
 Delivery record (branch-scoped) closing the reception custody chain.
 
-| Column                      | Type          | class    | Null? | Purpose                                                                                                                       |
-| --------------------------- | ------------- | -------- | ----- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `id`                        | `uuid`        | internal | no    | Primary key (UUID).                                                                                                           |
-| `tenant_id`                 | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                               |
-| `company_id`                | `uuid`        | internal | no    | Company scope (branch composite scope).                                                                                       |
-| `branch_id`                 | `uuid`        | internal | no    | Branch scope (branch composite scope).                                                                                        |
-| `work_order_id`             | `uuid`        | internal | no    | Composite FK -> `wo.work_orders(...)` RESTRICT; one live delivery per WO (`uq_delivery_records_work_order_active`).           |
-| `reception_visit_id`        | `uuid`        | internal | no    | Composite FK -> `rec.reception_visits(...)` RESTRICT; must match the WO (M-dlv-1).                                            |
-| `vehicle_id`                | `uuid`        | internal | no    | Composite FK -> `veh.vehicles(tenant_id, id)` RESTRICT; must match the WO (M-dlv-1).                                          |
-| `delivering_employee_id`    | `uuid`        | internal | no    | Delivering employee (user id).                                                                                                |
-| `status`                    | `text`        | internal | no    | CHECK IN ('ready','receiver_verified','signed','delivered','exception'); delivered-shape CHECK binds delivered_at + odometer. |
-| `delivered_at`              | `timestamptz` | internal | yes   | Delivery time; set at completion.                                                                                             |
-| `final_odometer_reading_id` | `uuid`        | internal | yes   | Composite FK -> `veh.odometer_readings(tenant_id, vehicle_id, id)` RESTRICT (nullable until delivered).                       |
-| `idempotency_key`           | `text`        | internal | yes   | Business idempotency key; partial `UNIQUE(tenant_id, idempotency_key)` (BR-SAL-001).                                          |
-| `record_version`            | `integer`     | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                                        |
-| `created_at`                | `timestamptz` | internal | no    | Row creation timestamp.                                                                                                       |
-| `created_by`                | `uuid`        | internal | no    | Creating actor (user id).                                                                                                     |
-| `updated_at`                | `timestamptz` | internal | yes   | Last-update timestamp (NULL until first update).                                                                              |
-| `updated_by`                | `uuid`        | internal | yes   | Last-updating actor.                                                                                                          |
-| `deleted_at`                | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                                                                          |
-| `deleted_by`                | `uuid`        | internal | yes   | Soft-deleting actor.                                                                                                          |
+| Column                             | Type          | class    | Null? | Purpose                                                                                                                          |
+| ---------------------------------- | ------------- | -------- | ----- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                               | `uuid`        | internal | no    | Primary key (UUID).                                                                                                              |
+| `tenant_id`                        | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                                  |
+| `company_id`                       | `uuid`        | internal | no    | Company scope (branch composite scope).                                                                                          |
+| `branch_id`                        | `uuid`        | internal | no    | Branch scope (branch composite scope).                                                                                           |
+| `work_order_id`                    | `uuid`        | internal | no    | Composite FK -> `wo.work_orders(...)` RESTRICT; one live delivery per WO (`uq_delivery_records_work_order_active`).              |
+| `reception_visit_id`               | `uuid`        | internal | no    | Composite FK -> `rec.reception_visits(...)` RESTRICT; must match the WO (M-dlv-1).                                               |
+| `vehicle_id`                       | `uuid`        | internal | no    | Composite FK -> `veh.vehicles(tenant_id, id)` RESTRICT; must match the WO (M-dlv-1).                                             |
+| `delivering_employee_id`           | `uuid`        | internal | no    | Composite FK -> `org.employees(tenant_id, company_id, branch_id, id)` RESTRICT (P1-31 P-17); insert-time eligibility by trigger. |
+| `delivering_employee_display_name` | `text`        | internal | no    | Immutable name snapshot stamped by `sal.stamp_delivering_employee_identity`; survives a rename or retirement.                    |
+| `status`                           | `text`        | internal | no    | CHECK IN ('ready','receiver_verified','signed','delivered','exception'); delivered-shape CHECK binds delivered_at + odometer.    |
+| `delivered_at`                     | `timestamptz` | internal | yes   | Delivery time; set at completion.                                                                                                |
+| `final_odometer_reading_id`        | `uuid`        | internal | yes   | Composite FK -> `veh.odometer_readings(tenant_id, vehicle_id, id)` RESTRICT (nullable until delivered).                          |
+| `idempotency_key`                  | `text`        | internal | yes   | Business idempotency key; partial `UNIQUE(tenant_id, idempotency_key)` (BR-SAL-001).                                             |
+| `record_version`                   | `integer`     | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                                           |
+| `created_at`                       | `timestamptz` | internal | no    | Row creation timestamp.                                                                                                          |
+| `created_by`                       | `uuid`        | internal | no    | Creating actor (user id).                                                                                                        |
+| `updated_at`                       | `timestamptz` | internal | yes   | Last-update timestamp (NULL until first update).                                                                                 |
+| `updated_by`                       | `uuid`        | internal | yes   | Last-updating actor.                                                                                                             |
+| `deleted_at`                       | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                                                                             |
+| `deleted_by`                       | `uuid`        | internal | yes   | Soft-deleting actor.                                                                                                             |
 
 ### `sal.delivery_signatures`
 
