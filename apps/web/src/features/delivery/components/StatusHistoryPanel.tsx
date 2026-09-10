@@ -29,15 +29,19 @@ export function StatusHistoryPanel({
   locale,
   messages,
   deliveryId,
+  revision = 0,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly deliveryId: string;
+  /** The screen's count of successful writes; a change re-reads this ledger. */
+  readonly revision?: number;
 }) {
   const page = usePagedList<DeliveryStatusHistoryEnvelope, DeliveryStatusTransition>(
     deliveryId,
     listStatusHistory,
-    selectTransitions
+    selectTransitions,
+    revision
   );
 
   return (

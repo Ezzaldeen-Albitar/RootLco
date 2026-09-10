@@ -914,14 +914,15 @@ holds sections 30–33, and the report configuration seam (PR #361) merged next 
 identifier and it is free at that head**, so the id this branch reserved provisionally stands. Of the
 two lanes that allocated between this one and the merged register, one has landed and one has not.
 
-| id        | lane                                             | state at 0204f2d1       |
-| --------- | ------------------------------------------------ | ----------------------- |
-| **CC-19** | the delivery detail screen (PR #357)             | merged, sections 30–33  |
-| **CC-20** | the reporting writer (P-11, PR #361)             | merged, section 34      |
-| **CC-21** | the checklist-template migration (P-9b, PR #363) | open, claims section 35 |
-| **CC-22** | this slice                                       | this branch, section 36 |
-| **CC-24** | the readiness seam                               | in preparation          |
-| **CC-25** | the delivery write paths (PR #362)               | open, on a stacked base |
+| id        | lane                                                   | state at 0204f2d1                                                 |
+| --------- | ------------------------------------------------------ | ----------------------------------------------------------------- |
+| **CC-19** | the delivery detail screen (PR #357)                   | merged, sections 30–33                                            |
+| **CC-20** | the reporting writer (P-11, PR #361)                   | merged, section 34                                                |
+| **CC-21** | the checklist-template migration (P-9b, PR #363)       | open, claims section 35                                           |
+| **CC-22** | this slice                                             | this branch, section 36                                           |
+| **CC-24** | the readiness seam                                     | in preparation                                                    |
+| **CC-25** | the delivery write paths (PR #362)                     | open, on a stacked base                                           |
+| **CC-26** | receiver identity-evidence document category (PR #362) | not allocated at that head; minted 2026-09-10 by #362, section 38 |
 
 So this slice takes **section 36 provisionally** and **CC-22 firmly**. P-9b has not merged, so that
 one lane landing out of order moves this heading rather than this identifier. **The section number
@@ -962,8 +963,10 @@ reports to the contracts that can serve them and names the prerequisites that do
   page still decides before it reads.
 - **The default window was not changed.** **D-11** — whether the seven-day default is ratified,
   deferred or changed — **stays open**, and the preflight's warning that shipping FE-015 without it
-  carries the decision into a second phase is now realised rather than avoided. The window itself is
-  proven by test to be seven days and server-computed.
+  carries the decision into a second phase is now realised rather than avoided. Addendum
+  2026-09-10: D-11 was settled by the Owner (seven-day default and 92-day maximum retained; see
+  `owner-decisions-2026-09-10.md` §3). The window itself is proven by test to be seven days and
+  server-computed.
 - **No backend source was touched.** A Frontend lane may not, and nothing here needed it: every
   criterion surfaced was already a bound parameter of the existing operation.
 - **No canonical task was marked done.** The task matrix records FE-015 as `in open PR`, and its
@@ -1127,3 +1130,84 @@ GitHub-only observer stopped on a DNS error without a failed gate; after its pro
 was verified absent, one replacement observed the terminal success and retired.
 The dependency push hold is therefore satisfied. #358 still requires its own final
 head's hosted gates and coordinator merge review; no phase acceptance is implied.
+
+---
+
+# The delivery execution slice — FE-002 … FE-006 write paths
+
+Section 38 records the delivery execution slice on `feature/p1-31-delivery-execution` (PR #362). The original preparation was based on the delivery detail branch at `626b0d8a`; final integration follows merged #363 at `071932584ffcf39776509227f8dead2022667484`. At that head the register runs to section 37 and CC-25, so this slice takes the next free heading, **section 38**, and retains **CC-25** for the withheld-Start disposition. **CC-24 remains allocated to the readiness seam**, which has not landed and takes a later heading; identifiers are not renumbered to follow heading order. **CC-26 is minted here** for the receiver identity-evidence document category. The full record is `delivery-execution-screen.md`.
+
+This slice is Frontend, tooling, tests and documentation only. It adds no operation, no route, no
+permission, no seed row and no migration, and it touches neither `apps/api/**` nor `supabase/**`.
+
+## 38. The delivery execution write paths
+
+### 38.1 What was delivered
+
+Four existing-record write paths on the handover screen, each gated on the code its own operation declares:
+
+| action                    | operation                       | authority                                                        |
+| ------------------------- | ------------------------------- | ---------------------------------------------------------------- |
+| Confirm the receiver      | `sal.delivery-receiver-verify`  | `sal.delivery.manage`, `sal.delivery.view`                       |
+| Record a checklist result | `sal.delivery-checklist-record` | `sal.delivery.manage`                                            |
+| Add a signature           | `sal.delivery-signature-attach` | `sal.delivery.manage`, `sal.delivery.view`                       |
+| Release the vehicle       | `sal.delivery-complete`         | `sal.delivery.complete`, `sal.delivery.view`, `sal.finance.view` |
+
+Plus the configuration read the checklist needs — the ACTIVE templates and their items, assembled in
+one Server Action from the two P-9 template reads, because no operation publishes "the checklist of
+this handover" and the completion evaluates mandatory items by COMPANY rather than by template.
+
+The mirror registry the payload-parity gate reads is
+`apps/web/src/lib/contracts/delivery-contract.ts` — the path named in `MIRROR_FILES` in
+`scripts/ci/check-p1-30-payload-parity.mjs` — and it is the file that holds the five
+`sal.delivery-*` request bodies. Two files carry the same name: the separate
+`apps/web/src/features/delivery/delivery-contract.ts` holds the read types, the permission codes and
+the view envelopes, not the request bodies. The registry declares **five** writes against these four
+sent paths: `sal.delivery-create` is mirrored there because the payload-parity gate reads its request
+bodies from one frozen list of files, while the Start control that would send it is withheld pending
+the delivering-employee contract recorded as **CC-25** in §38.3.
+
+### 38.2 The properties this slice is accountable for
+
+1. **A control is absent, never present-and-refused,** for a caller without the code its operation
+   declares. Measured for all four existing-record writes.
+2. **The release quotes the version the ELIGIBILITY read published,** never one a preparation step
+   answered with, and a stale version is re-attempted exactly once against a version read again.
+3. **The browser decides no eligibility.** The release button is enabled from what the server
+   published and from nothing else; the completion recomposes the whole decision in its own
+   transaction, and a blocked release renders the re-read blocker list rather than a sentence this
+   tier composed. The blockers are not in the refusal at all — `problemFor` carries no service prose.
+4. **The odometer holds to the COLUMN, not the route.** The route admits two decimals; the column
+   holds one, so the form refuses the second digit and says so in its own help text.
+5. **The waiver rule is a biconditional in the form as well as in the database.** A reason appears
+   only for a waiver, is required there, and is never sent with any other outcome.
+
+### 38.3 Dispositions
+
+- **CC-25 — new-handover Start is withheld pending validated employee selection.** No raw employee UUID input or browser-callable Start adapter remains. The existing backend create contract is preserved; employee, authenticated actor and authorized receiver remain distinct. The Owner answered the employee relation on 2026-09-10 (D-12, see [`owner-decisions-2026-09-10.md`](./owner-decisions-2026-09-10.md) §1): a tenant-owned employee identity, distinct from the login account, the authenticated actor and the authorized receiver, validated on the server. Engineering consequence (not an Owner decision): lane placement follows the P-2..P-11 precedent while D-1 stays open, and the Start control stays withheld until that contract exists.
+- **CC-26 — the receiver's identity evidence is NOT captured, and the missing category
+  is a new backend prerequisite.** The optional evidence field needs a document category that admits
+  a person's proof of identity. The seven seeded categories are all reception categories and the only
+  one whose purpose is an identity document is the VIN evidence category; filing a person's identity
+  document there would be a classification defect. A seed is not on this lane. The field is omitted
+  and the prerequisite is recorded.
+- **The signature capture reuses the seeded signature category and the ONE approved file input.**
+  The document is captured against `rec.reception_visits`, the visit the handover closes and the only
+  linkable entity type in this chain's reach; `sal.delivery_records` is not one.
+  `no-unapproved-file-input` names one path and this slice did not widen it.
+- **The delivery tree joined the form-reset inventory in the change that gave it a form,** rather
+  than after the next audit round found it uncovered.
+
+### 38.4 What this slice did NOT do
+
+- **No end-to-end verification, and none is claimed.** Every request shape is asserted against a
+  replaced transport; every rendering against a replaced adapter. What is owed is an authenticated
+  browser proof on a freshly provisioned organisation, and it is not in this change.
+- **No list screen.** FE-001 waits on the readiness contract the Owner's **D-3** answer routes to the
+  owning prerequisite lane. `/delivery` still has no page and the navigation entry stays `planned`.
+- **No template administration screen.** Two template reads are consumed; no template write is sent,
+  and the five template-write entries stay marked as owed in the payload-parity gate.
+- **No delivery document.** **D-7** approved 2026-09-10 (printable client-composed view); no document or print operation exists yet.
+- **No permission minted and no grant changed.** The three codes consulted are already seeded and are
+  already declared by the operations that use them.
+- **Task-matrix rows are reconciled during final integration.** The 29 canonical tasks remain distinct from slice proof; no phase acceptance is claimed.
