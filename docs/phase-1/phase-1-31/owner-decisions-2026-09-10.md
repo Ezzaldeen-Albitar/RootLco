@@ -41,8 +41,13 @@ The measured facts this decision was taken against:
   the create service passes the supplied identifier through unchecked
   (`apps/api/src/modules/delivery/application/delivery-service.ts:393`). Any uuid at all is
   currently a legal delivering employee.
-- The only roster-shaped entity, `tech.technician_profiles`, is anchored to `iam.user_accounts`
-  through `fk_technician_profiles_user`, so it **cannot represent a person who has no login**.
+- Two roster-shaped entities exist. `tech.technician_profiles` is anchored to `iam.user_accounts`
+  through `fk_technician_profiles_user`. `iam.user_employee_links`
+  (`supabase/migrations/20260718090000_iam_user_accounts_and_profiles.sql:166`) carries an opaque
+  text `employee_ref`, but it too is anchored to a user account through
+  `fk_user_employee_links_user`. **Neither represents a person who has no login account.**
+- Whether either of them is reused, or a new slice is defined instead, is a measurement for the
+  implementing slice. It is **not decided here**.
 
 What follows from it:
 
@@ -78,22 +83,35 @@ as they are implemented, with the current server validation:
 wider range with `ERR-VAL-001`.
 
 - The default is **not** widened, and the cap is **not** raised, to make a screen more convenient.
-- The **server keeps the authority**: the cap is enforced where it is enforced today, not moved into
-  the browser or duplicated there.
+- The **server keeps the authority**.
 - P1-26-OD-007 is settled by this answer and is not carried forward as an open decision into another
   phase.
+
+**Measured facts (not part of the decision).** These describe the code as it stands.
+
+- The server enforces the 92-day maximum:
+  `apps/api/src/modules/iam/application/audit-view-service.ts`, `MAX_RANGE_DAYS = 92`, refusing a
+  wider range with `ERR-VAL-001`.
+- The web client mirrors the same bound:
+  `apps/web/src/features/administration/audit/types.ts:70`, `MAX_WINDOW_DAYS = 92`.
+- Both are retained unchanged.
 
 ## 4. D-17 — the reporting period is a half-open period in the branch's timezone
 
 Every report period is **half-open**, `[from, to)`, expressed in the **selected branch's timezone**
-(`org.branches.timezone_name`) and converted consistently before it reaches a server query. A report
-that says a day includes every instant of that local day and no instant of the next.
+and converted consistently before it reaches a server query. A report that says a day includes every
+instant of that local day and no instant of the next.
 
 - The **timezone and the filter context are displayed and preserved** wherever the result is shown,
   printed or recorded, so a number can never be read without the period that produced it.
 - **Cross-branch reporting uses one explicit reporting timezone**, stated on the result. Local
   periods from branches in different timezones are **never silently mixed** into one total.
 - A boundary row belongs to exactly one period. No inclusive `to` and no double counting.
+
+**Measured facts (not part of the decision).**
+
+- A branch's timezone is stored as `org.branches.timezone_name`
+  (`supabase/migrations/20260717103000_org_companies_branches.sql:128`).
 
 Recorded as a named prerequisite for the report engine: **no helper converts a local period to UTC or
 computes half-open periods in `apps/api/src` today**. The timezone handling that does exist there is
