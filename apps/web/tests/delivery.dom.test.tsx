@@ -49,6 +49,7 @@ const listChecklistResults = vi.fn();
 const listStatusHistory = vi.fn();
 const readWorkOrderDelivery = vi.fn();
 const readActiveChecklistItems = vi.fn();
+// Regression trap: a restored create call must fail the unavailable-selection cases.
 const startDelivery = vi.fn();
 const verifyReceiver = vi.fn();
 const recordChecklistResult = vi.fn();
@@ -83,7 +84,7 @@ vi.mock('@/features/authentication/api/session', () => ({
   requireSession: async () => ({ permissions: PERMISSIONS, email: 'advisor@test.local' }),
 }));
 
-const notifyActionResult = vi.fn((..._args: unknown[]): boolean => true);
+const notifyActionResult = vi.fn<(...args: unknown[]) => boolean>().mockReturnValue(true);
 vi.mock('@/components/notifications/action-notifications', () => ({
   notifyActionResult: (...args: unknown[]) => notifyActionResult(...args),
 }));
@@ -267,7 +268,6 @@ beforeEach(() => {
   listStatusHistory.mockResolvedValue(okRead({ deliveryId: DELIVERY_ID, transitions: page([]) }));
   readWorkOrderDelivery.mockResolvedValue(okRead({ workOrderId: WORK_ORDER_ID, delivery: null }));
   readActiveChecklistItems.mockResolvedValue(okRead(checklist));
-  startDelivery.mockResolvedValue(succeeded('delivery.start.done'));
   verifyReceiver.mockResolvedValue(succeeded('delivery.receiver.verified'));
   recordChecklistResult.mockResolvedValue(succeeded('delivery.checklist.recorded'));
   completeDelivery.mockResolvedValue(succeeded('delivery.completion.done'));
@@ -720,6 +720,9 @@ describe('the work order’s own handover section', () => {
     // operator to ignore denials.
     expect(within(region).queryAllByRole('button')).toHaveLength(0);
     expect(within(region).queryAllByRole('link')).toHaveLength(0);
+    expect(
+      within(region).queryByText(EN['delivery.start.employeeSelectionUnavailable'] as string)
+    ).toBeNull();
   });
 
   it('links to the handover it found, and states its stage', async () => {
@@ -749,67 +752,58 @@ describe('the work order’s own handover section', () => {
   });
 });
 
-describe('starting a handover from the work order', () => {
-  const renderPanel = (over: Record<string, unknown> = {}) =>
+describe('employee selection is unavailable when starting a handover', () => {
+  it.each(['en', 'ar'] as const)(
+    'offers no employee input or Start action in %s and makes no create call',
+    async (locale) => {
+      const messages = locale === 'en' ? en : ar;
+      const text = locale === 'en' ? EN : AR;
+      const render = locale === 'en' ? renderLtr : renderRtl;
+      render(
+        <WorkOrderDeliveryPanel
+          locale={locale}
+          messages={messages}
+          workOrderId={WORK_ORDER_ID}
+          canManage={true}
+        />
+      );
+      const region = screen.getByRole('region', {
+        name: text['delivery.workOrder.heading'] as string,
+      });
+      expect(
+        await within(region).findByText(
+          text['delivery.start.employeeSelectionUnavailable'] as string
+        )
+      ).toBeVisible();
+      expect(within(region).queryAllByRole('textbox')).toHaveLength(0);
+      expect(within(region).queryAllByRole('button')).toHaveLength(0);
+      expect(startDelivery).not.toHaveBeenCalled();
+      expect(readWorkOrderDelivery).toHaveBeenCalledWith(WORK_ORDER_ID);
+      if (locale === 'ar') {
+        expect(
+          within(region).queryByText(EN['delivery.start.employeeSelectionUnavailable'] as string)
+        ).toBeNull();
+      }
+    }
+  );
+
+  it('keeps an existing handover accessible to a manager without offering employee entry', async () => {
+    readWorkOrderDelivery.mockResolvedValue(okRead({ workOrderId: WORK_ORDER_ID, delivery }));
     renderLtr(
       <WorkOrderDeliveryPanel
         locale="en"
         messages={en}
         workOrderId={WORK_ORDER_ID}
         canManage={true}
-        {...over}
       />
     );
-
-  it('sends the work order and the chosen employee, and nothing the service derives', async () => {
-    const user = userEvent.setup();
-    renderPanel();
-    const field = await screen.findByLabelText(labelled('delivery.start.deliveringEmployee'));
-    await user.type(field, EMPLOYEE_ID);
-    await user.click(screen.getByRole('button', { name: EN['delivery.start.submit'] as string }));
-    await waitFor(() =>
-      expect(startDelivery).toHaveBeenCalledWith({
-        workOrderId: WORK_ORDER_ID,
-        deliveringEmployeeId: EMPLOYEE_ID,
-      })
-    );
-    // The vehicle and the visit are the service's to derive from the work order.
-    expect(JSON.stringify(startDelivery.mock.calls[0])).not.toContain(VEHICLE_ID);
-    expect(JSON.stringify(startDelivery.mock.calls[0])).not.toContain(VISIT_ID);
-  });
-
-  it('refuses to send with no employee named, and spends no request', async () => {
-    const user = userEvent.setup();
-    renderPanel();
-    await user.click(
-      await screen.findByRole('button', { name: EN['delivery.start.submit'] as string })
-    );
+    const link = await screen.findByRole('link', { name: EN['delivery.workOrder.open'] as string });
+    expect(link.getAttribute('href')).toBe(`/en/delivery/${DELIVERY_ID}`);
+    expect(
+      screen.queryByText(EN['delivery.start.employeeSelectionUnavailable'] as string)
+    ).toBeNull();
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0);
     expect(startDelivery).not.toHaveBeenCalled();
-    expect(screen.getByText(EN['form.required'] as string)).toBeVisible();
-  });
-
-  it('re-reads the work order once a handover has been opened', async () => {
-    const user = userEvent.setup();
-    renderPanel();
-    await user.type(
-      await screen.findByLabelText(labelled('delivery.start.deliveringEmployee')),
-      EMPLOYEE_ID
-    );
-    await user.click(screen.getByRole('button', { name: EN['delivery.start.submit'] as string }));
-    await waitFor(() => expect(readWorkOrderDelivery).toHaveBeenCalledTimes(2));
-  });
-
-  it('reports a refusal and does NOT re-read, because nothing was opened', async () => {
-    const user = userEvent.setup();
-    startDelivery.mockResolvedValue(refusedWrite('conflict'));
-    renderPanel();
-    await user.type(
-      await screen.findByLabelText(labelled('delivery.start.deliveringEmployee')),
-      EMPLOYEE_ID
-    );
-    await user.click(screen.getByRole('button', { name: EN['delivery.start.submit'] as string }));
-    await waitFor(() => expect(notifyActionResult).toHaveBeenCalled());
-    expect(readWorkOrderDelivery).toHaveBeenCalledTimes(1);
   });
 });
 

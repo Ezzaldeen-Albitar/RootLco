@@ -38,7 +38,6 @@ const {
   readReceiver,
   readWorkOrderDelivery,
   recordChecklistResult,
-  startDelivery,
   verifyReceiver,
 } = adapters;
 const { PAGE_SIZE } = await import('@/features/delivery/delivery-contract');
@@ -250,7 +249,6 @@ describe('the checklist a handover is worked through is ASSEMBLED, and only from
 /* -- the writes ------------------------------------------------------------ */
 
 const PARTNER_ID = '88888888-8888-4888-8888-888888888888';
-const EMPLOYEE_ID = '77777777-7777-4777-8777-777777777777';
 const VERSION_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
 const sent = (index = 0) => send.mock.calls[index] ?? [];
@@ -262,21 +260,11 @@ const refused = (kind: string, code?: string) => ({
 });
 
 describe('every write sends the body its route declares, and nothing besides', () => {
-  it('opens a handover with the work order and the employee only', async () => {
-    send.mockResolvedValue(ok({ id: DELIVERY_ID, recordVersion: 1 }));
-    const state = await startDelivery({
-      workOrderId: WORK_ORDER_ID,
-      deliveringEmployeeId: EMPLOYEE_ID,
-    });
-    expect(state.status).toBe('success');
-    expect(sent()[0]).toBe('POST');
-    expect(sent()[1]).toBe('/api/v1/deliveries');
-    // The vehicle and the visit are the service's to derive; sending either
-    // would be this tier asserting something a trigger already fixes.
-    expect(sent()[2]).toEqual({ workOrderId: WORK_ORDER_ID, deliveringEmployeeId: EMPLOYEE_ID });
-    // Not version-guarded, so no version header travels: a malformed one would
-    // be refused by an operation that ignores a valid one.
-    expect(sent()[3]).toBeUndefined();
+  // Starting with an unvalidated employee identifier is withheld. Keep the
+  // backend body mirror, but do not expose a browser-callable start adapter.
+  it('does not export a start action while employee selection is unavailable', () => {
+    expect(adapters).not.toHaveProperty('startDelivery');
+    expect(send).not.toHaveBeenCalled();
   });
 
   it('confirms a receiver by partner, with no identity reference invented', async () => {

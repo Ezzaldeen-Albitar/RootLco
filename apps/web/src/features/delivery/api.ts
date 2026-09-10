@@ -7,7 +7,6 @@ import { fromFailure, success, type ActionState } from '@/lib/forms/action-resul
 import type {
   DeliveryChecklistRecordBody,
   DeliveryCompleteBody,
-  DeliveryCreateBody,
   DeliveryReceiverVerifyBody,
   DeliverySignatureAttachBody,
 } from '@/lib/contracts/delivery-contract';
@@ -30,7 +29,7 @@ import type {
  *
  * The reads came first and rendered the custody chain. The writes below are the
  * execution slice, and each one exists because a control on the delivery screen
- * sends it: opening a handover, verifying its receiver, recording a checklist
+ * sends it: verifying its receiver, recording a checklist
  * outcome, binding a signature and completing the release. Nothing here is
  * declared ahead of the screen that calls it, which is how a dead declaration
  * gets in.
@@ -232,34 +231,6 @@ export interface DeliveryWriteState extends ActionState {
   readonly code?: string;
   /** The authority a refused override named, when it named one. */
   readonly requiredPermissions?: readonly string[];
-}
-
-/** The delivery a successful creation opened, so the screen can open it. */
-export interface StartDeliveryOutcome extends DeliveryWriteState {
-  readonly created?: DeliveryRecord;
-}
-
-/**
- * Open a handover for a work order (`sal.delivery-create`).
- *
- * `sal.delivery.manage`, branch-scoped, idempotent, 201. The vehicle and the
- * visit are NOT sent: the service derives both from the work order, so the one
- * decision the caller makes is who is handing the vehicle over.
- *
- * A second attempt against the same work order is refused by
- * `uq_delivery_records_work_order_active`, and that refusal is the truth rather
- * than an inconvenience — one live handover per work order.
- */
-export async function startDelivery(
-  body: DeliveryCreateBody,
-  attempt = 1
-): Promise<StartDeliveryOutcome> {
-  const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
-
-  const result = await client.send<DeliveryRecord>('POST', '/api/v1/deliveries', body);
-  if (!result.ok) return withCode(fromFailure(result, attempt), result);
-  return { ...success('delivery.start.done', attempt), created: result.data };
 }
 
 /**

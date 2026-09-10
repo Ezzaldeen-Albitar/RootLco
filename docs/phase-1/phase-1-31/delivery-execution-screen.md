@@ -3,8 +3,8 @@
 **Status:** in an open pull request, unmerged · **Lane:** `p1-31-frontend` · **Base:** stacked on
 `feature/p1-31-delivery-detail-screen` (PR #357), which merges first
 
-This slice turns the read-only handover screen of PR #357 into the working handover flow. It adds
-five write paths and the configuration read the checklist needs, and it adds nothing to the backend:
+This slice adds four write paths for existing handovers and the configuration read the checklist
+needs. Starting a new handover is withheld while employee selection is unavailable. It adds nothing to the backend:
 no operation, no route, no permission, no seed row and no migration.
 
 Nothing in this document claims that any environment exists, that any deployment happened, or that
@@ -13,16 +13,16 @@ this flow has been exercised against a live server. What it claims is stated in
 
 ## 1. Each action, its operation, its authority, and what a refusal does
 
-| action on screen                    | operation                       | permissions the operation declares                               | how the control is gated                                                       |
-| ----------------------------------- | ------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| **Start the handover** (work order) | `sal.delivery-create`           | `sal.delivery.manage`                                            | the form is rendered only when the caller holds `sal.delivery.manage`          |
-| **Confirm the receiver**            | `sal.delivery-receiver-verify`  | `sal.delivery.manage`, `sal.delivery.view`                       | as above, and only while no receiver is confirmed                              |
-| **Record a checklist result**       | `sal.delivery-checklist-record` | `sal.delivery.manage`                                            | as above, and only for an item with no result yet                              |
-| **Add a signature**                 | `sal.delivery-signature-attach` | `sal.delivery.manage`, `sal.delivery.view`                       | as above                                                                       |
-| **Release the vehicle**             | `sal.delivery-complete`         | `sal.delivery.complete`, `sal.delivery.view`, `sal.finance.view` | the whole panel is rendered only when the caller holds `sal.delivery.complete` |
+| action on screen                    | operation                                | permissions the operation declares                               | how the control is gated                                                       |
+| ----------------------------------- | ---------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| **Start the handover** (work order) | `sal.delivery-create` (backend retained) | `sal.delivery.manage`                                            | unavailable; no employee input, Start control or web start adapter             |
+| **Confirm the receiver**            | `sal.delivery-receiver-verify`           | `sal.delivery.manage`, `sal.delivery.view`                       | write capability on a visible delivery, only while no receiver is confirmed    |
+| **Record a checklist result**       | `sal.delivery-checklist-record`          | `sal.delivery.manage`                                            | write capability on a visible delivery, only for an item with no result yet    |
+| **Add a signature**                 | `sal.delivery-signature-attach`          | `sal.delivery.manage`, `sal.delivery.view`                       | write capability on a visible delivery                                         |
+| **Release the vehicle**             | `sal.delivery-complete`                  | `sal.delivery.complete`, `sal.delivery.view`, `sal.finance.view` | the whole panel is rendered only when the caller holds `sal.delivery.complete` |
 
 Every gate is `holds(session.permissions, …)` against the code **that operation** declares, not one
-screen-wide capability. A caller who may prepare a handover and may not release it sees the four
+screen-wide capability. A caller who may prepare a handover and may not release it sees the three
 preparation controls and no release panel; a caller who may release and may not prepare sees the
 release panel and no preparation controls. In both cases the missing control is **absent**, never
 present-and-refused — a button whose only outcome is a denial teaches an operator to ignore denials.
@@ -53,7 +53,7 @@ be this tier claiming to know something it was not told.
 
 ## 2. The version guard: where `If-Match` comes from, and why only from there
 
-`sal.delivery-complete` is the only version-guarded operation of the five. The version it must quote
+`sal.delivery-complete` is the only version-guarded operation of the four exposed writes. The version it must quote
 is the `recordVersion` that **`sal.delivery-eligibility-read`** republishes, in its body and its
 ETag.
 
@@ -88,25 +88,28 @@ point, said in the field's own help text, refused before a request is spent. Thi
 substitute for the server rule — it is how the operator finds out in the form rather than from a
 refusal that has already consumed an idempotency key.
 
-## 4. The delivering employee, and the Owner decision that stays open
+## 4. Employee selection and new-handover creation remain unavailable
 
-`sal.delivery_records.delivering_employee_id` is `NOT NULL` and the DDL gives it **no foreign key**.
-No read in this platform resolves it to a person. Owner requirement **OWR-2026-09-06-G-10** — where
-that identity lives — is **Undecided**, and this slice does not decide it.
+The delivering employee is distinct from the authenticated actor and the authorized receiver.
+The existing backend requires `deliveringEmployeeId` as a UUID, but the frozen column has no
+employee foreign key and no server-side identity validation. An explicit typed UUID with no actor
+default still does not satisfy employee selection. The employee-entity decision remains open; this
+change chooses neither a user directory nor a technician register and infers no Owner approval.
 
-The control is an explicit, required identifier field with **no default**, whose help text says the
-platform holds no name for it. That is the shape the shipped work-order assignment control already
-uses for the same situation.
+The work-order section therefore offers no employee identifier input or Start control. A manager
+sees “Employee selection is currently unavailable.” in the selected language. The browser-callable
+`startDelivery` adapter is removed. The backend POST contract and its request-body mirror remain
+unchanged. Existing deliveries still open through the work-order link.
 
-What was considered and rejected, so the reasoning is on the record rather than in a diff:
+Receiver verification, checklist results, signature capture/attachment and completion remain
+implemented for existing deliveries, subject to their existing permissions, server validation,
+eligibility blockers and version guard. A `delivering_employee` signature role does not resolve
+or validate employee identity. These actions do not complete the new-handover selection journey.
 
-- **A picker fed from the technician roster.** It would assert that the person handing a vehicle over
-  is a technician, which is precisely the question G-10 leaves open, and it would couple opening a
-  handover to `tech.technician.read` — a permission `sal.delivery-create` does not declare, so a
-  delivery officer without it could not open a handover at all.
-- **A picker fed from a user directory.** Same objection, against a different register.
-
-When the Owner decides, the field changes shape. Until then it states what it is.
+This correction is implemented and unmerged. The two focused delivery test files passed 88 tests;
+after a lint-only test-mock correction, the affected DOM file passed all 57 tests again. Web
+typecheck, focused ESLint, style, web boundary, server-action export and P1-31 access checks passed.
+The phase matrix must distinguish the existing-record actions from withheld employee selection/start.
 
 ## 5. The receiver's identity evidence — a named prerequisite, not built
 
@@ -135,13 +138,16 @@ closes, and the only entity in this chain's reach that `LINKABLE_ENTITY_TYPES` c
 
 ## 6. What is proved here, and what is not
 
-**Proved by the tests in this change, and by nothing more than them.**
+**Verification scope.** The focused checks above cover the employee-start correction and existing
+delivery actions in the two test files. They do not establish live-server acceptance.
 
 The DOM suite renders the real screen with the adapter module replaced, so what it measures is what
 the components do with an answer — not what the server answers. It holds:
 
-- every control is absent without the code its own operation declares, and present with it;
-- the start form sends the work order and the employee and neither the vehicle nor the visit;
+- each supported existing-record write is gated by its own capability;
+- in English and Arabic, employee selection is unavailable with no input, Start button or create
+  call, and an existing handover remains accessible;
+- the server-action module exports no start adapter;
 - the receiver is chosen by name and submitted as an identifier;
 - a waiver carries its reason and a pass carries none;
 - a second, different outcome for one item is reported as "already recorded";
@@ -162,7 +168,7 @@ happens.
 
 - **No end-to-end verification.** Nothing in this slice has been exercised against a running API, a
   database or a browser. Every request shape above is asserted against a replaced transport.
-- **No proof that any of the five operations accepts these bodies at runtime.** The bodies are
+- **No proof that any of the four exposed writes accepts these bodies at runtime.** The bodies are
   mirrored from the route schemas and held to them by the payload-parity gate, which compares
   declarations. A declaration matching a schema is not a request the server accepted.
 - **No proof of the authorization outcome.** The permission gates are affordances measured in the
@@ -172,9 +178,11 @@ happens.
   slice neither ran nor changed.
 
 What that leaves owed is an **authenticated browser proof on a freshly provisioned organisation**,
-walking one handover from opening to release: the picker, the receiver, every checklist item, a
+walking an existing handover through the receiver, every checklist item, a
 signature, the odometer and the release, including one deliberate refusal to see the blocker list
 render from a real eligibility read. That proof is not in this change and is not claimed by it.
+The complete journey from a new handover additionally requires employee selection and its server
+validation; it cannot be claimed through typed UUID entry.
 
 ## 7. What this slice does NOT close
 
@@ -195,20 +203,20 @@ render from a real eligibility read. That proof is not in this change and is not
 
 ## 8. What changed
 
-| file                                                  | change                                                                                     |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `apps/web/src/lib/contracts/delivery-contract.ts`     | new — the five request-body mirrors and the nested override                                |
-| `apps/web/src/features/delivery/delivery-contract.ts` | the checklist template views, the odometer rule, the reason bound, the branched codes      |
-| `apps/web/src/features/delivery/api.ts`               | the five write adapters, the assembled checklist read, the single stale-version retry      |
-| `apps/web/src/features/delivery/signature-capture.ts` | new — capture, link and bind, in one act                                                   |
-| `apps/web/src/features/delivery/components/**`        | the five controls, one shared eligibility read, and a revision counter every panel keys on |
-| `apps/web/src/features/work-orders/components/**`     | the work-order section passes the write capability down                                    |
-| `apps/web/src/app/[locale]/(dashboard)/**`            | both pages resolve `sal.delivery.manage` and hand it on                                    |
-| `apps/web/src/i18n/messages/{en,ar}.json`             | the execution vocabulary, in both languages                                                |
-| `scripts/ci/check-p1-30-payload-parity.mjs`           | the delivery mirror is registered; the five delivery entries marked as owed are DELETED    |
-| `tests/ci/p1-30-payload-parity.test.ts`               | the frozen mirror list is extended in the same change                                      |
-| `apps/web/tests/form-reset-class.test.ts`             | the delivery tree joins the form inventory, because it now owns a form                     |
-| `apps/web/tests/delivery{-api,}.*`                    | extended in place; no new test file                                                        |
+| file                                                  | change                                                                                                      |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `apps/web/src/lib/contracts/delivery-contract.ts`     | new — the five request-body mirrors and the nested override                                                 |
+| `apps/web/src/features/delivery/delivery-contract.ts` | the checklist template views, the odometer rule, the reason bound, the branched codes                       |
+| `apps/web/src/features/delivery/api.ts`               | four existing-record write adapters; no start adapter; assembled checklist read and stale-version retry     |
+| `apps/web/src/features/delivery/signature-capture.ts` | new — capture, link and bind, in one act                                                                    |
+| `apps/web/src/features/delivery/components/**`        | four existing-record controls; unavailable employee selection; shared eligibility read and revision counter |
+| `apps/web/src/features/work-orders/components/**`     | the work-order section passes the write capability down                                                     |
+| `apps/web/src/app/[locale]/(dashboard)/**`            | both pages resolve `sal.delivery.manage` and hand it on                                                     |
+| `apps/web/src/i18n/messages/{en,ar}.json`             | the execution vocabulary, in both languages                                                                 |
+| `scripts/ci/check-p1-30-payload-parity.mjs`           | the delivery mirror is registered; the five delivery entries marked as owed are DELETED                     |
+| `tests/ci/p1-30-payload-parity.test.ts`               | the frozen mirror list is extended in the same change                                                       |
+| `apps/web/tests/form-reset-class.test.ts`             | the delivery tree joins the form inventory, because it now owns a form                                      |
+| `apps/web/tests/delivery{-api,}.*`                    | extended in place; no new test file                                                                         |
 
 The payload-parity lifecycle is the point of the ninth row. An entry marked as owed cannot outlive
 its reason: the moment a mirror declares the interface, the entry is stale and the gate fails until
