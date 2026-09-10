@@ -46,8 +46,10 @@ The measured facts this decision was taken against:
 
 What follows from it:
 
-- A **backend prerequisite slice on the `remediation/p1-31-backend-` lane** defines the entity and
-  the validation. It is not a Frontend edit and it is not improvised by a screen.
+- A **backend prerequisite slice** defines the entity and the validation before the Start control is
+  re-enabled. It is not a Frontend edit and it is not improvised by a screen. Lane placement follows
+  the P-2..P-11 precedent (`remediation/p1-31-backend-`) unless **D-1** is decided otherwise; D-1 is
+  still open ([`a0-preflight.md`](./a0-preflight.md):318) and nothing here settles it.
 - The **Start control withheld in PR #362 stays withheld** until that contract exists. Re-enabling it
   before then would put an unvalidated identifier back on the wire, which is the defect the
   withholding exists to prevent (register **CC-25**).
@@ -93,18 +95,18 @@ that says a day includes every instant of that local day and no instant of the n
   periods from branches in different timezones are **never silently mixed** into one total.
 - A boundary row belongs to exactly one period. No inclusive `to` and no double counting.
 
-Recorded as a named prerequisite for the report engine: **no timezone conversion helper exists in
-`apps/api/src` today**. The only timezone handling there renders wire timestamps
-`AT TIME ZONE 'UTC'` (for example `apps/api/src/server/db/pagination.ts`), which formats an instant
-and does not convert a local calendar period into a query range. That helper has to be written
-before a report can honour this decision.
+Recorded as a named prerequisite for the report engine: **no helper converts a local period to UTC or
+computes half-open periods in `apps/api/src` today**. The timezone handling that does exist there is
+limited to storing and validating `timezone_name` for branch settings (for example
+`apps/api/src/modules/iam/application/organization-administration-service.ts`) and to rendering wire
+timestamps in UTC (for example `apps/api/src/server/db/pagination.ts`, which formats an instant).
+Neither converts a local calendar period into a query range. That helper has to be written before a
+report can honour this decision.
 
 ## 5. D-18 — identity evidence uses the approved optional document category
 
-The receiver's identity evidence is supported as an **approved optional document category**, filed
-under the **existing scoped file-access rules**: `shared.document_categories`, with
-`business_link_purpose = 'identity_document'`, seeded through
-`supabase/seeds/05_shared_reference.sql`.
+**The decision.** The receiver's identity evidence is supported as an **approved optional
+identity-evidence document category**, filed under the **existing scoped file-access rules**.
 
 - Collection is **optional by default**. It becomes **mandatory only under an explicit applicable
   business policy** — stated, scoped and recorded, never inferred from the fact that the field
@@ -114,6 +116,20 @@ under the **existing scoped file-access rules**: `shared.document_categories`, w
   it happens to be accepted would be a classification defect, and it is forbidden.
 - The evidence inherits the **existing scoped access rules** — the same restricted visibility and
   retention posture the category system already enforces. This decision widens nobody's access.
+
+**Measured facts (not part of the decision).** These describe the schema as it stands; the Owner
+approved the category and its access posture, not any of the mechanisms below.
+
+- Document categories are seed rows in `shared.document_categories`
+  (`supabase/migrations/20260718100000_shared_document_categories_and_documents.sql`).
+- The `business_link_purpose` vocabulary lives in
+  `supabase/migrations/20260815090000_shared_reception_evidence_foundation.sql:33-36`.
+- The only existing row carrying the identity-document purpose is `reception_vin`
+  (`supabase/seeds/05_shared_reference.sql:43`), and it is **not** the approved category.
+- The receiver identity-evidence category therefore **does not yet exist**, which is consistent with
+  **CC-26**.
+- The concrete category code, the `business_link_purpose` value it takes, and the seed file it lands
+  in are **engineering choices for the implementing slice**, not decisions recorded here.
 
 This is the contract behind **CC-26** in
 [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) §38.3: the delivery execution slice
