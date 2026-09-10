@@ -93,13 +93,18 @@ id gets.
 
 Four labels, used exactly as written. Nothing in this document is left for a reader to classify.
 
-| id      | statement                                                                        | label                                                          | if it is answered the other way                                                                                                                                            |
-| ------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **A-1** | An employee may exist with **no user account**                                   | **OWNER DECISION — approved**                                  | Making `user_account_id` mandatory is a new migration and removes the only reason this table exists                                                                        |
-| **A-2** | The home branch is **informational and transferable**, never a restriction       | **OWNER DECISION — approved 2026-09-10**                       | `branch_id` is absent from the immutable guard and from every rule; reinstating a branch rule is a migration                                                               |
-| **A-3** | Rows minted by the backfill are **`inactive`**                                   | **ENGINEERING CHOICE — recommendation pending Owner approval** | **Recommendation: keep `inactive`.** A legacy account proves a handover happened once, not that the person is on the roster today; an operator reinstates the ones who are |
-| **A-4** | `employment_ref` is **optional**, opaque, and **unique per tenant** when present | **ENGINEERING CHOICE — recommendation pending Owner approval** | **Recommendation: keep both properties.** Mandatory would exclude every employee with no external record, and non-unique would stop it identifying anybody                 |
-| **A-5** | Administering an employee stays **branch-scoped**, while reading is tenant-wide  | **ENGINEERING CHOICE — recommendation pending Owner approval** | **Recommendation: keep the split.** Choosing a colleague is not the same authority as editing the roster; widening the write is a policy change, not a code change         |
+| id      | statement                                                                                  | label                                                          | if it is answered the other way                                                                                                                                                                                                                                                           |
+| ------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A-1** | An employee may exist with **no user account**                                             | **OWNER DECISION — approved**                                  | Making `user_account_id` mandatory is a new migration and removes the only reason this table exists                                                                                                                                                                                       |
+| **A-2** | The home branch is **informational and transferable**, never a restriction                 | **OWNER DECISION — approved 2026-09-10**                       | `branch_id` is absent from the immutable guard and from every rule; reinstating a branch rule is a migration                                                                                                                                                                              |
+| **A-3** | Rows minted by the backfill are **`inactive`**                                             | **ENGINEERING CHOICE — recommendation pending Owner approval** | **Recommendation: keep `inactive`.** A legacy account proves a handover happened once, not that the person is on the roster today; an operator reinstates the ones who are                                                                                                                |
+| **A-4** | `employment_ref` is **optional**, opaque, and **unique per tenant** when present           | **ENGINEERING CHOICE — recommendation pending Owner approval** | **Recommendation: keep both properties.** Mandatory would exclude every employee with no external record, and non-unique would stop it identifying anybody                                                                                                                                |
+| **A-5** | Administering an employee stays **branch-scoped**, while reading is tenant-wide            | **ENGINEERING CHOICE — recommendation pending Owner approval** | **Recommendation: keep the split.** Choosing a colleague is not the same authority as editing the roster; widening the write is a policy change, not a code change                                                                                                                        |
+| **A-6** | An unresolved legacy identity has **no resolution command** and stays listed for the Owner | **RECOMMENDATION PENDING OWNER APPROVAL**                      | **Recommendation: resolve a listed row through one Owner-approved operator command that names a real employee for it and then re-runs `VALIDATE CONSTRAINT`, never inside a migration.** Leaving it undecided keeps the key `NOT VALID` on every database that carries unresolved history |
+
+A-1 and A-2 are **approved** and are pending nothing. What remains open about branches is **A-5**,
+the policy that keeps the home branch informational only — reading tenant-wide while writing stays
+branch-scoped — and not the rule itself, which the Owner settled on 2026-09-10.
 
 Every other statement in this document is either an **OWNER DECISION** quoted in section 2, or a
 **VERIFIED FACT** — a property a case in `tests/backend/p1-31-delivering-employee-seam.test.ts` or
@@ -216,7 +221,59 @@ resolvable value mints a linked row and the key then validates; an unresolvable 
 untouched, appears in the review table, and the key lands `NOT VALID` while `VALIDATE` fails with
 `23503`. A transcription would have proved that a copy behaves.
 
-## 9. What was proved, on real rows
+## 9. What was proved, where, and what is merely observed
+
+Three different kinds of statement were conflated in the first draft of this slice, and they are
+separated here under their own labels, because a reading of one database on one day is not a proof
+about a migration, and neither of them is the status of a constraint.
+
+### 9.1 OBSERVATION — the shared database, read-only, 2026-09-10
+
+Read-only, changing nothing: on the shared local database `sal.delivery_records` held **0** rows.
+It therefore held **0** distinct legacy `(tenant_id, delivering_employee_id)` pairs, of which **0**
+matched a same-tenant account and **0** did not.
+
+That is an observation of **one environment on one day**. It proves nothing whatever about the
+migration's behaviour on data: an empty table exercises neither branch of the backfill, and a count
+of zero is precisely the measurement that cannot tell a correct mint from an absent one. It is
+recorded here so the number is not later mistaken for evidence.
+
+### 9.2 CONTROLLED PROOF — the disposable clone
+
+Database `p131_employee_20260910` on `127.0.0.1:55432`, rebuilt from `p131_candidate` at **139**
+migrations and replayed forward. Unlike the observation, this environment carries legacy-shaped rows
+that the cases write themselves, so both branches of the backfill are exercised. Each obligation
+below is cited by the **exact title** of the case that asserts it, so the claim is checkable against
+the file rather than against this table.
+
+| obligation                                                                                                                                       | file                                                   | describe › exact test title                                                                                                                                                                                                                                                                                                                                                                                                                 | state       |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| **(a)** a legacy value matching a same-tenant account mints a linked `org.employees` row whose `id` IS the legacy value, named from that account | `tests/db/org-employees.test.ts`                       | `5. the backfill, replayed from the committed migration file` › `mints exactly one employee per legacy value, and never invents a person`                                                                                                                                                                                                                                                                                                   | **covered** |
+| **(b)** an unmatched legacy value survives untouched, is listed in `sal.delivery_legacy_identity_review`, and leaves the key `NOT VALID`         | `tests/db/org-employees.test.ts`                       | `5. the backfill, replayed from the committed migration file` › `leaves an UNRESOLVABLE legacy value untouched, lists it for review, and cannot validate the key`                                                                                                                                                                                                                                                                           | **covered** |
+| **(c)** a database with no unmatched rows ends with the key **validated** (`convalidated = true`)                                                | `tests/db/org-employees.test.ts`                       | `3. the delivering employee is a real identity` › `carries the composite foreign key on (tenant_id, delivering_employee_id), ON DELETE RESTRICT`, which reads `pg_constraint.convalidated` rather than the printed definition; the resolved path is proved end to end inside `5. …` › `mints exactly one employee per legacy value, and never invents a person`, which runs `VALIDATE CONSTRAINT` after the mint and requires it to succeed | **covered** |
+| **(d)** the trigger refuses an inactive, a soft-deleted and an other-tenant employee, and accepts an active employee of another branch           | `tests/db/org-employees.test.ts`                       | `4. the eligibility trigger, and the snapshot it stamps` › `refuses a RETIRED employee (22023)` (the status value it writes is `inactive`), › `refuses a SOFT-DELETED employee (22023)`, › `refuses an employee of ANOTHER TENANT (22023)`, › `ACCEPTS an employee based in ANOTHER BRANCH of the same tenant, and stamps them`                                                                                                             | **covered** |
+| **(d)** the same two answers at the route, not only at the primitive                                                                             | `tests/backend/p1-31-delivering-employee-seam.test.ts` | `sal.delivery-create now names a real person` › `P17-D3 refuses a RETIRED employee with rule inactive_employee (denial)` and › `P17-D4 ACCEPTS an active employee of another branch of the same tenant, and stamps them (success)`                                                                                                                                                                                                          | **covered** |
+| **(e)** the review table is tenant-isolated and refuses writes from every application role                                                       | `tests/db/org-employees.test.ts`                       | `6. the review list is tenant-isolated and read-only to every application role` › `shows a runtime and a read-only session their own tenant row and not the other` and › `refuses INSERT, UPDATE and DELETE from the runtime login (42501)`                                                                                                                                                                                                 | **covered** |
+
+**Gaps.** None. Each of (a) to (e) is asserted by a case named above; nothing in this table is
+claimed that the two files do not actually assert. Any obligation later found uncovered belongs
+here under this label rather than in the table above it.
+
+### 9.3 CONSTRAINT-VALIDATION STATUS
+
+Stated precisely, because "the key is validated" is true of some databases and false of others:
+
+- `fk_delivery_records_delivering_employee` is added **`NOT VALID`**.
+- The migration validates it **in the same run only when `sal.delivery_legacy_identity_review` is
+  empty** — that is, only when nothing was left unresolved.
+- On a database carrying unresolved legacy identities it **remains `NOT VALID`** — binding every
+  future row, proving no past one — **until the Owner resolves those rows**. The resolution path is
+  **not yet decided**; it is A-6 in the register, a recommendation pending Owner approval, and this
+  slice ships no command for it.
+- The hosted migration replay runs on an **empty** database, so it always ends validated. That is a
+  property of the replay environment and is **not** evidence about a populated one.
+
+### 9.4 What the two suites prove besides
 
 - Every case in `tests/backend/p1-31-delivering-employee-seam.test.ts` goes through the real route
   handler, so the permission gate, the deferred scope check, the version guard, the idempotency
@@ -234,8 +291,6 @@ untouched, appears in the review table, and the key lands `NOT VALID` while `VAL
   levels — which is what replaced the branch rule rather than merely what survived it.
 - **VERIFIED FACT.** A branch-restricted session can READ an employee of another branch and still
   cannot UPDATE one, asserted on the runtime connection under RLS.
-- **VERIFIED FACT.** On this database the foreign key is `convalidated` and the review table is
-  empty, read from `pg_constraint` rather than from the printed definition.
 
 ## 10. What this does not close, and the one operator act it creates
 
