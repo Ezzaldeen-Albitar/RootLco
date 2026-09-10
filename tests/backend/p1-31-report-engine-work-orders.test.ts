@@ -82,8 +82,10 @@ import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
 import { withTransaction } from '@/server/db/transaction';
 import { AppFailure } from '@/server/errors/app-failure';
+import { callerHoldsPermission } from '@/server/auth/authorization';
 import { reportingModule, REPORT_DATASET_CODES } from '@/modules/reporting';
 import { GET as RUN } from '@/app/api/v1/reports/[reportCode]/rows/route';
+import { GET as READ_DEFINITION } from '@/app/api/v1/reports/[reportCode]/route';
 
 let admin: Pool;
 let runtime: Pool;
@@ -373,22 +375,67 @@ async function seedWorkOrder(input: {
 async function seedReportConfiguration(input: {
   readonly code: string;
   readonly scopeLevel: string;
+  readonly id?: string;
+  readonly status?: 'draft' | 'published' | 'archived';
+  readonly parameterSchema?: unknown;
 }): Promise<void> {
-  const id = randomUUID();
+  const id = input.id ?? randomUUID();
   await admin.query(
     `INSERT INTO rpt.report_configurations
        (id, tenant_id, report_code, name, scope_level, export_permission_code,
         owner_user_id, status, created_by)
-     VALUES ($1,$2,$3,$4,$5,'rpt.export',$6,'published',$6)`,
-    [id, TENANT_A, input.code, `Configured ${input.code}`, input.scopeLevel, USER_A]
+     VALUES ($1,$2,$3,$4,$5,'rpt.export',$6,$7,$6)`,
+    [
+      id,
+      TENANT_A,
+      input.code,
+      `Configured ${input.code}`,
+      input.scopeLevel,
+      USER_A,
+      input.status ?? 'published',
+    ]
   );
   await admin.query(
     `INSERT INTO rpt.report_configuration_versions
        (tenant_id, report_configuration_id, version_number, parameter_schema,
         status, published_at, created_by)
      VALUES ($1,$2,1,$3::jsonb,'published',now(),$4)`,
-    [TENANT_A, id, JSON.stringify({ filters: { branchId: { type: 'uuid' } } }), USER_A]
+    [
+      TENANT_A,
+      id,
+      JSON.stringify(input.parameterSchema ?? { filters: { branchId: { type: 'uuid' } } }),
+      USER_A,
+    ]
   );
+}
+
+/** Each case owns a newly generated configuration, never an existing fixture. */
+async function withExplicitReportConfiguration(
+  input: {
+    readonly status?: 'draft' | 'published' | 'archived';
+    readonly parameterSchema: unknown;
+  },
+  verify: (configurationId: string) => Promise<void>
+): Promise<void> {
+  const id = randomUUID();
+  try {
+    await seedReportConfiguration({ id, code: REPORT_CODE, scopeLevel: 'branch', ...input });
+    await verify(id);
+  } finally {
+    // Retire only the header this invocation created. The ordinary suite-owned
+    // teardown handles its rows later; no pre-existing fixture is deleted here.
+    await admin.query(
+      `UPDATE rpt.report_configurations SET deleted_at = now(), deleted_by = $3
+        WHERE tenant_id = $1 AND id = $2 AND created_by = $3`,
+      [TENANT_A, id, USER_A]
+    );
+  }
+}
+
+function readReportDefinition(): Promise<Response> {
+  return READ_DEFINITION(new Request(`http://localhost/api/v1/reports/${REPORT_CODE}`), {
+    params: Promise.resolve({ reportCode: REPORT_CODE }),
+  });
 }
 
 let firstOrder = '';
@@ -875,5 +922,142 @@ describe('the catalogue reports what the engine can actually run', () => {
     // Non-vacuity for the whole slice: a registry that had quietly emptied would
     // make every `executable` assertion above pass for the wrong reason.
     expect([...REPORT_DATASET_CODES]).toEqual([REPORT_CODE]);
+  });
+});
+
+describe('tenant report restrictions remain visible to a read-only report caller', () => {
+  const allowedFilters = {
+    companyId: { type: 'uuid' },
+    branchId: { type: 'uuid' },
+    from: { type: 'date' },
+    to: { type: 'date' },
+  };
+
+  async function readerConfiguration(id: string) {
+    return withTransaction(
+      contextFor({ tenantId: TENANT_A, userId: RPT_FULL.userId, operation: 'rpt.report-read' }),
+      async (db) => {
+        const visible = await db.query<{ status: string; scope_level: string }>(
+          `SELECT status, scope_level FROM rpt.report_configurations
+            WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+          [TENANT_A, id]
+        );
+        return {
+          configure: await callerHoldsPermission(db, 'rpt.report.configure', {
+            companyId: COMPANY_R,
+            branchId: BRANCH_R1,
+          }),
+          export: await callerHoldsPermission(db, 'rpt.export', {
+            companyId: COMPANY_R,
+            branchId: BRANCH_R1,
+          }),
+          visible: visible.rows,
+        };
+      }
+    );
+  }
+
+  it('runs the absent-configuration baseline without granting export authority', async () => {
+    const authority = await readerConfiguration(randomUUID());
+    expect(authority).toEqual({ configure: false, export: false, visible: [] });
+    authAs(RPT_FULL);
+    const result = await report();
+    expect(result.status).toBe(200);
+    expect((await body(result)).rows.items.map((row) => cellValue(row, 'workOrder'))).toContain(
+      middleOrder
+    );
+
+    authAs(RPT_FULL);
+    const definition = await readReportDefinition();
+    expect(definition.status).toBe(200);
+    expect(await definition.json()).toMatchObject({
+      source: 'platform',
+      exportPermissionCode: null,
+    });
+  });
+
+  it.each(['draft', 'archived'] as const)(
+    'can see a same-tenant %s configuration under runtime RLS, and both routes refuse fallback',
+    async (status) => {
+      await withExplicitReportConfiguration({ status, parameterSchema: {} }, async (id) => {
+        // If RLS hid this row from a caller without configure, the engine would
+        // see null and incorrectly run the code baseline. This proves the actual
+        // runtime visibility separately from the route's refusal.
+        expect(await readerConfiguration(id)).toEqual({
+          configure: false,
+          export: false,
+          visible: [{ status, scope_level: 'branch' }],
+        });
+        authAs(RPT_FULL);
+        const denied = await report();
+        expect(denied.status).toBe(404);
+        expect(((await denied.json()) as Problem).code).toBe('ERR-RES-001');
+
+        authAs(RPT_FULL);
+        const definition = await readReportDefinition();
+        expect(definition.status).toBe(404);
+        expect(((await definition.json()) as Problem).code).toBe('ERR-RES-001');
+      });
+    }
+  );
+
+  it('sees a published restrictive allowlist without configure permission and refuses execution', async () => {
+    await withExplicitReportConfiguration(
+      { parameterSchema: { filters: { branchId: { type: 'uuid' } } } },
+      async (id) => {
+        expect(await readerConfiguration(id)).toEqual({
+          configure: false,
+          export: false,
+          visible: [{ status: 'published', scope_level: 'branch' }],
+        });
+        authAs(RPT_FULL);
+        const denied = await report();
+        expect(denied.status).toBe(403);
+        expect(((await denied.json()) as Problem).code).toBe('ERR-IAM-001');
+
+        // Configuration metadata remains readable, including its separate
+        // export requirement. Reading it confers neither configure nor export.
+        authAs(RPT_FULL);
+        const definition = await readReportDefinition();
+        expect(definition.status).toBe(200);
+        expect(await definition.json()).toMatchObject({
+          source: 'tenant',
+          scopeLevel: 'branch',
+          exportPermissionCode: 'rpt.export',
+          parameterSchema: { filters: { branchId: { type: 'uuid' } } },
+        });
+      }
+    );
+  });
+
+  it('keeps the frozen published schema default {} executable for a reader without configure or export', async () => {
+    await withExplicitReportConfiguration({ parameterSchema: {} }, async (id) => {
+      expect(await readerConfiguration(id)).toMatchObject({ configure: false, export: false });
+      authAs(RPT_FULL);
+      const result = await report();
+      expect(result.status).toBe(200);
+      expect((await body(result)).rows.items.map((row) => cellValue(row, 'workOrder'))).toContain(
+        middleOrder
+      );
+    });
+  });
+
+  it('does not let a published branch configuration widen the caller scoped to its sibling', async () => {
+    await withExplicitReportConfiguration(
+      { parameterSchema: { filters: allowedFilters } },
+      async () => {
+        authAs(RPT_SCOPED_R2);
+        const denied = await report();
+        expect(denied.status).toBe(403);
+        expect(((await denied.json()) as Problem).code).toBe('ERR-IAM-001');
+
+        authAs(RPT_SCOPED_R2);
+        const permitted = await report({ branchId: BRANCH_R2 });
+        expect(permitted.status).toBe(200);
+        expect(
+          (await body(permitted)).rows.items.map((row) => cellValue(row, 'workOrder'))
+        ).toEqual([otherBranchOrder]);
+      }
+    );
   });
 });
