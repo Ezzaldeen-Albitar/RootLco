@@ -1032,3 +1032,46 @@ those runs; only RUN_RECORD_STALE remains at this pre-record checkpoint. The loc
 plus required-hosted policy. Hosted builds, browser checks and required gates remain
 mandatory. Canonical DOCX synchronization remains the technical authority's
 administrative postmerge task; this slice changes no architecture.
+
+The targeted backend rerun at source `6af7fadabf8157d3798313d769d7670d85092159`
+passed all 17 cases in one file, actual runner exit 0, reporter success true. It ran
+only in newly created `p131_delivery_list_20260910` (OID 36455) on the coordinator's
+isolated loopback port 55432, cloned from the retained 138-migration baseline. Before
+and after guards verified container/database identity, all 255 retained-source table
+contents and all cluster role attributes/memberships unchanged; active source/clone
+connections were empty at release. The final connection closed at
+2026-09-10T08:39:51.337Z. The clone is retained. This is the selected backend contract
+suite, not a full backend tier or phase acceptance. Raw outputs and inventories are
+preserved in the coordinator's external delivery-list evidence bundle.
+
+The pre-unit evidence suite initially passed 112/113 and refused four current
+backend file-inventory annotations: the added delivery-list suite moves actual
+backend test files from 133 to 134 and all backend files from 142 to 143. Those
+four annotations in the deliverable manifest and risk register were corrected to
+actual discovery and the manifest regenerated. Historical executed-tier figures
+and their hosted provenance were not changed. The failed focused output is
+preserved externally; the full unit recorder did not run against this discrepancy.
+
+Final serial records at executable source
+`6af7fadabf8157d3798313d769d7670d85092159`: web 3619 passed across 133 files and
+unit 3277 passed across 121 files; both actual runner exit codes are zero, both
+reporters report success, and both records have no dirty executable paths. After
+the current inventory correction, the three evidence suites passed 113/113 before
+the full unit recorder. Root and API typechecks/lint/format, web typecheck/lint/format/
+style, contract validators and security checks passed. Web lint has zero errors and
+13 pre-existing unused-argument warnings. The final records and raw outputs are
+preserved in the external coordinator evidence bundle; no historical hosted result
+was converted into local or current-source proof.
+
+The separate read-only agent-assisted verification at that exact source found no
+blocking issue: the route, service, repository and seventeen-case suite are unchanged
+through the sync, and authorization-before-query, explicit scope predicates, existing
+RLS, mapper and pagination contracts remain intact. This documents technical
+self-review under the Solo Developer Review Policy, not independent human QA.
+
+All 19 protected-branch checks passed for the #360 merge
+`f8958e77cd607b8d9a2ebd62eab08176d4c91cf0`, including `protected-gate`. The first
+GitHub-only observer stopped on a DNS error without a failed gate; after its process
+was verified absent, one replacement observed the terminal success and retired.
+The dependency push hold is therefore satisfied. #358 still requires its own final
+head's hosted gates and coordinator merge review; no phase acceptance is implied.
