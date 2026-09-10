@@ -1155,10 +1155,15 @@ Plus the configuration read the checklist needs — the ACTIVE templates and the
 one Server Action from the two P-9 template reads, because no operation publishes "the checklist of
 this handover" and the completion evaluates mandatory items by COMPANY rather than by template.
 
-The mirror registry in `apps/web/src/features/delivery/delivery-contract.ts` declares **five** writes
-against these four sent paths: `sal.delivery-create` is mirrored there because the payload-parity gate
-reads its request bodies from one frozen list of files, while the Start control that would send it is
-withheld pending the delivering-employee contract recorded as **CC-25** in §38.3.
+The mirror registry the payload-parity gate reads is
+`apps/web/src/lib/contracts/delivery-contract.ts` — the path named in `MIRROR_FILES` in
+`scripts/ci/check-p1-30-payload-parity.mjs` — and it is the file that holds the five
+`sal.delivery-*` request bodies. Two files carry the same name: the separate
+`apps/web/src/features/delivery/delivery-contract.ts` holds the read types, the permission codes and
+the view envelopes, not the request bodies. The registry declares **five** writes against these four
+sent paths: `sal.delivery-create` is mirrored there because the payload-parity gate reads its request
+bodies from one frozen list of files, while the Start control that would send it is withheld pending
+the delivering-employee contract recorded as **CC-25** in §38.3.
 
 ### 38.2 The properties this slice is accountable for
 
@@ -1177,7 +1182,7 @@ withheld pending the delivering-employee contract recorded as **CC-25** in §38.
 
 ### 38.3 Dispositions
 
-- **CC-25 — new-handover Start is withheld pending validated employee selection.** No raw employee UUID input or browser-callable Start adapter remains. The existing backend create contract is preserved; employee, authenticated actor and authorized receiver remain distinct. The Owner answered the employee relation on 2026-09-10 (D-12, see [`owner-decisions-2026-09-10.md`](./owner-decisions-2026-09-10.md) §1): a tenant-owned employee identity with server-side validation, defined on the backend prerequisite lane. The Start control stays withheld until that contract exists.
+- **CC-25 — new-handover Start is withheld pending validated employee selection.** No raw employee UUID input or browser-callable Start adapter remains. The existing backend create contract is preserved; employee, authenticated actor and authorized receiver remain distinct. The Owner answered the employee relation on 2026-09-10 (D-12, see [`owner-decisions-2026-09-10.md`](./owner-decisions-2026-09-10.md) §1): a tenant-owned employee identity, distinct from the login account, the authenticated actor and the authorized receiver, validated on the server. Engineering consequence (not an Owner decision): lane placement follows the P-2..P-11 precedent while D-1 stays open, and the Start control stays withheld until that contract exists.
 - **CC-26 — the receiver's identity evidence is NOT captured, and the missing category
   is a new backend prerequisite.** The optional evidence field needs a document category that admits
   a person's proof of identity. The seven seeded categories are all reception categories and the only
@@ -1200,7 +1205,7 @@ withheld pending the delivering-employee contract recorded as **CC-25** in §38.
   owning prerequisite lane. `/delivery` still has no page and the navigation entry stays `planned`.
 - **No template administration screen.** Two template reads are consumed; no template write is sent,
   and the five template-write entries stay marked as owed in the payload-parity gate.
-- **No delivery document.** **D-7** is open and no document or print operation exists.
+- **No delivery document.** **D-7** approved 2026-09-10 (printable client-composed view); no document or print operation exists yet.
 - **No permission minted and no grant changed.** The three codes consulted are already seeded and are
   already declared by the operations that use them.
 - **Task-matrix rows are reconciled during final integration.** The 29 canonical tasks remain distinct from slice proof; no phase acceptance is claimed.

@@ -15,7 +15,7 @@ only as a permission is the shape that later gets read as a licence.
 Nothing here asserts that any gate ran, that any environment exists, or that any of the work below
 has been built. It is a record of decisions.
 
-## 1. The delivering employee — D-12 answered, OWR-2026-09-06-G-10 closed
+## 1. The delivering employee — D-12 answered; answers OWR-2026-09-06-G-10 (register row update owed to the Owner document)
 
 The delivering employee is a **tenant-owned employee identity**, distinct from a login account,
 distinct from the authenticated actor who sends the request, and distinct from the authorized
@@ -33,7 +33,13 @@ Consequences the Owner attached to that answer:
 - This is **not an HR implementation**. No payroll, no employment lifecycle, no department
   hierarchy, no second source of truth for people.
 
-The measured facts this decision was taken against:
+The Owner clarified the answer later on 2026-09-10, in the Owner's own words: an employee's home
+branch must not become a restriction against authorized work in other branches; legacy
+delivering-employee values are validated individually; unmatched identities are never replaced by
+the authenticated actor or a fabricated match; status, reference and branch-policy choices remain
+unresolved until the Owner approves a recommendation.
+
+**Measured facts (not part of the decision).** These are the facts the decision was taken against.
 
 - **No employee master table exists** anywhere in the schema.
 - `sal.delivery_records.delivering_employee_id` is `uuid NOT NULL` with **no foreign key**
@@ -49,7 +55,7 @@ The measured facts this decision was taken against:
 - Whether either of them is reused, or a new slice is defined instead, is a measurement for the
   implementing slice. It is **not decided here**.
 
-What follows from it:
+**Engineering consequence (not an Owner decision):**
 
 - A **backend prerequisite slice** defines the entity and the validation before the Start control is
   re-enabled. It is not a Frontend edit and it is not improvised by a screen. Lane placement follows
@@ -61,9 +67,7 @@ What follows from it:
 
 ## 2. D-7 — the delivery document is a printable operational view
 
-The delivery document is a **permission-checked printable operational view**, composed on the client
-using the existing client-side print approach. No backend print route and no new document operation
-is authorized by this answer.
+The delivery document is a **permission-checked printable operational view**.
 
 - **Stored immutable document versions remain deferred.** If they are ever wanted they arrive
   through their own contract, deliberately, and not as a side effect of a print view.
@@ -72,6 +76,10 @@ is authorized by this answer.
   was printed, and that is the whole of its claim.
 - The view is **permission-checked**: it shows a caller only what the reads they already hold
   publish.
+
+**Engineering consequence (not an Owner decision).** The view is composed on the client using the
+existing client-side print approach. No backend print route and no new document operation is
+authorized by this answer, and none exists at this head.
 
 **Measured facts (not part of the decision).** These describe the client-side print approach as it
 stands.
@@ -87,8 +95,11 @@ as they are implemented, with the current server validation kept in force.
 
 - The default is **not** widened, and the cap is **not** raised, to make a screen more convenient.
 - The **server keeps the authority**.
-- P1-26-OD-007 is settled by this answer and is not carried forward as an open decision into another
-  phase.
+
+**Engineering consequence (not an Owner decision).** The proposed disposition is that P1-26-OD-007 is
+answered by this decision and need not be carried forward as an open decision into another phase.
+`docs/phase-1/phase-1-26/open-decisions.md` still records it as `Open` at this head; changing that
+record is owed and is not done here.
 
 **Measured facts (not part of the decision).** These describe the code as it stands.
 
@@ -115,14 +126,21 @@ instant of that local day and no instant of the next.
 
 - A branch's timezone is stored as `org.branches.timezone_name`
   (`supabase/migrations/20260717103000_org_companies_branches.sql:128`).
+- Half-open period logic **does exist** in `apps/api/src`. The price-list assignment route refuses an
+  equal `effectiveFrom`/`effectiveTo` pair because the range is half-open
+  (`apps/api/src/app/api/v1/price-list-assignments/route.ts:61`), and the warranty coverage-window
+  route records its range as half-open
+  (`apps/api/src/app/api/v1/warranty-policies/[policyId]/coverage-windows/route.ts:29`). What is
+  missing is a helper converting a local branch-timezone period to UTC bounds.
+- The timezone handling that exists is limited to storing and validating `timezone_name` for branch
+  settings (for example
+  `apps/api/src/modules/iam/application/organization-administration-service.ts`) and to rendering
+  wire timestamps in UTC (for example `apps/api/src/server/db/pagination.ts`, which formats an
+  instant). Neither converts a local calendar period into a query range.
 
-Recorded as a named prerequisite for the report engine: **no helper converts a local period to UTC or
-computes half-open periods in `apps/api/src` today**. The timezone handling that does exist there is
-limited to storing and validating `timezone_name` for branch settings (for example
-`apps/api/src/modules/iam/application/organization-administration-service.ts`) and to rendering wire
-timestamps in UTC (for example `apps/api/src/server/db/pagination.ts`, which formats an instant).
-Neither converts a local calendar period into a query range. That helper has to be written before a
-report can honour this decision.
+**Engineering consequence (not an Owner decision).** That helper has to be written before a report
+can honour this decision. It is recorded as a named prerequisite for the report engine, and it does
+not exist at this head.
 
 ## 5. D-18 — identity evidence uses the approved optional document category
 
@@ -152,7 +170,7 @@ approved the category and its access posture, not any of the mechanisms below.
 - The concrete category code, the `business_link_purpose` value it takes, and the seed file it lands
   in are **engineering choices for the implementing slice**, not decisions recorded here.
 
-This is the contract behind **CC-26** in
+**Engineering consequence (not an Owner decision).** This is the contract behind **CC-26** in
 [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) §38.3: the delivery execution slice
 omitted the evidence field precisely because the category did not yet exist, and recorded the gap
 rather than filing the document somewhere convenient.
