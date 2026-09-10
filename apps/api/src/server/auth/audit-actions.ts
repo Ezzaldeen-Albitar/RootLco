@@ -1695,6 +1695,53 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'A warranty record was generated from a committed delivery. Every term is configuration: duration, odometer limit and covered scope come from the wty.warranty_coverage row effective at the delivery date, and the backend defaults none of them. Records generation only — P1-22 implements no claim intake or adjudication, because no claim table exists in any schema (P1-22-L-01).',
   },
 
+  // ---- Phase 1-31 P-11 — report CONFIGURATION administration (rpt) ----
+  //
+  // The first audit actions this catalogue has ever carried in the rpt namespace,
+  // because until this slice nothing in the product wrote an rpt table at all.
+  // Every one is `privileged` for the same reason: the rows these actions write
+  // decide what the report surface SHOWS. Publishing a configuration puts a
+  // definition in front of every reader in the tenant, archiving one takes it away
+  // from all of them, and the export permission recorded on a definition is the
+  // authority a later export of its contents will be checked against. None of
+  // these records a figure, a customer or an amount — the reporting ENGINE does
+  // not exist, and this catalogue does not pretend otherwise.
+  {
+    code: 'rpt.report_configuration.created',
+    class: 'privileged',
+    entityType: 'rpt.report_configuration',
+    description:
+      'A report configuration was created, as a draft. The report configuration tables had no write path anywhere in the product until P1-31, so every tenant catalogue was empty and permanently so: the two published reads filter on published status and nothing could set it. The record names the report code, the scope level and the export permission code, because that last value decides who may export the report contents once an export surface exists.',
+  },
+  {
+    code: 'rpt.report_configuration.updated',
+    class: 'privileged',
+    entityType: 'rpt.report_configuration',
+    description:
+      'The name or the scope level of a report configuration changed. The report code is not editable and is not part of this action: an immutability trigger freezes it, and every published definition is addressed by that code. The export permission code is not part of it either, on purpose — re-pointing it changes who may export the contents, which is a privilege decision rather than an edit.',
+  },
+  {
+    code: 'rpt.report_configuration.status_changed',
+    class: 'privileged',
+    entityType: 'rpt.report_configuration',
+    description:
+      'A report configuration was published, withdrawn or returned to draft. This is the value both published report reads filter on, so it is what decides whether a definition is visible to a report reader at all. It does not cascade to the versions: the catalogue selects a version on the version own status, so cascading would change what the catalogue resolves for reasons the operator did not choose.',
+  },
+  {
+    code: 'rpt.report_configuration.version_created',
+    class: 'privileged',
+    entityType: 'rpt.report_configuration_version',
+    description:
+      'A draft version of a report configuration was created, with the filter allowlist it declares. The record names how many top-level keys that allowlist carries rather than the document itself: the vocabulary of the allowlist is owner-defined and undecided, so copying a tenant-authored structure into the audit trail would record something nothing can yet interpret.',
+  },
+  {
+    code: 'rpt.report_configuration.version_published',
+    class: 'privileged',
+    entityType: 'rpt.report_configuration_version',
+    description:
+      'A draft version of a report configuration was published, fixing the definition in force. It is effectively irreversible: a database trigger refuses any later update of a published version, so there is no unpublish and no edit, and a configuration may hold at most one published version at a time. Publishing a version does not publish its configuration, and does not make the report runnable — no data source is bound to a report code anywhere in the approved schema.',
+  },
+
   // ---- Phase 1-31 P-10 — warranty POLICY and COVERAGE administration (wty) ----
   //
   // `privileged` for a sharper reason than the generation action above: the rows these

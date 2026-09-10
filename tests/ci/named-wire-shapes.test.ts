@@ -107,8 +107,15 @@ describe('every route body serialises a named type', () => {
     // this gate refuses an inline return type; the six commands serialise
     // `ChecklistTemplateView` and `ChecklistTemplateItemView`, which is the same
     // pair the reads publish.
-    expect(summary.bodies).toBe(397);
-    expect(summary.named).toBe(344);
+    // 404 with the P1-31 report CONFIGURATION seam (P-11): seven operations, two
+    // GETs and five writes, every one of them NAMED, so `named` moves by seven and
+    // `composed` does not. `ReportConfigurationListView` and
+    // `ReportConfigurationDetailView` exist because this gate refuses an inline
+    // return type; the five commands serialise `ReportConfigurationSummaryView` and
+    // `ReportConfigurationVersionView`, which is the same pair the reads publish.
+    // The delivery list adds one named 200 body on an existing route module.
+    expect(summary.bodies).toBe(405);
+    expect(summary.named).toBe(352);
     expect(summary.composed).toBe(53);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);
