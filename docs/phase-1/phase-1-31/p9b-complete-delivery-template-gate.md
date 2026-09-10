@@ -8,8 +8,9 @@ and deliberately did not fix.
 **Migration:** `supabase/migrations/20260909090000_sal_complete_delivery_active_template_gate.sql`
 (139).
 **Recorded as:** **CC-21** at section 35 of
-[`change-control-2026-09-08.md`](./change-control-2026-09-08.md) — provisional until the open #361
-warranty-policy slice takes **CC-20** and section 34 at merge.
+[`change-control-2026-09-08.md`](./change-control-2026-09-08.md). The merged report-configuration
+writer #361 occupies **CC-20** and section 34; the final integration retains this slice's reserved
+identifiers.
 
 ## 1. The problem
 
@@ -120,10 +121,22 @@ precisely so a slice on this lane can close a finding of this shape.
 - **No permission was minted and no bundle changed.** The gate is inside a primitive that every
   existing caller already invokes.
 - **No route, no operation, no audit action.** The published contract is unchanged; the register
-  stays at 397 operations.
+  has 405 operations after integration of the merged predecessors; this slice adds none.
 - **No template-removal route.** The obstacle that made publishing one unsafe is gone — a
   soft-deleted template now does withdraw its items — but publishing the route is a separate
   decision and is not taken here.
 - **The company-wide mandatory scan is not closed.** Narrowing it needs a template reference on
   `sal.delivery_records`, which is a schema question this slice does not open.
 - **`apps/web` is untouched**, including the generated idempotency manifest: no operation moved.
+
+## 6. Integrated source verification — 2026-09-10
+
+Source `844fb9c7a1a2cfb55299995df989b232c63912e0` integrates protected `develop` `455bce260c315c2b8727418ba37b8e43a7e24fff` once, after cleanup #365 merged. Three documentation conflicts were reconciled; no executable conflict required a behavior change. The migration tree remains `565ebf2d1c4aef83aa910ccdbe42221a02e60611`, identical to the retained candidate139 replay. No migration was edited or replayed for this verification.
+
+On the newly owned `p131_template_gate_20260910` copy (OID 36457), seed validation applied all eight declared files twice and passed; all six classification validators passed. The full DB tier passed **1743/1743 across 144 files**, and the targeted `tests/backend/p1-31-delivery-checklist-template-seam.test.ts` passed **28/28**. Both actual runner exits were zero, both JSON reporters reported success, and neither reported failed or empty suites. This is full DB and selected backend evidence, not a full backend or end-to-end claim.
+
+The container/database identity and five existing test logins/four memberships were checked before execution. All 255 retained candidate tables (342 rows) retained their before/after content digest, `5184d443de700c445e08ca920216b6b655f622c93055efacd196dc6069bf1cb4`; captured role privilege attributes and memberships were unchanged. The final source/clone connection lists were empty, and the last connection closed at `2026-09-10T10:39:01.495Z`. The disposable copy is retained; no shared-stack reset, source-fixture cleanup, new cluster authority or seed replay against the retained source occurred. Durable raw reports and inventories are in the coordinator evidence bundle under `template-gate-*-20260910`. Historical failed runs remain preserved.
+
+Separate agent-assisted technical review of this exact executable source found no blocking issue in the immutable function, matching count/sample predicates, scoped exclusions, lifecycle cases or permission/version behavior. This is technical review under the Solo Developer Review Policy, not independent human QA or phase acceptance. The gate remains a live company-wide count of mandatory items under active, nondeleted templates; zero applicable items are permitted and no snapshot requirement is introduced.
+
+Final local records at the same executable source: web **3619/3619 across 133 files**, followed by the manifest refresh and **113/113** across the three evidence suites, then unit **3277/3277 across 121 files**. Both tier records retain actual runner exit zero, reporter success, no failed or empty suites and no dirty executable paths. Root/API typechecks, lint and formatting, Stylelint, security checks and contract validators passed. The coordinator separately verified all 19 postmerge checks for cleanup #365 at `455bce260c315c2b8727418ba37b8e43a7e24fff`, releasing the dependency push hold. The standing local aggregate/build/Playwright waiver remains; this branch still requires its own final-head hosted gates and coordinator merge review. No phase acceptance or pending Owner answer is implied.
