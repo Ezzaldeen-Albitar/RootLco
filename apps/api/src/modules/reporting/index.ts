@@ -51,9 +51,7 @@ export const reportingModule = composeModule({
   module: 'reporting',
   create: () => ({
     catalogue: new ReportCatalogueService(new ReportCatalogueRepository()),
-    // P1-31 P-11. Holds no repository of its own: every row it returns comes
-    // through the owning module's port, because `wo.*` is not this module's to
-    // read (ADR-001 rule 3).
-    runs: new ReportRunService(),
+    // Tenant restrictions come from rpt; dataset rows remain behind wo's port.
+    runs: new ReportRunService(new ReportCatalogueRepository()),
   }),
 });

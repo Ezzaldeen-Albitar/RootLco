@@ -172,7 +172,8 @@ export class ReportCatalogueService extends ApplicationService {
    * `report_code` order this catalogue has always used, marked
    * `source: 'tenant'`. A tenant row whose code is registered SUPPRESSES the
    * baseline entry and is returned in its own place, carrying that tenant's
-   * scope, export permission and parameter schema — a configuration row is
+   * scope, export permission and parameter schema. An unpublished or archived
+   * row also suppresses fallback, but is not returned. A configuration row is
    * **customization of a report the platform implements, not a precondition for
    * it existing**.
    *
@@ -201,9 +202,7 @@ export class ReportCatalogueService extends ApplicationService {
     if (request.cursor !== null) return { ...page, items: rows };
 
     const configured = new Set(
-      (await this.repository.findPublishedByCodes(db, REPORT_DATASET_CODES)).map(
-        (row) => row.report_code
-      )
+      (await this.repository.findByCodes(db, REPORT_DATASET_CODES)).map((row) => row.report_code)
     );
     const baselines = REPORT_DATASET_CODES.filter((code) => !configured.has(code)).map((code) =>
       baselineView(reportDataset(code))
@@ -212,8 +211,9 @@ export class ReportCatalogueService extends ApplicationService {
   }
 
   /**
-   * One definition by code — a tenant's configuration if it published one, the
-   * code-registered baseline if it did not, `ERR-RES-001` if neither exists.
+   * One definition by code — a tenant's published configuration, or the
+   * code-registered baseline only when no live configuration row exists.
+   * Unpublished and archived tenant rows answer `ERR-RES-001`.
    *
    * The precedence is the same as the list's and states the same rule: a
    * configuration row is CUSTOMIZATION of a report the platform already
@@ -222,9 +222,11 @@ export class ReportCatalogueService extends ApplicationService {
    * export permission and filter allowlist.
    */
   async readByCode(db: DbHandle, reportCode: string): Promise<ReportDefinitionView> {
-    const row = await this.repository.findPublishedByCode(db, reportCode);
-    if (row !== null) return toView(row);
-    if (isReportDatasetCode(reportCode)) return baselineView(reportDataset(reportCode));
+    const row = await this.repository.findByCode(db, reportCode);
+    if (row?.status === 'published') return toView(row);
+    if (row === null && isReportDatasetCode(reportCode)) {
+      return baselineView(reportDataset(reportCode));
+    }
     // A draft, an archived report, another tenant's report and a code that
     // never existed all answer identically. The catalogue must not be usable
     // to discover which report codes a tenant has configured.

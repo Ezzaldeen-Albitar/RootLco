@@ -31,6 +31,10 @@
  *    same company and branch, through `callerHoldsPermission`, which asks the
  *    same deployed `iam.has_permission_in_scope` every other check asks. A
  *    caller who may run reports but may not read work orders is refused.
+ * 3. An explicit tenant configuration must be published with a live published
+ *    version. Its scope ceiling and understood filter allowlist are enforced
+ *    before branch resolution or dataset reads. Unknown restrictions fail
+ *    closed. Only absence of configuration enables baseline fallback.
  *
  * A single operation cannot declare a per-report permission code — the
  * declaration is a literal, read statically by the authorization gate — so the
@@ -80,6 +84,8 @@ import type { DbHandle } from '@/server/db/transaction';
 import type { Page } from '@/server/db/pagination';
 import { iamOrganizationContext } from '@/modules/iam';
 import { workOrderModule } from '@/modules/work-order';
+import type { ReportCatalogueRepository } from '../data/report-catalogue-repository';
+import { assertReportConfiguration } from './report-configuration-policy';
 import {
   isReportDatasetCode,
   reportDataset,
@@ -293,6 +299,10 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 export class ReportRunService extends ApplicationService {
   protected readonly module = 'reporting';
 
+  constructor(private readonly repository: ReportCatalogueRepository) {
+    super();
+  }
+
   /**
    * Runs one registered report over one branch and one calendar period.
    *
@@ -323,6 +333,13 @@ export class ReportRunService extends ApplicationService {
         safeDetails: { requiredPermissions: [definition.requiredPermission] },
       });
     }
+
+    assertReportConfiguration(await this.repository.findByCode(db, definition.code), definition, {
+      companyId: input.companyId,
+      branchId: input.branchId,
+      from: input.from,
+      to: input.to,
+    });
 
     const branch = await iamOrganizationContext().branches.findBranch(db, {
       companyId: input.companyId,

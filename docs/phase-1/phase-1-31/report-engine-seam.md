@@ -76,6 +76,31 @@ Two checks, in this order, and they are different questions.
    `callerHoldsPermission`, which asks the same deployed `iam.has_permission_in_scope` every other
    check asks. No second definition of scope is introduced.
 
+The run then reads the caller tenant's explicit configuration under the same transaction.
+No configuration permits the code baseline. An existing draft or archived configuration is
+not a baseline fallback; execution returns `ERR-RES-001`, as does a published configuration
+without a live published version. Soft-deleted versions are excluded from resolution.
+The catalogue also suppresses baseline fallback for existing drafts and archived rows.
+
+For a published configuration, `scope_level` is a ceiling, following BR-RPT-001's ordering
+`branch < company < tenant`. The branch-only dataset remains branch-only even if a tenant
+configures a broader ceiling. The existing `parameter_schema` shape
+`{ filters: { name: { type } } }` is an explicit allowlist: every supplied report filter
+(`companyId`, `branchId`, `from`, `to`) must be listed, with the corresponding `uuid` or
+`date` type. The frozen database default `{}` adds no filter restriction; an explicit
+`{ filters: {} }` permits none. The configuration writer merged in PR #361 accepts bounded
+JSON objects while deferring vocabulary, so publication alone does not prove a restriction
+is understood by this engine. Pagination controls are transport parameters. Unknown schema properties,
+filter names, types, or constraints return `ERR-IAM-001` before any dataset read. This
+conservative behavior does not invent a general schema evaluator; supporting richer
+constraints requires an agreed executable vocabulary. A tenant restriction is never silently
+discarded in favor of registry defaults.
+
+Export remains unavailable for this dataset. The tenant's explicit export permission is
+preserved in catalogue metadata; read permission grants no export authority. P-12 must enforce
+the configured permission, dataset permissions and these same restrictions before generating
+an export. The generic P1-15 export-authorize operation does not itself implement report export.
+
 **Why the second check cannot be a declaration.** `defineOperation` is a literal read statically by
 the authorization gate, so one operation cannot declare a code that depends on its path parameter.
 The service check answers the **uniform** `ERR-IAM-001` — the same failure the route's own check
@@ -132,8 +157,9 @@ reused.
   tenant's own published rows by code, marked `source: 'tenant'`.
 - A tenant row whose code is registered **suppresses** its baseline entry and is returned in its own
   place, carrying that tenant's scope, export permission and parameter schema.
-- `GET /reports/{reportCode}` answers the tenant's row if one is published, the baseline if not, and
-  `ERR-RES-001` if neither exists.
+- `GET /reports/{reportCode}` answers the tenant's row if one is published, the baseline only
+  when no live configuration exists, and `ERR-RES-001` for an unpublished/archived row or an
+  unknown code. An explicit tenant decision cannot be bypassed by registry fallback.
 - `executable` is now `REPORT_DATASETS` membership rather than a literal `false`: true for a code
   the engine implements, false for a published tenant row whose code it does not.
 
@@ -146,8 +172,8 @@ ascending.
 **The alternative, and why it was not taken.** "A report is invisible until an operator configures
 it" is defensible and is what a strict reading of P1-23 implies. It would mean every tenant must
 author four configuration rows before any report works — and `rpt.report_configurations` has no
-seed and, until P-11's remaining writer slice lands, no writer at all. Every report would be
-unreachable in every tenant. **This is OPEN to Owner override**; reversing it is a change to two
+seed and had no writer at the time of this slice. PR #361 subsequently merged the writer;
+the approved baseline availability rule remains. **This is OPEN to Owner override**; reversing it is a change to two
 methods in `ReportCatalogueService` and their cases.
 
 A baseline entry publishes `exportPermissionCode: null` rather than naming `rpt.export`. Report
@@ -209,9 +235,15 @@ name instead of a bare id.
 | 1   | **Bilingual state labels need a schema change.** `wo.work_order_states.name` is a single `text` column (`supabase/migrations/20260722091000_wo_state_catalogs.sql`), so a client asking for Arabic cannot get a state label from this API. Inventing one here would be a fabricated translation |
 | 2   | **`countsByState` is dataset-specific and sits on the shared envelope.** The one dataset registered today groups by work-order state; the other three baseline reports group differently, and generalising the field is their work                                                              |
 | 3   | **Aggregate and batch ports for the other three reports.** Each needs its own port on its owning module, on the same rule this slice applied — the module that owns the tables answers for them                                                                                                 |
-| 4   | **A configuration writer.** `rpt.report.configure` is still declared by no operation and `rpt.report_configurations` still has no seed and no writer (**CC-02**)                                                                                                                                |
+| 4   | **Configuration-writer integration.** PR #361 has merged the writer; this branch will incorporate it at the coordinator's final dependency sync. Richer executable filter vocabulary remains explicit work.                                                                                     |
 
 ## 10. What this slice does NOT close
+
+The 2026-09-10 continuation adds focused database-free service regression cases for baseline
+availability, scoped dataset permission, published allowlists, unsupported restrictions,
+withdrawal, scope ceilings and export metadata. These are unit evidence; they do not claim a
+database replay, backend-suite run, hosted gate or merge. Final integration and backend evidence
+follow the coordinator's dependency and database ownership sequence.
 
 - **No migration and no schema change.** Every statement uses grants and policies that already
   existed; `rpt` is exactly as P1-11 left it.
