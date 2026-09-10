@@ -26,7 +26,9 @@
  *      than from the caller;
  *   5. the migration's own statements, read from the committed file, mint exactly
  *      one employee per RESOLVABLE legacy value and leave an unresolvable one
- *      untouched and listed for review.
+ *      untouched and listed for review;
+ *   6. the review list that step 5 produces is readable only inside its own
+ *      tenant and writable by no application role at all.
  *
  * The read scope and the missing branch rule are both the Owner clarification of
  * 2026-09-10: an employee's home branch is informational and transferable, and it
@@ -48,6 +50,7 @@ import {
   cleanFixtures,
   ensureOrgFixtures,
   ensureTestLogins,
+  readonlyPool,
   runtimePool,
   withRolledBackTx,
 } from './helpers';
@@ -83,6 +86,7 @@ type Q = { query: Client['query'] };
 
 let admin: Pool;
 let runtime: Pool;
+let readonly: Pool;
 
 /**
  * The migration's OWN mint statement, sliced out of the committed file.
@@ -153,6 +157,7 @@ beforeAll(async () => {
   await ensureOrgFixtures(admin);
   await seedP111Base(admin);
   runtime = runtimePool();
+  readonly = readonlyPool();
 
   await admin.query(
     `INSERT INTO org.branches (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
@@ -179,6 +184,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (runtime) await runtime.end();
+  if (readonly) await readonly.end();
   if (admin) {
     await cleanP111Committed(admin).catch(() => undefined);
     await admin
@@ -795,5 +801,106 @@ describe('5. the backfill, replayed from the committed migration file', () => {
         )`
     );
     expect(rows[0]?.n).toBe('0');
+  });
+});
+
+// ===========================================================================
+describe('6. the review list is tenant-isolated and read-only to every application role', () => {
+  /*
+   * Nothing in the product reads or writes this table: the migration writes it
+   * once and no operation publishes it. That is exactly why its policy is
+   * asserted here rather than assumed — a list nothing exercises is a list
+   * whose isolation nothing would have caught. Both halves matter and neither
+   * implies the other: a row readable across the tenant boundary would expose
+   * one organisation's unresolved handovers to another, and a list its own
+   * tenant can edit is not evidence of anything.
+   *
+   * The two rows are provisioned on the ADMIN connection and COMMITTED, because
+   * a row written inside an open transaction on one connection is invisible to
+   * every other session — a rolled-back provisioning would only have proved
+   * that an invisible row is invisible.
+   *
+   * `delivery_id` is deliberately not a foreign key (the migration says why),
+   * so these fixtures need no delivery behind them; `tenant_id` IS one, and
+   * both tenants exist in the shared org fixtures.
+   */
+  const REVIEW_DELIVERY_A = 'f1310000-0000-4000-8000-0000001700c1';
+  const REVIEW_LEGACY_A = 'f1310000-0000-4000-8000-0000001700c2';
+  const REVIEW_DELIVERY_B = 'f1310000-0000-4000-8000-0000001700d1';
+  const REVIEW_LEGACY_B = 'f1310000-0000-4000-8000-0000001700d2';
+
+  const provisionReviewRows = async (): Promise<void> => {
+    await admin.query(
+      `INSERT INTO sal.delivery_legacy_identity_review (tenant_id, delivery_id, legacy_value)
+       VALUES ($1,$2,$3),($4,$5,$6)`,
+      [TENANT_A, REVIEW_DELIVERY_A, REVIEW_LEGACY_A, TENANT_B, REVIEW_DELIVERY_B, REVIEW_LEGACY_B]
+    );
+  };
+
+  const removeReviewRows = async (): Promise<void> => {
+    await admin.query(
+      `DELETE FROM sal.delivery_legacy_identity_review WHERE delivery_id = ANY($1::uuid[])`,
+      [[REVIEW_DELIVERY_A, REVIEW_DELIVERY_B]]
+    );
+  };
+
+  it('shows a runtime and a read-only session their own tenant row and not the other', async () => {
+    await provisionReviewRows();
+    try {
+      for (const pool of [runtime, readonly]) {
+        await withRolledBackTx(pool, ctxA, async (c) => {
+          const mine = await c.query<{ legacy_value: string }>(
+            `SELECT legacy_value FROM sal.delivery_legacy_identity_review WHERE delivery_id = $1`,
+            [REVIEW_DELIVERY_A]
+          );
+          expect(mine.rowCount).toBe(1);
+          expect(mine.rows[0]?.legacy_value).toBe(REVIEW_LEGACY_A);
+
+          // Addressed directly by the other half of its primary key, so an empty
+          // answer is the POLICY and not a tenant filter this query remembered
+          // to write.
+          const theirs = await c.query(
+            `SELECT legacy_value FROM sal.delivery_legacy_identity_review WHERE delivery_id = $1`,
+            [REVIEW_DELIVERY_B]
+          );
+          expect(theirs.rowCount).toBe(0);
+
+          // And the unfiltered table is exactly this tenant and no other.
+          const everything = await c.query<{ tenant_id: string }>(
+            `SELECT DISTINCT tenant_id FROM sal.delivery_legacy_identity_review`
+          );
+          expect(everything.rows.map((row) => row.tenant_id)).toEqual([TENANT_A]);
+        });
+      }
+    } finally {
+      await removeReviewRows();
+    }
+  });
+
+  it('refuses INSERT, UPDATE and DELETE from the runtime login (42501)', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      // Its OWN tenant, and a row shaped exactly like the one the migration
+      // writes, so each refusal below is the absent grant and the absent policy
+      // rather than a tenant predicate the statement failed to satisfy.
+      await expectFail(
+        c,
+        '42501',
+        `INSERT INTO sal.delivery_legacy_identity_review (tenant_id, delivery_id, legacy_value)
+         VALUES ($1,$2,$3)`,
+        [TENANT_A, REVIEW_DELIVERY_A, REVIEW_LEGACY_A]
+      );
+      await expectFail(
+        c,
+        '42501',
+        `UPDATE sal.delivery_legacy_identity_review SET legacy_value = $1 WHERE tenant_id = $2`,
+        [REVIEW_LEGACY_A, TENANT_A]
+      );
+      await expectFail(
+        c,
+        '42501',
+        `DELETE FROM sal.delivery_legacy_identity_review WHERE tenant_id = $1`,
+        [TENANT_A]
+      );
+    });
   });
 });

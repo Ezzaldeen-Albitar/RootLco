@@ -374,8 +374,10 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('sal.delivery_checklist_results');
   await deleteFrom('sal.delivery_status_history');
   // Its own tenant FK is ON DELETE RESTRICT, so a review row would block the
-  // tenant delete below. Written only by migration 141, never by a suite, which
-  // is why this line is insurance rather than housekeeping.
+  // tenant delete below. The product writes the table once, in migration 141,
+  // and no application role holds DELETE on it; this connection is the owner and
+  // does, which is what removes the isolation fixtures written by
+  // tests/db/org-employees.test.ts obligation 6.
   await deleteFrom('sal.delivery_legacy_identity_review');
   await deleteFrom('sal.delivery_records');
   await deleteFrom('sal.delivery_checklist_template_items');
