@@ -963,8 +963,10 @@ reports to the contracts that can serve them and names the prerequisites that do
   page still decides before it reads.
 - **The default window was not changed.** **D-11** — whether the seven-day default is ratified,
   deferred or changed — **stays open**, and the preflight's warning that shipping FE-015 without it
-  carries the decision into a second phase is now realised rather than avoided. The window itself is
-  proven by test to be seven days and server-computed.
+  carries the decision into a second phase is now realised rather than avoided. Addendum
+  2026-09-10: D-11 was settled by the Owner (seven-day default and 92-day maximum retained; see
+  `owner-decisions-2026-09-10.md` §3). The window itself is proven by test to be seven days and
+  server-computed.
 - **No backend source was touched.** A Frontend lane may not, and nothing here needed it: every
   criterion surfaced was already a bound parameter of the existing operation.
 - **No canonical task was marked done.** The task matrix records FE-015 as `in open PR`, and its
