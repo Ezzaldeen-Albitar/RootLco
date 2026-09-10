@@ -396,6 +396,15 @@ import '@/app/api/v1/delivery-checklist-templates/[templateId]/items/[itemId]/ro
 import '@/app/api/v1/warranties/route';
 import '@/app/api/v1/warranties/[warrantyId]/route';
 
+// P1-31 prerequisite P-11, the report CONFIGURATION seam. Imported for the same
+// reason: an unimported route is simply ABSENT from the generated document rather
+// than reported as missing.
+import '@/app/api/v1/report-configurations/route';
+import '@/app/api/v1/report-configurations/[configurationId]/route';
+import '@/app/api/v1/report-configurations/[configurationId]/status/route';
+import '@/app/api/v1/report-configurations/[configurationId]/versions/route';
+import '@/app/api/v1/report-configurations/[configurationId]/versions/[versionId]/publish/route';
+
 // P1-31 prerequisite P-10, the warranty POLICY and COVERAGE seam (PPD-04). Imported
 // for the same reason: an unimported route is simply ABSENT from the generated
 // document rather than reported as missing.

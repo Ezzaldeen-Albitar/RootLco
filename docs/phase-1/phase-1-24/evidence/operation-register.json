@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 398,
-    "openapiPaths": 310,
-    "openapiOperations": 398,
+    "operations": 406,
+    "openapiPaths": 315,
+    "openapiOperations": 406,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -11,10 +11,10 @@
     "outboxForeignWriters": 0,
     "errorCodes": 28,
     "permissionCodes": 119,
-    "auditActions": 227
+    "auditActions": 232
   },
   "counts": {
-    "Covered": 398
+    "Covered": 406
   },
   "operations": [
     {
@@ -8892,6 +8892,280 @@
       "file": "apps/api/src/app/api/v1/reports/route.ts"
     },
     {
+      "id": "rpt.report-configuration-create",
+      "domain": "reporting",
+      "method": "POST",
+      "route": "/api/v1/report-configurations",
+      "permissions": ["rpt.report.configure"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "rpt.report_configuration.created",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/report-configurations",
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial",
+        "cross-tenant"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-31-report-configuration-seam.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/report-configurations/route.ts"
+    },
+    {
+      "id": "rpt.report-configuration-list",
+      "domain": "reporting",
+      "method": "GET",
+      "route": "/api/v1/report-configurations",
+      "permissions": ["rpt.report.configure"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/report-configurations",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "denial",
+        "cross-tenant"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-31-report-configuration-seam.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/report-configurations/route.ts"
+    },
+    {
+      "id": "rpt.report-configuration-read",
+      "domain": "reporting",
+      "method": "GET",
+      "route": "/api/v1/report-configurations/{configurationId}",
+      "permissions": ["rpt.report.configure"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/report-configurations/{configurationId}",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-31-report-configuration-seam.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/report-configurations/[configurationId]/route.ts"
+    },
+    {
+      "id": "rpt.report-configuration-status-set",
+      "domain": "reporting",
+      "method": "POST",
+      "route": "/api/v1/report-configurations/{configurationId}/status",
+      "permissions": ["rpt.report.configure"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "rpt.report_configuration.status_changed",
+      "idempotent": true,
+      "versionGuarded": true,
+      "openapi": "POST /api/v1/report-configurations/{configurationId}/status",
+      "documentedResponses": ["200", "401", "403", "409", "422", "428", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-31-report-configuration-seam.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/report-configurations/[configurationId]/status/route.ts"
+    },
+    {
+      "id": "rpt.report-configuration-update",
+      "domain": "reporting",
+      "method": "PATCH",
+      "route": "/api/v1/report-configurations/{configurationId}",
+      "permissions": ["rpt.report.configure"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "rpt.report_configuration.updated",
+      "idempotent": false,
+      "versionGuarded": true,
+      "openapi": "PATCH /api/v1/report-configurations/{configurationId}",
+      "documentedResponses": ["200", "401", "403", "409", "422", "428", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-31-report-configuration-seam.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/report-configurations/[configurationId]/route.ts"
+    },
+    {
+      "id": "rpt.report-configuration-version-create",
+      "domain": "reporting",
+      "method": "POST",
+      "route": "/api/v1/report-configurations/{configurationId}/versions",
+      "permissions": ["rpt.report.configure"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "rpt.report_configuration.version_created",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/report-configurations/{configurationId}/versions",
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-31-report-configuration-seam.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/report-configurations/[configurationId]/versions/route.ts"
+    },
+    {
+      "id": "rpt.report-configuration-version-publish",
+      "domain": "reporting",
+      "method": "POST",
+      "route": "/api/v1/report-configurations/{configurationId}/versions/{versionId}/publish",
+      "permissions": ["rpt.report.configure"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "rpt.report_configuration.version_published",
+      "idempotent": false,
+      "versionGuarded": true,
+      "openapi": "POST /api/v1/report-configurations/{configurationId}/versions/{versionId}/publish",
+      "documentedResponses": ["200", "401", "403", "409", "422", "428", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-31-report-configuration-seam.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/report-configurations/[configurationId]/versions/[versionId]/publish/route.ts"
+    },
+    {
       "id": "rpt.report-read",
       "domain": "reporting",
       "method": "GET",
@@ -9590,6 +9864,46 @@
       "file": "apps/api/src/app/api/v1/deliveries/[deliveryId]/eligibility/route.ts"
     },
     {
+      "id": "sal.delivery-list",
+      "domain": "delivery",
+      "method": "GET",
+      "route": "/api/v1/deliveries",
+      "permissions": ["sal.delivery.view"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/deliveries",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant",
+        "pagination"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-31-delivery-list-seam.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/deliveries/route.ts"
+    },
+    {
       "id": "sal.delivery-read",
       "domain": "delivery",
       "method": "GET",
@@ -9623,7 +9937,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-31-delivery-read-seam.test.ts"],
+      "tests": [
+        "tests/backend/p1-31-delivery-list-seam.test.ts",
+        "tests/backend/p1-31-delivery-read-seam.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/deliveries/[deliveryId]/route.ts"
     },
@@ -12219,7 +12536,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-30-a1-service-catalogue-head.test.ts"],
+      "tests": [
+        "tests/backend/p1-30-a1-service-catalogue-head.test.ts",
+        "tests/backend/p1-31-report-configuration-seam.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/services/[serviceId]/versions/route.ts"
     },

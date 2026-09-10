@@ -107,12 +107,20 @@ describe('every route body serialises a named type', () => {
     // this gate refuses an inline return type; the six commands serialise
     // `ChecklistTemplateView` and `ChecklistTemplateItemView`, which is the same
     // pair the reads publish.
-    // 398 with the P1-31 report engine (P-11): one GET serialising `ReportRunView`,
-    // a NAMED interface, so `named` moves by one and `composed` does not. The
-    // envelope exists BECAUSE this gate refuses an inline return type, and naming
-    // it is what let the cell, column and period shapes be named as well.
-    expect(summary.bodies).toBe(398);
-    expect(summary.named).toBe(345);
+    // 404 with the P1-31 report CONFIGURATION seam (P-11): seven operations, two
+    // GETs and five writes, every one of them NAMED, so `named` moves by seven and
+    // `composed` does not. `ReportConfigurationListView` and
+    // `ReportConfigurationDetailView` exist because this gate refuses an inline
+    // return type; the five commands serialise `ReportConfigurationSummaryView` and
+    // `ReportConfigurationVersionView`, which is the same pair the reads publish.
+    // The delivery list adds one named 200 body on an existing route module.
+    // 406 with the P1-31 report ENGINE (P-11) merged alongside it: one GET
+    // serialising `ReportRunView`, a NAMED interface, so `named` moves by one
+    // and `composed` does not. The envelope exists BECAUSE this gate refuses an
+    // inline return type, and naming it is what let the cell, column and period
+    // shapes be named as well.
+    expect(summary.bodies).toBe(406);
+    expect(summary.named).toBe(353);
     expect(summary.composed).toBe(53);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

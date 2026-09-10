@@ -22,24 +22,39 @@
  * `COMPANY_A9`, where its only grant carries no delivery code. Three principals, one
  * rule: a mandatory item authored here blocks the handover of every vehicle in every
  * branch of the company, because `sal.complete_delivery` counts mandatory items by
- * `(tenant, company)` across all templates.
+ * `(tenant, company)` across all templates that are in force.
  *
  * The READS are gated differently on purpose: `SAL_READER` holds `sal.delivery.view`
  * and not `sal.delivery.manage`, and reads the whole surface. A delivery officer must
  * be able to see the checklist they are working through.
  *
- * ## The gate finding this suite records rather than fixes
+ * ## The gate finding this suite recorded, and now proves closed
  *
- * **An INACTIVE template still blocks a handover.** `sal.complete_delivery` filters
- * mandatory items on the ITEM's `deleted_at` and never joins the parent template, so
- * deactivating a template does not withdraw its items from the completion gate. The
- * case below proves that on real rows, in `COMPANY_A9` so no other suite's in-flight
- * delivery can see it, and then proves that WITHDRAWING the item does clear the
- * blocker. Correcting the gate itself is a change to a protected function — a
- * migration — and is recorded in
- * `docs/phase-1/phase-1-31/delivery-checklist-template-seam.md` with the reason it is
- * not mirrored in application code: a mirror that "improved" on the primitive would
- * report a delivery eligible that the primitive then refuses.
+ * This suite originally recorded a defect it could not fix: **an INACTIVE template
+ * still blocked a handover**, because `sal.complete_delivery` filtered mandatory items
+ * on the ITEM's `deleted_at` and never joined the parent template, so retiring a
+ * template withdrew nothing from the completion gate and the operator's only remedy was
+ * withdrawing each item. Correcting it was a change to a protected function — a
+ * migration — and was carried as CC-14.
+ *
+ * P-9b closes it (Owner approval 2026-09-09). Migration
+ * `20260909090000_sal_complete_delivery_active_template_gate.sql` joins
+ * `sal.delivery_checklist_templates` into the count and admits an item only when its
+ * template is `status = 'active'` and not soft-deleted, and
+ * `mandatoryChecklistGaps` gains the same join in the same commit. The cases at the
+ * foot of this file are the inverted proof, on real rows in `COMPANY_A9`: an active
+ * template gates, deactivation clears, reactivation gates again, withdrawing the item
+ * still clears, and neither another company's nor another tenant's template is ever
+ * counted.
+ *
+ * The lockstep rule that made the finding unfixable here is unchanged and is why the
+ * mirror moves with the migration rather than ahead of it: a mirror that "improved" on
+ * the primitive would report a delivery eligible that the primitive then refuses with
+ * 23514. The WRITE side of that agreement — the refusal itself, and the completion
+ * succeeding once the template is retired or soft-deleted — is pinned against the
+ * primitive directly in `tests/db/sal-delivery.test.ts`. The soft-deleted-template
+ * state lives there rather than here for a reason of principle: this suite authors
+ * every row through a published route, and no route soft-deletes a template.
  *
  * COVERAGE-EVIDENCE (P1-31 delivery checklist template seam):
  *   sal.delivery-checklist-template-list: route service authorization success denial
@@ -75,6 +90,7 @@ import { establishP1_19Fixtures, type Principal } from './p1-19-helpers';
 import {
   BRANCH_A9,
   COMPANY_A9,
+  COMPANY_B1,
   SAL_COMPANY_SCOPED,
   SAL_FULL,
   SAL_READER,
@@ -1034,11 +1050,44 @@ describe('the item commands', () => {
 // The completion gate, measured
 // ---------------------------------------------------------------------------
 
-describe('an INACTIVE template still gates a handover', () => {
-  it('blocks completion on a deactivated template, and stops only when the item is withdrawn', async () => {
-    // Everything here happens in COMPANY_A9, the second company of tenant A, so the
-    // mandatory item cannot reach an in-flight delivery of any other suite. The item
-    // is withdrawn before the case ends.
+/**
+ * Opens a `ready` delivery in COMPANY_A9 and returns a reader for its eligibility.
+ *
+ * COMPANY_A9 — the second company of tenant A — for the reason the finding case used
+ * it: a mandatory item authored here gates every handover of its company, so authoring
+ * one in COMPANY_A1 would reach the in-flight deliveries of every other suite. Each
+ * case below retires or withdraws what it authored before it ends.
+ */
+async function openA9Delivery(
+  tag: string
+): Promise<{ deliveryId: string; eligibility: () => Promise<EligibilityBody> }> {
+  const chain = await seedWorkOrderChain(tag, { companyId: COMPANY_A9, branchId: BRANCH_A9 });
+  authAs(SAL_FULL);
+  const opened = await CREATE_DELIVERY(
+    new Request('http://localhost/api/v1/deliveries', {
+      method: 'POST',
+      headers: jsonHeaders({ key: randomUUID() }),
+      body: JSON.stringify({ workOrderId: chain.workOrderId, deliveringEmployeeId: randomUUID() }),
+    })
+  );
+  expect(opened.status).toBe(201);
+  const deliveryId = (await bodyOf<{ id: string }>(opened)).id;
+
+  const eligibility = async (): Promise<EligibilityBody> => {
+    authAs(SAL_FULL);
+    const response = await READ_ELIGIBILITY(
+      new Request(`http://localhost/api/v1/deliveries/${deliveryId}/eligibility`),
+      { params: Promise.resolve({ deliveryId }) }
+    );
+    expect(response.status).toBe(200);
+    return bodyOf<EligibilityBody>(response);
+  };
+
+  return { deliveryId, eligibility };
+}
+
+describe('only an ACTIVE, non-deleted template gates a handover', () => {
+  it('gates while the template is active, stops on deactivation, and gates again on reactivation', async () => {
     const template = await authorTemplate({
       companyId: COMPANY_A9,
       name: 'Company A9 checklist',
@@ -1047,56 +1096,99 @@ describe('an INACTIVE template still gates a handover', () => {
     const item = template.items[0];
     if (item === undefined) throw new Error('the fixture template carries no item');
 
-    authAs(SAL_FULL);
-    const retired = await setTemplateStatus(template.id, 'inactive', template.recordVersion);
-    expect(retired.status).toBe(200);
-    expect((await bodyOf<TemplateBody>(retired)).status).toBe('inactive');
+    const { eligibility } = await openA9Delivery('p131_p9_gate');
 
-    const chain = await seedWorkOrderChain('p131_p9_gate', {
-      companyId: COMPANY_A9,
-      branchId: BRANCH_A9,
-    });
-    authAs(SAL_FULL);
-    const opened = await CREATE_DELIVERY(
-      new Request('http://localhost/api/v1/deliveries', {
-        method: 'POST',
-        headers: jsonHeaders({ key: randomUUID() }),
-        body: JSON.stringify({
-          workOrderId: chain.workOrderId,
-          deliveringEmployeeId: randomUUID(),
-        }),
-      })
-    );
-    expect(opened.status).toBe(201);
-    const deliveryId = (await bodyOf<{ id: string }>(opened)).id;
-
-    const eligibility = async (): Promise<EligibilityBody> => {
-      authAs(SAL_FULL);
-      const response = await READ_ELIGIBILITY(
-        new Request(`http://localhost/api/v1/deliveries/${deliveryId}/eligibility`),
-        { params: Promise.resolve({ deliveryId }) }
-      );
-      expect(response.status).toBe(200);
-      return bodyOf<EligibilityBody>(response);
-    };
-
-    // THE FINDING. The template is inactive and its item still gates the handover:
-    // `sal.complete_delivery` counts mandatory items by (tenant, company), filtered on
-    // the ITEM's deleted_at, and never joins the parent template. The eligibility read
-    // mirrors the primitive exactly, deliberately, so it reports what completion would
-    // actually do.
+    // The template is ACTIVE and its mandatory item has no result, so it blocks — and
+    // the blocker is actionable, naming the item rather than being a bare code. This is
+    // the half that must survive P-9b: the join narrows which templates are in force
+    // and must not withdraw one that is.
     const blocked = await eligibility();
     expect(blocked.blockers).toContain('checklist_incomplete');
     expect(blocked.checklistGaps.map((gap) => gap.itemCode)).toContain('fx_p131_p9_mandatory');
 
+    // Retiring the template is now the operator's company-level remedy. Before P-9b
+    // (migration 20260909090000, closing CC-14) this changed nothing at all:
+    // `sal.complete_delivery` counted mandatory items by (tenant, company) filtered on
+    // the ITEM's deleted_at and never joined the parent template, so a retired
+    // checklist went on refusing every handover in the company.
+    authAs(SAL_FULL);
+    const retired = await setTemplateStatus(template.id, 'inactive', template.recordVersion);
+    expect(retired.status).toBe(200);
+    const retiredBody = await bodyOf<TemplateBody>(retired);
+    expect(retiredBody.status).toBe('inactive');
+
+    const cleared = await eligibility();
+    expect(cleared.blockers).not.toContain('checklist_incomplete');
+    expect(cleared.checklistGaps).toHaveLength(0);
+
+    // Reactivation puts it back in force, on the SAME delivery — so this is the gate
+    // responding to the template's state and not to anything about the delivery.
+    authAs(SAL_FULL);
+    const restored = await setTemplateStatus(template.id, 'active', retiredBody.recordVersion);
+    expect(restored.status).toBe(200);
+    const restoredBody = await bodyOf<TemplateBody>(restored);
+    expect(restoredBody.status).toBe('active');
+
+    const blockedAgain = await eligibility();
+    expect(blockedAgain.blockers).toContain('checklist_incomplete');
+    expect(blockedAgain.checklistGaps.map((gap) => gap.itemCode)).toContain('fx_p131_p9_mandatory');
+
+    // Withdrawing the ITEM still clears it under an ACTIVE template: the migration adds
+    // a condition to the count and removes none, so the withdrawal route keeps working
+    // exactly as it did. This also leaves COMPANY_A9 with nothing mandatory in force.
     authAs(SAL_FULL);
     const withdrawn = await removeItem(template.id, item.id);
     expect(withdrawn.status).toBe(200);
 
-    // Withdrawing the ITEM is what clears it, which is why the withdrawal route
-    // exists and why deactivation alone is not the operator's remedy.
-    const cleared = await eligibility();
-    expect(cleared.blockers).not.toContain('checklist_incomplete');
-    expect(cleared.checklistGaps).toHaveLength(0);
+    const clearedByWithdrawal = await eligibility();
+    expect(clearedByWithdrawal.blockers).not.toContain('checklist_incomplete');
+    expect(clearedByWithdrawal.checklistGaps).toHaveLength(0);
+
+    authAs(SAL_FULL);
+    const finalRetire = await setTemplateStatus(
+      template.id,
+      'inactive',
+      restoredBody.recordVersion
+    );
+    expect(finalRetire.status).toBe(200);
+  });
+
+  it('counts no template of another company and none of another tenant', async () => {
+    const { eligibility } = await openA9Delivery('p131_p9_iso');
+
+    // An ACTIVE mandatory checklist in COMPANY_A1 — the same tenant, a different
+    // company. The scan is company-scoped and the join carries `company_id`, so it
+    // cannot reach this delivery.
+    const otherCompany = await authorTemplate({
+      companyId: COMPANY_A1,
+      name: 'Active in another company',
+      items: [{ itemCode: 'fx_p131_p9_iso_company', label: 'Mandatory in A1', isMandatory: true }],
+    });
+
+    // And an ACTIVE mandatory checklist in another TENANT entirely. The join is on
+    // `uq_delivery_checklist_templates_scope_id (tenant_id, company_id, id)` and every
+    // arm of the count is bound to the delivery's tenant, so a foreign row is
+    // unreachable twice over — by the join key and by RLS.
+    authAs(SAL_TENANT_B);
+    const foreignCode = nextCode('iso_tenant');
+    const foreign = await createTemplate({
+      companyId: COMPANY_B1,
+      templateCode: foreignCode,
+      name: 'Active in another tenant',
+      items: [{ itemCode: 'fx_p131_p9_iso_tenant', label: 'Mandatory in B', isMandatory: true }],
+    });
+    expect(foreign.status).toBe(201);
+
+    const unaffected = await eligibility();
+    expect(unaffected.blockers).not.toContain('checklist_incomplete');
+    expect(unaffected.checklistGaps).toHaveLength(0);
+
+    // The COMPANY_A1 template is withdrawn rather than left retired: an inactive
+    // template with a live mandatory item is exactly the state P-9b makes harmless,
+    // and leaving one behind would make this suite depend on the behaviour it proves.
+    const otherItem = otherCompany.items[0];
+    if (otherItem === undefined) throw new Error('the fixture template carries no item');
+    authAs(SAL_FULL);
+    expect((await removeItem(otherCompany.id, otherItem.id)).status).toBe(200);
   });
 });

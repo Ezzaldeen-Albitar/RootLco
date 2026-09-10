@@ -237,12 +237,17 @@ describe('the API application lives in the workspace', () => {
     // the item module the edit and the withdrawal — eight and five, the same
     // asymmetry, because three paths carry two verbs each.
     //
-    // 311 with the P1-31 report engine (P-11): ONE operation over ONE new module,
-    // and the symmetry is the point — the run is a separate path from the
-    // definition read rather than a query parameter on it, so a slice that had
-    // overloaded an existing route would move neither count and this case would
-    // not have noticed. Compare the P-9 asymmetry directly above.
-    expect(routeFiles.length).toBe(311);
+    // 315 with the P1-31 report configuration seam (P-11): seven operations over
+    // FIVE more new modules. The collection module co-locates the list and the
+    // create and the id-addressed module the read and the edit, so two paths carry
+    // two verbs each — seven and five, the same asymmetry.
+    //
+    // 316 with the P1-31 report ENGINE (P-11) merged alongside it: ONE operation
+    // over ONE new module, and the symmetry is the point — the run is a separate
+    // path from the definition read rather than a query parameter on it, so a
+    // slice that had overloaded an existing route would move neither count and
+    // this case would not have noticed.
+    expect(routeFiles.length).toBe(316);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -263,7 +268,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 398 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 406 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -313,8 +318,11 @@ describe('the API application lives in the workspace', () => {
     // operations over five new modules, and 397 with the P1-31 checklist template
     // seam (P-9) merged alongside it: eight operations over five more new modules,
     // for the reason stated above the route-module count.
-    // 398 with the P1-31 report engine (P-11): one operation over one new module.
-    expect(report.operations).toHaveLength(398);
+    // 404 with the P1-31 report configuration seam (P-11): seven operations over
+    // five more new modules, for the same reason.
+    // The delivery list adds one operation on the existing collection module.
+    // 406 with the report engine (P-11): one operation over one new module.
+    expect(report.operations).toHaveLength(406);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the
