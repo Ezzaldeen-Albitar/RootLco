@@ -1193,7 +1193,12 @@ the rule it enforced, and the case that asserted it now asserts the acceptance i
 BODY is unchanged, so the `sal.delivery-create` payload mirror is untouched; `org` is outside the
 P1-30 payload-parity domains, so the four new operations owe no mirror.
 
-**`deliveringEmployeeDisplayName` is published as `string | null`.** `NULL` means one thing and
+**`deliveringEmployeeDisplayName` is `string | null` in the delivery service view types** —
+`apps/api/src/modules/delivery/application` — and that is the only place any nullability for it is
+stated. `docs/api/openapi.v1.json` publishes `{ "type": "object" }` for every `sal.delivery-*`
+success response and therefore carries no field-level delivery response schema at all, which is a
+pre-existing convention this slice neither introduced nor changed; the web read type does not carry
+the field yet either (section 41.3). `NULL` means one thing and
 only one: this handover was recorded before P-17 and its delivering identity resolved to nobody. No
 delivery created after the migration can carry it, because the trigger stamps a name or refuses the
 insert.
@@ -1252,3 +1257,12 @@ because `sal.delivery-create` now refuses an employee that does not exist, **can
 handover at all**. That is the sharpest consequence of any P1-31 bundle widening, and it is written
 here so it is scheduled rather than discovered. **This slice does not run it, and makes no claim that
 it has been run.**
+
+### 41.5 Record-integrity note (for the Owner)
+
+`tests/ci/p1-27-doc-counts.test.ts:784` requires `docs/phase-1/phase-1-27/closure-record.md` to
+quote the schema hash and migration count that the CURRENT committed baseline carries, so adding the
+two migrations of this slice obliged it to rewrite a row of a record sealed on 2026-08-12 — **139**
+and `8302f675…` became **141** and `ce41a44c…` — which is a repository convention that makes a
+historical record track the live baseline rather than the state it recorded, and one the Owner may
+wish to change.

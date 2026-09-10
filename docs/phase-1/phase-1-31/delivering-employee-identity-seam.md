@@ -260,3 +260,12 @@ untouched, appears in the review table, and the key lands `NOT VALID` while `VAL
   76-code bundle and therefore neither new code. They need one backfill run of the existing tenant
   administrator bundle backfill after this merges. This slice does not run it and makes no claim
   that it has been run.
+
+## 11. Record-integrity note (for the Owner)
+
+`tests/ci/p1-27-doc-counts.test.ts:784` requires `docs/phase-1/phase-1-27/closure-record.md` to
+quote the schema hash and migration count that the CURRENT committed baseline carries, so adding the
+two migrations of this slice obliged it to rewrite a row of a record sealed on 2026-08-12 — **139**
+and `8302f675…` became **141** and `ce41a44c…` — which is a repository convention that makes a
+historical record track the live baseline rather than the state it recorded, and one the Owner may
+wish to change.
