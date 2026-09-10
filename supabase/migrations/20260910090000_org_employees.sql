@@ -23,24 +23,40 @@
 --   Historical attribution survives a rename or a departure. It is deliberately
 --   NOT an HR record: no contract, no salary, no contact detail, no document.
 --
--- Working ASSUMPTIONS, pending Owner confirmation
+-- Working assumptions and their standing (Owner clarification of 2026-09-10)
 --   Recorded here and in docs/phase-1/phase-1-31/delivering-employee-identity-seam.md
---   as assumptions rather than decisions, because each one is a shape this DDL
---   commits to and each could be answered the other way:
---     A-1  an employee may exist with NO user account (`user_account_id` NULL);
---     A-2  an employee has ONE home branch, and it is transferable, which is
---          why `branch_id` is NOT frozen by the immutable guard below;
---     A-3  rows minted by the companion backfill are `inactive`, because
---          nothing has confirmed that the legacy account is a current employee;
---     A-4  `employment_ref` is optional, opaque, and unique per tenant when it
---          is present.
+--   with the label each one actually carries, because two are now settled and
+--   two are still engineering choices this DDL commits to:
+--     A-1  OWNER DECISION (approved). An employee may exist with NO user
+--          account (`user_account_id` NULL): employee identity is independent
+--          of a login.
+--     A-2  OWNER DECISION (approved). `branch_id` is the INFORMATIONAL home
+--          branch and it is transferable. It is NOT a restriction — it never
+--          decides whether this employee may be named on work recorded in
+--          another branch of the same tenant. That is why the immutable guard
+--          below does not freeze it and why nothing downstream compares it.
+--     A-3  ENGINEERING CHOICE — RECOMMENDATION PENDING OWNER APPROVAL. Rows
+--          minted by the companion backfill are `inactive`. Recommendation:
+--          keep `inactive`, because a legacy account is evidence that somebody
+--          handed a vehicle over once, not that they are on the roster today.
+--     A-4  ENGINEERING CHOICE — RECOMMENDATION PENDING OWNER APPROVAL.
+--          `employment_ref` is optional, opaque, and unique per tenant when it
+--          is present. Recommendation: keep both. A mandatory reference would
+--          exclude every employee who has no record in an external system, and
+--          a non-unique one would stop it identifying anybody.
 --
 -- Security implications
---   * Tenant/company/branch RLS on the sal.delivery_records template: SELECT to
---     app_runtime and app_readonly, INSERT and UPDATE to app_runtime, and NO
---     DELETE grant and no delete policy for any application role. An employee
---     is retired by `status = 'inactive'`, never removed, because a removed
---     employee would orphan the deliveries that cite them.
+--   * READ is TENANT-scoped, on the iam.user_accounts precedent, because A-2
+--     says the home branch must not restrict authorized work elsewhere: a
+--     branch-restricted operator recording a handover has to be able to resolve
+--     an employee whose home branch is another one. WRITE stays scoped —
+--     creating, transferring or retiring an employee is administration and the
+--     INSERT and UPDATE policies keep the company/branch predicates. Reading the
+--     register through the API is still scope-checked by the application, which
+--     is where a branch-restricted administrator is refused.
+--   * NO DELETE grant and no delete policy for any application role. An
+--     employee is retired by `status = 'inactive'`, never removed, because a
+--     removed employee would orphan the deliveries that cite them.
 --   * `user_account_id` is nullable but never arbitrary: the composite foreign
 --     key names (tenant_id, user_account_id), so an account belonging to
 --     another tenant is refused by the constraint and invisible to the read
@@ -51,14 +67,15 @@
 --
 -- Objects created
 --   Tables:      org.employees
---   Constraints: pk_employees, uq_employees_scope_id, fk_employees_tenant,
+--   Constraints: pk_employees, uq_employees_tenant_id, fk_employees_tenant,
 --                fk_employees_branch, fk_employees_user_account,
 --                ck_employees_display_name_not_blank,
 --                ck_employees_employment_ref_not_blank, ck_employees_status
---   Indexes:     ix_employees_user_account, ix_employees_tenant_status,
---                uq_employees_user_account_live, uq_employees_employment_ref_live
+--   Indexes:     ix_employees_branch, ix_employees_user_account,
+--                ix_employees_tenant_status, uq_employees_user_account_live,
+--                uq_employees_employment_ref_live
 --   Triggers:    tg_employees_touch_metadata, tg_employees_immutable
---   Policies:    sel_employees_scope, ins_employees_scope, upd_employees_scope
+--   Policies:    sel_employees_tenant, ins_employees_scope, upd_employees_scope
 -- ============================================================================
 
 CREATE TABLE org.employees (
@@ -85,11 +102,12 @@ CREATE TABLE org.employees (
   deleted_by        uuid        NULL,
 
   CONSTRAINT pk_employees PRIMARY KEY (id),
-  -- The composite candidate key sal.delivery_records points at. Its index also
-  -- covers fk_employees_tenant and fk_employees_branch, which is why neither
-  -- gets an index of its own: a second one would be redundant and the
-  -- duplicate-index sweep in tests/db/org-security.test.ts exists to say so.
-  CONSTRAINT uq_employees_scope_id UNIQUE (tenant_id, company_id, branch_id, id),
+  -- The candidate key sal.delivery_records points at, and it names the TENANT
+  -- and nothing narrower. A four-column key would have made the home branch a
+  -- constraint on every record that cites an employee, which is exactly what
+  -- A-2 forbids. Its index also covers fk_employees_tenant, which is why that
+  -- key gets no index of its own.
+  CONSTRAINT uq_employees_tenant_id UNIQUE (tenant_id, id),
   CONSTRAINT fk_employees_tenant FOREIGN KEY (tenant_id)
     REFERENCES org.tenants (id) ON DELETE RESTRICT,
   CONSTRAINT fk_employees_branch FOREIGN KEY (tenant_id, company_id, branch_id)
@@ -103,16 +121,20 @@ CREATE TABLE org.employees (
 );
 
 COMMENT ON TABLE org.employees IS
-  'P1-31 prerequisite P-17. Tenant-owned employee identity, distinct from the login account (iam.user_accounts), from the authenticated actor and from the authorized receiver. Branch-scoped and RLS-forced; exposes UNIQUE (tenant_id, company_id, branch_id, id) so a branch-scoped record such as sal.delivery_records can name an employee without widening its own scope. Deliberately NOT an HR master: no contract, salary, contact detail or document lives here.';
+  'P1-31 prerequisite P-17. Tenant-owned employee identity, distinct from the login account (iam.user_accounts), from the authenticated actor and from the authorized receiver. RLS-forced, read tenant-wide and written scope-restricted; exposes UNIQUE (tenant_id, id) so a record such as sal.delivery_records can name an employee of the same tenant whatever branch that employee calls home. Deliberately NOT an HR master: no contract, salary, contact detail or document lives here.';
 COMMENT ON COLUMN org.employees.user_account_id IS
   'The login account this employee signs in with, or NULL when they have none. Same-tenant by composite foreign key. Nullable on purpose: tech.technician_profiles and iam.user_employee_links both REQUIRE an account, which is why neither could carry this identity.';
 COMMENT ON COLUMN org.employees.employment_ref IS
   'Opaque, optional link to an employment record held outside this platform. Unique per tenant among live rows. Never a name, a contact detail or a national identifier.';
 COMMENT ON COLUMN org.employees.branch_id IS
-  'The home branch. Mutable by design (Owner assumption A-2, transfer), which is why the immutable guard on this table does not freeze it.';
+  'The INFORMATIONAL home branch, transferable by design, which is why the immutable guard on this table does not freeze it (Owner decision A-2 of 2026-09-10). It records where this employee is based; it never restricts where they may be named. Nothing compares it to the branch of a record that cites this employee.';
 COMMENT ON COLUMN org.employees.status IS
   'active or inactive. Retirement is a status change and never a delete: no application role holds DELETE on this table, because a removed employee would orphan every delivery that cites them.';
 
+-- Covers fk_employees_branch, which uq_employees_tenant_id no longer does now
+-- that the candidate key names only the tenant. It also serves the register
+-- LIST, which is filtered on exactly this pair by the application.
+CREATE INDEX ix_employees_branch ON org.employees (tenant_id, company_id, branch_id);
 -- Covers fk_employees_user_account. NOT partial, deliberately: the foreign-key
 -- index sweep ignores any index carrying a predicate, so the partial unique
 -- below cannot stand in for it.
@@ -143,13 +165,17 @@ CREATE TRIGGER tg_employees_immutable
 ALTER TABLE org.employees ENABLE ROW LEVEL SECURITY;
 ALTER TABLE org.employees FORCE  ROW LEVEL SECURITY;
 
-CREATE POLICY sel_employees_scope ON org.employees
+-- TENANT-wide read, on the iam.user_accounts precedent and for the same reason:
+-- this is a directory of people, and Owner decision A-2 says the home branch of
+-- a person is not a fence around them. A branch-restricted operator recording a
+-- handover must be able to resolve a colleague based elsewhere in the same
+-- tenant, and both the pre-check in the delivery module and
+-- sal.stamp_delivering_employee_identity read through THIS policy. Scope is
+-- still enforced where it belongs: the register's own read operations authorize
+-- the row's company and branch in the application before answering.
+CREATE POLICY sel_employees_tenant ON org.employees
   FOR SELECT TO app_runtime, app_readonly
-  USING (
-    tenant_id = iam.current_tenant_id()
-    AND (iam.allowed_company_ids() IS NULL OR company_id = ANY (iam.allowed_company_ids()))
-    AND (iam.allowed_branch_ids() IS NULL OR branch_id = ANY (iam.allowed_branch_ids()))
-  );
+  USING (tenant_id = iam.current_tenant_id());
 CREATE POLICY ins_employees_scope ON org.employees
   FOR INSERT TO app_runtime
   WITH CHECK (

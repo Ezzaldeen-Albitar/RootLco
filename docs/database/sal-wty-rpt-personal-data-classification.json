@@ -614,6 +614,26 @@
       "searchable": false,
       "dataType": "uuid"
     },
+    "sal.delivery_legacy_identity_review.delivery_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_legacy_identity_review.legacy_value": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.delivery_legacy_identity_review.recorded_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.delivery_legacy_identity_review.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
     "sal.delivery_records.branch_id": {
       "classification": "internal",
       "searchable": false,
