@@ -1,7 +1,7 @@
 # P1-31 — D-4 report definitions and their column-to-contract mapping
 
-**Status:** OPEN · **Authority:** Owner decision **D-4**, taken 2026-09-09, which names four baseline
-reports · **Measured at:** protected `develop` `249c6428`, 2026-09-09 · **Companions:**
+**Status:** OPEN · **Authority:** Owner decision **D-4**, taken 2026-09-09, which defines four baseline
+reports and their required columns · **Measured at:** protected `develop` `249c6428`, 2026-09-09 · **Companions:**
 [`a0-preflight.md`](./a0-preflight.md) (D-4 as it stood open), [`task-matrix.md`](./task-matrix.md)
 (FE-011 … FE-014 rows), `docs/product/owner-requirements-2026-09-06.md` (OWR-2026-09-06-A-12)
 
@@ -9,15 +9,11 @@ reports · **Measured at:** protected `develop` `249c6428`, 2026-09-09 · **Comp
 
 The report catalogue service states in its own source that inventing a binding from a report code to
 a data source would mean inventing a business report definition the Product Owner has not approved.
-That is why D-4 existed as an open decision and why no such binding was written. **The Owner has now
-named four baseline reports.** This record takes those four names and does the part that is an
-engineering measurement rather than a business choice: for every column each report would show, it
-names the contract that can supply it, or it names the prerequisite that must exist first.
+That is why D-4 existed as an open decision and why no such binding was written. **The Owner approved the four baseline reports and their required columns**, recorded in `owner-decisions-2026-09-09.md` §3. This record maps those approved requirements to the contracts that supply them or the prerequisites that must exist first. The source mapping is an engineering assessment; it does not narrow the approved columns.
 
 Three honesty rules apply throughout:
 
-- **The four report names are the Owner's. Every mapping, prerequisite and proposal below is this
-  record's.** Nothing here has been approved by the Owner beyond the four names.
+- **The four report definitions and required columns are the Owner's.** Contract mappings and explicitly marked proposals are this record's engineering assessment. The full approved column lists in `owner-decisions-2026-09-09.md` §3 remain authoritative.
 - **No figure appears anywhere in this document.** A report definition is a shape; a number in a
   definition document is a fabricated measurement.
 - **An unknown is written as a named prerequisite, never as a value.** Where a column has no source,

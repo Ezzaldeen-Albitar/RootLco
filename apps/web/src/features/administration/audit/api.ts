@@ -5,7 +5,15 @@ import type { ApiFailureKind } from '@/lib/api/client';
 import type { TableRequest } from '@/components/data-table/table-state';
 import type { ServerPage, ServerPageStatus } from '../shared/use-server-table';
 import { query, type CursorPage } from '../shared/api';
-import type { AuditDetail, AuditFilters, AuditRow } from './types';
+import { branchTargetQuery, type BranchTarget, type ItemsOnly } from '@/lib/api/read-operation';
+import type {
+  AuditBranchOption,
+  AuditCompanyOption,
+  AuditDetail,
+  AuditFilters,
+  AuditRow,
+  AuditScopeOptions,
+} from './types';
 
 /**
  * Reads for the audit log.
@@ -54,30 +62,57 @@ const STATUS_BY_KIND: Record<ApiFailureKind, ServerPageStatus> = {
 
 const EMPTY = { rows: [], nextCursor: null, hasMore: false } as const;
 
+/** Each directory enforces its own read permission and database reach policy. */
+export async function readAuditScopeOptions(): Promise<AuditScopeOptions> {
+  const client = await authorizedClient();
+  if (!client) return { status: 'unavailable', companies: [], branches: [] };
+  const [companies, branches] = await Promise.all([
+    client.get<ItemsOnly<AuditCompanyOption>>('/api/v1/org/companies'),
+    client.get<ItemsOnly<AuditBranchOption>>('/api/v1/org/branches'),
+  ]);
+  if (!companies.ok || !branches.ok) return { status: 'unavailable', companies: [], branches: [] };
+  return { status: 'ok', companies: companies.data.items, branches: branches.data.items };
+}
+
 export async function listAuditEvents(
   request: TableRequest,
   cursor: string | null,
   range: { readonly from: string; readonly to: string },
-  filters: AuditFilters
+  filters: AuditFilters,
+  target: BranchTarget | null = null
 ): Promise<ServerPage<AuditRow>> {
   const client = await authorizedClient();
   if (!client) return { ...EMPTY, status: 'expired', correlationId: null };
 
+  if (target !== null) {
+    // Server Actions are callable directly: never trust a browser-supplied option.
+    const options = await readAuditScopeOptions();
+    if (options.status !== 'ok') return { ...EMPTY, status: 'denied', correlationId: null };
+    if (
+      !options.companies.some((company) => company.id === target.companyId) ||
+      !options.branches.some(
+        (branch) => branch.id === target.branchId && branch.companyId === target.companyId
+      )
+    ) {
+      return { ...EMPTY, status: 'denied', correlationId: null };
+    }
+  }
+
   // `query` drops an empty value, so an unfilled criterion is absent from the
   // request rather than sent as a blank the backend would have to interpret.
+  const params = {
+    from: range.from,
+    to: range.to,
+    cursor,
+    limit: request.pageSize,
+    action: filters.action,
+    entityType: filters.entityType,
+    actorId: filters.actorId,
+  };
   const path =
-    '/api/v1/audit-events' +
-    query({
-      from: range.from,
-      to: range.to,
-      cursor,
-      limit: request.pageSize,
-      action: filters.action,
-      entityType: filters.entityType,
-      actorId: filters.actorId,
-    });
+    '/api/v1/audit-events' + (target === null ? query(params) : branchTargetQuery(target, params));
 
-  const result = await client.get<CursorPage<AuditRow>>(path);
+  const result = await client.get<CursorPage<AuditRow>>(path, { retries: 0 });
   if (!result.ok) {
     return { ...EMPTY, status: STATUS_BY_KIND[result.kind], correlationId: result.correlationId };
   }

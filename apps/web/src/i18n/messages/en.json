@@ -3533,5 +3533,10 @@
   "delivery.action.loadMore": "Show more",
   "delivery.workOrder.heading": "Vehicle handover",
   "delivery.workOrder.none": "No handover has been started for this work order.",
-  "delivery.workOrder.open": "Open the handover"
+  "delivery.workOrder.open": "Open the handover",
+  "audit.filter.company": "Company",
+  "audit.filter.branch": "Branch",
+  "audit.filter.allCompanies": "All accessible audit records",
+  "audit.filter.chooseBranch": "Choose a branch for the selected company.",
+  "audit.filter.scopeUnavailable": "Company and branch choices are unavailable. You can still search the audit log."
 }

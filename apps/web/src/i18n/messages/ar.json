@@ -3533,5 +3533,10 @@
   "delivery.action.loadMore": "عرض المزيد",
   "delivery.workOrder.heading": "تسليم المركبة",
   "delivery.workOrder.none": "لم يبدأ أي تسليم لأمر العمل هذا.",
-  "delivery.workOrder.open": "فتح التسليم"
+  "delivery.workOrder.open": "فتح التسليم",
+  "audit.filter.company": "الشركة",
+  "audit.filter.branch": "الفرع",
+  "audit.filter.allCompanies": "جميع سجلات التدقيق المتاحة",
+  "audit.filter.chooseBranch": "اختر فرعًا للشركة المحددة.",
+  "audit.filter.scopeUnavailable": "خيارات الشركات والفروع غير متاحة. لا يزال بإمكانك البحث في سجل التدقيق."
 }

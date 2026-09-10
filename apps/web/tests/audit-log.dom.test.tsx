@@ -17,11 +17,8 @@ import { renderLtr, renderRtl } from './render';
  * English; the screen still states that no export exists and still offers none;
  * and the route page decides before it reads.
  *
- * Two of the route's six filters are absent by decision, not by oversight:
- * the company and branch parameters are refused by the shared query builder,
- * which never lets a client assert a scope name (`P1-27-SEC-001`). Surfacing
- * them is a change to that boundary and is recorded for the Owner rather than
- * taken here, so this file asserts nothing about them in either direction.
+ * Company/branch choices use authorized directory rows and the existing paired
+ * resource-query contract. Direct Server Action calls recheck pair membership.
  */
 
 const EN = en as Record<string, string>;
@@ -33,9 +30,13 @@ const labelledAr = (key: string) => new RegExp(`^${escape(AR[key] as string)}`);
 
 const listAuditEvents = vi.fn();
 const readAuditEvent = vi.fn();
+const readAuditScopeOptions = vi.fn();
+const apiGet = vi.fn();
+vi.mock('@/lib/api/server-client', () => ({ authorizedClient: async () => ({ get: apiGet }) }));
 vi.mock('@/features/administration/audit/api', () => ({
   listAuditEvents: (...args: unknown[]) => listAuditEvents(...args),
   readAuditEvent: (...args: unknown[]) => readAuditEvent(...args),
+  readAuditScopeOptions: (...args: unknown[]) => readAuditScopeOptions(...args),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -88,6 +89,7 @@ beforeEach(() => {
   PERMISSIONS = [];
   listAuditEvents.mockResolvedValue(okPage([row]));
   readAuditEvent.mockResolvedValue({ status: 'ok', record: row, correlationId: 'corr-9' });
+  readAuditScopeOptions.mockResolvedValue({ status: 'unavailable', companies: [], branches: [] });
 });
 
 function renderScreen(over: Record<string, unknown> = {}) {
@@ -309,6 +311,7 @@ describe('the /administration/audit-log route page decides before it reads', () 
     renderLtr((await AuditLogPage({ params: Promise.resolve({ locale: 'en' }) })) as never);
     expect(screen.getByText(EN['state.denied.title'] as string)).toBeVisible();
     expect(listAuditEvents).not.toHaveBeenCalled();
+    expect(readAuditScopeOptions).not.toHaveBeenCalled();
   });
 
   it('reads a seven-day window with the code held, computed on the server', async () => {
@@ -321,5 +324,146 @@ describe('the /administration/audit-log route page decides before it reads', () 
     // the window plus the last day's tail rather than exactly seven.
     expect(Math.floor(days)).toBe(DEFAULT_WINDOW_DAYS);
     expect(lastFilters()).toEqual({ action: '', entityType: '', actorId: '' });
+  });
+});
+
+describe('authorized company and branch selection', () => {
+  const scopeOptions = {
+    status: 'ok' as const,
+    companies: [
+      { id: 'company-a', legalName: 'Company A' },
+      { id: 'company-b', legalName: 'Company B' },
+    ],
+    branches: [
+      { id: 'branch-a', companyId: 'company-a', name: 'Branch A' },
+      { id: 'branch-b', companyId: 'company-b', name: 'Branch B' },
+    ],
+  };
+
+  it('requires a named branch, applies only on submit, and clears the pair', async () => {
+    const user = userEvent.setup();
+    renderScreen({ scopeOptions });
+    await waitFor(() => expect(listAuditEvents).toHaveBeenCalled());
+    const before = listAuditEvents.mock.calls.length;
+    await user.selectOptions(screen.getByLabelText(labelled('audit.filter.company')), 'company-a');
+    expect(screen.queryByRole('option', { name: 'Branch B' })).toBeNull();
+    await user.click(
+      within(filterForm()).getByRole('button', { name: EN['audit.filter.apply'] as string })
+    );
+    expect(screen.getByText(EN['audit.filter.chooseBranch'] as string)).toBeVisible();
+    expect(listAuditEvents.mock.calls.length).toBe(before);
+    await user.selectOptions(screen.getByLabelText(labelled('audit.filter.branch')), 'branch-a');
+    expect(listAuditEvents.mock.calls.length).toBe(before);
+    await apply(user);
+    expect(listAuditEvents.mock.calls.at(-1)?.[4]).toEqual({
+      companyId: 'company-a',
+      branchId: 'branch-a',
+    });
+    await user.selectOptions(screen.getByLabelText(labelled('audit.filter.company')), 'company-b');
+    expect(screen.getByLabelText(labelled('audit.filter.branch'))).toHaveValue('');
+    await user.click(
+      within(filterForm()).getByRole('button', { name: EN['audit.filter.clear'] as string })
+    );
+    await waitFor(() => expect(listAuditEvents.mock.calls.at(-1)?.[4]).toBeNull());
+  });
+
+  it('keeps audit search usable when directory permission is absent', async () => {
+    renderScreen({ scopeOptions: { status: 'unavailable', companies: [], branches: [] } });
+    await waitFor(() => expect(listAuditEvents).toHaveBeenCalled());
+    expect(screen.getByText(EN['audit.filter.scopeUnavailable'] as string)).toBeVisible();
+    expect(within(filterForm()).queryByRole('combobox')).toBeNull();
+    expect(listAuditEvents.mock.calls.at(-1)?.[4]).toBeNull();
+  });
+
+  it('names company and branch choices in Arabic', async () => {
+    renderRtl(
+      <AuditLogScreen
+        locale="ar"
+        messages={ar}
+        initialFrom="2026-09-01"
+        initialTo="2026-09-08"
+        scopeOptions={scopeOptions}
+      />
+    );
+    await waitFor(() => expect(listAuditEvents).toHaveBeenCalled());
+    expect(screen.getByLabelText(labelledAr('audit.filter.company'))).toBeVisible();
+    expect(screen.getByLabelText(labelledAr('audit.filter.branch'))).toBeVisible();
+  });
+
+  const actualApi = async () =>
+    vi.importActual<typeof import('@/features/administration/audit/api')>(
+      '@/features/administration/audit/api'
+    );
+  const request = { pageSize: 25 } as import('@/components/data-table/table-state').TableRequest;
+  const range = { from: '2026-09-01T00:00:00.000Z', to: '2026-09-08T23:59:59.999Z' };
+  const filters = { action: '', entityType: '', actorId: '' };
+  function directoryReads() {
+    apiGet.mockImplementation(async (path: string) => ({
+      ok: true,
+      data:
+        path === '/api/v1/org/companies'
+          ? { items: scopeOptions.companies }
+          : path === '/api/v1/org/branches'
+            ? { items: scopeOptions.branches }
+            : { items: [], nextCursor: null, hasMore: false },
+    }));
+  }
+
+  it('sends the validated resource pair and disables retries on the audited read', async () => {
+    directoryReads();
+    const api = await actualApi();
+    const result = await api.listAuditEvents(request, null, range, filters, {
+      companyId: 'company-a',
+      branchId: 'branch-a',
+    });
+    expect(result.status).toBe('ok');
+    const call = apiGet.mock.calls.find(([path]) =>
+      String(path).startsWith('/api/v1/audit-events?')
+    );
+    const params = new URL(String(call?.[0]), 'https://example.test').searchParams;
+    expect(params.get('companyId')).toBe('company-a');
+    expect(params.get('branchId')).toBe('branch-a');
+    expect(params.has('tenantId')).toBe(false);
+    expect(call?.[1]).toEqual({ retries: 0 });
+  });
+
+  it.each([
+    { companyId: 'company-a', branchId: 'branch-b' },
+    { companyId: 'foreign-company', branchId: 'foreign-branch' },
+  ])(
+    'refuses a tampered or foreign-directory target before reading audit records: %j',
+    async (target) => {
+      directoryReads();
+      const api = await actualApi();
+      expect((await api.listAuditEvents(request, null, range, filters, target)).status).toBe(
+        'denied'
+      );
+      expect(
+        apiGet.mock.calls.some(([path]) => String(path).startsWith('/api/v1/audit-events'))
+      ).toBe(false);
+    }
+  );
+
+  it('does not need organization permissions for the original unfiltered audit read', async () => {
+    apiGet.mockImplementation(async (path: string) =>
+      path.startsWith('/api/v1/org/')
+        ? { ok: false, kind: 'forbidden', correlationId: 'denied' }
+        : { ok: true, data: { items: [], nextCursor: null, hasMore: false } }
+    );
+    const api = await actualApi();
+    expect((await api.readAuditScopeOptions()).status).toBe('unavailable');
+    expect((await api.listAuditEvents(request, null, range, filters)).status).toBe('ok');
+    apiGet.mockClear();
+    expect(
+      (
+        await api.listAuditEvents(request, null, range, filters, {
+          companyId: 'company-a',
+          branchId: 'branch-a',
+        })
+      ).status
+    ).toBe('denied');
+    expect(
+      apiGet.mock.calls.some(([path]) => String(path).startsWith('/api/v1/audit-events'))
+    ).toBe(false);
   });
 });

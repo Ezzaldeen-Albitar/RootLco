@@ -3,7 +3,8 @@
 import { useCallback, useState } from 'react';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import type { TableRequest } from '@/components/data-table/table-state';
-import { TextField } from '@/components/forms/Field';
+import { SelectField, TextField } from '@/components/forms/Field';
+import type { BranchTarget } from '@/lib/api/read-operation';
 import { Drawer } from '@/components/overlays/Overlays';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
@@ -11,7 +12,13 @@ import { translate } from '@/i18n/get-messages';
 import { formatDateTime } from '@/lib/format';
 import { useServerTable } from '../../shared/use-server-table';
 import { listAuditEvents, readAuditEvent } from '../api';
-import { NO_AUDIT_FILTERS, type AuditDetail, type AuditFilters, type AuditRow } from '../types';
+import {
+  NO_AUDIT_FILTERS,
+  type AuditDetail,
+  type AuditFilters,
+  type AuditRow,
+  type AuditScopeOptions,
+} from '../types';
 
 /**
  * The strict identifier shape, as the rest of Administration writes it. The
@@ -50,9 +57,8 @@ const SECONDARY_BUTTON =
  * The list operation takes a fixed allow-list of bound parameters, and until now
  * the screen surfaced none of them: it sent the window and nothing else, so an
  * operator looking for one action in a quarter of records had to read the pages.
- * The three surfaced here are the ones the client may send — see
- * `AuditFilters` in `../types` for why the company and branch parameters are
- * not among them.
+ * The text criteria travel with an optional authorized company/branch target.
+ * Selecting a company prepares its branch choices; applying requires a pair.
  *
  * They apply on submit rather than on each keystroke. The read is rate-limited
  * as an expensive one and is itself an audited act, so a criterion typed
@@ -64,11 +70,13 @@ export function AuditLogScreen({
   messages,
   initialFrom,
   initialTo,
+  scopeOptions,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly initialFrom: string;
   readonly initialTo: string;
+  readonly scopeOptions?: AuditScopeOptions;
 }) {
   const t = useCallback((key: string) => translate(messages, key as keyof Messages), [messages]);
 
@@ -80,6 +88,9 @@ export function AuditLogScreen({
   const [draft, setDraft] = useState<AuditFilters>(NO_AUDIT_FILTERS);
   const [applied, setApplied] = useState<AuditFilters>(NO_AUDIT_FILTERS);
   const [actorInvalid, setActorInvalid] = useState(false);
+  const [draftTarget, setDraftTarget] = useState<BranchTarget>({ companyId: '', branchId: '' });
+  const [appliedTarget, setAppliedTarget] = useState<BranchTarget | null>(null);
+  const [targetInvalid, setTargetInvalid] = useState(false);
   const [detail, setDetail] = useState<AuditDetail | null>(null);
   const [detailBusy, setDetailBusy] = useState(false);
 
@@ -92,9 +103,10 @@ export function AuditLogScreen({
           from: `${range.from}T00:00:00.000Z`,
           to: `${range.to}T23:59:59.999Z`,
         },
-        applied
+        applied,
+        appliedTarget
       ),
-    [range.from, range.to, applied]
+    [range.from, range.to, applied, appliedTarget]
   );
 
   // The range is what `load` closes over, so it is what must invalidate the
@@ -104,7 +116,7 @@ export function AuditLogScreen({
   // unfiltered set is not page four of a filtered one, and a cursor taken from
   // the first is meaningless against the second.
   const table = useServerTable<AuditRow>(load, {
-    loadKey: `${range.from}..${range.to}#${applied.action}#${applied.entityType}#${applied.actorId}`,
+    loadKey: `${range.from}..${range.to}#${applied.action}#${applied.entityType}#${applied.actorId}#${appliedTarget?.companyId ?? ''}#${appliedTarget?.branchId ?? ''}`,
   });
 
   const columns: readonly Column<AuditRow>[] = [
@@ -182,6 +194,12 @@ export function AuditLogScreen({
             return;
           }
           setActorInvalid(false);
+          if (draftTarget.companyId && !draftTarget.branchId) {
+            setTargetInvalid(true);
+            return;
+          }
+          setTargetInvalid(false);
+          setAppliedTarget(draftTarget.branchId ? draftTarget : null);
           setApplied({
             action: draft.action.trim(),
             entityType: draft.entityType.trim(),
@@ -189,6 +207,40 @@ export function AuditLogScreen({
           });
         }}
       >
+        {scopeOptions?.status === 'ok' ? (
+          <>
+            <SelectField
+              label={t('audit.filter.company')}
+              value={draftTarget.companyId}
+              placeholder={t('audit.filter.allCompanies')}
+              options={scopeOptions.companies.map((company) => ({
+                value: company.id,
+                label: company.legalName,
+              }))}
+              onChange={(event) => {
+                setDraftTarget({ companyId: event.target.value, branchId: '' });
+                setTargetInvalid(false);
+              }}
+            />
+            <SelectField
+              label={t('audit.filter.branch')}
+              value={draftTarget.branchId}
+              disabled={!draftTarget.companyId}
+              placeholder={t('field.selectPlaceholder')}
+              options={scopeOptions.branches
+                .filter((branch) => branch.companyId === draftTarget.companyId)
+                .map((branch) => ({ value: branch.id, label: branch.name }))}
+              error={targetInvalid ? t('audit.filter.chooseBranch') : undefined}
+              onChange={(event) =>
+                setDraftTarget((current) => ({ ...current, branchId: event.target.value }))
+              }
+            />
+          </>
+        ) : scopeOptions ? (
+          <p className="w-full text-caption text-text-muted">
+            {t('audit.filter.scopeUnavailable')}
+          </p>
+        ) : null}
         <TextField
           label={t('audit.filter.action')}
           spellCheck={false}
@@ -225,6 +277,9 @@ export function AuditLogScreen({
               setDraft(NO_AUDIT_FILTERS);
               setApplied(NO_AUDIT_FILTERS);
               setActorInvalid(false);
+              setDraftTarget({ companyId: '', branchId: '' });
+              setAppliedTarget(null);
+              setTargetInvalid(false);
             }}
           >
             {t('audit.filter.clear')}

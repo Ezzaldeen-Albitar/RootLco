@@ -83,12 +83,9 @@ export const MAX_WINDOW_DAYS = 92;
  * empty value, so the absent criterion never travels as a blank parameter that
  * the backend would have to interpret.
  *
- * `companyId` and `branchId` are deliberately NOT here. They are on the route's
- * allow-list, but `query()` refuses both names outright
- * (`apps/web/src/lib/api/read-operation.ts`, `P1-27-SEC-001`): the client never
- * asserts a scope, and the one narrow exception that exists is pinned by name to
- * a single operation. Surfacing them is a decision about that boundary, not a
- * screen change, and it is recorded rather than taken here.
+ * The optional branch target travels separately through `branchTargetQuery`.
+ * Its company/branch pair is selected from the authorized organization lists
+ * and rechecked by the server adapter; it never changes the caller's scope.
  */
 export interface AuditFilters {
   readonly action: string;
@@ -98,3 +95,21 @@ export interface AuditFilters {
 
 /** No criterion applied. The screen opens on this and returns to it on clear. */
 export const NO_AUDIT_FILTERS: AuditFilters = { action: '', entityType: '', actorId: '' };
+
+/** The projections published by the authorized organization directory reads. */
+export interface AuditCompanyOption {
+  readonly id: string;
+  readonly legalName: string;
+}
+
+export interface AuditBranchOption {
+  readonly id: string;
+  readonly companyId: string;
+  readonly name: string;
+}
+
+export interface AuditScopeOptions {
+  readonly status: 'ok' | 'unavailable';
+  readonly companies: readonly AuditCompanyOption[];
+  readonly branches: readonly AuditBranchOption[];
+}
