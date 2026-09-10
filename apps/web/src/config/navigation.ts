@@ -407,16 +407,25 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         key: 'delivery',
         labelKey: 'nav.delivery',
         icon: 'delivery',
-        // `/delivery`: still planned (the screen is FE-001). P1-31 P-8 re-pointed
-        // this gate at `sal.delivery.view`, the code every shipped delivery read
-        // declares; `sal.delivery.read`, named here until then, exists in no
-        // catalogue (RES-05) — the seeds carry `sal.delivery.manage`, `.complete`
-        // and `.view` only, and the rule is to correct the reference, never to seed
-        // a `.read` code. See the permission-reuse register under
+        // `/delivery`: the ready-for-delivery queue, built by P1-31 FE-001 on the
+        // Owner's D-3 decision. P1-31 P-8 re-pointed this gate at
+        // `sal.delivery.view`, the code every shipped delivery read declares;
+        // `sal.delivery.read`, named here until then, exists in no catalogue
+        // (RES-05) — the seeds carry `sal.delivery.manage`, `.complete` and
+        // `.view` only, and the rule is to correct the reference, never to seed a
+        // `.read` code. See the permission-reuse register under
         // docs/phase-1/pre-p1-29-multi-tenant-admin-rbac-workflow/.
+        //
+        // ONE code gates the entry while the queue itself requires three
+        // (`wo.work_order.read` and `sal.finance.view` as well). That is
+        // deliberate and matches every other row here: a navigation gate names
+        // the module's own read code, and the page states the rest in the
+        // operator's language. Naming all three here would hide the module from
+        // an adviser who holds the delivery code and would otherwise be told, on
+        // the page, exactly which authority they are missing.
         href: '/delivery',
         permission: 'sal.delivery.view',
-        status: 'planned',
+        status: 'available',
         scope: 'branch',
       },
     ],
