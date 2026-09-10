@@ -54,28 +54,42 @@ export interface PagedList<E, T> {
   readonly loadMore: () => Promise<void>;
 }
 
-/** What is held, and the delivery it was read for. */
+/** What is held, and the read it belongs to. */
 interface Held<E, T> {
-  readonly id: string;
+  readonly key: string;
   readonly first: ReadState<E>;
   readonly pages: readonly DeliveryPage<T>[];
   readonly moreFailed: string | null;
 }
 
+/**
+ * The identity of a held list: the delivery, and how many writes ago it was read.
+ *
+ * `revision` is bumped by the screen after every successful write. Folding it
+ * into the key rather than adding a second comparison means a list read before a
+ * write is treated as ABSENT once the write lands, exactly as a list read for a
+ * different delivery is — so a stale ledger cannot sit under a heading that has
+ * moved on, and the panel shows its loading state while the fresh read is in
+ * flight instead of showing yesterday's answer.
+ */
+const keyOf = (deliveryId: string, revision: number) => `${deliveryId}#${String(revision)}`;
+
 export function usePagedList<E, T>(
   deliveryId: string,
   reader: (deliveryId: string, cursor: string | null) => Promise<ReadState<E>>,
-  select: (envelope: E) => DeliveryPage<T>
+  select: (envelope: E) => DeliveryPage<T>,
+  revision = 0
 ): PagedList<E, T> {
   const [held, setHeld] = useState<Held<E, T> | null>(null);
   const [loading, setLoading] = useState(false);
+  const key = keyOf(deliveryId, revision);
 
   useEffect(() => {
     let cancelled = false;
     void reader(deliveryId, null).then((first) => {
       if (cancelled) return;
       setHeld({
-        id: deliveryId,
+        key,
         first,
         pages: first.status === 'ok' ? [select(first.data)] : [],
         moreFailed: null,
@@ -84,9 +98,9 @@ export function usePagedList<E, T>(
     return () => {
       cancelled = true;
     };
-  }, [deliveryId, reader, select]);
+  }, [deliveryId, key, reader, select]);
 
-  const current = held !== null && held.id === deliveryId ? held : null;
+  const current = held !== null && held.key === key ? held : null;
   const last = current?.pages.at(-1) ?? null;
 
   const loadMore = useCallback(async () => {
@@ -96,11 +110,11 @@ export function usePagedList<E, T>(
     const next = await reader(deliveryId, last.nextCursor);
     setLoading(false);
     setHeld((previous) => {
-      if (previous === null || previous.id !== deliveryId) return previous;
+      if (previous === null || previous.key !== key) return previous;
       if (next.status !== 'ok') return { ...previous, moreFailed: next.status };
       return { ...previous, pages: [...previous.pages, select(next.data)], moreFailed: null };
     });
-  }, [current, deliveryId, last, loading, reader, select]);
+  }, [current, deliveryId, key, last, loading, reader, select]);
 
   return {
     first: current?.first ?? null,

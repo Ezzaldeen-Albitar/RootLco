@@ -1,11 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { PermissionDeniedState } from '@/components/states/States';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
-import { readEligibility } from '../api';
 import type { DeliveryEligibility, EligibilityFact } from '../delivery-contract';
 import { BlockerLabel } from './CodeLabel';
 import { Fact, Panel, PanelFailure, PanelLoading } from './PanelShell';
@@ -17,11 +15,19 @@ import { Fact, Panel, PanelFailure, PanelLoading } from './PanelShell';
  *
  * The eligibility operation declares the financial read code alongside the
  * delivery one, because one of the eight reasons it composes is the customer's
- * open balance. A caller without it is refused at the route. So this panel
- * checks first and renders its own scoped refusal instead of asking: a request
+ * open balance. A caller without it is refused at the route. So the read is not
+ * issued at all and this panel renders its own scoped refusal instead: a request
  * whose answer is already known would put a denial in the backend's log and tell
  * the operator nothing extra. The rest of the screen still renders, which is the
  * reason the refusal is scoped to this panel rather than to the page.
+ *
+ * ## The read is the screen's, not this panel's
+ *
+ * `useEligibility` holds it, because the completion control needs the same
+ * answer — and above all the same `recordVersion`. A panel that read for itself
+ * would spend a second request on one answer and could show a version different
+ * from the one the button sends, which is the difference between a guard that
+ * works and a guard that is refused every other time.
  *
  * ## "Blocked" and "could not be checked" are drawn differently, on purpose
  *
@@ -42,37 +48,19 @@ import { Fact, Panel, PanelFailure, PanelLoading } from './PanelShell';
  */
 export function EligibilityPanel({
   messages,
-  deliveryId,
-  canReadFinance,
+  state,
+  withheld,
   canComplete,
 }: {
   readonly messages: Messages;
-  readonly deliveryId: string;
-  /** Whether the caller holds the financial read code the operation also demands. */
-  readonly canReadFinance: boolean;
+  /** The screen's own read. `null` while it is in flight, or when it was withheld. */
+  readonly state: ReadState<DeliveryEligibility> | null;
+  /** True when the caller lacks the financial read code and nothing was asked. */
+  readonly withheld: boolean;
   /** Whether the caller holds the authority that may override the one overridable reason. */
   readonly canComplete: boolean;
 }) {
-  const [held, setHeld] = useState<{
-    readonly id: string;
-    readonly read: ReadState<DeliveryEligibility>;
-  } | null>(null);
-
-  useEffect(() => {
-    if (!canReadFinance) return undefined;
-    let cancelled = false;
-    void readEligibility(deliveryId).then((read) => {
-      if (!cancelled) setHeld({ id: deliveryId, read });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [deliveryId, canReadFinance]);
-
-  // What was read for ANOTHER delivery is absent, not stale-but-shown.
-  const state = held !== null && held.id === deliveryId ? held.read : null;
-
-  if (!canReadFinance) {
+  if (withheld) {
     return (
       <Panel
         headingId="delivery-eligibility-heading"

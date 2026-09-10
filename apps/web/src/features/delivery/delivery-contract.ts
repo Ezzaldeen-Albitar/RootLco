@@ -13,11 +13,34 @@
  * | `sal.delivery-status-history`        | GET    | `/deliveries/{deliveryId}/status-history`     | `sal.delivery.view`                     |
  * | `sal.work-order-delivery-read`       | GET    | `/work-orders/{workOrderId}/delivery`         | `sal.delivery.view`                     |
  *
+ * The five WRITES the execution slice sends are registered here too, and their
+ * request bodies are mirrored in `@/lib/contracts/delivery-contract` because the
+ * payload-parity gate reads its mirrors from one frozen list of files:
+ *
+ * | operation                            | method | path                                          | permissions (ALL required)                                   |
+ * | ------------------------------------ | ------ | --------------------------------------------- | ------------------------------------------------------------ |
+ * | `sal.delivery-create`                | POST   | `/deliveries`                                 | `sal.delivery.manage`                                        |
+ * | `sal.delivery-receiver-verify`       | POST   | `/deliveries/{deliveryId}/authorized-receiver`| `sal.delivery.manage`, `sal.delivery.view`                   |
+ * | `sal.delivery-checklist-record`      | POST   | `/deliveries/{deliveryId}/checklist-results`  | `sal.delivery.manage`                                        |
+ * | `sal.delivery-signature-attach`      | POST   | `/deliveries/{deliveryId}/signatures`         | `sal.delivery.manage`, `sal.delivery.view`                   |
+ * | `sal.delivery-complete`              | POST   | `/deliveries/{deliveryId}/completion`         | `sal.delivery.complete`, `sal.delivery.view`, `sal.finance.view` |
+ *
+ * The checklist a handover is worked through comes from the delivery checklist
+ * TEMPLATE reads (`sal.delivery-checklist-template-list` and
+ * `sal.delivery-checklist-template-read`), both `sal.delivery.view`. Neither is
+ * a delivery read: they publish the company's configuration, and the screen
+ * intersects the ACTIVE templates' items with what this delivery has recorded.
+ *
  * Typed from the routes that own the shapes and the views in
- * `apps/api/src/modules/delivery/application/delivery-read-service.ts`. This
- * slice is READ-ONLY: creation, receiver verification, signing and completion
- * are separate tasks, so nothing here describes a request body and the
- * request-payload parity gate has nothing to mirror.
+ * `apps/api/src/modules/delivery/application/delivery-read-service.ts` and
+ * `checklist-template-service.ts`.
+ *
+ * ## Eligibility is the server's, and the screen never recomputes it
+ *
+ * Nothing in this file derives `eligible` from a blocker list, and no screen
+ * built on it may. The completion recomposes the whole decision inside its own
+ * transaction, so a browser-side opinion could only ever disagree with the
+ * authority — and would disagree most usefully at the exact moment it mattered.
  *
  * ## The eligibility read needs a SECOND permission, and the page must respect it
  *
@@ -65,8 +88,17 @@ export const DELIVERY_PERMISSIONS = {
   view: 'sal.delivery.view',
   /** Demanded by the eligibility read ALONGSIDE `view`, because one blocker is financial. */
   financeView: 'sal.finance.view',
-  /** The authority that may override the one overridable blocker. Never a gate here. */
+  /** The authority that may override the one overridable blocker. */
   complete: 'sal.delivery.complete',
+  /**
+   * The write code every handover act declares.
+   *
+   * Creating a delivery, verifying its receiver, recording a checklist outcome
+   * and attaching a signature all require it. Completion does NOT: that one
+   * declares `sal.delivery.complete` instead, so the authority to prepare a
+   * handover is not the authority to release the vehicle.
+   */
+  manage: 'sal.delivery.manage',
 } as const;
 
 /** `ck_delivery_records_status`, mirrored. */
@@ -309,3 +341,148 @@ export interface DeliveryStatusHistoryEnvelope {
   readonly deliveryId: string;
   readonly transitions: DeliveryPage<DeliveryStatusTransition>;
 }
+
+/* ------------------------------------------------------------------------- *
+ * The execution half: the checklist configuration, and the rules a control
+ * must hold to before it sends anything.
+ * ------------------------------------------------------------------------- */
+
+/** `ck_delivery_checklist_templates_status`, mirrored. */
+export const CHECKLIST_TEMPLATE_STATUSES = ['active', 'inactive'] as const;
+export type ChecklistTemplateStatus = (typeof CHECKLIST_TEMPLATE_STATUSES)[number];
+
+/** The status a template must hold for its items to bind a handover. */
+export const ACTIVE_TEMPLATE_STATUS: ChecklistTemplateStatus = 'active';
+
+/** `ChecklistTemplateView` — one checklist configuration of one company. */
+export interface ChecklistTemplate {
+  readonly id: string;
+  readonly companyId: string;
+  readonly templateCode: string;
+  readonly name: string;
+  /** The wire's `string`; the check constraint is the database's to widen. */
+  readonly status: string;
+  readonly recordVersion: number;
+}
+
+/**
+ * `ChecklistTemplateItemView` — one line of a checklist.
+ *
+ * `itemCode` and `label` are spelled exactly as a recorded result spells them,
+ * which is what lets one row render whether or not it has an outcome yet.
+ */
+export interface ChecklistTemplateItem {
+  readonly id: string;
+  readonly templateId: string;
+  readonly itemCode: string;
+  readonly label: string;
+  readonly isMandatory: boolean;
+  readonly sortOrder: number;
+  readonly recordVersion: number;
+}
+
+/** `sal.delivery-checklist-template-list` — a cursor page of templates. */
+export interface ChecklistTemplateListEnvelope {
+  readonly templates: DeliveryPage<ChecklistTemplate>;
+}
+
+/**
+ * `sal.delivery-checklist-template-read` — a template WITH its live items.
+ *
+ * The items are not paged and the order is the checklist. Withdrawn items are
+ * excluded by the read, so an item that disappears from here while a result for
+ * it is still listed is a withdrawal rather than a fault.
+ */
+export interface ChecklistTemplateDetail {
+  readonly template: ChecklistTemplate;
+  readonly items: readonly ChecklistTemplateItem[];
+}
+
+/**
+ * Every item of every ACTIVE template of the companies the caller can reach.
+ *
+ * Assembled from the two template reads rather than published by one operation,
+ * because no operation publishes it. The assembly is stated rather than hidden:
+ * a screen showing "the checklist" is showing the union of the active templates
+ * it could read, and `templateCount` is what lets it say so.
+ */
+export interface ActiveChecklist {
+  readonly templates: readonly ChecklistTemplateDetail[];
+  /** How many templates were read in total, active or not. */
+  readonly templateCount: number;
+}
+
+/**
+ * What a delivery signature may be captured as.
+ *
+ * The list is not written here. It is the ACCEPTED CONTENT TYPES of the document
+ * category the SERVER published, read at capture time — a literal in this tier
+ * would be a media policy the interface invented and presented as though
+ * somebody had decided it.
+ */
+export const SIGNATURE_CATEGORY_CODE = 'reception_signature';
+
+/**
+ * The longest reason either the waiver or the override may carry.
+ *
+ * `MAX_REASON` in the delivery domain, and the same bound on both: a waiver
+ * reason and an override reason are each `text` with a length check the route
+ * enforces at 2000. Checked here so an operator is told by the control, not by a
+ * refused submission that has already spent an idempotency key.
+ */
+export const MAX_REASON = 2000;
+
+/**
+ * The final odometer reading, as the COLUMN accepts it.
+ *
+ * `veh.odometer_readings.value` is `numeric(12,1)` — twelve digits and ONE
+ * decimal — while the completion route's own schema admits two. A two-decimal
+ * value therefore passes the route's validation and is refused by the delivery
+ * domain with `ERR-VAL-001`, naming a field the operator has already left. This
+ * is the narrower of the two rules on purpose, so the refusal happens in the
+ * form where it can be corrected.
+ */
+const ODOMETER_ONE_DECIMAL = /^\d{1,12}(\.\d)?$/;
+
+/** True when the value is one the odometer column can hold without rounding. */
+export function isAcceptableOdometerValue(value: string): boolean {
+  return ODOMETER_ONE_DECIMAL.test(value);
+}
+
+/** `veh.odometer_readings.unit`. `sal.complete_delivery` defaults to kilometres. */
+export const ODOMETER_UNITS = ['km', 'mi'] as const;
+export type OdometerUnit = (typeof ODOMETER_UNITS)[number];
+
+/** The message key for an odometer unit. */
+export const ODOMETER_UNIT_LABEL_KEYS: Readonly<Record<string, string>> = {
+  km: 'delivery.odometerUnit.km',
+  mi: 'delivery.odometerUnit.mi',
+} satisfies Readonly<Record<OdometerUnit, string>>;
+
+/**
+ * The catalogue codes a delivery write answers with that mean something more
+ * specific than their HTTP kind.
+ *
+ * A code is branched on only where the backend genuinely distinguishes a cause
+ * and the distinction changes what the operator should do. Everything else keeps
+ * the shared banner: inventing a sentence per code would claim knowledge the
+ * problem document does not carry.
+ *
+ * `message` never crosses the wire — `problemFor` assembles the document from
+ * the catalogue entry and the failure's safe details and reads the service's own
+ * sentence nowhere — so the blockers and item codes behind `ERR-TRN-001` are NOT
+ * readable from the refusal. They are read back from the eligibility operation,
+ * which publishes both as data.
+ */
+export const DELIVERY_ERROR_CODES = {
+  /** A recorded outcome is final; a second, different one is refused. */
+  alreadyRecorded: 'ERR-INT-001',
+  /** The view was stale. Re-read eligibility and quote the version it republishes. */
+  staleVersion: 'ERR-CON-001',
+  /** No `If-Match` reached a version-guarded operation. */
+  versionRequired: 'ERR-CON-002',
+  /** The override was refused; `requiredPermissions` names the authority. */
+  overrideDenied: 'ERR-IAM-001',
+  /** The handover is blocked. The reasons come from the eligibility read. */
+  blocked: 'ERR-TRN-001',
+} as const;

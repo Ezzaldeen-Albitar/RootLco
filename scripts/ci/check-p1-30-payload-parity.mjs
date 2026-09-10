@@ -66,6 +66,7 @@ export const MIRROR_FILES = Object.freeze([
   join('lib', 'contracts', 'inventory-contract.ts'),
   join('lib', 'contracts', 'billing-contract.ts'),
   join('lib', 'contracts', 'payments-contract.ts'),
+  join('lib', 'contracts', 'delivery-contract.ts'),
 ]);
 
 /**
@@ -126,19 +127,15 @@ export const PENDING_MIRRORS = Object.freeze({
     'PENDING: no P1-30 screen sends this (outside FE-008…FE-013); a later phase owes the mirror',
   // The `sal` writes entered this scope with W6, which mirrors the invoice
   // create and cancel bodies. Payments belong to W7 (canonical plan §4); credit
-  // notes and deliveries are sent by no P1-30 screen.
+  // notes are sent by no P1-30 screen.
+  //
+  // The FIVE delivery writes stood here for the same reason and no longer do:
+  // P1-31's delivery-execution screen sends every one of them, so
+  // `lib/contracts/delivery-contract.ts` declares their bodies and the entries
+  // were deleted in that same change — which is the lifecycle this map exists
+  // to force. An entry cannot outlive its reason.
   'sal.credit-note-create':
     'PENDING: no P1-30 screen sends this (credit notes are in no FE row); a later phase owes the mirror',
-  'sal.delivery-checklist-record':
-    'PENDING: no P1-30 screen sends this (FE-008…FE-021 do not render deliveries); a later phase owes the mirror',
-  'sal.delivery-complete':
-    'PENDING: no P1-30 screen sends this (FE-008…FE-021 do not render deliveries); a later phase owes the mirror',
-  'sal.delivery-create':
-    'PENDING: no P1-30 screen sends this (FE-008…FE-021 do not render deliveries); a later phase owes the mirror',
-  'sal.delivery-receiver-verify':
-    'PENDING: no P1-30 screen sends this (FE-008…FE-021 do not render deliveries); a later phase owes the mirror',
-  'sal.delivery-signature-attach':
-    'PENDING: no P1-30 screen sends this (FE-008…FE-021 do not render deliveries); a later phase owes the mirror',
   // The P1-31 checklist TEMPLATE writes (prerequisite P-9). They are `sal` writes, so
   // they entered this gate's scope the moment they were registered, and no P1-30
   // screen sends any of them — FE-008…FE-021 render no delivery configuration. The

@@ -28,38 +28,41 @@ import { StatusLabel } from './CodeLabel';
  * what the operation states and does not narrate a distinction the read does not
  * publish.
  *
- * ## No control creates one
- *
- * Starting a handover is a write with its own authority and its own screen. Until
- * that exists, this panel says there is no delivery and offers no button that
- * would do nothing.
+ * Employee selection is unavailable until a tenant-owned identity can be
+ * selected and validated. The write permission only gates that explanation;
+ * it does not expose an unvalidated way to start a handover. Existing delivery
+ * reads and links remain available independently.
  */
 export function WorkOrderDeliveryPanel({
   locale,
   messages,
   workOrderId,
+  canManage = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly workOrderId: string;
+  /** Whether the caller should see why starting a handover is unavailable. */
+  readonly canManage?: boolean;
 }) {
   const [held, setHeld] = useState<{
-    readonly id: string;
+    readonly key: string;
     readonly read: ReadState<WorkOrderDelivery>;
   } | null>(null);
+  const key = workOrderId;
 
   useEffect(() => {
     let cancelled = false;
     void readWorkOrderDelivery(workOrderId).then((read) => {
-      if (!cancelled) setHeld({ id: workOrderId, read });
+      if (!cancelled) setHeld({ key, read });
     });
     return () => {
       cancelled = true;
     };
-  }, [workOrderId]);
+  }, [key, workOrderId]);
 
-  // What was read for ANOTHER work order is absent, not stale-but-shown.
-  const state = held !== null && held.id === workOrderId ? held.read : null;
+  // A result for another work order is never shown under this work order.
+  const state = held !== null && held.key === key ? held.read : null;
 
   return (
     <section
@@ -82,9 +85,16 @@ export function WorkOrderDeliveryPanel({
             : ''}
         </p>
       ) : state.data.delivery === null ? (
-        <p className="text-body text-text-secondary">
-          {translate(messages, 'delivery.workOrder.none')}
-        </p>
+        <div className="flex flex-col gap-3">
+          <p className="text-body text-text-secondary">
+            {translate(messages, 'delivery.workOrder.none')}
+          </p>
+          {canManage ? (
+            <p className="text-body text-text-secondary">
+              {translate(messages, 'delivery.start.employeeSelectionUnavailable')}
+            </p>
+          ) : null}
+        </div>
       ) : (
         <p className="text-body text-text-primary">
           <StatusLabel messages={messages} status={state.data.delivery.status} />{' '}
