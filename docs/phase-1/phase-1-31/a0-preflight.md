@@ -244,7 +244,9 @@ disposition row names P1-22 (decision D-1).
 | **P-15** | Add the `p1-31` ownership rules and profiles                | CI tooling — travels on A0's own lane  | `.github/ci-baselines/phase-ownership-profiles.json` and the profiles in `scripts/ci/check-phase-ownership.mjs`. **Closed by this preflight** — see [Ownership rules added](#ownership-rules-added-by-this-preflight)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Every pull request in every lane                             |
 | **P-16** | Extend or sibling the gate-before-read check                | CI tooling                             | That check owns the plural `deliveries` and `warranties` segments through an id namespace that excludes `rpt.` entirely, while the href already committed in navigation is the singular `/delivery`. Both P1-31 entry points escape it as things stand. **Resolved** on `feature/p1-31-delivery-detail-screen` (PR #357): `scripts/ci/check-p1-31-access.mjs` is a SIBLING, not a widening — P1-30 already owns the whole `sal.`/`wty.` namespaces, so the scope is an explicit allow-list of the operation ids P1-31 published, and the dashboard areas `delivery`, `warranty` and `reports` are named beside the derived roots. It reuses `judgePage`, refuses a stale allow-list entry, and — because it ships beside a screen rather than ahead of one — refuses a run that examines no page                                                                                                                                              | DO-001, SEC-001                                              |
 
-**None of P-1 through P-16 is a canonical task.** Each is either an execution prerequisite of this
+| **P-17** | Give the delivering employee a real identity | Backend — organisation and delivery | `sal.delivery_records.delivering_employee_id` is NOT NULL with NO foreign key, so any uuid is a legal handover officer, and the platform has no employee to point it at: `tech.technician_profiles.user_id` and `iam.user_employee_links.user_id` both REQUIRE an `iam.user_accounts` row. **This is the D-12 slice.** **IMPLEMENTED, NOT MERGED** on `remediation/p1-31-backend-delivering-employee-identity` (Owner decision 2026-09-10): two migrations add `org.employees` and bind the column to it on all four scope columns with an insert-time eligibility trigger and an immutable display-name snapshot; four operations publish the register; `org.employee.read` and `org.employee.manage` are MINTED and both carried by the provisioning bundle (76 to 78), which obliges one operator run of `scripts/platform/backfill-tenant-administrator-bundle.mjs` after merge. See delivering-employee-identity-seam.md and change control CC-29 | FE-001, FE-002, and every delivery write |
+
+**None of P-1 through P-17 is a canonical task.** Each is either an execution prerequisite of this
 phase or a change request against an owning backend phase under Field 13. Closing one closes no task.
 
 ---
@@ -371,10 +373,14 @@ engineering, and none is one of the 29. Each is phrased as a question with its c
 - **D-11 — Is P1-26-OD-007, the seven-day audit-log default window, ratified, deferred or changed?**
   _Consequence:_ FE-015 inherits whatever is decided, and shipping it without a decision carries the
   open decision forward into a second phase.
-- **D-12 — Is the delivering employee's name in P1-31's scope at all?** OWR-2026-09-06-G-10 is
-  Undecided and its dependency G-14 is Undecided. _Consequence:_ G-10 itself records that placement
+- **D-12 — Is the delivering employee's name in P1-31's scope at all?** OWR-2026-09-06-G-10 was
+  Undecided and its dependency G-14 was Undecided. _Consequence:_ G-10 itself records that placement
   of the backend slice is an Owner decision "because it changes the data model the Owner has been
-  told is P1-31's".
+  told is P1-31's". **ANSWERED on 2026-09-10:** yes, and as a tenant-owned employee identity rather
+  than as a name resolved from a login account. Prerequisite **P-17** implements it; the shape, the
+  parts that are settled and the four working ASSUMPTIONS still awaiting confirmation are recorded in
+  [`delivering-employee-identity-seam.md`](./delivering-employee-identity-seam.md) and in change
+  control **CC-29**, which is PROVISIONAL until that branch merges.
 - **D-13 — Where is the P1-30 / P1-31 split for delivery and warranty?** WFP-15 records the owning
   Frontend phase as "P1-30 / P1-31 — the split is not established", corroborated in three further
   places. _Consequence:_ scheduling any delivery or warranty screen before this is answered risks

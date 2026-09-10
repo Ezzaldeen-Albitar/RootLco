@@ -923,6 +923,17 @@ two lanes that allocated between this one and the merged register, one has lande
 | **CC-24** | the readiness seam                               | in preparation          |
 | **CC-25** | the delivery write paths (PR #362)               | open, on a stacked base |
 
+**Continuation, 2026-09-10** — allocated after this section was written, at protected `develop`
+**07193258**. The row is dated rather than folded into the table above, because that table states
+what was true at **0204f2d1** and rewriting it would destroy the record.
+
+| id        | lane                                                | state at 07193258, 2026-09-10 |
+| --------- | --------------------------------------------------- | ----------------------------- |
+| **CC-26** | the identity-evidence category (PR #362)            | open                          |
+| **CC-27** | the report engine slice                             | in preparation                |
+| **CC-28** | the report engine slice, second identifier          | in preparation                |
+| **CC-29** | the delivering-employee identity (P-17), section 41 | this branch, PROVISIONAL      |
+
 So this slice takes **section 36 provisionally** and **CC-22 firmly**. P-9b has not merged, so that
 one lane landing out of order moves this heading rather than this identifier. **The section number
 must be re-checked against `develop` before this branch merges**, and renumbered if P-9b lands with a
@@ -1127,3 +1138,97 @@ GitHub-only observer stopped on a DNS error without a failed gate; after its pro
 was verified absent, one replacement observed the terminal success and retired.
 The dependency push hold is therefore satisfied. #358 still requires its own final
 head's hosted gates and coordinator merge review; no phase acceptance is implied.
+
+---
+
+## 41. What P-17 changed — the delivering employee becomes a real identity
+
+**Slice:** `remediation/p1-31-backend-delivering-employee-identity`, ownership profile
+`p1-31-backend`. **Baseline:** protected `develop` **07193258**; `main` untouched.
+**Section 41 and CC-29 are PROVISIONAL**, on the section 36.1 rule: sections 38, 39 and 40 are
+allocated to lanes that have not landed, so one of them landing out of order moves this heading
+rather than this identifier. The number must be re-checked against `develop` before this branch
+merges.
+
+### 41.1 What was published, and why the table had to be new
+
+`sal.delivery_records.delivering_employee_id` landed in P1-11 as `NOT NULL` **with no foreign key of
+any kind**, so any uuid at all was a legal handover officer and the column recorded a claim rather
+than an identity. Every fixture in this repository demonstrated it, by passing a LOGIN ACCOUNT id or
+`randomUUID()` and being accepted without complaint.
+
+The Owner decision of **2026-09-10** answers **D-12**: the delivering employee is a **tenant-owned
+employee identity**, distinct from the login account, from the authenticated actor and from the
+authorized receiver, with a server-validated reference and organisational assignment, historical
+attribution preserved, and no HR module.
+
+The reuse question was **measured before anything was proposed**, and the measurement lives in the
+suite rather than in this paragraph: `tech.technician_profiles.user_id` and
+`iam.user_employee_links.user_id` are both `NOT NULL` foreign keys into `iam.user_accounts`, so
+neither can hold a person who has no reason to sign in — which is the person a workshop most often
+sends out to hand a vehicle over.
+
+**Two migrations.** `20260910090000_org_employees.sql` adds `org.employees`, RLS enabled and forced,
+three policies on the `sal.delivery_records` template, `SELECT` to `app_runtime` and `app_readonly`,
+`INSERT` and `UPDATE` to `app_runtime`, and **no `DELETE` grant to anyone**.
+`20260910091000_sal_delivery_delivering_employee_identity.sql` mints one employee per distinct legacy
+value, adds the fully validated composite foreign key on all four scope columns, adds the
+`delivering_employee_display_name` snapshot and the `BEFORE INSERT` trigger that stamps it, and
+recreates the immutable guard so the snapshot and the id it came from are frozen.
+
+**Four operations** under `/api/v1/org/employees`: the list and the detail declare
+`org.employee.read`, the create and the status command declare `org.employee.manage`. **Both codes
+are MINTED** — the register did not exist, so no catalogue code named it — and **both are carried by
+the provisioning bundle (76 to 78)**.
+
+**`sal.delivery-create` now refuses three ways**, per rule on `body.deliveringEmployeeId`: `custom`
+for not visible, `inactive_employee` for retired, and `employee_branch_mismatch` for another branch.
+The request BODY is unchanged, so the `sal.delivery-create` payload mirror is untouched; `org` is
+outside the P1-30 payload-parity domains, so the four new operations owe no mirror.
+
+### 41.2 Dispositions
+
+| id        | finding                                                                  | measured                                                                                                                                                                                                                                                                                                                                                       | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | owner / slice                         | state                       |
+| --------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | --------------------------- |
+| **CC-29** | four working ASSUMPTIONS were required, and not one is an Owner decision | The decision settles what a delivering employee IS. It does not settle whether an employee may exist without an account (A-1), whether a home branch is single and transferable (A-2), what lifecycle a backfilled legacy row takes (A-3), or whether `employment_ref` is optional and tenant-unique (A-4). The DDL commits to one answer for each of the four | **Recorded as assumptions — in the migration header and in [`delivering-employee-identity-seam.md`](./delivering-employee-identity-seam.md) section 3 — with the cost of reversing each one stated, and NOT presented as decisions.** `branch_id` is deliberately left out of the immutable guard so a transfer command needs no second migration, and the suite asserts that mutability so a later tidy cannot silently forbid transfers. **No rename and no transfer command ships**: a rename must first say what happens to the snapshots already taken, and a transfer what happens to deliveries recorded in the branch being left | Owner, before the next employee slice | open, awaiting confirmation |
+
+### 41.3 What this slice did NOT do
+
+- **No HR module.** Seven columns and a lifecycle. No contract, salary, contact detail, document,
+  department, grade or reporting line, and no second identity model beside `iam.user_accounts`.
+- **No rename, no transfer, and no delete at any level.** `org.employees` grants `DELETE` to no
+  application role and `fk_delivery_records_delivering_employee` is `ON DELETE RESTRICT`.
+- **No screen, and no web CONTRACT change either.** `apps/web` changes only in the generated
+  idempotency manifest, which every published operation moves. The delivery contract mirror in
+  `apps/web/src/features/delivery/delivery-contract.ts` still lacks `deliveringEmployeeDisplayName`,
+  and its docblock still states that `deliveringEmployeeId` has no foreign key anywhere in the
+  platform — which this slice makes false. **That is left deliberately**, because the
+  `p1-31-backend` ownership profile forbids the `web` bucket outright and the correction is a
+  frontend-lane change; widening the profile to slip it through would be exactly the
+  work-around the gate exists to prevent. It is the same class of stale docblock P-14 corrected and
+  is owed to the frontend lane, which is where CC-29 leaves it.
+- **No index for the list ordering**, on the CC-23 precedent: a branch register is small, and no
+  measurement has demonstrated a cost a schema change would buy.
+- **No claim about the hosted replay.** `.github/ci-baselines/schema-baseline.json` moves
+  `migrationCount` 139 to 141, `permissionCount` 119 to 121, `schemaHash`, and four of the five
+  structural totals. Every figure was measured on a disposable clone replayed from the idle
+  139-migration template inside the coordinator's isolated container, and that same clone reproduced
+  the recorded 139-migration values digit for digit before either migration was applied. The hosted
+  `database-migration-replay` job settles it, as always.
+- **No fake data.** `org.employees` is business data: it is absent from the structural-reference
+  allow-lists in both `scripts/db/validate-seed-state.mjs` and `tests/db/no-fake-data.test.ts`, so it
+  is required to be empty on a provisioned tenant, and the backfill mints only from rows that already
+  exist.
+
+### 41.4 The one operator act this slice creates and does not perform
+
+Every organisation already provisioned holds the 76-code bundle and therefore **neither** new code.
+They need **one** run of `scripts/platform/backfill-tenant-administrator-bundle.mjs` after this
+merges — separate from the run P-10 and P-11 already oblige, because it covers two codes those runs
+could not know about.
+
+Until that run happens, an existing organisation's administrator cannot create an employee, and
+because `sal.delivery-create` now refuses an employee that does not exist, **cannot record a
+handover at all**. That is the sharpest consequence of any P1-31 bundle widening, and it is written
+here so it is scheduled rather than discovered. **This slice does not run it, and makes no claim that
+it has been run.**
