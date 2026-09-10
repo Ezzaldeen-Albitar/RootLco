@@ -179,7 +179,14 @@
   "audit.detail.noDetails": "This record carries no detail rows.",
   "audit.detail.title": "Audit record",
   "audit.filter.action": "Action",
+  "audit.filter.actor": "Who",
+  "audit.filter.apply": "Apply filters",
+  "audit.filter.clear": "Clear filters",
   "audit.filter.entityType": "Record type",
+  "audit.filter.formLabel": "Audit log filters",
+  "audit.filter.hint": "Leave a box empty to include everything. Each value must match exactly.",
+  "audit.filter.idFormat": "Enter the identifier exactly as it was given.",
+  "audit.filter.identifierHelp": "Copy it from a row in the table below.",
   "audit.from": "From",
   "audit.noExport": "The service publishes no export operation for audit records, so none is offered here.",
   "audit.rangeHint": "A date range is required. This screen opens on the last seven days.",
@@ -3568,5 +3575,10 @@
   "delivery.completion.refusedNoVersion": "This release could not be sent. Refresh the page and try again.",
   "delivery.completion.done": "The vehicle has been released.",
   "delivery.odometerUnit.km": "Kilometres",
-  "delivery.odometerUnit.mi": "Miles"
+  "delivery.odometerUnit.mi": "Miles",
+  "audit.filter.company": "Company",
+  "audit.filter.branch": "Branch",
+  "audit.filter.allCompanies": "All accessible audit records",
+  "audit.filter.chooseBranch": "Choose a branch for the selected company.",
+  "audit.filter.scopeUnavailable": "Company and branch choices are unavailable. You can still search the audit log."
 }

@@ -179,7 +179,14 @@
   "audit.detail.noDetails": "لا يحمل هذا السجل أي صفوف تفاصيل.",
   "audit.detail.title": "سجل تدقيق",
   "audit.filter.action": "الإجراء",
+  "audit.filter.actor": "المنفّذ",
+  "audit.filter.apply": "تطبيق التصفية",
+  "audit.filter.clear": "مسح التصفية",
   "audit.filter.entityType": "نوع السجل",
+  "audit.filter.formLabel": "عوامل تصفية سجل التدقيق",
+  "audit.filter.hint": "اترك أي خانة فارغة لتشمل كل شيء. يجب أن تطابق كل قيمة تماماً.",
+  "audit.filter.idFormat": "أدخل المعرّف كما أُعطي لك تماماً.",
+  "audit.filter.identifierHelp": "انسخه من أحد صفوف الجدول أدناه.",
   "audit.from": "من",
   "audit.noExport": "لا تنشر الخدمة عملية تصدير لسجلات التدقيق، لذا لا يُتاح تصدير هنا.",
   "audit.rangeHint": "المدى الزمني مطلوب. تفتح هذه الشاشة على آخر سبعة أيام.",
@@ -3568,5 +3575,10 @@
   "delivery.completion.refusedNoVersion": "تعذّر إرسال هذا التسليم. حدِّث الصفحة ثم أعد المحاولة.",
   "delivery.completion.done": "تم تسليم المركبة.",
   "delivery.odometerUnit.km": "كيلومترات",
-  "delivery.odometerUnit.mi": "أميال"
+  "delivery.odometerUnit.mi": "أميال",
+  "audit.filter.company": "الشركة",
+  "audit.filter.branch": "الفرع",
+  "audit.filter.allCompanies": "جميع سجلات التدقيق المتاحة",
+  "audit.filter.chooseBranch": "اختر فرعًا للشركة المحددة.",
+  "audit.filter.scopeUnavailable": "خيارات الشركات والفروع غير متاحة. لا يزال بإمكانك البحث في سجل التدقيق."
 }

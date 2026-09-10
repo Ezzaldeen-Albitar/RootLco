@@ -1,7 +1,6 @@
 # P1-31 — the delivery execution screen (FE-002 … FE-006 write paths)
 
-**Status:** in an open pull request, unmerged · **Lane:** `p1-31-frontend` · **Base:** stacked on
-`feature/p1-31-delivery-detail-screen` (PR #357), which merges first
+**Status:** implemented in open PR #362, unmerged · **Lane:** `p1-31-frontend` · **Integrated base:** merged #363 at `071932584ffcf39776509227f8dead2022667484`. The original preparation was stacked on #357, now merged.
 
 This slice adds four write paths for existing handovers and the configuration read the checklist
 needs. Starting a new handover is withheld while employee selection is unavailable. It adds nothing to the backend:
@@ -101,7 +100,7 @@ sees “Employee selection is currently unavailable.” in the selected language
 `startDelivery` adapter is removed. The backend POST contract and its request-body mirror remain
 unchanged. Existing deliveries still open through the work-order link.
 
-Receiver verification, checklist results, signature capture/attachment and completion remain
+Receiver verification, checklist results, signature image upload and attachment and completion remain
 implemented for existing deliveries, subject to their existing permissions, server validation,
 eligibility blockers and version guard. A `delivering_employee` signature role does not resolve
 or validate employee identity. These actions do not complete the new-handover selection journey.
@@ -135,6 +134,8 @@ The signature capture has no such gap. `reception_signature` is a seeded categor
 `signature`, and the document is captured against `rec.reception_visits` — the visit this handover
 closes, and the only entity in this chain's reach that `LINKABLE_ENTITY_TYPES` carries.
 `sal.delivery_records` is not a linkable entity type.
+
+The screen uploads a selected signature image and attaches its resulting document version; it does not draw a signature. Category discovery requires `shared.document.read`; upload authorization, registration and linking require `shared.document.manage`. The existing `reception_signature` category is restricted, admits JPEG/PNG/WebP up to 10 MiB, and supplies the `signature` link purpose. `DeliveryDetailScreen` passes the delivery read’s reception visit identifier. The final delivery bind independently checks document scope, refused review states and a live link to the work order or reception visit read from the delivery itself. A caller-supplied visit argument is not the authority for that final provenance check.
 
 ## 6. What is proved here, and what is not
 
@@ -197,9 +198,7 @@ validation; it cannot be claimed through typed UUID entry.
   this slice READS two of them to assemble the checklist. It writes none. The five template-write
   entries stay marked as owed in the payload-parity gate for the slice that builds that screen.
 - **The receiver's identity evidence.** See [§5](#5-the-receivers-identity-evidence--a-named-prerequisite-not-built).
-- **P-9b.** The Owner approved the correction narrowly on 2026-09-09; it is a forward migration on a
-  backend lane. Nothing here changes which templates bind a completion — this screen renders the
-  active ones, and the server decides.
+- **P-9b.** Merged in #363 at `071932584ffcf39776509227f8dead2022667484`. Completion counts live mandatory items of active, nondeleted company templates; zero items are permitted. This slice changes no backend predicate or snapshot policy.
 
 ## 8. What changed
 

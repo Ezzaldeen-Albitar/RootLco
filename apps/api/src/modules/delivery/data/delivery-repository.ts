@@ -313,6 +313,23 @@ export const CHECKLIST_TEMPLATE_ORDER = Object.freeze({
   direction: 'desc' as const,
 });
 
+/**
+ * A branch's delivery records, newest first (P1-31 prerequisite P-2b).
+ *
+ * `created_at` and not `delivered_at`: the column is NOT NULL on every row, where
+ * `delivered_at` is NULL until the handover completes, and a sort key that is null
+ * for most of the set cannot order it. `sal.delivery_records` carries no scheduled
+ * date of any kind, so `created_at` is the only total temporal order the table has.
+ *
+ * The cursor is minted by `cursorTimestamp()` at MICROSECOND precision, because
+ * `created_at` defaults to `now()` and two deliveries opened in one transaction
+ * share it exactly (`P1-27-INT-006`).
+ */
+export const DELIVERY_RECORD_ORDER = Object.freeze({
+  key: 'sal.delivery_records:created_at_desc',
+  direction: 'desc' as const,
+});
+
 // ---------------------------------------------------------------------------
 // SQL shapes and mappers. snake_case in, camelCase out, one mapper per shape.
 // ---------------------------------------------------------------------------
@@ -570,6 +587,95 @@ export class DeliveryRepository extends Repository {
       [context.principal.tenantId, scope.companyId, scope.branchId, workOrderId]
     );
     return row ? toDeliveryRecord(row) : null;
+  }
+
+  /**
+   * A branch's delivery records, newest first (P1-31 prerequisite P-2b).
+   *
+   * ## Scope
+   *
+   * `company_id` and `branch_id` are bound predicates and the service has already
+   * authorized the pair. `sel_delivery_records_scope` narrows on the
+   * permission-blind union of the caller's allowed companies and branches, so
+   * without the explicit pair a caller holding `sal.delivery.view` in one branch
+   * would read every branch it holds any grant in (P1-18-A-01). RLS remains the
+   * guarantee; the predicate is the intent.
+   *
+   * ## Three optional filters and no more
+   *
+   * `status`, `work_order_id` and `vehicle_id`, each expressed as
+   * `($n IS NULL OR col = $n)` so one statement serves every combination. All three
+   * are columns of this table — `status` is bounded by `ck_delivery_records_status`
+   * and validated against the same vocabulary at the boundary, and the other two are
+   * NOT NULL references — so no filter needs a new column and none is invented
+   * beyond what the record names.
+   *
+   * ## Ordering, and the index that was NOT added
+   *
+   * `DELIVERY_RECORD_ORDER` — `(created_at DESC, id DESC)`, with the `id` tie-break
+   * making the order total. The branch predicate is served by the table's
+   * tenant/company/branch-leading indexes and no index leads on
+   * `(tenant, company, branch, created_at)`, so the ordering is a sort over the
+   * already-narrowed set. `wty.warranty-list` declined a migration on exactly this
+   * reasoning and this list follows it: a branch's deliveries are bounded by its
+   * work orders, and a schema change would be a cost this read has not demonstrated.
+   *
+   * `deleted_at IS NULL` is filtered, as it is in `findDelivery`: a list feeds no
+   * primitive, so publishing rows the tenant has deleted would be the dishonest
+   * option.
+   */
+  public async listDeliveries(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly status?: string | undefined;
+      readonly workOrderId?: string | undefined;
+      readonly vehicleId?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<DeliveryRecordRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.status ?? null,
+      filter.workOrderId ?? null,
+      filter.vehicleId ?? null,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'created_at', id: 'id' },
+      DELIVERY_RECORD_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<DeliveryRecordSql & { sort_value: string }>(
+      db,
+      `SELECT ${DELIVERY_COLUMNS},
+              ${cursorTimestamp('created_at')} AS sort_value
+         FROM sal.delivery_records
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+          AND deleted_at IS NULL
+          AND ($4::text IS NULL OR status = $4)
+          AND ($5::uuid IS NULL OR work_order_id = $5)
+          AND ($6::uuid IS NULL OR vehicle_id = $6)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        // `created_at` is not published on the row, so the cursor value cannot be
+        // re-derived from the response — which is what `buildPageWithCursors` is for.
+        item: toDeliveryRecord(row),
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      DELIVERY_RECORD_ORDER
+    );
   }
 
   /**
@@ -1431,7 +1537,7 @@ export class DeliveryRepository extends Repository {
   /**
    * The mandatory-checklist shortfall, transcribed from `sal.complete_delivery`.
    *
-   * Two details of the primitive's predicate are counter-intuitive and are reproduced
+   * Three details of the primitive's predicate are counter-intuitive and are reproduced
    * rather than corrected:
    *
    *  1. **The item scan is COMPANY-scoped, not template-scoped.** The function counts
@@ -1443,6 +1549,21 @@ export class DeliveryRepository extends Repository {
    *     template-scoped mirror would report eligible and then be refused at the call.
    *  2. **Items filter `deleted_at IS NULL` and so do results.** A soft-deleted item
    *     stops being mandatory; a soft-deleted result stops satisfying its item.
+   *  3. **Only an ACTIVE, non-deleted TEMPLATE is in force.** The join onto
+   *     `sal.delivery_checklist_templates` is new in P1-31 P-9b (migration
+   *     20260909090000, closing CC-14) and lands in the same commit as the
+   *     primitive's. Before it, deactivating or soft-deleting a template withdrew
+   *     nothing from the gate and the operator's only remedy was withdrawing each
+   *     item. The join is on `(tenant_id, company_id, id)` — the scoped unique key
+   *     `uq_delivery_checklist_templates_scope_id` — so it cannot cross a tenant or a
+   *     company, and it is INNER because the item's foreign key makes the template
+   *     reference mandatory.
+   *
+   * The company-wide scan therefore stays exactly as wide as it was; what narrowed is
+   * which templates count as in force. The standing rule is unchanged and is the reason
+   * this file moves in lockstep with the migration rather than ahead of it: the mirror
+   * must never be BETTER than the primitive, or the eligibility read reports a delivery
+   * eligible that `sal.complete_delivery` then refuses with 23514.
    *
    * The count is the gate. The sample is `LIMIT`-bounded so a company with a large
    * mandatory template cannot turn a refusal message into an unbounded response.
@@ -1454,8 +1575,13 @@ export class DeliveryRepository extends Repository {
   ): Promise<ChecklistGapReport> {
     const context = this.assertContext(db);
     const values = [context.principal.tenantId, scope.companyId, scope.branchId, deliveryRecordId];
+    const source = `sal.delivery_checklist_template_items ti
+              JOIN sal.delivery_checklist_templates t
+                ON t.tenant_id = ti.tenant_id AND t.company_id = ti.company_id
+               AND t.id = ti.template_id`;
     const predicate = `ti.tenant_id = $1 AND ti.company_id = $2 AND ti.is_mandatory
           AND ti.deleted_at IS NULL
+          AND t.status = 'active' AND t.deleted_at IS NULL
           AND NOT EXISTS (
             SELECT 1
               FROM sal.delivery_checklist_results r
@@ -1466,7 +1592,7 @@ export class DeliveryRepository extends Repository {
     const counted = await this.runOne<{ missing: number }>(
       db,
       `SELECT count(*)::int AS missing
-         FROM sal.delivery_checklist_template_items ti
+         FROM ${source}
         WHERE ${predicate}`,
       values
     );
@@ -1476,7 +1602,7 @@ export class DeliveryRepository extends Repository {
     const sample = await this.run<ChecklistGapSql>(
       db,
       `SELECT ti.id AS template_item_id, ti.template_id, ti.item_code, ti.label
-         FROM sal.delivery_checklist_template_items ti
+         FROM ${source}
         WHERE ${predicate}
         ORDER BY ti.template_id, ti.sort_order, ti.item_code
         LIMIT $5`,
