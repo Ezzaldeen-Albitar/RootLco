@@ -1300,3 +1300,65 @@ neither do their identifiers.
 | **D3-3** | the `cancelled` trap proved rather than assumed — `is_closed` AND `is_cancellation` read off the real catalogue row, then the exclusion asserted                                                                                                                                |
 | **D3-4** | a HANDED-OVER work order raises no blocker and is still not ready, so an empty blocker list is proved insufficient to infer readiness                                                                                                                                           |
 | **D3-5** | the three declared permissions proved necessary and sufficient from four sides, with `sal.finance.view` refused at the operation rather than answered with a softened fact                                                                                                      |
+
+---
+
+## 43. The warranty record screens — **PROVISIONAL** (FE-008, FE-009 partial)
+
+**This whole section is PROVISIONAL, and so is its identifier.** It records work on
+`feature/p1-31-warranty-record-screens`, based on `develop` `01c32937`. The branch is **unmerged**,
+has **no pull request** and **no hosted result**. Nothing below claims otherwise.
+
+### 43.1 Identifier allocation — PROVISIONAL, dated 2026-09-11
+
+At the base head this register runs to **section 39** and to **CC-26**, with **CC-21** … **CC-26**
+already settled against merged or open predecessors. Several P1-31 lanes are in flight at this
+head and each will take the next free heading as it integrates, so this slice does **not** claim
+the next number in sequence. It reserves a heading and an identifier deliberately ahead of the
+front, and states that the reservation is provisional so that a collision is a reconciliation and
+never a silent renumbering of somebody else's record.
+
+| id                | lane                                          | state at this head                       |
+| ----------------- | --------------------------------------------- | ---------------------------------------- |
+| **CC-24**         | the readiness queue (D-3)                     | section 39, on this base                 |
+| **CC-25**         | the delivery write paths                      | section 38, merged into this base        |
+| **CC-26**         | receiver identity-evidence document category  | section 38, merged into this base        |
+| **CC-27 … CC-30** | reserved for the lanes in flight at this head | not allocated here                       |
+| **CC-31**         | this slice                                    | **PROVISIONAL**, this branch, section 43 |
+
+**Reconciliation rule.** If section 43 or **CC-31** is occupied when this branch integrates, this
+section moves to the next free heading and this identifier to the next free identifier, and the move
+is recorded here with its date. No existing identifier and no historical result is renumbered to
+accommodate it.
+
+### 43.2 What was delivered
+
+Two route pages — the branch warranty list at `/{locale}/warranty` and the warranty record at
+`/{locale}/warranty/{warrantyId}`, both gated on `wty.warranty.read` and both deciding before they
+read — a warranty feature (contract, adapters, shared pieces, two screens), an issue control drawn
+on the handover screen for a caller holding `wty.warranty.issue`, a `warranty` navigation entry at
+`available`, the English and Arabic wording for all of it, and two new web test files. The full
+record is [`warranty-record-screens.md`](./warranty-record-screens.md).
+
+`wty.warranty-detail` and `wty.warranty-generate` were added to `P1_31_OPERATION_IDS` in
+`scripts/ci/check-p1-31-access.mjs`. That gate's scope is an allow-list of OPERATIONS, so an
+operation a P1-31 screen calls and the list omits is one the gate has quietly stopped owning.
+Neither addition widens the derived segment set; the examined page count moved from 8 to 10.
+
+### 43.3 Disposition
+
+| id        | what is accepted                                                                       | measured basis                                                                                                                                                                                                                                            | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | owner               | state          |
+| --------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | -------------- |
+| **CC-31** | **FE-009 ships PARTIAL: a vehicle-filtered list, and no per-record transition ledger** | `wty.warranty_record_status_history` is written by the database and read by **no operation anywhere** in `apps/api/src` — **CC-10**, unchanged. The only history that can be read honestly is `wty.warranty-list` filtered by its one filter, `vehicleId` | **accepted, with the missing half NAMED and NOT simulated.** The record screen states in the operator's own language that the transition record cannot be read yet. No sequence is composed from the record's current state: an invented ledger would be believed, which is worse than an absent one. The backend prerequisite is named as **P-18 — warranty history reader**, a `wty.warranty.read` branch-scoped read over the existing table. It is a Backend seam and is not in this lane | a Backend seam lane | open, recorded |
+
+### 43.4 What this slice did NOT do
+
+- **No backend file was edited**, no migration was written, no seed changed and no permission was
+  minted. Both codes the screens consult already exist.
+- **No warranty policy or coverage administration screen.** P-10 published seven policy and coverage
+  operations and no screen consumes any of them, so a policy is still named by reference at the
+  point of issue — the same unresolvable-identifier gap **PPD-04** records.
+- **No history reader and no simulated history.** See CC-31.
+- **No gate was weakened, no allow-list narrowed and no suppression added.** The P1-31 access gate's
+  operation list was EXTENDED, which widens what the gate owns rather than what it permits.
+- **No pull request, no merge, no push, no hosted run and no acceptance.**
