@@ -138,7 +138,7 @@ sit in the tree looking like coverage while running nowhere.
 ## Current tree
 
 The live web suite holds **133 web test files**, every one matched by a `vitest`
-project, and the current tree executes **3664** tests. Both are derived on every
+project, and the current tree executes **3703** tests. Both are derived on every
 run of `npm run validate:p1-27-closing-values` rather than recorded by hand.
 
 That executed figure is the one a test reads. It used to read the `Web tier` row
@@ -149,7 +149,7 @@ comparing a live baseline against a record of a head the branch had left behind.
 The superseded figures are left exactly as they were, because they are a true
 account of that head; what moved is which number the check consults.
 
-**The 3664 is local, and it is pending attestation by this pull request's hosted
+**The 3703 is local, and it is pending attestation by this pull request's hosted
 run.** It is the output of
 `node scripts/ci/check-p1-27-closing-values.mjs --record web` against this tree,
 recorded in `evidence/local-run-ledger.json` with the commit it was taken at and
@@ -162,7 +162,7 @@ merely for cosmetic consistency.
 | measure                                    | value | the command that decides it                                       |
 | ------------------------------------------ | ----- | ------------------------------------------------------------------ |
 | Web test files under `apps/web/tests`       | 133    | a walk of the tree                                                 |
-| Web tier — tests executed                   | 3664  | `--record web`, from the `vitest` JSON report                      |
+| Web tier — tests executed                   | 3703  | `--record web`, from the `vitest` JSON report                      |
 | Web tier — files the run reported           | 133    | the same report, cross-checked against the walk above              |
 | Root unit tier — tests executed             | 3300  | `--record unit`, from the `vitest` JSON report                     |
 | Root unit tier — files the run reported     | 122   | the same report, cross-checked against the tier's include rule      |

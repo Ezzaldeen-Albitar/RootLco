@@ -226,7 +226,7 @@ every advance of local `develop` in the sequence above was a fast-forward from
 
 ### 5.1 The five trees the P1-27 ownership gate owns — 145 files
 
-`validate:p1-27-frontend` reports **148 files across 5 trees, 0 failures**. Of
+`validate:p1-27-frontend` reports **149 files across 5 trees, 0 failures**. Of
 those, **43** are §5.2 and §5.3 together — the two feature trees — and both
 halves are derived from the trees the gate itself names, so the count follows the
 gate rather than a reader's memory of it. The next **34** are the third
@@ -993,7 +993,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files tests/backend:all = 145 -->
 <!-- derived: files apps/web/src/features/crm = 20 -->
 <!-- derived: files apps/web/src/features/vehicles = 23 -->
-<!-- derived: files p1-27-frontend-gate = 148 -->
+<!-- derived: files p1-27-frontend-gate = 149 -->
 <!-- derived: files p1-27-frontend-gate:trees = 5 -->
 <!-- derived: tracked docs/phase-1/phase-1-27 = 42 -->
 <!-- derived: tracked docs/phase-1/phase-1-27:md = 32 -->

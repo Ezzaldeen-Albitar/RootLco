@@ -6,8 +6,8 @@ import ar from '../src/i18n/messages/ar.json';
 import { renderLtr, renderRtl } from './render';
 
 /**
- * The vehicle handover, rendered (P1-31, FE-002, FE-003, FE-004, FE-006,
- * FE-007).
+ * The vehicle handover, rendered (P1-31, FE-001, FE-002, FE-003, FE-004,
+ * FE-006, FE-007).
  *
  * The properties under test: the route page decides before it reads; the
  * release checks are neither shown nor REQUESTED without the financial read
@@ -26,6 +26,12 @@ import { renderLtr, renderRtl } from './render';
  * step answered with; a reading with two decimals is refused by the form before
  * a request is spent; and a blocked release names the reasons the server gave,
  * read again, rather than a sentence this tier composed.
+ *
+ * FE-001 adds the ready-for-delivery queue, whose properties are its own: all
+ * three of the operation's codes gate the page and each one alone is enough to
+ * refuse it; the branch pair is named before anything is read; and the verdict
+ * is rendered exactly as the server composed it — an empty reason list is never
+ * read as "ready", because a vehicle already handed over produces exactly that.
  */
 
 const EN = en as Record<string, string>;
@@ -79,9 +85,23 @@ vi.mock('@/lib/customers/directory', () => ({
   searchCustomerDirectory: (...args: unknown[]) => searchCustomerDirectory(...args),
 }));
 
+const listDeliveryReadiness = vi.fn();
+const readDeliveryReadinessScopes = vi.fn();
+vi.mock('@/features/delivery/readiness-api', () => ({
+  listDeliveryReadiness: (...args: unknown[]) => listDeliveryReadiness(...args),
+  readDeliveryReadinessScopes: (...args: unknown[]) => readDeliveryReadinessScopes(...args),
+}));
+
 let PERMISSIONS: readonly string[] = [];
 vi.mock('@/features/authentication/api/session', () => ({
-  requireSession: async () => ({ permissions: PERMISSIONS, email: 'advisor@test.local' }),
+  requireSession: async () => ({
+    permissions: PERMISSIONS,
+    email: 'advisor@test.local',
+    // The session's RESOLVED scope. The queue screen offers these as choices and
+    // never lets the browser assert one of its own.
+    companyIds: [COMPANY_ID],
+    branchIds: [BRANCH_ID],
+  }),
 }));
 
 const notifyActionResult = vi.fn<(...args: unknown[]) => boolean>().mockReturnValue(true);
@@ -100,25 +120,43 @@ const { DeliveryDetailScreen } =
   await import('@/features/delivery/components/DeliveryDetailScreen');
 const { WorkOrderDeliveryPanel } =
   await import('@/features/delivery/components/WorkOrderDeliveryPanel');
+const { DeliveryReadinessScreen } =
+  await import('@/features/delivery/components/DeliveryReadinessScreen');
 type RoutePage = (args: { params: Promise<Record<string, string>> }) => Promise<React.ReactNode>;
 const DeliveryPage = (await import('@/app/[locale]/(dashboard)/delivery/[deliveryId]/page'))
   .default as unknown as RoutePage;
+const DeliveryQueuePage = (await import('@/app/[locale]/(dashboard)/delivery/page'))
+  .default as unknown as RoutePage;
 
+const COMPANY_ID = '11111111-1111-4111-8111-111111111111';
+const BRANCH_ID = '22222222-2222-4222-8222-222222222222';
 const DELIVERY_ID = '33333333-3333-4333-8333-333333333333';
 const WORK_ORDER_ID = '44444444-4444-4444-8444-444444444444';
 const VEHICLE_ID = '55555555-5555-4555-8555-555555555555';
 const VISIT_ID = '66666666-6666-4666-8666-666666666666';
 const EMPLOYEE_ID = '77777777-7777-4777-8777-777777777777';
 const PARTNER_ID = '88888888-8888-4888-8888-888888888888';
+const SECOND_WORK_ORDER_ID = '99999999-9999-4999-8999-999999999999';
 
 const VIEW = 'sal.delivery.view';
 const FINANCE = 'sal.finance.view';
 const COMPLETE = 'sal.delivery.complete';
+const WORK_ORDER_READ = 'wo.work_order.read';
+/** The three codes the ready-for-delivery queue requires, all of them. */
+const QUEUE_CODES = [VIEW, WORK_ORDER_READ, FINANCE] as const;
+const QUEUE_SCOPES = {
+  status: 'ok' as const,
+  data: {
+    companies: [{ id: COMPANY_ID, legalName: 'Workshop company' }],
+    branches: [{ id: BRANCH_ID, companyId: COMPANY_ID, name: 'Service branch' }],
+  },
+  correlationId: null,
+};
 
 const delivery = {
   id: DELIVERY_ID,
-  companyId: '11111111-1111-4111-8111-111111111111',
-  branchId: '22222222-2222-4222-8222-222222222222',
+  companyId: COMPANY_ID,
+  branchId: BRANCH_ID,
   workOrderId: WORK_ORDER_ID,
   receptionVisitId: VISIT_ID,
   vehicleId: VEHICLE_ID,
@@ -257,6 +295,110 @@ const refusedRead = (status: string, correlationId: string | null = 'corr-403') 
   correlationId,
 });
 
+/* ------------------------------------------------------------------ *
+ * FE-001 — the ready-for-delivery queue
+ * ------------------------------------------------------------------ */
+
+/** One page of the queue, as the adapter hands it to the table. */
+const queuePage = (rows: readonly unknown[], over: Record<string, unknown> = {}) => ({
+  status: 'ok',
+  rows,
+  nextCursor: null,
+  hasMore: false,
+  correlationId: 'corr-queue',
+  ...over,
+});
+
+const QUEUE_CURSOR = 'cXVldWUtY3Vyc29y';
+
+/** The four checks this surface reports, all read and all clear. */
+const clearFacts = [
+  { blocker: 'work_order_not_complete', established: true, source: 'work order state' },
+  { blocker: 'quality_control_not_passed', established: true, source: 'quality gate' },
+  { blocker: 'financial_balance_outstanding', established: true, source: 'open receivable' },
+  { blocker: 'part_obligation_outstanding', established: true, source: 'open commitments' },
+];
+
+const workOrderOf = (id: string, over: Record<string, unknown> = {}) => ({
+  id,
+  companyId: COMPANY_ID,
+  branchId: BRANCH_ID,
+  receptionVisitId: VISIT_ID,
+  vehicleId: VEHICLE_ID,
+  kind: 'ordinary',
+  state: 'closed',
+  partsForwardState: 'settled',
+  displayNumber: 'W-000123',
+  openedAt: '2026-09-01T08:30:00.000Z',
+  recordVersion: 3,
+  customer: {
+    partnerId: PARTNER_ID,
+    displayName: 'Counter party at the desk',
+    relationshipRole: 'service_requester',
+    hasAdditionalParties: false,
+  },
+  vehicle: { vehicleId: VEHICLE_ID, registrationPlate: 'AA-1234', makeModel: 'Saloon, mid-size' },
+  ...over,
+});
+
+const readyRow = {
+  workOrder: workOrderOf(WORK_ORDER_ID),
+  delivery: null,
+  facts: clearFacts,
+  blockers: [],
+  readyToStartDelivery: true,
+};
+
+const heldRow = {
+  workOrder: workOrderOf(SECOND_WORK_ORDER_ID, { displayNumber: 'W-000124' }),
+  delivery: null,
+  facts: [
+    { blocker: 'financial_balance_outstanding', established: true, source: 'open receivable' },
+    // Could not be READ. Still holds the vehicle back, and must not be drawn as
+    // an ordinary failed check.
+    { blocker: 'quality_control_not_passed', established: false, source: 'quality gate' },
+  ],
+  blockers: ['financial_balance_outstanding', 'quality_control_not_passed'],
+  readyToStartDelivery: false,
+};
+
+/**
+ * Already handed over: NOT ready, and NO reason named.
+ *
+ * The backend states that the reason for this is bound to the handover record
+ * and is outside this surface's four, so the queue reports an empty reason list
+ * for a vehicle that has already left. A screen that read "no reasons" as
+ * "ready" would offer it again.
+ */
+const deliveredRow = {
+  workOrder: workOrderOf(WORK_ORDER_ID),
+  delivery: { ...delivery, status: 'delivered' },
+  facts: clearFacts,
+  blockers: [],
+  readyToStartDelivery: false,
+};
+
+async function renderQueuePage(locale = 'en') {
+  const tree = await DeliveryQueuePage({ params: Promise.resolve({ locale }) });
+  return renderLtr(tree as React.ReactElement);
+}
+
+/** Mounts the queue and asks for the pre-filled branch, which is where it reads. */
+async function showQueue(locale: 'en' | 'ar' = 'en') {
+  const catalogue = locale === 'ar' ? ar : en;
+  const render = locale === 'ar' ? renderRtl : renderLtr;
+  const view = render(
+    <DeliveryReadinessScreen locale={locale} messages={catalogue} scopeOptions={QUEUE_SCOPES} />
+  );
+  await userEvent.click(
+    screen.getByRole('button', {
+      name: (catalogue as Record<string, string>)['delivery.queue.show'] as string,
+    })
+  );
+  await waitFor(() => expect(listDeliveryReadiness).toHaveBeenCalled());
+  return view;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   PERMISSIONS = [];
@@ -273,6 +415,8 @@ beforeEach(() => {
   completeDelivery.mockResolvedValue(succeeded('delivery.completion.done'));
   captureDeliverySignature.mockResolvedValue(succeeded('delivery.signature.attached'));
   searchCustomerDirectory.mockResolvedValue(customerPage([CUSTOMER]));
+  listDeliveryReadiness.mockResolvedValue(queuePage([]));
+  readDeliveryReadinessScopes.mockResolvedValue(QUEUE_SCOPES);
 });
 
 function renderScreen(over: Record<string, unknown> = {}) {
@@ -1270,5 +1414,292 @@ describe('the execution controls read in Arabic as Arabic', () => {
         name: EN['delivery.checklist.record'] as string,
       })
     ).toBeNull();
+  });
+});
+
+describe('the ready-for-delivery queue decides before it reads', () => {
+  it.each([
+    ['the delivery code', VIEW],
+    ['the work-order code', WORK_ORDER_READ],
+    ['the financial code', FINANCE],
+  ])('refuses without %s, and reads NOTHING', async (_name, missing) => {
+    PERMISSIONS = QUEUE_CODES.filter((code) => code !== missing);
+    await renderQueuePage();
+    expect(screen.getByText(EN['state.denied.title'] as string)).toBeVisible();
+    // Both halves. "Nothing was read" alone would stay green with the gate
+    // deleted if the screen happened not to render.
+    expect(screen.queryByText(EN['delivery.queue.show'] as string)).toBeNull();
+    expect(listDeliveryReadiness).not.toHaveBeenCalled();
+    expect(readDeliveryReadinessScopes).not.toHaveBeenCalled();
+  });
+
+  it('renders the queue for a caller who holds all three codes', async () => {
+    PERMISSIONS = [...QUEUE_CODES];
+    await renderQueuePage();
+    expect(screen.getByRole('button', { name: EN['delivery.queue.show'] as string })).toBeVisible();
+    expect(screen.queryByText(EN['state.denied.title'] as string)).toBeNull();
+  });
+
+  it('requests nothing at all until an operator names a branch', async () => {
+    PERMISSIONS = [...QUEUE_CODES];
+    await renderQueuePage();
+    expect(screen.getByText(EN['delivery.queue.idleTitle'] as string)).toBeVisible();
+    // The branch pair is the authorization TARGET. Reading before it is named
+    // would degrade a branch-scoped check into a scope-blind permission test.
+    expect(listDeliveryReadiness).not.toHaveBeenCalled();
+  });
+});
+
+describe('the queue selects authorized named scopes', () => {
+  it('shows directory names rather than raw identifier inputs', async () => {
+    PERMISSIONS = [...QUEUE_CODES];
+    await renderQueuePage();
+    expect(screen.getByRole('option', { name: 'Workshop company' })).toBeVisible();
+    expect(screen.getByRole('option', { name: 'Service branch' })).toBeVisible();
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(listDeliveryReadiness).not.toHaveBeenCalled();
+  });
+
+  it('clears the selected branch when its company changes and requires a new matching branch', async () => {
+    const secondCompany = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const secondBranch = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    renderLtr(
+      <DeliveryReadinessScreen
+        locale="en"
+        messages={en}
+        scopeOptions={{
+          ...QUEUE_SCOPES,
+          data: {
+            companies: [
+              ...QUEUE_SCOPES.data.companies,
+              { id: secondCompany, legalName: 'Second company' },
+            ],
+            branches: [
+              ...QUEUE_SCOPES.data.branches,
+              { id: secondBranch, companyId: secondCompany, name: 'Second branch' },
+            ],
+          },
+        }}
+      />
+    );
+    const user = userEvent.setup();
+    const company = screen.getByRole('combobox', {
+      name: new RegExp(EN['delivery.queue.company'] as string),
+    });
+    const branch = screen.getByRole('combobox', {
+      name: new RegExp(EN['delivery.queue.branch'] as string),
+    });
+    await user.selectOptions(company, COMPANY_ID);
+    await user.selectOptions(branch, BRANCH_ID);
+    await user.selectOptions(company, secondCompany);
+    expect(branch).toHaveValue('');
+    expect(screen.queryByRole('option', { name: 'Service branch' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: EN['delivery.queue.show'] as string }));
+    expect(listDeliveryReadiness).not.toHaveBeenCalled();
+    await user.selectOptions(branch, secondBranch);
+    await user.click(screen.getByRole('button', { name: EN['delivery.queue.show'] as string }));
+    await waitFor(() =>
+      expect(listDeliveryReadiness).toHaveBeenCalledWith(
+        expect.objectContaining({ companyId: secondCompany, branchId: secondBranch })
+      )
+    );
+  });
+
+  it.each(['denied', 'unavailable', 'expired'])(
+    'shows directory %s without offering raw scope entry or reading the queue',
+    async (status) => {
+      PERMISSIONS = [...QUEUE_CODES];
+      readDeliveryReadinessScopes.mockResolvedValue({ status, correlationId: 'scope-unavailable' });
+      await renderQueuePage();
+      expect(screen.queryByRole('textbox')).toBeNull();
+      expect(screen.queryByRole('combobox')).toBeNull();
+      expect(
+        screen.queryByRole('button', { name: EN['delivery.queue.show'] as string })
+      ).toBeNull();
+      expect(listDeliveryReadiness).not.toHaveBeenCalled();
+      expect(screen.getByText(EN[`state.${status}.title`] as string)).toBeVisible();
+    }
+  );
+
+  it('distinguishes an empty authorized directory from an empty readiness queue', async () => {
+    PERMISSIONS = [...QUEUE_CODES];
+    readDeliveryReadinessScopes.mockResolvedValue({
+      status: 'ok',
+      data: { companies: [], branches: [] },
+      correlationId: null,
+    });
+    await renderQueuePage();
+    expect(screen.getByText(EN['delivery.queue.noScopesTitle'] as string)).toBeVisible();
+    expect(screen.queryByText(EN['delivery.queue.noneMatching'] as string)).toBeNull();
+    expect(listDeliveryReadiness).not.toHaveBeenCalled();
+  });
+});
+
+describe('the queue renders the verdict it was given and derives none of it', () => {
+  it('names the branch the operator chose, and no scope of its own', async () => {
+    listDeliveryReadiness.mockResolvedValue(queuePage([readyRow]));
+    await showQueue();
+    const asked = listDeliveryReadiness.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(asked['companyId']).toBe(COMPANY_ID);
+    expect(asked['branchId']).toBe(BRANCH_ID);
+    expect(asked['cursor']).toBeNull();
+    // No eligibility is ever asserted by a request. There is no such parameter
+    // on the operation and this screen must never invent one.
+    expect(asked['ready']).toBeUndefined();
+  });
+
+  it('draws a ready row as ready, with no reason list', async () => {
+    listDeliveryReadiness.mockResolvedValue(queuePage([readyRow]));
+    const { container } = await showQueue();
+    const row = (await within(container).findByText('W-000123')).closest('tr') as HTMLElement;
+    expect(within(row).getByText(EN['delivery.queue.ready'] as string)).toBeVisible();
+    expect(within(row).queryByText(EN['delivery.queue.notReady'] as string)).toBeNull();
+    expect(
+      within(row).queryByText(EN['delivery.blocker.financialBalanceOutstanding'] as string)
+    ).toBeNull();
+  });
+
+  it('shows an absent server verdict as unknown even for a closed work order with no blockers', async () => {
+    listDeliveryReadiness.mockResolvedValue(
+      queuePage([{ ...readyRow, readyToStartDelivery: undefined }])
+    );
+    const { container } = await showQueue();
+    const row = (await within(container).findByText('W-000123')).closest('tr') as HTMLElement;
+    expect(within(row).getByText(EN['delivery.queue.unknown'] as string)).toBeVisible();
+    expect(within(row).queryByText(EN['delivery.queue.ready'] as string)).toBeNull();
+  });
+
+  it('draws a held row as not ready and names every reason the server gave', async () => {
+    listDeliveryReadiness.mockResolvedValue(queuePage([heldRow]));
+    const { container } = await showQueue();
+    const row = (await within(container).findByText('W-000124')).closest('tr') as HTMLElement;
+    expect(within(row).getByText(EN['delivery.queue.notReady'] as string)).toBeVisible();
+    expect(
+      within(row).getByText(EN['delivery.blocker.financialBalanceOutstanding'] as string)
+    ).toBeVisible();
+    expect(
+      within(row).getByText(EN['delivery.blocker.qualityControlNotPassed'] as string)
+    ).toBeVisible();
+  });
+
+  it('marks a check that could not be READ apart from one that failed', async () => {
+    listDeliveryReadiness.mockResolvedValue(queuePage([heldRow]));
+    const { container } = await showQueue();
+    const row = (await within(container).findByText('W-000124')).closest('tr') as HTMLElement;
+    // Exactly one of the two reasons could not be established, and only that one
+    // carries the mark. Marking both would send an operator to support for a
+    // customer's unpaid bill; marking neither turns an outage into a customer
+    // conversation.
+    const quality = within(row)
+      .getByText(EN['delivery.blocker.qualityControlNotPassed'] as string)
+      .closest('li') as HTMLElement;
+    expect(quality.textContent).toContain(EN['delivery.queue.reasonUnreadable'] as string);
+    const money = within(row)
+      .getByText(EN['delivery.blocker.financialBalanceOutstanding'] as string)
+      .closest('li') as HTMLElement;
+    expect(money.textContent).not.toContain(EN['delivery.queue.reasonUnreadable'] as string);
+  });
+
+  it('never reads an empty reason list as ready', async () => {
+    listDeliveryReadiness.mockResolvedValue(queuePage([deliveredRow]));
+    const { container } = await showQueue();
+    const row = (await within(container).findByText('W-000123')).closest('tr') as HTMLElement;
+    // The row carries NO reason and is NOT ready. Inferring readiness from the
+    // empty list would offer a vehicle that has already left the workshop.
+    expect(within(row).getByText(EN['delivery.queue.notReady'] as string)).toBeVisible();
+    expect(within(row).queryByText(EN['delivery.queue.ready'] as string)).toBeNull();
+    expect(within(row).getByText(EN['delivery.queue.notReadyNoReasons'] as string)).toBeVisible();
+  });
+
+  it('links a started handover and states plainly when there is none', async () => {
+    listDeliveryReadiness.mockResolvedValue(
+      queuePage([
+        readyRow,
+        {
+          ...deliveredRow,
+          workOrder: workOrderOf(SECOND_WORK_ORDER_ID, { displayNumber: 'W-000124' }),
+        },
+      ])
+    );
+    const { container } = await showQueue();
+    await within(container).findByText('W-000123');
+    const rows = Array.from(container.querySelectorAll('tbody tr')) as HTMLElement[];
+    expect(rows).toHaveLength(2);
+    const first = rows[0] as HTMLElement;
+    const second = rows[1] as HTMLElement;
+    expect(within(first).getByText(EN['delivery.queue.noHandover'] as string)).toBeVisible();
+    const open = within(second).getByRole('link', {
+      name: EN['delivery.queue.openHandover'] as string,
+    });
+    expect(open.getAttribute('href')).toBe(`/en/delivery/${DELIVERY_ID}`);
+    expect(within(second).getByText(EN['delivery.status.delivered'] as string)).toBeVisible();
+  });
+
+  it('links every row to its work order and offers no action of its own', async () => {
+    listDeliveryReadiness.mockResolvedValue(queuePage([readyRow]));
+    const { container } = await showQueue();
+    await within(container).findByText('W-000123');
+    const body = container.querySelector('tbody') as HTMLElement;
+    const link = within(body).getByRole('link', { name: 'W-000123' });
+    expect(link.getAttribute('href')).toBe(`/en/work-orders/${WORK_ORDER_ID}`);
+    // Starting a handover belongs to the work order's own panel, with its own
+    // authority. A control here would be an affordance this read cannot enforce.
+    expect(within(body).queryAllByRole('button')).toHaveLength(0);
+  });
+
+  it('carries the cursor the server published rather than one of its own', async () => {
+    listDeliveryReadiness.mockResolvedValueOnce(
+      queuePage([readyRow], { nextCursor: QUEUE_CURSOR, hasMore: true })
+    );
+    listDeliveryReadiness.mockResolvedValue(queuePage([heldRow]));
+    await showQueue();
+    await screen.findByText('W-000123');
+    await userEvent.click(screen.getByRole('button', { name: EN['table.nextPage'] as string }));
+    await waitFor(() => expect(listDeliveryReadiness).toHaveBeenCalledTimes(2));
+    const next = listDeliveryReadiness.mock.calls[1]?.[0] as Record<string, unknown>;
+    expect(next['cursor']).toBe(QUEUE_CURSOR);
+    expect(await screen.findByText('W-000124')).toBeVisible();
+  });
+
+  it('says a refusal is a refusal rather than showing an empty queue', async () => {
+    listDeliveryReadiness.mockResolvedValue({
+      status: 'denied',
+      rows: [],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: 'corr-queue-403',
+    });
+    const { container } = await showQueue();
+    // "Nothing is ready" and "you may not see this" are different sentences.
+    expect(await within(container).findByText(EN['state.denied.title'] as string)).toBeVisible();
+    expect(within(container).queryByText(EN['delivery.queue.noneMatching'] as string)).toBeNull();
+  });
+
+  it('states an empty branch as an empty branch', async () => {
+    listDeliveryReadiness.mockResolvedValue(queuePage([]));
+    const { container } = await showQueue();
+    expect(
+      await within(container).findByText(EN['delivery.queue.noneMatching'] as string)
+    ).toBeVisible();
+  });
+});
+
+describe('the queue reads in Arabic as Arabic', () => {
+  it('renders its verdict and its reasons from the Arabic catalogue, right to left', async () => {
+    listDeliveryReadiness.mockResolvedValue(queuePage([heldRow]));
+    const { container } = await showQueue('ar');
+    expect(document.documentElement.dir).toBe('rtl');
+    const row = (await within(container).findByText('W-000124')).closest('tr') as HTMLElement;
+    for (const key of [
+      'delivery.queue.notReady',
+      'delivery.blocker.financialBalanceOutstanding',
+      'delivery.blocker.qualityControlNotPassed',
+      'delivery.queue.reasonUnreadable',
+    ]) {
+      expect(row.textContent, key).toContain(AR[key] as string);
+      // A copy-paste that leaves the English string in the Arabic catalogue
+      // reads as translated to anyone who does not read Arabic.
+      expect(row.textContent, key).not.toContain(EN[key] as string);
+    }
   });
 });
