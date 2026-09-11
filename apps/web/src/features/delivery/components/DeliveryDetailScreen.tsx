@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useCallback, useState } from 'react';
 import { formatDateTime } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
@@ -8,23 +9,29 @@ import { translate } from '@/i18n/get-messages';
 import type { DeliveryRecord } from '../delivery-contract';
 import { ChecklistResultsPanel } from './ChecklistResultsPanel';
 import { StatusLabel } from './CodeLabel';
+import { CompletionPanel } from './CompletionPanel';
 import { EligibilityPanel } from './EligibilityPanel';
 import { Fact, Panel, Reference } from './PanelShell';
 import { ReceiverPanel } from './ReceiverPanel';
 import { SignaturesPanel } from './SignaturesPanel';
 import { StatusHistoryPanel } from './StatusHistoryPanel';
+import { useEligibility } from './use-eligibility';
 
 /**
  * One vehicle handover, end to end (P1-31, FE-002, FE-003, FE-004, FE-006,
  * FE-007).
  *
- * ## Read-only, and it says so by having no controls
+ * ## Every control is gated on the code ITS OWN operation declares
  *
- * This slice publishes the custody chain and changes nothing. There is no
- * button here that writes: verifying the receiver, recording a checklist result,
- * attaching a signature and completing the handover each have their own
- * authority and their own screen still to come. A control that submits nothing
- * is worse than an absent one, so none is drawn.
+ * Not on one screen-wide capability. Verifying a receiver, recording a checklist
+ * outcome and binding a signature declare `sal.delivery.manage`; completing the
+ * handover declares `sal.delivery.complete` alongside the financial read code.
+ * A caller holding one and not the other sees exactly the controls they can use,
+ * and the others are ABSENT rather than present-and-refused: a button whose only
+ * outcome is a denial teaches an operator to ignore denials.
+ *
+ * Every gate here is an affordance. The backend decides again, against the
+ * actual record, on every single request.
  *
  * ## The record is read on the server, the panels read for themselves
  *
@@ -32,6 +39,21 @@ import { StatusHistoryPanel } from './StatusHistoryPanel';
  * see one, so this screen starts loaded rather than blank. Each panel then reads
  * its own subresource, which is what lets one refusal or one outage stay inside
  * one panel instead of taking the screen with it.
+ *
+ * ## One eligibility read, and one revision counter
+ *
+ * Eligibility is read HERE rather than inside the panel that displays it,
+ * because the completion control needs the same answer and above all the same
+ * `recordVersion` — the number a version-guarded completion must quote. Two
+ * reads could hand the two panels different versions, so the number on screen
+ * and the number in the request would not be the same fact.
+ *
+ * `revision` counts successful writes and is passed to every panel. Each panel
+ * folds it into the key of what it holds, so a write makes every stale answer
+ * ABSENT rather than merely old — the panels show their loading state while the
+ * fresh reads land, instead of showing a decision that has since changed. Every
+ * preparation step moves the delivery version, so a screen that did not re-read
+ * would send a version guaranteed to be refused.
  *
  * ## Identifiers are shown as identifiers
  *
@@ -47,6 +69,7 @@ export function DeliveryDetailScreen({
   delivery,
   canReadFinance,
   canComplete,
+  canManage = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -54,7 +77,13 @@ export function DeliveryDetailScreen({
   readonly delivery: DeliveryRecord;
   readonly canReadFinance: boolean;
   readonly canComplete: boolean;
+  /** Whether the caller holds the write code the preparation acts declare. */
+  readonly canManage?: boolean;
 }) {
+  const [revision, setRevision] = useState(0);
+  const refresh = useCallback(() => setRevision((previous) => previous + 1), []);
+  const eligibility = useEligibility(delivery.id, canReadFinance, revision);
+
   return (
     <div className="flex min-h-0 flex-col gap-6">
       <Panel
@@ -111,18 +140,60 @@ export function DeliveryDetailScreen({
 
       <EligibilityPanel
         messages={messages}
-        deliveryId={delivery.id}
-        canReadFinance={canReadFinance}
+        state={eligibility.state}
+        withheld={eligibility.withheld}
         canComplete={canComplete}
       />
 
-      <ReceiverPanel locale={locale} messages={messages} deliveryId={delivery.id} />
+      <ReceiverPanel
+        locale={locale}
+        messages={messages}
+        deliveryId={delivery.id}
+        canManage={canManage}
+        revision={revision}
+        onDone={refresh}
+      />
 
-      <SignaturesPanel locale={locale} messages={messages} deliveryId={delivery.id} />
+      <SignaturesPanel
+        locale={locale}
+        messages={messages}
+        deliveryId={delivery.id}
+        receptionVisitId={delivery.receptionVisitId}
+        canManage={canManage}
+        revision={revision}
+        onDone={refresh}
+      />
 
-      <ChecklistResultsPanel messages={messages} deliveryId={delivery.id} />
+      <ChecklistResultsPanel
+        messages={messages}
+        deliveryId={delivery.id}
+        canManage={canManage}
+        revision={revision}
+        onDone={refresh}
+      />
 
-      <StatusHistoryPanel locale={locale} messages={messages} deliveryId={delivery.id} />
+      {/*
+        The release control is drawn only for a caller who holds the authority
+        the completion declares. Without it there is nothing here to show: the
+        eligibility panel above already states whether the vehicle may go, and
+        a disabled release button would only invite a click that cannot work.
+      */}
+      {canComplete ? (
+        <CompletionPanel
+          messages={messages}
+          deliveryId={delivery.id}
+          state={eligibility.state}
+          withheld={eligibility.withheld}
+          onDone={refresh}
+        />
+      ) : null}
+
+      <StatusHistoryPanel
+        locale={locale}
+        messages={messages}
+        deliveryId={delivery.id}
+        revision={revision}
+      />
     </div>
   );
 }

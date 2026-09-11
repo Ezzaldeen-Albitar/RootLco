@@ -547,9 +547,9 @@ bundle changed, and no migration was added.** The register moves **382 -> 390** 
 
 ## 26. Dispositions
 
-| id        | finding                                                                                   | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | owner / slice                                            | status |
-| --------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- | ------ |
-| **CC-14** | an **INACTIVE** checklist template still blocks a handover, and this slice did not fix it | `sal.complete_delivery` (`supabase/migrations/20260724094000_sal_delivery.sql`, section 8) counts mandatory items with `ti.company_id = ... AND ti.is_mandatory AND ti.deleted_at IS NULL`. It never joins `sal.delivery_checklist_templates` and reads no template `status`, so deactivating a template leaves its mandatory items gating every delivery in that company. The application mirror in `DeliveryRepository.mandatoryChecklistGaps` reproduces the primitive exactly, including this. Proved on real rows in `COMPANY_A9`: an inactive template's mandatory item produces `checklist_incomplete` naming the item | **open, and deliberately NOT mirrored away.** Filtering inactive templates in the mirror alone would report a delivery ELIGIBLE that the primitive then refuses inside the transaction, which is the failure the repository's own rule about mirrors exists to prevent. Correcting the behaviour means replacing a protected function - a forward migration - which this prerequisite does not sanction and which the shared acceptance database could not receive without a migration run. **The operator remedy that works today is published by this slice:** the item-withdrawal route sets exactly the column the primitive filters on, and the suite proves the blocker clears | a later `sal` migration slice, with P1-22 under Field 13 | open   |
+| id        | finding                                                                                   | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | owner / slice                                                                | status |
+| --------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ------ |
+| **CC-14** | an **INACTIVE** checklist template still blocks a handover, and this slice did not fix it | `sal.complete_delivery` (`supabase/migrations/20260724094000_sal_delivery.sql`, section 8) counts mandatory items with `ti.company_id = ... AND ti.is_mandatory AND ti.deleted_at IS NULL`. It never joins `sal.delivery_checklist_templates` and reads no template `status`, so deactivating a template leaves its mandatory items gating every delivery in that company. The application mirror in `DeliveryRepository.mandatoryChecklistGaps` reproduces the primitive exactly, including this. Proved on real rows in `COMPANY_A9`: an inactive template's mandatory item produces `checklist_incomplete` naming the item | **open, and deliberately NOT mirrored away.** Filtering inactive templates in the mirror alone would report a delivery ELIGIBLE that the primitive then refuses inside the transaction, which is the failure the repository's own rule about mirrors exists to prevent. Correcting the behaviour means replacing a protected function - a forward migration - which this prerequisite does not sanction and which the shared acceptance database could not receive without a migration run. **The operator remedy that works today is published by this slice:** the item-withdrawal route sets exactly the column the primitive filters on, and the suite proves the blocker clears. **CLOSED by P-9b** (Owner approval 2026-09-09): migration `20260909090000_sal_complete_delivery_active_template_gate.sql` re-issues the function with the template join, and `mandatoryChecklistGaps` gains it in the SAME commit, so the mirror is still never better than the primitive. See [`p9b-complete-delivery-template-gate.md`](./p9b-complete-delivery-template-gate.md) | a later `sal` migration slice, with P1-22 under Field 13 - taken by **P-9b** | closed |
 
 ## 27. What this slice did NOT do
 
@@ -571,7 +571,9 @@ bundle changed, and no migration was added.** The register moves **382 -> 390** 
 
 ## 28. Proof
 
-`tests/backend/p1-31-delivery-checklist-template-seam.test.ts`, **27 cases on real rows**, every one
+`tests/backend/p1-31-delivery-checklist-template-seam.test.ts`, **27 cases on real rows** as this
+slice left it (**28** since P-9b replaced the single gate-finding case with an inverted pair - see
+section 30), every one
 of which authors what it reads **through the published routes** - unlike every suite before it, this
 one seeds neither checklist table by admin SQL, because that seeding is the measurement PPD-12
 records.
@@ -845,3 +847,549 @@ The full record is [`report-configuration-seam.md`](./report-configuration-seam.
 | **P11-C** | tenant-wide authority from two sides — a `rpt.report.read`-only caller refused all seven, and a branch-scoped configure holder refused by the re-check |
 | **P11-D** | the publication invariants: one published version at a time, a second refused, and a published version immutable through the mapped freeze refusal     |
 | **P11-E** | the bundle delta measured against the generated P1-24 register, with the undeclared-exclusion list now empty and asserted empty                        |
+
+---
+
+## 35. P-9b — the completion gate honours the template lifecycle
+
+**Branch:** `remediation/p1-31-backend-complete-delivery-template-gate`, ownership profile
+`p1-31-backend`. **Owner approval:** 2026-09-09. **Baseline:** protected `develop` `fc58f1c2`,
+`main` `1262de74` — untouched; this branch carries the merge of that `develop` head. `develop`
+holds sections 1–33 and **CC-01 … CC-19**, sections 30–33 and **CC-19** being the delivery detail
+screen (#357). At the original branch point, section 35 / CC-21 was reserved after the report writer #361. The integration reconciliation below confirms those identifiers against the merged predecessors.
+
+The full record is
+[`p9b-complete-delivery-template-gate.md`](./p9b-complete-delivery-template-gate.md); this section
+is the register entry rather than a second copy of it.
+
+**What was delivered.** One forward migration and its lockstep mirror.
+`supabase/migrations/20260909090000_sal_complete_delivery_active_template_gate.sql` (**139**)
+re-issues `sal.complete_delivery(uuid, numeric, text, uuid)` with an identical signature,
+`SECURITY INVOKER`, `SET search_path = ''` and identical `REVOKE`/`GRANT` lines, changing only the
+mandatory-item count: it joins `sal.delivery_checklist_templates` on the scoped unique key
+`(tenant_id, company_id, id)` and requires `t.status = 'active' AND t.deleted_at IS NULL`.
+`DeliveryRepository.mandatoryChecklistGaps` takes the same join in the same commit, in both the
+count and the sample, so the mirror is still never better than the primitive — the rule that made
+**CC-14** unfixable inside the P-9 seam. **No object, no permission, no bundle, no route, no
+operation, no audit action and no seed row**; the register stays at **397** operations and
+`apps/web` is untouched.
+
+**Derived pins moved 138 -> 139** with the migration count: the schema baseline's `migrationCount`,
+carrying a `structuralTotalsNote139` that records tables 254, functions 533, policies 695, triggers
+560 and `security_definer` 0 unmoved and `schemaHash` unmoved at
+`8302f675153bb681b3dc92c47029c0a4391ed040ad7ce09f83a067f03285dac6` — MEASURED before and after the
+migration was applied, because `schema-inventory.mjs` hashes function identity and not body; the
+migration-tail assertion in `tests/db/p1-15-shared-services-runtime-capabilities.test.ts`, widened
+from eight named files to nine rather than slid; and the P1-27 closing-value ledger and evidence
+manifest, which carry the count as a derived figure.
+
+**Proof.** `tests/db/sal-delivery.test.ts` gains five cases and runs **11**: the gate still refuses
+while the template is ACTIVE and lets the handover through once it is deactivated; a SOFT-DELETED
+template lets it through while the item row survives; a REACTIVATED template gates again; a
+WITHDRAWN item under an active template stays excluded, which is the pre-existing rule; and a
+mandatory item of a SECOND active template is counted until that template is retired.
+`tests/backend/p1-31-delivery-checklist-template-seam.test.ts` moves **27 -> 28**: the single case
+that recorded the defect is replaced by a pair — one that gates, stops on deactivation and gates
+again on reactivation, and one that counts no template of another company and none of another
+tenant — so the gate cannot be removed and called a fix, and the scoped join is asserted rather
+than assumed.
+
+| id        | finding                                                                                            | measured                                                                                                                                                                                                                                                                                                                                                                                                    | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | owner / slice | status |
+| --------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------ |
+| **CC-21** | closing **CC-14** required replacing a protected function, which no earlier P1-31 slice sanctioned | The completion gate read the checklist ITEM's `deleted_at` and never the parent template's `status` or `deleted_at`, so deactivating a template withdrew nothing and soft-deleting one left its items refusing handovers from behind a row no read returns. Correcting the mirror alone would have reported a handover eligible that `sal.complete_delivery` then refuses inside the transaction with 23514 | **closed by this slice**, under Owner approval of 2026-09-09 and on the Field 13 route that returns a defect found by the Frontend to its owning backend phase under change control. Migration 139 and the mirror move together, and `passAllMandatory` in `tests/db/p1-11-helpers.ts` takes the same predicate so a fixture cannot satisfy an item the gate no longer asks about. Rollback-safe: one `CREATE OR REPLACE FUNCTION` under an unchanged identity, writing no state | this slice    | closed |
+
+**Identifier reconciliation — 2026-09-10.** Section **35** and **CC-21** retain their reserved identifiers after integration of protected `develop` `455bce260c315c2b8727418ba37b8e43a7e24fff`. The report writer #361 is merged at section 34 / CC-20, audit #360 occupies section 36 / CC-22, and delivery list #358 occupies section 37 / CC-23. No existing identifier or historical result is renumbered.
+
+## 36. What the FE-015 slice changed — the audit report, and the phase records
+
+**Slice:** `feature/p1-31-audit-report-and-phase-records`, ownership profile `p1-31-frontend`.
+**Baseline:** protected `develop` **0204f2d1**, merged into this branch. This slice was cut at
+**249c6428** (PR #356) when sections 1–29 were backend seams, documentation corrections and CI
+ownership and no Frontend slice had landed; the delivery detail screen (PR #357) merged first and
+holds sections 30–33, and the report configuration seam (PR #361) merged next and holds section 34.
+
+### 36.1 Identifier allocation — CC-22 settled, the section number ahead of one remaining lane
+
+`develop` at **0204f2d1** carries **CC-01 … CC-20** across sections 1–34. **CC-22 is this slice's
+identifier and it is free at that head**, so the id this branch reserved provisionally stands. Of the
+two lanes that allocated between this one and the merged register, one has landed and one has not.
+
+| id        | lane                                                   | state at 0204f2d1                                                 |
+| --------- | ------------------------------------------------------ | ----------------------------------------------------------------- |
+| **CC-19** | the delivery detail screen (PR #357)                   | merged, sections 30–33                                            |
+| **CC-20** | the reporting writer (P-11, PR #361)                   | merged, section 34                                                |
+| **CC-21** | the checklist-template migration (P-9b, PR #363)       | open, claims section 35                                           |
+| **CC-22** | this slice                                             | this branch, section 36                                           |
+| **CC-24** | the readiness seam                                     | in preparation                                                    |
+| **CC-25** | the delivery write paths (PR #362)                     | open, on a stacked base                                           |
+| **CC-26** | receiver identity-evidence document category (PR #362) | not allocated at that head; minted 2026-09-10 by #362, section 38 |
+
+So this slice takes **section 36 provisionally** and **CC-22 firmly**. P-9b has not merged, so that
+one lane landing out of order moves this heading rather than this identifier. **The section number
+must be re-checked against `develop` before this branch merges**, and renumbered if P-9b lands with a
+different allocation. A register whose identifiers collide is worse than one that renumbers.
+
+### 36.2 What changed
+
+**D-6 is answered: the shipped Audit Log screen IS "audit report" (FE-015), completed as a report.**
+The screen already existed and already refused to offer an export. What it did not do was let an
+operator ask a question: it sent the mandatory window and nothing else, so finding one action inside
+a quarter meant reading the pages.
+
+The action, record type and actor criteria are surfaced alongside an optional named company/branch pair from the authorized organization directories. They travel under the list operation's published parameter names. Company selection prepares branch choices; it is not a company-only filter.
+The window and its 92-day bound are untouched, the permission is untouched, and **no export control
+was added**.
+
+The criteria apply on submit rather than on each keystroke. The read is rate-limited as an expensive
+one and is itself an audited act, so a criterion typed character by character would record a dozen
+reads of the audit trail for one question.
+
+Two records were also written: [`task-matrix.md`](./task-matrix.md), which states where each of the
+twenty-nine canonical tasks stands and what proves it, and
+[`d4-report-definitions.md`](./d4-report-definitions.md), which maps the Owner's four baseline
+reports to the contracts that can serve them and names the prerequisites that do not exist yet.
+
+### 36.3 Dispositions
+
+| id        | finding                                                          | measured                                                                                                                                                                                                                                        | disposition                                                                                                                                                                                                                                                                                                   | owner / slice   | status                     |
+| --------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- | -------------------------- |
+| **CC-22** | audit company/branch selectors were incorrectly declared blocked | The existing authorized `org.company-list` and `org.branch-list` directories publish names and the branch/company relationship. `branchTargetQuery` already accepts a separate resource pair while refusing scope names among ordinary filters. | Corrected in #360: paired named selectors, server-side directory membership and pair validation, then the existing paired query helper. Default `query()` and `companyFilterQuery` guards remain intact. Directory denial leaves the original audit search available. Company-only filtering is not provided. | Frontend / #360 | implemented, pending merge |
+
+### 36.4 What this slice did NOT do
+
+- **No export, and no step toward one.** No control, no client-side extraction, no new operation. The
+  route's own docblock states export is out of scope, and the screen still says so in both languages.
+- **No permission changed.** The screen gates on the same code it has always gated on, and the route
+  page still decides before it reads.
+- **The default window was not changed.** **D-11** — whether the seven-day default is ratified,
+  deferred or changed — **stays open**, and the preflight's warning that shipping FE-015 without it
+  carries the decision into a second phase is now realised rather than avoided. Addendum
+  2026-09-10: D-11 was settled by the Owner (seven-day default and 92-day maximum retained; see
+  `owner-decisions-2026-09-10.md` §3). The window itself is proven by test to be seven days and
+  server-computed.
+- **No backend source was touched.** A Frontend lane may not, and nothing here needed it: every
+  criterion surfaced was already a bound parameter of the existing operation.
+- **No canonical task was marked done.** The task matrix records FE-015 as `in open PR`, and its
+  rule 2 keeps `end-to-end verified` unreachable until a phase acceptance record exists. None does.
+- **No figure appears in the D-4 record.** Every unknown in it is written as a named prerequisite.
+- **No report engine, registry or run operation was written.** D-4 is a mapping; P-11's engine half
+  has not begun.
+
+### 36.5 Proof
+
+| id        | what was shown                                                                                                                                                                    |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **F15-1** | `apps/web/tests/audit-log.dom.test.tsx` — each criterion reaching the adapter under the published name, alone and together, with the window carried with it                       |
+| **F15-2** | a malformed actor identifier refused **before** any request is made, and named on the field rather than returned as a refusal about a parameter the operator never saw            |
+| **F15-3** | clearing returns the read to the unfiltered one and empties the controls; applying resets the page, because a cursor from an unfiltered set is meaningless against a filtered one |
+| **F15-4** | every criterion and both buttons named in Arabic, rendered right-to-left                                                                                                          |
+| **F15-5** | the no-export notice present in both languages, and no control or link that would produce one                                                                                     |
+| **F15-6** | the route page refusing without the audit code **and issuing no read**, and reading a seven-day server-computed window with it                                                    |
+
+### 36.7 Integration correction — 2026-09-10
+
+The original CC-22 inference missed the existing scoped directory reads and paired resource-query contract. The current implementation uses those contracts within the Frontend lane and does not require a new Owner business decision. The server adapter rechecks selected company and branch membership and their relationship before issuing an audit read. Organization-directory refusal affects the selectors only. Audited list reads explicitly disable automatic retries.
+
+Targeted local checks and required hosted gates follow the standing verification policy. `verify:workspaces` is not run locally for this integration; production builds and browser smoke remain required hosted evidence. No database operation or database test is part of this frontend verification. Canonical DOCX synchronization remains an administrative post-merge responsibility of the technical authority; this slice changes no architecture.
+
+### 36.8 Technical review — 2026-09-10
+
+Agent-assisted technical self-review under the Solo Developer Review Policy covered source commit `5dcb4d70fdc24cc441c0c3c2fdaa7b439f719e41`: the paired selectors use authorized directory rows, the Server Action rechecks company membership and branch/company membership, the query is an additional filter under the audit operation's unchanged authorization/RLS, and directory refusal leaves unfiltered audit search usable. No export, permission, schema or query-guard change was introduced. A separately assigned agent performed a read-only review of that same source commit and reported no blocking finding; it did not run tests or change files. This is not independent human QA.
+
+Terminal targeted results at that source: `typecheck:web` passed; `lint:web` passed with 13 existing warnings; root and web format checks passed; `style:check:web` passed; `security:all` passed; web boundary, token, theme and brand validators passed. The focused audit/scope tests passed 81 cases across two files. The full web runner recorded 3619 passed, zero failed/skipped, 133 files, exit 0 and no dirty executable paths. The policy sequence passed every preceding validator and initially ended with only stale unit/web records from the earlier source; the final ledger and closing-values check resolve that evidence dependency. The unit runner's result is recorded in the generated ledger, not inferred from the web result.
+
+The first full unit record at that source was **red**: 3269 passed and eight failed across 121 files, with runner exit 1 (the recording wrapper itself returned 0). All eight failures were real-tree scan cases across six existing CI/foundation test files and took 35.7–127.7 seconds against the unchanged 30-second test limit. The JSON reporter preserved only `STACK_TRACE_ERROR`, so the original exception text does not establish a timeout by itself. With the host's heavy-test slot reserved, a diagnostic run of those exact six files using the default reporter passed all 243 tests in 75.66 seconds; the eight affected cases took 1.08–5.68 seconds. No source, expectation or timeout was changed. This supports a contention/timing explanation rather than a reproduced assertion defect. The failed raw report and diagnostic log were retained locally, and a serial full unit record was then taken; its terminal verdict is in the generated ledger. The passing web record was retained without rerunning it.
+
+A second full unit record, run with the exclusive heavy-test slot, recorded 3271 passed and six failed across 121 files (runner exit 1). The eight earlier real-tree timing cases passed. These six failures instead exposed an evidence sequencing error in this integration: the successful web measurement was 3619 while the current prose/classification bindings still said 3612, and the manifest still described the earlier document bytes. The unit record remained red. The authoritative prose and classification bindings were updated from the actual successful web record, then the manifest was regenerated before further unit verification. No generated run result was edited by hand.
+
+There is no fabricated-success bootstrap: the existing live classification test deliberately excludes `RUN_RECORD_*` because its own future verdict cannot be a prerequisite for running it. The focused evidence tests can therefore validate the corrected bindings/digests while the prior unit verdict remains red. After a successful full unit recording, the manifest must be regenerated again for the new ledger bytes and the standalone closing-values gate must pass. The two failed full-run reports remain retained locally as diagnostic evidence.
+
+Final unit recording at `5dcb4d70fdc24cc441c0c3c2fdaa7b439f719e41` completed with **3277 passed, zero failed/skipped, 121 files, runner exit 0 and reporter success true**. The web record remained **3619 passed, zero failed/skipped, 133 files, runner exit 0 and reporter success true**. Both records report no dirty executable paths. The focused evidence suite had passed 113 tests across three files before this final run. All owned test processes were verified absent at terminal, and the heavy-test reservation was released before hosted CI.
+
+After the final run, the evidence manifest was regenerated from the actual ledger bytes. The standalone closing-values gate passed with zero problems, evidence validation passed for all 41 documents, and document-count validation passed all 151 claims across 32 documents.
+
+---
+
+# P-2b — the branch delivery list, of 2026-09-09
+
+Section 37 was added by the **P-2b** slice on 2026-09-09; its identifier is **CC-23**. The slice
+was written against `develop` `5cd06fbd`, where it reserved **CC-19**; the delivery detail screen
+(#357) took that number while this branch was open, so it is renumbered here — the P-9 and
+P-13/P-14 slices both had to renumber for exactly this reason, and both are recorded above. At the current integration baseline, #360 is merged at protected `develop`
+`f8958e77cd607b8d9a2ebd62eab08176d4c91cf0`. The report writer occupies section 34
+and CC-20; audit records occupy section 36 and CC-22; section 35 and CC-21 remain
+reserved for #363. This list retains section 37 and CC-23. `main` is untouched.
+
+## 37. The branch delivery list
+
+### 37.1 What was published
+
+**One operation**, `sal.delivery-list` — `GET /api/v1/deliveries` — the chapter first declared API,
+added to the route module `sal.delivery-create` already owned.
+
+The P-2 … P-5 seam made a delivery recoverable from an identifier the caller already held. It left
+the SET unreadable: nothing in the product answered _which deliveries does this branch have_, so
+scope item 1 and FE-001 still had no read. This is that read. The slice record is
+[`delivery-read-seam.md`](./delivery-read-seam.md) §10.
+
+`companyId` and `branchId` are required and are the authorization target, checked before any row is
+read; `status`, `workOrderId` and `vehicleId` are optional filters, each a column of the record;
+paging is keyset on `sal.delivery_records:created_at_desc`. The response is `Page<DeliveryRecordView>`
+— the envelope `wty.warranty-list` returns, over the item `sal.delivery-read` already publishes.
+
+### 37.2 Dispositions
+
+| id        | finding                                                                    | measured                                                                                                                                                                                                                                                                                        | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | owner                                                       | state          |
+| --------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | -------------- |
+| **CC-23** | **no index was added for the list ordering, and no migration was written** | `sal.delivery_records` carries `uq_delivery_records_scope_id (tenant, company, branch, id)` and three `ix_delivery_records_*` indexes; **none leads on `(tenant, company, branch, created_at)`**, so the newest-first ordering is a sort over the branch-narrowed set rather than an index walk | **accepted, on the `wty.warranty-list` precedent, which declined a migration on the same evidence and said so.** A branch deliveries are bounded by its work orders; this read has not demonstrated a cost that a schema change would buy. Recorded here so a later measurement can reverse it deliberately rather than discover it. **The permission was reused, not minted** — `sal.delivery.view`, the code every read on this seam declares — and no policy changed: `sel_delivery_records_scope` is a tenant/company/branch predicate with no permission term, so the declared code is the only application gate | a later `sal` performance slice, if measurement warrants it | open, recorded |
+| **D-3**   | Owner decision settled 2026-09-09                                          | The approved FE-001 surface is the work-order readiness queue, including work orders without a delivery record                                                                                                                                                                                  | This branch lists existing delivery records and remains a separate useful read. FE-001 uses the authoritative readiness seam; this list does not satisfy that contract. See owner-decisions-2026-09-09.md section 2                                                                                                                                                                                                                                                                                                                                                                                                   | Owner decision already recorded                             | settled        |
+
+### 37.3 What this slice did NOT do
+
+- **No permission was minted, no seed changed and no bundle changed.** `sal.delivery.view` is
+  seeded, is carried by the tenant administrator bundle, and is the code the other five delivery
+  reads already declare.
+- **No migration, no policy and no grant.** Every statement runs on grants that have existed since
+  P1-11, under the existing `sel_delivery_records_scope`.
+- **No second mapper.** Rows come back through `toDeliveryView`, so the listed delivery and the read
+  delivery are one wire contract; the suite asserts the two responses are equal rather than similar.
+- **No screen.** `apps/web` changes only through the generated idempotency manifest, which every
+  published operation moves. FE-001 belongs to the frontend lane.
+- **No tenant-wide reading.** The company/branch pair is required, so no caller can read deliveries
+  across branches, and none is offered.
+- **CC-14 is untouched.** The inactive-template gate finding stands exactly as recorded in §26.
+
+### 37.4 Integration verification, 2026-09-10
+
+The existing clean checkout switched from merged #360 to the preserved #358 branch
+at `9accee4dfc9ec9a851330fc903310a21e6723395`. It synced once to the actual
+protected develop merge `f8958e77cd607b8d9a2ebd62eab08176d4c91cf0`.
+The backend route, service, repository and existing seventeen-case contract suite
+merged without application conflicts. Conflicts in generated contracts/registers
+were resolved by their existing generators; three discovery assertions now pin
+the actual combined tree: 405 operations, 352 named bodies and 53 composed bodies,
+with zero anonymous or unresolved bodies. The status census contains 290 responses
+with status 200; no route module was added by this list.
+
+At the combined tree, OpenAPI generation/contract verification passed 4/4; the three
+discovery suites passed 29/29. Contract validators, root and API typechecks, API lint
+and format, and security checks passed. The discovery test title/comment correction
+that followed changes no assertion; the final unit run below will include it.
+The source commit precedes the final tier measurements. Their results and the
+seventeen-case backend rerun will be recorded from terminal evidence, not inferred.
+
+Existing #360 unit/web records and original #358 hosted provenance remain historical
+evidence. The repository-wide freshness validator expires both current tier records
+when any executable path changes, so both tiers require serial refresh at this
+settled source. Value bindings were reconciled and the manifest regenerated before
+those runs; only RUN_RECORD_STALE remains at this pre-record checkpoint. The local
+`verify:workspaces` aggregate is not run under the standing 2026-09-09 targeted-local
+plus required-hosted policy. Hosted builds, browser checks and required gates remain
+mandatory. Canonical DOCX synchronization remains the technical authority's
+administrative postmerge task; this slice changes no architecture.
+
+The targeted backend rerun at source `6af7fadabf8157d3798313d769d7670d85092159`
+passed all 17 cases in one file, actual runner exit 0, reporter success true. It ran
+only in newly created `p131_delivery_list_20260910` (OID 36455) on the coordinator's
+isolated loopback port 55432, cloned from the retained 138-migration baseline. Before
+and after guards verified container/database identity, all 255 retained-source table
+contents and all cluster role attributes/memberships unchanged; active source/clone
+connections were empty at release. The final connection closed at
+2026-09-10T08:39:51.337Z. The clone is retained. This is the selected backend contract
+suite, not a full backend tier or phase acceptance. Raw outputs and inventories are
+preserved in the coordinator's external delivery-list evidence bundle.
+
+The pre-unit evidence suite initially passed 112/113 and refused four current
+backend file-inventory annotations: the added delivery-list suite moves actual
+backend test files from 133 to 134 and all backend files from 142 to 143. Those
+four annotations in the deliverable manifest and risk register were corrected to
+actual discovery and the manifest regenerated. Historical executed-tier figures
+and their hosted provenance were not changed. The failed focused output is
+preserved externally; the full unit recorder did not run against this discrepancy.
+
+Final serial records at executable source
+`6af7fadabf8157d3798313d769d7670d85092159`: web 3619 passed across 133 files and
+unit 3277 passed across 121 files; both actual runner exit codes are zero, both
+reporters report success, and both records have no dirty executable paths. After
+the current inventory correction, the three evidence suites passed 113/113 before
+the full unit recorder. Root and API typechecks/lint/format, web typecheck/lint/format/
+style, contract validators and security checks passed. Web lint has zero errors and
+13 pre-existing unused-argument warnings. The final records and raw outputs are
+preserved in the external coordinator evidence bundle; no historical hosted result
+was converted into local or current-source proof.
+
+The separate read-only agent-assisted verification at that exact source found no
+blocking issue: the route, service, repository and seventeen-case suite are unchanged
+through the sync, and authorization-before-query, explicit scope predicates, existing
+RLS, mapper and pagination contracts remain intact. This documents technical
+self-review under the Solo Developer Review Policy, not independent human QA.
+
+All 19 protected-branch checks passed for the #360 merge
+`f8958e77cd607b8d9a2ebd62eab08176d4c91cf0`, including `protected-gate`. The first
+GitHub-only observer stopped on a DNS error without a failed gate; after its process
+was verified absent, one replacement observed the terminal success and retired.
+The dependency push hold is therefore satisfied. #358 still requires its own final
+head's hosted gates and coordinator merge review; no phase acceptance is implied.
+
+---
+
+# The delivery execution slice — FE-002 … FE-006 write paths
+
+Section 38 records the delivery execution slice on `feature/p1-31-delivery-execution` (PR #362). The original preparation was based on the delivery detail branch at `626b0d8a`; final integration follows merged #363 at `071932584ffcf39776509227f8dead2022667484`. At that head the register runs to section 37 and CC-25, so this slice takes the next free heading, **section 38**, and retains **CC-25** for the withheld-Start disposition. **CC-24 remains allocated to the readiness seam**, which has not landed and takes a later heading; identifiers are not renumbered to follow heading order. **CC-26 is minted here** for the receiver identity-evidence document category. The full record is `delivery-execution-screen.md`.
+
+This slice is Frontend, tooling, tests and documentation only. It adds no operation, no route, no
+permission, no seed row and no migration, and it touches neither `apps/api/**` nor `supabase/**`.
+
+## 38. The delivery execution write paths
+
+### 38.1 What was delivered
+
+Four existing-record write paths on the handover screen, each gated on the code its own operation declares:
+
+| action                    | operation                       | authority                                                        |
+| ------------------------- | ------------------------------- | ---------------------------------------------------------------- |
+| Confirm the receiver      | `sal.delivery-receiver-verify`  | `sal.delivery.manage`, `sal.delivery.view`                       |
+| Record a checklist result | `sal.delivery-checklist-record` | `sal.delivery.manage`                                            |
+| Add a signature           | `sal.delivery-signature-attach` | `sal.delivery.manage`, `sal.delivery.view`                       |
+| Release the vehicle       | `sal.delivery-complete`         | `sal.delivery.complete`, `sal.delivery.view`, `sal.finance.view` |
+
+Plus the configuration read the checklist needs — the ACTIVE templates and their items, assembled in
+one Server Action from the two P-9 template reads, because no operation publishes "the checklist of
+this handover" and the completion evaluates mandatory items by COMPANY rather than by template.
+
+The mirror registry the payload-parity gate reads is
+`apps/web/src/lib/contracts/delivery-contract.ts` — the path named in `MIRROR_FILES` in
+`scripts/ci/check-p1-30-payload-parity.mjs` — and it is the file that holds the five
+`sal.delivery-*` request bodies. Two files carry the same name: the separate
+`apps/web/src/features/delivery/delivery-contract.ts` holds the read types, the permission codes and
+the view envelopes, not the request bodies. The registry declares **five** writes against these four
+sent paths: `sal.delivery-create` is mirrored there because the payload-parity gate reads its request
+bodies from one frozen list of files, while the Start control that would send it is withheld pending
+the delivering-employee contract recorded as **CC-25** in §38.3.
+
+### 38.2 The properties this slice is accountable for
+
+1. **A control is absent, never present-and-refused,** for a caller without the code its operation
+   declares. Measured for all four existing-record writes.
+2. **The release quotes the version the ELIGIBILITY read published,** never one a preparation step
+   answered with, and a stale version is re-attempted exactly once against a version read again.
+3. **The browser decides no eligibility.** The release button is enabled from what the server
+   published and from nothing else; the completion recomposes the whole decision in its own
+   transaction, and a blocked release renders the re-read blocker list rather than a sentence this
+   tier composed. The blockers are not in the refusal at all — `problemFor` carries no service prose.
+4. **The odometer holds to the COLUMN, not the route.** The route admits two decimals; the column
+   holds one, so the form refuses the second digit and says so in its own help text.
+5. **The waiver rule is a biconditional in the form as well as in the database.** A reason appears
+   only for a waiver, is required there, and is never sent with any other outcome.
+
+### 38.3 Dispositions
+
+- **CC-25 — new-handover Start is withheld pending validated employee selection.** No raw employee UUID input or browser-callable Start adapter remains. The existing backend create contract is preserved; employee, authenticated actor and authorized receiver remain distinct. The Owner answered the employee relation on 2026-09-10 (D-12, see [`owner-decisions-2026-09-10.md`](./owner-decisions-2026-09-10.md) §1): a tenant-owned employee identity, distinct from the login account, the authenticated actor and the authorized receiver, validated on the server. Engineering consequence (not an Owner decision): lane placement follows the P-2..P-11 precedent while D-1 stays open, and the Start control stays withheld until that contract exists.
+- **CC-26 — the receiver's identity evidence is NOT captured, and the missing category
+  is a new backend prerequisite.** The optional evidence field needs a document category that admits
+  a person's proof of identity. The seven seeded categories are all reception categories and the only
+  one whose purpose is an identity document is the VIN evidence category; filing a person's identity
+  document there would be a classification defect. A seed is not on this lane. The field is omitted
+  and the prerequisite is recorded.
+- **The signature capture reuses the seeded signature category and the ONE approved file input.**
+  The document is captured against `rec.reception_visits`, the visit the handover closes and the only
+  linkable entity type in this chain's reach; `sal.delivery_records` is not one.
+  `no-unapproved-file-input` names one path and this slice did not widen it.
+- **The delivery tree joined the form-reset inventory in the change that gave it a form,** rather
+  than after the next audit round found it uncovered.
+
+### 38.4 What this slice did NOT do
+
+- **No end-to-end verification, and none is claimed.** Every request shape is asserted against a
+  replaced transport; every rendering against a replaced adapter. What is owed is an authenticated
+  browser proof on a freshly provisioned organisation, and it is not in this change.
+- **No list screen.** FE-001 waits on the readiness contract the Owner's **D-3** answer routes to the
+  owning prerequisite lane. `/delivery` still has no page and the navigation entry stays `planned`.
+- **No template administration screen.** Two template reads are consumed; no template write is sent,
+  and the five template-write entries stay marked as owed in the payload-parity gate.
+- **No delivery document.** **D-7** approved 2026-09-10 (printable client-composed view); no document or print operation exists yet.
+- **No permission minted and no grant changed.** The three codes consulted are already seeded and are
+  already declared by the operations that use them.
+- **Task-matrix rows are reconciled during final integration.** The 29 canonical tasks remain distinct from slice proof; no phase acceptance is claimed.
+
+---
+
+# The delivery-readiness queue — Owner decision D-3, of 2026-09-09
+
+## 39. What D-3 changed
+
+**Slice:** `remediation/p1-31-backend-delivery-readiness-seam`, ownership profile `p1-31-backend`.
+**Baseline:** protected `develop` **249c6428**, merged up to **0204f2d1**, then **07193258**, then
+**78d34fbc** — the head this branch is integrated against.
+
+The full record is [`delivery-readiness-seam.md`](./delivery-readiness-seam.md). In short:
+
+**The Owner's decision (D-3, settled 2026-09-09), in the Owner's words.** The operational
+ready-for-delivery queue is the set of work orders that satisfy the AUTHORITATIVE SERVER
+delivery-eligibility rules, and it INCLUDES eligible work orders that do not yet have a delivery
+record; it is a different question from the delivery-record list, which lists records that already
+exist. The three constraints the Owner attached: **no new work-order status**, **eligibility is not
+computed in the browser**, **finance permissions are not broadened**.
+
+**Measured fact (not part of the decision).** `GET /api/v1/deliveries` (PR #358) lists delivery
+RECORDS, so a work order that is finished, quality-signed, paid and unencumbered is invisible to it
+precisely because nobody has opened a handover yet — which is when it is most worth showing.
+
+**Engineering consequence (not an Owner decision).** The points below are this slice's own choices,
+made against that answer. The Owner named none of them.
+
+- **One operation.** `GET /api/v1/delivery-readiness` maps to `sal.delivery-readiness-list`, a
+  top-level resource on the `/damaged-stock` precedent rather than a static sibling of
+  `{deliveryId}`.
+- **FOUR of the eight blocker codes**, and the other four are ABSENT rather than reported as
+  satisfied: `delivery_state_invalid`, `checklist_incomplete`, `receiver_not_verified` and
+  `signature_missing` are counted against a delivery row's id and are unaskable for a work order
+  that has none. The four that remain come from the SAME private readers the eligibility
+  composition uses, through a new `composeWorkOrderFacts`, restating none of them.
+- **The three Owner constraints are discharged** in sections 3 and 4 of the record: nothing writes a
+  status, no eligibility input crosses the wire, and requiring three codes narrows rather than
+  broadens.
+- **Nothing was minted.** No migration, no schema change, no seed, no permission, no audit action.
+
+### 39.1 What was published, and what was minted
+
+| published                                                                         | minted  |
+| --------------------------------------------------------------------------------- | ------- |
+| 1 operation, 1 route module, 1 path, 1 application service, 1 work-order port     | nothing |
+| register 405 to **406** operations, 314 to **315** paths, audit actions unchanged | nothing |
+
+### 39.2 Dispositions
+
+| id        | finding                                                                                                                      | measured                                                                                                                                                                                                                                                                                                                                               | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | owner / slice | status |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------- | ------ |
+| **CC-24** | no batch variant of the four fact sources exists, so a page of N costs about **5N** round trips and the page must stay small | `qualityModule().gate.evaluate`, billing's `openReceivableForWorkOrder`, inventory's `reads.openCommitmentsFor` and this module's `findLiveDeliveryForWorkOrder` each answer for ONE work order. There is no batched form of any of them anywhere in `apps/api/src`, so twenty rows cost on the order of a hundred round trips plus the candidate page | **accepted, with the page bounded and the remedy NAMED but not performed.** The default page is 20 and the maximum 50, below the platform 50/100, and the maximum is refused at the BOUNDARY rather than clamped by `resolveLimit` — returning fewer rows than were asked for is right for a cheap list and wrong for one that fans out per row. **Batch fact ports in `quality`, `billing` and `inventory` are the named prerequisite of any larger page.** They are not built here: three modules' public surfaces are not this slice's to change, and inventing a batch port per module with no consumer contract is how one surface ends up with two readers that disagree | later slice   | open   |
+
+**Identifier note — the section number and the identifier are both settled.** **CC-24** is this
+slice's identifier: the allocation table of §36.1 reserves it for "the readiness seam", and no other
+lane claims it. The SECTION NUMBER is now settled too. `develop` **78d34fbc** carries sections 1–38
+and **CC-01 … CC-26**: sections 1–34 and **CC-01 … CC-20** were merged at **0204f2d1**; **#363**
+landed section 35 and **CC-21**, **#360** section 36 and **CC-22**, **#358** section 37 and
+**CC-23**, and **#362** section 38 with **CC-25** and **CC-26**. Section 39 is therefore the next
+free heading and this slice takes it, continuing at **CC-24**. Sections 38 and 39 do not collide and
+neither do their identifiers.
+
+### 39.3 What this slice did NOT do
+
+- **No migration and no schema change.** The one new SQL predicate is a parameter on the existing
+  work-order list query; every statement uses grants that already existed.
+- **No permission was minted and no seed changed.** All three declared codes are pre-existing
+  catalogue rows already carried by the tenant administrator bundle, so no widening obliges an
+  operator act and no backfill is owed.
+- **No work-order status was added.** "Ready" is composed on every read and is written nowhere.
+- **No gate was weakened.** This is a read and it gates nothing: `sal.complete_delivery`,
+  `composeFor` and the eligibility route are untouched, and the four delivery-bound blockers are
+  still enforced exactly where they were.
+- **`apps/web/src` was not edited** except through `lib/api/idempotent-operations.ts`, which a
+  repository script regenerates and which every published operation moves.
+- **No allow-list was widened and no gate suppressed.** `check-p1-30-payload-parity.mjs` filters its
+  scope to `WRITE_METHODS`, so a GET is outside it and no `PENDING` entry was added: declaring one
+  would be a claim about a gate that does not look here.
+- **FE-001 is not built**, and the batch fact ports of CC-24 are not built.
+
+### 39.4 Proof
+
+| id       | what was shown                                                                                                                                                                                                                                                                  |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D3-1** | `tests/backend/p1-31-delivery-readiness-seam.test.ts` — every fixture arranged THROUGH shipped routes: reception conversion, four transition edges, the closure command, `sal.issue_invoice`, the payment and allocation routes, the delivery routes. Nothing planted by UPDATE |
+| **D3-2** | the D-3 claim itself: a closed, settled, unencumbered work order with NO delivery record is returned ready, with no blockers                                                                                                                                                    |
+| **D3-3** | the `cancelled` trap proved rather than assumed — `is_closed` AND `is_cancellation` read off the real catalogue row, then the exclusion asserted                                                                                                                                |
+| **D3-4** | a HANDED-OVER work order raises no blocker and is still not ready, so an empty blocker list is proved insufficient to infer readiness                                                                                                                                           |
+| **D3-5** | the three declared permissions proved necessary and sufficient from four sides, with `sal.finance.view` refused at the operation rather than answered with a softened fact                                                                                                      |
+
+## 42. The ready-for-delivery queue screen — PROVISIONAL
+
+**Slice:** `feature/p1-31-delivery-readiness-queue`, ownership profile `p1-31-frontend`.
+**Baseline:** protected `develop` **01c32937**, merged into this branch on 2026-09-11. The screen
+was written against **0204f2d1**; the contract it consumes reached `develop` with the readiness seam
+(#366, section 39) and the delivery execution paths (#362, section 38), so this is the first head at
+which the screen compiles against a published contract rather than a proposed one.
+
+The full record is [`delivery-readiness-queue-ui.md`](./delivery-readiness-queue-ui.md).
+
+**The Owner's decision (D-3, settled 2026-09-09), in the Owner's words.** The operational
+ready-for-delivery queue is the set of work orders that satisfy the AUTHORITATIVE SERVER
+delivery-eligibility rules, and it INCLUDES eligible work orders that do not yet have a delivery
+record; it is a different question from the delivery-record list, which lists records that already
+exist. The three constraints the Owner attached: **no new work-order status**, **eligibility is not
+computed in the browser**, **finance permissions are not broadened**. This slice consumes that
+decision and extends none of it.
+
+**Measured facts (not part of the decision).**
+
+- The contract mirrored on this side matches the merged route field for field: the route's
+  `DeliveryReadinessRowView` (`workOrder`, `delivery`, `facts`, `blockers`, `readyToStartDelivery`)
+  over the platform cursor page (`items`, `nextCursor`, `hasMore`), and `DEFAULT_READINESS_PAGE_SIZE`
+  20 / `MAX_READINESS_PAGE_SIZE` 50 as the route declares them.
+- The shared table's first page is **25** rows and its size options are 10, 25, 50 and 100. The
+  route's default of 20 applies only to a request that sends no `limit`, and this screen always
+  sends one, so 25 is what the first page actually asks for; 100 is capped to the route's 50 on this
+  side and the capping is stated to the operator rather than performed silently.
+- The P-16 access gate examines **9** route pages across **7** owned segments with the readiness
+  operation named, and the new page is one of the nine.
+
+**Engineering consequence (not an Owner decision).** The points below are this slice's own choices.
+The Owner named none of them.
+
+- **The page route is `/delivery`**, the singular href already committed in navigation, and the
+  navigation entry moves from planned to available. The plural `deliveries` remains the API spelling.
+- **All three of the operation's codes gate the page** before any read is issued, and each one alone
+  is enough to refuse it. The gate is the page's own; the backend's check is unchanged and remains
+  the authority.
+- **The verdict is rendered, never composed.** `readyToStartDelivery` is taken as given; an empty
+  blocker list is not read as readiness, and no control asks the server to filter by it.
+- **The queue is a separate module from the delivery record contract** — `readiness-contract.ts` and
+  `readiness-api.ts` — so the execution half (#362) and this half did not stand on each other.
+
+### 42.1 Identifier allocation — PROVISIONAL, dated 2026-09-11
+
+`develop` at **01c32937** carries sections 1–39 and **CC-01 … CC-26**. Two lanes that have not
+merged hold the headings and identifiers between that head and this one.
+
+| id                   | lane                                      | state at 01c32937, dated 2026-09-11 |
+| -------------------- | ----------------------------------------- | ----------------------------------- |
+| **CC-24**            | the readiness seam (#366)                 | merged, section 39                  |
+| **CC-25**, **CC-26** | the delivery execution write paths (#362) | merged, section 38                  |
+| **CC-27**, **CC-28** | an unmerged lane                          | open, claims section 40             |
+| **CC-29**            | an unmerged lane                          | open, claims section 41             |
+| **CC-30**            | this slice                                | this branch, claims section 42      |
+
+So this slice takes **section 42** and **CC-30**, and both are **PROVISIONAL**: neither of the two
+open lanes has merged, so either landing with a different allocation moves this heading. **The
+section number and the identifier must both be re-checked against `develop` before this branch
+merges.** A register whose identifiers collide is worse than one that renumbers.
+
+### 42.2 What changed, and what was minted
+
+| changed                                                                                                                                                   | minted  |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| 1 route page, 1 screen component, 2 feature modules (contract and adapter), 1 navigation entry flipped to available, 1 parent link on the detail page     | nothing |
+| English and Arabic copy for the selectors, the verdict, the unreadable-check case and the paging notice; 3 web test files extended; 1 CI allow-list entry | nothing |
+
+The CI allow-list entry is `sal.delivery-readiness-list` in `scripts/ci/check-p1-31-access.mjs`,
+which that gate's own docblock requires in the same change that first consumes the operation. It
+WIDENS what the gate judges — the derived segment `delivery-readiness` joins the owned set — and
+suppresses nothing.
+
+### 42.3 Dispositions
+
+| id        | finding                                                                                                     | measured                                                                                                                                                                                                                                                                      | disposition                                                                                                                                                                                                                                                                                                                                                                                                                | owner / slice          | status         |
+| --------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | -------------- |
+| **CC-30** | an operator without `sal.finance.view` is refused the whole queue, and **no reduced view of it is offered** | the operation declares all three codes and the page tests all three; the financial check is composed from rows that live behind the finance code, so a caller without it would be answered from an invisible zero and shown a vehicle as releasable while money is owed on it | **accepted, and recorded because an operator will meet it.** D-3 forbids broadening finance permissions, and a reduced view — the queue with the financial check left blank — is the softened fact the seam already refused at the operation. The remedy is a permission grant by an administrator, not a change here. Recorded so that "the delivery page shows me nothing" is read as a permission fact, not as a defect | a tenant administrator | open, recorded |
+
+### 42.4 What this slice did NOT do, and what is not claimed
+
+- **No backend file changed.** No route, no service, no repository, no migration, no seed, no
+  permission, no audit action and no operation. The operation register is untouched by this slice.
+- **No work-order status was written or invented**, and nothing on this side recomputes a verdict.
+- **No delivery, receiver, signature or checklist result is created from this screen.** It reads,
+  and it links to the pages that write.
+- **No gate was weakened and no allow-list was relaxed.** The one CI edit adds an operation to a
+  gate's reach.
+- **No hosted run, no database tier, no browser acceptance and no end-to-end result is claimed.**
+  The evidence for this slice is the local frontend chain and the focused web run named in the
+  record document. The branch is unmerged as this section is written.

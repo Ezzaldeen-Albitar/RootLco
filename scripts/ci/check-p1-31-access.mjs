@@ -77,10 +77,11 @@ const REGISTER = join(ROOT, 'docs', 'phase-1', 'phase-1-24', 'evidence', 'operat
 /**
  * The operations P1-31 published, by id.
  *
- * The delivery read seam (P-2 through P-5) and the warranty list the phase's
- * chapter declares. An operation added by a later P1-31 task belongs here in the
- * same change that adds it — that is one line, and it is the line that makes the
- * new screen's segment owned.
+ * The delivery read seam (P-2 through P-5), the readiness queue the FE-001
+ * screen consumes, and the warranty list the phase's chapter declares. An
+ * operation added by a later P1-31 task belongs here in the same change that
+ * adds it — that is one line, and it is the line that makes the new screen's
+ * segment owned.
  */
 export const P1_31_OPERATION_IDS = Object.freeze([
   'sal.delivery-read',
@@ -90,6 +91,7 @@ export const P1_31_OPERATION_IDS = Object.freeze([
   'sal.delivery-checklist-result-list',
   'sal.delivery-status-history',
   'sal.work-order-delivery-read',
+  'sal.delivery-readiness-list',
   'wty.warranty-list',
 ]);
 

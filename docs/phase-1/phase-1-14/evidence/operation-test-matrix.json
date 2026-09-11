@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 404,
-    "publicApi": 404,
+    "registered": 406,
+    "publicApi": 406,
     "internal": 0,
-    "withRequiredEvidence": 404,
+    "withRequiredEvidence": 406,
     "invocationOnly": 0,
     "p1_15": {
       "registered": 28,
@@ -77,9 +77,9 @@
       "metadataOnly": 0
     },
     "p1_22": {
-      "registered": 44,
-      "publicApi": 44,
-      "operationDepth": 44,
+      "registered": 46,
+      "publicApi": 46,
+      "operationDepth": 46,
       "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
@@ -8717,6 +8717,40 @@
       "unitOnly": false
     },
     {
+      "id": "sal.delivery-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/deliveries",
+      "public": false,
+      "files": ["tests/backend/p1-31-delivery-list-seam.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "pagination"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant",
+        "pagination"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "sal.delivery-read",
       "surface": "public-api",
       "method": "GET",
@@ -8740,6 +8774,40 @@
         "cross-tenant",
         "denial",
         "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "sal.delivery-readiness-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/delivery-readiness",
+      "public": false,
+      "files": ["tests/backend/p1-31-delivery-readiness-seam.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "pagination"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant",
+        "pagination"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
         "route",
         "service",
         "success"

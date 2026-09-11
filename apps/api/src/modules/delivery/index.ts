@@ -58,6 +58,7 @@ import { composeModule } from '@/server/layering';
 import { DeliveryRepository } from './data/delivery-repository';
 import { ChecklistTemplateService } from './application/checklist-template-service';
 import { DeliveryReadService } from './application/delivery-read-service';
+import { DeliveryReadinessService } from './application/delivery-readiness-service';
 import { DeliveryService } from './application/delivery-service';
 
 export type {
@@ -100,7 +101,14 @@ export type {
   EligibilityFact,
   EligibilityView,
   WorkOrderDeliveryView,
+  WorkOrderEligibilityFacts,
 } from './application/delivery-read-service';
+
+export type { DeliveryReadinessRowView } from './application/delivery-readiness-service';
+export {
+  DEFAULT_READINESS_PAGE_SIZE,
+  MAX_READINESS_PAGE_SIZE,
+} from './application/delivery-readiness-service';
 
 export type {
   /**
@@ -204,6 +212,15 @@ export const deliveryModule = composeModule({
       // precedent for a second write service inside one module; the SQL stays in
       // the one repository above for the reason stated below it.
       checklistTemplates: new ChecklistTemplateService(repository),
+      // A FOURTH accessor, added by the Owner's D-3 decision. It reads and composes
+      // and writes nothing, so it belongs on neither `deliveries` nor
+      // `checklistTemplates`; and it is not folded into `reads` because every method
+      // there is addressed by a delivery id while this one answers for work orders
+      // that have no delivery at all. It DEPENDS on `reads` — the same instance —
+      // rather than re-deriving a fact, for the reason stated above `deliveries`:
+      // two definitions of the financial blocker are two chances to lose the one
+      // gate the database does not hold.
+      readiness: new DeliveryReadinessService(repository, reads),
     };
   },
 });

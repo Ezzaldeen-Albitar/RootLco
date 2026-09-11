@@ -57,6 +57,7 @@ import {
 import { pageRequest, type Page, type PageRequest } from '@/server/db/pagination';
 import {
   CHECKLIST_RESULT_ORDER,
+  DELIVERY_RECORD_ORDER,
   SIGNATURE_ORDER,
   STATUS_HISTORY_ORDER,
 } from '../data/delivery-repository';
@@ -114,6 +115,24 @@ export interface EligibilityView {
    * re-read. This read IS the re-read.
    */
   readonly recordVersion: number;
+}
+
+/**
+ * The subset of the composition that a work order carries on its own (P1-31 D-3).
+ *
+ * Returned by `composeWorkOrderFacts` and consumed by the readiness queue, which
+ * must answer for work orders that have NO delivery record — so it can carry only
+ * the four facts keyed on `workOrderId`, never the four keyed on a delivery id.
+ * `clear` is the four-fact verdict and is deliberately NOT called `eligible`: a
+ * handover is decided by `composeEligibility` over all eight, and a name that
+ * suggested otherwise is how the delivery-bound half gets skipped.
+ */
+export interface WorkOrderEligibilityFacts {
+  readonly facts: readonly EligibilityFact[];
+  /** The blockers those four facts raise, in `BLOCKER_CODES` order. */
+  readonly blockers: readonly BlockerCode[];
+  /** Every one of the four established AND raising no blocker. */
+  readonly clear: boolean;
 }
 
 /** The composition plus the evidence behind it, shared with the write path. */
@@ -294,7 +313,7 @@ export interface DeliveryForWarranty {
  * screen reads by id and the delivery it reaches through a work order are the same
  * wire contract rather than two that can drift.
  */
-const toDeliveryView = (row: DeliveryRecordRow): DeliveryRecordView => ({
+export const toDeliveryView = (row: DeliveryRecordRow): DeliveryRecordView => ({
   id: row.id,
   companyId: row.companyId,
   branchId: row.branchId,
@@ -427,6 +446,52 @@ export class DeliveryReadService {
       workOrderId: workOrder.id,
       delivery: delivery === null ? null : toDeliveryView(delivery),
     };
+  }
+
+  /**
+   * `sal.delivery-list` — a branch's delivery records, newest first (P-2b).
+   *
+   * ## Scope is authorized BEFORE any row is read
+   *
+   * The exact opposite order from every other read on this seam, and deliberately
+   * so. An id-addressed read has no scope to name until the row has been read, so
+   * `requireDelivery` reads first and authorizes against the row's OWN company and
+   * branch. A list has no row to take a scope from, so the caller must name one and
+   * the server must refuse it before reading anything.
+   *
+   * Two things follow. `sel_delivery_records_scope` narrows on the permission-blind
+   * union of the caller's allowed branches, so an optional pair would let a caller
+   * holding `sal.delivery.view` in one branch read every branch it holds any grant
+   * in (P1-18-A-01). And authorizing first stops the empty/non-empty difference from
+   * reporting whether a branch has deliveries at all — a caller with no grant in the
+   * named scope is refused, never handed an empty page.
+   *
+   * Client-asserted scope is never authoritative: the pair names a target and
+   * `authorizeScope` decides. RLS stays default-deny underneath and narrows again on
+   * the caller's own grants.
+   *
+   * ## One mapper
+   *
+   * Rows come back through `toDeliveryView`, the same mapper `sal.delivery-read` and
+   * `sal.work-order-delivery-read` use, so a listed delivery and a read one are one
+   * wire contract rather than two that can drift.
+   */
+  public async listDeliveries(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly status?: string | undefined;
+      readonly workOrderId?: string | undefined;
+      readonly vehicleId?: string | undefined;
+    },
+    page: { readonly cursor?: string | undefined; readonly limit?: number | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<Page<DeliveryRecordView>> {
+    await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
+    const request: PageRequest = pageRequest(DELIVERY_RECORD_ORDER, page);
+    const result = await this.repository.listDeliveries(db, filter, request);
+    return { ...result, items: result.items.map(toDeliveryView) };
   }
 
   /**
@@ -658,7 +723,9 @@ export class DeliveryReadService {
       {
         blocker: 'checklist_incomplete',
         established: true,
-        source: 'sal.delivery_checklist_template_items ∖ sal.delivery_checklist_results',
+        source:
+          'sal.delivery_checklist_template_items ⋈ sal.delivery_checklist_templates ' +
+          '∖ sal.delivery_checklist_results',
       },
       { blocker: 'receiver_not_verified', established: true, source: 'sal.authorized_receivers' },
       { blocker: 'signature_missing', established: true, source: 'sal.delivery_signatures' }
@@ -676,6 +743,65 @@ export class DeliveryReadService {
     });
 
     return { decision, facts, checklistGaps: gaps.sample };
+  }
+
+  /**
+   * The FOUR eligibility facts that are keyed on a work order alone (P1-31 D-3).
+   *
+   * ## Why four and not eight
+   *
+   * `composeFor` above needs a delivery ROW: `delivery_state_invalid` reads that
+   * row's status, and `checklist_incomplete`, `receiver_not_verified` and
+   * `signature_missing` are all counted against the delivery's own id. None of the
+   * four is answerable for a work order that has no delivery record yet, which is
+   * precisely the population the readiness queue exists to show — the Owner's D-3
+   * decision is that an eligible work order with NO delivery must appear in it.
+   *
+   * The other four take `workOrderId` and nothing else, so they are exactly the
+   * subset that can be established before a delivery exists. This method calls
+   * `composeFor`'s own private readers rather than restating any of them: a second
+   * definition of the financial fact is the failure the module docblock above is
+   * written to prevent, and it would be the one gate with no database backstop.
+   *
+   * ## Blocking and unestablished are both refused
+   *
+   * `clear` demands that every fact be `established` AND that no blocker be raised.
+   * The conjunction is deliberate redundancy: each reader already fails closed —
+   * an unresolvable state is not complete, an absent invoice is not settlement —
+   * so the two conditions coincide today, and stating both means a future reader
+   * that reports an unestablished fact as harmless cannot make this queue offer a
+   * vehicle for handover.
+   */
+  public async composeWorkOrderFacts(
+    db: DbHandle,
+    workOrderId: string
+  ): Promise<WorkOrderEligibilityFacts> {
+    const [workOrder, quality, financial, parts] = await Promise.all([
+      this.readWorkOrderFact(db, workOrderId),
+      this.readQualityFact(db, workOrderId),
+      this.readFinancialFact(db, workOrderId),
+      this.readPartObligationFact(db, workOrderId),
+    ]);
+
+    const facts: readonly EligibilityFact[] = [
+      workOrder.fact,
+      quality.fact,
+      financial.fact,
+      parts.fact,
+    ];
+    // Pushed in `BLOCKER_CODES` order, so two rows of the same page never report
+    // the same set of reasons in two different sequences.
+    const blockers: BlockerCode[] = [];
+    if (!workOrder.complete) blockers.push('work_order_not_complete');
+    if (!quality.passed) blockers.push('quality_control_not_passed');
+    if (financial.outstanding) blockers.push('financial_balance_outstanding');
+    if (parts.outstanding) blockers.push('part_obligation_outstanding');
+
+    return {
+      facts,
+      blockers,
+      clear: blockers.length === 0 && facts.every((fact) => fact.established),
+    };
   }
 
   /**

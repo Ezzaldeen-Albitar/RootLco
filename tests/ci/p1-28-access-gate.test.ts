@@ -131,6 +131,14 @@ describe('the gate is clean on the tree it ships with — and really looked', ()
     // Restated here so a silent collapse fails by name rather than by a clean
     // report over nothing.
     /*
+     * ELEVEN since P1-31: the delivery detail screen binds a handover signature
+     * through the same capture surface, so its import closure reaches a P1-28
+     * feature tree and the derivation adopts it exactly as it adopted the two
+     * below. It is held to every rule here, and satisfying rule 4 is what forced
+     * `features/delivery/api.ts` to build its paths with a shape this gate can
+     * READ — an unresolvable helper makes an operation invisible, and every
+     * permission the screen consults for it then reads as surplus privilege.
+     *
      * TEN since P1-29 W7: the job diagnostics workbench under `work-orders` renders
      * the same capture surface for report evidence and is adopted the same way.
      *
@@ -143,12 +151,13 @@ describe('the gate is clean on the tree it ships with — and really looked', ()
      * it gates before it reads, consults only published codes, requires no
      * more than its operations require, and asserts no scope in a URL.
      */
-    expect(REAL.routes.length).toBe(10);
+    expect(REAL.routes.length).toBe(11);
     expect(REAL.treeFiles).toBeGreaterThanOrEqual(40);
     expect(REAL.constants).toBeGreaterThanOrEqual(40);
     expect(REAL.scanned).toBeGreaterThanOrEqual(200);
     expect(REAL.segments).toEqual([
       'appointments',
+      'delivery',
       'reception',
       'receptions',
       'technicians',
@@ -159,14 +168,20 @@ describe('the gate is clean on the tree it ships with — and really looked', ()
     expect(REAL.closureFiles).toBeGreaterThanOrEqual(100);
   });
 
-  it('recognised an awaited read on the five routes that perform one', () => {
+  it('recognised an awaited read on the six routes that perform one', () => {
     // Rule 1's read half, stated as a census. If this collapsed to zero the rule
     // would still report clean on every route — a gate ordering nothing against
     // nothing — which is why the run itself refuses below four.
+    //
+    // The sixth is the P1-31 handover screen, which reads its delivery record
+    // AFTER it has decided the operator may see one. That ordering is the whole
+    // subject of rule 1, and the screen is in this gate's scope because it binds
+    // a signature through P1-28's one approved capture surface.
     const reading = REAL.routes.filter((route: { reads: boolean }) => route.reads);
     expect(reading.map((route: { route: string }) => route.route).sort()).toEqual([
       'apps/web/src/app/[locale]/(dashboard)/appointments/[appointmentId]/page.tsx',
       'apps/web/src/app/[locale]/(dashboard)/appointments/new/page.tsx',
+      'apps/web/src/app/[locale]/(dashboard)/delivery/[deliveryId]/page.tsx',
       'apps/web/src/app/[locale]/(dashboard)/receptions/check-in/[receptionId]/acknowledgement/page.tsx',
       'apps/web/src/app/[locale]/(dashboard)/receptions/check-in/[receptionId]/page.tsx',
       'apps/web/src/app/[locale]/(dashboard)/receptions/check-in/page.tsx',
@@ -690,17 +705,20 @@ describe('the route set is DERIVED, not a hand-written list of segments', () => 
     expect(PLAN).not.toContain('(dashboard)/receptions');
   });
 
-  it('finds the ten pages by what they LOAD, including the singular walk-in', () => {
+  it('finds the eleven pages by what they LOAD, including the singular walk-in', () => {
     const routes = webRoutes().map((file: string) => posix(file));
-    // Eight P1-28 screens, plus the P1-29 technician workspace, which loads the
-    // shared capture field out of `features/receptions` — see the census above.
-    expect(routes).toHaveLength(10);
+    // Eight P1-28 screens, plus the P1-29 technician workspace and diagnostics
+    // workbench and the P1-31 handover screen, each of which loads the shared
+    // capture field out of `features/receptions` — see the census above.
+    expect(routes).toHaveLength(11);
     expect(routes.some((route: string) => route.includes('/reception/walk-in/'))).toBe(true);
     expect(routes.some((route: string) => route.endsWith('/appointments/new/page.tsx'))).toBe(true);
     expect(routes.some((route: string) => route.includes('/acknowledgement/'))).toBe(true);
     expect(routes.some((route: string) => route.endsWith('/technicians/me/page.tsx'))).toBe(true);
+    expect(routes.some((route: string) => route.includes('/delivery/'))).toBe(true);
     expect(segmentsOnce()).toEqual([
       'appointments',
+      'delivery',
       'reception',
       'receptions',
       'technicians',

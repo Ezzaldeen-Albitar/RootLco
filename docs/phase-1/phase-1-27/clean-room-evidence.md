@@ -137,8 +137,8 @@ sit in the tree looking like coverage while running nowhere.
 
 ## Current tree
 
-The live web suite holds **132 web test files**, every one matched by a `vitest`
-project, and the current tree executes **3598** tests. Both are derived on every
+The live web suite holds **133 web test files**, every one matched by a `vitest`
+project, and the current tree executes **3664** tests. Both are derived on every
 run of `npm run validate:p1-27-closing-values` rather than recorded by hand.
 
 That executed figure is the one a test reads. It used to read the `Web tier` row
@@ -149,25 +149,26 @@ comparing a live baseline against a record of a head the branch had left behind.
 The superseded figures are left exactly as they were, because they are a true
 account of that head; what moved is which number the check consults.
 
-**The 3598 is HOSTED, and it is the binding measurement.** It is the output of
-`node scripts/ci/check-p1-27-closing-values.mjs --record web --hosted-run`
-against this pull request's own run and recorded in
-`evidence/local-run-ledger.json` with a provenance block naming the run, the
-job, the artifact and that artifact's digest, and the head that run describes —
-this head. That block is what marks it hosted; a record without one is local.
+**The 3664 is local, and it is pending attestation by this pull request's hosted
+run.** It is the output of
+`node scripts/ci/check-p1-27-closing-values.mjs --record web` against this tree,
+recorded in `evidence/local-run-ledger.json` with the commit it was taken at and
+with no provenance block, which is what marks it local. The required hosted run can attest this local measurement without changing its
+source. A valid hosted-attested local record is retained; it is not converted
+merely for cosmetic consistency.
 
 ### `DERIVABLE_LOCAL` — a command in this repository answers it
 
 | measure                                    | value | the command that decides it                                       |
 | ------------------------------------------ | ----- | ------------------------------------------------------------------ |
-| Web test files under `apps/web/tests`       | 132    | a walk of the tree                                                 |
-| Web tier — tests executed                   | 3598  | `--record web`, from the `vitest` JSON report                      |
-| Web tier — files the run reported           | 132    | the same report, cross-checked against the walk above              |
+| Web test files under `apps/web/tests`       | 133    | a walk of the tree                                                 |
+| Web tier — tests executed                   | 3664  | `--record web`, from the `vitest` JSON report                      |
+| Web tier — files the run reported           | 133    | the same report, cross-checked against the walk above              |
 | Root unit tier — tests executed             | 3277  | `--record unit`, from the `vitest` JSON report                     |
 | Root unit tier — files the run reported     | 121   | the same report, cross-checked against the tier's include rule      |
 | Committed web floor (`minTests`)            | 3050  | `.github/ci-baselines/test-count-baseline.json`                    |
 | Committed unit floor (`minTests`)           | 1050  | the same baseline                                                  |
-| Migrations on disk                          | 138   | a walk of `supabase/migrations`                                    |
+| Migrations on disk                          | 139   | a walk of `supabase/migrations`                                    |
 
 The floor and the measurement are different questions and they have different
 authorities. The baseline file defines the FLOOR, so binding "the floor is 3050"
@@ -181,7 +182,7 @@ the tree was running.
 | --------------------------------------------------- | ------------------------------------------- |
 | Tracked files under `docs/phase-1/phase-1-27`        | 42                                          |
 | Tracked `.md` files under the same directory         | 32                                          |
-| Migrations tracked by git at `HEAD`                  | 138                                         |
+| Migrations tracked by git at `HEAD`                  | 139                                         |
 | `CODE_CANDIDATE_SHA`                                 | `501f5f0d48d7b8cafc12dad51f6c501534b66a18`  |
 | Executable paths changed, candidate to accepted `develop` | 0                                      |
 

@@ -18,6 +18,15 @@ import { renderLtr, renderRtl } from './render';
  * named and never fetched; the reasons read in Arabic as Arabic; and the work
  * order's own section reads nothing without the authority to see a handover.
  *
+ * The execution half adds: every control is drawn only for a caller holding the
+ * code ITS OWN operation declares, and is ABSENT rather than disabled for anyone
+ * else; a waiver states its reason and a pass never carries one; a recorded
+ * outcome is final and a second attempt says so in those words; the release
+ * quotes the version the RELEASE CHECKS published and never one a preparation
+ * step answered with; a reading with two decimals is refused by the form before
+ * a request is spent; and a blocked release names the reasons the server gave,
+ * read again, rather than a sentence this tier composed.
+ *
  * FE-001 adds the ready-for-delivery queue, whose properties are its own: all
  * three of the operation's codes gate the page and each one alone is enough to
  * refuse it; the branch pair is named before anything is read; and the verdict
@@ -28,6 +37,16 @@ import { renderLtr, renderRtl } from './render';
 const EN = en as Record<string, string>;
 const AR = ar as Record<string, string>;
 
+/*
+ * A required control's `<label>` carries a decorative asterisk, so its label
+ * text is the catalogue string PLUS a character the catalogue does not hold.
+ * Anchoring at the start matches the label without asserting the marker, which
+ * is a styling decision rather than a property of this screen.
+ */
+const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const labelled = (key: string) => new RegExp(`^${escape(EN[key] as string)}`);
+const labelledAr = (key: string) => new RegExp(`^${escape(AR[key] as string)}`);
+
 const readDelivery = vi.fn();
 const readEligibility = vi.fn();
 const readReceiver = vi.fn();
@@ -35,6 +54,12 @@ const listSignatures = vi.fn();
 const listChecklistResults = vi.fn();
 const listStatusHistory = vi.fn();
 const readWorkOrderDelivery = vi.fn();
+const readActiveChecklistItems = vi.fn();
+// Regression trap: a restored create call must fail the unavailable-selection cases.
+const startDelivery = vi.fn();
+const verifyReceiver = vi.fn();
+const recordChecklistResult = vi.fn();
+const completeDelivery = vi.fn();
 vi.mock('@/features/delivery/api', () => ({
   readDelivery: (...args: unknown[]) => readDelivery(...args),
   readEligibility: (...args: unknown[]) => readEligibility(...args),
@@ -43,6 +68,21 @@ vi.mock('@/features/delivery/api', () => ({
   listChecklistResults: (...args: unknown[]) => listChecklistResults(...args),
   listStatusHistory: (...args: unknown[]) => listStatusHistory(...args),
   readWorkOrderDelivery: (...args: unknown[]) => readWorkOrderDelivery(...args),
+  readActiveChecklistItems: (...args: unknown[]) => readActiveChecklistItems(...args),
+  startDelivery: (...args: unknown[]) => startDelivery(...args),
+  verifyReceiver: (...args: unknown[]) => verifyReceiver(...args),
+  recordChecklistResult: (...args: unknown[]) => recordChecklistResult(...args),
+  completeDelivery: (...args: unknown[]) => completeDelivery(...args),
+}));
+
+const captureDeliverySignature = vi.fn();
+vi.mock('@/features/delivery/signature-capture', () => ({
+  captureDeliverySignature: (...args: unknown[]) => captureDeliverySignature(...args),
+}));
+
+const searchCustomerDirectory = vi.fn();
+vi.mock('@/lib/customers/directory', () => ({
+  searchCustomerDirectory: (...args: unknown[]) => searchCustomerDirectory(...args),
 }));
 
 const listDeliveryReadiness = vi.fn();
@@ -164,6 +204,83 @@ const receiver = {
   verifiedAt: '2026-09-08T09:00:00.000Z',
   recordVersion: 1,
 };
+
+const TEMPLATE_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const ITEM_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const SECOND_ITEM_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+
+const item = (id: string, code: string, label: string, isMandatory = true) => ({
+  id,
+  templateId: TEMPLATE_ID,
+  itemCode: code,
+  label,
+  isMandatory,
+  sortOrder: 1,
+  recordVersion: 1,
+});
+
+const checklist = {
+  templates: [
+    {
+      template: {
+        id: TEMPLATE_ID,
+        companyId: '11111111-1111-4111-8111-111111111111',
+        templateCode: 'HANDOVER',
+        name: 'Handover checks',
+        status: 'active',
+        recordVersion: 1,
+      },
+      items: [
+        item(ITEM_ID, 'FUEL', 'Fuel level agreed'),
+        item(SECOND_ITEM_ID, 'KEYS', 'All keys returned', false),
+      ],
+    },
+  ],
+  templateCount: 1,
+};
+
+/** The release checks as they read when nothing is holding the vehicle back. */
+const clearEligibility = {
+  ...eligibility,
+  eligible: true,
+  blockers: [],
+  checklistGaps: [],
+  facts: [{ blocker: 'signature_missing', established: true, source: 'delivery signatures' }],
+};
+
+/** The release checks with ONLY the one reason the platform lets an authority set aside. */
+const moneyOnlyEligibility = {
+  ...eligibility,
+  eligible: false,
+  blockers: ['financial_balance_outstanding'],
+  checklistGaps: [],
+};
+
+const CUSTOMER = {
+  id: PARTNER_ID,
+  displayNumber: 'C-000482',
+  displayName: 'Layla Haddad',
+  partyType: 'individual',
+  lifecycleStatus: 'active',
+  createdAt: '2026-01-01T00:00:00.000Z',
+};
+
+const customerPage = (rows: readonly unknown[]) => ({
+  status: 'ok',
+  rows,
+  nextCursor: null,
+  hasMore: false,
+  correlationId: 'corr-1',
+});
+
+const succeeded = (messageKey: string) => ({ status: 'success', messageKey, attempt: 1 });
+const refusedWrite = (status: string, code?: string) => ({
+  status,
+  messageKey: 'state.conflict.title',
+  correlationId: 'corr-9',
+  attempt: 1,
+  ...(code === undefined ? {} : { code }),
+});
 
 const page = (items: readonly unknown[], over: Record<string, unknown> = {}) => ({
   items,
@@ -292,6 +409,12 @@ beforeEach(() => {
   listChecklistResults.mockResolvedValue(okRead({ deliveryId: DELIVERY_ID, results: page([]) }));
   listStatusHistory.mockResolvedValue(okRead({ deliveryId: DELIVERY_ID, transitions: page([]) }));
   readWorkOrderDelivery.mockResolvedValue(okRead({ workOrderId: WORK_ORDER_ID, delivery: null }));
+  readActiveChecklistItems.mockResolvedValue(okRead(checklist));
+  verifyReceiver.mockResolvedValue(succeeded('delivery.receiver.verified'));
+  recordChecklistResult.mockResolvedValue(succeeded('delivery.checklist.recorded'));
+  completeDelivery.mockResolvedValue(succeeded('delivery.completion.done'));
+  captureDeliverySignature.mockResolvedValue(succeeded('delivery.signature.attached'));
+  searchCustomerDirectory.mockResolvedValue(customerPage([CUSTOMER]));
   listDeliveryReadiness.mockResolvedValue(queuePage([]));
   readDeliveryReadinessScopes.mockResolvedValue(QUEUE_SCOPES);
 });
@@ -556,39 +679,78 @@ describe('the signatures', () => {
   });
 });
 
+const recordedWaiver = {
+  id: 'result-1',
+  deliveryRecordId: DELIVERY_ID,
+  templateItemId: ITEM_ID,
+  itemCode: 'FUEL',
+  label: 'Fuel level agreed',
+  outcome: 'waived',
+  waiverReason: 'Agreed with the branch manager at handover.',
+  recordedBy: EMPLOYEE_ID,
+  recordVersion: 1,
+};
+
 describe('the checklist results', () => {
-  it('says nothing has been recorded, and that this is not the whole checklist', async () => {
+  it('says which checklists are in use, rather than presenting a subset as the whole', async () => {
+    readActiveChecklistItems.mockResolvedValue(okRead({ templates: [], templateCount: 0 }));
     renderScreen();
     await waitFor(() => expect(listChecklistResults).toHaveBeenCalledWith(DELIVERY_ID, null));
     const region = panel('delivery.checklist.heading');
-    expect(within(region).getByText(EN['delivery.checklist.noneTitle'] as string)).toBeVisible();
-    expect(within(region).getByText(EN['delivery.checklist.resultsOnly'] as string)).toBeVisible();
+    expect(
+      within(region).getByText(EN['delivery.checklist.noTemplatesTitle'] as string)
+    ).toBeVisible();
+  });
+
+  it('renders every item of every checklist in use, whether or not it has a result', async () => {
+    renderScreen();
+    const region = await screen.findByRole('region', {
+      name: EN['delivery.checklist.heading'] as string,
+    });
+    expect(await within(region).findByText('Fuel level agreed')).toBeVisible();
+    expect(within(region).getByText('All keys returned')).toBeVisible();
+    // The required marker is on the required item and not on the other.
+    expect(within(region).getAllByText(EN['delivery.checklist.mandatory'] as string)).toHaveLength(
+      1
+    );
   });
 
   it('shows the outcome and the reason a waiver was given', async () => {
     listChecklistResults.mockResolvedValue(
-      okRead({
-        deliveryId: DELIVERY_ID,
-        results: page([
-          {
-            id: 'result-1',
-            deliveryRecordId: DELIVERY_ID,
-            templateItemId: 'item-1',
-            itemCode: 'FUEL',
-            label: 'Fuel level agreed',
-            outcome: 'waived',
-            waiverReason: 'Agreed with the branch manager at handover.',
-            recordedBy: EMPLOYEE_ID,
-            recordVersion: 1,
-          },
-        ]),
-      })
+      okRead({ deliveryId: DELIVERY_ID, results: page([recordedWaiver]) })
     );
     renderScreen();
     await waitFor(() => expect(listChecklistResults).toHaveBeenCalled());
     const region = panel('delivery.checklist.heading');
-    expect(within(region).getByText(EN['delivery.outcome.waived'] as string)).toBeVisible();
+    expect(await within(region).findByText(EN['delivery.outcome.waived'] as string)).toBeVisible();
     expect(within(region).getByText('Agreed with the branch manager at handover.')).toBeVisible();
+  });
+
+  it('keeps a result recorded against an item that has since been withdrawn', async () => {
+    listChecklistResults.mockResolvedValue(
+      okRead({
+        deliveryId: DELIVERY_ID,
+        results: page([{ ...recordedWaiver, templateItemId: 'withdrawn-item', itemCode: 'MATS' }]),
+      })
+    );
+    renderScreen();
+    const region = await screen.findByRole('region', {
+      name: EN['delivery.checklist.heading'] as string,
+    });
+    expect(
+      await within(region).findByText(EN['delivery.checklist.withdrawnHeading'] as string)
+    ).toBeVisible();
+    expect(within(region).getByText('MATS')).toBeVisible();
+  });
+
+  it('reports a refusal of the CONFIGURATION as a refusal, not as an empty checklist', async () => {
+    readActiveChecklistItems.mockResolvedValue(refusedRead('denied'));
+    renderScreen();
+    const region = await screen.findByRole('region', {
+      name: EN['delivery.checklist.heading'] as string,
+    });
+    expect(await within(region).findByText(EN['state.denied.title'] as string)).toBeVisible();
+    expect(within(region).queryByText('Fuel level agreed')).toBeNull();
   });
 });
 
@@ -691,15 +853,20 @@ describe('the reasons read in Arabic as Arabic', () => {
 });
 
 describe('the work order’s own handover section', () => {
-  it('says there is none, and offers no control that would create one', async () => {
+  it('says there is none, and offers no way to start one WITHOUT the write code', async () => {
     renderLtr(<WorkOrderDeliveryPanel locale="en" messages={en} workOrderId={WORK_ORDER_ID} />);
     await waitFor(() => expect(readWorkOrderDelivery).toHaveBeenCalledWith(WORK_ORDER_ID));
     const region = screen.getByRole('region', {
       name: EN['delivery.workOrder.heading'] as string,
     });
     expect(within(region).getByText(EN['delivery.workOrder.none'] as string)).toBeVisible();
+    // Absent, not disabled. A button whose only outcome is a denial teaches an
+    // operator to ignore denials.
     expect(within(region).queryAllByRole('button')).toHaveLength(0);
     expect(within(region).queryAllByRole('link')).toHaveLength(0);
+    expect(
+      within(region).queryByText(EN['delivery.start.employeeSelectionUnavailable'] as string)
+    ).toBeNull();
   });
 
   it('links to the handover it found, and states its stage', async () => {
@@ -726,6 +893,527 @@ describe('the work order’s own handover section', () => {
     });
     expect(within(region).getByRole('alert')).toHaveTextContent('corr-403');
     expect(within(region).queryByText(EN['delivery.workOrder.none'] as string)).toBeNull();
+  });
+});
+
+describe('employee selection is unavailable when starting a handover', () => {
+  it.each(['en', 'ar'] as const)(
+    'offers no employee input or Start action in %s and makes no create call',
+    async (locale) => {
+      const messages = locale === 'en' ? en : ar;
+      const text = locale === 'en' ? EN : AR;
+      const render = locale === 'en' ? renderLtr : renderRtl;
+      render(
+        <WorkOrderDeliveryPanel
+          locale={locale}
+          messages={messages}
+          workOrderId={WORK_ORDER_ID}
+          canManage={true}
+        />
+      );
+      const region = screen.getByRole('region', {
+        name: text['delivery.workOrder.heading'] as string,
+      });
+      expect(
+        await within(region).findByText(
+          text['delivery.start.employeeSelectionUnavailable'] as string
+        )
+      ).toBeVisible();
+      expect(within(region).queryAllByRole('textbox')).toHaveLength(0);
+      expect(within(region).queryAllByRole('button')).toHaveLength(0);
+      expect(startDelivery).not.toHaveBeenCalled();
+      expect(readWorkOrderDelivery).toHaveBeenCalledWith(WORK_ORDER_ID);
+      if (locale === 'ar') {
+        expect(
+          within(region).queryByText(EN['delivery.start.employeeSelectionUnavailable'] as string)
+        ).toBeNull();
+      }
+    }
+  );
+
+  it('keeps an existing handover accessible to a manager without offering employee entry', async () => {
+    readWorkOrderDelivery.mockResolvedValue(okRead({ workOrderId: WORK_ORDER_ID, delivery }));
+    renderLtr(
+      <WorkOrderDeliveryPanel
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER_ID}
+        canManage={true}
+      />
+    );
+    const link = await screen.findByRole('link', { name: EN['delivery.workOrder.open'] as string });
+    expect(link.getAttribute('href')).toBe(`/en/delivery/${DELIVERY_ID}`);
+    expect(
+      screen.queryByText(EN['delivery.start.employeeSelectionUnavailable'] as string)
+    ).toBeNull();
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0);
+    expect(startDelivery).not.toHaveBeenCalled();
+  });
+});
+
+describe('confirming who may receive the vehicle', () => {
+  it('is absent for a caller without the write code, and present with it', async () => {
+    const without = renderScreen();
+    await waitFor(() => expect(readReceiver).toHaveBeenCalled());
+    expect(
+      within(panel('delivery.receiver.heading')).queryByText(
+        EN['delivery.receiver.verifyHeading'] as string
+      )
+    ).toBeNull();
+    without.unmount();
+
+    renderScreen({ canManage: true });
+    const region = await screen.findByRole('region', {
+      name: EN['delivery.receiver.heading'] as string,
+    });
+    expect(
+      await within(region).findByText(EN['delivery.receiver.verifyHeading'] as string)
+    ).toBeVisible();
+  });
+
+  it('sends the partner chosen by NAME, and no identity reference it did not capture', async () => {
+    const user = userEvent.setup();
+    renderScreen({ canManage: true });
+    const region = await screen.findByRole('region', {
+      name: EN['delivery.receiver.heading'] as string,
+    });
+    await user.type(
+      await within(region).findByLabelText(labelled('crm.customers.column.name')),
+      'Layla'
+    );
+    await user.click(
+      within(region).getByRole('button', { name: EN['customerSelector.search'] as string })
+    );
+    await user.click(await within(region).findByRole('button', { name: /Layla Haddad/ }));
+    await user.click(
+      within(region).getByRole('button', { name: EN['delivery.receiver.verifySubmit'] as string })
+    );
+    await waitFor(() =>
+      expect(verifyReceiver).toHaveBeenCalledWith(DELIVERY_ID, { receiverPartnerId: PARTNER_ID })
+    );
+  });
+
+  it('refuses to send with nobody chosen, and spends no request', async () => {
+    const user = userEvent.setup();
+    renderScreen({ canManage: true });
+    const region = await screen.findByRole('region', {
+      name: EN['delivery.receiver.heading'] as string,
+    });
+    await user.click(
+      await within(region).findByRole('button', {
+        name: EN['delivery.receiver.verifySubmit'] as string,
+      })
+    );
+    expect(verifyReceiver).not.toHaveBeenCalled();
+    expect(
+      within(region).getByText(EN['delivery.receiver.partnerRequired'] as string)
+    ).toBeVisible();
+  });
+
+  it('offers no second confirmation once somebody is confirmed', async () => {
+    readReceiver.mockResolvedValue(okRead({ deliveryId: DELIVERY_ID, receiver }));
+    renderScreen({ canManage: true });
+    const region = await screen.findByRole('region', {
+      name: EN['delivery.receiver.heading'] as string,
+    });
+    await within(region).findByText(EN['delivery.receiver.evidenceOnFile'] as string);
+    expect(within(region).queryByText(EN['delivery.receiver.verifyHeading'] as string)).toBeNull();
+  });
+});
+
+describe('working through the checklist', () => {
+  const openChecklist = async () => {
+    renderScreen({ canManage: true });
+    return screen.findByRole('region', { name: EN['delivery.checklist.heading'] as string });
+  };
+
+  /** The row of one item, found by the code the backend published for it. */
+  const rowFor = (region: HTMLElement, code: string) => {
+    const row = region.querySelector(`[data-item-code="${code}"]`);
+    expect(row).not.toBeNull();
+    return row as HTMLElement;
+  };
+
+  it('records a pass with NO reason attached to it', async () => {
+    const user = userEvent.setup();
+    const region = await openChecklist();
+    await within(region).findByText('Fuel level agreed');
+    const row = rowFor(region, 'FUEL');
+    await user.click(
+      within(row).getByRole('button', { name: EN['delivery.checklist.record'] as string })
+    );
+    await waitFor(() =>
+      // The waiver rule is a biconditional: a reason on a pass is refused, not
+      // ignored, so the field must be absent rather than empty.
+      expect(recordChecklistResult).toHaveBeenCalledWith(DELIVERY_ID, {
+        templateItemId: ITEM_ID,
+        outcome: 'passed',
+      })
+    );
+  });
+
+  it('refuses a waiver with no reason, before a request is spent', async () => {
+    const user = userEvent.setup();
+    const region = await openChecklist();
+    await within(region).findByText('Fuel level agreed');
+    const row = rowFor(region, 'FUEL');
+    await user.selectOptions(
+      within(row).getByLabelText(EN['delivery.checklist.outcome'] as string),
+      'waived'
+    );
+    await user.click(
+      within(row).getByRole('button', { name: EN['delivery.checklist.record'] as string })
+    );
+    expect(recordChecklistResult).not.toHaveBeenCalled();
+    // The reason box says so itself, rather than the row saying it somewhere.
+    const reason = within(row).getByLabelText(labelled('delivery.checklist.waiverReasonLabel'));
+    expect(reason).toHaveAttribute('aria-invalid', 'true');
+    expect(within(row).getByText(EN['form.required'] as string)).toBeVisible();
+  });
+
+  it('sends a waiver WITH the reason once one is given', async () => {
+    const user = userEvent.setup();
+    const region = await openChecklist();
+    await within(region).findByText('Fuel level agreed');
+    const row = rowFor(region, 'FUEL');
+    await user.selectOptions(
+      within(row).getByLabelText(EN['delivery.checklist.outcome'] as string),
+      'waived'
+    );
+    await user.type(
+      within(row).getByLabelText(labelled('delivery.checklist.waiverReasonLabel')),
+      'Tank was already empty on arrival.'
+    );
+    await user.click(
+      within(row).getByRole('button', { name: EN['delivery.checklist.record'] as string })
+    );
+    await waitFor(() =>
+      expect(recordChecklistResult).toHaveBeenCalledWith(DELIVERY_ID, {
+        templateItemId: ITEM_ID,
+        outcome: 'waived',
+        waiverReason: 'Tank was already empty on arrival.',
+      })
+    );
+  });
+
+  it('says "already recorded" in those words rather than reporting a bare conflict', async () => {
+    const user = userEvent.setup();
+    recordChecklistResult.mockResolvedValue(refusedWrite('conflict', 'ERR-INT-001'));
+    const region = await openChecklist();
+    await within(region).findByText('Fuel level agreed');
+    const row = rowFor(region, 'FUEL');
+    await user.click(
+      within(row).getByRole('button', { name: EN['delivery.checklist.record'] as string })
+    );
+    expect(
+      await within(row).findByText(EN['delivery.checklist.alreadyRecorded'] as string)
+    ).toBeVisible();
+  });
+
+  it('offers no control at all for an item that already has an outcome', async () => {
+    listChecklistResults.mockResolvedValue(
+      okRead({ deliveryId: DELIVERY_ID, results: page([recordedWaiver]) })
+    );
+    const region = await openChecklist();
+    await within(region).findByText('Fuel level agreed');
+    const done = rowFor(region, 'FUEL');
+    const open = rowFor(region, 'KEYS');
+    // Absent, not disabled: there is no way to change a recorded outcome, so a
+    // greyed control would invite the operator to look for one.
+    expect(
+      within(done).queryByRole('button', { name: EN['delivery.checklist.record'] as string })
+    ).toBeNull();
+    expect(
+      within(open).getByRole('button', { name: EN['delivery.checklist.record'] as string })
+    ).toBeVisible();
+  });
+
+  it('shows the outcome and no control to a caller without the write code', async () => {
+    renderScreen();
+    const region = await screen.findByRole('region', {
+      name: EN['delivery.checklist.heading'] as string,
+    });
+    await within(region).findByText('Fuel level agreed');
+    expect(
+      within(region).queryByRole('button', { name: EN['delivery.checklist.record'] as string })
+    ).toBeNull();
+    expect(
+      within(region).getAllByText(EN['delivery.checklist.notRecordedYet'] as string).length
+    ).toBeGreaterThan(0);
+  });
+});
+
+describe('adding a signature', () => {
+  it('is absent without the write code and present with it', async () => {
+    const without = renderScreen();
+    await waitFor(() => expect(listSignatures).toHaveBeenCalled());
+    expect(
+      within(panel('delivery.signatures.heading')).queryByText(
+        EN['delivery.signatures.captureHeading'] as string
+      )
+    ).toBeNull();
+    without.unmount();
+
+    renderScreen({ canManage: true });
+    const region = await screen.findByRole('region', {
+      name: EN['delivery.signatures.heading'] as string,
+    });
+    expect(
+      within(region).getByText(EN['delivery.signatures.captureHeading'] as string)
+    ).toBeVisible();
+  });
+
+  it('captures against the VISIT the delivery names, and the delivery it belongs to', async () => {
+    const user = userEvent.setup();
+    renderScreen({ canManage: true });
+    const region = await screen.findByRole('region', {
+      name: EN['delivery.signatures.heading'] as string,
+    });
+    const file = new File(['x'], 'signature.png', { type: 'image/png' });
+    await user.upload(
+      within(region).getByLabelText(EN['delivery.signatures.signatureFile'] as string),
+      file
+    );
+    await user.click(
+      within(region).getByRole('button', {
+        name: EN['delivery.signatures.captureSubmit'] as string,
+      })
+    );
+    await waitFor(() => expect(captureDeliverySignature).toHaveBeenCalled());
+    const [deliveryArg, visitArg, formData] = captureDeliverySignature.mock.calls[0] ?? [];
+    expect(deliveryArg).toBe(DELIVERY_ID);
+    // The visit comes from the record the page read, never from the form.
+    expect(visitArg).toBe(VISIT_ID);
+    expect((formData as FormData).get('signerRole')).toBe('receiver');
+    expect((formData as FormData).get('signatureFile')).toBeInstanceOf(File);
+  });
+
+  it('re-reads the ledger once a signature is on file', async () => {
+    const user = userEvent.setup();
+    renderScreen({ canManage: true });
+    const region = await screen.findByRole('region', {
+      name: EN['delivery.signatures.heading'] as string,
+    });
+    await user.upload(
+      within(region).getByLabelText(EN['delivery.signatures.signatureFile'] as string),
+      new File(['x'], 'signature.png', { type: 'image/png' })
+    );
+    await user.click(
+      within(region).getByRole('button', {
+        name: EN['delivery.signatures.captureSubmit'] as string,
+      })
+    );
+    await waitFor(() => expect(listSignatures).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe('releasing the vehicle', () => {
+  const renderRelease = (over: Record<string, unknown> = {}) =>
+    renderScreen({ canComplete: true, canManage: true, ...over });
+
+  const releasePanel = async () =>
+    screen.findByRole('region', { name: EN['delivery.completion.heading'] as string });
+
+  it('is not drawn at all for a caller without the authority to release', async () => {
+    readEligibility.mockResolvedValue(okRead(clearEligibility));
+    renderScreen({ canComplete: false, canManage: true });
+    await waitFor(() => expect(readEligibility).toHaveBeenCalled());
+    expect(
+      screen.queryByRole('region', { name: EN['delivery.completion.heading'] as string })
+    ).toBeNull();
+  });
+
+  it('quotes the version the RELEASE CHECKS published, not one a preparation step answered with', async () => {
+    const user = userEvent.setup();
+    readEligibility.mockResolvedValue(okRead({ ...clearEligibility, recordVersion: 7 }));
+    renderRelease();
+    const region = await releasePanel();
+    await user.type(
+      within(region).getByLabelText(labelled('delivery.completion.odometer')),
+      '120.5'
+    );
+    await user.click(
+      within(region).getByRole('button', { name: EN['delivery.completion.submit'] as string })
+    );
+    await waitFor(() =>
+      expect(completeDelivery).toHaveBeenCalledWith({
+        deliveryId: DELIVERY_ID,
+        ifMatch: 7,
+        finalOdometerValue: '120.5',
+        odometerUnit: 'km',
+      })
+    );
+  });
+
+  it('refuses a reading with two decimals before a request is spent', async () => {
+    const user = userEvent.setup();
+    readEligibility.mockResolvedValue(okRead(clearEligibility));
+    renderRelease();
+    const region = await releasePanel();
+    await user.type(
+      within(region).getByLabelText(labelled('delivery.completion.odometer')),
+      '120.45'
+    );
+    await user.click(
+      within(region).getByRole('button', { name: EN['delivery.completion.submit'] as string })
+    );
+    // The route's own rule admits two decimals; the column holds one, so the
+    // request would be refused after the fact by a field the operator has left.
+    expect(completeDelivery).not.toHaveBeenCalled();
+    expect(
+      within(region).getByText(EN['delivery.completion.odometerInvalid'] as string)
+    ).toBeVisible();
+  });
+
+  it('cannot be sent while a reason the platform will not set aside is outstanding', async () => {
+    renderRelease();
+    const region = await releasePanel();
+    expect(
+      within(region).getByRole('button', { name: EN['delivery.completion.submit'] as string })
+    ).toBeDisabled();
+    expect(within(region).getByText(EN['delivery.completion.heldBack'] as string)).toBeVisible();
+  });
+
+  it('offers the override ONLY when the server says that reason may be set aside', async () => {
+    readEligibility.mockResolvedValue(okRead(clearEligibility));
+    const clear = renderRelease();
+    let region = await releasePanel();
+    // Nothing is blocking, so nothing is offered to set aside.
+    expect(within(region).queryByText(EN['delivery.completion.override'] as string)).toBeNull();
+    clear.unmount();
+
+    readEligibility.mockResolvedValue(okRead(moneyOnlyEligibility));
+    renderRelease();
+    region = await releasePanel();
+    expect(within(region).getByText(EN['delivery.completion.override'] as string)).toBeVisible();
+  });
+
+  it('demands a written reason for an override, and sends it when one is given', async () => {
+    const user = userEvent.setup();
+    readEligibility.mockResolvedValue(okRead(moneyOnlyEligibility));
+    renderRelease();
+    const region = await releasePanel();
+    await user.type(within(region).getByLabelText(labelled('delivery.completion.odometer')), '90');
+    await user.click(within(region).getByLabelText(EN['delivery.completion.override'] as string));
+    await user.click(
+      within(region).getByRole('button', { name: EN['delivery.completion.submit'] as string })
+    );
+    expect(completeDelivery).not.toHaveBeenCalled();
+
+    await user.type(
+      within(region).getByLabelText(labelled('delivery.completion.overrideReason')),
+      'Settlement agreed in writing.'
+    );
+    await user.click(
+      within(region).getByRole('button', { name: EN['delivery.completion.submit'] as string })
+    );
+    await waitFor(() =>
+      expect(completeDelivery).toHaveBeenCalledWith(
+        expect.objectContaining({ overrideReason: 'Settlement agreed in writing.' })
+      )
+    );
+  });
+
+  it('names the reasons a refused release gave, read again, with the item codes', async () => {
+    const user = userEvent.setup();
+    readEligibility.mockResolvedValue(okRead(clearEligibility));
+    completeDelivery.mockResolvedValue(refusedWrite('conflict', 'ERR-TRN-001'));
+    renderRelease();
+    const region = await releasePanel();
+    await user.type(within(region).getByLabelText(labelled('delivery.completion.odometer')), '90');
+    // The refusal itself carries no reasons, so the release checks are read
+    // again and it is THAT answer the panel renders.
+    readEligibility.mockResolvedValue(okRead(eligibility));
+    await user.click(
+      within(region).getByRole('button', { name: EN['delivery.completion.submit'] as string })
+    );
+    const alert = await within(region).findByRole('alert');
+    expect(alert).toHaveTextContent(EN['delivery.completion.refusedBlocked'] as string);
+    expect(alert).toHaveTextContent(EN['delivery.blocker.signatureMissing'] as string);
+    expect(alert).toHaveTextContent('FUEL');
+  });
+
+  it('names the authority a refused override needed', async () => {
+    const user = userEvent.setup();
+    readEligibility.mockResolvedValue(okRead(moneyOnlyEligibility));
+    completeDelivery.mockResolvedValue({
+      ...refusedWrite('denied', 'ERR-IAM-001'),
+      requiredPermissions: [COMPLETE],
+    });
+    renderRelease();
+    const region = await releasePanel();
+    await user.type(within(region).getByLabelText(labelled('delivery.completion.odometer')), '90');
+    await user.click(
+      within(region).getByRole('button', { name: EN['delivery.completion.submit'] as string })
+    );
+    const alert = await within(region).findByRole('alert');
+    expect(alert).toHaveTextContent(EN['delivery.completion.refusedOverride'] as string);
+    expect(alert).toHaveTextContent(COMPLETE);
+  });
+
+  it('states that the release checks are not readable without the financial code', async () => {
+    renderScreen({ canComplete: true, canManage: true, canReadFinance: false });
+    const region = await releasePanel();
+    expect(
+      within(region).getByText(EN['delivery.completion.needsFinance'] as string)
+    ).toBeVisible();
+    expect(
+      within(region).queryByRole('button', { name: EN['delivery.completion.submit'] as string })
+    ).toBeNull();
+  });
+
+  it('re-reads every panel after a release', async () => {
+    const user = userEvent.setup();
+    readEligibility.mockResolvedValue(okRead(clearEligibility));
+    renderRelease();
+    const region = await releasePanel();
+    await user.type(within(region).getByLabelText(labelled('delivery.completion.odometer')), '90');
+    await user.click(
+      within(region).getByRole('button', { name: EN['delivery.completion.submit'] as string })
+    );
+    await waitFor(() => expect(listStatusHistory).toHaveBeenCalledTimes(2));
+    expect(readEligibility).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('the execution controls read in Arabic as Arabic', () => {
+  it('renders the release form and the checklist controls from the Arabic catalogue', async () => {
+    readEligibility.mockResolvedValue(okRead(clearEligibility));
+    renderRtl(
+      <DeliveryDetailScreen
+        locale="ar"
+        messages={ar}
+        delivery={delivery}
+        canReadFinance={true}
+        canComplete={true}
+        canManage={true}
+      />
+    );
+    expect(document.documentElement.dir).toBe('rtl');
+    const region = await screen.findByRole('region', {
+      name: AR['delivery.completion.heading'] as string,
+    });
+    expect(within(region).getByLabelText(labelledAr('delivery.completion.odometer'))).toBeVisible();
+    expect(
+      within(region).getByRole('button', { name: AR['delivery.completion.submit'] as string })
+    ).toBeVisible();
+    // The English of the same control must not be on screen: a copy-paste that
+    // leaves the English string in the Arabic catalogue reads as translated.
+    expect(within(region).queryByText(EN['delivery.completion.submit'] as string)).toBeNull();
+
+    const checklistRegion = await screen.findByRole('region', {
+      name: AR['delivery.checklist.heading'] as string,
+    });
+    const records = await within(checklistRegion).findAllByRole('button', {
+      name: AR['delivery.checklist.record'] as string,
+    });
+    // One control per item still open, all of them Arabic.
+    expect(records).toHaveLength(2);
+    expect(
+      within(checklistRegion).queryByRole('button', {
+        name: EN['delivery.checklist.record'] as string,
+      })
+    ).toBeNull();
   });
 });
 

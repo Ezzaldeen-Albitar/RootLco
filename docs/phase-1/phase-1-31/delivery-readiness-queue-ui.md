@@ -1,42 +1,65 @@
 # P1-31 FE-001 — delivery readiness queue
 
-Status: implemented in the preserved `feature/p1-31-delivery-readiness-queue` checkout;
-not merged or verified end to end. The base remains `0204f2d1` until the readiness seam
-and the preceding delivery UI work land. This record does not replace the 29-task matrix.
+**Status:** implemented on `feature/p1-31-delivery-readiness-queue`, integrated onto protected
+`develop` `01c32937` on 2026-09-11, **unmerged**. No hosted run and no end-to-end acceptance result
+is claimed. The change-control entry is section 42 of
+[`change-control-2026-09-08.md`](./change-control-2026-09-08.md), identifier **CC-30**, both
+PROVISIONAL. This record does not replace the 29-task matrix.
 
-The `/delivery` page lets an authorized adviser select a named company and branch, review
-completed work orders with the server's readiness verdict and blockers, and open a work
-order or existing handover. It creates no delivery, employee, receiver or signature.
+## The Owner's decision (D-3, settled 2026-09-09), in the Owner's words
 
-The page checks all three readiness permissions before calling either the directory or
-queue adapters: `sal.delivery.view`, `wo.work_order.read`, and `sal.finance.view`.
-Directory choices use the existing `/org/companies` and `/org/branches` contracts, whose
-own `org.company.read` and `org.branch.read` permissions remain required. A directory
-refusal or unavailable response is shown explicitly, without a raw identifier fallback.
-The server adapter re-reads directory membership and verifies that the selected branch
-belongs to the selected company. The backend independently checks the three readiness
-permissions in that exact branch. Directory membership does not replace that check.
+The operational ready-for-delivery queue is the set of work orders that satisfy the AUTHORITATIVE
+SERVER delivery-eligibility rules, and it INCLUDES eligible work orders that do not yet have a
+delivery record; it is a different question from the delivery-record list, which lists records that
+already exist. The three constraints the Owner attached: **no new work-order status**, **eligibility
+is not computed in the browser**, **finance permissions are not broadened**. The full wording is in
+[`owner-decisions-2026-09-09.md`](./owner-decisions-2026-09-09.md).
 
-Readiness comes from `DeliveryReadinessRowView.readyToStartDelivery`, with `workOrder.id`,
-the existing work-order summary, the live delivery record, four work-order facts and
-blocker codes. A closed work-order state or empty blocker list never makes a row ready.
-An unavailable server verdict is shown as unavailable. A fact that could not be established
-is distinguished from a known blocker. Receiver, signature and checklist eligibility
-remain on the handover record; this queue does not make those decisions.
+This screen consumes that decision. It extends none of it, and nothing below was named by the Owner.
 
-The response is the existing cursor page: `items`, `nextCursor`, `hasMore`. The screen
-preserves the server cursor and does not invent a total or a ready-only filter. It uses the
-shared table's default 25 rows, within the endpoint's limit of 50. Requests above that
-ceiling are capped visibly. Changing the company clears its selected branch; submitting
-a different target starts a new table and discards the old cursor.
+## Measured facts (not part of the decision)
 
-English and Arabic copy covers the selectors, readiness, unavailable checks and handover
-links. The delivery navigation entry becomes available; the page's complete permission
-gate remains authoritative before any read. The existing detail page gains a parent link.
+- The contract mirrored here matches the merged route field for field: `workOrder`, `delivery`,
+  `facts`, `blockers` and `readyToStartDelivery` over the platform cursor page (`items`,
+  `nextCursor`, `hasMore`), with the route's own page sizes — default 20, maximum 50.
+- The shared table's first page is 25 rows, its options are 10, 25, 50 and 100, and the screen always
+  sends a `limit`. So the first request asks for 25, the route's default of 20 applies only to a
+  request that sends none, and a chosen 100 is reduced to 50 with the reduction stated on the page
+  rather than performed silently.
+- The focused web run over the three touched test files passed 145 tests across 3 files at the
+  integration head; `typecheck:web`, `lint:web`, both Prettier checks, `style:check`, the web
+  boundary check, the `'use server'` export check, the module-boundary check and the P1-31 access
+  gate all pass. These are slice checks, not phase acceptance.
 
-Focused regression cases cover each missing readiness permission, no queue read before
-selection, named and paired directory options, directory failure without identifier entry,
-tampered targets, server false or absent verdicts, unknown facts, pagination, links and Arabic.
-The bounded delivery API, delivery DOM and navigation run passed 100 tests across three
-files; `typecheck:web` passed. No database test, hosted check, merge or functional
-acceptance result is claimed by this record.
+## Engineering consequence (not an Owner decision)
+
+- **The page is `/delivery`** — the singular href already committed in navigation, whose entry moves
+  from planned to available. The API spelling stays plural.
+- **All three of the operation's codes gate the page** before any read is issued, and each one alone
+  is enough to refuse it: `sal.delivery.view`, `wo.work_order.read`, `sal.finance.view`. The page
+  gate is a second check, not the authority — the backend checks the same three codes in the selected
+  branch and that check is unchanged.
+- **The verdict is rendered, never composed.** `readyToStartDelivery` is taken as the server gave it.
+  An empty blocker list is not read as readiness — a vehicle already handed over produces exactly
+  that — a check that could not be read is drawn differently from a check that failed, and no control
+  asks the server to filter by readiness, because the route publishes no such parameter.
+- **Scope is chosen from named directory options**, not typed: the existing `/org/companies` and
+  `/org/branches` reads supply the pair, their own permissions still apply, a directory refusal is
+  shown as a refusal with no raw-identifier fallback, and the server adapter re-reads membership and
+  the company/branch relationship before issuing a queue read.
+- **The queue is its own module** — `readiness-contract.ts` and `readiness-api.ts`, separate from the
+  delivery-record contract — which is what let the execution half (#362) and this half proceed
+  without standing on each other.
+- **Copy is in English and Arabic** for the selectors, the verdict, the unreadable check and the
+  paging notice, and the reasons read in Arabic as Arabic.
+
+## What this slice did not do, and what is not claimed
+
+- No backend file changed: no route, service, repository, migration, seed, permission, audit action
+  or operation. The one CI edit names the readiness operation in the P1-31 access gate, which widens
+  what that gate judges and suppresses nothing.
+- The screen creates no delivery, employee, receiver, signature or checklist result. It reads, and it
+  links to the pages that write.
+- An operator without `sal.finance.view` is refused the whole queue and no reduced view is offered.
+  That consequence is recorded as **CC-30**; the remedy is an administrator granting the code.
+- No database tier, no hosted check, no browser acceptance and no merge result is claimed here.
