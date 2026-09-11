@@ -106,6 +106,18 @@ export const P1_31_OPERATION_IDS = Object.freeze([
   // These two DO widen the segment set, unlike the two above.
   'wty.warranty-policy-list',
   'wty.warranty-policy-read',
+  // The five policy and coverage WRITES P-10 published, added with the plan
+  // administration screens that reach them. None of them widens the segment set —
+  // every one is addressed under the `warranty-policies` root the two reads above
+  // already contributed — so naming them here is the only thing that makes them
+  // owned. An allow-list that omits an operation its own phase's screens call is an
+  // allow-list that has quietly stopped owning it, which is the failure mode this
+  // shape trades a namespace for.
+  'wty.warranty-policy-create',
+  'wty.warranty-policy-rename',
+  'wty.warranty-policy-status-set',
+  'wty.warranty-coverage-create',
+  'wty.warranty-coverage-status-set',
 ]);
 
 /**

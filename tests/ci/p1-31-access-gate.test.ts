@@ -120,9 +120,31 @@ describe('the derivation is P1-31’s own and is not empty', () => {
     // phase's screens call is an allow-list that has quietly stopped owning them.
     expect(P1_31_OPERATION_IDS).toContain(id('wty', 'warranty-detail'));
     expect(P1_31_OPERATION_IDS).toContain(id('wty', 'warranty-generate'));
+    // The plan administration screens call five WRITES, and every one of them is
+    // addressed under a resource root the two policy reads already contributed. So
+    // none of them widens the derived segment set, and being named here is the only
+    // thing that makes the gate own them. That is exactly the case an allow-list
+    // exists to cover and a namespace rule would miss.
+    for (const tail of [
+      'warranty-policy-create',
+      'warranty-policy-rename',
+      'warranty-policy-status-set',
+      'warranty-coverage-create',
+      'warranty-coverage-status-set',
+    ]) {
+      expect(P1_31_OPERATION_IDS, `${tail} is owned`).toContain(id('wty', tail));
+    }
     // A stale entry is a VIOLATION rather than a silent shrink, so an honest
     // derivation over the real register reports no problems at all.
     expect(deriveSegments().problems).toEqual([]);
+  });
+
+  it('owns the plan resource root the administration screens live under', () => {
+    // The five writes are owned WITHOUT widening the segment set, which is the
+    // claim above. Asserted from the other side: the root is derived, and it is
+    // derived from the reads as well, so removing a write leaves it in place while
+    // removing the reads would not.
+    expect(ownedSegments()).toContain(['warranty', 'policies'].join('-'));
   });
 
   it('reports a stale allow-list entry rather than skipping it', () => {
