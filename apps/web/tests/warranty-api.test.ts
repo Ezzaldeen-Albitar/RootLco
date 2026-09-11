@@ -12,7 +12,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * one filter the route accepts is sent when it is meant and omitted when it is not;
  * the page asked for stays inside the bound the route enforces; a refusal arrives as
  * a refusal rather than as an empty branch; the detail read names its warranty in the
- * path; the generation posts under the DELIVERY and carries a policy only when one was
+ * path; the plan list asks for the issuable state and asserts no scope of its own; the
+ * generation posts under the DELIVERY and carries a policy only when one was
  * chosen; it attaches no retry key of its own, because the transport owns that; and a
  * refusal carries the catalogue code the screen branches on.
  */
@@ -27,8 +28,9 @@ vi.mock('@/lib/api/server-client', () => ({
 }));
 
 const adapters = await import('@/features/warranty/warranty-api');
-const { generateWarranty, listBranches, listWarranties, readWarranty } = adapters;
-const { PAGE_SIZE } = await import('@/features/warranty/warranty-contract');
+const { generateWarranty, listBranches, listWarranties, listWarrantyPolicies, readWarranty } =
+  adapters;
+const { ISSUABLE_POLICY_STATUS, PAGE_SIZE } = await import('@/features/warranty/warranty-contract');
 
 const COMPANY_ID = '11111111-1111-4111-8111-111111111111';
 const BRANCH_ID = '22222222-2222-4222-8222-222222222222';
@@ -170,6 +172,82 @@ describe('the record read names its warranty in the path', () => {
     get.mockResolvedValue(ok({ items: [] }));
     await listBranches();
     expect(requested()).toBe('/api/v1/org/branches');
+  });
+});
+
+describe('the plans a warranty may be issued under', () => {
+  const emptyPolicies = { policies: { items: [], nextCursor: null, hasMore: false } };
+
+  it('reads the published plan list', async () => {
+    get.mockResolvedValue(ok(emptyPolicies));
+    await listWarrantyPolicies();
+    expect(new URL(requested(), 'https://test.local').pathname).toBe('/api/v1/warranty-policies');
+  });
+
+  it('asks for the state a warranty can actually be issued under', async () => {
+    // A plan that is not in use is refused by the generation, so offering one in a
+    // picker is offering a choice whose only outcome is a refusal.
+    get.mockResolvedValue(ok(emptyPolicies));
+    await listWarrantyPolicies({ status: ISSUABLE_POLICY_STATUS });
+    expect(new URL(requested(), 'https://test.local').searchParams.get('status')).toBe('active');
+  });
+
+  it('omits the state filter when none was asked for', async () => {
+    // The route treats an absent filter as "every plan", which is what a
+    // configuration reader wants. An empty value is not a missing one.
+    get.mockResolvedValue(ok(emptyPolicies));
+    await listWarrantyPolicies();
+    expect(requested()).not.toContain('status');
+  });
+
+  it('sends no scope of its own, and a page the route will accept', async () => {
+    get.mockResolvedValue(ok(emptyPolicies));
+    await listWarrantyPolicies();
+    const params = new URL(requested(), 'https://test.local').searchParams;
+    // The read is scoped server-side from the session; the route offers no company
+    // filter at all, so none is invented here.
+    expect(params.get('companyId')).toBeNull();
+    expect(Number(params.get('limit'))).toBe(PAGE_SIZE);
+    expect(Number(params.get('limit'))).toBeLessThanOrEqual(100);
+  });
+
+  it('passes a further page back exactly as the server minted it', async () => {
+    get.mockResolvedValue(ok(emptyPolicies));
+    await listWarrantyPolicies({ cursor: CURSOR });
+    expect(new URL(requested(), 'https://test.local').searchParams.get('cursor')).toBe(CURSOR);
+  });
+
+  it('sends no cursor on the first page', async () => {
+    get.mockResolvedValue(ok(emptyPolicies));
+    await listWarrantyPolicies();
+    expect(requested()).not.toContain('cursor');
+  });
+
+  it('carries the page the route published without flattening it', async () => {
+    // The body is `{ policies: { ... } }` and not a bare page. Flattening it here
+    // would disagree with the wire at the one place a disagreement is invisible.
+    get.mockResolvedValue(
+      ok({ policies: { items: [{ id: POLICY_ID }], nextCursor: null, hasMore: false } })
+    );
+    const state = await listWarrantyPolicies();
+    expect(state.status).toBe('ok');
+    expect(state.status === 'ok' && state.data.policies.items).toHaveLength(1);
+  });
+
+  it('reports a refused plan list as denied rather than as no plans at all', async () => {
+    // The difference the picker depends on: "you may not see these" hides the
+    // control and says so, while "there are none" would silently look the same.
+    get.mockResolvedValue(failure('forbidden'));
+    const state = await listWarrantyPolicies();
+    expect(state.status).toBe('denied');
+    expect(state.correlationId).toBe('corr-9');
+  });
+
+  it('reports an ended session without asking the transport at all', async () => {
+    authorizedClient.mockResolvedValue(null as unknown);
+    const state = await listWarrantyPolicies();
+    expect(state.status).toBe('expired');
+    expect(get).not.toHaveBeenCalled();
   });
 });
 

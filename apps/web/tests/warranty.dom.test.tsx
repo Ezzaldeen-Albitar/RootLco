@@ -34,11 +34,13 @@ const listWarranties = vi.fn();
 const readWarranty = vi.fn();
 const listBranches = vi.fn();
 const generateWarranty = vi.fn();
+const listWarrantyPolicies = vi.fn();
 vi.mock('@/features/warranty/warranty-api', () => ({
   listWarranties: (...args: unknown[]) => listWarranties(...args),
   readWarranty: (...args: unknown[]) => readWarranty(...args),
   listBranches: (...args: unknown[]) => listBranches(...args),
   generateWarranty: (...args: unknown[]) => generateWarranty(...args),
+  listWarrantyPolicies: (...args: unknown[]) => listWarrantyPolicies(...args),
 }));
 
 let PERMISSIONS: readonly string[] = [];
@@ -85,6 +87,19 @@ const policy = {
   policyCode: 'STANDARD-12',
   name: 'Standard cover',
   status: 'active',
+};
+
+/** One row of `wty.warranty-policy-list` — the four fields above plus the two it adds. */
+const policySummary = { ...policy, companyId: COMPANY_ID, recordVersion: 1 };
+
+/** A plan belonging to ANOTHER company the same caller can reach. */
+const otherCompanyPolicy = {
+  id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  policyCode: 'OTHER-24',
+  name: 'Other company cover',
+  status: 'active',
+  companyId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  recordVersion: 1,
 };
 
 const row = {
@@ -148,11 +163,39 @@ beforeEach(() => {
   readWarranty.mockReset();
   listBranches.mockReset();
   generateWarranty.mockReset();
+  listWarrantyPolicies.mockReset();
   listWarranties.mockResolvedValue(page([row]));
   readWarranty.mockResolvedValue({ status: 'ok', data: record, correlationId: 'corr-1' });
   listBranches.mockResolvedValue({ status: 'denied', correlationId: 'corr-9' });
   generateWarranty.mockResolvedValue({ status: 'success', created: record, attempt: 1 });
+  listWarrantyPolicies.mockResolvedValue({
+    status: 'ok',
+    data: { policies: { items: [policySummary], nextCursor: null, hasMore: false } },
+    correlationId: 'corr-1',
+  });
 });
+
+/** The panel under its own props, so each case names only what it varies. */
+function renderPanel(
+  props: {
+    readonly deliveryStatus?: string;
+    readonly canReadPolicies?: boolean;
+    readonly companyId?: string;
+  } = {}
+) {
+  return renderLtr(
+    <GenerateWarrantyPanel
+      locale="en"
+      messages={en as never}
+      deliveryId={DELIVERY_ID}
+      deliveryCompanyId={props.companyId ?? COMPANY_ID}
+      deliveryStatus={props.deliveryStatus ?? 'delivered'}
+      canReadPolicies={props.canReadPolicies ?? false}
+    />
+  );
+}
+
+const submit = () => screen.getByRole('button', { name: EN['warranty.generate.submit'] as string });
 
 async function renderListPage(search: Record<string, string> = {}) {
   const tree = await WarrantyListPage({
@@ -380,46 +423,20 @@ describe('the issue control is gated on the code its own operation declares', ()
    */
 
   it('is offered on a completed handover', () => {
-    renderLtr(
-      <GenerateWarrantyPanel
-        locale="en"
-        messages={en as never}
-        deliveryId={DELIVERY_ID}
-        deliveryStatus="delivered"
-      />
-    );
-    const button = screen.getByRole('button', { name: EN['warranty.generate.submit'] as string });
-    expect(button).toBeEnabled();
+    renderPanel();
+    expect(submit()).toBeEnabled();
   });
 
   it('is withheld while the vehicle has not been handed over', () => {
-    renderLtr(
-      <GenerateWarrantyPanel
-        locale="en"
-        messages={en as never}
-        deliveryId={DELIVERY_ID}
-        deliveryStatus="ready"
-      />
-    );
-    expect(
-      screen.getByRole('button', { name: EN['warranty.generate.submit'] as string })
-    ).toBeDisabled();
+    renderPanel({ deliveryStatus: 'ready' });
+    expect(submit()).toBeDisabled();
     expect(screen.getByText(EN['warranty.generate.notHandedOver'] as string)).toBeInTheDocument();
   });
 
   it('sends no warranty term of its own, and links to what it created', async () => {
     const user = userEvent.setup();
-    renderLtr(
-      <GenerateWarrantyPanel
-        locale="en"
-        messages={en as never}
-        deliveryId={DELIVERY_ID}
-        deliveryStatus="delivered"
-      />
-    );
-    await user.click(
-      screen.getByRole('button', { name: EN['warranty.generate.submit'] as string })
-    );
+    renderPanel();
+    await user.click(submit());
     await waitFor(() => expect(generateWarranty).toHaveBeenCalled());
     expect(generateWarranty.mock.calls[0]?.[0]).toBe(DELIVERY_ID);
     expect(generateWarranty.mock.calls[0]?.[1]).toEqual({});
@@ -437,17 +454,8 @@ describe('the issue control is gated on the code its own operation declares', ()
       attempt: 1,
     });
     const user = userEvent.setup();
-    renderLtr(
-      <GenerateWarrantyPanel
-        locale="en"
-        messages={en as never}
-        deliveryId={DELIVERY_ID}
-        deliveryStatus="delivered"
-      />
-    );
-    await user.click(
-      screen.getByRole('button', { name: EN['warranty.generate.submit'] as string })
-    );
+    renderPanel();
+    await user.click(submit());
     expect(
       await screen.findByText(EN['warranty.generate.refusedAlreadyCovered'] as string, {
         exact: false,
@@ -463,22 +471,185 @@ describe('the issue control is gated on the code its own operation declares', ()
       attempt: 1,
     });
     const user = userEvent.setup();
-    renderLtr(
-      <GenerateWarrantyPanel
-        locale="en"
-        messages={en as never}
-        deliveryId={DELIVERY_ID}
-        deliveryStatus="delivered"
-      />
-    );
-    await user.click(
-      screen.getByRole('button', { name: EN['warranty.generate.submit'] as string })
-    );
+    renderPanel();
+    await user.click(submit());
     expect(
       await screen.findByText(EN['warranty.generate.refusedNotConfigured'] as string, {
         exact: false,
       })
     ).toBeInTheDocument();
+  });
+
+  /*
+   * The remaining three codes the panel branches on. Each arrives as a bare kind —
+   * a validation failure, a denial, a conflict — and only the catalogue code tells
+   * them apart, so each needs its own case or the branch is untested and a wrong
+   * mapping would read as the shared "the action failed" sentence.
+   */
+
+  it('states an incomplete handover as the precondition it is', async () => {
+    generateWarranty.mockResolvedValue({
+      status: 'error',
+      code: 'ERR-TRN-001',
+      correlationId: 'corr-9',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderPanel();
+    await user.click(submit());
+    expect(
+      await screen.findByText(EN['warranty.generate.refusedPrecondition'] as string, {
+        exact: false,
+      })
+    ).toBeInTheDocument();
+  });
+
+  it('states a denial the BACKEND made in its own words, with the reference it logged', async () => {
+    generateWarranty.mockResolvedValue({
+      status: 'denied',
+      code: 'ERR-IAM-001',
+      correlationId: 'corr-9',
+      requiredPermissions: ['a.b.c'],
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderPanel();
+    await user.click(submit());
+    expect(
+      await screen.findByText(EN['warranty.generate.refusedDenied'] as string, { exact: false })
+    ).toBeInTheDocument();
+    expect(screen.getByText('corr-9')).toBeInTheDocument();
+  });
+
+  it('tells an operator a repeated request was already recorded, not that it failed', async () => {
+    generateWarranty.mockResolvedValue({
+      status: 'conflict',
+      code: 'ERR-INT-001',
+      correlationId: 'corr-9',
+      attempt: 2,
+    });
+    const user = userEvent.setup();
+    renderPanel();
+    await user.click(submit());
+    expect(
+      await screen.findByText(EN['warranty.generate.refusedAlreadyRecorded'] as string, {
+        exact: false,
+      })
+    ).toBeInTheDocument();
+    // The shared wording would send the operator to try again, which is the one
+    // thing they must not do with a request the backend has already recorded.
+    expect(screen.queryByText(EN['action.failed'] as string)).not.toBeInTheDocument();
+  });
+});
+
+describe('the warranty plan is picked from the published list, never typed', () => {
+  it('asks for no plan without the read code, and still submits', async () => {
+    // `wty.warranty.issue` does not imply `wty.warranty.read`. Without the read code
+    // nothing is asked for, and the form is still usable: an unnamed plan is what
+    // resolves the company's single active one.
+    const user = userEvent.setup();
+    renderPanel({ canReadPolicies: false });
+    await waitFor(() => expect(listWarrantyPolicies).not.toHaveBeenCalled());
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(
+      screen.getByText(EN['warranty.generate.policyNotOffered'] as string)
+    ).toBeInTheDocument();
+    await user.click(submit());
+    await waitFor(() => expect(generateWarranty).toHaveBeenCalled());
+    expect(generateWarranty.mock.calls[0]?.[1]).toEqual({});
+  });
+
+  it('offers the plans the list published, asking only for the issuable state', async () => {
+    renderPanel({ canReadPolicies: true });
+    const picker = await screen.findByRole('combobox', {
+      name: labelled('warranty.generate.policyField'),
+    });
+    expect(listWarrantyPolicies).toHaveBeenCalledWith({ status: 'active' });
+    // The plan is named, not referenced: an operator cannot discover an identifier.
+    expect(
+      screen.getByRole('option', { name: `${policy.policyCode} — ${policy.name}` })
+    ).toBeInTheDocument();
+    // Leaving it unchosen stays an explicit, named choice, because the route accepts
+    // a request that names no plan.
+    expect(
+      screen.getByRole('option', { name: EN['warranty.generate.policyPlaceholder'] as string })
+    ).toBeInTheDocument();
+    expect(picker).toHaveValue('');
+  });
+
+  it('sends the plan the operator chose', async () => {
+    const user = userEvent.setup();
+    renderPanel({ canReadPolicies: true });
+    const picker = await screen.findByRole('combobox', {
+      name: labelled('warranty.generate.policyField'),
+    });
+    await user.selectOptions(picker, policy.id);
+    await user.click(submit());
+    await waitFor(() => expect(generateWarranty).toHaveBeenCalled());
+    expect(generateWarranty.mock.calls[0]?.[1]).toEqual({ policyId: policy.id });
+  });
+
+  it('offers no plan belonging to another company', async () => {
+    // The read is tenant-wide and answers for every company the caller reaches. A plan
+    // from another company would be refused, so it is never offered.
+    listWarrantyPolicies.mockResolvedValue({
+      status: 'ok',
+      data: {
+        policies: { items: [policySummary, otherCompanyPolicy], nextCursor: null, hasMore: false },
+      },
+      correlationId: 'corr-1',
+    });
+    renderPanel({ canReadPolicies: true });
+    await screen.findByRole('option', { name: `${policy.policyCode} — ${policy.name}` });
+    expect(screen.queryByRole('option', { name: /Other company cover/ })).toBeNull();
+  });
+
+  it('hides the picker when the plan list is refused, and says so', async () => {
+    listWarrantyPolicies.mockResolvedValue({ status: 'denied', correlationId: 'corr-9' });
+    renderPanel({ canReadPolicies: true });
+    expect(
+      await screen.findByText(EN['warranty.generate.policiesRefused'] as string)
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).toBeNull();
+    // A refused list is not a blocked handover: the request that names no plan is
+    // still the one that resolves the company's single active plan.
+    expect(submit()).toBeEnabled();
+  });
+
+  it('draws no empty picker when the company has no active plan', async () => {
+    listWarrantyPolicies.mockResolvedValue({
+      status: 'ok',
+      data: { policies: { items: [], nextCursor: null, hasMore: false } },
+      correlationId: 'corr-1',
+    });
+    renderPanel({ canReadPolicies: true });
+    await waitFor(() => expect(listWarrantyPolicies).toHaveBeenCalled());
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(
+      await screen.findByText(EN['warranty.generate.policyNotOffered'] as string)
+    ).toBeInTheDocument();
+  });
+});
+
+describe('the record page draws every outcome its read can return', () => {
+  it('sends an ended session to sign in again rather than reporting a fault', async () => {
+    readWarranty.mockResolvedValue({ status: 'expired', correlationId: null });
+    await renderRecordPage();
+    expect(screen.getByText(EN['state.expired.title'] as string)).toBeInTheDocument();
+  });
+
+  it('states an unreachable backend as unavailable, with the reference it logged', async () => {
+    readWarranty.mockResolvedValue({ status: 'unavailable', correlationId: 'corr-9' });
+    await renderRecordPage();
+    expect(screen.getByText(EN['state.unavailable.title'] as string)).toBeInTheDocument();
+    expect(screen.getByText('corr-9')).toBeInTheDocument();
+  });
+
+  it('falls back to the shared failure wording for anything else', async () => {
+    readWarranty.mockResolvedValue({ status: 'error', correlationId: 'corr-9' });
+    await renderRecordPage();
+    expect(screen.getByText(EN['state.error.title'] as string)).toBeInTheDocument();
+    expect(screen.getByText('corr-9')).toBeInTheDocument();
   });
 });
 

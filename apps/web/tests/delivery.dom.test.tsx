@@ -82,11 +82,17 @@ vi.mock('@/features/delivery/signature-capture', () => ({
  * exercised for real in `warranty.dom.test.tsx`.
  */
 const generateWarranty = vi.fn();
+const listWarrantyPolicies = vi.fn(async () => ({
+  status: 'ok' as const,
+  data: { policies: { items: [], nextCursor: null, hasMore: false } },
+  correlationId: 'corr-1',
+}));
 vi.mock('@/features/warranty/warranty-api', () => ({
   generateWarranty: (...args: unknown[]) => generateWarranty(...args),
   listWarranties: vi.fn(),
   listBranches: vi.fn(),
   readWarranty: vi.fn(),
+  listWarrantyPolicies: () => listWarrantyPolicies(),
 }));
 
 const searchCustomerDirectory = vi.fn();
@@ -1323,5 +1329,18 @@ describe('the warranty control follows the code its own operation declares', () 
     expect(
       screen.getByRole('button', { name: EN['warranty.generate.submit'] as string })
     ).toBeEnabled();
+  });
+
+  it('asks for no warranty plan without the warranty READ code', async () => {
+    // Issuing and reading are two codes. A caller holding only the issue code gets
+    // the control and no plan list is requested, because the answer could only be a
+    // refusal — and the request that names no plan is still the one that works.
+    renderScreen({ canIssueWarranty: true });
+    await waitFor(() => expect(listWarrantyPolicies).not.toHaveBeenCalled());
+  });
+
+  it('asks for the plans when the caller holds the warranty read code', async () => {
+    renderScreen({ canIssueWarranty: true, canReadWarrantyPolicies: true });
+    await waitFor(() => expect(listWarrantyPolicies).toHaveBeenCalled());
   });
 });
