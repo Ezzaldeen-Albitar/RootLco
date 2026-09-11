@@ -6,6 +6,7 @@ import { formatDateTime } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
+import { GenerateWarrantyPanel } from '@/features/warranty/components/GenerateWarrantyPanel';
 import type { DeliveryRecord } from '../delivery-contract';
 import { ChecklistResultsPanel } from './ChecklistResultsPanel';
 import { StatusLabel } from './CodeLabel';
@@ -70,6 +71,7 @@ export function DeliveryDetailScreen({
   canReadFinance,
   canComplete,
   canManage = false,
+  canIssueWarranty = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -79,6 +81,16 @@ export function DeliveryDetailScreen({
   readonly canComplete: boolean;
   /** Whether the caller holds the write code the preparation acts declare. */
   readonly canManage?: boolean;
+  /**
+   * Whether the caller holds `wty.warranty.issue`.
+   *
+   * A fourth capability rather than a fold into `canComplete`, for the same reason
+   * the other three are separate: issuing a warranty is the code `wty.warranty-generate`
+   * declares, and releasing a vehicle is not. Resolving each control against the code
+   * ITS OWN operation declares is what stops a screen offering a button whose only
+   * outcome is a denial.
+   */
+  readonly canIssueWarranty?: boolean;
 }) {
   const [revision, setRevision] = useState(0);
   const refresh = useCallback(() => setRevision((previous) => previous + 1), []);
@@ -185,6 +197,21 @@ export function DeliveryDetailScreen({
           state={eligibility.state}
           withheld={eligibility.withheld}
           onDone={refresh}
+        />
+      ) : null}
+
+      {/*
+        The warranty control is drawn only for a caller holding the code the
+        generation declares. It is placed after the release because that is the
+        order of the acts: a warranty is dated from the handover, and the database
+        refuses to issue one against a handover that has not completed.
+      */}
+      {canIssueWarranty ? (
+        <GenerateWarrantyPanel
+          locale={locale}
+          messages={messages}
+          deliveryId={delivery.id}
+          deliveryStatus={delivery.status}
         />
       ) : null}
 

@@ -13,6 +13,7 @@ import { holds } from '@/features/crm/permissions';
 import { readDelivery } from '@/features/delivery/api';
 import { DeliveryDetailScreen } from '@/features/delivery/components/DeliveryDetailScreen';
 import { DELIVERY_PERMISSIONS } from '@/features/delivery/delivery-contract';
+import { WARRANTY_PERMISSIONS } from '@/features/warranty/warranty-contract';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 import { pageMetadata } from '@/lib/page-metadata';
@@ -53,7 +54,12 @@ import { pageMetadata } from '@/lib/page-metadata';
  * declares is what stops a screen offering a button whose only outcome is a
  * denial.
  *
- * **All three are affordances, never enforcement.** Every read and every write is
+ * `wty.warranty.issue` is the fourth, added with FE-008. It is the code
+ * `wty.warranty-generate` declares and it is neither of the delivery write codes, so
+ * it is resolved on its own: a caller who may release a vehicle does not necessarily
+ * have the authority to issue the warranty that follows it.
+ *
+ * **All four are affordances, never enforcement.** Every read and every write is
  * decided again by the backend against the actual record.
  */
 export default async function DeliveryDetailPage({
@@ -154,6 +160,7 @@ export default async function DeliveryDetailPage({
       canReadFinance={holds(session.permissions, DELIVERY_PERMISSIONS.financeView)}
       canComplete={holds(session.permissions, DELIVERY_PERMISSIONS.complete)}
       canManage={holds(session.permissions, DELIVERY_PERMISSIONS.manage)}
+      canIssueWarranty={holds(session.permissions, WARRANTY_PERMISSIONS.issue)}
     />
   );
 }
