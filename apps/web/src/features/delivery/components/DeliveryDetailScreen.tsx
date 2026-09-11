@@ -10,6 +10,7 @@ import type { DeliveryRecord } from '../delivery-contract';
 import { ChecklistResultsPanel } from './ChecklistResultsPanel';
 import { StatusLabel } from './CodeLabel';
 import { CompletionPanel } from './CompletionPanel';
+import { DeliveryDocumentPanel } from './DeliveryDocumentPanel';
 import { EligibilityPanel } from './EligibilityPanel';
 import { Fact, Panel, Reference } from './PanelShell';
 import { ReceiverPanel } from './ReceiverPanel';
@@ -70,6 +71,7 @@ export function DeliveryDetailScreen({
   canReadFinance,
   canComplete,
   canManage = false,
+  canReadWorkOrder = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -79,6 +81,15 @@ export function DeliveryDetailScreen({
   readonly canComplete: boolean;
   /** Whether the caller holds the write code the preparation acts declare. */
   readonly canManage?: boolean;
+  /**
+   * Whether the caller holds the code the work-order read declares.
+   *
+   * Consulted by the printable sheet alone. It is the only read reachable from
+   * this screen that resolves a customer name, a registration plate or a
+   * work-order number, and a caller without the code is not asked to spend a
+   * request discovering that.
+   */
+  readonly canReadWorkOrder?: boolean;
 }) {
   const [revision, setRevision] = useState(0);
   const refresh = useCallback(() => setRevision((previous) => previous + 1), []);
@@ -192,6 +203,22 @@ export function DeliveryDetailScreen({
         locale={locale}
         messages={messages}
         deliveryId={delivery.id}
+        revision={revision}
+      />
+
+      {/*
+        The printable sheet (FE-007). It is drawn for every caller this screen
+        renders for — the route already required the delivery code to get here —
+        and it composes itself from the reads that caller holds: the release
+        checks are reused from above rather than read again, and the work order
+        is read only by a caller who holds the code that read declares.
+      */}
+      <DeliveryDocumentPanel
+        locale={locale}
+        messages={messages}
+        delivery={delivery}
+        eligibility={eligibility}
+        canReadWorkOrder={canReadWorkOrder}
         revision={revision}
       />
     </div>

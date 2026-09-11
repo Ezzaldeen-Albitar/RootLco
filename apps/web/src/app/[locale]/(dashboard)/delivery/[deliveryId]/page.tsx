@@ -13,6 +13,7 @@ import { holds } from '@/features/crm/permissions';
 import { readDelivery } from '@/features/delivery/api';
 import { DeliveryDetailScreen } from '@/features/delivery/components/DeliveryDetailScreen';
 import { DELIVERY_PERMISSIONS } from '@/features/delivery/delivery-contract';
+import { WORK_ORDER_PERMISSIONS } from '@/features/work-orders/work-orders-contract';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 import { pageMetadata } from '@/lib/page-metadata';
@@ -53,7 +54,14 @@ import { pageMetadata } from '@/lib/page-metadata';
  * declares is what stops a screen offering a button whose only outcome is a
  * denial.
  *
- * **All three are affordances, never enforcement.** Every read and every write is
+ * `wo.work_order.read` is the fourth, and it is consulted for the printable
+ * handover sheet alone (FE-007). The work-order read is the only read reachable
+ * from this screen that resolves a customer name, a registration plate or a
+ * work-order number; without the code it is not asked, and the sheet prints the
+ * identifiers the delivery record carries instead. It does not gate the page,
+ * because a handover is readable without it.
+ *
+ * **All four are affordances, never enforcement.** Every read and every write is
  * decided again by the backend against the actual record.
  */
 export default async function DeliveryDetailPage({
@@ -154,6 +162,7 @@ export default async function DeliveryDetailPage({
       canReadFinance={holds(session.permissions, DELIVERY_PERMISSIONS.financeView)}
       canComplete={holds(session.permissions, DELIVERY_PERMISSIONS.complete)}
       canManage={holds(session.permissions, DELIVERY_PERMISSIONS.manage)}
+      canReadWorkOrder={holds(session.permissions, WORK_ORDER_PERMISSIONS.read)}
     />
   );
 }
