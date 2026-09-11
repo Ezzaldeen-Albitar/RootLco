@@ -96,6 +96,22 @@ export interface WorkOrderListFilter {
    * an oracle for another tenant's customer list.
    */
   readonly customerId?: string | undefined;
+  /**
+   * Narrows to a SET of catalog state codes (P1-31 D-3).
+   *
+   * Beside `state` rather than replacing it: `state` is the board's single-value
+   * filter and is a caller-supplied code, while this one is resolved by the
+   * service from `wo.work_order_states` and is never read from a request. The two
+   * AND together, which is well defined — a caller naming `state=closed` while the
+   * service resolved `['closed']` gets the same page either way.
+   *
+   * An EMPTY array matches nothing, deliberately. The readiness queue resolves the
+   * closed-and-not-cancellation codes from the live catalog, and a tenant whose
+   * catalog resolves none of them has no work order that can be handed over — so
+   * an empty page is the honest answer and `undefined` (meaning "no predicate")
+   * would silently widen it to every state.
+   */
+  readonly states?: readonly string[] | undefined;
 }
 
 export interface JobRow {
@@ -520,6 +536,7 @@ export class WorkOrderRepository extends Repository {
       filter.openedFrom ?? null,
       filter.openedTo ?? null,
       filter.customerId ?? null,
+      filter.states === undefined ? null : [...filter.states],
     ];
     const keyset = keysetFragment(
       page,
@@ -564,6 +581,11 @@ export class WorkOrderRepository extends Repository {
                    AND r.reception_visit_id = wo.work_orders.reception_visit_id
                    AND r.partner_id = $8
                    AND r.deleted_at IS NULL))
+          -- P1-31 D-3. The resolved state SET, applied in the query for the same
+          -- reason the customer predicate is: post-filtering a fetched page produces
+          -- short pages and a hasMore flag that lies. An EMPTY array matches nothing,
+          -- which is what a catalogue resolving no closed state must answer.
+          AND ($9::text[] IS NULL OR state = ANY($9::text[]))
           ${keyset.predicate}
         ${keyset.order}
         ${keyset.limitClause}`,

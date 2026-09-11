@@ -622,6 +622,51 @@ export class WorkOrderService extends ApplicationService {
     return { ...rows, items: await withPartyContext(db, rows.items) };
   }
 
+  /**
+   * One keyset page of the branch's CLOSED, non-cancelled work orders (P1-31 D-3).
+   *
+   * ## Why this port exists at all
+   *
+   * `wo.*` is private to this module (ADR-001 rule 3), and the delivery-readiness
+   * queue needs the set of work orders whose work is finished. `WorkOrderListFilter`
+   * carried a single `state` code and no closed/terminal predicate, so the caller's
+   * only options were to enumerate the tenant's state codes itself — which means
+   * resolving the platform/tenant catalog precedence in a second place — or to page
+   * every work order in the branch and discard most of them, which produces short
+   * pages and a `hasMore` that lies. Neither is acceptable, so the predicate lands
+   * here.
+   *
+   * ## Closed AND NOT a cancellation
+   *
+   * `is_closed` is the column that means "the work is finished", and it is TRUE for
+   * `cancelled` as well as `closed` — the platform graph sets
+   * `('cancelled', is_terminal, is_closed, is_cancellation) = (true, true, true)`.
+   * A queue built on `is_closed` alone would therefore offer every abandoned job for
+   * handover. `is_cancellation` is the column that separates them and both are read
+   * from the LIVE catalog rather than compared against a hardcoded state name,
+   * because `wo.work_order_states` is a table tenants may shadow — the same reason
+   * `detail` resolves its edges through the catalog service.
+   *
+   * A tenant whose catalog resolves no closed, non-cancellation state gets an empty
+   * page: the repository's `states` predicate matches nothing on an empty array.
+   *
+   * There is **no authorization here**. `companyId` and `branchId` are the caller's
+   * claim and the CALLER authorizes them before calling — the readiness service does
+   * so first thing, on the `listWarranties` precedent — because a list has no row to
+   * take a scope from and an empty page must not be able to report whether a branch
+   * exists.
+   */
+  async listClosedNonCancelled(
+    db: DbHandle,
+    filter: { readonly companyId: string; readonly branchId: string },
+    page: PageInput
+  ): Promise<Page<WorkOrderSummary>> {
+    const states = (await this.catalog.workOrderStates(db))
+      .filter((state) => state.isClosed && !state.isCancellation)
+      .map((state) => state.code);
+    return this.list(db, { ...filter, states }, page);
+  }
+
   /** The work order, its live jobs, and the edges it can currently take. */
   async detail(
     db: DbHandle,
