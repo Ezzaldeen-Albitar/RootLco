@@ -180,9 +180,12 @@ Every prerequisite this section named is answered, and none was answered by rela
 
 The columns are the Owner's five in the Owner's order, plus `source`, so an amended figure can be
 told from an original one. The period is half-open on `started_at` in the branch's timezone (D-17).
-The required permission is `tech.technician.read`; the disclosure that follows from naming only that
-one code is recorded as **CC-33**. The full record is
-[`report-engine-seam.md`](./report-engine-seam.md) § 11.
+The required permissions are `tech.technician.read` **and** `wo.work_order.read`, checked
+conjunctively: the report publishes a work-order reference, and a report is not a way to be told
+something the record's own read operation would refuse, so a caller lacking either code is refused
+the WHOLE report rather than served one with the reference column blanked. Both are existing
+catalogue rows and nothing was minted. That is recorded as **CC-33**, now closed by implementation.
+The full record is [`report-engine-seam.md`](./report-engine-seam.md) § 11.
 
 ---
 

@@ -101,6 +101,14 @@ const REPORT_CODE = 'technician_labor_time';
 
 const REPORT_READ = 'rpt.report.read';
 const TECHNICIAN_READ = 'tech.technician.read';
+/**
+ * The SECOND declared code of this dataset.
+ *
+ * The report publishes a work-order reference per row, so it declares the
+ * work-order module's own read code beside the technician one and the check is
+ * conjunctive. The suite exercises both directions of that below.
+ */
+const WORK_ORDER_READ = 'wo.work_order.read';
 const USER_READ = 'iam.user.read';
 /** Widens RLS reach without widening authority. Deliberately not a technician code. */
 const REACH_ONLY = 'org.tenant.read';
@@ -133,29 +141,50 @@ const HOUR = 60 * MINUTE;
 
 // ---- Principals -------------------------------------------------------------
 
-/** Both codes plus the directory capability, so technician NAMES resolve. */
+/** Every declared code plus the directory capability, so technician NAMES resolve. */
 const LABOR_FULL: Principal = {
   roleId: 'f1320000-0000-4000-8000-000000000101',
   userId: 'f1320000-0000-4000-8000-000000000102',
   subject: 'fx_p1_31_labor_full',
   tenantId: TENANT_A,
-  permissions: [REPORT_READ, TECHNICIAN_READ, USER_READ],
+  permissions: [REPORT_READ, TECHNICIAN_READ, WORK_ORDER_READ, USER_READ],
 };
 
 /**
- * Both codes and NOT `iam.user.read`.
+ * Every declared code and NOT `iam.user.read`.
  *
  * The label counterfactual. `resolveDisplayIdentities` narrows to an empty map for
  * a caller who may not read the directory, so this principal sees every row and
  * every group with a null label beside a real id — which is the behaviour, not a
- * gap.
+ * gap. `iam.user.read` is a directory CAPABILITY and not one of the dataset's
+ * declared codes, which is why its absence narrows a label instead of refusing
+ * the report.
  */
 const LABOR_NO_NAMES: Principal = {
   roleId: 'f1320000-0000-4000-8000-000000000111',
   userId: 'f1320000-0000-4000-8000-000000000112',
   subject: 'fx_p1_31_labor_no_names',
   tenantId: TENANT_A,
-  permissions: [REPORT_READ, TECHNICIAN_READ],
+  permissions: [REPORT_READ, TECHNICIAN_READ, WORK_ORDER_READ],
+};
+
+/**
+ * May run reports and read technician records; may NOT read work orders.
+ *
+ * The conjunctive counterfactual. This principal can see every labour row the
+ * report is built from — `tech.labor-session-list` would answer for it — and the
+ * only thing it cannot read is the work order each session was logged against.
+ * The report publishes that reference in a column, so the WHOLE report is refused
+ * rather than the column being blanked: a blanked reference inside a report is a
+ * report that reads as "no work order", which is a wrong answer and not an
+ * absent one.
+ */
+const LABOR_NO_WORK_ORDER: Principal = {
+  roleId: 'f1320000-0000-4000-8000-000000000171',
+  userId: 'f1320000-0000-4000-8000-000000000172',
+  subject: 'fx_p1_31_labor_no_wo',
+  tenantId: TENANT_A,
+  permissions: [REPORT_READ, TECHNICIAN_READ, USER_READ],
 };
 
 /** May run reports; may not read technician records. Refused by the SERVICE. */
@@ -189,7 +218,7 @@ const LABOR_SCOPED_L2: Principal = {
   userId: 'f1320000-0000-4000-8000-000000000142',
   subject: 'fx_p1_31_labor_scoped_l2',
   tenantId: TENANT_A,
-  permissions: [REPORT_READ, TECHNICIAN_READ, USER_READ],
+  permissions: [REPORT_READ, TECHNICIAN_READ, WORK_ORDER_READ, USER_READ],
   scope: { companyId: COMPANY_L, branchId: BRANCH_L2 },
   grantId: 'f1320000-0000-4000-8000-0000000001f1',
 };
@@ -200,12 +229,13 @@ const LABOR_TENANT_B: Principal = {
   userId: 'f1320000-0000-4000-8000-000000000152',
   subject: 'fx_p1_31_labor_tenant_b',
   tenantId: TENANT_B,
-  permissions: [REPORT_READ, TECHNICIAN_READ, USER_READ],
+  permissions: [REPORT_READ, TECHNICIAN_READ, WORK_ORDER_READ, USER_READ],
 };
 
 const PRINCIPALS: readonly Principal[] = [
   LABOR_FULL,
   LABOR_NO_NAMES,
+  LABOR_NO_WORK_ORDER,
   RPT_ONLY,
   TECH_ONLY,
   LABOR_SCOPED_L2,
@@ -1042,6 +1072,31 @@ describe('technician_labor_time — authorization', () => {
     expect(problem.requiredPermissions).toEqual([TECHNICIAN_READ]);
   });
 
+  it('refuses a caller who may read technician records but not the work orders they name', async () => {
+    authAs(LABOR_NO_WORK_ORDER);
+    const response = await report();
+    // The conjunctive check. Every code the dataset declares is evaluated, and the
+    // WHOLE report is refused on the first one missing — this caller could read
+    // every labour session through `tech.labor-session-list`, and would still be
+    // told the work-order ids and display numbers that carried labour in the
+    // branch if the report answered with the reference column blanked.
+    expect(response.status).toBe(403);
+    const problem = (await response.json()) as Problem;
+    expect(problem.code).toBe('ERR-IAM-001');
+    // The code NAMED is the missing one, not the whole declared list.
+    expect(problem.requiredPermissions).toEqual([WORK_ORDER_READ]);
+  });
+
+  it('answers the same caller once the work-order code is granted', async () => {
+    // The non-vacuity half of the case above: the refusal is about the ONE code
+    // and not about anything else this principal lacks. Granting it turns the same
+    // request into the same report the fully-granted caller sees.
+    authAs(LABOR_FULL);
+    const view = await body(await report());
+    expect(view.rows.items.length).toBeGreaterThan(0);
+    expect(view.rows.items.some((row) => cellValue(row, 'workOrder') !== null)).toBe(true);
+  });
+
   it('refuses a caller who may read technician records but may not run reports', async () => {
     authAs(TECH_ONLY);
     const response = await report();
@@ -1136,10 +1191,13 @@ describe('technician_labor_time — paging', () => {
 describe('the registry', () => {
   it('registers the dataset the Owner approved, with the permission it declares', async () => {
     expect([...REPORT_DATASET_CODES]).toContain(REPORT_CODE);
-    // The permission list is a LIST from this slice onward, and it is the code
-    // `tech.labor-session-list` already declares for the same rows.
+    // The permission list is a LIST from this slice onward, and it names one code
+    // per RECORD the report publishes: the labour sessions themselves under the
+    // code `tech.labor-session-list` already declares, and the work orders the
+    // reference column resolves to under the work-order module's own read code.
     expect([...REPORT_DATASETS.technician_labor_time.requiredPermissions]).toEqual([
       TECHNICIAN_READ,
+      WORK_ORDER_READ,
     ]);
     expect(REPORT_DATASETS.technician_labor_time.scope).toBe('branch');
     // The parameter schema is the shared period: two required calendar dates, and

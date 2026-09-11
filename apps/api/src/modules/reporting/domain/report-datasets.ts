@@ -112,9 +112,11 @@ export interface ReportDatasetDefinition {
    * total that silently under-reports, which is worse than a refusal.
    *
    * What a dataset PUTS in this list is a disclosure decision taken per dataset
-   * and recorded with it, not something this type can derive. `technician_labor_time`
-   * names one code and publishes a work-order reference under it; that choice, and
-   * what it exposes, is stated on the entry itself.
+   * and recorded with it, not something this type can derive. The rule the
+   * datasets below follow is that a COLUMN which publishes another module's
+   * record names that module's read code: `technician_labor_time` publishes a
+   * work-order reference, so it declares `wo.work_order.read` beside
+   * `tech.technician.read` and a caller must hold both.
    */
   readonly requiredPermissions: readonly string[];
   readonly parameterSchema: readonly ReportParameterDefinition[];
@@ -195,22 +197,33 @@ export const REPORT_DATASETS = Object.freeze({
    * empty "cancelled" bucket would read as a real zero, so the report shows no
    * such bucket and the seam record states the absence instead.
    *
-   * ## One permission code, and what it publishes
+   * ## TWO permission codes, one per record this report publishes
    *
    * `tech.technician.read` is the code `tech.labor-session-list` already declares
    * for the same rows — a session says who worked and for how long, which is
-   * employee-derived data. Stated so it is not discovered later: this report
-   * resolves each session's job to its WORK ORDER and publishes that reference,
-   * so a caller holding `rpt.report.read` and `tech.technician.read` and NOT
-   * `wo.work_order.read` learns the work-order ids and display numbers that
-   * carried labour in the branch. That is a disclosure decision, it is recorded in
-   * change control, and reversing it is one more code in the list below.
+   * employee-derived data.
+   *
+   * `wo.work_order.read` is beside it because this report resolves each session's
+   * job to its WORK ORDER and publishes that reference. Slice 2 shipped with the
+   * technician code alone and recorded the disclosure openly: a caller holding
+   * `rpt.report.read` and `tech.technician.read` and NOT `wo.work_order.read`
+   * would learn the work-order ids and display numbers that carried labour in the
+   * branch. That is the work-order module's record, read through a report, and a
+   * report is not a way to be told something the record's own read operation
+   * would refuse. So the list names both and the check is CONJUNCTIVE: the whole
+   * report is refused to a caller who lacks either, which is the same fail-closed
+   * shape the delivery readiness seam took when a read spanned two modules.
+   *
+   * This is not a broadening — no caller gains anything — and it is an
+   * Engineering consequence of the columns rather than an Owner decision: D-4
+   * names "work-order reference" as a column, and naming the column's own read
+   * code is what publishing it honestly costs.
    */
   technician_labor_time: Object.freeze({
     code: 'technician_labor_time',
     titleKey: 'reports.technician_labor_time.title',
     scope: 'branch',
-    requiredPermissions: Object.freeze(['tech.technician.read']),
+    requiredPermissions: Object.freeze(['tech.technician.read', 'wo.work_order.read']),
     parameterSchema: PERIOD_PARAMETERS,
     columns: Object.freeze([
       Object.freeze({

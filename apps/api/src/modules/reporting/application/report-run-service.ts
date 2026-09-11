@@ -28,7 +28,8 @@
  *    every active grant (P1-18-A-01).
  * 2. THIS service then evaluates EVERY code in the dataset's own
  *    `requiredPermissions` — `wo.work_order.read` for `work_orders_by_status`,
- *    `tech.technician.read` for `technician_labor_time` — against the same
+ *    `tech.technician.read` AND `wo.work_order.read` for
+ *    `technician_labor_time` — against the same
  *    company and branch, through `callerHoldsPermission`, which asks the same
  *    deployed `iam.has_permission_in_scope` every other check asks. A caller who
  *    may run reports but may not read the underlying rows is refused, and the

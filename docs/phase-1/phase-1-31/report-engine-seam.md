@@ -386,12 +386,19 @@ choice and not an Owner decision.
   disagree with the group.
 - **Seconds rather than hours.** Hours is a division and therefore a rounding decision nobody has
   taken; see § 9 row 8.
-- **One required permission, `tech.technician.read`** — the code `tech.labor-session-list` already
-  declares for the same rows. **Stated so it is not discovered later:** the report resolves each
-  session's job to its WORK ORDER and publishes that reference, so a caller holding
-  `rpt.report.read` and `tech.technician.read` and NOT `wo.work_order.read` learns which work orders
-  carried labour in the branch and their display numbers. Reversing that is one more code in
-  `requiredPermissions`. Recorded as **CC-33** for the Owner.
+- **Two required permissions, `tech.technician.read` AND `wo.work_order.read`.** The first is the
+  code `tech.labor-session-list` already declares for the same rows. The second is there because the
+  report resolves each session's job to its WORK ORDER and publishes that reference: without it, a
+  caller holding `rpt.report.read` and `tech.technician.read` alone would learn which work orders
+  carried labour in the branch and their display numbers, which is the work-order module's record
+  read through a report. **A report is not a way to be told something the record's own read
+  operation would refuse**, so the dataset names the column's own read code and the check is
+  CONJUNCTIVE — the whole report is refused to a caller who lacks either, on the same fail-closed
+  shape the delivery readiness seam took when one read spanned two modules. This is not a
+  broadening: no caller gains anything, and the only callers affected are those who could previously
+  see a reference they could not have read directly. It is an Engineering consequence of D-4's own
+  column list ("work-order reference") rather than an Owner decision. Recorded as **CC-33**, whose
+  disposition is now CLOSED by this change rather than left for the Owner.
 - **The technician's NAME comes from the iam directory** and is `null` for a caller without
   `iam.user.read`, with the profile id published beside it either way. A null label is a real
   state — "this caller may not be told who that is" — not a missing value, and nothing is invented
@@ -434,7 +441,9 @@ unchanged.
 ### 11.6 What slice 2 does NOT close
 
 - **No migration, no schema change, no seed row, no permission and no audit action.**
-  `tech.technician.read` is an existing catalogue row and no bundle moved.
+  `tech.technician.read` and `wo.work_order.read` are both existing catalogue rows and no bundle
+  moved. The dataset naming a second EXISTING code is a narrowing of what the report discloses, not
+  a new grant.
 - **No new operation and no new path.** `rpt.report-run` serves the dataset; the register stays at
   407 operations and 316 OpenAPI paths, and the committed contract document is byte-unchanged.
 - **No export.** Prerequisite P-12 is untouched and `rpt.export` stays excluded on CC-04's grounds.
