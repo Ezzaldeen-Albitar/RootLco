@@ -1427,20 +1427,29 @@ operations and 316 OpenAPI paths.
 
 ### 40.4 Proof
 
-**Measured facts (not part of the decision) — where these results come from.** Every row below was
-observed on 2026-09-10, at head `3cb65df9`, against a DISPOSABLE LOCAL CLONE database,
-`p131_report_controls_20260910` on `127.0.0.1:55432`. The controlled runs were:
+**Measured facts (not part of the decision) — where these results come from.** The runs below were
+observed on 2026-09-11 at head `b14818ce`, which is the executable tree of this branch after the
+`01c32937` sync; the two commits that follow it change records only. Every database-bound run used
+a DISPOSABLE LOCAL CLONE, `p131_report_controls_20260910` on `127.0.0.1:55432`, carrying 139
+migrations on PostgreSQL 17.10, with the connection stated in the environment of each command:
 
-| run                                                      | result               |
-| -------------------------------------------------------- | -------------------- |
-| `tests/backend/p1-31-report-engine-work-orders.test.ts`  | 29/29                |
-| `tests/backend/p1-31-report-configuration-seam.test.ts`  | 29/29                |
-| `tests/unit/p1-31-report-configuration-controls.test.ts` | 23/23                |
-| `tests/ci` with `tests/openapi-contract.test.ts`         | 1990/1990            |
-| `npm run test:unit`                                      | 3300/3300, 122 files |
+| run                                                         | result                                          | database window (UTC) |
+| ----------------------------------------------------------- | ----------------------------------------------- | --------------------- |
+| `npm run test:backend` — the whole tier, on the clone       | 136 files, 2906/2906                            | 09:43:04 → 09:57:30   |
+| `tests/db/rpt-reporting.test.ts`, on the clone              | 3/3                                             | 09:57:47 → 09:57:51   |
+| `tests/backend/p1-23-reporting.test.ts` alone, on the clone | 13/13                                           | not timed separately  |
+| `npm run test:unit`, through the recorder                   | 3300/3300, 122 files                            | no database           |
+| the web tier, through the recorder                          | 3664/3664, 133 files                            | no database           |
+| `npm run verify:policies`                                   | exit 0                                          | no database           |
+| changed-file ownership, in both CI forms                    | CHECK → `p1-31-backend`, 43 files, 0 violations | no database           |
+
+The earlier observation of 2026-09-10 at `3cb65df9` — the engine suite 29/29, the configuration
+seam 29/29, the unit controls 23/23, `tests/ci` with the OpenAPI contract 1990/1990 — is superseded
+by the whole-tier run above, which contains all of them.
 
 **There was no hosted gate, no run against the shared database, and no merge.** PR #364's remote
-head `59be1698` carries no checks and no hosted result exists for `3cb65df9`. The seam record
+head `59be1698` carries no checks, it is behind this local branch, and no hosted result exists for
+`b14818ce` or for any commit after it. The seam record
 [`report-engine-seam.md`](./report-engine-seam.md) section 10 states the same runs in the same
 terms.
 

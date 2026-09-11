@@ -1,10 +1,12 @@
 # The report engine — P1-31 prerequisite P-11, slice 1 of 4
 
 **Status:** implemented on branch `remediation/p1-31-backend-report-engine-work-orders`,
-**UNMERGED** at `3cb65df9` · **Authority:** prerequisite **P-11** of
-[`a0-preflight.md`](./a0-preflight.md); Owner decision **D-4** of 2026-09-09 approved the baseline
-of four reports and their columns, and everything below about HOW that baseline is served is an
-engineering consequence rather than an Owner decision · **Baseline:** protected `develop` `249c6428`
+**UNMERGED**; executable tree at `b14818ce`, with records-only commits after it · **Authority:**
+prerequisite **P-11** of [`a0-preflight.md`](./a0-preflight.md); Owner decision **D-4** of
+2026-09-09 approved the baseline of four reports and their columns, and everything below about HOW
+that baseline is served is an engineering consequence rather than an Owner decision ·
+**Baseline:** protected `develop` `249c6428`, with protected `develop` `07193258` merged in on
+2026-09-10 and protected `develop` `01c32937` on 2026-09-11
 
 This slice makes one report runnable on this branch. It adds a dataset registry, one operation that
 executes a registered dataset, and `work_orders_by_status` implemented in the module that owns the
@@ -278,22 +280,29 @@ name instead of a bare id.
 
 ## 10. What this slice does NOT close
 
-**Measured facts (not part of the decision) — what was actually run, and where.** On 2026-09-10, at
-head `3cb65df9`, the following controlled runs were observed against a DISPOSABLE LOCAL CLONE
-database, `p131_report_controls_20260910` on `127.0.0.1:55432`:
+**Measured facts (not part of the decision) — what was actually run, and where.** On 2026-09-11, at
+head `b14818ce` — the executable tree of this branch after the `01c32937` sync, the commits after it
+being records only — the following controlled runs were observed. Every database-bound one used a
+DISPOSABLE LOCAL CLONE, `p131_report_controls_20260910` on `127.0.0.1:55432`, carrying 139
+migrations on PostgreSQL 17.10:
 
-| run                                                      | result               |
-| -------------------------------------------------------- | -------------------- |
-| `tests/backend/p1-31-report-engine-work-orders.test.ts`  | 29/29                |
-| `tests/backend/p1-31-report-configuration-seam.test.ts`  | 29/29                |
-| `tests/unit/p1-31-report-configuration-controls.test.ts` | 23/23                |
-| `tests/ci` with `tests/openapi-contract.test.ts`         | 1990/1990            |
-| `npm run test:unit`                                      | 3300/3300, 122 files |
+| run                                                         | result               | database window (UTC) |
+| ----------------------------------------------------------- | -------------------- | --------------------- |
+| `npm run test:backend` — the whole tier, on the clone       | 136 files, 2906/2906 | 09:43:04 → 09:57:30   |
+| `tests/db/rpt-reporting.test.ts`, on the clone              | 3/3                  | 09:57:47 → 09:57:51   |
+| `tests/backend/p1-23-reporting.test.ts` alone, on the clone | 13/13                | not timed separately  |
+| `npm run test:unit`, through the P1-27 recorder             | 3300/3300, 122 files | no database           |
+| the web tier, through the P1-27 recorder                    | 3664/3664, 133 files | no database           |
+
+The engine suite, the configuration seam and the unit controls were each observed at 29/29, 29/29
+and 23/23 on 2026-09-10 at `3cb65df9`; the whole-tier run above contains the two backend ones and
+the recorded unit tier contains the third.
 
 **There was no hosted gate, no run against the shared database, and no merge.** PR #364's remote
-head `59be1698` has no checks recorded, and no hosted result exists for `3cb65df9`. Final
-integration and shared-database evidence follow the coordinator's dependency and database ownership
-sequence. Change control section 40.4 states the same runs in the same terms.
+head `59be1698` has no checks recorded, it is behind this local branch, and no hosted result exists
+for `b14818ce` or for any commit after it. Final integration and shared-database evidence follow the
+coordinator's dependency and database ownership sequence. Change control section 40.4 states the
+same runs in the same terms.
 
 - **No migration and no schema change.** Every statement uses grants and policies that already
   existed; `rpt` is exactly as P1-11 left it.
