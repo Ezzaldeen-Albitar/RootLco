@@ -270,6 +270,7 @@ export const ROUTE_TEMPLATES = Object.freeze([
   '/report-configurations/{configurationId}/versions/{versionId}/publish',
   '/reports',
   '/reports/{reportCode}',
+  '/reports/{reportCode}/rows',
   '/rework-links/{reworkLinkId}',
   '/rework-links/{reworkLinkId}/cost',
   '/rework-links/{reworkLinkId}/sign-off',

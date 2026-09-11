@@ -507,7 +507,7 @@ describe('the coverage include lists are pinned, because they are the denominato
       typeScriptFilesUnder(pattern.slice(0, -'/**/*.ts'.length))
     );
     expect(files.filter((file) => file.endsWith('.d.ts'))).toEqual([]);
-    expect(files.length).toBe(278);
+    expect(files.length).toBe(283);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -530,7 +530,25 @@ describe('the coverage include lists are pinned, because they are the denominato
      * quietly narrowed. The baseline's percentage floors are untouched:
      * re-establishing them needs a hosted measurement run, which none of these
      * slices performed and none claims.
+     *
+     * 282 with the P1-31 report engine (P-11): five more files, and each one is a
+     * layer this slice needed rather than a file it chose to add —
+     * `modules/reporting/domain/report-datasets.ts` (the dataset registry, which
+     * must be database-free to satisfy boundary rule B5),
+     * `modules/reporting/application/report-run-service.ts` (the resolvers, which
+     * are I/O and therefore may not sit beside the registry),
+     * `modules/reporting/application/report-configuration-policy.ts` (the tenant
+     * restriction the engine reads before it runs, and the parameter vocabulary
+     * the version writer validates against, which is why one module owns both),
+     * `modules/work-order/application/work-order-report-port.ts` (the owning
+     * module answering for `wo.*`) and
+     * `modules/iam/data/branch-context-repository.ts` (the branch timezone the
+     * period is resolved in). The floors are untouched for the reason above.
+     *
+     * The 283 above is these 282 plus `server/openapi/document.ts`, which the
+     * include list admits and `exclude` then removes; the two numbers moving
+     * together by five is what says no file slipped in behind the exclusion.
      */
-    expect(instrumented.length).toBe(277);
+    expect(instrumented.length).toBe(282);
   });
 });
