@@ -1,10 +1,10 @@
 # P1-31 — the delivering-employee identity seam (P-17)
 
-What was published, why the table had to be new, and — separated explicitly, because the two were
+What was published, why the table had to be new, and — separated explicitly, because they were
 conflated in the first draft of this slice — which statements are **Owner decisions**, which are
-**engineering choices**, which are **recommendations pending Owner approval**, and which are
-**verified facts** measured by a suite. Plus the one operator act this slice creates and does not
-perform.
+**engineering consequences** of one, which are **engineering choices**, which are **recommendations
+pending Owner approval**, and which are **verified facts** measured by a suite. Plus the one
+operator act this slice creates and does not perform.
 
 |                              |                                                                                                                                                                    |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -46,9 +46,15 @@ measurement in the suite rather than a sentence in this document.
 > organisational assignment are **validated by the server**. Historical attribution is **preserved**.
 > This is **not** an HR module.
 
-Every one of those five clauses has a structure behind it:
+Those five clauses are the whole of the Owner's decision. Nothing under the sub-heading below is.
 
-| clause                      | structure                                                                                                                |
+### Engineering consequence (not an Owner decision)
+
+Each clause was implemented by a structure this lane chose. The clause on the left is the Owner's
+wording; the structure on the right is an engineering consequence of it rather than a second
+decision, and replacing a structure that still satisfies its clause needs no new Owner decision.
+
+| Owner clause                | engineering consequence — the structure that implements the clause                                                       |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | tenant-owned identity       | `org.employees`, RLS enabled and forced; READ tenant-wide, WRITE `tenant/company/branch`                                 |
 | distinct from the account   | `user_account_id` is **NULLABLE**                                                                                        |
@@ -60,22 +66,32 @@ Every one of those five clauses has a structure behind it:
 
 ## 2a. The Owner clarification of 2026-09-10, and what it changed
 
-Three statements, and each one is labelled below in the register of section 3 so that no reader has
-to guess whose decision it was.
+Three Owner statements. Each is separated below from the engineering consequence that implements
+it, and each is labelled again in the register of section 3, so that no reader has to guess whose
+decision it was.
 
 **OWNER DECISION.** An employee's **home branch must not become a restriction** against authorized
 work in another branch of the same tenant. A colleague sent to another site to hand a vehicle over
-is a normal day. So the reference from `sal.delivery_records` names `(tenant_id, id)` and nothing
-narrower, the eligibility trigger does not read the employee's company or branch at all, and the
-`employee_branch_mismatch` refusal that the first draft of this slice shipped was **removed with the
-rule it enforced**. `org.employees.branch_id` remains as the informational, transferable home
-branch.
+is a normal day.
 
-**OWNER DECISION.** A legacy `delivering_employee_id` that resolves to nobody is **left exactly as
-it is**. It is not replaced by the migrating actor, no person is fabricated for it, and the
-migration does not fail. It is recorded in `sal.delivery_legacy_identity_review` so the Owner can
-see which handovers carry an unresolved identity, and `delivering_employee_display_name` is
-`NULL` for it — which is what `NULL` means in that column and the only thing it means.
+**Engineering consequence (not an Owner decision).** The reference from `sal.delivery_records` names
+`(tenant_id, id)` and nothing narrower, the eligibility trigger does not read the employee's company
+or branch at all, and the `employee_branch_mismatch` refusal that the first draft of this slice
+shipped was removed with the rule it enforced. `org.employees.branch_id` remains as the
+informational, transferable home branch. The key shape, the trigger's read list and the removed
+refusal code are this lane's way of implementing the Owner's sentence; the Owner named none of
+them.
+
+**OWNER DECISION.** Legacy values are judged **one at a time**, and a `delivering_employee_id` that
+resolves to nobody is **left exactly as it is**. It is not replaced by the migrating actor, no
+person is fabricated for it, and the migration does not fail.
+
+**Engineering consequence (not an Owner decision).** The unresolved delivery is recorded in
+`sal.delivery_legacy_identity_review` so the Owner can see which handovers carry an unresolved
+identity, and `delivering_employee_display_name` is `NULL` for it — which is what `NULL` means in
+that column and the only thing it means. The review table, its name, its read-only grants and the
+NULL-snapshot semantics are this lane's design; the Owner asked only that nothing be replaced or
+fabricated and that the migration survive.
 
 **OWNER DECISION (already approved).** Employee identity is **independent of a login**. That is A-1
 below and it is not pending anything.
@@ -91,7 +107,9 @@ id gets.
 
 ## 3. The register: who decided what
 
-Four labels, used exactly as written. Nothing in this document is left for a reader to classify.
+Four labels in the register below, used exactly as written, and a fifth — **Engineering
+consequence (not an Owner decision)** — used outside the register wherever this document states a
+design element this lane chose. Nothing in this document is left for a reader to classify.
 
 | id      | statement                                                                                  | label                                                          | if it is answered the other way                                                                                                                                                                                                                                                           |
 | ------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -102,13 +120,24 @@ Four labels, used exactly as written. Nothing in this document is left for a rea
 | **A-5** | Administering an employee stays **branch-scoped**, while reading is tenant-wide            | **ENGINEERING CHOICE — recommendation pending Owner approval** | **Recommendation: keep the split.** Choosing a colleague is not the same authority as editing the roster; widening the write is a policy change, not a code change                                                                                                                        |
 | **A-6** | An unresolved legacy identity has **no resolution command** and stays listed for the Owner | **RECOMMENDATION PENDING OWNER APPROVAL**                      | **Recommendation: resolve a listed row through one Owner-approved operator command that names a real employee for it and then re-runs `VALIDATE CONSTRAINT`, never inside a migration.** Leaving it undecided keeps the key `NOT VALID` on every database that carries unresolved history |
 
-A-1 and A-2 are **approved** and are pending nothing. What remains open about branches is **A-5**,
-the policy that keeps the home branch informational only — reading tenant-wide while writing stays
-branch-scoped — and not the rule itself, which the Owner settled on 2026-09-10.
+A-1 and A-2 are **approved** and are pending nothing. The register therefore carries **four**
+pending recommendations, not three, and they are: **A-3** rows minted by the backfill stay
+`inactive`; **A-4** `employment_ref` stays optional, opaque and unique per tenant when present;
+**A-5** administering an employee stays branch-scoped while reading is tenant-wide; **A-6** an
+unresolved legacy identity has no resolution command and stays listed for the Owner. A-3, A-4 and
+A-5 are engineering choices the DDL has already committed to, each carrying a recommendation; A-6
+commits to nothing and ships no command, and is a recommendation only. What remains open about
+branches is **A-5**, the policy that keeps the home branch informational only — reading tenant-wide
+while writing stays branch-scoped — and not the rule itself, which the Owner settled on 2026-09-10.
 
-Every other statement in this document is either an **OWNER DECISION** quoted in section 2, or a
-**VERIFIED FACT** — a property a case in `tests/backend/p1-31-delivering-employee-seam.test.ts` or
-`tests/db/org-employees.test.ts` asserts, named where it is claimed.
+Every other statement in this document belongs to one of three classes, and the class is written
+where the statement is: an **OWNER DECISION** quoted in section 2 or section 2a; an **ENGINEERING
+CONSEQUENCE (not an Owner decision)** — a design element this lane chose in order to implement an
+Owner decision, which engineering may revisit without a new one; or a **VERIFIED FACT** — a property
+a case in `tests/backend/p1-31-delivering-employee-seam.test.ts` or `tests/db/org-employees.test.ts`
+asserts, named where it is claimed. Sections 4, 5 and 8 carry the middle label explicitly, because
+the read-versus-manage permission split, the bundle widening and the `NOT VALID` foreign key were
+each readable as Owner decisions in the first draft of this slice and none of the three is one.
 
 ## 4. The four operations
 
@@ -118,6 +147,11 @@ Every other statement in this document is either an **OWNER DECISION** quoted in
 | `org.employee-detail`     | `GET /org/employees/{employeeId}`         | `org.employee.read`   | `branch` | ETag carries `recordVersion`    |
 | `org.employee-create`     | `POST /org/employees`                     | `org.employee.manage` | `branch` | `201`, `Idempotency-Key`        |
 | `org.employee-status-set` | `POST /org/employees/{employeeId}/status` | `org.employee.manage` | `branch` | `If-Match` mandatory            |
+
+**Engineering consequence (not an Owner decision).** The four operations above, their two
+permission codes and the read-versus-manage split are this lane's design. The Owner decided that the
+reference and the organisational assignment are validated by the server; which codes guard the
+register, and where the line between reading and administering falls, the Owner did not say.
 
 The list and the detail take the **read** code and the two writes take the **manage** code, on the
 `org.department` precedent and for its stated reason: reusing the manage code for the list would
@@ -129,6 +163,10 @@ The create is the only one that trusts the request for its scope, because there 
 yet; the other three resolve the row first and re-decide against the row's own company and branch.
 
 ## 5. The permissions — two MINTED codes
+
+**Engineering consequence (not an Owner decision).** The two codes, their names, their risk classes
+and the widening of the provisioning bundle from 76 to 78 are this lane's design throughout. No part
+of the Owner decision names a permission code or a bundle.
 
 `org.employee.read` (risk `low`) and `org.employee.manage` (risk `medium`) are new rows in
 `supabase/seeds/04_iam_permission_catalog.sql`. Nothing in the catalogue could have been reused: the
@@ -193,8 +231,11 @@ delivery and is **informational** (A-2), which is why an id appearing in two bra
 ambiguous and no longer a reason to refuse. The `created_by` of the minted row is that same account,
 because there is no other honest actor to name.
 
-The foreign key is added **`NOT VALID`** and a `DO` block validates it **only when the review list
-is empty**. The consequences are exact and worth stating plainly:
+**Engineering consequence (not an Owner decision).** The foreign key is added **`NOT VALID`** and a
+`DO` block validates it **only when the review list is empty**. A `NOT VALID` key with conditional
+validation is this lane's way of satisfying the Owner's instruction that nothing be fabricated and
+that the migration not fail; the Owner named neither the constraint state nor the condition. The
+consequences are exact and worth stating plainly:
 
 - a fresh database, and any database whose history all resolves, ends with the key **fully
   validated** — every past row proved, every future row bound;
@@ -221,6 +262,12 @@ resolvable value mints a linked row and the key then validates; an unresolvable 
 untouched, appears in the review table, and the key lands `NOT VALID` while `VALIDATE` fails with
 `23503`. A transcription would have proved that a copy behaves.
 
+**Measured facts (not part of the decision).** The structural movement these two migrations cause —
+`structuralTotals`, `schemaHash` and `permissionCount` in
+`.github/ci-baselines/schema-baseline.json` — was measured on the local isolation clone described in
+section 9.2, while that file designates CI as the authority for those figures. The hosted
+`database-migration-replay` job must confirm them, and has **not yet been observed** doing so.
+
 ## 9. What was proved, where, and what is merely observed
 
 Three different kinds of statement were conflated in the first draft of this slice, and they are
@@ -240,9 +287,33 @@ recorded here so the number is not later mistaken for evidence.
 
 ### 9.2 CONTROLLED PROOF — the disposable clone
 
-Database `p131_employee_20260910` on `127.0.0.1:55432`, rebuilt from `p131_candidate` at **139**
-migrations and replayed forward. Unlike the observation, this environment carries legacy-shaped rows
-that the cases write themselves, so both branches of the backfill are exercised. Each obligation
+Unlike the observation, this environment carries legacy-shaped rows that the cases write
+themselves, so both branches of the backfill are exercised.
+
+**Measured facts (not part of the decision) — the run this section reports.** Executed on
+**2026-09-10** against the disposable clone `p131_employee_20260910`, rebuilt from the idle
+`p131_candidate` template at **139** migrations and replayed forward, served on `127.0.0.1:55432`
+by container `rootlco-p131-isolation-20260910`. What was run, and what it reported:
+
+| suite                                                               | result    | exit code |
+| ------------------------------------------------------------------- | --------- | --------- |
+| `tests/db/org-employees.test.ts`                                    | 23 / 23   | 0         |
+| `tests/db/org-security.test.ts` and `tests/db/no-fake-data.test.ts` | 12 / 12   | 0         |
+| `tests/backend/p1-31-delivering-employee-seam.test.ts`              | 31 / 31   | 0         |
+| the 13 backend files over the delivery and organisation surface     | 285 / 285 | 0         |
+
+Those four runs were taken at commit **244f868f**. Every commit after it changed only tests,
+documentation and comment text — including the wording of one `COMMENT ON TABLE` — and no table,
+column, constraint, trigger, policy, grant or application file, so the totals are reported at that
+head rather than at this one, and only a re-run would move them.
+
+**No run ledger entry exists for either the database or the backend tier.**
+`docs/phase-1/phase-1-27/evidence/local-run-ledger.json` records the `unit` and `web` tiers and
+nothing else, so the totals above are this document's own report of a local run rather than a
+recorded tier measurement. **No hosted result exists for any of it**: nothing in this section has
+been observed on CI.
+
+Each obligation
 below is cited by the **exact title** of the case that asserts it, so the claim is checkable against
 the file rather than against this table.
 
@@ -259,6 +330,14 @@ the file rather than against this table.
 claimed that the two files do not actually assert. Any obligation later found uncovered belongs
 here under this label rather than in the table above it.
 
+**Measured facts (not part of the decision) — the structural baseline.** The `structuralTotals`,
+`schemaHash` and `permissionCount` movements recorded for migrations 140 and 141 in
+`.github/ci-baselines/schema-baseline.json` were measured on that same local isolation clone. That
+file designates CI as the authority for them — it describes every value it holds as a claim the
+`database-migration-replay` job re-proves from an empty PostgreSQL 17 on every run — so the hosted
+replay must confirm them, and it has **not yet been observed** doing so. If it ever reports a
+different movement, the migrations are to be re-read rather than the baseline re-recorded.
+
 ### 9.3 CONSTRAINT-VALIDATION STATUS
 
 Stated precisely, because "the key is validated" is true of some databases and false of others:
@@ -270,8 +349,13 @@ Stated precisely, because "the key is validated" is true of some databases and f
   future row, proving no past one — **until the Owner resolves those rows**. The resolution path is
   **not yet decided**; it is A-6 in the register, a recommendation pending Owner approval, and this
   slice ships no command for it.
-- The hosted migration replay runs on an **empty** database, so it always ends validated. That is a
-  property of the replay environment and is **not** evidence about a populated one.
+- The hosted migration replay is **defined** to start from an empty database — the
+  `database-migration-replay` job in `.github/workflows/_reusable-database-assurance.yml` asserts
+  that the database holds zero application tables at line 235 and applies every migration from zero
+  at line 242 — so it is **expected** to end with the key validated. That is an expectation read
+  from the workflow definition and **not yet an observed result**; no hosted run of this slice has
+  been observed. Either way it would be a property of the replay environment and **not** evidence
+  about a populated one.
 
 ### 9.4 What the two suites prove besides
 
@@ -303,7 +387,8 @@ Stated precisely, because "the key is validated" is true of some databases and f
 - **No operation over `sal.delivery_legacy_identity_review`, and no resolution command.** The table
   is readable by a runtime or read-only connection and by nothing else; resolving an unresolved
   historical identity would have to say who decides the person, which is an Owner question this
-  slice does not answer. Reading the list needs no new code — it needs a decision about who may.
+  slice does not answer. Reading the list needs no new code — it needs a decision about who may. That
+  decision is **A-6**, one of the four recommendations the register leaves pending.
 - **No screen, and no web contract change.** `apps/web` changes only in the generated idempotency
   manifest. The delivery contract mirror still lacks `deliveringEmployeeDisplayName` and its
   docblock still says `deliveringEmployeeId` has no foreign key — false after this slice, and left
