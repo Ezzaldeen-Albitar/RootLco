@@ -974,7 +974,7 @@ describe('versions', () => {
     authAs(RPT_CONFIGURER);
 
     const firstResponse = await createVersion(authored.id, {
-      parameterSchema: { branchId: { type: 'uuid' }, from: { type: 'date' } },
+      parameterSchema: { filters: { branchId: { type: 'uuid' }, from: { type: 'date' } } },
     });
     expect(firstResponse.status).toBe(201);
     const first = await bodyOf<VersionBody>(firstResponse);
@@ -982,8 +982,7 @@ describe('versions', () => {
     expect(first.status).toBe('draft');
     expect(first.publishedAt).toBeNull();
     expect(first.parameterSchema).toEqual({
-      branchId: { type: 'uuid' },
-      from: { type: 'date' },
+      filters: { branchId: { type: 'uuid' }, from: { type: 'date' } },
     });
 
     // An omitted schema is the empty object the column already defaults to.
@@ -1023,11 +1022,96 @@ describe('versions', () => {
     expect(detail.versions).toEqual([]);
   });
 
+  it('accepts the whole implemented vocabulary, and the empty object beside it', async () => {
+    const authored = await authorConfiguration({ stem: 'vocab_ok' });
+    authAs(RPT_CONFIGURER);
+
+    const full = {
+      filters: {
+        companyId: { type: 'uuid' },
+        branchId: { type: 'uuid' },
+        from: { type: 'date' },
+        to: { type: 'date' },
+      },
+    };
+    const all = await createVersion(authored.id, { parameterSchema: full });
+    expect(all.status).toBe(201);
+    expect((await bodyOf<VersionBody>(all)).parameterSchema).toEqual(full);
+
+    // `{}` is the column's own default and must remain the permissive document,
+    // or a version created without a schema would forbid every run of its report.
+    const empty = await createVersion(authored.id, { parameterSchema: {} });
+    expect(empty.status).toBe(201);
+    expect((await bodyOf<VersionBody>(empty)).parameterSchema).toEqual({});
+  });
+
+  it('refuses a schema the report engine would refuse, and writes nothing', async () => {
+    const authored = await authorConfiguration({ stem: 'vocab_bad' });
+    authAs(RPT_CONFIGURER);
+
+    /*
+     * Each of these was accepted before the vocabulary was validated here, and
+     * each produces a definition the engine refuses on every run — a report an
+     * administrator could publish and nobody could then execute.
+     *
+     * The first is the shape the seam's own examples used: filter names at the
+     * TOP level rather than under `filters`.
+     */
+    const refused: readonly unknown[] = [
+      { branchId: { type: 'uuid' } },
+      { filters: { branchId: { type: 'uuid' } }, sort: 'asc' },
+      { filters: { state: { type: 'text' } } },
+      { filters: { from: { type: 'uuid' } } },
+      { filters: { branchId: { type: 'uuid', required: true } } },
+      { filters: { branchId: {} } },
+    ];
+    for (const parameterSchema of refused) {
+      const response = await createVersion(authored.id, { parameterSchema });
+      expect(response.status).toBe(422);
+      const refusal = await refusalOf(response);
+      expect(refusal.code).toBe('ERR-VAL-001');
+      expect(refusal.violations).toEqual([
+        { path: 'body.parameterSchema', rule: 'report_vocabulary' },
+      ]);
+    }
+
+    const detail = await bodyOf<DetailBody>(await readConfiguration(authored.id));
+    expect(detail.versions).toEqual([]);
+  });
+
+  it('refuses an empty filter allowlist under its own rule, naming the ambiguity', async () => {
+    const authored = await authorConfiguration({ stem: 'vocab_empty' });
+    authAs(RPT_CONFIGURER);
+
+    /*
+     * `{ filters: {} }` is well formed and the ENGINE honours it exactly: an
+     * allowlist permitting no filter. It is refused HERE because `{}` already
+     * says "no restriction", so nobody reaches for the empty allowlist to say
+     * that — they reach for it believing it says the same thing, and publishing
+     * it would instead narrow the report to nothing.
+     *
+     * It carries its OWN rule and not the vocabulary rule, because the document
+     * is not misunderstood; it is understood and rejected, and a caller told
+     * "unrecognised vocabulary" would look for a spelling mistake that is not
+     * there.
+     */
+    const response = await createVersion(authored.id, { parameterSchema: { filters: {} } });
+    expect(response.status).toBe(422);
+    const refusal = await refusalOf(response);
+    expect(refusal.code).toBe('ERR-VAL-001');
+    expect(refusal.violations).toEqual([
+      { path: 'body.parameterSchema', rule: 'empty_filter_allowlist' },
+    ]);
+
+    const detail = await bodyOf<DetailBody>(await readConfiguration(authored.id));
+    expect(detail.versions).toEqual([]);
+  });
+
   it('replays one version key into one version and one audit record', async () => {
     const authored = await authorConfiguration({ stem: 'version_replay' });
     authAs(RPT_CONFIGURER);
     const key = randomUUID();
-    const body = { parameterSchema: { branchId: { type: 'uuid' } } };
+    const body = { parameterSchema: { filters: { branchId: { type: 'uuid' } } } };
     const first = await createVersion(authored.id, body, key);
     expect(first.status).toBe(201);
     const created = await bodyOf<VersionBody>(first);
@@ -1049,7 +1133,9 @@ describe('publication', () => {
     const authored = await authorConfiguration({ stem: 'publish' });
     authAs(RPT_CONFIGURER);
     const draft = await bodyOf<VersionBody>(
-      await createVersion(authored.id, { parameterSchema: { branchId: { type: 'uuid' } } })
+      await createVersion(authored.id, {
+        parameterSchema: { filters: { branchId: { type: 'uuid' } } },
+      })
     );
 
     // The CONFIGURATION's counter is NOT the version's, and offering it is refused.
@@ -1139,7 +1225,9 @@ describe('the P1-23 catalogue reads what this seam writes', () => {
     authAs(RPT_CONFIGURER);
 
     const version = await bodyOf<VersionBody>(
-      await createVersion(live.id, { parameterSchema: { branchId: { type: 'uuid' } } })
+      await createVersion(live.id, {
+        parameterSchema: { filters: { branchId: { type: 'uuid' } } },
+      })
     );
     expect((await publishVersion(live.id, version.id, version.recordVersion)).status).toBe(200);
     expect((await setStatus(live.id, 'published', live.recordVersion)).status).toBe(200);

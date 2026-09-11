@@ -1,9 +1,10 @@
 # P1-31 — the printable delivery handover document (FE-007)
 
 **Date:** 2026-09-11 · **Branch:** `feature/p1-31-delivery-document` · **Base:** protected
-`develop` `01c32937c2d6f5f78f5757cb83c6fdf2995f1dad` · **Lane:** `p1-31-frontend` (web, docs,
-tests) · **Status:** implemented and **unmerged**. No pull request exists, no hosted run exists,
-and nothing here has been proved against a running environment.
+`develop` `c1b1a8cdd822e3e70667600a0309d36a7d6438c6` (merged in 2026-09-11; the slice was written
+against `01c32937c2d6f5f78f5757cb83c6fdf2995f1dad`) · **Lane:** `p1-31-frontend` (web, docs,
+tests) · **Status:** implemented and **unmerged**, open as pull request #368. This document records
+no hosted run, and nothing here has been proved against a running environment.
 
 This slice adds one control to the vehicle-handover screen: a printable sheet. It publishes no
 operation, changes no schema, adds no permission and writes nothing.
@@ -143,8 +144,8 @@ and no gate result is claimed that was not executed.
 
 ## 7. Status
 
-- **Implemented, unmerged.** Branch `feature/p1-31-delivery-document`. No pull request has been
-  opened and nothing has been pushed.
-- **No hosted result.** No acceptance, no browser pass, no environment.
+- **Implemented, unmerged.** Branch `feature/p1-31-delivery-document`, pushed and open as pull
+  request #368 against `develop`.
+- **No hosted result is recorded here.** No acceptance, no browser pass, no environment.
 - The task matrix records FE-007 as `implemented/unmerged` against this head, and
   [`a0-preflight.md`](./a0-preflight.md) carries the same statement in its readiness row.

@@ -53,6 +53,7 @@ import { JobAssignmentService } from './application/job-assignment-service';
 import { AdditionalWorkService } from './application/additional-work-service';
 import { JobBoardService } from './application/job-board-service';
 import { JobBoardRepository } from './data/job-board-repository';
+import { WorkOrderReportPort } from './application/work-order-report-port';
 
 export type {
   AssignInput,
@@ -62,6 +63,18 @@ export type {
   TechnicianQueueResult,
 } from './application/job-assignment-service';
 export type { AssignmentRow, LineRow, TechnicianQueueRow } from './data/work-order-repository';
+// P1-31 P-11: the reporting port's contract. The FILTER type is exported too,
+// because the reporting module constructs one — it is a value-shaped contract of
+// this module's surface, not a peek into its data layer.
+export type {
+  WorkOrderStatusSummaryFilter,
+  WorkOrderStatusSummaryRows,
+  WorkOrderStateCountRow,
+} from './data/work-order-repository';
+export type {
+  WorkOrderStateCount,
+  WorkOrderStatusSummary,
+} from './application/work-order-report-port';
 export type {
   AdditionalWorkDecisionResult,
   AdditionalWorkDetailView,
@@ -164,6 +177,10 @@ export const workOrderModule = composeModule({
       // graph `wo.work-order-detail` does, and two instances would be two caches
       // of one tenant's configuration.
       jobBoard: new JobBoardService(new JobBoardRepository(), catalog),
+      // P1-31 P-11. The port the REPORTING module consumes, and the only part of
+      // this module it can reach: one method, sharing the repository and the
+      // state catalogue above rather than constructing second copies of either.
+      reportPort: new WorkOrderReportPort(repository, catalog),
     };
   },
 });
