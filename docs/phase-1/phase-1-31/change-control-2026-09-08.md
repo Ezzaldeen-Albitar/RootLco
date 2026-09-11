@@ -1463,3 +1463,124 @@ terms.
 | **P11-7** | the shared vocabulary from both ends: `tests/unit/p1-31-report-configuration-controls.test.ts` pins `readReportParameterVocabulary` directly, including that a verdict of `unrecognised` and a denied run are the same answer on the same documents, and that no refusal quotes the submitted schema; `tests/backend/p1-31-report-configuration-seam.test.ts` proves the route accepts the whole four-filter allowlist and `{}`, refuses six documents the engine would refuse, refuses `{ filters: {} }` under its own rule, and writes no version in any refused case |
 | **P11-6** | `executable` in both limbs: true for the registered baseline, false for a PUBLISHED tenant row whose code the engine does not implement                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | **P11-8** | the P1-23 mutation re-target of **CC-27(c)**, measured rather than assumed: each new `from` string counted exactly once in its file, then each mutation applied BY HAND and `tests/backend/p1-23-reporting.test.ts` run alone — 13/13 green unmutated, the M7b mutant failing `never applies a configuration the tenant has not published` and the M8 mutant failing `claims executability only for a registered code`, both with an `AssertionError` and neither with a crash signature. The matrix script itself was not executed                                     |
+
+## 45. What P-11 changed — the report engine, dataset slice 2 (`technician_labor_time`) — PROVISIONAL
+
+**Slice:** `remediation/p1-31-backend-report-engine-datasets`, ownership profile `p1-31-backend`.
+**Baseline:** `remediation/p1-31-backend-report-engine-work-orders` at `c7fb9f9e` — PR #364's
+branch, which is itself UNMERGED. This slice is STACKED on it and inherits its unmerged state.
+
+**Identifier allocation — PROVISIONAL, checked 2026-09-11 against this branch's own base.** Section
+36.1 records the register's rule: identifiers are allocated when a finding is raised and are never
+renumbered to follow heading order. The rows below are what this lane can see from `c7fb9f9e`, which
+is behind protected `develop`; they were NOT read off the merged tree, and that is why both the
+heading and the identifier are provisional.
+
+| id                   | lane                                                     | state as this branch can see it                                        |
+| -------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------- |
+| **CC-27**, **CC-28** | the report engine, engine half (P-11 1/4, PR #364)       | this branch's base, section 40 — settled                               |
+| sections 41, 42      | the coordinator's standing allocation: P-17, then FE-001 | not written at this head                                               |
+| sections 43, 44      | unallocated as far as this lane can see                  | left free rather than taken, so nothing later has to renumber downward |
+| **CC-29 … CC-32**    | not allocated by this lane                               | reserved for the lanes between section 40 and this one                 |
+| **CC-33**            | this slice                                               | this branch, section 45 — **PROVISIONAL**                              |
+
+**Both the section number and the identifier must be re-checked against protected `develop` before
+this branch merges, and renumbered if either collides.** A register whose identifiers collide is
+worse than one that renumbers. Nothing in this section depends on the number being right.
+
+### 45.1 What was published, and what was minted
+
+| published                                                                             | minted  |
+| ------------------------------------------------------------------------------------- | ------- |
+| 1 dataset, 0 operations, 0 routes, 0 paths, 0 audit actions, 2 new module files       | nothing |
+| 2 module port methods (1 new port, 1 method on an existing one)                       | nothing |
+| register unchanged at **407** operations and **316** OpenAPI paths; audit actions 232 | nothing |
+| bundle unchanged                                                                      | nothing |
+
+**Measured facts (not part of the decision).**
+
+- **`technician_labor_time`** joins the dataset registry, which now holds exactly **two** entries. A
+  case asserts the exact list, so a third cannot arrive quietly.
+- **`tech.labor_sessions` has no status column and no cancelled state.** The soft delete and
+  `source = 'correction'` are its entire lifecycle
+  (`supabase/migrations/20260722099000_tech_labor_sessions.sql`). It also has no duration column, and
+  a session names a JOB rather than a work order.
+- **The committed OpenAPI document is byte-unchanged.** No operation, path, permission, audit
+  action, migration or seed row moved. `tech.technician.read` is an existing catalogue row.
+- **Two new source files** under `apps/api/src`: `server/db/period.ts` and
+  `modules/technician/application/labor-report-port.ts`. The instrumented-file denominator in
+  `tests/ci/baseline-integrity.test.ts` moves 282 → 284 with the admitted count 283 → 285. **The
+  coverage FLOORS are untouched**; re-establishing them needs a hosted measurement run, which this
+  slice did not perform and does not claim.
+- **The generated P1-24 operation register was regenerated** and lists the new suite against the
+  operations its text references. It was not hand-edited.
+- **The P1-27 evidence manifest was regenerated** (`npm run evidence:p1-27`) because two documents it
+  digests carry derived `tests/backend` file counts that a new test file moves, 136 → 137 and
+  145 → 146.
+
+### 45.2 Dispositions
+
+| id           | finding                                                                                                                             | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | owner / slice | status                    |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------- | ------------------------- |
+| **CC-33**    | this report publishes a WORK-ORDER reference to a caller who holds no work-order read code, and the decision is visible in the wire | **Measured facts (not part of the decision).** `technician_labor_time` declares one required code, `tech.technician.read` — the code `tech.labor-session-list` already declares for the same rows (`apps/api/src/app/api/v1/jobs/[jobId]/labor-sessions/route.ts`). That operation, however, answers for ONE job the caller already holds; this report enumerates a branch's sessions and names each one's work order and display number. So a caller holding `rpt.report.read` and `tech.technician.read` and NOT `wo.work_order.read` learns which work orders carried labour in the branch. The Owner's D-4 names "work-order reference" as a column of this report and does not state which permission it sits behind | **Engineering consequence (not an Owner decision), taken and implemented on this branch, which is unmerged.** One code, not two, on the reading that the work-order reference is the ATTRIBUTION of a labour row the caller is already entitled to read, rather than a second report about work orders. The alternative — adding `wo.work_order.read` to `requiredPermissions` — is ONE more string in `domain/report-datasets.ts` and is the reason that field became a conjunctive LIST in the same change. **Recorded for the Owner rather than presented as settled.** Stated in `report-engine-seam.md` § 11.3 and on the registry entry itself, so a reader of either finds it without reading this register | Owner         | open                      |
+| **CC-33(a)** | the `technician` column publishes a drill-through template for a client screen that does not exist                                  | `apps/web` has `technicians/me` and no per-technician route at this head; FE-012 is not started. Slice 1 set the precedent that `drillThrough` is a TEMPLATE the client resolves against its own route table, not a URL the API builds — `report-run-service.ts` says so in the type's own docblock — and slice 1 also left `customer` and `vehicle` without one although both have screens, so the repository carries no rule either way                                                                                                                                                                                                                                                                                 | **Engineering consequence, implemented.** The template is published as `/technicians/{id}`. A client without that route renders no link; nothing about the row depends on it, because the profile id travels in the cell. It is recorded as a named prerequisite (`report-engine-seam.md` § 9 row 7) so FE-012 inherits it rather than discovering it                                                                                                                                                                                                                                                                                                                                                              | this slice    | settled — recorded in § 9 |
+| **CC-33(b)** | the shared run envelope was changed, and `countsByState` — a field slice 1 published — is now deprecated rather than removed        | Slice 1 recorded the limitation in its own seam record as named prerequisite 2: `countsByState` is one dataset's grouping sitting on a shared envelope, and the reports after it group differently                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | **Closed on this branch.** `groups` carries every group of the whole selection with string-valued measures. `countsByState` is retained, marked deprecated, and DERIVED from `work_orders_by_status`'s own groups so the two cannot disagree; it is empty for every other dataset. It is NOT removed here: removing a published field in the same change that adds its replacement leaves a consumer no window in which both exist. Its removal is a named prerequisite (§ 9 row 5) and belongs with a check that nothing still reads it                                                                                                                                                                           | this slice    | settled                   |
+
+### 45.3 What this slice did NOT do
+
+- **No migration and no schema change.** Every statement uses grants and policies that already
+  existed; `tech` and `wo` are untouched.
+- **No permission was minted and no bundle changed.** `tech.technician.read` is an existing
+  catalogue row, and this is the first report to require it.
+- **No new operation, no new route and no new path.** `rpt.report-run` serves the dataset, and the
+  committed OpenAPI document is byte-unchanged.
+- **No export.** Prerequisite P-12 is untouched; `rpt.export` stays excluded on **CC-04**'s grounds
+  and a baseline still names no export permission.
+- **No frontend.** `apps/web/src` was not edited at all — not even through
+  `lib/api/idempotent-operations.ts`, because no published operation moved.
+- **The remaining two baseline reports are not implemented.** `inventory_movements` and
+  `invoice_payment_summary` are named prerequisites and nothing here narrows them.
+- **`WorkOrderRepository.statusSummary` was not redesigned.** Its period predicate now comes from
+  `server/db/period.ts` instead of being written in the method; the expression, the bind values and
+  their positions are unchanged, and engine slice 1's suite is what says the move changed nothing.
+- **No allow-list was widened and no gate was suppressed.** No `@ts-expect-error`, no
+  `eslint-disable`, no skipped or retried test. `scripts/check-operation-test-coverage.mjs` was NOT
+  edited: the new suite declares a `COVERAGE-EVIDENCE` block beside its assertions, and
+  `rpt.report-run`'s required evidence was already provided by slice 1's file, so the manifest
+  needed no change and adding one would have been an edit outside this lane's declared scope.
+- **The P1-23 and P1-24 mutation matrices were not run**, and no mutation was re-targeted: this
+  slice redefines no property either matrix attacks.
+
+### 45.4 Proof
+
+**Measured facts (not part of the decision) — where these results come from.** The runs below were
+observed on 2026-09-11 at this branch's head. Every database-bound run used a DISPOSABLE LOCAL
+CLONE, `p131_report_controls_20260910` on `127.0.0.1:55432`, carrying 139 migrations, with
+`DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` stated explicitly in the environment
+of each command and the environment printed before each one:
+
+| run                                                                                         | result                 | database window (UTC) |
+| ------------------------------------------------------------------------------------------- | ---------------------- | --------------------- |
+| `tests/backend/p1-31-report-engine-technician-labor.test.ts`, on the clone                  | 22/22                  | 12:54:35 → 12:54:46   |
+| the four reporting backend suites together, on the clone                                    | 4 files, 93/93         | 12:54:52 → 12:55:16   |
+| `tests/unit/p1-31-report-configuration-controls.test.ts` + `tests/openapi-contract.test.ts` | 27/27                  | no database           |
+| `npm run test:unit` (whole unit tier)                                                       | 3300/3300 in 122 files | no database           |
+| `tests/ci` (whole directory)                                                                | 1986/1986 in 68 files  | no database           |
+
+**There was no hosted gate, no run against the shared database, and no merge.** This branch has no
+remote head and no checks recorded, and its base PR #364 is itself unmerged. Final integration and
+shared-database evidence follow the coordinator's dependency and database ownership sequence, at
+this branch's own turn after #364 merges.
+
+| id        | what was shown                                                                                                                                                                                                                                                                                                          |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **S2-1**  | `tests/backend/p1-31-report-engine-technician-labor.test.ts` — the columns in the Owner's order and their kinds, the rows, the groups, the period, the authorization and the paging, on real sessions against real jobs on real work orders in a branch this suite owns                                                 |
+| **S2-2**  | the two permissions from BOTH sides: a principal holding `rpt.report.read` alone is refused naming `tech.technician.read` by the SERVICE, one holding `tech.technician.read` alone is refused naming `rpt.report.read` by the ROUTE                                                                                     |
+| **S2-3**  | the three contributing rules, each on its own fixture technician because the partial GiST EXCLUDE forbids them coexisting on one: a running session excluded, a soft-deleted session excluded, and a corrected session counted ONCE on its amended window — with the retired original proved still present in the table |
+| **S2-4**  | the half-open period in the BRANCH zone on FOUR instants: local midnight on the first included day is IN, one second earlier is OUT, one second before local midnight on the excluded day is IN, and that midnight itself is OUT                                                                                        |
+| **S2-5**  | the absence of a cancelled bucket proved against `information_schema`: `tech.labor_sessions` has no `status`, `state` or `cancelled_at` column, so there is nothing to exclude and nothing is shown                                                                                                                     |
+| **S2-6**  | the groups sum exactly — one technician's two sessions total the sum of the two durations the rows carry — and the groups are identical on both pages of a paged run, so they answer for the selection and not for the page                                                                                             |
+| **S2-7**  | the null technician label as a COUNTERFACTUAL: the same rows read by a principal without `iam.user.read` carry the same ids and no names, and nothing is invented or refused                                                                                                                                            |
+| **S2-8**  | branch isolation with RLS reach deliberately widened into the refused branch, so the refusal is the scoped permission evaluation and not an empty result set; and the sibling branch's own sessions are invisible to the reported branch                                                                                |
+| **S2-9**  | `countsByState` empty for this dataset and still correct for `work_orders_by_status`, derived from that dataset's groups — slice 1's suite is unchanged in that respect and still green                                                                                                                                 |
+| **S2-10** | the period helper changed nothing: `WorkOrderRepository.statusSummary` now composes it, and slice 1's boundary, counting and paging cases pass unmodified                                                                                                                                                               |

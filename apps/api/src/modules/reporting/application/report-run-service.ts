@@ -27,12 +27,12 @@
  *    `iam.has_permission`, and `app.branch_ids` is the permission-blind union of
  *    every active grant (P1-18-A-01).
  * 2. THIS service then evaluates EVERY code in the dataset's own
- *    `requiredPermissions` — `wo.work_order.read` for the only dataset
- *    registered today — against the same company and branch, through
- *    `callerHoldsPermission`, which asks the same deployed
- *    `iam.has_permission_in_scope` every other check asks. A caller who may run
- *    reports but may not read the underlying rows is refused, and the refusal is
- *    of the WHOLE report rather than of some of its columns.
+ *    `requiredPermissions` — `wo.work_order.read` for `work_orders_by_status`,
+ *    `tech.technician.read` for `technician_labor_time` — against the same
+ *    company and branch, through `callerHoldsPermission`, which asks the same
+ *    deployed `iam.has_permission_in_scope` every other check asks. A caller who
+ *    may run reports but may not read the underlying rows is refused, and the
+ *    refusal is of the WHOLE report rather than of some of its columns.
  * 3. An explicit tenant configuration must be published with a live published
  *    version. Its scope ceiling and understood filter allowlist are enforced
  *    before branch resolution or dataset reads. Unknown restrictions fail
@@ -94,6 +94,7 @@ import { callerHoldsPermission } from '@/server/auth/authorization';
 import type { DbHandle } from '@/server/db/transaction';
 import type { Page } from '@/server/db/pagination';
 import { iamOrganizationContext } from '@/modules/iam';
+import { technicianModule } from '@/modules/technician';
 import { workOrderModule } from '@/modules/work-order';
 import type { ReportCatalogueRepository } from '../data/report-catalogue-repository';
 import { assertReportConfiguration } from './report-configuration-policy';
@@ -388,6 +389,96 @@ const runWorkOrdersByStatus: ReportResolver = async (db, input) => {
 };
 
 /**
+ * `technician_labor_time` — engine slice 2 (D-4, D-17).
+ *
+ * ## Two ports, because two modules own the tables
+ *
+ * `tech.labor_sessions` is the technician module's and `wo.jobs` is the work-order
+ * module's, so the rows come from `technicianModule().reportPort` and the
+ * work-order each session belongs to comes from `workOrderModule().reportPort`.
+ * Neither query is written here. That is not ceremony: `tech.labor_sessions`
+ * carries `job_id` and no work-order column, so the only alternative was a join
+ * across a private schema, which ADR-001 rule 3 forbids and the boundary checker
+ * refuses.
+ *
+ * ## The second call is over the PAGE, deliberately
+ *
+ * The work-order references are resolved for the ids on the page and for nothing
+ * else, in ONE batched statement. The TOTALS do not need them — the report groups
+ * by technician, not by work order — so resolving them for the whole selection
+ * would read rows nobody displays.
+ *
+ * ## A missing reference renders as absent, never as a guess
+ *
+ * `workOrder` may be null when a session's job is outside the reported branch,
+ * which is a state the scoped resolution produces rather than an error. The cell
+ * carries null on both halves; nothing substitutes the job id for the work order
+ * id, because a client drilling through would then open the wrong record.
+ *
+ * ## Nothing is recomputed
+ *
+ * The duration arrives as an integer string computed in SQL, and it is placed in
+ * the cell unchanged. No subtraction, no division into hours, no `Number`: a
+ * duration that is divided once is a duration that carries a rounding error into
+ * every total built on it, and D-4 says this figure is a duration and not a
+ * derived measure of anything.
+ */
+const runTechnicianLaborTime: ReportResolver = async (db, input) => {
+  const report = await technicianModule().reportPort.laborTotals(
+    db,
+    {
+      companyId: input.companyId,
+      branchId: input.branchId,
+      from: input.from,
+      toExclusive: input.toExclusive,
+      timezoneName: input.timezoneName,
+    },
+    { cursor: input.cursor, limit: input.limit }
+  );
+  const references = await workOrderModule().reportPort.workOrdersForJobs(
+    db,
+    report.sessions.items.map((session) => session.jobId),
+    { companyId: input.companyId, branchId: input.branchId }
+  );
+  const byJob = new Map(references.map((entry) => [entry.jobId, entry]));
+
+  return {
+    groups: report.totals.map((total) => ({
+      key: { technician: total.technicianProfileId },
+      label: total.technicianName,
+      measures: { durationSeconds: total.durationSeconds },
+    })),
+    rows: {
+      ...report.sessions,
+      items: report.sessions.items.map((session) => {
+        const workOrder = byJob.get(session.jobId);
+        return {
+          cells: [
+            // Null label when this caller may not be told who the technician is.
+            // The profile id travels either way, so the row is never anonymous to
+            // a caller who can already resolve it elsewhere.
+            cell('technician', session.technicianName, session.technicianProfileId),
+            cell('branch', input.branchName, input.branchId),
+            cell('workOrder', workOrder?.label ?? null, workOrder?.workOrderId ?? null),
+            // The session's START instant, serialised UTC like every other
+            // published timestamp. Which DAY it falls on depends on the zone,
+            // which is why the envelope states the zone it resolved in.
+            cell('workLogDate', null, session.startedAt),
+            // Whole seconds. The column's `kind` is `duration`, which is how a
+            // client knows this string is not a count.
+            cell('duration', null, session.durationSeconds),
+            // The raw three-term vocabulary. No label, because the catalogue has
+            // none to give and an English word invented here would ship as though
+            // it were one.
+            cell('source', null, session.source),
+          ],
+        };
+      }),
+    },
+  };
+};
+
+/**
  * Code → resolver, TOTAL by construction.
  *
  * `Record<ReportDatasetCode, …>` over the registry's own key union: a dataset
@@ -398,6 +489,7 @@ const runWorkOrdersByStatus: ReportResolver = async (db, input) => {
  */
 const RESOLVERS: Readonly<Record<ReportDatasetCode, ReportResolver>> = Object.freeze({
   work_orders_by_status: runWorkOrdersByStatus,
+  technician_labor_time: runTechnicianLaborTime,
 });
 
 /**

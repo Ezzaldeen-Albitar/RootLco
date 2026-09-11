@@ -1,4 +1,4 @@
-# The report engine — P1-31 prerequisite P-11, slice 1 of 4
+# The report engine — P1-31 prerequisite P-11, slices 1 and 2 of 4
 
 **Status:** implemented on branch `remediation/p1-31-backend-report-engine-work-orders`,
 **UNMERGED**; executable tree at `b14818ce`, with records-only commits after it · **Authority:**
@@ -278,6 +278,20 @@ name instead of a bare id.
 | 3   | **Aggregate and batch ports for the other three reports.** Each needs its own port on its owning module, on the same rule this slice applied — the module that owns the tables answers for them                                                                                                                                                                                                                                        |
 | 4   | **Richer executable filter vocabulary.** On this branch the writer of PR #361 is integrated and validates against this engine's vocabulary through one shared function, so the drift is closed here and closes on `develop` only when this branch merges. What remains open is the vocabulary's SIZE: four filter names, because four is what the engine implements. A fifth is a change to the engine and to the shared list together |
 
+**Movement on this table, recorded by engine slice 2** (branch
+`remediation/p1-31-backend-report-engine-datasets`, stacked on the slice-1 branch and equally
+unmerged). Row 1 is unchanged. Rows 2 and 3 are addressed, and the rows below are what slice 2
+itself leaves for the two datasets after it:
+
+| #   | prerequisite                                                                                                                                                                                                                                                                                                                                                                               | state after slice 2                                                                                                                                                                                                                                                                      |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2   | `countsByState` on the shared envelope                                                                                                                                                                                                                                                                                                                                                     | **closed.** `groups` replaces it — group key, label and string-valued measures, computed over the whole selection. `countsByState` is retained, marked deprecated and DERIVED from `work_orders_by_status`'s own groups, so the two cannot disagree; it is empty for every other dataset |
+| 3   | Aggregate and batch ports for the other reports                                                                                                                                                                                                                                                                                                                                            | **closed for the technician report only.** `technicianModule().reportPort` and a second method on `workOrderModule().reportPort` (below). `inventory_movements` and `invoice_payment_summary` still owe theirs                                                                           |
+| 5   | **Retiring `countsByState`.** It is published, deprecated and correct. Removing a published field in the same change that adds its replacement leaves a consumer no window in which both exist, so the removal belongs to a later slice — and belongs with a check that no consumer still reads it                                                                                         | open, raised by slice 2                                                                                                                                                                                                                                                                  |
+| 6   | **A localised label for `source`.** `tech.labor_sessions.source` is a CHECK-constrained vocabulary (`manual`, `timer`, `correction`) and no catalogue carries a name for any of the three, so the report publishes the code and no label. The client renders it from an i18n key; an English word invented in the API would ship as though it were a catalogue value                       | open, raised by slice 2                                                                                                                                                                                                                                                                  |
+| 7   | **No technician detail screen consumes the `technician` drill-through.** The column publishes the route template `/technicians/{id}`, which the API states and the client resolves; `apps/web` has `technicians/me` and no per-technician route at this head. FE-012 is not started, so the template names a screen that does not yet exist and a client without it simply renders no link | open, raised by slice 2                                                                                                                                                                                                                                                                  |
+| 8   | **A duration is seconds, not hours.** Every `duration` cell and every `durationSeconds` measure is whole seconds as an integer string. Presenting hours is a DIVISION and therefore a rounding decision; nobody has taken it, and taking it in the API would make every total built on the figure carry the error                                                                          | open, raised by slice 2                                                                                                                                                                                                                                                                  |
+
 ## 10. What this slice does NOT close
 
 **Measured facts (not part of the decision) — what was actually run, and where.** On 2026-09-11, at
@@ -309,7 +323,8 @@ same runs in the same terms.
 - **No permission was minted and no seed changed.** `rpt.report.read` and `wo.work_order.read` are
   both existing catalogue rows, and this operation is the first thing to require them together.
 - **The other three baseline reports** the chapter declares are not implemented. The registry holds
-  exactly one entry and a test pins that, so the count cannot drift silently.
+  exactly one entry and a test pins that, so the count cannot drift silently. _(Sections 1-10 record
+  slice 1 as it stood. Slice 2 added `technician_labor_time` and moved the pin to two; see § 11.)_
 - **Export is untouched** (prerequisite P-12). `rpt.export` stays excluded on **CC-04**'s unchanged
   grounds, no export path is offered, and a baseline names no export permission at all.
 - **No frontend.** FE-011 … FE-016 are unreleased and `apps/web/src` was not edited except through
@@ -319,3 +334,111 @@ same runs in the same terms.
   not hold `rpt` operations to a mirror — `P1_30_DOMAINS` is `svc`, `quo`, `inv`, `sal` — and this
   is a GET with no body, so declaring a `PENDING` entry would be a claim about a gate that does not
   look here.
+
+---
+
+## 11. Engine slice 2 — `technician_labor_time`
+
+**Status:** implemented on `remediation/p1-31-backend-report-engine-datasets`, **stacked on the
+slice-1 branch and equally UNMERGED**; no hosted result exists for it. **Authority:** Owner
+decision **D-4** of 2026-09-09 for the columns and the contributing rule, Owner decision **D-17** of
+2026-09-10 for the period. Everything below headed _Engineering consequence_ is this coordinator's
+choice and not an Owner decision.
+
+### 11.1 The Owner's text, quoted
+
+> **`technician_labor_time`** — technician, branch, work-order reference, work-log date and the
+> recorded duration. The definition states which log states contribute; cancelled and deleted logs
+> are excluded. Recorded duration is duration, and the definition says so: it is not productivity
+> and it is not a payroll figure.
+> — [`owner-decisions-2026-09-09.md`](./owner-decisions-2026-09-09.md) § 3 (D-4)
+
+> Every report period is **half-open**, `[from, to)`, expressed in the **selected branch's
+> timezone** and converted consistently before it reaches a server query. … The **timezone and the
+> filter context are displayed and preserved** wherever the result is shown, printed or recorded.
+> — [`owner-decisions-2026-09-10.md`](./owner-decisions-2026-09-10.md) § 4 (D-17)
+
+### 11.2 Measured facts (not part of the decision)
+
+- `tech.labor_sessions` (`supabase/migrations/20260722099000_tech_labor_sessions.sql`) carries
+  `technician_profile_id`, `job_id`, `started_at`, a NULLABLE `ended_at`, `source` constrained to
+  `manual` / `timer` / `correction`, `correction_of_id`, and `deleted_at`.
+- **The table has no status column and no cancelled state.** The soft delete and
+  `source = 'correction'` are its entire lifecycle. So "cancelled logs are excluded" is satisfied by
+  there being nothing of that kind to exclude, and the report shows **no cancelled bucket**: an
+  empty one would read as a real zero for a concept that does not exist.
+- **There is no duration column.** `ck_labor_sessions_window` guarantees only
+  `ended_at IS NULL OR ended_at > started_at`.
+- **A session names a JOB, never a work order.** The work-order id lives on `wo.jobs`
+  (`20260722097000_wo_jobs.sql`), which is the work-order module's private schema.
+- `ex_labor_sessions_overlap` is a partial GiST EXCLUDE per technician over
+  `tstzrange(started_at, COALESCE(ended_at,'infinity'))`, so an open session overlaps everything
+  starting after it. That is why the suite gives each excluded case its own fixture technician.
+
+### 11.3 Engineering consequence (not an Owner decision)
+
+- **Contributing = `ended_at IS NOT NULL AND deleted_at IS NULL`.** An open session has no duration,
+  and running one to `now()` would make the same report over the same CLOSED period total
+  differently on every run. A corrected session is counted once, on its amended window.
+- **The duration is computed in SQL as whole seconds, carried as an integer string.**
+  `extract(epoch from (ended_at - started_at))::bigint::text`. No float is constructed anywhere, and
+  each technician's total is the SUM OF THE SAME per-row expression, so adding a page can never
+  disagree with the group.
+- **Seconds rather than hours.** Hours is a division and therefore a rounding decision nobody has
+  taken; see § 9 row 8.
+- **One required permission, `tech.technician.read`** — the code `tech.labor-session-list` already
+  declares for the same rows. **Stated so it is not discovered later:** the report resolves each
+  session's job to its WORK ORDER and publishes that reference, so a caller holding
+  `rpt.report.read` and `tech.technician.read` and NOT `wo.work_order.read` learns which work orders
+  carried labour in the branch and their display numbers. Reversing that is one more code in
+  `requiredPermissions`. Recorded as **CC-33** for the Owner.
+- **The technician's NAME comes from the iam directory** and is `null` for a caller without
+  `iam.user.read`, with the profile id published beside it either way. A null label is a real
+  state — "this caller may not be told who that is" — not a missing value, and nothing is invented
+  to fill it.
+- **Groups list only the technicians who contributed.** Unlike the work-order state counts there is
+  no zero row for a technician who logged nothing: a state is a catalogue entry and "none are
+  awaiting parts" is an answer, whereas a roster listed at zero would make this an attendance
+  record, which D-4 says it is not.
+- **Columns, in the Owner's order:** `technician` (reference, drill-through `/technicians/{id}`),
+  `branch` (text), `workOrder` (reference, drill-through `/work-orders/{id}`), `workLogDate` (date,
+  the session's START instant), `duration` (duration, seconds), and `source` (text) — added beside
+  the Owner's five because a reader who cannot see that a row is a correction cannot tell an amended
+  figure from an original one. Nothing else was added.
+- **The period predicate is on `started_at`**, through the shared helper, so the "work-log date" is
+  the day the work was STARTED in the branch's own zone. A session that begins one second before the
+  period closes is included and its end may fall outside the period; that is the half-open rule
+  applied to one column rather than to an interval, and choosing the start is what makes each
+  session belong to exactly one period.
+
+### 11.4 Ports added
+
+| port                                                | why it exists                                                                                                                                         |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `technicianModule().reportPort` (`LaborReportPort`) | `tech.*` is the technician module's private schema, so the selection, the totals and the name resolution live there and reporting asks for the answer |
+| `workOrderModule().reportPort.workOrdersForJobs`    | `tech.labor_sessions` carries a job id and `wo.jobs` is the work-order module's, so that module answers for it — the same rule in the other direction |
+
+Both are branch-scoped and batched over one page, and neither performs authorization: the dataset
+registry declares the codes and `ReportRunService` evaluates them, in one place.
+
+### 11.5 The shared engine changes this dataset required
+
+They are recorded in commit `P1-31-P-11-020` and in change control § 45: `groups` on the envelope
+with `countsByState` retained, deprecated and derived; the filter context and the branch on the
+envelope for D-17; `requiredPermissions` as a conjunctive list; three measure column kinds; and
+`apps/api/src/server/db/period.ts`, which holds the half-open local-day predicate ONCE because D-17
+requires the conversion to be consistent and a second copy is how two reports over one period stop
+adding up. `WorkOrderRepository.statusSummary` composes the helper; the expression it ran before is
+unchanged.
+
+### 11.6 What slice 2 does NOT close
+
+- **No migration, no schema change, no seed row, no permission and no audit action.**
+  `tech.technician.read` is an existing catalogue row and no bundle moved.
+- **No new operation and no new path.** `rpt.report-run` serves the dataset; the register stays at
+  407 operations and 316 OpenAPI paths, and the committed contract document is byte-unchanged.
+- **No export.** Prerequisite P-12 is untouched and `rpt.export` stays excluded on CC-04's grounds.
+- **No frontend.** FE-012 is not started and `apps/web/src` was not edited at all.
+- **The remaining two baseline reports are not implemented.** The registry holds exactly two entries
+  and a case asserts the exact list, so a third cannot arrive quietly.
+- **No allow-list was widened and no gate was suppressed.**

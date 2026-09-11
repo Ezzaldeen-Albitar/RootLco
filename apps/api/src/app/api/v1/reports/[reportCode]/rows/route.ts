@@ -3,9 +3,10 @@
  *
  * RUNS a registered report over one branch and one calendar period, and returns
  * its columns, a keyset page of rows, and the GROUPS of the whole selection with
- * their measures — states and their counts for `work_orders_by_status`, the only
- * dataset registered today. The grouping is the dataset's; the envelope around it
- * is the engine's and is the same shape for every report.
+ * their measures — states and their counts for `work_orders_by_status`,
+ * technicians and their recorded seconds for `technician_labor_time`. The
+ * grouping is the dataset's; the envelope around it is the engine's and is the
+ * same shape for every report.
  *
  * The envelope also echoes the filter context — the company and branch, beside
  * the period and the zone it was resolved in — because the Owner's D-17 requires

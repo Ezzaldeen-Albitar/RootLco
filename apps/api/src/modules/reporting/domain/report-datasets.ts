@@ -112,9 +112,9 @@ export interface ReportDatasetDefinition {
    * total that silently under-reports, which is worse than a refusal.
    *
    * What a dataset PUTS in this list is a disclosure decision taken per dataset
-   * and recorded on the entry itself, not something this type can derive: a
-   * dataset publishing a reference into another module's rows is stating what a
-   * holder of the codes below is thereby told.
+   * and recorded with it, not something this type can derive. `technician_labor_time`
+   * names one code and publishes a work-order reference under it; that choice, and
+   * what it exposes, is stated on the entry itself.
    */
   readonly requiredPermissions: readonly string[];
   readonly parameterSchema: readonly ReportParameterDefinition[];
@@ -165,6 +165,72 @@ export const REPORT_DATASETS = Object.freeze({
       Object.freeze({ key: 'vehicle', kind: 'reference' }),
       Object.freeze({ key: 'openedAt', kind: 'date' }),
       Object.freeze({ key: 'state', kind: 'text' }),
+    ]),
+  }),
+
+  /**
+   * Recorded technician labour time in a period, in one branch (D-4, slice 2).
+   *
+   * ## The Owner's columns, in the Owner's order
+   *
+   * D-4 names them: "technician, branch, work-order reference, work-log date and
+   * the recorded duration" (`docs/phase-1/phase-1-31/owner-decisions-2026-09-09.md`).
+   * `source` is added beside them because `tech.labor_sessions.source` is a
+   * CHECK-constrained three-term vocabulary — `manual`, `timer`, `correction` —
+   * and a reader who cannot see that a row is a correction cannot tell an amended
+   * figure from an original one. Nothing else was added.
+   *
+   * ## What "recorded duration" is, and what it is NOT
+   *
+   * D-4 is explicit: "Recorded duration is duration, and the definition says so:
+   * it is not productivity and it is not a payroll figure." The column is the
+   * elapsed time of closed sessions and nothing is derived from it.
+   *
+   * ## There is no status column, so there is no status bucket
+   *
+   * D-4 says cancelled and deleted logs are excluded. `tech.labor_sessions` has no
+   * status column and no cancelled state at all: the soft delete and
+   * `source = 'correction'` are its entire lifecycle
+   * (`supabase/migrations/20260722099000_tech_labor_sessions.sql`). Showing an
+   * empty "cancelled" bucket would read as a real zero, so the report shows no
+   * such bucket and the seam record states the absence instead.
+   *
+   * ## One permission code, and what it publishes
+   *
+   * `tech.technician.read` is the code `tech.labor-session-list` already declares
+   * for the same rows — a session says who worked and for how long, which is
+   * employee-derived data. Stated so it is not discovered later: this report
+   * resolves each session's job to its WORK ORDER and publishes that reference,
+   * so a caller holding `rpt.report.read` and `tech.technician.read` and NOT
+   * `wo.work_order.read` learns the work-order ids and display numbers that
+   * carried labour in the branch. That is a disclosure decision, it is recorded in
+   * change control, and reversing it is one more code in the list below.
+   */
+  technician_labor_time: Object.freeze({
+    code: 'technician_labor_time',
+    titleKey: 'reports.technician_labor_time.title',
+    scope: 'branch',
+    requiredPermissions: Object.freeze(['tech.technician.read']),
+    parameterSchema: PERIOD_PARAMETERS,
+    columns: Object.freeze([
+      Object.freeze({
+        key: 'technician',
+        kind: 'reference',
+        // The technician PROFILE id — the identifier `tech.technician-detail`
+        // resolves. A template, not a URL: no client screen consumes it yet
+        // (FE-012 is not started), and the client's route table is the client's.
+        drillThrough: '/technicians/{id}',
+      }),
+      Object.freeze({ key: 'branch', kind: 'text' }),
+      Object.freeze({ key: 'workOrder', kind: 'reference', drillThrough: '/work-orders/{id}' }),
+      // The session's START instant, serialised UTC. The DAY it falls on depends
+      // on the zone, which is why the envelope states the zone it resolved in.
+      Object.freeze({ key: 'workLogDate', kind: 'date' }),
+      // Whole seconds as an integer string, computed in SQL. Never a float and
+      // never divided into hours here: a division is where a duration acquires
+      // the rounding error that a sum then multiplies.
+      Object.freeze({ key: 'duration', kind: 'duration' }),
+      Object.freeze({ key: 'source', kind: 'text' }),
     ]),
   }),
 } as const satisfies Record<string, ReportDatasetDefinition>);

@@ -33,6 +33,7 @@ import type { DbHandle } from '@/server/db/transaction';
 import { pageRequest, type Page } from '@/server/db/pagination';
 import {
   WORK_ORDER_LIST_ORDER,
+  type JobWorkOrderRow,
   type WorkOrderRepository,
   type WorkOrderStatusSummaryFilter,
 } from '../data/work-order-repository';
@@ -52,6 +53,19 @@ export interface WorkOrderStateCount {
    */
   readonly stateName: string;
   readonly count: number;
+}
+
+/**
+ * One job's parent work order, as a reference another module may publish.
+ *
+ * `label` rather than `displayNumber` because that is what it IS to the consumer:
+ * the number when the order has one, and null when it does not. A report renders
+ * the id either way, so an unnumbered order is still reachable.
+ */
+export interface JobWorkOrderReference {
+  readonly jobId: string;
+  readonly workOrderId: string;
+  readonly label: string | null;
 }
 
 export interface WorkOrderStatusSummary {
@@ -132,5 +146,53 @@ export class WorkOrderReportPort extends ApplicationService {
         items: await withPartyContext(db, summary.page.items),
       },
     };
+  }
+
+  /**
+   * Resolves a set of JOB ids to the work orders they belong to, within one
+   * branch (P1-31 P-11, engine slice 2).
+   *
+   * ## Why the technician module cannot do this itself
+   *
+   * `tech.labor_sessions` carries `job_id` and no work-order column, and `wo.*`
+   * is this module's private schema (ADR-001 rule 3) — the boundary checker
+   * refuses a sibling schema in another module's SQL. So the technician labour
+   * report asks here, exactly as the job board asks the technician module which
+   * jobs hold an open session. Each module answers for its own tables, in both
+   * directions.
+   *
+   * ## Addressed by ids, and scoped to a branch
+   *
+   * The caller passes the job ids it already holds and the (company, branch) it
+   * is reporting on. A job outside that pair resolves to NOTHING rather than to a
+   * reference, so this method can only ever narrow what its caller already had —
+   * it is not a way to enumerate jobs, because it answers nothing for an id the
+   * caller did not already name.
+   *
+   * ## It performs NO authorization
+   *
+   * The same statement `statusSummary` above makes, for the same reason. The
+   * caller has evaluated its dataset's declared read codes against the company
+   * and branch it passes here, and RLS narrows the statement underneath. What
+   * this port does NOT do is check `wo.work_order.read`: the decision about which
+   * codes a report requires belongs to the dataset registry, which declares them
+   * in one place, and a second differently-shaped check here would be a second
+   * definition of that decision.
+   */
+  async workOrdersForJobs(
+    db: DbHandle,
+    jobIds: readonly string[],
+    scope: { readonly companyId: string; readonly branchId: string }
+  ): Promise<readonly JobWorkOrderReference[]> {
+    const rows: readonly JobWorkOrderRow[] = await this.repository.workOrdersForJobs(
+      db,
+      jobIds,
+      scope
+    );
+    return rows.map((row) => ({
+      jobId: row.jobId,
+      workOrderId: row.workOrderId,
+      label: row.displayNumber,
+    }));
   }
 }

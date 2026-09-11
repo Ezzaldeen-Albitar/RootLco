@@ -49,9 +49,11 @@ The named prerequisites are:
 
 - **P-11** — the reporting writer and the report engine. The writer merged in PR #361. **Engine
   slice 1 of 4 — this registry, the run operation and `work_orders_by_status` — is implemented on
-  `remediation/p1-31-backend-report-engine-work-orders` (PR #364) and is NOT merged.** Slices 2–4,
-  covering `technician_labor_time`, `inventory_movements` and `invoice_payment_summary`, have not
-  started.
+  `remediation/p1-31-backend-report-engine-work-orders` (PR #364) and is NOT merged.** **Engine
+  slice 2 — `technician_labor_time` — is implemented on
+  `remediation/p1-31-backend-report-engine-datasets`, which is STACKED on that branch and is
+  likewise NOT merged and carries no hosted result.** Slices 3 and 4, covering
+  `inventory_movements` and `invoice_payment_summary`, have not started.
 - **P-12** — the export operation. Not started, and `rpt.export` remains withheld from the
   provisioning bundle on the Owner decision recorded as **CC-04**.
 
@@ -162,6 +164,26 @@ produce two totals, and a client-side subtraction over a paged set silently tota
 2. **A job-to-work-order resolution port**, so a session can be attributed to the work order the
    report groups by.
 
+### Status — implemented on an unmerged branch
+
+**Engine slice 2 implements this definition** on `remediation/p1-31-backend-report-engine-datasets`,
+stacked on PR #364's branch. Both are UNMERGED and neither carries a hosted result.
+
+Every prerequisite this section named is answered, and none was answered by relaxing the definition:
+
+| prerequisite named above                   | how it was answered                                                                                                                             |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| a technician NAME, not just an id          | resolved through the iam directory from `tech.technician_profiles.user_id`; `null` for a caller without `iam.user.read`, never invented         |
+| there is no duration column                | computed in SQL as `extract(epoch from (ended_at - started_at))::bigint`, carried as an integer string of WHOLE SECONDS and never as a float    |
+| the row carries `job_id`, not a work order | `workOrderModule().reportPort.workOrdersForJobs` — the owning module answers for `wo.jobs`; the technician repository never joins a `wo.` table |
+| there is no status column                  | the report states the absence instead of showing an empty bucket; contributing is `ended_at IS NOT NULL AND deleted_at IS NULL`                 |
+
+The columns are the Owner's five in the Owner's order, plus `source`, so an amended figure can be
+told from an original one. The period is half-open on `started_at` in the branch's timezone (D-17).
+The required permission is `tech.technician.read`; the disclosure that follows from naming only that
+one code is recorded as **CC-33**. The full record is
+[`report-engine-seam.md`](./report-engine-seam.md) § 11.
+
 ---
 
 ## 3. `inventory_movements`
@@ -266,16 +288,16 @@ evaluated, not where the column is rendered.
 
 ## Summary — what D-4 still owes
 
-| #   | prerequisite                                                                                                                                               | owning module        | blocks                                                |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- | ----------------------------------------------------- |
-| 1   | The dataset registry and the report run operation (**P-11**, engine half) — implemented on PR #364's branch, unmerged                                      | reporting            | slices 2–4, and all four on `develop` until it merges |
-| 2   | The export operation (**P-12**), while `rpt.export` stays withheld (**CC-04**)                                                                             | reporting and export | FE-011 … FE-014 export                                |
-| 3   | A work-order status summary with a half-open period predicate — met on PR #364's branch by `workOrderModule().reportPort`, unmerged                        | work-order           | `work_orders_by_status` on `develop`                  |
-| 4   | A state-label decision                                                                                                                                     | Owner / presentation | `work_orders_by_status`                               |
-| 5   | A labour-totals port and a job-to-work-order resolution port                                                                                               | technician           | `technician_labor_time`                               |
-| 6   | Enriched movement rows and `inv.stock-movement-summary`                                                                                                    | inventory            | `inventory_movements`                                 |
-| 7   | A restricted-amount reporting read gated on both codes                                                                                                     | billing and payments | `invoice_payment_summary`                             |
-| 8   | The SOURCE column for the branch timezone — a recommendation pending Owner approval; the period convention and timezone semantics were approved 2026-09-10 | Owner                | nothing today                                         |
+| #   | prerequisite                                                                                                                                                                               | owning module        | blocks                                                |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------- | ----------------------------------------------------- |
+| 1   | The dataset registry and the report run operation (**P-11**, engine half) — implemented on PR #364's branch, unmerged                                                                      | reporting            | slices 2–4, and all four on `develop` until it merges |
+| 2   | The export operation (**P-12**), while `rpt.export` stays withheld (**CC-04**)                                                                                                             | reporting and export | FE-011 … FE-014 export                                |
+| 3   | A work-order status summary with a half-open period predicate — met on PR #364's branch by `workOrderModule().reportPort`, unmerged                                                        | work-order           | `work_orders_by_status` on `develop`                  |
+| 4   | A state-label decision                                                                                                                                                                     | Owner / presentation | `work_orders_by_status`                               |
+| 5   | A labour-totals port and a job-to-work-order resolution port — MET on the slice-2 branch by `technicianModule().reportPort` and `workOrderModule().reportPort.workOrdersForJobs`, unmerged | technician           | `technician_labor_time` on `develop`                  |
+| 6   | Enriched movement rows and `inv.stock-movement-summary`                                                                                                                                    | inventory            | `inventory_movements`                                 |
+| 7   | A restricted-amount reporting read gated on both codes                                                                                                                                     | billing and payments | `invoice_payment_summary`                             |
+| 8   | The SOURCE column for the branch timezone — a recommendation pending Owner approval; the period convention and timezone semantics were approved 2026-09-10                                 | Owner                | nothing today                                         |
 
 Item 1 exists on PR #364's branch and not on `develop`. Until that branch merges, FE-011 … FE-014
 have a definition and no engine on `develop`, which is exactly the state the task matrix records for

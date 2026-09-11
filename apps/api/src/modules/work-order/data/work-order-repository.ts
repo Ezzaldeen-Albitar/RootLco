@@ -147,6 +147,14 @@ export interface WorkOrderStatusSummaryRows {
   readonly page: Page<WorkOrderRow>;
 }
 
+/** One job's parent work order, for a consumer that may not read `wo.jobs`. */
+export interface JobWorkOrderRow {
+  readonly jobId: string;
+  readonly workOrderId: string;
+  /** Null until the order is issued a document and the sequence allocates one. */
+  readonly displayNumber: string | null;
+}
+
 export interface JobRow {
   readonly id: string;
   readonly workOrderId: string;
@@ -767,6 +775,59 @@ export class WorkOrderRepository extends Repository {
         id: row.id,
       })),
     };
+  }
+
+  /**
+   * Which work order each of these jobs belongs to (P1-31 P-11, engine slice 2).
+   *
+   * BATCHED — one statement for a whole page. A per-row lookup would make any
+   * consumer that lists jobs an N+1, which is the reason `jobsWithOpenSession` on
+   * the technician side is batched too.
+   *
+   * Scoped to ONE company and branch rather than to the tenant alone. The caller
+   * is reporting on a branch; a job id from a sibling branch must resolve to
+   * nothing here rather than quietly widening the answer, and the composite
+   * `ix_jobs_work_order` is on exactly this key. RLS narrows the statement again
+   * underneath, and the two are not the same control: RLS answers "may this
+   * connection see the row", this predicate answers "is the row in the reported
+   * branch".
+   *
+   * `display_number` is nullable — the number is allocated by the sequence when
+   * the order is issued a document, not when it is opened — so a caller receives
+   * the id always and the label sometimes.
+   *
+   * Neither side is filtered on `deleted_at`, deliberately. This resolves an
+   * ATTRIBUTION for a row the caller already holds: hiding the work order of a
+   * soft-deleted job would leave recorded labour attached to nothing, which reads
+   * as missing data rather than as a retired job.
+   */
+  async workOrdersForJobs(
+    db: DbHandle,
+    jobIds: readonly string[],
+    scope: { readonly companyId: string; readonly branchId: string }
+  ): Promise<readonly JobWorkOrderRow[]> {
+    if (jobIds.length === 0) return [];
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      job_id: string;
+      work_order_id: string;
+      display_number: string | null;
+    }>(
+      db,
+      `SELECT j.id AS job_id, j.work_order_id, w.display_number
+         FROM wo.jobs j
+         JOIN wo.work_orders w
+           ON w.tenant_id = j.tenant_id AND w.company_id = j.company_id
+          AND w.branch_id = j.branch_id AND w.id = j.work_order_id
+        WHERE j.tenant_id = $1 AND j.company_id = $2 AND j.branch_id = $3
+          AND j.id = ANY($4::uuid[])`,
+      [context.principal.tenantId, scope.companyId, scope.branchId, [...new Set(jobIds)]]
+    );
+    return result.rows.map((row) => ({
+      jobId: row.job_id,
+      workOrderId: row.work_order_id,
+      displayNumber: row.display_number,
+    }));
   }
 
   /**
