@@ -81,6 +81,23 @@ export function WarrantyListScreen({
 
   return (
     <div className="flex flex-col gap-6">
+      {/*
+       * The way to the plan administration screen, offered to everyone who can read a
+       * warranty. It is NOT gated on `wty.policy.manage` here: the plan list and the
+       * plan read both answer the read code, so a clerk may look at the terms they
+       * issue under, and it is that screen which withholds the controls that change
+       * them. A link hidden from a reader who is allowed to follow it would be this
+       * side inventing an authority the backend does not assert.
+       */}
+      <p className="text-body">
+        <Link
+          href={`/${locale}/warranty/policies`}
+          className="text-primary underline-offset-2 hover:underline"
+        >
+          {translate(messages, 'warranty.list.openPolicies')}
+        </Link>
+      </p>
+
       <TargetSection
         messages={messages}
         canReadBranches={canReadBranches}
