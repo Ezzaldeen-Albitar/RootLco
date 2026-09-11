@@ -34,8 +34,26 @@
  * decision nobody has taken.
  */
 
-/** How a client should render a column, and what the cell carries. */
-export type ReportColumnKind = 'text' | 'date' | 'count' | 'reference';
+/**
+ * How a client should render a column, and what the cell carries.
+ *
+ * The three kinds added for engine slice 2 name MEASURES, and naming them is the
+ * point: a cell's `value` is a string whatever the kind, so without the kind a
+ * client cannot tell `3600` seconds from `3600` of anything else and would have
+ * to guess at a format.
+ *
+ *   * `duration` — an elapsed time in WHOLE SECONDS, as an integer string. Seconds
+ *     rather than hours because hours would be a division, and a division is where
+ *     a duration acquires a rounding error that then gets summed.
+ *   * `quantity` — a decimal string in the column's own unit, carried unrounded.
+ *   * `money` — an exact decimal string. Never a JSON number and never recomputed
+ *     by a consumer; `pg` returns `numeric` as a string and it stays one, which is
+ *     the rule `scripts/ci/check-exact-money.mjs` enforces inside the financial
+ *     trees. No dataset registered today emits one — the kind exists so that the
+ *     first one to do so cannot reach for `count` instead.
+ */
+export type ReportColumnKind =
+  'text' | 'date' | 'count' | 'reference' | 'duration' | 'quantity' | 'money';
 
 export interface ReportColumnDefinition {
   /** Stable key. Cells are emitted in column order and carry the same key. */
@@ -76,16 +94,29 @@ export interface ReportDatasetDefinition {
    */
   readonly scope: 'branch';
   /**
-   * The read code the UNDERLYING data requires, checked in the run service at
-   * the operation's branch scope.
+   * The read codes the UNDERLYING data requires, ALL of them, checked in the run
+   * service at the operation's branch scope.
    *
    * Not a second declaration of the operation's own permission: the operation
-   * declares `rpt.report.read` (the right to run reports at all) and this is the
-   * right to see the rows the dataset returns. A single operation cannot declare
-   * a per-report code, so the second check is performed in the service and
-   * answers the uniform `ERR-IAM-001`.
+   * declares `rpt.report.read` (the right to run reports at all) and these are
+   * the rights to see the rows the dataset returns. A single operation cannot
+   * declare a per-report code, so the second check is performed in the service
+   * and answers the uniform `ERR-IAM-001`.
+   *
+   * ## A LIST, and conjunctive, from slice 2 onward
+   *
+   * Slice 1 carried one code because one dataset needed one. The list is evaluated
+   * as ALL of them, never "any of": the service refuses the WHOLE report on the
+   * first code the caller lacks, rather than returning a report with the columns
+   * that caller could not see blanked out — a blanked column inside a total is a
+   * total that silently under-reports, which is worse than a refusal.
+   *
+   * What a dataset PUTS in this list is a disclosure decision taken per dataset
+   * and recorded on the entry itself, not something this type can derive: a
+   * dataset publishing a reference into another module's rows is stating what a
+   * holder of the codes below is thereby told.
    */
-  readonly requiredPermission: string;
+  readonly requiredPermissions: readonly string[];
   readonly parameterSchema: readonly ReportParameterDefinition[];
   readonly columns: readonly ReportColumnDefinition[];
 }
@@ -120,7 +151,7 @@ export const REPORT_DATASETS = Object.freeze({
     code: 'work_orders_by_status',
     titleKey: 'reports.work_orders_by_status.title',
     scope: 'branch',
-    requiredPermission: 'wo.work_order.read',
+    requiredPermissions: Object.freeze(['wo.work_order.read']),
     parameterSchema: PERIOD_PARAMETERS,
     columns: Object.freeze([
       Object.freeze({

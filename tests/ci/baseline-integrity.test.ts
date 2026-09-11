@@ -507,7 +507,7 @@ describe('the coverage include lists are pinned, because they are the denominato
       typeScriptFilesUnder(pattern.slice(0, -'/**/*.ts'.length))
     );
     expect(files.filter((file) => file.endsWith('.d.ts'))).toEqual([]);
-    expect(files.length).toBe(283);
+    expect(files.length).toBe(284);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -545,10 +545,18 @@ describe('the coverage include lists are pinned, because they are the denominato
      * `modules/iam/data/branch-context-repository.ts` (the branch timezone the
      * period is resolved in). The floors are untouched for the reason above.
      *
-     * The 283 above is these 282 plus `server/openapi/document.ts`, which the
+     * 283 with the report engine's shared period helper (P1-31 P-11): ONE more
+     * file, `server/db/period.ts` — the half-open local-day predicate, written
+     * once because Owner decision D-17 requires every report period to be
+     * converted consistently and a second copy of the comparison is how two
+     * reports over one period stop adding up. The floors are untouched for the
+     * reason above: re-establishing them needs a hosted measurement run, which
+     * this slice did not perform and does not claim.
+     *
+     * The 284 above is these 283 plus `server/openapi/document.ts`, which the
      * include list admits and `exclude` then removes; the two numbers moving
-     * together by five is what says no file slipped in behind the exclusion.
+     * together by one is what says no file slipped in behind the exclusion.
      */
-    expect(instrumented.length).toBe(282);
+    expect(instrumented.length).toBe(283);
   });
 });

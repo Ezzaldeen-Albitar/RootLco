@@ -28,6 +28,7 @@
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 import { buildPage, keysetFragment, type Page, type PageRequest } from '@/server/db/pagination';
+import { halfOpenLocalDayRange } from '@/server/db/period';
 
 export interface WorkOrderRow {
   readonly id: string;
@@ -677,6 +678,13 @@ export class WorkOrderRepository extends Repository {
    * is. The zone name is a bind PARAMETER, never interpolated, and it reaches
    * this method from `org.branches.timezone_name`, which
    * `fk_branches_timezone_name` constrains to a `shared.timezones` row.
+   *
+   * That predicate now comes from `halfOpenLocalDayRange` (`server/db/period.ts`)
+   * rather than being written here. It is the SAME expression, moved: the Owner's
+   * D-17 requires every report period to be converted CONSISTENTLY, and a second
+   * dataset writing the comparison from memory is how two reports over one period
+   * come to disagree. The values and their positions are unchanged, so this
+   * method's behaviour is unchanged and engine slice 1's suite is what says so.
    */
   async statusSummary(
     db: DbHandle,
@@ -696,8 +704,7 @@ export class WorkOrderRepository extends Repository {
     // how an aggregate and its rows come to answer for different selections.
     const scope = `tenant_id = $1 AND company_id = $2 AND branch_id = $3
           AND deleted_at IS NULL
-          AND opened_at >= (($4::date)::timestamp AT TIME ZONE $6)
-          AND opened_at <  (($5::date)::timestamp AT TIME ZONE $6)`;
+          AND ${halfOpenLocalDayRange('opened_at', 4, 5, 6)}`;
 
     const counts = await this.run<{ state: string; total: number }>(
       db,

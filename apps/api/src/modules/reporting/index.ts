@@ -31,8 +31,12 @@ export type {
   ReportDefinitionView,
 } from './application/report-catalogue-service';
 export type {
+  ReportBranchView,
   ReportCellView,
   ReportColumnView,
+  ReportFilterContextView,
+  ReportGroupView,
+  ReportPeriodInput,
   ReportPeriodView,
   ReportRowView,
   ReportRunInput,

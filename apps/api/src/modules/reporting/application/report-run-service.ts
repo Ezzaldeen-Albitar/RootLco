@@ -26,11 +26,13 @@
  *    tenant-scoped run operation would be decided by the scope-blind
  *    `iam.has_permission`, and `app.branch_ids` is the permission-blind union of
  *    every active grant (P1-18-A-01).
- * 2. THIS service then evaluates the dataset's own `requiredPermission` —
- *    `wo.work_order.read` for the only dataset registered today — against the
- *    same company and branch, through `callerHoldsPermission`, which asks the
- *    same deployed `iam.has_permission_in_scope` every other check asks. A
- *    caller who may run reports but may not read work orders is refused.
+ * 2. THIS service then evaluates EVERY code in the dataset's own
+ *    `requiredPermissions` — `wo.work_order.read` for the only dataset
+ *    registered today — against the same company and branch, through
+ *    `callerHoldsPermission`, which asks the same deployed
+ *    `iam.has_permission_in_scope` every other check asks. A caller who may run
+ *    reports but may not read the underlying rows is refused, and the refusal is
+ *    of the WHOLE report rather than of some of its columns.
  * 3. An explicit tenant configuration must be published with a live published
  *    version. Its scope ceiling and understood filter allowlist are enforced
  *    before branch resolution or dataset reads. Unknown restrictions fail
@@ -71,11 +73,20 @@
  * day either swallows the next day's first instant or drops the last one's final
  * microsecond, and either shows up only as a total that does not add up.
  *
- * The branch timezone rather than the tenant default (`org.tenants
- * .default_timezone`) is a coordinator DECISION recorded for the Owner to
- * confirm, not a contract fact: both columns exist, both are foreign keys into
- * `shared.timezones`, and no query in the platform buckets by either today. It
- * is written down in `docs/phase-1/phase-1-31/report-engine-seam.md`.
+ * The half-open semantics and the branch zone were APPROVED by the Owner on
+ * 2026-09-10 (decision D-17). What remains a recommendation pending Owner
+ * approval is the SOURCE COLUMN: that the selected branch's zone be read from
+ * `org.branches.timezone_name` rather than `org.tenants.default_timezone`. Both
+ * columns exist and both are foreign keys into `shared.timezones`. Reversing the
+ * choice is ONE lookup — `iamOrganizationContext().branches.findBranch` below —
+ * which is why every dataset takes the resolved zone as an argument and no
+ * dataset reads a timezone for itself. It is written down in
+ * `docs/phase-1/phase-1-31/report-engine-seam.md`.
+ *
+ * The predicate that applies the period is `halfOpenLocalDayRange`
+ * (`server/db/period.ts`), written once and composed by every dataset, because
+ * D-17 requires the conversion to be CONSISTENT and two repositories writing the
+ * comparison from memory is how two reports over one period stop adding up.
  */
 import { ApplicationService } from '@/server/layering';
 import { AppFailure } from '@/server/errors/app-failure';
@@ -140,6 +151,72 @@ export interface ReportStateCountView {
   readonly count: number;
 }
 
+/**
+ * One GROUP and its measures, computed over the WHOLE scoped selection.
+ *
+ * This is the generalisation slice 1 named as a prerequisite: `countsByState` put
+ * one dataset's grouping on the shared envelope, and the other three baseline
+ * reports group by something else. Three fields, and each is a decision:
+ *
+ *   * `key` — the grouping columns and their values, BY NAME, so a client reading
+ *     `{ state: 'open' }` or `{ technician: '<uuid>' }` does not have to know
+ *     which dataset it asked for to know what it is looking at. A value may be
+ *     null: "no party was named" is a group, and collapsing it into a bucket
+ *     called "other" would hide it.
+ *   * `label` — what a human reads, or null when the source has nothing to show
+ *     or this caller may not be told. Never the key stringified: a label the API
+ *     invented is a label that will disagree with the one the detail screen shows.
+ *   * `measures` — measure name to value, and every value is a STRING. A count, a
+ *     duration in seconds, a quantity and an amount are all exact integers or
+ *     exact decimals, and JSON numbers are the one representation that cannot
+ *     carry all four without losing something. The column whose `kind` matches
+ *     the measure says how to render it.
+ *
+ * Computed over the SELECTION and never over the page — the P1-28 round-two rule.
+ */
+export interface ReportGroupView {
+  readonly key: Readonly<Record<string, string | null>>;
+  readonly label: string | null;
+  readonly measures: Readonly<Record<string, string>>;
+}
+
+/**
+ * The filter context the rows were produced under, echoed back.
+ *
+ * D-17 requires that the timezone and the filter context be displayed and
+ * preserved wherever a result is shown, printed or recorded, so that a number can
+ * never be read without the period that produced it. The period already travelled;
+ * the scope did not, and a printed page showing a total with no branch on it is
+ * exactly the artefact that decision forbids.
+ */
+export interface ReportFilterContextView {
+  readonly companyId: string;
+  readonly branchId: string;
+}
+
+/** The branch the report was run for, named as well as identified. */
+export interface ReportBranchView {
+  readonly id: string;
+  readonly name: string;
+}
+
+/**
+ * A resolved period, as a dataset read receives it.
+ *
+ * `toExclusive` rather than `to`, because the name is the contract: a reader who
+ * sees `to` assumes the last day reported, and that assumption is the off-by-one
+ * the half-open period exists to prevent. Published from this module's index so a
+ * port on another module can accept exactly this shape instead of restating it.
+ */
+export interface ReportPeriodInput {
+  /** First day included, `YYYY-MM-DD`. */
+  readonly from: string;
+  /** First day EXCLUDED — the day after the last one reported, `YYYY-MM-DD`. */
+  readonly toExclusive: string;
+  /** The IANA zone the two days are resolved in: the branch's own. */
+  readonly timezoneName: string;
+}
+
 export interface ReportPeriodView {
   /** First day included, `YYYY-MM-DD`. */
   readonly from: string;
@@ -152,13 +229,11 @@ export interface ReportPeriodView {
 /**
  * The run result.
  *
- * `countsByState` is on the envelope rather than inside a dataset-specific
- * payload, and that is a LIMITATION of slice 1 stated rather than hidden: the
- * one dataset registered today groups by work-order state, so the engine's
- * result type names that grouping. The other three baseline reports (P-11's
- * remaining slices) group differently, and generalising this field is their
- * work — it is listed as a named prerequisite in the seam record so the next
- * slice does not discover it.
+ * Slice 1 put `countsByState` on this envelope and recorded the limitation
+ * openly: the one dataset registered then grouped by work-order state, so the
+ * shared result type named that grouping, and the seam record listed
+ * generalising it as a named prerequisite for the next slice. This is that
+ * slice, and `groups` is the generalisation.
  */
 export interface ReportRunView {
   readonly reportCode: string;
@@ -166,6 +241,10 @@ export interface ReportRunView {
   readonly titleKey: string;
   readonly scope: 'branch';
   readonly period: ReportPeriodView;
+  /** The company and branch the rows were selected under (D-17). */
+  readonly filters: ReportFilterContextView;
+  /** The reported branch, named. The run resolves it anyway, for the timezone. */
+  readonly branch: ReportBranchView;
   /** When the rows were read. */
   readonly generatedAt: string;
   /**
@@ -175,6 +254,22 @@ export interface ReportRunView {
    */
   readonly freshness: 'live';
   readonly columns: readonly ReportColumnView[];
+  /** Every group of the WHOLE selection, with its measures. Dataset-shaped. */
+  readonly groups: readonly ReportGroupView[];
+  /**
+   * @deprecated Superseded by `groups`. Read `groups` instead.
+   *
+   * Kept, and kept CORRECT, for `work_orders_by_status` only — it is DERIVED from
+   * that dataset's groups rather than computed a second time, so the two cannot
+   * disagree. It is empty for every other dataset, which is the honest answer: a
+   * technician's recorded hours have no work-order state, and filling this field
+   * with something would be inventing a grouping the report does not have.
+   *
+   * It survives this slice rather than being removed in it because removing a
+   * published field and adding its replacement in one change gives a consumer no
+   * window in which both exist. Its removal is a named prerequisite of the slice
+   * that retires it.
+   */
   readonly countsByState: readonly ReportStateCountView[];
   readonly rows: Page<ReportRowView>;
 }
@@ -192,20 +287,25 @@ export interface ReportRunInput {
 }
 
 /** What a resolver is handed once the period and the scope are settled. */
-interface ResolverInput {
+interface ResolverInput extends ReportPeriodInput {
   readonly companyId: string;
   readonly branchId: string;
   readonly branchName: string;
-  readonly from: string;
-  readonly toExclusive: string;
-  readonly timezoneName: string;
   readonly cursor?: string | undefined;
   readonly limit?: number | undefined;
 }
 
-/** What a resolver returns. The envelope around it is assembled below. */
+/**
+ * What a resolver returns. The envelope around it is assembled below.
+ *
+ * TWO fields and no dataset-specific third: a resolver produces the groups of the
+ * whole selection and one page of rows, and every other field on the envelope is
+ * the engine's, computed identically for every dataset. That is what stops the
+ * next slice from adding a fourth field named after its own grouping — the defect
+ * `countsByState` is.
+ */
 interface ResolverResult {
-  readonly countsByState: readonly ReportStateCountView[];
+  readonly groups: readonly ReportGroupView[];
   readonly rows: Page<ReportRowView>;
 }
 
@@ -244,7 +344,14 @@ const runWorkOrdersByStatus: ReportResolver = async (db, input) => {
   const stateNames = new Map(summary.counts.map((entry) => [entry.stateCode, entry.stateName]));
 
   return {
-    countsByState: summary.counts,
+    // One group per state, in the port's own order. The count is a string here
+    // like every other measure — `countsByState` is derived back from it below,
+    // so the two cannot disagree about a single state.
+    groups: summary.counts.map((entry) => ({
+      key: { state: entry.stateCode },
+      label: entry.stateName,
+      measures: { count: String(entry.count) },
+    })),
     rows: {
       ...summary.workOrders,
       items: summary.workOrders.items.map((order) => ({
@@ -293,6 +400,40 @@ const RESOLVERS: Readonly<Record<ReportDatasetCode, ReportResolver>> = Object.fr
   work_orders_by_status: runWorkOrdersByStatus,
 });
 
+/**
+ * `countsByState`, DERIVED from `work_orders_by_status`'s own groups.
+ *
+ * The deprecated field is filled from the replacement rather than computed a
+ * second time, so the two can never report different numbers for one state — two
+ * computations of one answer being the way a deprecated field quietly becomes
+ * wrong while nothing fails.
+ *
+ * `Number.parseInt` is the only place this module turns a measure back into a
+ * number, and it is safe HERE for a reason that does not generalise: the measure
+ * is a `count(*)::int` from PostgreSQL, so it is a small integer with no fraction
+ * and no precision to lose. A duration or an amount must never make this trip,
+ * which is why every other measure stays a string all the way to the wire.
+ *
+ * Any dataset that is not `work_orders_by_status` gets an empty list.
+ */
+function countsByStateFrom(
+  code: ReportDatasetCode,
+  groups: readonly ReportGroupView[]
+): readonly ReportStateCountView[] {
+  if (code !== 'work_orders_by_status') return [];
+  return groups.flatMap((group) => {
+    const stateCode = group.key.state;
+    if (stateCode === undefined || stateCode === null) return [];
+    return [
+      {
+        stateCode,
+        stateName: group.label ?? stateCode,
+        count: Number.parseInt(group.measures.count ?? '0', 10),
+      },
+    ];
+  });
+}
+
 /** `YYYY-MM-DD`, validated again here because this service is callable directly. */
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -320,17 +461,25 @@ export class ReportRunService extends ApplicationService {
 
     // FIRST. See the file header: resolving the branch before this would let a
     // caller who cannot read the data learn whether a branch exists.
-    const permitted = await callerHoldsPermission(db, definition.requiredPermission, {
-      companyId: input.companyId,
-      branchId: input.branchId,
-    });
-    if (!permitted) {
+    //
+    // EVERY declared code, and the WHOLE report is refused on the first one the
+    // caller lacks. Not a partial report with the unreadable columns blanked: a
+    // blanked column inside a total is a total that silently under-reports, and a
+    // reader cannot tell it from a real one.
+    for (const required of definition.requiredPermissions) {
+      const permitted = await callerHoldsPermission(db, required, {
+        companyId: input.companyId,
+        branchId: input.branchId,
+      });
+      if (permitted) continue;
       throw new AppFailure('ERR-IAM-001', {
-        message: `Denied ${definition.code}: missing ${definition.requiredPermission}`,
+        message: `Denied ${definition.code}: missing ${required}`,
         // The same disclosure `requirePermissions` makes, for the same reason:
         // the required code is documented API metadata, and the RESOURCE is
-        // never named.
-        safeDetails: { requiredPermissions: [definition.requiredPermission] },
+        // never named. The code NAMED is the first one missing rather than the
+        // whole declared list, so a caller learns what to ask for without being
+        // told which of the others they already hold.
+        safeDetails: { requiredPermissions: [required] },
       });
     }
 
@@ -369,6 +518,10 @@ export class ReportRunService extends ApplicationService {
       titleKey: definition.titleKey,
       scope: definition.scope,
       period: { from: input.from, to: input.to, timezone: branch.timezoneName },
+      // D-17: the filter context travels with the numbers, so a printed or
+      // recorded result can never be read without the selection that produced it.
+      filters: { companyId: input.companyId, branchId: input.branchId },
+      branch: { id: input.branchId, name: branch.name },
       generatedAt: new Date().toISOString(),
       freshness: 'live',
       columns: definition.columns.map((column) => ({
@@ -376,7 +529,8 @@ export class ReportRunService extends ApplicationService {
         kind: column.kind,
         drillThrough: column.drillThrough ?? null,
       })),
-      countsByState: resolved.countsByState,
+      groups: resolved.groups,
+      countsByState: countsByStateFrom(input.reportCode, resolved.groups),
       rows: resolved.rows,
     };
   }
