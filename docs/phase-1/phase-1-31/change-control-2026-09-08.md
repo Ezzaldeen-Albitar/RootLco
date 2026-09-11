@@ -1507,3 +1507,29 @@ seven operations expected. `tests/ci/p1-28-version-sourcing.test.ts` therefore n
 its `expect(live.accountedFor).toHaveLength(7)` was already the correct number, and the 10 seen
 before the registration was the symptom rather than a new floor. The test file is unchanged by
 this slice.
+
+### 48.6 The local tier record — measured fact, dated 2026-09-11
+
+Both tiers were re-recorded by `check-p1-27-closing-values.mjs --record` at `4eeac4d3`, the head
+that carries this slice’s write handlers, with no executable path dirty:
+
+| tier | files | tests | passed | failed | skipped |
+| ---- | ----- | ----- | ------ | ------ | ------- |
+| unit | 121   | 3278  | 3278   | 0      | 0       |
+| web  | 136   | 3797  | 3797   | 0      | 0       |
+
+These are LOCAL figures. No hosted run of this branch exists and none is claimed. The previous
+pair was taken at `467a2681`, before the plan screens and their tests landed, and a record taken
+at a head the branch has left behind is exactly what the run ledger expires.
+
+**Engineering consequence (not an Owner decision).** The derived sites moved with the record: on
+`clean-room-evidence.md`, with their closing-value ledger entries, the web file count 135 → 136
+in three places, the web executed total 3749 → 3797 in three and the unit executed total
+3277 → 3278 in one; in `deliverable-manifest.md`, the web file count in the three places it
+appears; and the frontend ownership gate’s own file count 150 → 152 in five places across four
+documents, which moved because the two plan route pages landed inside the trees that gate walks.
+The evidence manifest was regenerated so its digests describe these bytes.
+
+The committed floor in `.github/ci-baselines/test-count-baseline.json` was **not** touched. 3797
+executed clears the 3700 floor, and no rule forced a ratchet, so the baseline keeps the figures
+its own run established.

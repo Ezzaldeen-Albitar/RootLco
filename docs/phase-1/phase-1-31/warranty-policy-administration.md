@@ -251,16 +251,33 @@ rather than left to look like a pass.
 | `npm run validate:web-boundary`                           | pass — 355 files, 0 violations                                     |
 | `npm run validate:use-server-exports`                     | pass — 48 modules across 954 files                                 |
 | `npm run validate:plain-language`                         | pass — 2 catalogues, 24 rules, 0 findings                          |
-| `npm run validate:module-boundaries`                      | pass                                                               |
+| `npm run validate:module-boundaries`                      | pass — 599 files in `apps/api/src`                                 |
 | `npm run validate:p1-31-access`                           | pass — 12 route pages across 7 owned segments, 0 violations        |
-| `npm run security:all`                                    | pass                                                               |
+| `npm run validate:p1-28-version-sourcing`                 | pass — 7 expected, 30 adapters, 31 call sites, 0 violations        |
+| `npm run security:all`                                    | pass — 2717 tracked files, all four scanners                       |
 | focused web tests                                         | pass                                                               |
 | `npx vitest run tests/ci tests/openapi-contract.test.ts`  | pass                                                               |
+| `--record unit`                                           | 121 files, 3278 tests, 3278 passed, 0 failed, 0 skipped            |
+| `--record web`                                            | 136 files, 3797 tests, 3797 passed, 0 failed, 0 skipped            |
+| `npm run evidence:p1-27`                                  | regenerated — 41 evidence documents                                |
+| `npm run verify:policies`                                 | pass — exit 0                                                      |
+| `validate:phase-ownership p1-31-frontend`                 | pass — 39 changed files, 0 violations, both forms                  |
 
 **Not executed in this record**, and therefore not claimed: `npm run build`, `build:web`,
 `verify:web`, `verify:workspaces`, `verify:repository` as an aggregate, `test:backend`, `test:db`,
 `verify:database`, every `supabase:*` command, every Playwright tier and every acceptance command.
 No environment was provisioned and no hosted run exists.
+
+Both tiers were re-recorded at `4eeac4d3`, the head that carries the write handlers, with no
+executable path dirty. The sites that read those figures moved with them: on
+`clean-room-evidence.md`, with their closing-value ledger entries, the web file count 135 → 136
+in three places, the web executed total 3749 → 3797 in three and the unit executed total
+3277 → 3278 in one; in `deliverable-manifest.md`, the web file count in the three places it
+appears; and the frontend ownership gate’s own file count 150 → 152 in five places across four
+documents, which moved because the two plan route pages landed inside the trees that gate walks.
+The evidence manifest was regenerated so its digests describe these bytes. The committed floor in
+`.github/ci-baselines/test-count-baseline.json` was NOT touched: 3797 clears the 3700 floor and
+nothing forced a ratchet.
 
 The two web test files this slice added are `apps/web/tests/warranty-api.test.ts` (extended — the
 five write adapters, with only the transport replaced: paths, methods, bodies and both headers) and
