@@ -922,14 +922,14 @@ describe('the catalogue reports what the engine can actually run', () => {
     // Non-vacuity for the whole slice: a registry that had quietly emptied would
     // make every `executable` assertion above pass for the wrong reason.
     //
-    // THREE codes from engine slice 3 onward, and the list is exhaustive rather
-    // than a `toContain`: the four baseline reports D-4 approves land one slice
-    // at a time, and an exact list is what makes the arrival of the fourth one a
+    // FOUR codes from engine slice 4 onward — the whole of what D-4 approves —
+    // and the list is exhaustive rather than a `toContain`: a fifth dataset is a
     // deliberate edit here instead of a silent widening of the catalogue.
     expect([...REPORT_DATASET_CODES]).toEqual([
       REPORT_CODE,
       'technician_labor_time',
       'inventory_movements',
+      'invoice_payment_summary',
     ]);
   });
 });

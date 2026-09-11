@@ -302,6 +302,18 @@ inventory report; rows 9 to 11 are what slice 3 itself leaves behind:
 | 10  | **`inv.stock_movements` records no unit.** The report joins `inv.item_master.uom_id`, so the unit on a row is the item's unit AS IT IS NOW — re-pointing an item's unit restates its whole movement history. The unit is in the group key regardless, which keeps the separation visible; carrying the unit on the movement is a schema change nobody has authorised                                      | open, raised by slice 3                                                                                                |
 | 11  | **The ledger cannot record a BACKDATED movement.** `shared.stamp_status_history` assigns `occurred_at := now()` unconditionally on every insert, and `app_runtime` holds SELECT and INSERT and no UPDATE. A movement's date is the date it was written, and a period report over `occurred_at` is exactly as accurate as that. Nothing here is wrong; what nobody can do is post a movement dated earlier | open, raised by slice 3                                                                                                |
 
+**Movement recorded by engine slice 4** (same branch, same unmerged state). Row 3 closes
+completely; rows 12 to 15 are what slice 4 itself leaves behind:
+
+| #   | prerequisite                                                                                                                                                                                                                                                                                                                                                                                                                             | state after slice 4                                                                                                                                                                             |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 3   | Aggregate and batch ports for the other reports                                                                                                                                                                                                                                                                                                                                                                                          | **closed.** `billingModule().reportPort` and `paymentsModule().reportPort` complete the set; all four baseline datasets are served by the module that owns their tables                         |
+| 5   | Retiring `countsByState`                                                                                                                                                                                                                                                                                                                                                                                                                 | still open, and one step nearer: it is no longer READ BACK out of a group measure. Its one producer now sets it from the same counts its groups are built from, so no count is converted at all |
+| 12  | **The `document` column publishes NO drill-through, because one column addresses THREE kinds of document.** An invoice would resolve through `sal.invoice-detail` (`/invoices/{id}`) and a receipt through `sal.receipt-detail` (`/payments/{id}`), while a credit note has no read operation at all. A `ReportColumnDefinition` carries ONE template, so publishing either would send most rows to a screen that cannot answer for them | open, raised by slice 4                                                                                                                                                                         |
+| 13  | **The `customer` cell carries an id and no name.** `BillingReadService` publishes `payerPartnerId` without a display name today. Naming the payer means reading `crm.business_partners` — another module's record, and therefore another module's read code on the dataset's permission list, which is a disclosure decision rather than a lookup                                                                                        | open, raised by slice 4                                                                                                                                                                         |
+| 14  | **No credit-note amount is published anywhere.** D-4's column list names none, so an approved credit note appears as a DOCUMENT — its date, its payer, its currency, its approved state — and its money is visible only as the reduction inside the affected invoice's `outstanding`. Publishing a credit amount is a column the Owner has not named                                                                                     | open, raised by slice 4 — an Owner question, not an engineering one                                                                                                                             |
+| 15  | **`sal.receipt_unallocated` is named by D-4 and is published by no column.** The Owner's source table lists "receipts not yet applied"; the column list this slice implements carries `allocatedAmount` and not its complement. The function exists and the payments module already calls it elsewhere, so this is a column decision and not a capability gap                                                                            | open, raised by slice 4 — an Owner question, not an engineering one                                                                                                                             |
+
 ## 10. What this slice does NOT close
 
 **Measured facts (not part of the decision) — what was actually run, and where.** On 2026-09-11, at
@@ -572,3 +584,110 @@ evaluates it, in one place.
 - **The ledger's own limitations are not fixed here.** No unit on the movement, no backdated
   movement, no per-item read operation — all three are recorded in § 9 rather than worked around.
 - **No allow-list was widened and no gate was suppressed.**
+
+## 13. Engine slice 4 — `invoice_payment_summary`
+
+**Status:** implemented on `remediation/p1-31-backend-report-engine-datasets`, **stacked on the
+slice-1 branch and equally UNMERGED**; no hosted result exists for it. **Authority:** Owner decision
+**D-4** of 2026-09-09 for the columns, the permission and the five rules; **D-5** for the
+prohibition on a measure spanning two currencies; **D-17** of 2026-09-10 for the period. Everything
+below headed _Engineering consequence_ is this coordinator's choice and not an Owner decision.
+
+### 13.1 The Owner's text, quoted
+
+> **`invoice_payment_summary`** — invoice and payment summary.
+> — [`owner-decisions-2026-09-09.md`](./owner-decisions-2026-09-09.md) § 3 (D-4)
+
+> `rpt.report.read` **AND** `sal.finance.view`. The second is not optional and the report must refuse
+> **as a whole** without it. … A report that computes an outstanding total from amounts it was not
+> allowed to read renders a confident, wrong figure — indistinguishable on screen from a real one.
+> — [`d4-report-definitions.md`](./d4-report-definitions.md) § 4, restating D-4
+
+> Outstanding is `sal.invoice_open_receivable`, not a subtraction the report performs. … `credited`
+> is a status, and it must be shown as one. … Per-currency receipt totals exclude
+> `status = 'reversed'`. … Totals are per currency, never across currencies. … Amounts stay strings.
+> — [`d4-report-definitions.md`](./d4-report-definitions.md) § 4, the five rules
+
+### 13.2 Measured facts (not part of the decision)
+
+- `sal.invoices` (`supabase/migrations/20260724091000_sal_invoices.sql`) carries `status`
+  (`draft`, `issued`, `credited`, `void_before_issue`), `currency_code`, `payer_partner_id` and a
+  NULLABLE `issued_at`; `sal.invoice_amounts` carries `net_total` / `tax_total` / `gross_total` as
+  `numeric(18,4)` and is classified `restricted`.
+- `sal.receipts` (`20260724092000_sal_payments.sql`) carries `amount numeric(18,4)`, `received_at`,
+  `payer_partner_id`, `currency_code` and a status including `reversed`. Its WHOLE ROW is gated by
+  `iam.has_permission('sal.finance.view')`.
+- `sal.payment_allocations` is append-only and carries `receipt_id`, `invoice_id` and `amount`.
+  `sal.credit_notes.approval_state` is `pending` / `approved` / `rejected`, under dual control.
+- `sal.invoice_open_receivable` (`20260724093000_sal_financial_events.sql`) returns
+  `round(gross − allocations of non-reversed receipts − approved credits, 4)` and `0` for a draft or
+  a voided invoice. It is CALLED; nothing re-derives it.
+- **Every instant on these tables is stamped from `now()`** by the protected primitives, and no
+  route or function accepts one from a caller: a financial document cannot be backdated.
+- The register stays at **407** operations and **316** OpenAPI paths; the committed contract
+  document is byte-unchanged. `sal.finance.view` is an existing catalogue row.
+
+### 13.3 The decisions this slice took, and why
+
+**Engineering consequence — the rows are DOCUMENTS, of three kinds.** An invoice enters the period
+by `issued_at`, a receipt by `received_at`, an approved credit note by its own `issued_at`.
+`documentType` discriminates them, and every amount column a type has no equivalent for is NULL
+rather than zero: a zero is a claim about money and an absent column is not. A draft invoice carries
+no `issued_at`, so it is excluded by the period predicate itself rather than by a status list — it
+happened in no period, because it was never issued.
+
+**Engineering consequence — the allocation is published ONCE, on the receipt.** The invoice side
+carries no allocation column. The money a receipt applied to an invoice appears as the receipt's
+`allocatedAmount` and reaches the invoice only as a REDUCTION inside `sal.invoice_open_receivable`.
+Publishing it on both sides is precisely the double count a reader would then add up, and it is also
+what keeps `sal.payment_allocations` out of the billing module's SQL and `sal.invoices` out of the
+payments module's.
+
+**Engineering consequence — the groups are keyed `(currency, documentType)`, and carry only the
+measures their type can hold.** Currency because D-4 and D-5 both forbid a cross-currency figure and
+this platform holds no rate. Document type because the measures of an invoice and of a receipt are
+different facts. An invoice group publishes `invoiced` and `outstanding`; a receipt group publishes
+`receipts` and `allocated`; neither publishes the other's measures at zero, because a zero would
+read as "none of this happened" rather than "this is not that kind of document".
+
+**Engineering consequence — the page is a MERGE of two ordered streams.** Each port returns at most
+`limit + 1` rows after the cursor in one shared order (document date descending, row id as the
+tie-break), and the reporting module merges them, trims and mints the cursor. The ordering contract
+`sal.invoice_payment_summary:document_date_desc` is declared in the reporting module alone, because
+neither module owns the order; the ports accept an already-decoded position instead. The cursor
+value is the microsecond-precision string the ports publish beside each row, never the JS `Date` on
+it (`P1-27-INT-006`).
+
+**Engineering consequence — the reporting module joined the exact-money surface.**
+`scripts/ci/check-exact-money.mjs` now scans `modules/reporting`. That forced out the one numeric
+conversion the module held: `countsByState` used to be read back from a group measure with
+`Number.parseInt`. It is now set by its one producer directly from the counts, so nothing is
+converted and the deprecated field still cannot disagree with `groups`. The gate was widened, not
+weakened, and no allow-list or suppression was added.
+
+### 13.4 Ports added
+
+| port                                                                         | why it exists                                                                                                                                                          |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `billingModule().reportPort` (`BillingReportPort`)                           | `sal.invoices`, `sal.invoice_amounts` and `sal.credit_notes` are the billing module's, and `sal.invoice_open_receivable` is the authority it already calls             |
+| `paymentsModule().reportPort` (`PaymentsReportPort`)                         | `sal.receipts` and `sal.payment_allocations` are the payments module's; it answers for the receipt and for what the receipt applied                                    |
+| `BillingRepository.invoiceDocuments` / `PaymentsRepository.receiptDocuments` | one scope predicate composed by each module's two statements, so a total can never stop matching the rows it totals; neither statement reads the other module's tables |
+
+Neither port performs authorization: the dataset registry declares `sal.finance.view` and
+`ReportRunService` evaluates it before anything is read, in one place.
+
+### 13.5 What slice 4 does NOT close
+
+- **No migration, no schema change, no seed row, no permission and no audit action.**
+  `sal.finance.view` is an existing catalogue row and no bundle moved.
+- **No new operation and no new path.** `rpt.report-run` serves the dataset; the register stays at
+  407 operations and 316 OpenAPI paths, and the committed contract document is byte-unchanged.
+- **No export, and no frontend.** P-12 is untouched, `rpt.export` stays excluded on CC-04's grounds,
+  and `apps/web/src` was not edited at all (FE-014 is not started).
+- **No credit-note amount and no unallocated-receipt column.** Both are recorded in § 9 as Owner
+  questions rather than answered here.
+- **No drill-through on `document`, and no payer name.** Both are recorded in § 9.
+- **`countsByState` is still published.** It is deprecated and correct; removing it is still a later
+  slice's work, with a check that no consumer reads it.
+- **No allow-list was widened and no gate was suppressed.** No `@ts-expect-error`, no
+  `eslint-disable`, no skipped or retried test.

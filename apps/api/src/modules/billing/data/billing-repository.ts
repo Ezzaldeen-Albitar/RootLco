@@ -63,6 +63,8 @@
  * `app_runtime` grant.
  */
 import { Repository } from '@/server/db/repository';
+import { cursorTimestamp } from '@/server/db/pagination';
+import { halfOpenLocalDayRange } from '@/server/db/period';
 import type { DbHandle } from '@/server/db/transaction';
 
 /**
@@ -224,6 +226,86 @@ export interface OpenReceivableRow {
   readonly amount: string;
   readonly currencyCode: string;
   readonly status: string;
+}
+
+/**
+ * The period, the branch and the cursor a report document read is bounded by
+ * (P1-31 P-11, engine slice 4).
+ *
+ * `toExclusive` rather than `to`, because the name is the contract: a reader who
+ * sees `to` assumes the last day reported, and that assumption is the off-by-one
+ * the half-open period exists to prevent (D-17).
+ */
+export interface InvoiceDocumentFilter {
+  /** REQUIRED. The authorized scope, and a predicate on every statement. */
+  readonly companyId: string;
+  readonly branchId: string;
+  /** Inclusive first day, `YYYY-MM-DD`, in `timezoneName`. */
+  readonly from: string;
+  /** First day EXCLUDED — the day after the last one reported, `YYYY-MM-DD`. */
+  readonly toExclusive: string;
+  /** An IANA zone name: the reporting branch's `org.branches.timezone_name`. */
+  readonly timezoneName: string;
+}
+
+/**
+ * Where the page starts and how many rows it may hold.
+ *
+ * A DECODED position rather than an encoded cursor, and that is the slice-4
+ * shape rather than the slice-3 one for a measured reason: this report's rows
+ * are a MERGE of two modules' documents, so the ordering contract — and
+ * therefore the cursor's identity, its decode and its minting — belongs to the
+ * reporting module that merges them. A second contract declared here would be a
+ * second definition of one order, and the two would drift.
+ *
+ * `limit` is the number of rows to return and includes whatever sentinel the
+ * caller intends: this statement adds none, because the merge decides `hasMore`
+ * over the combined stream and a per-stream sentinel would answer for the wrong
+ * selection.
+ */
+export interface ReportDocumentPage {
+  readonly after: { readonly sortValue: string; readonly id: string } | null;
+  readonly limit: number;
+}
+
+/**
+ * One billing document of the reported period: an invoice or a credit note.
+ *
+ * Two document types in one row shape because they are read in one statement and
+ * merged into one ordered stream. `documentType` is the discriminator and every
+ * field a credit note has no equivalent for is null rather than zero — a zero
+ * amount is a claim about money, and an absent column is not.
+ */
+export interface InvoiceDocumentRow {
+  readonly documentType: 'invoice' | 'credit_note';
+  readonly documentId: string;
+  /** `sal.invoices.invoice_number`; always null for a credit note, which has none. */
+  readonly documentNumber: string | null;
+  readonly documentDate: Date;
+  readonly payerPartnerId: string;
+  readonly currencyCode: string;
+  /** The invoice's `status`, or the credit note's `approval_state`. */
+  readonly status: string;
+  /** `sal.invoice_amounts.gross_total` as a decimal string; null on a credit note. */
+  readonly invoicedAmount: string | null;
+  /** `sal.invoice_open_receivable` as a decimal string; null on a credit note. */
+  readonly outstanding: string | null;
+  /** The microsecond-precision cursor value for `documentDate`. */
+  readonly sortValue: string;
+}
+
+/** One currency's invoice totals over the WHOLE selection. */
+export interface InvoiceDocumentTotalRow {
+  readonly currencyCode: string;
+  /** Sum of `gross_total` over the period's invoices, as a decimal string. */
+  readonly invoiced: string;
+  /** Sum of `sal.invoice_open_receivable` over the same invoices. */
+  readonly outstanding: string;
+}
+
+export interface InvoiceDocumentRows {
+  readonly totals: readonly InvoiceDocumentTotalRow[];
+  readonly documents: readonly InvoiceDocumentRow[];
 }
 
 /**
@@ -787,6 +869,169 @@ export class BillingRepository extends Repository {
           status: row.status,
         }
       : null;
+  }
+
+  /**
+   * The branch's BILLING documents in a period, with the invoice totals of the
+   * whole selection (P1-31 P-11, engine slice 4).
+   *
+   * ## Which rows are documents of the period, and which are not
+   *
+   * An invoice belongs to the period by its `issued_at`, and a credit note by its
+   * own `issued_at`. Both are half-open in the branch's zone (D-17).
+   *
+   * A `draft` and a `void_before_issue` invoice carry `issued_at IS NULL`, so they
+   * fail BOTH comparisons of the range and are excluded by the predicate rather
+   * than by a status list — which is the honest exclusion, because the reason they
+   * are absent is that they were never issued and so happened in no period.
+   * `issued` and `credited` both remain and `status` travels with the row: D-4 is
+   * explicit that a credited invoice is neither paid nor outstanding and must be
+   * shown as what it is.
+   *
+   * A credit note appears only when `approval_state = 'approved'`, which D-4
+   * requires, and `ck_credit_notes_approved_shape` guarantees its `issued_at` is
+   * present exactly when it is approved.
+   *
+   * ## Outstanding is CALLED, never re-derived
+   *
+   * `sal.invoice_open_receivable` already excludes the allocations of reversed
+   * receipts, counts only approved credit notes and returns zero for a draft or a
+   * voided invoice. A subtraction written here would be a second authority that
+   * disagrees with the invoice screen the first time either changes. `round(…, 4)`
+   * is applied on the way out only to fix the scale, exactly as `openReceivable`
+   * above does and for the same reason.
+   *
+   * ## No allocation column, and that is what prevents the double count
+   *
+   * Allocations live in `sal.payment_allocations`, which is the payments module's
+   * table and is not read here. The money a receipt applied to an invoice appears
+   * ONCE in this report — on the receipt's own row — and reaches the invoice only
+   * through `sal.invoice_open_receivable`, which subtracts it. Publishing it a
+   * second time as an invoice column is exactly the double count a reader would
+   * then add up.
+   *
+   * ## No page is built here
+   *
+   * These rows are one of TWO ordered streams the reporting module merges, so this
+   * returns ordered rows with their cursor values and mints no cursor. See
+   * `ReportDocumentPage`.
+   */
+  public async invoiceDocuments(
+    db: DbHandle,
+    filter: InvoiceDocumentFilter,
+    page: ReportDocumentPage
+  ): Promise<InvoiceDocumentRows> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.from,
+      filter.toExclusive,
+      filter.timezoneName,
+    ];
+    // Written once and used by both statements. A second copy is how an aggregate
+    // and its rows come to answer for different selections.
+    const invoiceScope = `FROM sal.invoices i
+         LEFT JOIN sal.invoice_amounts a
+           ON a.tenant_id = i.tenant_id AND a.company_id = i.company_id
+          AND a.branch_id = i.branch_id AND a.invoice_id = i.id AND a.deleted_at IS NULL
+        WHERE i.tenant_id = $1 AND i.company_id = $2 AND i.branch_id = $3
+          AND i.deleted_at IS NULL
+          AND ${halfOpenLocalDayRange('i.issued_at', 4, 5, 6)}`;
+
+    const totals = await this.run<{
+      currency_code: string;
+      invoiced: string;
+      outstanding: string;
+    }>(
+      db,
+      `SELECT i.currency_code,
+              coalesce(sum(a.gross_total), 0::numeric(18, 4))::text AS invoiced,
+              coalesce(sum(round(sal.invoice_open_receivable(i.id), 4)),
+                       0::numeric(18, 4))::text                     AS outstanding
+         ${invoiceScope}
+        GROUP BY i.currency_code
+        ORDER BY i.currency_code`,
+      values
+    );
+
+    // The keyset predicate, written here rather than taken from `keysetFragment`,
+    // because the cursor belongs to the reporting module's MERGED ordering and
+    // arrives already decoded. The comparison is the same row-value form
+    // `keysetFragment` emits for a descending order, applied inside EACH arm of
+    // the union so that every arm is bounded before the arms are merged.
+    const cursorIndex = values.length + 1;
+    if (page.after !== null) values.push(page.after.sortValue, page.after.id);
+    const after = (dateColumn: string, idColumn: string): string =>
+      page.after === null
+        ? ''
+        : `AND (${dateColumn}, ${idColumn}) < ($${cursorIndex}, $${cursorIndex + 1})`;
+    const limitIndex = values.length + 1;
+    values.push(page.limit);
+
+    const rows = await this.run<{
+      document_type: 'invoice' | 'credit_note';
+      document_id: string;
+      document_number: string | null;
+      document_date: Date;
+      payer_partner_id: string;
+      currency_code: string;
+      status: string;
+      invoiced_amount: string | null;
+      outstanding: string | null;
+      sort_value: string;
+    }>(
+      db,
+      `SELECT * FROM (
+         SELECT 'invoice'::text AS document_type, i.id AS document_id,
+                i.invoice_number AS document_number, i.issued_at AS document_date,
+                i.payer_partner_id, i.currency_code, i.status,
+                a.gross_total::text                               AS invoiced_amount,
+                round(sal.invoice_open_receivable(i.id), 4)::text AS outstanding,
+                ${cursorTimestamp('i.issued_at')}                 AS sort_value
+           ${invoiceScope}
+             ${after('i.issued_at', 'i.id')}
+         UNION ALL
+         SELECT 'credit_note'::text, c.id, NULL, c.issued_at, i.payer_partner_id,
+                c.currency_code, c.approval_state, NULL, NULL,
+                ${cursorTimestamp('c.issued_at')}
+           FROM sal.credit_notes c
+           JOIN sal.invoices i
+             ON i.tenant_id = c.tenant_id AND i.company_id = c.company_id
+            AND i.branch_id = c.branch_id AND i.id = c.invoice_id
+          WHERE c.tenant_id = $1 AND c.company_id = $2 AND c.branch_id = $3
+            AND c.approval_state = 'approved'
+            AND ${halfOpenLocalDayRange('c.issued_at', 4, 5, 6)}
+            ${after('c.issued_at', 'c.id')}
+       ) d
+        ORDER BY d.document_date DESC, d.document_id DESC
+        LIMIT $${limitIndex}`,
+      values
+    );
+
+    return {
+      totals: totals.rows.map((row) => ({
+        currencyCode: row.currency_code,
+        invoiced: row.invoiced,
+        outstanding: row.outstanding,
+      })),
+      documents: rows.rows.map((row) => ({
+        documentType: row.document_type,
+        documentId: row.document_id,
+        documentNumber: row.document_number,
+        documentDate: row.document_date,
+        payerPartnerId: row.payer_partner_id,
+        currencyCode: row.currency_code,
+        status: row.status,
+        // Carried through as the decimal strings `pg` produced. No arithmetic
+        // happens here and none may: `numeric(18,4)` holds values a double cannot
+        // represent, and one conversion is all it takes to lose the fourth place.
+        invoicedAmount: row.invoiced_amount,
+        outstanding: row.outstanding,
+        sortValue: row.sort_value,
+      })),
+    };
   }
 
   /**

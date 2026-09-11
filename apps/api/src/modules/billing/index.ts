@@ -68,6 +68,7 @@
 import { composeModule } from '@/server/layering';
 import { BillingRepository } from './data/billing-repository';
 import { BillingReadService } from './application/billing-read-service';
+import { BillingReportPort } from './application/billing-report-port';
 import { InvoiceService } from './application/invoice-service';
 
 // ---- Row-shape types --------------------------------------------------------
@@ -81,11 +82,13 @@ export type {
   CommercialSourceRow,
   CreditNoteRow,
   InvoiceAmountsRow,
+  InvoiceDocumentFilter,
   InvoiceLineAmountsRow,
   InvoiceLineRow,
   InvoiceRow,
   NumberingConfigRow,
   OpenReceivableRow,
+  ReportDocumentPage,
   WorkOrderScopeRow,
 } from './data/billing-repository';
 
@@ -110,6 +113,12 @@ export type {
    */
   WorkOrderReceivableView,
 } from './application/billing-read-service';
+
+export type {
+  InvoiceDocumentEntry,
+  InvoiceDocumentSummary,
+  InvoiceDocumentTotal,
+} from './application/billing-report-port';
 
 export type {
   CreatedInvoice,
@@ -180,6 +189,10 @@ export const billingModule = composeModule({
     return {
       reads: new BillingReadService(repository),
       invoices: new InvoiceService(repository),
+      // P1-31 P-11 slice 4. The REPORTING port. Separate from `reads` because
+      // that service answers for ONE invoice and its shapes are the invoice
+      // screen's; a period report over many documents shares none of them.
+      reportPort: new BillingReportPort(repository),
     };
   },
 });

@@ -93,9 +93,16 @@ import { ApplicationService } from '@/server/layering';
 import { AppFailure } from '@/server/errors/app-failure';
 import { callerHoldsPermission } from '@/server/auth/authorization';
 import type { DbHandle } from '@/server/db/transaction';
-import type { Page } from '@/server/db/pagination';
+import {
+  buildPageWithCursors,
+  pageRequest,
+  type OrderingContract,
+  type Page,
+} from '@/server/db/pagination';
+import { billingModule } from '@/modules/billing';
 import { iamOrganizationContext } from '@/modules/iam';
 import { inventoryModule } from '@/modules/inventory';
+import { paymentsModule } from '@/modules/payments';
 import { technicianModule } from '@/modules/technician';
 import { workOrderModule } from '@/modules/work-order';
 import type { ReportCatalogueRepository } from '../data/report-catalogue-repository';
@@ -310,6 +317,22 @@ interface ResolverInput extends ReportPeriodInput {
 interface ResolverResult {
   readonly groups: readonly ReportGroupView[];
   readonly rows: Page<ReportRowView>;
+  /**
+   * The DEPRECATED `countsByState`, set by its one producer and by nothing else.
+   *
+   * It is not the dataset-specific third field the comment above warns against —
+   * it is that field's retirement in progress. `work_orders_by_status` fills it
+   * from the SAME `counts` array its groups are built from, so the two cannot
+   * disagree, and the numbers never make a trip through a string on the way.
+   *
+   * That round trip is why this exists at all: the previous derivation read the
+   * count back out of a group MEASURE with `Number.parseInt`, and a numeric
+   * conversion is forbidden outright on the financial surface this module joined
+   * in engine slice 4 — a gate that cannot tell a row count from an amount is a
+   * gate worth keeping strict. Removing the conversion rather than exempting the
+   * file is the fix; this field and the one it feeds disappear together.
+   */
+  readonly countsByState?: readonly ReportStateCountView[];
 }
 
 type ReportResolver = (db: DbHandle, input: ResolverInput) => Promise<ResolverResult>;
@@ -348,12 +371,19 @@ const runWorkOrdersByStatus: ReportResolver = async (db, input) => {
 
   return {
     // One group per state, in the port's own order. The count is a string here
-    // like every other measure — `countsByState` is derived back from it below,
-    // so the two cannot disagree about a single state.
+    // like every other measure.
     groups: summary.counts.map((entry) => ({
       key: { state: entry.stateCode },
       label: entry.stateName,
       measures: { count: String(entry.count) },
+    })),
+    // The deprecated field, from the SAME array the groups above are built from
+    // rather than read back out of them. One source, so the two cannot report
+    // different numbers for one state, and no count is converted to reach it.
+    countsByState: summary.counts.map((entry) => ({
+      stateCode: entry.stateCode,
+      stateName: entry.stateName,
+      count: entry.count,
     })),
     rows: {
       ...summary.workOrders,
@@ -570,6 +600,185 @@ const runInventoryMovements: ReportResolver = async (db, input) => {
 };
 
 /**
+ * The ordering of the MERGED document stream, and the identity of its cursor.
+ *
+ * Declared HERE rather than in either module, because neither module owns the
+ * order: the rows are invoices and credit notes from `@/modules/billing` and
+ * receipts from `@/modules/payments`, interleaved by document date. A contract
+ * declared twice is a contract that drifts, so the two ports accept an ALREADY
+ * DECODED position and this module owns the decode, the merge and the minting.
+ *
+ * The key names the report rather than a table, which is the property that makes
+ * a cursor minted for the invoice list or the receipt list refuse here instead of
+ * being reinterpreted against a different order.
+ */
+const INVOICE_PAYMENT_DOCUMENT_ORDER: OrderingContract = Object.freeze({
+  key: 'sal.invoice_payment_summary:document_date_desc',
+  direction: 'desc',
+});
+
+/**
+ * `invoice_payment_summary` — engine slice 4 (D-4, D-5, D-17).
+ *
+ * ## Two ports, because two modules own the tables
+ *
+ * `sal.invoices`, `sal.invoice_amounts` and `sal.credit_notes` are the billing
+ * module's; `sal.receipts` and `sal.payment_allocations` are the payments
+ * module's. Each answers for its own tables and neither reads the other's, which
+ * is what keeps `outstanding` the database function's answer and keeps the
+ * allocation total on the receipt where it belongs.
+ *
+ * ## The page is a MERGE of two ordered streams
+ *
+ * Each port returns at most `limit + 1` rows strictly after the cursor in ONE
+ * shared order — document date descending, row id as the tie-break. Merging two
+ * such streams and keeping the first `limit + 1` yields exactly the next page of
+ * the union: a row that was left out of either stream ranks below every row that
+ * was kept, so it cannot belong on this page.
+ *
+ * The tie-break compares the ids as TEXT here and as `uuid` in SQL, and the two
+ * orders are the same one: PostgreSQL compares a uuid by its bytes, the canonical
+ * text form is lower-case hexadecimal with the dashes at fixed positions, and
+ * hexadecimal digits sort identically in both.
+ *
+ * The cursor is minted from `sortValue`, a MICROSECOND-precision string the ports
+ * publish beside each row, never from the ISO instant on the row itself. A cursor
+ * minted from a JS `Date` silently SKIPS every row sharing the boundary row's
+ * millisecond at a higher microsecond (`P1-27-INT-006`), and a receipt and an
+ * invoice written in one transaction share their instant exactly.
+ *
+ * ## The groups never span a currency, and never double-count
+ *
+ * The key is `(currency, documentType)`. Currency, because there is no exchange
+ * rate anywhere in this platform and a cross-currency total would be a number
+ * nobody can name (D-4 rule 4, D-5). Document type, because the measures of an
+ * invoice and of a receipt are different facts about the same money: a receipt
+ * applied to an invoice is counted once as `receipts`/`allocated` in its own
+ * group and once as a REDUCTION inside `outstanding` in the invoice's, and adding
+ * an allocation column to the invoice side is precisely the double count a reader
+ * would then sum.
+ *
+ * Each group publishes only the measures its document type can carry, and no
+ * group publishes a measure at zero for a fact it does not hold — a zero would
+ * read as "none of this happened" rather than "this is not that kind of
+ * document". Approved credit notes are therefore ROWS and not a group: the
+ * Owner's column list names no credit-note amount, so there is no measure to
+ * publish, and their effect on money is already inside `outstanding`, which the
+ * database function computes.
+ *
+ * ## Nothing is recomputed
+ *
+ * Every amount arrives as a decimal string from `numeric(18,4)` and is placed in
+ * the cell unchanged — no `Number`, no `toFixed`, no addition here. The sums are
+ * computed in SQL over the same rows, so adding a page by hand can never disagree
+ * with a group.
+ */
+const runInvoicePaymentSummary: ReportResolver = async (db, input) => {
+  const request = pageRequest(INVOICE_PAYMENT_DOCUMENT_ORDER, {
+    cursor: input.cursor,
+    limit: input.limit,
+  });
+  const filter = {
+    companyId: input.companyId,
+    branchId: input.branchId,
+    from: input.from,
+    toExclusive: input.toExclusive,
+    timezoneName: input.timezoneName,
+  };
+  // One row of headroom per stream, which is what lets the merge decide `hasMore`
+  // over the union rather than trusting either stream's own end.
+  const page = {
+    after: request.cursor === null ? null : { sortValue: request.cursor.v, id: request.cursor.i },
+    limit: request.limit + 1,
+  };
+  const [billing, payments] = await Promise.all([
+    billingModule().reportPort.invoiceDocuments(db, filter, page),
+    paymentsModule().reportPort.receiptDocuments(db, filter, page),
+  ]);
+
+  const merged = [
+    ...billing.documents.map((document) => ({
+      item: {
+        cells: [
+          // The number is the human half; a credit note has none, so the label is
+          // absent while the id never is. No drill-through is published on this
+          // column — see the dataset definition.
+          cell('document', document.documentNumber, document.documentId),
+          cell('documentType', null, document.documentType),
+          cell('documentDate', null, document.documentDate),
+          cell('branch', input.branchName, input.branchId),
+          // The payer, as an id with no name. Naming it would put another
+          // module's record in this row; see the dataset definition.
+          cell('customer', null, document.payerPartnerId),
+          cell('currency', null, document.currencyCode),
+          cell('invoicedAmount', null, document.invoicedAmount),
+          // A billing document is not a receipt and has applied nothing: NULL
+          // rather than a zero, which would be a claim that money moved.
+          cell('receiptAmount', null, null),
+          cell('allocatedAmount', null, null),
+          cell('outstanding', null, document.outstanding),
+          // The invoice's own status, or the credit note's approval state.
+          cell('status', null, document.status),
+        ],
+      },
+      sortValue: document.sortValue,
+      id: document.documentId,
+    })),
+    ...payments.documents.map((document) => ({
+      item: {
+        cells: [
+          cell('document', document.documentNumber, document.documentId),
+          cell('documentType', null, 'receipt'),
+          cell('documentDate', null, document.documentDate),
+          cell('branch', input.branchName, input.branchId),
+          cell('customer', null, document.payerPartnerId),
+          cell('currency', null, document.currencyCode),
+          cell('invoicedAmount', null, null),
+          cell('receiptAmount', null, document.receiptAmount),
+          cell('allocatedAmount', null, document.allocatedAmount),
+          // A receipt has no outstanding balance of its own. The money it has not
+          // yet applied is a different question, and the Owner's column list does
+          // not ask it.
+          cell('outstanding', null, null),
+          cell('status', null, document.status),
+        ],
+      },
+      sortValue: document.sortValue,
+      id: document.documentId,
+    })),
+  ].sort((left, right) => {
+    if (left.sortValue !== right.sortValue) return left.sortValue < right.sortValue ? 1 : -1;
+    if (left.id === right.id) return 0;
+    return left.id < right.id ? 1 : -1;
+  });
+
+  const groups: ReportGroupView[] = [
+    ...billing.totals.map((total) => ({
+      key: { currency: total.currencyCode, documentType: 'invoice' },
+      // The currency code IS what a human reads for a currency; a name would be
+      // a label this module invented for a catalogue row it did not read.
+      label: total.currencyCode,
+      measures: { invoiced: total.invoiced, outstanding: total.outstanding },
+    })),
+    ...payments.totals.map((total) => ({
+      key: { currency: total.currencyCode, documentType: 'receipt' },
+      label: total.currencyCode,
+      measures: { receipts: total.receipts, allocated: total.allocated },
+    })),
+  ].sort((left, right) => {
+    const currency = (left.key.currency ?? '').localeCompare(right.key.currency ?? '');
+    return currency === 0
+      ? (left.key.documentType ?? '').localeCompare(right.key.documentType ?? '')
+      : currency;
+  });
+
+  return {
+    groups,
+    rows: buildPageWithCursors(merged, request, INVOICE_PAYMENT_DOCUMENT_ORDER),
+  };
+};
+
+/**
  * Code → resolver, TOTAL by construction.
  *
  * `Record<ReportDatasetCode, …>` over the registry's own key union: a dataset
@@ -582,41 +791,8 @@ const RESOLVERS: Readonly<Record<ReportDatasetCode, ReportResolver>> = Object.fr
   work_orders_by_status: runWorkOrdersByStatus,
   technician_labor_time: runTechnicianLaborTime,
   inventory_movements: runInventoryMovements,
+  invoice_payment_summary: runInvoicePaymentSummary,
 });
-
-/**
- * `countsByState`, DERIVED from `work_orders_by_status`'s own groups.
- *
- * The deprecated field is filled from the replacement rather than computed a
- * second time, so the two can never report different numbers for one state — two
- * computations of one answer being the way a deprecated field quietly becomes
- * wrong while nothing fails.
- *
- * `Number.parseInt` is the only place this module turns a measure back into a
- * number, and it is safe HERE for a reason that does not generalise: the measure
- * is a `count(*)::int` from PostgreSQL, so it is a small integer with no fraction
- * and no precision to lose. A duration or an amount must never make this trip,
- * which is why every other measure stays a string all the way to the wire.
- *
- * Any dataset that is not `work_orders_by_status` gets an empty list.
- */
-function countsByStateFrom(
-  code: ReportDatasetCode,
-  groups: readonly ReportGroupView[]
-): readonly ReportStateCountView[] {
-  if (code !== 'work_orders_by_status') return [];
-  return groups.flatMap((group) => {
-    const stateCode = group.key.state;
-    if (stateCode === undefined || stateCode === null) return [];
-    return [
-      {
-        stateCode,
-        stateName: group.label ?? stateCode,
-        count: Number.parseInt(group.measures.count ?? '0', 10),
-      },
-    ];
-  });
-}
 
 /** `YYYY-MM-DD`, validated again here because this service is callable directly. */
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -714,7 +890,17 @@ export class ReportRunService extends ApplicationService {
         drillThrough: column.drillThrough ?? null,
       })),
       groups: resolved.groups,
-      countsByState: countsByStateFrom(input.reportCode, resolved.groups),
+      /*
+       * The DEPRECATED field, from its one producer.
+       *
+       * `work_orders_by_status` is the only dataset that sets it, and it sets it
+       * from the same counts its groups are built from — so the two can never
+       * report different numbers for one state. Every other dataset leaves it
+       * empty, which is the honest answer: a technician's recorded hours, a stock
+       * movement and an invoice have no work-order state, and filling this field
+       * would be inventing a grouping the report does not have.
+       */
+      countsByState: resolved.countsByState ?? [],
       rows: resolved.rows,
     };
   }

@@ -507,7 +507,7 @@ describe('the coverage include lists are pinned, because they are the denominato
       typeScriptFilesUnder(pattern.slice(0, -'/**/*.ts'.length))
     );
     expect(files.filter((file) => file.endsWith('.d.ts'))).toEqual([]);
-    expect(files.length).toBe(286);
+    expect(files.length).toBe(288);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -562,14 +562,22 @@ describe('the coverage include lists are pinned, because they are the denominato
      * the inventory module answering for `inv.*` — which the reporting module may
      * not read, and which could not be a method on `InventoryReadService` because
      * that service writes an `inv.movement_history.read` audit row on every call
-     * and a report run is audited as itself. The floors are untouched for the
-     * reason above: re-establishing them needs a hosted measurement run, which
-     * this slice did not perform and does not claim.
+     * and a report run is audited as itself.
      *
-     * The 286 above is these 285 plus `server/openapi/document.ts`, which the
+     * 287 with engine slice 4 (`invoice_payment_summary`): TWO more, one per
+     * module that owns part of the row — `modules/billing/application/
+     * billing-report-port.ts` for the invoices and credit notes, and
+     * `modules/payments/application/payments-report-port.ts` for the receipts and
+     * their allocations. Neither module reads the other's tables, which is what
+     * keeps an allocation from being published twice.
+     *
+     * The floors are untouched for the reason above: re-establishing them needs a
+     * hosted measurement run, which these slices did not perform and do not claim.
+     *
+     * The 288 above is these 287 plus `server/openapi/document.ts`, which the
      * include list admits and `exclude` then removes; the two numbers moving
-     * together by one is what says no file slipped in behind the exclusion.
+     * together by two is what says no file slipped in behind the exclusion.
      */
-    expect(instrumented.length).toBe(285);
+    expect(instrumented.length).toBe(287);
   });
 });

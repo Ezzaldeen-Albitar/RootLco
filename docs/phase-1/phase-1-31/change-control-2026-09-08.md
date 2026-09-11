@@ -1698,3 +1698,120 @@ this branch's own turn after #364 merges.
 | **S3-10** | a cursor minted for the LEDGER SCREEN's ordering over the same table refused with `ERR-PAG-001` rather than reinterpreted                                                                                                                                                                                          |
 | **S3-11** | every quantity a STRING at `numeric(12,3)` scale, in cells and in measures alike, so no value made a trip through a JSON number                                                                                                                                                                                    |
 | **S3-12** | the two ledger limitations measured against the deployed database rather than asserted: no unit column on the movement, and `occurred_at` stamped from the transaction clock with `app_runtime` holding SELECT and INSERT only                                                                                     |
+
+---
+
+## 47. What P-11 changed — the report engine, dataset slice 4 (`invoice_payment_summary`) — PROVISIONAL
+
+**Slice:** `remediation/p1-31-backend-report-engine-datasets`, ownership profile `p1-31-backend`.
+**Baseline:** `remediation/p1-31-backend-report-engine-work-orders` at `c7fb9f9e` — PR #364's
+branch, which is itself UNMERGED. This slice is STACKED on it and inherits its unmerged state.
+
+**Identifier allocation — PROVISIONAL, checked 2026-09-11 against this branch's own base.** Section
+36.1 records the register's rule: identifiers are allocated when a finding is raised and are never
+renumbered to follow heading order. **CC-35** is this section's allocation, taken from the same base
+as **CC-33** and **CC-34** and equally unverified against protected `develop`. **Both the section
+number and the identifier must be re-checked against `develop` before this branch merges, and
+renumbered if either collides.** Nothing in this section depends on the number being right.
+
+### 47.1 What was published, and what was minted
+
+| published                                                                             | minted  |
+| ------------------------------------------------------------------------------------- | ------- |
+| 1 dataset, 0 operations, 0 routes, 0 paths, 0 audit actions, 2 new module files       | nothing |
+| 2 module ports (1 repository method each)                                             | nothing |
+| register unchanged at **407** operations and **316** OpenAPI paths; audit actions 232 | nothing |
+| bundle unchanged                                                                      | nothing |
+
+**Measured facts (not part of the decision).**
+
+- **`invoice_payment_summary`** joins the dataset registry, which now holds exactly **four** entries
+  — the whole of what D-4 approves. A case asserts the exact list, so a fifth cannot arrive quietly.
+- **The committed OpenAPI document is byte-unchanged.** No operation, path, permission, audit
+  action, migration or seed row moved. `sal.finance.view` is an existing catalogue row.
+- **Two new source files** under `apps/api/src`:
+  `modules/billing/application/billing-report-port.ts` and
+  `modules/payments/application/payments-report-port.ts` — one per module that owns part of the row.
+  The instrumented-file denominator in `tests/ci/baseline-integrity.test.ts` moves 285 → 287 with the
+  admitted count 286 → 288. **The coverage FLOORS are untouched**; re-establishing them needs a
+  hosted measurement run, which this slice did not perform and does not claim.
+- **`scripts/ci/check-exact-money.mjs` now scans `modules/reporting`**, taking the gate from 12 to
+  13 declared trees and to 61 scanned files, 9 of which are this module. It was WIDENED, not weakened: no rule, allow-list or
+  suppression changed.
+- **Every financial instant is stamped from `now()`** by the protected primitives, and no route or
+  function accepts one from a caller — so the suite writes each document through the full primitive
+  and then restates its single instant with triggers suspended in a superuser transaction, which
+  `app_runtime` cannot do. The file says so at its head.
+- **The generated P1-24 operation register was regenerated** and lists the new suite against the
+  operation its text references. It was not hand-edited.
+- **The P1-27 evidence manifest was regenerated** (`npm run evidence:p1-27`) because two documents it
+  digests carry derived `tests/backend` file counts that a new test file moves, 138 → 139 and
+  147 → 148.
+
+### 47.2 Dispositions
+
+| id           | finding                                                                                                                           | measured                                                                                                                                                                                                                                                                                                                            | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | owner / slice | status                    |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------- | ------------------------- |
+| **CC-35**    | D-4's source table names two figures the approved column list does not carry: a credit-note amount, and `sal.receipt_unallocated` | Both exist and both are reachable. `sal.credit_notes.amount` is `numeric(18,4)`; `sal.receipt_unallocated` is a deployed function the payments module already calls on its own receipt reads. The column list implemented is the one under "Columns and their contracts", which names neither                                       | **Recorded, not decided.** An approved credit note is published as a DOCUMENT — its date, its payer, its currency, its approved state — and its money reaches the report only as the reduction inside the affected invoice's `outstanding`, which the database function computes. No unallocated column is published either. Adding either is a COLUMN the Owner has not named, and inventing one would be this coordinator deciding what the report says. Recorded so the Owner can add them deliberately; `report-engine-seam.md` § 9 rows 14 and 15 | Owner         | recorded — no action here |
+| **CC-35(a)** | the `document` column publishes NO drill-through, unlike every reference column on the three datasets before it                   | A `ReportColumnDefinition` carries ONE `drillThrough` template. This column addresses THREE kinds of document: an invoice resolves through `sal.invoice-detail` (`/invoices/{id}`), a receipt through `sal.receipt-detail` (`/payments/{id}`), and a credit note through nothing — the register holds no credit-note read operation | **Engineering consequence, implemented.** No template is published. Publishing either route would send most rows to a screen that cannot answer for them, and a per-ROW template is a change to the published column contract rather than to this dataset. `documentType` is the discriminator a client needs to choose a route, and the document id travels in the cell either way. Recorded as a named prerequisite (`report-engine-seam.md` § 9 row 12) so FE-014 inherits it rather than discovering it                                            | this slice    | settled — recorded in § 9 |
+| **CC-35(b)** | the `customer` cell carries the payer's id and no name                                                                            | `BillingReadService` publishes `payerPartnerId` with no display name today, and neither the billing nor the payments repository reads `crm.*`. Slice 2 established that a column publishing another module's record must name that module's read code on the dataset's permission list                                              | **Engineering consequence, implemented.** The id travels and the label is null, which is what the invoice screen already shows. Resolving the name is not a lookup but a DISCLOSURE decision — it would add `crm`'s read code to a report whose permission list the Owner fixed at `sal.finance.view` — so it is a named prerequisite (`report-engine-seam.md` § 9 row 13)                                                                                                                                                                             | this slice    | settled — recorded in § 9 |
+| **CC-35(c)** | the reporting module held a numeric conversion, and adding it to the exact-money surface exposed it                               | `countsByState` — the field deprecated in slice 2 — was DERIVED from `work_orders_by_status`'s group measures with `Number.parseInt`, which rule MONEY-02 forbids outright on the financial surface. The gate cannot tell a row count from an amount, and a gate that could be argued with is a gate that gets turned off           | **Engineering consequence, implemented.** The conversion was REMOVED rather than exempted: the deprecated field is now set by its one producer directly from the same counts its groups are built from, so the two still cannot disagree and no count is converted at all. `modules/reporting` is in `MONEY_TREES` with no allow-list entry beside it. This also moves prerequisite 5 (retiring `countsByState`) one step nearer without closing it                                                                                                    | this slice    | closed in this slice      |
+
+### 47.3 What this slice did NOT do
+
+- **No migration and no schema change.** Every statement uses grants and policies that already
+  existed; `sal` is untouched.
+- **No permission was minted and no bundle changed.** `sal.finance.view` is an existing catalogue
+  row, and the whole report is refused to a caller who lacks it — where the permission is evaluated,
+  before anything is read, rather than where a column is rendered.
+- **No new operation, no new route and no new path.** `rpt.report-run` serves the dataset, and the
+  committed OpenAPI document is byte-unchanged.
+- **No export.** Prerequisite P-12 is untouched; `rpt.export` stays excluded on **CC-04**'s grounds.
+- **No frontend.** `apps/web/src` was not edited at all.
+- **No outstanding balance was re-derived.** `sal.invoice_open_receivable` is called, and a case
+  compares the published figure against the function itself rather than against a number written in
+  the test.
+- **Neither module read the other's tables.** Billing answers for invoices and credit notes,
+  payments for receipts and allocations, and the reporting module merges the two ordered streams.
+- **No allow-list was widened and no gate was suppressed.** No `@ts-expect-error`, no
+  `eslint-disable`, no skipped or retried test. `scripts/check-operation-test-coverage.mjs` was NOT
+  edited: the new suite declares a `COVERAGE-EVIDENCE` block beside its assertions.
+- **The P1-23 and P1-24 mutation matrices were not run**, and no mutation was re-targeted: this
+  slice redefines no property either matrix attacks.
+
+### 47.4 Proof
+
+**Measured facts (not part of the decision) — where these results come from.** The runs below were
+observed on 2026-09-11 at this branch's head. Every database-bound run used a DISPOSABLE LOCAL
+CLONE, `p131_report_controls_20260910` on `127.0.0.1:55432`, carrying 139 migrations, with
+`DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` stated explicitly in the environment
+of each command and the environment printed before each one:
+
+| run                                                         | result                 | database window (UTC) |
+| ----------------------------------------------------------- | ---------------------- | --------------------- |
+| `tests/backend/p1-31-report-engine-invoice-payment.test.ts` | 26/26                  | 17:25:13 → 17:25:25   |
+| the six reporting backend suites together, on the clone     | 6 files, 146/146       | 17:25:35 → 17:26:18   |
+| the eight billing and payments backend suites, on the clone | 8 files, 168/168       | 17:26:23 → 17:27:52   |
+| the six inventory backend suites, on the clone              | 6 files, 173/173       | 17:27:57 → 17:28:59   |
+| `npm run test:unit` (whole unit tier, includes `tests/ci`)  | 3300/3300 in 122 files | no database           |
+
+**There was no hosted gate, no run against the shared database, and no merge.** This branch has no
+remote head and no checks recorded, and its base PR #364 is itself unmerged. Final integration and
+shared-database evidence follow the coordinator's dependency and database ownership sequence, at
+this branch's own turn after #364 merges.
+
+| id        | what was shown                                                                                                                                                                                                                                                                    |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **S4-1**  | the columns in the Owner's order and their kinds, the rows, the groups, the period, the authorization and the paging, on real invoices, receipts, allocations and an approved credit note produced by the protected `sal` primitives                                              |
+| **S4-2**  | the WHOLE report refused to a caller holding `rpt.report.read` alone, naming `sal.finance.view` — with the response text carrying no amount and, specifically, no `0.0000` standing in for one; and refused at the ROUTE to a caller holding `sal.finance.view` alone             |
+| **S4-3**  | `outstanding` equal to `sal.invoice_open_receivable` for a PARTIAL allocation (165.0000 invoiced, 65.0000 applied, 100.0000 open), compared against the function itself rather than against a number written in the test                                                          |
+| **S4-4**  | a fully credited invoice published as `credited` with the function reporting `0.0000` open, and the approved credit note published as its own document with every money column null                                                                                               |
+| **S4-5**  | a reversed receipt absent from the rows and from every total, with its `reversed` status read back as admin so the absence is a report decision and not a fixture gap                                                                                                             |
+| **S4-6**  | two currencies never summed: four groups keyed `(currency, documentType)`, each measure inside one currency, and the cross-currency sums absent from the payload entirely                                                                                                         |
+| **S4-7**  | an allocation counted ONCE — `allocated` on the receipt group, absent as a measure on the invoice group, and reaching the invoice only as the reduction inside `outstanding`                                                                                                      |
+| **S4-8**  | the half-open period in the BRANCH zone on four instants: local midnight on the first included day is IN, one second earlier is OUT, one second before the excluded day's local midnight is IN, that midnight is OUT — with a widened period then showing both excluded documents |
+| **S4-9**  | the zone itself: the first included instant falls on the PREVIOUS calendar day in UTC, so a period resolved server-side would drop the invoice that sits on it                                                                                                                    |
+| **S4-10** | paging over a MERGE of two modules' streams: four pages reconstruct the selection exactly, an invoice and a receipt sharing an instant EXACTLY stay adjacent across the page boundary, and the groups are byte-identical on every page                                            |
+| **S4-11** | a malformed cursor and one minted for the RECEIPT SCREEN's ordering both refused with `ERR-PAG-001` rather than reinterpreted                                                                                                                                                     |
+| **S4-12** | every amount a STRING at `numeric(18,4)` scale, in cells and in measures alike, quoted in the wire text, so no value made a trip through a JSON number                                                                                                                            |
+| **S4-13** | branch isolation with RLS reach deliberately widened into the refused branch, so the refusal is the scoped permission evaluation and not an empty result set; and the sibling branch's own documents are invisible to the reported branch, and vice versa                         |

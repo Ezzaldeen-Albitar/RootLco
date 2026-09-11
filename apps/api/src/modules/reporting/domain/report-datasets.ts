@@ -337,6 +337,114 @@ export const REPORT_DATASETS = Object.freeze({
       Object.freeze({ key: 'unit', kind: 'text' }),
     ]),
   }),
+
+  /**
+   * Invoices, receipts and approved credit notes of a period, in one branch,
+   * totalled per currency (D-4, D-5, D-17 — engine slice 4).
+   *
+   * ## ONE permission, and the WHOLE report refuses without it
+   *
+   * `sal.finance.view`. D-4 is explicit that the second code is not optional and
+   * that the report must refuse AS A WHOLE without it, and the reason is measured
+   * rather than stylistic: the invoice read returns `null` amounts to a caller
+   * lacking the code, RLS empties `sal.receipts` and `sal.invoice_amounts` for the
+   * same caller, and an aggregate over amounts that were hidden is a confident
+   * ZERO rather than an absence — a figure indistinguishable on screen from a real
+   * one. The run service checks every declared code before it reads anything, so
+   * the refusal happens where the permission is evaluated and not where a column
+   * is rendered.
+   *
+   * No second code is named because no column publishes another module's record:
+   * every column is `sal` data, the branch is the run's own, and the customer
+   * travels as the payer's ID WITHOUT a name for exactly that reason — see below.
+   *
+   * ## The rows are DOCUMENTS, of three kinds
+   *
+   * An invoice enters by its `issued_at`, a receipt by its `received_at` and a
+   * credit note by its own `issued_at`, each half-open in the branch's zone. A
+   * draft or voided invoice carries no `issued_at` and therefore appears in no
+   * period; a REVERSED receipt is excluded outright, because D-4 says a reversed
+   * receipt is a receipt that did not happen; a credit note appears only when
+   * `approval_state = 'approved'`.
+   *
+   * `documentType` discriminates them and every amount column a given type has no
+   * equivalent for is NULL rather than zero. A zero is a claim about money; an
+   * absent column is not.
+   *
+   * ## `outstanding` is the database function, never a subtraction
+   *
+   * `sal.invoice_open_receivable` already excludes reversed receipts'
+   * allocations, counts only approved credit notes and returns zero for a draft
+   * or a voided invoice. Re-deriving it here would create a second authority that
+   * disagrees with the invoice screen the first time either changes.
+   *
+   * ## `allocatedAmount` is a column of its own, and it appears ONCE
+   *
+   * It is the receipt's, not the invoice's. The same money reaches the invoice
+   * side only through `sal.invoice_open_receivable`, which SUBTRACTS it — so a
+   * receipt applied to an invoice is published once as an allocation and once as
+   * a reduction, and no group adds it twice.
+   *
+   * ## `credited` is a status and is shown as one
+   *
+   * D-4: an invoice fully credited is not paid and is not outstanding, and
+   * folding it into either bucket misstates both. `status` carries the invoice's
+   * own term, the receipt's own term, or the credit note's approval state.
+   *
+   * ## `document` publishes NO drill-through, and that is measured
+   *
+   * The cell carries the document id beside its number, so a client that can
+   * resolve one resolves it. No `drillThrough` template is published because a
+   * column carries ONE template while this column addresses THREE kinds of
+   * document — `sal.invoice-detail` on `/invoices/{id}`, `sal.receipt-detail` on
+   * `/payments/{id}`, and nothing at all for a credit note, which has no read
+   * operation of its own. Publishing either route would send half the rows to a
+   * screen that cannot answer for them. Slice 1 set the precedent that a
+   * `reference` column may carry no template, `documentType` is the discriminator
+   * a client needs to choose the route, and the gap is recorded as a named
+   * prerequisite rather than papered over.
+   *
+   * ## `customer` carries an id and no name, for the same reason as the invoice screen
+   *
+   * `BillingReadService` publishes `payerPartnerId` with no display name today.
+   * Naming the payer means reading `crm.business_partners`, which would put
+   * another module's record in this row and therefore another module's read code
+   * on the list above — the disclosure rule slice 2 paid for. It is a named
+   * prerequisite, not a silent omission.
+   */
+  invoice_payment_summary: Object.freeze({
+    code: 'invoice_payment_summary',
+    titleKey: 'reports.invoice_payment_summary.title',
+    scope: 'branch',
+    requiredPermissions: Object.freeze(['sal.finance.view']),
+    parameterSchema: PERIOD_PARAMETERS,
+    columns: Object.freeze([
+      // The number is what a human reads and the id is the machine-readable half.
+      // No `drillThrough` — see above; one column, three kinds of document.
+      Object.freeze({ key: 'document', kind: 'reference' }),
+      // `invoice`, `receipt` or `credit_note`. The discriminator for every
+      // nullable column below, and for the route a client would choose.
+      Object.freeze({ key: 'documentType', kind: 'text' }),
+      // The document's own business instant, serialised UTC. The DAY it falls on
+      // depends on the zone, which is why the envelope states the zone it
+      // resolved in.
+      Object.freeze({ key: 'documentDate', kind: 'date' }),
+      Object.freeze({ key: 'branch', kind: 'text' }),
+      // The payer. An id with no label — see above.
+      Object.freeze({ key: 'customer', kind: 'reference' }),
+      // The currency every amount on the row is denominated in. D-4 rule 4: there
+      // is no rate anywhere in this platform, so no amount is ever comparable
+      // across two of these without one being invented.
+      Object.freeze({ key: 'currency', kind: 'text' }),
+      // Exact decimal strings, all four. Null where the document type has no such
+      // amount — never zero.
+      Object.freeze({ key: 'invoicedAmount', kind: 'money' }),
+      Object.freeze({ key: 'receiptAmount', kind: 'money' }),
+      Object.freeze({ key: 'allocatedAmount', kind: 'money' }),
+      Object.freeze({ key: 'outstanding', kind: 'money' }),
+      Object.freeze({ key: 'status', kind: 'text' }),
+    ]),
+  }),
 } as const satisfies Record<string, ReportDatasetDefinition>);
 
 /** The registered codes, as a union. An unknown code cannot be written. */

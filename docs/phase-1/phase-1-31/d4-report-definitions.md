@@ -52,9 +52,10 @@ The named prerequisites are:
   `remediation/p1-31-backend-report-engine-work-orders` (PR #364) and is NOT merged.** **Engine
   slice 2 — `technician_labor_time` — is implemented on
   `remediation/p1-31-backend-report-engine-datasets`, which is STACKED on that branch and is
-  likewise NOT merged and carries no hosted result. Engine slice 3 — `inventory_movements` — is
-  implemented on the same branch and is equally unmerged.** Slice 4, covering
-  `invoice_payment_summary`, has not started.
+  likewise NOT merged and carries no hosted result. Engine slices 3 and 4 —
+  `inventory_movements` and `invoice_payment_summary` — are implemented on the same branch and are
+  equally unmerged.** All four datasets D-4 approves now exist in code; none of them has a hosted
+  result, and none of the four screens has been started.
 - **P-12** — the export operation. Not started, and `rpt.export` remains withheld from the
   provisioning bundle on the Owner decision recorded as **CC-04**.
 
@@ -319,6 +320,39 @@ present it as one.
 **A reporting read that carries the restricted amount fields under both permission codes**, refusing
 the whole report rather than nulling a column — the refusal has to happen where the permission is
 evaluated, not where the column is rendered.
+
+### Status — implemented on an unmerged branch
+
+**Engine slice 4 implements this definition** on `remediation/p1-31-backend-report-engine-datasets`,
+stacked on PR #364's branch. Both are UNMERGED and neither carries a hosted result.
+
+The named prerequisite above is answered, and it was not answered by relaxing the definition: the
+dataset declares `sal.finance.view`, `ReportRunService` evaluates it BEFORE it reads anything and
+refuses the whole report with `ERR-IAM-001`, and a case proves the refusal carries no amount and no
+zero standing in for one.
+
+The five rules are implemented as written. `outstanding` is `sal.invoice_open_receivable` CALLED,
+compared in a test against the function itself rather than against a number written in the test;
+`credited` travels as the invoice's own status and the function reports nothing open for it; a
+reversed receipt is excluded from the rows and from every total; the groups are keyed on the
+currency so no measure can span two; every amount is a decimal string at `numeric(18,4)` scale, and
+the reporting module is now inside the exact-money gate's scanned surface.
+
+The rows are DOCUMENTS of three kinds — an invoice by its `issued_at`, a receipt by its
+`received_at`, an approved credit note by its own `issued_at` — with `documentType` as the
+discriminator and a NULL, never a zero, in every amount column a type has no equivalent for. The
+period is half-open in the branch's timezone (D-17).
+
+**Three absences this slice measured and did not paper over**, all recorded as named prerequisites
+in [`report-engine-seam.md`](./report-engine-seam.md) § 9 and raised in the change-control register:
+
+- **The `document` column publishes no drill-through**, because one column addresses three kinds of
+  document and a column carries one route template.
+- **The `customer` cell carries the payer's id and no name**, because naming it means reading
+  another module's record and therefore naming that module's read code.
+- **Two figures this section's own source table names are published by no column** — a credit-note
+  amount and `sal.receipt_unallocated`. The column list implemented is the one in "Columns and their
+  contracts" above; those two are Owner questions, stated rather than decided.
 
 ---
 

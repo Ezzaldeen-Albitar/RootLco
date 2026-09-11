@@ -9248,6 +9248,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-31-report-engine-inventory-movements.test.ts",
+        "tests/backend/p1-31-report-engine-invoice-payment.test.ts",
         "tests/backend/p1-31-report-engine-technician-labor.test.ts",
         "tests/backend/p1-31-report-engine-work-orders.test.ts"
       ],
