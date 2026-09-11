@@ -3721,7 +3721,7 @@
   "warranty.policies.renameFormLabel": "إعادة تسمية هذه الخطة",
   "warranty.policies.renameSubmit": "حفظ الاسم",
   "warranty.policies.renamed": "تم حفظ الاسم.",
-  "warranty.policies.stateHeading": "الاستخدام",
+  "warranty.policies.stateHeading": "ما إذا كانت هذه الخطة مستخدمة",
   "warranty.policies.stateExplain": "تقاعد الخطة يمنع عرضها عند إصدار الضمان. لا تتأثر الضمانات الصادرة بموجبها، وتبقى شروط تغطيتها كما هي تمامًا.",
   "warranty.policies.retirePlan": "إحالة هذه الخطة إلى التقاعد",
   "warranty.policies.restorePlan": "إعادة هذه الخطة إلى الاستخدام",

@@ -3721,7 +3721,7 @@
   "warranty.policies.renameFormLabel": "Rename this plan",
   "warranty.policies.renameSubmit": "Save the name",
   "warranty.policies.renamed": "The name has been saved.",
-  "warranty.policies.stateHeading": "In use",
+  "warranty.policies.stateHeading": "Whether this plan is in use",
   "warranty.policies.stateExplain": "Retiring a plan stops it being offered when a warranty is issued. Warranties already issued under it are not affected, and its cover terms are left exactly as they are.",
   "warranty.policies.retirePlan": "Retire this plan",
   "warranty.policies.restorePlan": "Put this plan back in use",
