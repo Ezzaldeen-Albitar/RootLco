@@ -1587,3 +1587,114 @@ this branch's own turn after #364 merges.
 | **S2-8**  | branch isolation with RLS reach deliberately widened into the refused branch, so the refusal is the scoped permission evaluation and not an empty result set; and the sibling branch's own sessions are invisible to the reported branch                                                                                                                                                                                                                                         |
 | **S2-9**  | `countsByState` empty for this dataset and still correct for `work_orders_by_status`, derived from that dataset's groups — slice 1's suite is unchanged in that respect and still green                                                                                                                                                                                                                                                                                          |
 | **S2-10** | the period helper changed nothing: `WorkOrderRepository.statusSummary` now composes it, and slice 1's boundary, counting and paging cases pass unmodified                                                                                                                                                                                                                                                                                                                        |
+
+---
+
+## 46. What P-11 changed — the report engine, dataset slice 3 (`inventory_movements`) — PROVISIONAL
+
+**Slice:** `remediation/p1-31-backend-report-engine-datasets`, ownership profile `p1-31-backend`.
+**Baseline:** `remediation/p1-31-backend-report-engine-work-orders` at `c7fb9f9e` — PR #364's
+branch, which is itself UNMERGED. This slice is STACKED on it and inherits its unmerged state.
+
+**Identifier allocation — PROVISIONAL, checked 2026-09-11 against this branch's own base.** Section
+36.1 records the register's rule: identifiers are allocated when a finding is raised and are never
+renumbered to follow heading order. **CC-34** is this section's allocation, taken from the same base
+as **CC-33** and equally unverified against protected `develop`. **Both the section number and the
+identifier must be re-checked against `develop` before this branch merges, and renumbered if either
+collides.** Nothing in this section depends on the number being right.
+
+### 46.1 What was published, and what was minted
+
+| published                                                                             | minted  |
+| ------------------------------------------------------------------------------------- | ------- |
+| 1 dataset, 0 operations, 0 routes, 0 paths, 0 audit actions, 1 new module file        | nothing |
+| 1 module port (1 repository method, 1 ordering contract)                              | nothing |
+| register unchanged at **407** operations and **316** OpenAPI paths; audit actions 232 | nothing |
+| bundle unchanged                                                                      | nothing |
+
+**Measured facts (not part of the decision).**
+
+- **`inventory_movements`** joins the dataset registry, which now holds exactly **three** entries. A
+  case asserts the exact list, so a fourth cannot arrive quietly.
+- **`inv.stock_movements` is append-only and immutable**, has no unit column, and its `occurred_at`
+  is assigned `now()` by `shared.stamp_status_history` on every insert
+  (`supabase/migrations/20260723094000_inv_ledger.sql`, `tg_stock_movements_stamp`). `app_runtime`
+  holds SELECT and INSERT on it and no UPDATE.
+- **`movement_type` is CHECK-constrained to five terms** and `transfer` is not among them.
+- **The committed OpenAPI document is byte-unchanged.** No operation, path, permission, audit
+  action, migration or seed row moved. `inv.stock.read` is an existing catalogue row.
+- **One new source file** under `apps/api/src`:
+  `modules/inventory/application/inventory-report-port.ts`. The instrumented-file denominator in
+  `tests/ci/baseline-integrity.test.ts` moves 284 → 285 with the admitted count 285 → 286. **The
+  coverage FLOORS are untouched**; re-establishing them needs a hosted measurement run, which this
+  slice did not perform and does not claim.
+- **The generated P1-24 operation register was regenerated** and lists the new suite against the
+  operation its text references. It was not hand-edited.
+- **The P1-27 evidence manifest was regenerated** (`npm run evidence:p1-27`) because two documents it
+  digests carry derived `tests/backend` file counts that a new test file moves, 137 → 138 and
+  146 → 147.
+
+### 46.2 Dispositions
+
+| id           | finding                                                                                                             | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | owner / slice | status                    |
+| ------------ | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------------------------- |
+| **CC-34**    | D-4 names a TRANSFER whose distinct meaning must be preserved, and the ledger cannot express one                    | **Measured facts (not part of the decision).** `ck_stock_movements_type` constrains `movement_type` to `opening`, `issue`, `return`, `damage`, `adjustment`. The `transfer` movement kind and the `transit` location type were dropped in Phase 1-10, and `modules/inventory/index.ts` states the disclaimer in the module's own surface. There is no primitive a transfer could be assembled from, and a two-movement "transfer" composed in the report would mint a business fact the ledger cannot express | **Engineering consequence (not an Owner decision), implemented.** The report renders the FIVE terms that exist and shows **no transfer bucket**, because an empty one reads as a real zero for a concept that does not exist. What D-4's sentence binds and this dataset does implement is the other half: a RETURN is never netted against an ISSUE — the group key carries the movement type and the `in` and `out` halves are two measures, never one signed sum. `signed_qty` exists on the table and is deliberately not read. Recorded so the Owner can see that the word in the decision has no referent in the schema; **making one is a migration and a module scope change, neither of which this slice takes** | Owner         | recorded — no action here |
+| **CC-34(a)** | the `item` column publishes NO drill-through, unlike every other reference column                                   | The register holds `inv.item-search`, a LIST, and no per-item read operation. Slice 1 set the precedent that `drillThrough` is optional on a `reference` column — `customer` and `vehicle` both carry none                                                                                                                                                                                                                                                                                                    | **Engineering consequence, implemented.** No template is published. Naming a route for an operation that does not exist would publish a link that cannot resolve, and the item id travels in the cell either way, so a client that can resolve an item resolves it. Recorded as a named prerequisite (`report-engine-seam.md` § 9 row 9) so FE-013 inherits it rather than discovering it                                                                                                                                                                                                                                                                                                                                 | this slice    | settled — recorded in § 9 |
+| **CC-34(b)** | the unit on a report row is the item's CURRENT unit, because the movement records none                              | `inv.stock_movements` has no `uom_id` column; the unit is `inv.item_master.uom_id`. Proved against `information_schema` in the suite rather than asserted                                                                                                                                                                                                                                                                                                                                                     | **Engineering consequence, implemented and recorded.** The report joins the item's unit and puts it in the group key, which is what makes D-5's separation visible rather than implicit. The consequence, stated plainly: re-pointing an item's unit restates its whole movement history. Carrying the unit on the movement is a schema change and therefore a migration nobody has authorised; it is `report-engine-seam.md` § 9 row 10                                                                                                                                                                                                                                                                                  | this slice    | settled — recorded in § 9 |
+| **CC-34(c)** | the ledger cannot record a BACKDATED movement, so a period report over `occurred_at` reports when a row was WRITTEN | `tg_stock_movements_stamp` runs `shared.stamp_status_history`, which assigns `NEW.occurred_at := now()` unconditionally, and `app_runtime` holds SELECT and INSERT and no UPDATE. The suite proves all three against the deployed function, trigger and grants                                                                                                                                                                                                                                                | **Recorded, not changed.** The report is exactly as accurate as the column, and for movements posted as they happen the two coincide. What nobody can do is post a movement dated earlier, which a tenant migrating history would need. It is `report-engine-seam.md` § 9 row 11. **The suite's own fixtures restate `occurred_at` with an admin UPDATE after inserting through the full provenance guard**, and say so in the file: `app_runtime` cannot perform that UPDATE, so the fixture is visibly not exercising an application path                                                                                                                                                                               | this slice    | settled — recorded in § 9 |
+
+### 46.3 What this slice did NOT do
+
+- **No migration and no schema change.** Every statement uses grants and policies that already
+  existed; `inv` is untouched.
+- **No permission was minted and no bundle changed.** `inv.stock.read` is an existing catalogue row,
+  and this is the first report to require it.
+- **No new operation, no new route and no new path.** `rpt.report-run` serves the dataset, and the
+  committed OpenAPI document is byte-unchanged.
+- **No export.** Prerequisite P-12 is untouched; `rpt.export` stays excluded on **CC-04**'s grounds.
+- **No frontend.** `apps/web/src` was not edited at all.
+- **`InventoryReadService` was not changed.** The report port is a new class beside it, because that
+  service takes a scope authorizer and writes an `inv.movement_history.read` audit row on every call.
+- **The last baseline report is not implemented.** `invoice_payment_summary` is a named prerequisite
+  and nothing here narrows it.
+- **No allow-list was widened and no gate was suppressed.** No `@ts-expect-error`, no
+  `eslint-disable`, no skipped or retried test. `scripts/check-operation-test-coverage.mjs` was NOT
+  edited: the new suite declares a `COVERAGE-EVIDENCE` block beside its assertions, and
+  `rpt.report-run`'s required evidence was already provided by slice 1's file.
+- **The P1-23 and P1-24 mutation matrices were not run**, and no mutation was re-targeted: this
+  slice redefines no property either matrix attacks.
+
+### 46.4 Proof
+
+**Measured facts (not part of the decision) — where these results come from.** The runs below were
+observed on 2026-09-11 at this branch's head. Every database-bound run used a DISPOSABLE LOCAL
+CLONE, `p131_report_controls_20260910` on `127.0.0.1:55432`, carrying 139 migrations, with
+`DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` stated explicitly in the environment
+of each command and the environment printed before each one:
+
+| run                                                             | result                 | database window (UTC) |
+| --------------------------------------------------------------- | ---------------------- | --------------------- |
+| `tests/backend/p1-31-report-engine-inventory-movements.test.ts` | 25/25                  | 14:46:28 → 14:46:37   |
+| the five reporting backend suites together, on the clone        | 5 files, 120/120       | 14:47:44 → 14:48:16   |
+| the six inventory backend suites, on the clone                  | 6 files, 163/163       | 14:48:24 → 14:49:11   |
+| `npm run test:unit` (whole unit tier, includes `tests/ci`)      | 3300/3300 in 122 files | no database           |
+
+**There was no hosted gate, no run against the shared database, and no merge.** This branch has no
+remote head and no checks recorded, and its base PR #364 is itself unmerged. Final integration and
+shared-database evidence follow the coordinator's dependency and database ownership sequence, at
+this branch's own turn after #364 merges.
+
+| id        | what was shown                                                                                                                                                                                                                                                                                                     |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **S3-1**  | `tests/backend/p1-31-report-engine-inventory-movements.test.ts` — the columns in the Owner's order and their kinds, the rows, the groups, the period, the authorization and the paging, on real movements cited to real approved opening lines, part issues, part returns, damage records and approved adjustments |
+| **S3-2**  | all FIVE movement types with the direction the CHECK constrains, including the damage PAIR from one source row, out of the warehouse and in to quarantine                                                                                                                                                          |
+| **S3-3**  | the absence of `transfer` proved against the live `ck_stock_movements_type` definition and against the table, so the report's silence about it is a schema fact rather than a fixture gap                                                                                                                          |
+| **S3-4**  | totals separated by `(item, unit, movement type)` with exact decimal strings, the two units genuinely incompatible (`each` is a count, `litre` a volume), and NO measure spanning two items or two units                                                                                                           |
+| **S3-5**  | a return never netted against an issue: 4.000 issued and 1.500 returned, with 2.500 appearing in no measure and the two kept as two groups                                                                                                                                                                         |
+| **S3-6**  | the half-open period in the BRANCH zone on FOUR instants: local midnight on the first included day is IN, one second earlier is OUT, one second before local midnight on the excluded day is IN, and that midnight itself is OUT — with each excluded movement's quantity absent from every total                  |
+| **S3-7**  | the permissions from BOTH sides: a principal holding `rpt.report.read` alone is refused naming `inv.stock.read` by the SERVICE, one holding `inv.stock.read` alone is refused naming `rpt.report.read` by the ROUTE                                                                                                |
+| **S3-8**  | branch isolation with RLS reach deliberately widened into the refused branch, so the refusal is the scoped permission evaluation and not an empty result set; and the sibling branch's own movement is invisible to the reported branch                                                                            |
+| **S3-9**  | paging over a NON-UNIQUE sort column: three pages reconstruct the whole selection exactly, with the damage pair — which shares an instant — split across a page boundary, which is where a sort-only cursor loses a row; and the groups are identical on every page                                                |
+| **S3-10** | a cursor minted for the LEDGER SCREEN's ordering over the same table refused with `ERR-PAG-001` rather than reinterpreted                                                                                                                                                                                          |
+| **S3-11** | every quantity a STRING at `numeric(12,3)` scale, in cells and in measures alike, so no value made a trip through a JSON number                                                                                                                                                                                    |
+| **S3-12** | the two ledger limitations measured against the deployed database rather than asserted: no unit column on the movement, and `occurred_at` stamped from the transaction clock with `app_runtime` holding SELECT and INSERT only                                                                                     |

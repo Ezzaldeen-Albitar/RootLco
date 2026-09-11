@@ -246,6 +246,97 @@ export const REPORT_DATASETS = Object.freeze({
       Object.freeze({ key: 'source', kind: 'text' }),
     ]),
   }),
+
+  /**
+   * Stock movements in a period, in one branch, totalled per item and unit
+   * (D-4, D-5, D-17 — engine slice 3).
+   *
+   * ## The Owner's columns, in the Owner's order
+   *
+   * D-4 names them: "movement date, reference and type, the item, the warehouse
+   * or location, and the quantity with its unit. Totals are separated by item and
+   * by compatible unit, and the distinct meanings of a return and a transfer are
+   * preserved rather than netted away"
+   * (`docs/phase-1/phase-1-31/owner-decisions-2026-09-09.md` § 3). The
+   * column list below is exactly that, split where the source splits: `reference`
+   * and `movementType` are two columns because `inv.stock_movements` carries them
+   * as two columns, and `direction` is published beside the type because the
+   * table constrains the pair together (`ck_stock_movements_type_direction`) and a
+   * reader who cannot see the direction cannot tell an adjustment up from an
+   * adjustment down. Nothing else was added.
+   *
+   * ## There IS no transfer, and the report says so rather than showing an empty row
+   *
+   * D-4 asks that "the distinct meanings of a return and a transfer are preserved
+   * rather than netted away". `inv.stock_movements.movement_type` is CHECK-constrained to
+   * exactly five terms — `opening`, `issue`, `return`, `damage`, `adjustment`
+   * (`supabase/migrations/20260723094000_inv_ledger.sql`) — and TRANSFER IS NOT
+   * ONE OF THEM. The inventory module disclaims transfers by design: the
+   * `transfer` movement kind and the `transit` location type were dropped in
+   * Phase 1-10, so there is no primitive a transfer could be built on and a
+   * two-movement "transfer" assembled here would mint a business fact the ledger
+   * cannot express.
+   *
+   * So the report renders the five terms that exist and the seam record states the
+   * absence of the sixth. What D-4's sentence still binds, and what this dataset
+   * does implement, is that a RETURN is never netted against an ISSUE: the totals
+   * are keyed by movement type and the `in` and `out` halves are separate
+   * measures, never one signed sum. `signed_qty` exists on the table and is
+   * deliberately not read.
+   *
+   * ## Why the quantity is a string and the unit is a column
+   *
+   * `quantity` is `numeric(12,3)` and travels as a decimal string end-to-end, the
+   * convention the inventory repository already holds without exception
+   * (`inventory-read-service.ts`), because IEEE-754 cannot represent the third
+   * decimal place. `unit` is its own column because a quantity without its unit
+   * is not a quantity — D-5 forbids a single quantity across unlike items, and the
+   * group key carries the unit for the same reason.
+   *
+   * ## `item` is a reference WITHOUT a drill-through, and that is measured
+   *
+   * The cell carries the item id beside its SKU, so a client that can resolve an
+   * item resolves it. No `drillThrough` template is published because THERE IS NO
+   * PER-ITEM READ OPERATION to name: the register holds `inv.item-search`, a
+   * list, and no `inv.item-read`. Slice 1 set the precedent that a `reference`
+   * column may have no template — `customer` and `vehicle` both do — and inventing
+   * a route for an operation that does not exist would publish a link that cannot
+   * resolve. It is recorded as a named prerequisite instead.
+   *
+   * ## One permission code
+   *
+   * `inv.stock.read` is the code `inv.stock-movement-list` declares for the same
+   * rows (`apps/api/src/app/api/v1/stock-movements/route.ts`). Every column this
+   * report publishes is `inv` master data or the ledger itself, so unlike the
+   * labour report there is no second module's record in the row and no second
+   * code to name.
+   */
+  inventory_movements: Object.freeze({
+    code: 'inventory_movements',
+    titleKey: 'reports.inventory_movements.title',
+    scope: 'branch',
+    requiredPermissions: Object.freeze(['inv.stock.read']),
+    parameterSchema: PERIOD_PARAMETERS,
+    columns: Object.freeze([
+      // The movement's own business instant, serialised UTC. The DAY it falls on
+      // depends on the zone, which is why the envelope states the zone it
+      // resolved in.
+      Object.freeze({ key: 'occurredAt', kind: 'date' }),
+      // The `reference_kind` / `reference_id` pair. `uq_stock_movements_source`
+      // makes the pair single-use per direction, so the two together ARE the
+      // document reference: the kind is the label and the id is the value.
+      Object.freeze({ key: 'reference', kind: 'text' }),
+      Object.freeze({ key: 'movementType', kind: 'text' }),
+      Object.freeze({ key: 'direction', kind: 'text' }),
+      // No `drillThrough` — see above; there is no per-item read operation.
+      Object.freeze({ key: 'item', kind: 'reference' }),
+      Object.freeze({ key: 'location', kind: 'text' }),
+      // A decimal string in the unit the next column names. The `quantity` kind
+      // is how a client knows it is neither a count nor an amount.
+      Object.freeze({ key: 'quantity', kind: 'quantity' }),
+      Object.freeze({ key: 'unit', kind: 'text' }),
+    ]),
+  }),
 } as const satisfies Record<string, ReportDatasetDefinition>);
 
 /** The registered codes, as a union. An unknown code cannot be written. */

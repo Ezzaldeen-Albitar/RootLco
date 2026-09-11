@@ -1,4 +1,4 @@
-# The report engine — P1-31 prerequisite P-11, slices 1 and 2 of 4
+# The report engine — P1-31 prerequisite P-11, slices 1, 2 and 3 of 4
 
 **Status:** implemented on branch `remediation/p1-31-backend-report-engine-work-orders`,
 **UNMERGED**; executable tree at `b14818ce`, with records-only commits after it · **Authority:**
@@ -292,6 +292,16 @@ itself leaves for the two datasets after it:
 | 7   | **No technician detail screen consumes the `technician` drill-through.** The column publishes the route template `/technicians/{id}`, which the API states and the client resolves; `apps/web` has `technicians/me` and no per-technician route at this head. FE-012 is not started, so the template names a screen that does not yet exist and a client without it simply renders no link | open, raised by slice 2                                                                                                                                                                                                                                                                  |
 | 8   | **A duration is seconds, not hours.** Every `duration` cell and every `durationSeconds` measure is whole seconds as an integer string. Presenting hours is a DIVISION and therefore a rounding decision; nobody has taken it, and taking it in the API would make every total built on the figure carry the error                                                                          | open, raised by slice 2                                                                                                                                                                                                                                                                  |
 
+**Movement recorded by engine slice 3** (same branch, same unmerged state). Row 3 closes for the
+inventory report; rows 9 to 11 are what slice 3 itself leaves behind:
+
+| #   | prerequisite                                                                                                                                                                                                                                                                                                                                                                                              | state after slice 3                                                                                                    |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| 3   | Aggregate and batch ports for the other reports                                                                                                                                                                                                                                                                                                                                                           | **closed for the inventory report too.** `inventoryModule().reportPort`. Only `invoice_payment_summary` still owes one |
+| 9   | **There is NO PER-ITEM READ OPERATION.** The `item` column is a `reference` with no `drillThrough`, because the register holds `inv.item-search` (a list) and no `inv.item-read`. A template naming an operation that does not exist would publish a link that cannot resolve, so none is published. Adding one is a new operation, not a change to this dataset                                          | open, raised by slice 3                                                                                                |
+| 10  | **`inv.stock_movements` records no unit.** The report joins `inv.item_master.uom_id`, so the unit on a row is the item's unit AS IT IS NOW — re-pointing an item's unit restates its whole movement history. The unit is in the group key regardless, which keeps the separation visible; carrying the unit on the movement is a schema change nobody has authorised                                      | open, raised by slice 3                                                                                                |
+| 11  | **The ledger cannot record a BACKDATED movement.** `shared.stamp_status_history` assigns `occurred_at := now()` unconditionally on every insert, and `app_runtime` holds SELECT and INSERT and no UPDATE. A movement's date is the date it was written, and a period report over `occurred_at` is exactly as accurate as that. Nothing here is wrong; what nobody can do is post a movement dated earlier | open, raised by slice 3                                                                                                |
+
 ## 10. What this slice does NOT close
 
 **Measured facts (not part of the decision) — what was actually run, and where.** On 2026-09-11, at
@@ -450,4 +460,115 @@ unchanged.
 - **No frontend.** FE-012 is not started and `apps/web/src` was not edited at all.
 - **The remaining two baseline reports are not implemented.** The registry holds exactly two entries
   and a case asserts the exact list, so a third cannot arrive quietly.
+- **No allow-list was widened and no gate was suppressed.**
+
+---
+
+## 12. Engine slice 3 — `inventory_movements`
+
+**Status:** implemented on `remediation/p1-31-backend-report-engine-datasets`, **stacked on the
+slice-1 branch and equally UNMERGED**; no hosted result exists for it. **Authority:** Owner decision
+**D-4** of 2026-09-09 for the columns and the totals rule, **D-5** for the prohibition on a single
+quantity across unlike items, **D-17** of 2026-09-10 for the period. Everything below headed
+_Engineering consequence_ is this coordinator's choice and not an Owner decision.
+
+### 12.1 The Owner's text, quoted
+
+> **`inventory_movements`** — movement date, reference and type, the item, the warehouse or location,
+> and the quantity with its unit. Totals are separated by item and by compatible unit, and the
+> distinct meanings of a return and a transfer are preserved rather than netted away.
+> — [`owner-decisions-2026-09-09.md`](./owner-decisions-2026-09-09.md) § 3 (D-4)
+
+> No single inventory quantity is presented across unlike items; a quantity is meaningful only within
+> an item and a compatible unit.
+> — [`owner-decisions-2026-09-09.md`](./owner-decisions-2026-09-09.md) § 4 (D-5)
+
+> Every report period is **half-open**, `[from, to)`, expressed in the **selected branch's
+> timezone** and converted consistently before it reaches a server query. … The **timezone and the
+> filter context are displayed and preserved** wherever the result is shown, printed or recorded.
+> — [`owner-decisions-2026-09-10.md`](./owner-decisions-2026-09-10.md) § 4 (D-17)
+
+### 12.2 Measured facts (not part of the decision)
+
+- `inv.stock_movements` (`supabase/migrations/20260723094000_inv_ledger.sql`) carries `item_id`,
+  `location_id`, `movement_type`, `direction`, `quantity numeric(12,3)`, a GENERATED `signed_qty`, a
+  `reference_kind` / `reference_id` pair, `occurred_at` and a `seq` identity. It is **append-only and
+  immutable**: no `deleted_at`, no status column, and `app_runtime` holds SELECT and INSERT only.
+- **`movement_type` is CHECK-constrained to exactly five terms** — `opening`, `issue`, `return`,
+  `damage`, `adjustment`. **`transfer` is not one of them**, and neither is `receipt`: the inventory
+  module disclaims transfers by design, the `transfer` movement kind and the `transit` location type
+  having been dropped in Phase 1-10.
+- **`ck_stock_movements_type_direction` constrains the pair**: `opening` and `return` are always
+  `in`, `issue` is always `out`, `damage` and `adjustment` may be either. **Damage is the only kind
+  that posts a PAIR from one source row** — out of the sellable location and in to quarantine — which
+  `uq_stock_movements_source`, unique on `(reference_kind, reference_id, direction)`, is what permits.
+- **There is no unit column on the movement.** The unit is `inv.item_master.uom_id →
+inv.units_of_measure (code, name, dimension)`, a property of the ITEM.
+- **`occurred_at` cannot be chosen.** `tg_stock_movements_stamp` runs `shared.stamp_status_history`,
+  which assigns `NEW.occurred_at := now()` on every insert.
+- **There is no per-item read operation.** The register holds `inv.item-search`, a list, and no
+  `inv.item-read`.
+
+### 12.3 Engineering consequence (not an Owner decision)
+
+- **Columns, in the Owner's order:** `occurredAt` (date), `reference` (text — the kind labels the
+  ledger's `(reference_kind, reference_id)` pair and the id identifies it, NOT concatenated, because
+  joining them would make this module the authority on how a reference is spelled), `movementType`
+  (text), `direction` (text), `item` (reference — SKU label, item id), `location` (text — name as the
+  label, branch-unique `location_code` as the value), `quantity` (quantity — an unrounded decimal
+  string) and `unit` (text — the UOM code). **`direction` is the one column added beside the Owner's
+  list**, because the CHECK constrains it together with the type and a reader who cannot see it
+  cannot tell an adjustment up from an adjustment down. Nothing else was added, and `signed_qty` is
+  deliberately NOT published.
+- **The group key is `(item, unit, movementType)` and there is no grand total.** D-5 forbids a single
+  quantity across unlike items and D-4 requires totals separated by item and by compatible unit, so
+  both are in the key: two units can never merge into one number because they are two groups. The
+  measures are `quantityIn` and `quantityOut`, TWO FILTERed sums rather than one signed sum, so **a
+  return is never netted against an issue** — which is what D-4's sentence about preserving distinct
+  meanings binds on a ledger that has no transfer.
+- **The transfer that does not exist is STATED, not shown as an empty bucket.** An empty transfer row
+  would read as a real zero for a concept the ledger cannot express. The suite proves the absence
+  against the live CHECK constraint rather than against a comment.
+- **Every quantity is a decimal string, end to end.** `numeric(12,3)` arrives from `pg` as text and
+  stays text: no `Number`, no `toFixed`, no arithmetic in TypeScript. The sums are computed in SQL
+  over the same expression the rows carry, so adding a page by hand can never disagree with a group.
+  A FILTERed sum over an empty set is NULL and the zero is supplied as `0::numeric(12,3)`, so a
+  measure is a decimal string at the same scale as a real one; **the sum itself is never cast**,
+  because casting it back to `numeric(12,3)` would make a large branch's total raise an overflow
+  instead of reporting a number.
+- **One required permission, `inv.stock.read`** — the code `inv.stock-movement-list` declares for the
+  same rows. One and not two: every column is `inv` master data or the ledger itself, so unlike the
+  labour report there is no second module's record in the row.
+- **The ordering is `occurred_at DESC, id`, under its OWN qualified contract key.** Not the ledger
+  screen's `seq`: this is a report ABOUT A PERIOD, and sorting it on an insertion sequence would let
+  a movement dated the third be paged between two dated the fifth. `occurred_at` is not unique, so
+  the row id is the tie-break — the damage pair shares an instant, which is the case that needs it —
+  and the cursor value is the microsecond-precision string, never a JS `Date` (`P1-27-INT-006`).
+- **The port is a separate class, not a method on `InventoryReadService`.**
+  `InventoryReadService.listMovements` takes a scope authorizer and writes an
+  `inv.movement_history.read` audit row on every call. A report run is audited as itself; a second
+  entry attributed to an operation the caller never invoked would be a false trail.
+
+### 12.4 Ports added
+
+| port                                                           | why it exists                                                                                                                                                                                                                 |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `inventoryModule().reportPort` (`InventoryReportPort`)         | `inv.*` is the inventory module's private schema, so the selection, the totals and the master-data joins live there and reporting asks for the answer                                                                         |
+| `InventoryRepository.movementReport` + `MOVEMENT_REPORT_ORDER` | one scope predicate composed by both statements, so a total can never stop matching the rows it totals; and a second ordering contract over the same table, qualified so a ledger cursor is refused rather than reinterpreted |
+
+The port performs NO authorization: the dataset registry declares the code and `ReportRunService`
+evaluates it, in one place.
+
+### 12.5 What slice 3 does NOT close
+
+- **No migration, no schema change, no seed row, no permission and no audit action.**
+  `inv.stock.read` is an existing catalogue row and no bundle moved.
+- **No new operation and no new path.** `rpt.report-run` serves the dataset; the register stays at
+  407 operations and 316 OpenAPI paths, and the committed contract document is byte-unchanged.
+- **No export, and no frontend.** P-12 is untouched, `rpt.export` stays excluded on CC-04's grounds,
+  and `apps/web/src` was not edited at all (FE-013 is not started).
+- **`invoice_payment_summary` is not implemented.** The registry holds exactly three entries and a
+  case asserts the exact list, so a fourth cannot arrive quietly.
+- **The ledger's own limitations are not fixed here.** No unit on the movement, no backdated
+  movement, no per-item read operation — all three are recorded in § 9 rather than worked around.
 - **No allow-list was widened and no gate was suppressed.**

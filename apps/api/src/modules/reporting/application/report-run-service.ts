@@ -95,6 +95,7 @@ import { callerHoldsPermission } from '@/server/auth/authorization';
 import type { DbHandle } from '@/server/db/transaction';
 import type { Page } from '@/server/db/pagination';
 import { iamOrganizationContext } from '@/modules/iam';
+import { inventoryModule } from '@/modules/inventory';
 import { technicianModule } from '@/modules/technician';
 import { workOrderModule } from '@/modules/work-order';
 import type { ReportCatalogueRepository } from '../data/report-catalogue-repository';
@@ -480,6 +481,95 @@ const runTechnicianLaborTime: ReportResolver = async (db, input) => {
 };
 
 /**
+ * `inventory_movements` — engine slice 3 (D-4, D-5, D-17).
+ *
+ * ## One port, because one module owns every table in the row
+ *
+ * The ledger, the item, its unit and the location are all `inv.*`, which is the
+ * inventory module's private schema (ADR-001 rule 3). So one call to
+ * `inventoryModule().reportPort` produces the whole row and the whole total, and
+ * nothing is joined or resolved here.
+ *
+ * ## The groups are keyed on THREE things, and that is the Owner's rule
+ *
+ * `(itemId, uomCode, movementType)`. D-5 forbids a single quantity across unlike
+ * items and D-4 requires totals "separated by item and by compatible unit", so
+ * the item and the unit are both in the key: two units of one item can never
+ * merge into one number, because they are two groups.
+ *
+ * The movement type is in the key because D-4 requires the distinct meanings of
+ * the movement kinds to be preserved. Within a type the `in` and `out` halves are
+ * TWO MEASURES rather than one signed sum, so a return is never netted against an
+ * issue. Nothing on this envelope is a grand total.
+ *
+ * ## Nothing is recomputed
+ *
+ * Every quantity arrives as a decimal string from `numeric(12,3)` and is placed
+ * in the cell unchanged — no `Number`, no `toFixed`, no addition here. The sums
+ * are computed in SQL over the same expression the rows carry, so adding a page
+ * by hand can never disagree with the group.
+ */
+const runInventoryMovements: ReportResolver = async (db, input) => {
+  const report = await inventoryModule().reportPort.movementSummary(
+    db,
+    {
+      companyId: input.companyId,
+      branchId: input.branchId,
+      from: input.from,
+      toExclusive: input.toExclusive,
+      timezoneName: input.timezoneName,
+    },
+    { cursor: input.cursor, limit: input.limit }
+  );
+
+  return {
+    groups: report.totals.map((total) => ({
+      key: {
+        item: total.itemId,
+        unit: total.uomCode,
+        movementType: total.movementType,
+      },
+      // The SKU is what a human reads; the unit and the type are already legible
+      // in the key, and repeating them in the label would be this module
+      // inventing a format for a string a client renders.
+      label: total.sku,
+      measures: { quantityIn: total.quantityIn, quantityOut: total.quantityOut },
+    })),
+    rows: {
+      ...report.movements,
+      items: report.movements.items.map((movement) => ({
+        cells: [
+          // The movement's own business instant, serialised UTC. Which DAY it
+          // falls on depends on the zone, which is why the envelope states the
+          // zone it resolved in.
+          cell('occurredAt', null, movement.occurredAt),
+          // The kind labels the reference and the id identifies it. The two are
+          // not concatenated: joining them would make this module the authority
+          // on how a reference is spelled, which belongs to whoever renders it.
+          cell('reference', movement.referenceKind, movement.referenceId),
+          // The raw five-term vocabulary and the two-term direction. No labels,
+          // because no catalogue carries a name for either and an English word
+          // invented here would ship as though it were one.
+          cell('movementType', null, movement.movementType),
+          cell('direction', null, movement.direction),
+          cell('item', movement.sku, movement.itemId),
+          // The location's NAME is what a human reads and its CODE is the
+          // machine-readable half — the `state` column's treatment in slice 1,
+          // for the same reason: `uq_stock_locations_code` makes the code unique
+          // within a branch, so it identifies the location as well as an id
+          // would, and it is the string a store actually uses. Both columns are
+          // NOT NULL, so neither half is ever absent.
+          cell('location', movement.locationName, movement.locationCode),
+          // A decimal string, unrounded, in the unit the next cell names.
+          cell('quantity', null, movement.quantity),
+          cell('unit', movement.uomName, movement.uomCode),
+        ],
+      })),
+    },
+  };
+};
+
+/**
  * Code → resolver, TOTAL by construction.
  *
  * `Record<ReportDatasetCode, …>` over the registry's own key union: a dataset
@@ -491,6 +581,7 @@ const runTechnicianLaborTime: ReportResolver = async (db, input) => {
 const RESOLVERS: Readonly<Record<ReportDatasetCode, ReportResolver>> = Object.freeze({
   work_orders_by_status: runWorkOrdersByStatus,
   technician_labor_time: runTechnicianLaborTime,
+  inventory_movements: runInventoryMovements,
 });
 
 /**

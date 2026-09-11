@@ -52,8 +52,9 @@ The named prerequisites are:
   `remediation/p1-31-backend-report-engine-work-orders` (PR #364) and is NOT merged.** **Engine
   slice 2 — `technician_labor_time` — is implemented on
   `remediation/p1-31-backend-report-engine-datasets`, which is STACKED on that branch and is
-  likewise NOT merged and carries no hosted result.** Slices 3 and 4, covering
-  `inventory_movements` and `invoice_payment_summary`, have not started.
+  likewise NOT merged and carries no hosted result. Engine slice 3 — `inventory_movements` — is
+  implemented on the same branch and is equally unmerged.** Slice 4, covering
+  `invoice_payment_summary`, has not started.
 - **P-12** — the export operation. Not started, and `rpt.export` remains withheld from the
   provisioning bundle on the Owner decision recorded as **CC-04**.
 
@@ -230,6 +231,38 @@ property of the item, so it cannot be derived from a movement row alone.
    quantity across unlike items: summing litres and pieces into a single figure produces a number that
    looks authoritative and means nothing. The unit is part of the grouping key precisely so that the
    query cannot be written the other way.
+
+### Status — implemented on an unmerged branch
+
+**Engine slice 3 implements this definition** on `remediation/p1-31-backend-report-engine-datasets`,
+stacked on PR #364's branch. Both are UNMERGED and neither carries a hosted result.
+
+Every prerequisite this section named is answered, and none was answered by relaxing the definition:
+
+| prerequisite named above                            | how it was answered                                                                                                                                                                                                                            |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the row carries no item name, unit or location code | `InventoryRepository.movementReport` joins `inv.item_master`, `inv.units_of_measure` and `inv.stock_locations` in the same statement, so the report row carries the SKU, the item name, the unit code and name, and the location code and name |
+| a summary grouping by `(item, unit, movement_type)` | the group key is exactly `(item, unit, movementType)` with `quantityIn` and `quantityOut` as two FILTERed sums. There is no grand total, no cross-item measure and no signed sum                                                               |
+
+The columns are the Owner's, in the Owner's order, with `direction` published beside `movementType`
+because `ck_stock_movements_type_direction` constrains the pair together and a reader who cannot see
+the direction cannot tell an adjustment up from an adjustment down. Nothing else was added. The
+period is half-open on `occurred_at` in the branch's timezone (D-17). The required permission is
+`inv.stock.read`, the code `inv.stock-movement-list` declares for the same rows — one code, because
+every column is `inv` master data or the ledger itself.
+
+**Two absences this slice measured and did not paper over**, both recorded as named prerequisites in
+[`report-engine-seam.md`](./report-engine-seam.md) § 9:
+
+- **The ledger has no unit column.** The unit on a report row is the item's unit AS IT IS NOW, so
+  re-pointing an item's unit restates its movement history. The unit is in the group key anyway,
+  which is what makes the separation visible rather than implicit.
+- **The ledger cannot record a backdated movement.** `shared.stamp_status_history` assigns
+  `occurred_at := now()` on every insert and `app_runtime` holds SELECT and INSERT and no UPDATE, so
+  a movement's date is the date it was written. The report is correct over that column; what nobody
+  can do is post a movement dated earlier.
+
+The full record is [`report-engine-seam.md`](./report-engine-seam.md) § 12.
 
 ---
 

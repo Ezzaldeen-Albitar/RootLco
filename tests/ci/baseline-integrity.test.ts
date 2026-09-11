@@ -507,7 +507,7 @@ describe('the coverage include lists are pinned, because they are the denominato
       typeScriptFilesUnder(pattern.slice(0, -'/**/*.ts'.length))
     );
     expect(files.filter((file) => file.endsWith('.d.ts'))).toEqual([]);
-    expect(files.length).toBe(285);
+    expect(files.length).toBe(286);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -557,10 +557,19 @@ describe('the coverage include lists are pinned, because they are the denominato
      * a hosted measurement run, which this slice did not perform and does not
      * claim.
      *
-     * The 285 above is these 284 plus `server/openapi/document.ts`, which the
+     * 285 with the P1-31 report engine slice 3 (P-11, `inventory_movements`):
+     * ONE more file, `modules/inventory/application/inventory-report-port.ts`,
+     * the inventory module answering for `inv.*` — which the reporting module may
+     * not read, and which could not be a method on `InventoryReadService` because
+     * that service writes an `inv.movement_history.read` audit row on every call
+     * and a report run is audited as itself. The floors are untouched for the
+     * reason above: re-establishing them needs a hosted measurement run, which
+     * this slice did not perform and does not claim.
+     *
+     * The 286 above is these 285 plus `server/openapi/document.ts`, which the
      * include list admits and `exclude` then removes; the two numbers moving
-     * together by two is what says no file slipped in behind the exclusion.
+     * together by one is what says no file slipped in behind the exclusion.
      */
-    expect(instrumented.length).toBe(284);
+    expect(instrumented.length).toBe(285);
   });
 });

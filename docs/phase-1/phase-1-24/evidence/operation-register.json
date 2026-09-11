@@ -5079,7 +5079,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-21-inventory-reads.test.ts",
-        "tests/backend/p1-30-w5-parts-movements.test.ts"
+        "tests/backend/p1-30-w5-parts-movements.test.ts",
+        "tests/backend/p1-31-report-engine-inventory-movements.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/stock-movements/route.ts"
@@ -9246,6 +9247,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-report-engine-inventory-movements.test.ts",
         "tests/backend/p1-31-report-engine-technician-labor.test.ts",
         "tests/backend/p1-31-report-engine-work-orders.test.ts"
       ],
