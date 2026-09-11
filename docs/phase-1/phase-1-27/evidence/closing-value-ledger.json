@@ -36,8 +36,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "the current tree executes **3726** tests",
-      "value": "3726",
+      "locator": "the current tree executes **3749** tests",
+      "value": "3749",
       "binding": {
         "kind": "run",
         "tier": "web",
@@ -50,8 +50,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "**The 3726 is local, and it is pending attestation by this pull request's hosted",
-      "value": "3726",
+      "locator": "**The 3749 is local, and it is pending attestation by this pull request's hosted",
+      "value": "3749",
       "binding": {
         "kind": "run",
         "tier": "web",
@@ -77,8 +77,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Web tier — tests executed                   | 3726  | `--record web`, from the `vitest` JSON report                      |",
-      "value": "3726",
+      "locator": "| Web tier — tests executed                   | 3749  | `--record web`, from the `vitest` JSON report                      |",
+      "value": "3749",
       "binding": {
         "kind": "run",
         "tier": "web",

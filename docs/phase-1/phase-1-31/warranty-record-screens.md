@@ -214,32 +214,47 @@ Every command below was run locally on this branch, in the working tree this rec
 Nothing here is a claim about a hosted run, and a command that was not run in this record is named
 as not run rather than left to look like a pass.
 
-| command                                                                 | result                                                                      |
-| ----------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `npm run typecheck`, `typecheck:web`                                    | pass                                                                        |
-| `npm run lint`, `lint:web`                                              | pass — 0 errors; 12 pre-existing warnings, none in touched files            |
-| `npm run format:check`, `format:check:web`, `style:check`               | pass                                                                        |
-| `npm run validate:web-boundary`                                         | pass — 351 files, 0 violations                                              |
-| `npm run validate:use-server-exports`                                   | pass — 48 modules across 950 files                                          |
-| `npm run validate:plain-language`                                       | pass — 2 catalogues, 24 rules, 0 findings                                   |
-| `npm run validate:module-boundaries`                                    | pass                                                                        |
-| `npm run validate:web-topology`, `web-tokens`, `web-theme`, `web-brand` | pass                                                                        |
-| `npm run validate:encoding`, `validate:generated-artifacts`             | pass                                                                        |
-| `npm run validate:p1-31-access`                                         | pass — 10 route pages across 7 owned segments, 0 violations                 |
-| `npm run security:all`                                                  | pass — 2711 tracked files, 0 findings across all four scanners              |
-| `npm run verify:policies`                                               | pass — exit 0                                                               |
-| `validate:phase-ownership` (`p1-31-frontend`, both invocation forms)    | pass — 31 changed files, 0 violations (web 17, docs 12, tooling 1, tests 1) |
-| `npm run test:web`                                                      | pass — 135 files, 3749 tests                                                |
-| `npm run test:unit`                                                     | **1 FAILURE** — 121 files, 3277 tests, 3276 passed; see below               |
+| command                                                                 | result                                                                                              |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `npm run typecheck`, `typecheck:web`                                    | pass                                                                                                |
+| `npm run lint`, `lint:web`                                              | pass — 0 errors; 12 pre-existing warnings, none in touched files                                    |
+| `npm run format:check`, `format:check:web`, `style:check`               | pass                                                                                                |
+| `npm run validate:web-boundary`                                         | pass — 351 files, 0 violations                                                                      |
+| `npm run validate:use-server-exports`                                   | pass — 48 modules across 950 files                                                                  |
+| `npm run validate:plain-language`                                       | pass — 2 catalogues, 24 rules, 0 findings                                                           |
+| `npm run validate:module-boundaries`                                    | pass                                                                                                |
+| `npm run validate:web-topology`, `web-tokens`, `web-theme`, `web-brand` | pass                                                                                                |
+| `npm run validate:encoding`, `validate:generated-artifacts`             | pass                                                                                                |
+| `npm run validate:p1-31-access`                                         | pass — 10 route pages across 7 owned segments, 0 violations                                         |
+| `npm run security:all`                                                  | pass — 2711 tracked files, 0 findings across all four scanners                                      |
+| `npm run verify:policies`                                               | pass — exit 0                                                                                       |
+| `validate:phase-ownership` (`p1-31-frontend`, both invocation forms)    | pass — 32 changed files, 0 violations (web 17, docs 12, tooling 2, tests 1)                         |
+| `--record unit`, `--record web` (`check-p1-27-closing-values.mjs`)      | pass — re-recorded at `467a2681`: unit 121 files / 3277 tests, web 135 files / 3749 tests, 0 failed |
+| `npm run evidence:p1-27`                                                | pass — 41 evidence documents re-digested                                                            |
+| `npm run test:web`                                                      | pass — 135 files, 3749 tests, 0 failed, 0 skipped                                                   |
+| `npm run test:unit`                                                     | pass — 121 files, 3277 tests, 0 failed, once the floor was raised below                             |
 
-**The one failure, stated rather than worked around.** `tests/ci/web-test-floor.test.ts` case
-`WTF-08` compares the web floor in `.github/ci-baselines/test-count-baseline.json` against the cases
-declared on disk. The tests this slice added take the declared count from 3050 to 3073 while the
-floor is still 3050, so the floor now sits below the tree it is a floor for. The baseline's own
-`howToRaise` says to raise a floor in the commit that adds the tests. That file is in a
-CODEOWNERS-protected directory this lane does not own, so it is **not edited here** and the failure
-is carried as an open item rather than suppressed, waived or narrowed. Nothing else in the tier
-failed.
+**The one failure the tier held, and the ratchet that closed it.** `tests/ci/web-test-floor.test.ts`
+case `WTF-08` compares the web floor in `.github/ci-baselines/test-count-baseline.json` against the
+cases declared on disk. The tests this slice added take the declared count from 3050 to 3073 while
+the floor still read 3050, so the floor sat below the tree it is a floor for. The baseline's own
+`howToRaise` says to raise a floor in the commit that adds the tests, and that is what was done,
+upward only and with nothing suppressed, waived or narrowed: `minTests` 3050 -> 3700, `measured`
+3125 -> 3749, `measuredFiles` 117 -> 135. The file classifies as `tooling`, which the
+`p1-31-frontend` ownership profile allows, so this lane may carry it.
+
+**The measured fact.** The web tier of this branch executes 3749 tests across 135 files with 0
+failed and 0 skipped — a local `--record web` run, written to the run ledger with the commit it
+was taken at, not a hosted measurement and not claimed as one.
+
+**The engineering consequence.** The floor is not free to be any number above 3073. `WTF-09` keeps
+the headroom at or below the largest file in the tree (88 declared cases in `api-client.test.ts`),
+so the floor may not sit below 3661; `baseline-integrity.test.ts` keeps the headroom above one per
+cent of the measurement, so it may not sit above 3711. 3700 is the round number inside
+[3661, 3711]. The headroom therefore narrows from 75 executed tests to 49: the tier may still lose
+49 executed tests to ordinary churn without the floor moving, and any larger net loss — including
+the deletion of any single web test file — trips it. A future slice that adds web tests inherits
+a tighter budget and will have to move the floor again sooner, which is the cost the ratchet buys.
 
 **Not executed in this record**, and therefore not claimed: `npm run build`, `build:web`,
 `verify:web`, `verify:workspaces`, `verify:repository` as an aggregate, `test:backend`, `test:db`,

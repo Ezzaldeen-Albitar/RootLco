@@ -1361,8 +1361,41 @@ Neither addition widens the derived segment set; the examined page count moved f
   identifier an operator cannot discover. Creating, renaming, archiving or restoring a plan, and
   everything to do with coverage windows, still has no screen.
 - **No history reader and no simulated history.** See CC-31.
-- **No gate was weakened, no allow-list narrowed and no suppression added.** The P1-31 access gate's
+- **No gate was weakened, no allow-list narrowed and no suppression added.** The web test floor was
+  raised, which makes a gate stricter rather than weaker — see 43.5. The P1-31 access gate's
   operation list was EXTENDED by four operations, which widens what the gate owns rather than what
   it permits. The two policy reads add a seventh owned route segment, `warranty-policies`, which no
   page occupies yet.
 - **No pull request, no merge, no push, no hosted run and no acceptance.**
+
+### 43.5 The web test floor was ratcheted, and what that costs
+
+**The measured fact.** `apps/web/tests` now DECLARES 3073 cases across 135 files, and the tier
+EXECUTES 3749 with 0 failed and 0 skipped — a local `--record web` run of this branch, recorded
+in `docs/phase-1/phase-1-27/evidence/local-run-ledger.json` with the commit it was taken at. No
+hosted run of this branch exists, and none is claimed.
+
+**Why the floor had to move.** `tests/ci/web-test-floor.test.ts` case `WTF-08` refuses a floor
+beneath cases that physically exist. The committed floor was 3050, the declared count crossed it,
+and the baseline's own `howToRaise` says to raise a floor in the commit that adds the tests. The
+three values move together so that all three describe ONE run: `minTests` 3050 -> 3700, `measured`
+3125 -> 3749, `measuredFiles` 117 -> 135. Upward only; nothing in the baseline was lowered, and the
+unit and backend entries were left alone because their `measured` is hosted run 19 provenance
+rather than a local figure.
+
+**The engineering consequence.** The floor was not chosen; it was forced into a window from three
+sides. `WTF-08` puts it at or above 3073. `WTF-09` refuses a headroom wider than the largest file
+in the tree (88 declared cases in `api-client.test.ts`, which executes 136), so it may not sit
+below 3661. `tests/ci/baseline-integrity.test.ts` refuses a headroom under one per cent of the
+measurement, so it may not sit above 3711. 3700 is the round number inside [3661, 3711]. The
+headroom therefore narrows from 75 executed tests to 49, and the guarantee sentence in the baseline
+states that bound rather than a slogan: any net loss of more than 49 executed tests is detected,
+which still covers the deletion of any single web test file. The cost is that the next slice to add
+web tests has less room before it must move the floor again, and a slice that DELETES web tests
+must state why rather than let the count drift down.
+
+**What travelled with it.** The two derived sites that read `web.minTests` and the three that read
+the recorded web total — the clean-room floor row and the sentence beside it, the current-tree
+total and its two restatements — with their five closing-value ledger entries, the re-recorded
+unit and web tiers, and the regenerated P1-27 evidence manifest. The baseline file classifies as
+`tooling`, a bucket the `p1-31-frontend` ownership profile allows.
