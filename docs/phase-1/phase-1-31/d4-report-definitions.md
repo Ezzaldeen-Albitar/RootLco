@@ -343,26 +343,31 @@ The rows are DOCUMENTS of three kinds — an invoice by its `issued_at`, a recei
 discriminator and a NULL, never a zero, in every amount column a type has no equivalent for. The
 period is half-open in the branch's timezone (D-17).
 
-**Three absences this slice measured and did not paper over**, all recorded as named prerequisites
-in [`report-engine-seam.md`](./report-engine-seam.md) § 9 and raised in the change-control register
-as **OPEN Owner-level items** — CC-35, CC-35(a) and CC-35(b) — each carrying one recommendation
-pending Owner approval:
+### Completed by the Owner's decision D-20 of 2026-09-12
 
-- **The `document` column publishes no drill-through** (CC-35(a)), because one column addresses
-  three kinds of document and a column carries one route template. **Recommendation pending Owner
-  approval:** a drill-through per document KIND against the two detail operations that already
-  exist — an invoice through `sal.invoice-detail`, a receipt through `sal.receipt-detail` — with a
-  credit note carrying none until the register holds a credit-note read; the column stays without a
-  template until that is approved.
-- **The `customer` cell carries the payer's id and no name** (CC-35(b)), because naming it means
-  reading another module's record and therefore naming that module's read code, `crm.customer.read`.
-  **Recommendation pending Owner approval:** keep the cell id-only; if the Owner wants the name,
-  declare `crm.customer.read` beside `sal.finance.view` conjunctively so the whole report is refused
-  to a caller who may not read customers.
-- **Two figures this section's own source table names are published by no column** (CC-35) — a
-  credit-note amount and `sal.receipt_unallocated`. The column list implemented is the one in
-  "Columns and their contracts" above. **Recommendation pending Owner approval:** add neither
-  column until the Owner names it, because either would be a column nobody has decided on.
+Three absences this slice measured and did not paper over were raised in the change-control register
+as **OPEN Owner-level items** — CC-35, CC-35(a) and CC-35(b) — each carrying one recommendation
+pending Owner approval, and recorded as named prerequisites in
+[`report-engine-seam.md`](./report-engine-seam.md) § 9 rows 12 to 15. The Owner decided all three on
+2026-09-12 ([`owner-decisions-2026-09-12.md`](./owner-decisions-2026-09-12.md) § 2, **D-20**):
+
+- **The authoritative credit-note and unallocated-receipt amounts are included as separate fields**
+  (CC-35), which is what this section's own source table names under "credit notes" and "receipts
+  not yet applied". Authoritative means the table's own column and the deployed function — not a
+  figure derived from the other columns on the row, and not netted into `outstanding`, which
+  `sal.invoice_open_receivable` has already computed.
+- **The permitted party name is shown alongside its identifier, labelled according to its actual
+  role** (CC-35(b)), rather than confusing payer and customer. The Owner did NOT take the
+  recommendation of adding `crm.customer.read` to the report's permission list: the name is gated
+  where the capability lives, so a caller without it sees the identifier and no name, and the
+  report's declared permission list is unchanged.
+- **The document drill-through is resolved by document kind and authorized target route**
+  (CC-35(a)). The kind with no read operation carries a published null rather than an invented
+  route, and the absence is recorded — the decision forbids silently omitting a missing contract.
+
+The decision also forbids inventing an amount and forbids performing a financial calculation in the
+browser. Both are already the rules this section's five rules state; D-20 restates them as binding on
+the completion.
 
 ---
 
