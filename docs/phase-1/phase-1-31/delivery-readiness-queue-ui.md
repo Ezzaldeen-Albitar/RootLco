@@ -1,8 +1,8 @@
 # P1-31 FE-001 — delivery readiness queue
 
 **Status:** implemented on `feature/p1-31-delivery-readiness-queue`, integrated onto protected
-`develop` `01c32937` on 2026-09-11, **unmerged**. No hosted run and no end-to-end acceptance result
-is claimed. The change-control entry is section 42 of
+`develop` `01c32937` on 2026-09-11 at local commit `ecd6e419`, **unmerged**. No hosted run
+and no end-to-end acceptance result is claimed. The change-control entry is section 42 of
 [`change-control-2026-09-08.md`](./change-control-2026-09-08.md), identifier **CC-30**, both
 PROVISIONAL. This record does not replace the 29-task matrix.
 
@@ -27,9 +27,11 @@ This screen consumes that decision. It extends none of it, and nothing below was
   request that sends none, and a chosen 100 is reduced to 50 with the reduction stated on the page
   rather than performed silently.
 - The focused web run over the three touched test files passed 145 tests across 3 files at the
-  integration head; `typecheck:web`, `lint:web`, both Prettier checks, `style:check`, the web
-  boundary check, the `'use server'` export check, the module-boundary check and the P1-31 access
-  gate all pass. These are slice checks, not phase acceptance.
+  integration head, and the tiers were re-recorded locally at 3277 tests across 121 files (unit)
+  and 3703 across 133 (web), both with a zero runner exit and no hosted attestation.
+  `typecheck:web`, `lint:web`, both Prettier checks, `style:check`, the web boundary check, the
+  `'use server'` export check, the module-boundary check and the P1-31 access gate all pass. These
+  are slice checks, not phase acceptance.
 
 ## Engineering consequence (not an Owner decision)
 

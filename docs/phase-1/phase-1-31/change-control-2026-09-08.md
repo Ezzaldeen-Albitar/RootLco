@@ -1304,7 +1304,7 @@ neither do their identifiers.
 ## 42. The ready-for-delivery queue screen — PROVISIONAL
 
 **Slice:** `feature/p1-31-delivery-readiness-queue`, ownership profile `p1-31-frontend`.
-**Baseline:** protected `develop` **01c32937**, merged into this branch on 2026-09-11. The screen
+**Baseline:** protected `develop` **01c32937**, merged into this branch on 2026-09-11; the integrated head is `ecd6e419`, the commit this section is written against. The screen
 was written against **0204f2d1**; the contract it consumes reached `develop` with the readiness seam
 (#366, section 39) and the delivery execution paths (#362, section 38), so this is the first head at
 which the screen compiles against a published contract rather than a proposed one.
