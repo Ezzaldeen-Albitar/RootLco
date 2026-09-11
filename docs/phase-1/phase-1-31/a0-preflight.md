@@ -378,7 +378,9 @@ engineering, and none is one of the 29. Each is phrased as a question with its c
   of the backend slice is an Owner decision "because it changes the data model the Owner has been
   told is P1-31's". **ANSWERED on 2026-09-10:** yes, and as a tenant-owned employee identity rather
   than as a name resolved from a login account. Prerequisite **P-17** implements it; the shape, the
-  parts that are settled and the four working ASSUMPTIONS still awaiting confirmation are recorded in
+  parts that are settled and the four **recommendations pending Owner approval (A-3 to A-6)** —
+  of which A-6 is a resolution path the DDL commits nothing to and this slice ships no command for
+  — are recorded in
   [`delivering-employee-identity-seam.md`](./delivering-employee-identity-seam.md) and in change
   control **CC-29**, which is PROVISIONAL until that branch merges.
 - **D-13 — Where is the P1-30 / P1-31 split for delivery and warranty?** WFP-15 records the owning

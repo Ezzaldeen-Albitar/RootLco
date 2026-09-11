@@ -35,18 +35,22 @@ could not be closed the same way, and the reason was measured before anything wa
 | `iam.user_employee_links`        | `user_id` `NOT NULL` | requires an `iam.user_accounts` row; it links an account to an external reference  |
 | `iam.user_accounts` (as for rec) | —                    | requires a login, which the person handing a vehicle over frequently does not have |
 
+**Measured facts (not part of the decision).** The table above is a measurement, not a decision.
 That `NOT NULL` on both `user_id` columns is asserted directly against `pg_attribute` in
-`tests/backend/p1-31-delivering-employee-seam.test.ts`, so the justification for a new table is a
-measurement in the suite rather than a sentence in this document.
+`tests/backend/p1-31-delivering-employee-seam.test.ts`, so the finding that no existing personnel
+entity is suitable — the finding the Owner's reuse clause in section 2 obliged this lane to
+establish before proposing anything — is a measurement in the suite rather than a sentence in this
+document.
 
 ## 2. What the Owner decided, 2026-09-10
 
 > A delivering employee is a **tenant-owned employee identity**, distinct from the login account,
 > from the authenticated actor, and from the authorized receiver. The reference and the
 > organisational assignment are **validated by the server**. Historical attribution is **preserved**.
-> This is **not** an HR module.
+> This is **not** an HR module. An existing suitable personnel entity is to be **reused** before a
+> minimal new schema slice is created.
 
-Those five clauses are the whole of the Owner's decision. Nothing under the sub-heading below is.
+Those six clauses are the whole of the Owner's decision. Nothing under the sub-heading below is.
 
 ### Engineering consequence (not an Owner decision)
 
@@ -54,15 +58,16 @@ Each clause was implemented by a structure this lane chose. The clause on the le
 wording; the structure on the right is an engineering consequence of it rather than a second
 decision, and replacing a structure that still satisfies its clause needs no new Owner decision.
 
-| Owner clause                | engineering consequence — the structure that implements the clause                                                       |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| tenant-owned identity       | `org.employees`, RLS enabled and forced; READ tenant-wide, WRITE `tenant/company/branch`                                 |
-| distinct from the account   | `user_account_id` is **NULLABLE**                                                                                        |
-| distinct from the actor     | `created_by` on the delivery is the session principal; the suite asserts the two differ                                  |
-| server-validated reference  | `fk_delivery_records_delivering_employee` on `(tenant_id, delivering_employee_id)`                                       |
-| server-validated assignment | `sal.stamp_delivering_employee_identity`, a `BEFORE INSERT` trigger, refuses a retired, deleted or other-tenant employee |
-| historical attribution      | `delivering_employee_display_name`, stamped server-side and frozen by `tg_delivery_records_immutable`                    |
-| not HR                      | no contract, salary, contact detail, document, department, grade or reporting line — seven columns and the lifecycle     |
+| Owner clause                | engineering consequence — the structure that implements the clause                                                                                                       |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| tenant-owned identity       | `org.employees`, RLS enabled and forced; READ tenant-wide, WRITE `tenant/company/branch`                                                                                 |
+| distinct from the account   | `user_account_id` is **NULLABLE**                                                                                                                                        |
+| distinct from the actor     | `created_by` on the delivery is the session principal; the suite asserts the two differ                                                                                  |
+| server-validated reference  | `fk_delivery_records_delivering_employee` on `(tenant_id, delivering_employee_id)`                                                                                       |
+| server-validated assignment | `sal.stamp_delivering_employee_identity`, a `BEFORE INSERT` trigger, refuses a retired, deleted or other-tenant employee                                                 |
+| historical attribution      | `delivering_employee_display_name`, stamped server-side and frozen by `tg_delivery_records_immutable`                                                                    |
+| not HR                      | no contract, salary, contact detail, document, department, grade or reporting line — seven columns and the lifecycle                                                     |
+| reuse before creating       | the three candidates of section 1, each measured unfit in the suite before a new table was proposed; `org.employees` is the minimal slice that survived that measurement |
 
 ## 2a. The Owner clarification of 2026-09-10, and what it changed
 
@@ -107,8 +112,10 @@ id gets.
 
 ## 3. The register: who decided what
 
-Four labels in the register below, used exactly as written, and a fifth — **Engineering
-consequence (not an Owner decision)** — used outside the register wherever this document states a
+**Three** labels are used in the register below, exactly as written — **OWNER DECISION**,
+**ENGINEERING CHOICE** and **RECOMMENDATION PENDING OWNER APPROVAL**. Two further labels are used
+outside it and nowhere in it: **VERIFIED FACT**, at section 9.4 only, for a property a case
+asserts; and **Engineering consequence (not an Owner decision)**, wherever this document states a
 design element this lane chose. Nothing in this document is left for a reader to classify.
 
 | id      | statement                                                                                  | label                                                          | if it is answered the other way                                                                                                                                                                                                                                                           |
@@ -120,24 +127,24 @@ design element this lane chose. Nothing in this document is left for a reader to
 | **A-5** | Administering an employee stays **branch-scoped**, while reading is tenant-wide            | **ENGINEERING CHOICE — recommendation pending Owner approval** | **Recommendation: keep the split.** Choosing a colleague is not the same authority as editing the roster; widening the write is a policy change, not a code change                                                                                                                        |
 | **A-6** | An unresolved legacy identity has **no resolution command** and stays listed for the Owner | **RECOMMENDATION PENDING OWNER APPROVAL**                      | **Recommendation: resolve a listed row through one Owner-approved operator command that names a real employee for it and then re-runs `VALIDATE CONSTRAINT`, never inside a migration.** Leaving it undecided keeps the key `NOT VALID` on every database that carries unresolved history |
 
-A-1 and A-2 are **approved** and are pending nothing. The register therefore carries **four**
-pending recommendations, not three, and they are: **A-3** rows minted by the backfill stay
-`inactive`; **A-4** `employment_ref` stays optional, opaque and unique per tenant when present;
-**A-5** administering an employee stays branch-scoped while reading is tenant-wide; **A-6** an
-unresolved legacy identity has no resolution command and stays listed for the Owner. A-3, A-4 and
-A-5 are engineering choices the DDL has already committed to, each carrying a recommendation; A-6
-commits to nothing and ships no command, and is a recommendation only. What remains open about
-branches is **A-5**, the policy that keeps the home branch informational only — reading tenant-wide
-while writing stays branch-scoped — and not the rule itself, which the Owner settled on 2026-09-10.
+A-1 and A-2 are **approved** and are pending nothing; the register therefore carries **four**
+pending recommendations, not three — **A-3**, **A-4**, **A-5** and **A-6**, each stated once in its
+own row above and deliberately not restated here. A-3, A-4 and A-5 are engineering choices the DDL
+has already committed to; A-6 commits to nothing and ships no command. What remains open about
+branches is A-5's policy split only, never the branch rule itself, which the Owner settled on
+2026-09-10.
 
 Every other statement in this document belongs to one of three classes, and the class is written
 where the statement is: an **OWNER DECISION** quoted in section 2 or section 2a; an **ENGINEERING
 CONSEQUENCE (not an Owner decision)** — a design element this lane chose in order to implement an
 Owner decision, which engineering may revisit without a new one; or a **VERIFIED FACT** — a property
 a case in `tests/backend/p1-31-delivering-employee-seam.test.ts` or `tests/db/org-employees.test.ts`
-asserts, named where it is claimed. Sections 4, 5 and 8 carry the middle label explicitly, because
-the read-versus-manage permission split, the bundle widening and the `NOT VALID` foreign key were
-each readable as Owner decisions in the first draft of this slice and none of the three is one.
+asserts, named where it is claimed. Sections 2, 2a, 4, 5, 6, 7, 8 and 10 carry the middle label
+explicitly, because the implementing structures, the read-versus-manage permission split, the
+bundle widening, the refusal-rule names and the single `ERR-RES-001`, the trigger's security
+properties and the service's translated refusals, the `NOT VALID` foreign key, and the
+`ON DELETE RESTRICT` / no-`DELETE`-grant / no-index decisions were each readable as Owner decisions
+in the first draft of this slice and none of them is one.
 
 ## 4. The four operations
 
@@ -180,6 +187,13 @@ creates one, so a freshly provisioned organisation could not record a single han
 
 ## 6. Absence, and what a 404 means here
 
+**Engineering consequence (not an Owner decision).** Everything in this section is this lane's
+design: collapsing absent, soft-deleted, out-of-reach and other-tenant into a single
+`ERR-RES-001`, the two rule names `custom` and `inactive_employee`, and the absence of a third
+rule for a branch. The Owner decided that the reference and the organisational assignment are
+validated by the server and that a home branch never restricts authorized work; the Owner named no
+error code and no rule name, and any of them may be revised without a new Owner decision.
+
 Absent, soft-deleted, out of the caller's reach, and in another tenant are **one** `ERR-RES-001`,
 decided before any scope decision. That follows `wty.warranty-policy-read`, the newest read in the
 repository to face the same question, and it is what stops the register becoming a way to enumerate
@@ -201,6 +215,12 @@ described: case **P17-D4** now creates an employee in another branch and expects
 snapshot stamped. It replaced a case that expected a refusal.
 
 ## 7. The database is the authority, not the application
+
+**Engineering consequence (not an Owner decision).** `SECURITY INVOKER`, the empty `search_path`,
+the trigger's two-column read list, and the service's two refusals being a translation of the
+trigger rather than a second rule are all this lane's design. The Owner decided that the server
+validates; that the validation sits in a `BEFORE INSERT` trigger with these properties, and that
+the application restates it in a field-level shape a form can render, the Owner did not say.
 
 `sal.stamp_delivering_employee_identity` is `SECURITY INVOKER` with an empty `search_path`, so its
 lookup runs under the caller's own RLS and an employee of another tenant is invisible before the
@@ -290,26 +310,37 @@ recorded here so the number is not later mistaken for evidence.
 Unlike the observation, this environment carries legacy-shaped rows that the cases write
 themselves, so both branches of the backfill are exercised.
 
-**Measured facts (not part of the decision) — the run this section reports.** Executed on
-**2026-09-10** against the disposable clone `p131_employee_20260910`, rebuilt from the idle
-`p131_candidate` template at **139** migrations and replayed forward, served on `127.0.0.1:55432`
-by container `rootlco-p131-isolation-20260910`. What was run, and what it reported:
+**Measured facts (not part of the decision) — the runs this section reports.** Every run below was
+executed on **2026-09-10** against the disposable clone `p131_employee_20260910`, rebuilt from the
+idle `p131_candidate` template at **139** migrations and replayed forward, served on
+`127.0.0.1:55432` by container `rootlco-p131-isolation-20260910`. There were **two** runs at **two
+different commits**, and each row names the commit its total was measured at, because a total
+measured at one head is not a total measured at another:
 
-| suite                                                               | result    | exit code |
-| ------------------------------------------------------------------- | --------- | --------- |
-| `tests/db/org-employees.test.ts`                                    | 23 / 23   | 0         |
-| `tests/db/org-security.test.ts` and `tests/db/no-fake-data.test.ts` | 12 / 12   | 0         |
-| `tests/backend/p1-31-delivering-employee-seam.test.ts`              | 31 / 31   | 0         |
-| the 13 backend files over the delivery and organisation surface     | 285 / 285 | 0         |
+| commit       | what was run                                                                                                                                 | result    | exit code |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | --------- | --------- |
+| **244f868f** | `tests/db/org-employees.test.ts`                                                                                                             | 21 / 21   | 0         |
+| **244f868f** | `tests/db/foundation.test.ts`, `tests/db/org-security.test.ts`, `tests/db/sal-delivery.test.ts` and `tests/db/no-fake-data.test.ts`          | 58 / 58   | 0         |
+| **244f868f** | the 13 backend files over the delivery and organisation surface, of which `tests/backend/p1-31-delivering-employee-seam.test.ts` was 31 / 31 | 285 / 285 | 0         |
+| **750913e3** | `tests/db/org-employees.test.ts`                                                                                                             | 23 / 23   | 0         |
+| **750913e3** | `tests/db/org-security.test.ts` and `tests/db/no-fake-data.test.ts`                                                                          | 12 / 12   | 0         |
+| **750913e3** | `tests/backend/p1-31-delivering-employee-seam.test.ts`                                                                                       | 31 / 31   | 0         |
 
-Those four runs were taken at commit **244f868f**. Every commit after it changed only tests,
-documentation and comment text — including the wording of one `COMMENT ON TABLE` — and no table,
-column, constraint, trigger, policy, grant or application file, so the totals are reported at that
-head rather than at this one, and only a re-run would move them.
+The two runs differ because the tree moved between the two heads, and the difference is stated
+rather than averaged away:
+
+- `tests/db/org-employees.test.ts` went from **21** cases to **23** in commit **d25ca30a**, which
+  added section 6 — the review list's tenant isolation and its write refusal. **Those two cases
+  were executed at 750913e3 and at no earlier head**; the 21 / 21 at 244f868f predates them.
+- The only migration file touched after 244f868f was changed by **f704ec52**, which altered
+  **comment text only** — no table, column, constraint, trigger, policy or grant moved.
+- The **285 / 285** over the 13 backend files **was not re-run after 244f868f**. What was re-run at
+  750913e3 is the seam file alone, which reported the same **31 / 31**.
+- The two commits after 750913e3 — **ad6c4fbf** and **be58260d** — changed documentation only.
 
 **No run ledger entry exists for either the database or the backend tier.**
 `docs/phase-1/phase-1-27/evidence/local-run-ledger.json` records the `unit` and `web` tiers and
-nothing else, so the totals above are this document's own report of a local run rather than a
+nothing else, so the totals above are this document's own report of two local runs rather than a
 recorded tier measurement. **No hosted result exists for any of it**: nothing in this section has
 been observed on CI.
 
@@ -317,18 +348,23 @@ Each obligation
 below is cited by the **exact title** of the case that asserts it, so the claim is checkable against
 the file rather than against this table.
 
-| obligation                                                                                                                                       | file                                                   | describe › exact test title                                                                                                                                                                                                                                                                                                                                                                                                                 | state       |
-| ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| **(a)** a legacy value matching a same-tenant account mints a linked `org.employees` row whose `id` IS the legacy value, named from that account | `tests/db/org-employees.test.ts`                       | `5. the backfill, replayed from the committed migration file` › `mints exactly one employee per legacy value, and never invents a person`                                                                                                                                                                                                                                                                                                   | **covered** |
-| **(b)** an unmatched legacy value survives untouched, is listed in `sal.delivery_legacy_identity_review`, and leaves the key `NOT VALID`         | `tests/db/org-employees.test.ts`                       | `5. the backfill, replayed from the committed migration file` › `leaves an UNRESOLVABLE legacy value untouched, lists it for review, and cannot validate the key`                                                                                                                                                                                                                                                                           | **covered** |
-| **(c)** a database with no unmatched rows ends with the key **validated** (`convalidated = true`)                                                | `tests/db/org-employees.test.ts`                       | `3. the delivering employee is a real identity` › `carries the composite foreign key on (tenant_id, delivering_employee_id), ON DELETE RESTRICT`, which reads `pg_constraint.convalidated` rather than the printed definition; the resolved path is proved end to end inside `5. …` › `mints exactly one employee per legacy value, and never invents a person`, which runs `VALIDATE CONSTRAINT` after the mint and requires it to succeed | **covered** |
-| **(d)** the trigger refuses an inactive, a soft-deleted and an other-tenant employee, and accepts an active employee of another branch           | `tests/db/org-employees.test.ts`                       | `4. the eligibility trigger, and the snapshot it stamps` › `refuses a RETIRED employee (22023)` (the status value it writes is `inactive`), › `refuses a SOFT-DELETED employee (22023)`, › `refuses an employee of ANOTHER TENANT (22023)`, › `ACCEPTS an employee based in ANOTHER BRANCH of the same tenant, and stamps them`                                                                                                             | **covered** |
-| **(d)** the same two answers at the route, not only at the primitive                                                                             | `tests/backend/p1-31-delivering-employee-seam.test.ts` | `sal.delivery-create now names a real person` › `P17-D3 refuses a RETIRED employee with rule inactive_employee (denial)` and › `P17-D4 ACCEPTS an active employee of another branch of the same tenant, and stamps them (success)`                                                                                                                                                                                                          | **covered** |
-| **(e)** the review table is tenant-isolated and refuses writes from every application role                                                       | `tests/db/org-employees.test.ts`                       | `6. the review list is tenant-isolated and read-only to every application role` › `shows a runtime and a read-only session their own tenant row and not the other` and › `refuses INSERT, UPDATE and DELETE from the runtime login (42501)`                                                                                                                                                                                                 | **covered** |
+| obligation                                                                                                                                       | file                                                   | describe › exact test title                                                                                                                                                                                                                                                                                                                                                                                                                 | state                                                                                                                   |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| **(a)** a legacy value matching a same-tenant account mints a linked `org.employees` row whose `id` IS the legacy value, named from that account | `tests/db/org-employees.test.ts`                       | `5. the backfill, replayed from the committed migration file` › `mints exactly one employee per legacy value, and never invents a person`                                                                                                                                                                                                                                                                                                   | **covered**                                                                                                             |
+| **(b)** an unmatched legacy value survives untouched, is listed in `sal.delivery_legacy_identity_review`, and leaves the key `NOT VALID`         | `tests/db/org-employees.test.ts`                       | `5. the backfill, replayed from the committed migration file` › `leaves an UNRESOLVABLE legacy value untouched, lists it for review, and cannot validate the key`                                                                                                                                                                                                                                                                           | **covered**                                                                                                             |
+| **(c)** a database with no unmatched rows ends with the key **validated** (`convalidated = true`)                                                | `tests/db/org-employees.test.ts`                       | `3. the delivering employee is a real identity` › `carries the composite foreign key on (tenant_id, delivering_employee_id), ON DELETE RESTRICT`, which reads `pg_constraint.convalidated` rather than the printed definition; the resolved path is proved end to end inside `5. …` › `mints exactly one employee per legacy value, and never invents a person`, which runs `VALIDATE CONSTRAINT` after the mint and requires it to succeed | **covered**                                                                                                             |
+| **(d)** the trigger refuses an inactive, a soft-deleted and an other-tenant employee, and accepts an active employee of another branch           | `tests/db/org-employees.test.ts`                       | `4. the eligibility trigger, and the snapshot it stamps` › `refuses a RETIRED employee (22023)` (the status value it writes is `inactive`), › `refuses a SOFT-DELETED employee (22023)`, › `refuses an employee of ANOTHER TENANT (22023)`, › `ACCEPTS an employee based in ANOTHER BRANCH of the same tenant, and stamps them`                                                                                                             | **covered**                                                                                                             |
+| **(d)** the same two answers at the route, not only at the primitive                                                                             | `tests/backend/p1-31-delivering-employee-seam.test.ts` | `sal.delivery-create now names a real person` › `P17-D3 refuses a RETIRED employee with rule inactive_employee (denial)` and › `P17-D4 ACCEPTS an active employee of another branch of the same tenant, and stamps them (success)`                                                                                                                                                                                                          | **covered**                                                                                                             |
+| **(e)** the review table is tenant-isolated and refuses writes from every application role                                                       | `tests/db/org-employees.test.ts`                       | `6. the review list is tenant-isolated and read-only to every application role` › `shows a runtime and a read-only session their own tenant row and not the other` and › `refuses INSERT, UPDATE and DELETE from the runtime login (42501)`                                                                                                                                                                                                 | **covered — executed at 750913e3**, in the 23 / 23 run; both cases were added by d25ca30a and did not exist at 244f868f |
 
-**Gaps.** None. Each of (a) to (e) is asserted by a case named above; nothing in this table is
-claimed that the two files do not actually assert. Any obligation later found uncovered belongs
-here under this label rather than in the table above it.
+**Gaps.** None — and the test for that is stricter than "a case exists". Every title cited above
+both exists in the file named beside it **and** was executed in a run listed in the table of runs:
+the `org-employees` titles in the **23 / 23** run at **750913e3**, which is the only run that
+carried the two section-6 titles of obligation (e); the backend titles of obligation (d) in the
+**31 / 31** run, reported at both heads. Nothing in this table is claimed that the two files do not
+actually assert, and no obligation is cited against a title that has no executed run. Any
+obligation later found uncovered, or cited without a run, belongs here under this label rather than
+in the table above it.
 
 **Measured facts (not part of the decision) — the structural baseline.** The `structuralTotals`,
 `schemaHash` and `permissionCount` movements recorded for migrations 140 and 141 in
@@ -377,6 +413,12 @@ Stated precisely, because "the key is validated" is true of some databases and f
   cannot UPDATE one, asserted on the runtime connection under RLS.
 
 ## 10. What this does not close, and the one operator act it creates
+
+**Engineering consequence (not an Owner decision).** Three of the items below are this lane's
+design rather than anything the Owner settled: `fk_delivery_records_delivering_employee` being
+`ON DELETE RESTRICT`, no application role holding `DELETE`, and no index being shipped for the list
+ordering. Each is revisable without a new Owner decision. The remaining items are either an Owner
+question this slice does not answer or an operator act it creates and does not perform.
 
 - **No rename and no transfer command.** Both are legitimate and neither has an Owner decision
   behind it: a rename must say what happens to the snapshots already taken, and a transfer must say
