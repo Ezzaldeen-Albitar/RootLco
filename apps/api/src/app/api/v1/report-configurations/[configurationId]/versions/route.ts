@@ -27,15 +27,32 @@
  * the point of a draft. The succession boundary is decided at publication, not
  * here.
  *
- * ## `parameterSchema` — bounded in SHAPE, undecided in VOCABULARY
+ * ## `parameterSchema` — bounded in SHAPE and in VOCABULARY
  *
  * The frozen schema constrains the column in no way at all: `parameter_schema` is
  * `jsonb NOT NULL DEFAULT '{}'` with no CHECK, no domain and no trigger over its
  * content. This route bounds the shape, because a `jsonb` column a TENANT writes
- * is otherwise a row size the tenant chooses, and validates NOTHING about what the
- * keys mean. What a filter key means is part of the report definition the Owner
- * has not approved (decision **D-4**), and validating a vocabulary here would be
- * inventing the report.
+ * is otherwise a row size the tenant chooses.
+ *
+ * Shape alone was not enough. Owner decision **D-4** released the report engine,
+ * and the engine reads a published `parameter_schema` through
+ * `readReportParameterVocabulary`, refusing a run whose schema it does not
+ * recognise. While this route accepted any bounded JSON object, an administrator
+ * could publish a definition every run of which was then refused — a report
+ * locked by its own configuration, with nothing at authoring time saying so. So
+ * the route now reads the SAME function the engine reads, and a schema that
+ * would be refused at run time is refused here, where the person who wrote it is
+ * present to correct it.
+ *
+ * `{ filters: {} }` is refused rather than accepted, and that is a decision
+ * rather than a transcription. It is a well-formed document, and the engine
+ * honours it exactly — an allowlist permitting no filter at all. But `{}`
+ * already means "place no restriction", so nobody reaches for the empty
+ * allowlist to say that; they reach for it believing it says the same thing, and
+ * publishing it would instead narrow the report to nothing. Refusing it names
+ * the ambiguity at the only moment a person can resolve it. The ENGINE's
+ * treatment is untouched: a version published before this rule existed still
+ * behaves exactly as it did.
  */
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
@@ -46,6 +63,7 @@ import { callerHoldsPermissionTenantWide } from '@/server/auth/authorization';
 import {
   MAX_PARAMETER_SCHEMA_BYTES,
   MAX_PARAMETER_SCHEMA_KEYS,
+  readReportParameterVocabulary,
   reportingModule,
 } from '@/modules/reporting';
 
@@ -100,6 +118,49 @@ const ParameterSchema = z
  */
 export const CreateVersionBody = z.object({ parameterSchema: ParameterSchema.optional() }).strict();
 
+/**
+ * Refuses a `parameterSchema` the report engine would not recognise.
+ *
+ * Stated as an explicit failure rather than a Zod refinement because the MESSAGE
+ * is the whole point of the rule. `parseOrFail` maps a refinement to a path and
+ * the stable code `custom`, deliberately dropping the text so no validation
+ * error can echo a submitted value — correct for that mapping, and useless for a
+ * refusal whose job is to tell an administrator which vocabulary exists.
+ *
+ * No part of the submitted document is quoted back. `reason` names the RULE that
+ * was broken and the message names the vocabulary, so the refusal is actionable
+ * without carrying tenant input into a log or onto a screen.
+ */
+function assertParameterVocabulary(schema: Record<string, unknown>): void {
+  const vocabulary = readReportParameterVocabulary(schema);
+  if (vocabulary.kind === 'unrecognised') {
+    throw new AppFailure('ERR-VAL-001', {
+      message:
+        `The parameter schema was refused because ${vocabulary.reason}. ` +
+        'A report parameter schema is either an empty object, which places no ' +
+        'restriction on a run, or an object holding one key, filters, naming any ' +
+        'of companyId with type uuid, branchId with type uuid, from with type ' +
+        'date and to with type date. Each named filter declares exactly one key, ' +
+        'type. A schema outside that vocabulary is refused by the report engine ' +
+        'on every run, so it is refused here instead.',
+      safeDetails: { violations: [{ path: 'body.parameterSchema', rule: 'report_vocabulary' }] },
+    });
+  }
+  if (vocabulary.kind === 'allowlist' && vocabulary.names.length === 0) {
+    throw new AppFailure('ERR-VAL-001', {
+      message:
+        'The parameter schema declares filters with nothing inside it, which is ' +
+        'an allowlist permitting no filter at all. A version published with it ' +
+        'would refuse every run of the report. Send an empty object, or omit the ' +
+        'parameter schema, to place no restriction on a run; name the filters the ' +
+        'report may be narrowed by to restrict one.',
+      safeDetails: {
+        violations: [{ path: 'body.parameterSchema', rule: 'empty_filter_allowlist' }],
+      },
+    });
+  }
+}
+
 export const REPORT_CONFIGURATION_VERSION_CREATE_OPERATION = defineOperation({
   id: 'rpt.report-configuration-version-create',
   successStatus: 201,
@@ -134,6 +195,7 @@ export async function POST(
     async ({ db }) => {
       const params = parseOrFail(Params, raw, 'path');
       const parsed = parseOrFail(CreateVersionBody, body, 'body');
+      assertParameterVocabulary(parsed.parameterSchema ?? {});
       if (!(await callerHoldsPermissionTenantWide(db, 'rpt.report.configure'))) {
         throw new AppFailure('ERR-IAM-001', {
           message:

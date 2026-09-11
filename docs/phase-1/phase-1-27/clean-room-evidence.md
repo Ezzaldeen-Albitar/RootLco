@@ -164,8 +164,8 @@ merely for cosmetic consistency.
 | Web test files under `apps/web/tests`       | 135    | a walk of the tree                                                 |
 | Web tier — tests executed                   | 3749  | `--record web`, from the `vitest` JSON report                      |
 | Web tier — files the run reported           | 135    | the same report, cross-checked against the walk above              |
-| Root unit tier — tests executed             | 3277  | `--record unit`, from the `vitest` JSON report                     |
-| Root unit tier — files the run reported     | 121   | the same report, cross-checked against the tier's include rule      |
+| Root unit tier — tests executed             | 3300  | `--record unit`, from the `vitest` JSON report                     |
+| Root unit tier — files the run reported     | 122   | the same report, cross-checked against the tier's include rule      |
 | Committed web floor (`minTests`)            | 3700  | `.github/ci-baselines/test-count-baseline.json`                    |
 | Committed unit floor (`minTests`)           | 1050  | the same baseline                                                  |
 | Migrations on disk                          | 139   | a walk of `supabase/migrations`                                    |
