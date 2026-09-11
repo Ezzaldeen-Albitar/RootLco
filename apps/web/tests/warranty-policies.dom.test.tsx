@@ -476,11 +476,11 @@ describe('one plan, and the controls over it', () => {
     ).toBeNull();
   });
 
-  it('retires the plan against the plan version', async () => {
+  it('retires the plan against the plan version, and reads again', async () => {
     PERMISSIONS = [READ, MANAGE];
     const user = userEvent.setup();
     await renderDetailPage();
-    await waitFor(() => expect(readWarrantyPolicy).toHaveBeenCalled());
+    await waitFor(() => expect(readWarrantyPolicy).toHaveBeenCalledTimes(1));
     await user.click(
       screen.getByRole('button', { name: EN['warranty.policies.retirePlan'] as string })
     );
@@ -490,13 +490,16 @@ describe('one plan, and the controls over it', () => {
       { status: 'archived' },
       POLICY_VERSION,
     ]);
+    // The handler that spends the version renews it: the plan is read again before
+    // anything else can be commanded against the version this one just consumed.
+    await waitFor(() => expect(readWarrantyPolicy).toHaveBeenCalledTimes(2));
   });
 
-  it('sends a window state against THAT window version, never the plan’s', async () => {
+  it('sends a window state against THAT window version, and reads again', async () => {
     PERMISSIONS = [READ, MANAGE];
     const user = userEvent.setup();
     await renderDetailPage();
-    await waitFor(() => expect(readWarrantyPolicy).toHaveBeenCalled());
+    await waitFor(() => expect(readWarrantyPolicy).toHaveBeenCalledTimes(1));
     await user.click(
       screen.getAllByRole('button', {
         name: EN['warranty.policies.retireWindow'] as string,
@@ -509,6 +512,9 @@ describe('one plan, and the controls over it', () => {
       { status: 'archived' },
       COVERAGE_VERSION,
     ]);
+    // The window version this handler spent is renewed the same way, and off the
+    // same read: the plan is read whole and every row on it comes back with it.
+    await waitFor(() => expect(readWarrantyPolicy).toHaveBeenCalledTimes(2));
   });
 
   it('offers the retired window a restore rather than a second retirement', async () => {
@@ -557,6 +563,9 @@ describe('one plan, and the controls over it', () => {
     expect(body['effectiveFrom']).toBe('2026-02-01');
     // Omitted rather than sent empty: an absent end date is what "still in force" means.
     expect(body).not.toHaveProperty('effectiveTo');
+    // And this handler re-reads too, so the window that came back is the server’s row
+    // rather than the one this side sent.
+    await waitFor(() => expect(readWarrantyPolicy).toHaveBeenCalledTimes(2));
   });
 
   it('refuses an inverted window in the control, the way the database refuses it', async () => {

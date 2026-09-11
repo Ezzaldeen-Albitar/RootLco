@@ -25,6 +25,7 @@ import {
   WHOLE_NUMBER,
   type CoveredScope,
   type WarrantyConfigurationStatus,
+  type WarrantyCoverageCreateBody,
   type WarrantyCoverageTerms,
   type WarrantyPolicyDetail,
 } from '../warranty-contract';
@@ -126,7 +127,7 @@ export function WarrantyPolicyScreen({
    * A failed re-read is reported and the previously held plan is kept: the write it
    * followed may well have succeeded, and blanking the screen would suggest otherwise.
    */
-  const reread = async () => {
+  const refresh = async () => {
     const next = await readWarrantyPolicy(policyId);
     if (next.status !== 'ok') {
       setRereadFailed(next.status);
@@ -136,13 +137,74 @@ export function WarrantyPolicyScreen({
     setDetail(next.data);
   };
 
-  /** Run one write, record where it happened, and re-read on success. */
-  const run = async (area: WriteArea, write: () => Promise<PolicyWriteState>) => {
+  /*
+   * Each control has its own handler, and each handler ends with its own re-read.
+   *
+   * These four were one `run(area, write)` helper that took the command as a
+   * callback. The behaviour was the same, and that is the point: a reader of the
+   * rename control saw a version go out and had to leave the call site to learn
+   * whether anything renewed it. The version discipline is the reason this screen
+   * is written the way it is, so the renewal belongs beside the command that spends
+   * the version rather than one indirection away from it. Four short handlers that
+   * repeat three lines each state it where it can be read.
+   */
+
+  /** Rename the plan against the PLAN's version, then take the server's answer. */
+  const renamePlan = async (name: string) => {
     if (busy) return;
     setBusy(true);
-    const state = await write();
-    setOutcome({ area, state });
-    if (state.status === 'success') await reread();
+    const state = await renameWarrantyPolicy(policyId, { name }, policy.recordVersion);
+    setOutcome({ area: 'rename', state });
+    if (state.status === 'success') await refresh();
+    setBusy(false);
+  };
+
+  /** Retire or restore the plan against the PLAN's version, then read it back. */
+  const changePlanState = async () => {
+    if (busy) return;
+    setBusy(true);
+    const next = policy.status === ACTIVE ? ARCHIVED : ACTIVE;
+    const state = await setWarrantyPolicyStatus(policyId, { status: next }, policy.recordVersion);
+    setOutcome({ area: 'planState', state });
+    if (state.status === 'success') await refresh();
+    setBusy(false);
+  };
+
+  /**
+   * Retire or restore one window against THAT WINDOW's version, then read back.
+   *
+   * The version comes off the row the button belongs to, handed in by that row. The
+   * plan's is a different counter on a different row, and the path names both
+   * identifiers, which is what makes the confusion easy and silent.
+   */
+  const changeWindowState = async (terms: WarrantyCoverageTerms) => {
+    if (busy) return;
+    setBusy(true);
+    const next = terms.status === ACTIVE ? ARCHIVED : ACTIVE;
+    const state = await setCoverageWindowStatus(
+      policyId,
+      terms.id,
+      { status: next },
+      terms.recordVersion
+    );
+    setOutcome({ area: 'windowState', state });
+    if (state.status === 'success') await refresh();
+    setBusy(false);
+  };
+
+  /**
+   * Add one window of terms, then read the plan back.
+   *
+   * This command carries no version of its own, but the plan it lands under moves,
+   * so the re-read is owed here for the same reason as everywhere else: the next
+   * guarded command takes its version from what this read returned.
+   */
+  const addCoverageWindow = async (body: WarrantyCoverageCreateBody) => {
+    if (busy) return;
+    setBusy(true);
+    const state = await createCoverageWindow(policyId, body);
+    setOutcome({ area: 'window', state });
+    if (state.status === 'success') await refresh();
     setBusy(false);
   };
 
@@ -153,7 +215,7 @@ export function WarrantyPolicyScreen({
         state={outcome.state}
         onReload={() => {
           setOutcome(null);
-          void reread();
+          void refresh();
         }}
       />
     ) : null;
@@ -201,9 +263,7 @@ export function WarrantyPolicyScreen({
             messages={messages}
             currentName={policy.name}
             busy={busy}
-            onSubmit={(name) =>
-              run('rename', () => renameWarrantyPolicy(policyId, { name }, policy.recordVersion))
-            }
+            onSubmit={(name) => void renamePlan(name)}
           />
           {report('rename')}
         </Section>
@@ -220,12 +280,7 @@ export function WarrantyPolicyScreen({
             type="button"
             className={SECONDARY_BUTTON}
             disabled={busy}
-            onClick={() => {
-              const next = policy.status === ACTIVE ? ARCHIVED : ACTIVE;
-              void run('planState', () =>
-                setWarrantyPolicyStatus(policyId, { status: next }, policy.recordVersion)
-              );
-            }}
+            onClick={() => void changePlanState()}
           >
             {translate(
               messages,
@@ -313,19 +368,7 @@ export function WarrantyPolicyScreen({
                         messages={messages}
                         terms={terms}
                         busy={busy}
-                        onClick={() => {
-                          const next = terms.status === ACTIVE ? ARCHIVED : ACTIVE;
-                          void run('windowState', () =>
-                            setCoverageWindowStatus(
-                              policyId,
-                              terms.id,
-                              { status: next },
-                              // The WINDOW's own version, off the row this button
-                              // belongs to. The plan's is a different counter.
-                              terms.recordVersion
-                            )
-                          );
-                        }}
+                        onClick={() => void changeWindowState(terms)}
                       />
                     </td>
                   ) : null}
@@ -347,7 +390,7 @@ export function WarrantyPolicyScreen({
           <CoverageForm
             messages={messages}
             busy={busy}
-            onSubmit={(body) => run('window', () => createCoverageWindow(policyId, body))}
+            onSubmit={(body) => void addCoverageWindow(body)}
           />
           {report('window')}
         </Section>

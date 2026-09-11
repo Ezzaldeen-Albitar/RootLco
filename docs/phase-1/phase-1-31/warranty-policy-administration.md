@@ -132,6 +132,25 @@ windows and both versions are the server's rather than this side's guess. A vers
 "the one before plus one" would encode an assumption about a database trigger this application does
 not own.
 
+The re-read is written out **in each write handler**, after the command and inside the same body,
+rather than behind a shared helper the handlers hand a callback to. That started as a gate
+finding: `scripts/ci/check-p1-28-version-sourcing.mjs` requires the function enclosing a guarded
+call to renew afterwards within its own body, and a helper one indirection away satisfies the
+behaviour while hiding it from the call site. The shape follows
+`apps/web/src/features/quotations/components/QuotationDetailScreen.tsx`, where the issue handler
+writes and then renews in the same body. Four short handlers that repeat three lines each are the
+price of stating the discipline where the version is spent.
+
+The same gate's count equality is a **subject classifier**: it compares the guarded adapters it
+accounts for against the version-guarded `apt.*` / `rec.*` operations this application must
+reach. The three `wty.*` adapters are registered by name in `OUT_OF_SUBJECT_ADAPTERS`, exactly as
+P1-29 W3, W4, W7 and W8 and P1-30 W1, W2, W3 and W6 registered theirs. Registration excludes an
+adapter from that one equality and from nothing else — all three are still required to declare
+`ifMatch`, to use it, to source it from a read or a command response and to renew it afterwards,
+and the run reports all three as satisfying every one of those rules. Measured after the
+registration, `accountedFor` is **7**, the same seven apt/rec adapters as before, so
+`tests/ci/p1-28-version-sourcing.test.ts` needed no change.
+
 ---
 
 ## 6. One conflict code means three things, so the refusal carries the rule
