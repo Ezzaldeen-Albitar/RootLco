@@ -91,14 +91,23 @@ export const P1_31_OPERATION_IDS = Object.freeze([
   'sal.delivery-status-history',
   'sal.work-order-delivery-read',
   'wty.warranty-list',
+  // FE-008 added the warranty record screen and its issue surface. The detail read
+  // shares the `warranties` resource root the list already contributes, and the
+  // generation is addressed under `deliveries`, so neither widens the segment set —
+  // they are named because the rule is an allow-list of OPERATIONS, and an operation
+  // a P1-31 screen calls that is absent here is one this gate does not own.
+  'wty.warranty-detail',
+  'wty.warranty-generate',
 ]);
 
 /**
  * The dashboard route segments P1-31's screens live under.
  *
  * `delivery` is singular and deliberately so — it is the href already committed
- * in navigation. `warranty` and `reports` have no page yet and are named now,
- * so that the first screen under either meets a rule that predates it.
+ * in navigation. `warranty` was named before its screens existed and now carries
+ * them, which is the point of naming an area early: FE-008's two pages met a rule
+ * that predated them. `reports` still has no page and stays named for the same
+ * reason.
  */
 export const P1_31_AREAS = Object.freeze(['delivery', 'warranty', 'reports']);
 
