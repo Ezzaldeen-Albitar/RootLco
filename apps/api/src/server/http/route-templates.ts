@@ -115,6 +115,7 @@ export const ROUTE_TEMPLATES = Object.freeze([
   '/delivery-checklist-templates/{templateId}/items',
   '/delivery-checklist-templates/{templateId}/items/{itemId}',
   '/delivery-checklist-templates/{templateId}/status',
+  '/delivery-readiness',
   '/diagnostic-types',
   '/exports/authorizations',
   '/exports/resources',

@@ -507,29 +507,31 @@ describe('the coverage include lists are pinned, because they are the denominato
       typeScriptFilesUnder(pattern.slice(0, -'/**/*.ts'.length))
     );
     expect(files.filter((file) => file.endsWith('.d.ts'))).toEqual([]);
-    expect(files.length).toBe(282);
+    expect(files.length).toBe(283);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
     );
     /*
-     * 276, five more than the 271 the hosted run that established
-     * `coverage-baseline.backend.json` measured, and the difference is five files:
+     * 277, six more than the 271 the hosted run that established
+     * `coverage-baseline.backend.json` measured, and the difference is six files:
      * `modules/delivery/application/checklist-template-service.ts`, added by the
      * P1-31 checklist template seam (P-9);
      * `modules/warranty/application/warranty-policy-service.ts`, added by the
-     * P1-31 warranty policy and coverage seam (P-10); and the three the P1-31
+     * P1-31 warranty policy and coverage seam (P-10); the three the P1-31
      * report configuration seam (P-11) adds —
      * `modules/reporting/domain/report-configuration.ts`,
      * `modules/reporting/data/report-configuration-repository.ts` and
-     * `modules/reporting/application/report-configuration-service.ts`. The
-     * denominator is SUPPOSED to grow with the tier's source; what this case
-     * defends is that it only ever grows because a file was added, never because
-     * the include list quietly narrowed. The baseline's percentage floors are
-     * untouched: re-establishing them needs a hosted measurement run, which
-     * neither slice performed and neither claims.
+     * `modules/reporting/application/report-configuration-service.ts`; and
+     * `modules/delivery/application/delivery-readiness-service.ts`, added by
+     * the P1-31 delivery-readiness queue (Owner decision D-3). The denominator is
+     * SUPPOSED to grow with the tier's source; what this case defends is that it
+     * only ever grows because a file was added, never because the include list
+     * quietly narrowed. The baseline's percentage floors are untouched:
+     * re-establishing them needs a hosted measurement run, which none of these
+     * slices performed and none claims.
      *
-     * 281 with the P1-31 report engine (P-11): five more files, and each one is a
+     * 282 with the P1-31 report engine (P-11): five more files, and each one is a
      * layer this slice needed rather than a file it chose to add —
      * `modules/reporting/domain/report-datasets.ts` (the dataset registry, which
      * must be database-free to satisfy boundary rule B5),
@@ -543,10 +545,10 @@ describe('the coverage include lists are pinned, because they are the denominato
      * `modules/iam/data/branch-context-repository.ts` (the branch timezone the
      * period is resolved in). The floors are untouched for the reason above.
      *
-     * The 282 above is these 281 plus `server/openapi/document.ts`, which the
+     * The 283 above is these 282 plus `server/openapi/document.ts`, which the
      * include list admits and `exclude` then removes; the two numbers moving
      * together by five is what says no file slipped in behind the exclusion.
      */
-    expect(instrumented.length).toBe(281);
+    expect(instrumented.length).toBe(282);
   });
 });

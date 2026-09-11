@@ -69,8 +69,9 @@ the two would agree for a single-branch operator and diverge silently for everyo
 **The Owner approved, on 2026-09-10:** half-open `[from, to)` periods in the selected branch's
 timezone, converted consistently for server queries; the timezone and the filter context displayed
 and preserved wherever a result is shown; and cross-branch reporting under one explicit reporting
-timezone, never a silent mixing of local periods. The record is `owner-decisions-2026-09-10.md`
-§ 4, which sits on protected `develop` and reaches this branch at its next sync.
+timezone, never a silent mixing of local periods. The record is
+[`owner-decisions-2026-09-10.md`](./owner-decisions-2026-09-10.md) § 4, which reached this branch
+with the protected `develop` `01c32937` sync.
 
 **Engineering consequence (not an Owner decision).** A half-open bound is not what the platform's one
 existing period filter gives: the work-order list is closed on both ends and therefore cannot be

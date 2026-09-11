@@ -155,8 +155,8 @@ that pre-handler probe. This was written the other way round first, and the live
 **Approved by the Owner on 2026-09-10**, in the Owner's words: half-open `[from, to)` periods in the
 selected branch's timezone, converted consistently for server queries; timezone and filter context
 displayed and preserved; cross-branch reporting uses one explicit reporting timezone. The record is
-`owner-decisions-2026-09-10.md` § 4, which sits on protected `develop` and reaches this branch at its
-next sync.
+[`owner-decisions-2026-09-10.md`](./owner-decisions-2026-09-10.md) § 4, which reached this branch
+with the protected `develop` `01c32937` sync.
 
 **Recommendation pending Owner approval.** One question the approval does not answer is which SOURCE
 column supplies "the selected branch's timezone"; this slice reads `org.branches.timezone_name`, and

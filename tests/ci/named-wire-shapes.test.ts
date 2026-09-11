@@ -113,14 +113,22 @@ describe('every route body serialises a named type', () => {
     // `ReportConfigurationDetailView` exist because this gate refuses an inline
     // return type; the five commands serialise `ReportConfigurationSummaryView` and
     // `ReportConfigurationVersionView`, which is the same pair the reads publish.
+    // 405 with the P1-31 delivery-readiness queue (Owner decision D-3): ONE
+    // further operation, a GET returning `Page<DeliveryReadinessRowView>` — a
+    // NAMED interface, because this gate refuses an inline return type — so
+    // `named` moves by one again and `composed` still does not.
     // The delivery list adds one named 200 body on an existing route module.
-    // 406 with the P1-31 report ENGINE (P-11) merged alongside it: one GET
+    // 406 with the P1-31 delivery-readiness queue merged on develop: the
+    // delivery-record list (#358) and the readiness queue are separate
+    // operations on separate route modules, so both count, `named` moves by one
+    // for each and `composed` still does not.
+    // 407 with the P1-31 report ENGINE (P-11) merged alongside it: one GET
     // serialising `ReportRunView`, a NAMED interface, so `named` moves by one
     // and `composed` does not. The envelope exists BECAUSE this gate refuses an
     // inline return type, and naming it is what let the cell, column and period
     // shapes be named as well.
-    expect(summary.bodies).toBe(406);
-    expect(summary.named).toBe(353);
+    expect(summary.bodies).toBe(407);
+    expect(summary.named).toBe(354);
     expect(summary.composed).toBe(53);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

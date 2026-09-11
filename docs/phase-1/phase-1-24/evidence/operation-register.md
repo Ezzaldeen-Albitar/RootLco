@@ -9,10 +9,10 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 406   |
+| Public operations        | 407   |
 | Domains (modules)        | 20    |
-| OpenAPI paths            | 315   |
-| OpenAPI operations       | 406   |
+| OpenAPI paths            | 316   |
+| OpenAPI operations       | 407   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 119   |
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 406        |
+| Covered           | 407        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -36,7 +36,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | --------------- | ---------- | ------- | ------ | ------- | ---------- | --------------- |
 | billing         | 9          | 9       | 5      | 5       | 5          | 2               |
 | crm             | 29         | 29      | 15     | 15      | 15         | 0               |
-| delivery        | 21         | 21      | 11     | 11      | 8          | 4               |
+| delivery        | 22         | 22      | 11     | 11      | 8          | 4               |
 | diagnostics     | 23         | 23      | 15     | 15      | 14         | 4               |
 | iam             | 46         | 46      | 29     | 27      | 12         | 9               |
 | inventory       | 24         | 24      | 13     | 14      | 11         | 0               |
@@ -308,6 +308,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `sal.delivery-eligibility-read`                     | GET    | `/api/v1/deliveries/{deliveryId}/eligibility`                                       | branch  | `sal.delivery.view`<br>`sal.finance.view`                            | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `sal.delivery-list`                                 | GET    | `/api/v1/deliveries`                                                                | branch  | `sal.delivery.view`                                                  | —                                              | —    | —   | authorization cross-tenant denial isolation pagination route service success                                                  | Covered |
 | `sal.delivery-read`                                 | GET    | `/api/v1/deliveries/{deliveryId}`                                                   | branch  | `sal.delivery.view`                                                  | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
+| `sal.delivery-readiness-list`                       | GET    | `/api/v1/delivery-readiness`                                                        | branch  | `sal.delivery.view`<br>`wo.work_order.read`<br>`sal.finance.view`    | —                                              | —    | —   | authorization cross-tenant denial isolation pagination route service success                                                  | Covered |
 | `sal.delivery-receiver-read`                        | GET    | `/api/v1/deliveries/{deliveryId}/authorized-receiver`                               | branch  | `sal.delivery.view`                                                  | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `sal.delivery-receiver-verify`                      | POST   | `/api/v1/deliveries/{deliveryId}/authorized-receiver`                               | branch  | `sal.delivery.manage`<br>`sal.delivery.view`                         | sal.delivery.receiver_verified                 | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `sal.delivery-signature-attach`                     | POST   | `/api/v1/deliveries/{deliveryId}/signatures`                                        | branch  | `sal.delivery.manage`<br>`sal.delivery.view`                         | sal.delivery.signature_recorded                | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
