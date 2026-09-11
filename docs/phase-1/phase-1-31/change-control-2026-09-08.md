@@ -1484,14 +1484,14 @@ heading and identifier it reserved deliberately ahead of the front, and the rese
 PROVISIONAL** precisely because 41 and 42 are unmerged: a collision must be a reconciliation and
 never a silent renumbering of somebody else's record.
 
-| id                | lane                                          | state at this base                                 |
-| ----------------- | --------------------------------------------- | -------------------------------------------------- |
-| **CC-24**         | the readiness queue (D-3)                     | section 39, merged into this base                  |
-| **CC-25**         | the delivery write paths                      | section 38, merged into this base                  |
-| **CC-26**         | receiver identity-evidence document category  | section 38, merged into this base                  |
-| **CC-27, CC-28**  | the report engine (P-11, engine half)         | **section 40, settled, merged into this base**     |
-| **CC-29, CC-30**  | reserved for the lanes at sections 41 and 42  | not allocated here; both unmerged at this head     |
-| **CC-31**         | this slice                                    | **PROVISIONAL**, this branch, section 43           |
+| id               | lane                                         | state at this base                             |
+| ---------------- | -------------------------------------------- | ---------------------------------------------- |
+| **CC-24**        | the readiness queue (D-3)                    | section 39, merged into this base              |
+| **CC-25**        | the delivery write paths                     | section 38, merged into this base              |
+| **CC-26**        | receiver identity-evidence document category | section 38, merged into this base              |
+| **CC-27, CC-28** | the report engine (P-11, engine half)        | **section 40, settled, merged into this base** |
+| **CC-29, CC-30** | reserved for the lanes at sections 41 and 42 | not allocated here; both unmerged at this head |
+| **CC-31**        | this slice                                   | **PROVISIONAL**, this branch, section 43       |
 
 **Reconciliation rule.** If section 43 or **CC-31** is occupied when this branch integrates, this
 section moves to the next free heading and this identifier to the next free identifier, and the move
