@@ -1464,25 +1464,125 @@ terms.
 | **P11-6** | `executable` in both limbs: true for the registered baseline, false for a PUBLISHED tenant row whose code the engine does not implement                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | **P11-8** | the P1-23 mutation re-target of **CC-27(c)**, measured rather than assumed: each new `from` string counted exactly once in its file, then each mutation applied BY HAND and `tests/backend/p1-23-reporting.test.ts` run alone — 13/13 green unmutated, the M7b mutant failing `never applies a configuration the tenant has not published` and the M8 mutant failing `claims executability only for a registered code`, both with an `AssertionError` and neither with a crash signature. The matrix script itself was not executed                                     |
 
+## 42. The ready-for-delivery queue screen — PROVISIONAL
+
+**Slice:** `feature/p1-31-delivery-readiness-queue`, ownership profile `p1-31-frontend`.
+**Baseline:** protected `develop` **c1b1a8cd** (the report engine, #364), merged into this branch on
+2026-09-11; the integrated head is that merge commit, `P1-31-FE-001-008`, the commit this section is
+written against. An earlier sync merged `develop` **01c32937** on the same day. The screen was
+written against **0204f2d1**; the contract it consumes reached `develop` with the readiness seam
+(#366, section 39) and the delivery execution paths (#362, section 38), so this is the first head at
+which the screen compiles against a published contract rather than a proposed one.
+
+The full record is [`delivery-readiness-queue-ui.md`](./delivery-readiness-queue-ui.md).
+
+**The Owner's decision (D-3, settled 2026-09-09), in the Owner's words.** The operational
+ready-for-delivery queue is the set of work orders that satisfy the AUTHORITATIVE SERVER
+delivery-eligibility rules, and it INCLUDES eligible work orders that do not yet have a delivery
+record; it is a different question from the delivery-record list, which lists records that already
+exist. The three constraints the Owner attached: **no new work-order status**, **eligibility is not
+computed in the browser**, **finance permissions are not broadened**. This slice consumes that
+decision and extends none of it.
+
+**Measured facts (not part of the decision).**
+
+- The contract mirrored on this side matches the merged route field for field: the route's
+  `DeliveryReadinessRowView` (`workOrder`, `delivery`, `facts`, `blockers`, `readyToStartDelivery`)
+  over the platform cursor page (`items`, `nextCursor`, `hasMore`), and `DEFAULT_READINESS_PAGE_SIZE`
+  20 / `MAX_READINESS_PAGE_SIZE` 50 as the route declares them.
+- The shared table's first page is **25** rows and its size options are 10, 25, 50 and 100. The
+  route's default of 20 applies only to a request that sends no `limit`, and this screen always
+  sends one, so 25 is what the first page actually asks for; 100 is capped to the route's 50 on this
+  side and the capping is stated to the operator rather than performed silently.
+- The P-16 access gate examines **9** route pages across **7** owned segments with the readiness
+  operation named, and the new page is one of the nine.
+
+**Engineering consequence (not an Owner decision).** The points below are this slice's own choices.
+The Owner named none of them.
+
+- **The page route is `/delivery`**, the singular href already committed in navigation, and the
+  navigation entry moves from planned to available. The plural `deliveries` remains the API spelling.
+- **All three of the operation's codes gate the page** before any read is issued, and each one alone
+  is enough to refuse it. The gate is the page's own; the backend's check is unchanged and remains
+  the authority.
+- **The verdict is rendered, never composed.** `readyToStartDelivery` is taken as given; an empty
+  blocker list is not read as readiness, and no control asks the server to filter by it.
+- **The queue is a separate module from the delivery record contract** — `readiness-contract.ts` and
+  `readiness-api.ts` — so the execution half (#362) and this half did not stand on each other.
+
+### 42.1 Identifier allocation — PROVISIONAL, dated 2026-09-11
+
+`develop` at **c1b1a8cd** carries sections 1–40 and **CC-01 … CC-28**. Section 40, with **CC-27**,
+**CC-27(c)** and **CC-28**, settled on `develop` when the report engine (#364) merged on 2026-09-11,
+so one of the two lanes named below has since landed at the allocation it claimed. One unmerged lane
+still holds a heading and an identifier between that head and this one.
+
+| id                   | lane                                      | state at c1b1a8cd, dated 2026-09-11 |
+| -------------------- | ----------------------------------------- | ----------------------------------- |
+| **CC-24**            | the readiness seam (#366)                 | merged, section 39                  |
+| **CC-25**, **CC-26** | the delivery execution write paths (#362) | merged, section 38                  |
+| **CC-27**, **CC-28** | the report engine (#364)                  | merged, section 40                  |
+| **CC-29**            | an unmerged lane                          | open, claims section 41             |
+| **CC-30**            | this slice                                | this branch, claims section 42      |
+
+So this slice takes **section 42** and **CC-30**, and both stay **PROVISIONAL**: section 40 is
+settled, but section 41 and **CC-29** are still claimed by a lane that has not merged, so that lane
+landing with a different allocation would still move this heading. **The section number and the
+identifier must both be re-checked against `develop` before this branch merges.** A register whose
+identifiers collide is worse than one that renumbers.
+
+### 42.2 What changed, and what was minted
+
+| changed                                                                                                                                                   | minted  |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| 1 route page, 1 screen component, 2 feature modules (contract and adapter), 1 navigation entry flipped to available, 1 parent link on the detail page     | nothing |
+| English and Arabic copy for the selectors, the verdict, the unreadable-check case and the paging notice; 3 web test files extended; 1 CI allow-list entry | nothing |
+
+The CI allow-list entry is `sal.delivery-readiness-list` in `scripts/ci/check-p1-31-access.mjs`,
+which that gate's own docblock requires in the same change that first consumes the operation. It
+WIDENS what the gate judges — the derived segment `delivery-readiness` joins the owned set — and
+suppresses nothing.
+
+### 42.3 Dispositions
+
+| id        | finding                                                                                                     | measured                                                                                                                                                                                                                                                                      | disposition                                                                                                                                                                                                                                                                                                                                                                                                                | owner / slice          | status         |
+| --------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | -------------- |
+| **CC-30** | an operator without `sal.finance.view` is refused the whole queue, and **no reduced view of it is offered** | the operation declares all three codes and the page tests all three; the financial check is composed from rows that live behind the finance code, so a caller without it would be answered from an invisible zero and shown a vehicle as releasable while money is owed on it | **accepted, and recorded because an operator will meet it.** D-3 forbids broadening finance permissions, and a reduced view — the queue with the financial check left blank — is the softened fact the seam already refused at the operation. The remedy is a permission grant by an administrator, not a change here. Recorded so that "the delivery page shows me nothing" is read as a permission fact, not as a defect | a tenant administrator | open, recorded |
+
+### 42.4 What this slice did NOT do, and what is not claimed
+
+- **No backend file changed.** No route, no service, no repository, no migration, no seed, no
+  permission, no audit action and no operation. The operation register is untouched by this slice.
+- **No work-order status was written or invented**, and nothing on this side recomputes a verdict.
+- **No delivery, receiver, signature or checklist result is created from this screen.** It reads,
+  and it links to the pages that write.
+- **No gate was weakened and no allow-list was relaxed.** The one CI edit adds an operation to a
+  gate's reach.
+- **No hosted run, no database tier, no browser acceptance and no end-to-end result is claimed.**
+  The evidence for this slice is the local frontend chain and the focused web run named in the
+  record document. The branch is unmerged as this section is written.
+
 ---
 
 ## 43. The warranty record screens — **PROVISIONAL** (FE-008, FE-009 partial)
 
 **This whole section is PROVISIONAL, and so is its identifier.** It records work on
-`feature/p1-31-warranty-record-screens`, opened against `develop` `01c32937` and re-based by merge
-onto protected `develop` `c1b1a8cd` on 2026-09-11. The branch is **unmerged** and has **no hosted
-result**; it carries an open pull request. Nothing below claims otherwise.
+`feature/p1-31-warranty-record-screens`, opened against `develop` `01c32937`, re-based by merge onto
+protected `develop` `c1b1a8cd` on 2026-09-11 and onto protected `develop` `ae0e0354` on 2026-09-12.
+The branch is **unmerged** and has **no hosted result**; it carries an open pull request. Nothing
+below claims otherwise.
 
-### 43.1 Identifier allocation — PROVISIONAL, dated 2026-09-11, re-checked at the `c1b1a8cd` sync
+### 43.1 Identifier allocation — PROVISIONAL, dated 2026-09-11, re-checked at the `ae0e0354` sync
 
 At the base head this register ran to **section 39** and to **CC-26**. **At the merge base this
-section now sits on — protected `develop` `c1b1a8cd` — it runs to section 40 and to CC-28**: the
-report engine (P-11) landed section 40 with **CC-27** and **CC-28**, and those are **settled**, not
-in flight. Sections 41 and 42 are held by the coordinator's standing allocation for two lanes that
-are still unmerged, so this slice does **not** claim the next number in sequence. It keeps the
-heading and identifier it reserved deliberately ahead of the front, and the reservation **stays
-PROVISIONAL** precisely because 41 and 42 are unmerged: a collision must be a reconciliation and
-never a silent renumbering of somebody else's record.
+section now sits on — protected `develop` `ae0e0354` — it runs to section 42 and to CC-30**: the
+report engine (P-11) landed section 40 with **CC-27** and **CC-28**, and the ready-for-delivery
+queue (FE-001) landed section 42 with **CC-30**; all three are **settled**, not in flight. Section
+41 is still held by the coordinator's standing allocation for a lane that has not merged, so this
+slice does **not** claim the next number in sequence. It keeps the heading and identifier it
+reserved deliberately ahead of the front, and the reservation **stays PROVISIONAL** precisely
+because 41 is unmerged: a collision must be a reconciliation and never a silent renumbering of
+somebody else's record.
 
 | id               | lane                                         | state at this base                             |
 | ---------------- | -------------------------------------------- | ---------------------------------------------- |
@@ -1490,15 +1590,16 @@ never a silent renumbering of somebody else's record.
 | **CC-25**        | the delivery write paths                     | section 38, merged into this base              |
 | **CC-26**        | receiver identity-evidence document category | section 38, merged into this base              |
 | **CC-27, CC-28** | the report engine (P-11, engine half)        | **section 40, settled, merged into this base** |
-| **CC-29, CC-30** | reserved for the lanes at sections 41 and 42 | not allocated here; both unmerged at this head |
+| **CC-29**        | reserved for the lane at section 41          | not allocated here; unmerged at this head      |
+| **CC-30**        | the ready-for-delivery queue (FE-001)        | **section 42, settled, merged into this base** |
 | **CC-31**        | this slice                                   | **PROVISIONAL**, this branch, section 43       |
 
 **Reconciliation rule.** If section 43 or **CC-31** is occupied when this branch integrates, this
 section moves to the next free heading and this identifier to the next free identifier, and the move
 is recorded here with its date. No existing identifier and no historical result is renumbered to
-accommodate it. This sync exercised exactly that rule in the other direction: section 40 and
-**CC-27/CC-28** arrived while this branch was open, they did not collide with 43 or **CC-31**, and
-nothing here was renumbered.
+accommodate it. Both syncs exercised exactly that rule in the other direction: section 40 with
+**CC-27/CC-28**, and then section 42 with **CC-30**, arrived while this branch was open, neither
+collided with 43 or **CC-31**, and nothing here was renumbered.
 
 ### 43.2 What was delivered
 
@@ -1509,10 +1610,13 @@ on the handover screen for a caller holding `wty.warranty.issue`, a `warranty` n
 `available`, the English and Arabic wording for all of it, and two new web test files. The full
 record is [`warranty-record-screens.md`](./warranty-record-screens.md).
 
-`wty.warranty-detail` and `wty.warranty-generate` were added to `P1_31_OPERATION_IDS` in
-`scripts/ci/check-p1-31-access.mjs`. That gate's scope is an allow-list of OPERATIONS, so an
-operation a P1-31 screen calls and the list omits is one the gate has quietly stopped owning.
-Neither addition widens the derived segment set; the examined page count moved from 8 to 10.
+`wty.warranty-detail`, `wty.warranty-generate` and the two policy reads were added to
+`P1_31_OPERATION_IDS` in `scripts/ci/check-p1-31-access.mjs`. That gate's scope is an allow-list of
+OPERATIONS, so an operation a P1-31 screen calls and the list omits is one the gate has quietly
+stopped owning. The detail and the generation share resource roots already derived and widen
+nothing; the two policy reads add one owned segment. Measured at this merge base, the gate reports
+**11 route pages across 8 owned segments**, against the 9 and 7 that `develop` `ae0e0354` pins, and
+the pins in `tests/ci/p1-31-access-gate.test.ts` were moved to 11 and 8 in this sync.
 
 ### 43.3 Disposition
 
@@ -1533,7 +1637,7 @@ Neither addition widens the derived segment set; the examined page count moved f
 - **No gate was weakened, no allow-list narrowed and no suppression added.** The web test floor was
   raised, which makes a gate stricter rather than weaker — see 43.5. The P1-31 access gate's
   operation list was EXTENDED by four operations, which widens what the gate owns rather than what
-  it permits. The two policy reads add a seventh owned route segment, `warranty-policies`, which no
+  it permits. The two policy reads add an eighth owned route segment, `warranty-policies`, which no
   page occupies yet.
 - **No merge into any protected branch, no hosted run and no acceptance.** The branch carries an
   open pull request, #369, and is pushed; neither is a result. Every figure quoted in this section

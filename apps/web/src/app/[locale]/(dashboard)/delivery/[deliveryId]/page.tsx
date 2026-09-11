@@ -73,15 +73,20 @@ export default async function DeliveryDetailPage({
   const session = await requireSession(locale);
   const messages = getMessages(locale);
   /*
-   * ONE crumb, because there is no ancestor SCREEN to route back to.
+   * TWO crumbs now, because the ancestor SCREEN exists.
    *
-   * The navigation entry for `/delivery` is still `planned` — the list is
-   * FE-001 and waits on an Owner decision — so a parent crumb here would be
-   * either a link to a page that does not exist or a route-less ancestor, and
+   * This page shipped with one crumb and said why: the navigation entry for
+   * `/delivery` was still `planned`, so a parent crumb would have been either a
+   * link to a page that does not exist or a route-less ancestor, and
    * `shell.dom.test.tsx` measures that no route-less ancestor exists in this
-   * product. The list crumb arrives with the list.
+   * product. FE-001 built that list on the Owner's D-3 decision, so the parent
+   * crumb arrives with it — carrying an href, which is what keeps that
+   * measurement true.
    */
-  const crumbs = [{ labelKey: 'delivery.detail.crumb' }];
+  const crumbs = [
+    { labelKey: 'nav.delivery', href: `/${locale}/delivery` },
+    { labelKey: 'delivery.detail.crumb' },
+  ];
 
   if (!holds(session.permissions, DELIVERY_PERMISSIONS.view)) {
     return (
