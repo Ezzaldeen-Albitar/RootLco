@@ -305,14 +305,14 @@ inventory report; rows 9 to 11 are what slice 3 itself leaves behind:
 **Movement recorded by engine slice 4** (same branch, same unmerged state). Row 3 closes
 completely; rows 12 to 15 are what slice 4 itself leaves behind:
 
-| #   | prerequisite                                                                                                                                                                                                                                                                                                                                                                                                                             | state after slice 4                                                                                                                                                                             |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 3   | Aggregate and batch ports for the other reports                                                                                                                                                                                                                                                                                                                                                                                          | **closed.** `billingModule().reportPort` and `paymentsModule().reportPort` complete the set; all four baseline datasets are served by the module that owns their tables                         |
-| 5   | Retiring `countsByState`                                                                                                                                                                                                                                                                                                                                                                                                                 | still open, and one step nearer: it is no longer READ BACK out of a group measure. Its one producer now sets it from the same counts its groups are built from, so no count is converted at all |
-| 12  | **The `document` column publishes NO drill-through, because one column addresses THREE kinds of document.** An invoice would resolve through `sal.invoice-detail` (`/invoices/{id}`) and a receipt through `sal.receipt-detail` (`/payments/{id}`), while a credit note has no read operation at all. A `ReportColumnDefinition` carries ONE template, so publishing either would send most rows to a screen that cannot answer for them | open, raised by slice 4                                                                                                                                                                         |
-| 13  | **The `customer` cell carries an id and no name.** `BillingReadService` publishes `payerPartnerId` without a display name today. Naming the payer means reading `crm.business_partners` — another module's record, and therefore another module's read code on the dataset's permission list, which is a disclosure decision rather than a lookup                                                                                        | open, raised by slice 4                                                                                                                                                                         |
-| 14  | **No credit-note amount is published anywhere.** D-4's column list names none, so an approved credit note appears as a DOCUMENT — its date, its payer, its currency, its approved state — and its money is visible only as the reduction inside the affected invoice's `outstanding`. Publishing a credit amount is a column the Owner has not named                                                                                     | open, raised by slice 4 — an Owner question, not an engineering one                                                                                                                             |
-| 15  | **`sal.receipt_unallocated` is named by D-4 and is published by no column.** The Owner's source table lists "receipts not yet applied"; the column list this slice implements carries `allocatedAmount` and not its complement. The function exists and the payments module already calls it elsewhere, so this is a column decision and not a capability gap                                                                            | open, raised by slice 4 — an Owner question, not an engineering one                                                                                                                             |
+| #   | prerequisite                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | state after slice 4                                                                                                                                                                             |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 3   | Aggregate and batch ports for the other reports                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | **closed.** `billingModule().reportPort` and `paymentsModule().reportPort` complete the set; all four baseline datasets are served by the module that owns their tables                         |
+| 5   | Retiring `countsByState`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | still open, and one step nearer: it is no longer READ BACK out of a group measure. Its one producer now sets it from the same counts its groups are built from, so no count is converted at all |
+| 12  | **The `document` column publishes NO drill-through, because one column addresses THREE kinds of document.** An invoice would resolve through `sal.invoice-detail` (`/invoices/{id}`) and a receipt through `sal.receipt-detail` (`/payments/{id}`), while a credit note has no read operation at all. A `ReportColumnDefinition` carries ONE template, so publishing either would send most rows to a screen that cannot answer for them. **Recommendation pending Owner approval:** a drill-through PER DOCUMENT KIND against the two detail operations that already exist, with a credit note carrying none until the register holds a credit-note read; the column stays without a template until that is approved (CC-35(a)) | open, raised by slice 4 — an Owner question, not an engineering one                                                                                                                             |
+| 13  | **The `customer` cell carries an id and no name.** `BillingReadService` publishes `payerPartnerId` without a display name today. Naming the payer means reading `crm.business_partners` — another module's record, and therefore another module's read code — `crm.customer.read` — on the dataset's permission list, which is a disclosure decision rather than a lookup. **Recommendation pending Owner approval:** keep the cell id-only; if the Owner wants the name, declare `crm.customer.read` beside `sal.finance.view` conjunctively so the whole report is refused to a caller who may not read customers (CC-35(b))                                                                                                   | open, raised by slice 4 — an Owner question, not an engineering one                                                                                                                             |
+| 14  | **No credit-note amount is published anywhere.** D-4's column list names none, so an approved credit note appears as a DOCUMENT — its date, its payer, its currency, its approved state — and its money is visible only as the reduction inside the affected invoice's `outstanding`. Publishing a credit amount is a column the Owner has not named                                                                                                                                                                                                                                                                                                                                                                             | open, raised by slice 4 — an Owner question, not an engineering one                                                                                                                             |
+| 15  | **`sal.receipt_unallocated` is named by D-4 and is published by no column.** The Owner's source table lists "receipts not yet applied"; the column list this slice implements carries `allocatedAmount` and not its complement. The function exists and the payments module already calls it elsewhere, so this is a column decision and not a capability gap                                                                                                                                                                                                                                                                                                                                                                    | open, raised by slice 4 — an Owner question, not an engineering one                                                                                                                             |
 
 ## 10. What this slice does NOT close
 
@@ -396,6 +396,11 @@ choice and not an Owner decision.
 - `ex_labor_sessions_overlap` is a partial GiST EXCLUDE per technician over
   `tstzrange(started_at, COALESCE(ended_at,'infinity'))`, so an open session overlaps everything
   starting after it. That is why the suite gives each excluded case its own fixture technician.
+- **OpenAPI paths/operations unchanged (407/316).** `docs/api/openapi.v1.json` was not changed by
+  this branch, and the response schema of `rpt.report-run` is BARE by repository convention
+  (`a0-preflight.md` records it for QA-002), so the envelope fields — including `groups`, the filter
+  context and the branch — are described only in the named wire types exported from
+  `apps/api/src/modules/reporting/index.ts`.
 
 ### 11.3 Engineering consequence (not an Owner decision)
 
@@ -447,6 +452,14 @@ choice and not an Owner decision.
 | `technicianModule().reportPort` (`LaborReportPort`) | `tech.*` is the technician module's private schema, so the selection, the totals and the name resolution live there and reporting asks for the answer |
 | `workOrderModule().reportPort.workOrdersForJobs`    | `tech.labor_sessions` carries a job id and `wo.jobs` is the work-order module's, so that module answers for it — the same rule in the other direction |
 
+The report pages on an ordering contract of its own, `tech.technician_labor_time:started_at_desc`,
+and not on the per-job log's `tech.labor_sessions:started_at_desc`. Both sort `started_at`
+descending with the row id as the tie-break over the same table; the SELECTIONS are different, so
+a cursor minted by the job's log names a row this report may never return and is refused with
+`ERR-PAG-001` instead of beginning a page in the wrong place — the qualification
+`inv.stock_movements:occurred_at_desc` and `sal.invoice_payment_summary:document_date_desc` carry
+on the sibling slices.
+
 Both are branch-scoped and batched over one page, and neither performs authorization: the dataset
 registry declares the codes and `ReportRunService` evaluates them, in one place.
 
@@ -466,8 +479,9 @@ unchanged.
   `tech.technician.read` and `wo.work_order.read` are both existing catalogue rows and no bundle
   moved. The dataset naming a second EXISTING code is a narrowing of what the report discloses, not
   a new grant.
-- **No new operation and no new path.** `rpt.report-run` serves the dataset; the register stays at
-  407 operations and 316 OpenAPI paths, and the committed contract document is byte-unchanged.
+- **No new operation and no new path.** `rpt.report-run` serves the dataset; OpenAPI
+  paths/operations are unchanged at 407 operations and 316 paths, and `docs/api/openapi.v1.json`
+  was not changed by this branch.
 - **No export.** Prerequisite P-12 is untouched and `rpt.export` stays excluded on CC-04's grounds.
 - **No frontend.** FE-012 is not started and `apps/web/src` was not edited at all.
 - **The remaining two baseline reports are not implemented.** The registry holds exactly two entries
@@ -520,6 +534,10 @@ inv.units_of_measure (code, name, dimension)`, a property of the ITEM.
   which assigns `NEW.occurred_at := now()` on every insert.
 - **There is no per-item read operation.** The register holds `inv.item-search`, a list, and no
   `inv.item-read`.
+- **OpenAPI paths/operations unchanged (407/316).** `docs/api/openapi.v1.json` was not changed by
+  this branch, and the response schema of `rpt.report-run` is BARE by repository convention
+  (`a0-preflight.md` records it for QA-002), so the envelope fields are described only in the named
+  wire types exported from `apps/api/src/modules/reporting/index.ts`.
 
 ### 12.3 Engineering consequence (not an Owner decision)
 
@@ -575,8 +593,9 @@ evaluates it, in one place.
 
 - **No migration, no schema change, no seed row, no permission and no audit action.**
   `inv.stock.read` is an existing catalogue row and no bundle moved.
-- **No new operation and no new path.** `rpt.report-run` serves the dataset; the register stays at
-  407 operations and 316 OpenAPI paths, and the committed contract document is byte-unchanged.
+- **No new operation and no new path.** `rpt.report-run` serves the dataset; OpenAPI
+  paths/operations are unchanged at 407 operations and 316 paths, and `docs/api/openapi.v1.json`
+  was not changed by this branch.
 - **No export, and no frontend.** P-12 is untouched, `rpt.export` stays excluded on CC-04's grounds,
   and `apps/web/src` was not edited at all (FE-013 is not started).
 - **`invoice_payment_summary` is not implemented.** The registry holds exactly three entries and a
@@ -624,8 +643,11 @@ below headed _Engineering consequence_ is this coordinator's choice and not an O
   a voided invoice. It is CALLED; nothing re-derives it.
 - **Every instant on these tables is stamped from `now()`** by the protected primitives, and no
   route or function accepts one from a caller: a financial document cannot be backdated.
-- The register stays at **407** operations and **316** OpenAPI paths; the committed contract
-  document is byte-unchanged. `sal.finance.view` is an existing catalogue row.
+- **OpenAPI paths/operations unchanged (407/316).** `docs/api/openapi.v1.json` was not changed by
+  this branch, and the response schema of `rpt.report-run` is BARE by repository convention
+  (`a0-preflight.md` records it for QA-002), so the envelope fields are described only in the
+  named wire types exported from `apps/api/src/modules/reporting/index.ts`. The register stays at **407**
+  operations and **316** paths, and `sal.finance.view` is an existing catalogue row.
 
 ### 13.3 The decisions this slice took, and why
 
@@ -680,13 +702,16 @@ Neither port performs authorization: the dataset registry declares `sal.finance.
 
 - **No migration, no schema change, no seed row, no permission and no audit action.**
   `sal.finance.view` is an existing catalogue row and no bundle moved.
-- **No new operation and no new path.** `rpt.report-run` serves the dataset; the register stays at
-  407 operations and 316 OpenAPI paths, and the committed contract document is byte-unchanged.
+- **No new operation and no new path.** `rpt.report-run` serves the dataset; OpenAPI
+  paths/operations are unchanged at 407 operations and 316 paths, and `docs/api/openapi.v1.json`
+  was not changed by this branch.
 - **No export, and no frontend.** P-12 is untouched, `rpt.export` stays excluded on CC-04's grounds,
   and `apps/web/src` was not edited at all (FE-014 is not started).
 - **No credit-note amount and no unallocated-receipt column.** Both are recorded in § 9 as Owner
   questions rather than answered here.
-- **No drill-through on `document`, and no payer name.** Both are recorded in § 9.
+- **No drill-through on `document`, and no payer name.** Both are recorded in § 9 rows 12 and 13
+  and are OPEN Owner-level items — CC-35(a) and CC-35(b), beside CC-35 — not questions settled
+  here. Each carries one recommendation pending Owner approval.
 - **`countsByState` is still published.** It is deprecated and correct; removing it is still a later
   slice's work, with a check that no consumer reads it.
 - **No allow-list was widened and no gate was suppressed.** No `@ts-expect-error`, no

@@ -49,8 +49,9 @@
  *   * `money` — an exact decimal string. Never a JSON number and never recomputed
  *     by a consumer; `pg` returns `numeric` as a string and it stays one, which is
  *     the rule `scripts/ci/check-exact-money.mjs` enforces inside the financial
- *     trees. No dataset registered today emits one — the kind exists so that the
- *     first one to do so cannot reach for `count` instead.
+ *     trees. `invoice_payment_summary` emits four of them — `invoicedAmount`,
+ *     `receiptAmount`, `allocatedAmount` and `outstanding` — and it is the only
+ *     dataset registered today that does.
  */
 export type ReportColumnKind =
   'text' | 'date' | 'count' | 'reference' | 'duration' | 'quantity' | 'money';

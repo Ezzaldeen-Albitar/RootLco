@@ -344,15 +344,25 @@ discriminator and a NULL, never a zero, in every amount column a type has no equ
 period is half-open in the branch's timezone (D-17).
 
 **Three absences this slice measured and did not paper over**, all recorded as named prerequisites
-in [`report-engine-seam.md`](./report-engine-seam.md) § 9 and raised in the change-control register:
+in [`report-engine-seam.md`](./report-engine-seam.md) § 9 and raised in the change-control register
+as **OPEN Owner-level items** — CC-35, CC-35(a) and CC-35(b) — each carrying one recommendation
+pending Owner approval:
 
-- **The `document` column publishes no drill-through**, because one column addresses three kinds of
-  document and a column carries one route template.
-- **The `customer` cell carries the payer's id and no name**, because naming it means reading
-  another module's record and therefore naming that module's read code.
-- **Two figures this section's own source table names are published by no column** — a credit-note
-  amount and `sal.receipt_unallocated`. The column list implemented is the one in "Columns and their
-  contracts" above; those two are Owner questions, stated rather than decided.
+- **The `document` column publishes no drill-through** (CC-35(a)), because one column addresses
+  three kinds of document and a column carries one route template. **Recommendation pending Owner
+  approval:** a drill-through per document KIND against the two detail operations that already
+  exist — an invoice through `sal.invoice-detail`, a receipt through `sal.receipt-detail` — with a
+  credit note carrying none until the register holds a credit-note read; the column stays without a
+  template until that is approved.
+- **The `customer` cell carries the payer's id and no name** (CC-35(b)), because naming it means
+  reading another module's record and therefore naming that module's read code, `crm.customer.read`.
+  **Recommendation pending Owner approval:** keep the cell id-only; if the Owner wants the name,
+  declare `crm.customer.read` beside `sal.finance.view` conjunctively so the whole report is refused
+  to a caller who may not read customers.
+- **Two figures this section's own source table names are published by no column** (CC-35) — a
+  credit-note amount and `sal.receipt_unallocated`. The column list implemented is the one in
+  "Columns and their contracts" above. **Recommendation pending Owner approval:** add neither
+  column until the Owner names it, because either would be a column nobody has decided on.
 
 ---
 

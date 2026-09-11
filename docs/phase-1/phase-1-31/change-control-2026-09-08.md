@@ -1493,7 +1493,7 @@ worse than one that renumbers. Nothing in this section depends on the number bei
 | published                                                                             | minted  |
 | ------------------------------------------------------------------------------------- | ------- |
 | 1 dataset, 0 operations, 0 routes, 0 paths, 0 audit actions, 2 new module files       | nothing |
-| 2 module port methods (1 new port, 1 method on an existing one)                       | nothing |
+| 2 module port methods (1 new port, 1 method on an existing one), 1 ordering contract  | nothing |
 | register unchanged at **407** operations and **316** OpenAPI paths; audit actions 232 | nothing |
 | bundle unchanged                                                                      | nothing |
 
@@ -1501,14 +1501,24 @@ worse than one that renumbers. Nothing in this section depends on the number bei
 
 - **`technician_labor_time`** joins the dataset registry, which now holds exactly **two** entries. A
   case asserts the exact list, so a third cannot arrive quietly.
+- **The report has an ordering contract of its OWN**, `tech.technician_labor_time:started_at_desc`,
+  keyed on the report rather than on the table. The per-job labour log keeps
+  `tech.labor_sessions:started_at_desc`. Both sort `started_at` descending with the row id as the
+  tie-break over the same table, and the SELECTIONS differ — one job's whole log against a branch's
+  contributing sessions in a period — so a cursor minted by the list is refused with `ERR-PAG-001`
+  rather than starting a report page in the wrong place. A case mints the cursor through the list
+  route itself and shows the report refusing it.
 - **`tech.labor_sessions` has no status column and no cancelled state.** The soft delete and
   `source = 'correction'` are its entire lifecycle
   (`supabase/migrations/20260722099000_tech_labor_sessions.sql`). It also has no duration column, and
   a session names a JOB rather than a work order.
-- **The committed OpenAPI document is byte-unchanged.** No operation, path, permission, audit
-  action, migration or seed row moved. `tech.technician.read` and `wo.work_order.read` are both
-  existing catalogue rows; the dataset naming the second one NARROWS what the report discloses and
-  mints nothing.
+- **OpenAPI paths/operations unchanged (407/316).** `docs/api/openapi.v1.json` was not changed by
+  this branch, and the response schema of `rpt.report-run` is BARE by repository convention
+  (`a0-preflight.md` records it for QA-002), so the envelope fields are described only in the
+  named wire types exported from `apps/api/src/modules/reporting/index.ts`. No operation, path, permission,
+  audit action, migration or seed row moved. `tech.technician.read` and `wo.work_order.read` are
+  both existing catalogue rows; the dataset naming the second one NARROWS what the report
+  discloses and mints nothing.
 - **Two new source files** under `apps/api/src`: `server/db/period.ts` and
   `modules/technician/application/labor-report-port.ts`. The instrumented-file denominator in
   `tests/ci/baseline-integrity.test.ts` moves 282 → 284 with the admitted count 283 → 285. **The
@@ -1535,8 +1545,8 @@ worse than one that renumbers. Nothing in this section depends on the number bei
 - **No permission was minted and no bundle changed.** `tech.technician.read` and
   `wo.work_order.read` are both existing catalogue rows; this is the first report to require the
   first one, and the second is the code `wo.work-order-read` already declares.
-- **No new operation, no new route and no new path.** `rpt.report-run` serves the dataset, and the
-  committed OpenAPI document is byte-unchanged.
+- **No new operation, no new route and no new path.** `rpt.report-run` serves the dataset, and
+  `docs/api/openapi.v1.json` was not changed by this branch.
 - **No export.** Prerequisite P-12 is untouched; `rpt.export` stays excluded on **CC-04**'s grounds
   and a baseline still names no export permission.
 - **No frontend.** `apps/web/src` was not edited at all — not even through
@@ -1590,6 +1600,46 @@ this branch's own turn after #364 merges.
 
 ---
 
+### 45.5 Remediation — `P1-31-P-11-025`, 2026-09-11
+
+**Measured facts (not part of the decision).** A review of this branch found the labour report
+paging on the PER-JOB log's ordering contract key, `tech.labor_sessions:started_at_desc`, so a
+cursor minted by `tech.labor-session-list` was accepted by a read over a different selection. The
+report now carries its own key, `tech.technician_labor_time:started_at_desc`, and the per-job list
+keeps the table's. **S2-11** is the case that says so: the cursor is minted by the list ROUTE
+itself, the report refuses it with `ERR-PAG-001`, and the report's own cursor still pages on the
+same request shape — so the refusal is the contract key and not paging being broken for the
+dataset. No operation, path, permission, audit action, migration or seed row moved, and the
+published wire shape is unchanged: a cursor is opaque.
+
+Three record corrections were made in the same commit and are not code changes: the OpenAPI
+sentences in § 45.1, § 46.1, § 47.1 and the three "did NOT do" lists now state that
+`docs/api/openapi.v1.json` was not changed by this branch and that the response schema is bare by
+repository convention; the `money` column-kind docblock in
+`apps/api/src/modules/reporting/domain/report-datasets.ts` no longer says no dataset emits one,
+because `invoice_payment_summary` emits four; and **CC-35(a)** and **CC-35(b)** are reclassified
+from settled engineering consequences to OPEN Owner-level items beside **CC-35**, each carrying one
+recommendation pending Owner approval.
+
+Re-measured at the remediation head against the same DISPOSABLE LOCAL CLONE,
+`p131_report_controls_20260910` on `127.0.0.1:55432`, carrying 139 migrations, with
+`DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` stated explicitly and the
+environment printed before each command:
+
+| run                                                             | result           | database window (UTC) |
+| --------------------------------------------------------------- | ---------------- | --------------------- |
+| `tests/backend/p1-31-report-engine-technician-labor.test.ts`    | 25/25            | 18:52:05 → 18:52:16   |
+| `tests/backend/p1-31-report-engine-work-orders.test.ts`         | 29/29            | 18:52:44 → 18:52:58   |
+| `tests/backend/p1-31-report-engine-inventory-movements.test.ts` | 25/25            | 18:53:02 → 18:53:15   |
+| `tests/backend/p1-31-report-engine-invoice-payment.test.ts`     | 26/26            | 18:53:19 → 18:53:34   |
+| the six reporting backend suites together, on the clone         | 6 files, 147/147 | 18:53:39 → 18:54:17   |
+
+The figures in § 45.4, § 46.4 and § 47.4 were observed at each slice's own head and are left as
+recorded there; the table above is this head's measurement. There was still no hosted gate, no run
+against the shared database and no merge.
+
+---
+
 ## 46. What P-11 changed — the report engine, dataset slice 3 (`inventory_movements`) — PROVISIONAL
 
 **Slice:** `remediation/p1-31-backend-report-engine-datasets`, ownership profile `p1-31-backend`.
@@ -1621,8 +1671,11 @@ collides.** Nothing in this section depends on the number being right.
   (`supabase/migrations/20260723094000_inv_ledger.sql`, `tg_stock_movements_stamp`). `app_runtime`
   holds SELECT and INSERT on it and no UPDATE.
 - **`movement_type` is CHECK-constrained to five terms** and `transfer` is not among them.
-- **The committed OpenAPI document is byte-unchanged.** No operation, path, permission, audit
-  action, migration or seed row moved. `inv.stock.read` is an existing catalogue row.
+- **OpenAPI paths/operations unchanged (407/316).** `docs/api/openapi.v1.json` was not changed by
+  this branch, and the response schema of `rpt.report-run` is BARE by repository convention
+  (`a0-preflight.md` records it for QA-002), so the envelope fields are described only in the
+  named wire types exported from `apps/api/src/modules/reporting/index.ts`. No operation, path, permission,
+  audit action, migration or seed row moved. `inv.stock.read` is an existing catalogue row.
 - **One new source file** under `apps/api/src`:
   `modules/inventory/application/inventory-report-port.ts`. The instrumented-file denominator in
   `tests/ci/baseline-integrity.test.ts` moves 284 → 285 with the admitted count 285 → 286. **The
@@ -1649,8 +1702,8 @@ collides.** Nothing in this section depends on the number being right.
   existed; `inv` is untouched.
 - **No permission was minted and no bundle changed.** `inv.stock.read` is an existing catalogue row,
   and this is the first report to require it.
-- **No new operation, no new route and no new path.** `rpt.report-run` serves the dataset, and the
-  committed OpenAPI document is byte-unchanged.
+- **No new operation, no new route and no new path.** `rpt.report-run` serves the dataset, and
+  `docs/api/openapi.v1.json` was not changed by this branch.
 - **No export.** Prerequisite P-12 is untouched; `rpt.export` stays excluded on **CC-04**'s grounds.
 - **No frontend.** `apps/web/src` was not edited at all.
 - **`InventoryReadService` was not changed.** The report port is a new class beside it, because that
@@ -1727,8 +1780,11 @@ renumbered if either collides.** Nothing in this section depends on the number b
 
 - **`invoice_payment_summary`** joins the dataset registry, which now holds exactly **four** entries
   — the whole of what D-4 approves. A case asserts the exact list, so a fifth cannot arrive quietly.
-- **The committed OpenAPI document is byte-unchanged.** No operation, path, permission, audit
-  action, migration or seed row moved. `sal.finance.view` is an existing catalogue row.
+- **OpenAPI paths/operations unchanged (407/316).** `docs/api/openapi.v1.json` was not changed by
+  this branch, and the response schema of `rpt.report-run` is BARE by repository convention
+  (`a0-preflight.md` records it for QA-002), so the envelope fields are described only in the
+  named wire types exported from `apps/api/src/modules/reporting/index.ts`. No operation, path, permission,
+  audit action, migration or seed row moved. `sal.finance.view` is an existing catalogue row.
 - **Two new source files** under `apps/api/src`:
   `modules/billing/application/billing-report-port.ts` and
   `modules/payments/application/payments-report-port.ts` — one per module that owns part of the row.
@@ -1750,12 +1806,12 @@ renumbered if either collides.** Nothing in this section depends on the number b
 
 ### 47.2 Dispositions
 
-| id           | finding                                                                                                                           | measured                                                                                                                                                                                                                                                                                                                            | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | owner / slice | status                    |
-| ------------ | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------- | ------------------------- |
-| **CC-35**    | D-4's source table names two figures the approved column list does not carry: a credit-note amount, and `sal.receipt_unallocated` | Both exist and both are reachable. `sal.credit_notes.amount` is `numeric(18,4)`; `sal.receipt_unallocated` is a deployed function the payments module already calls on its own receipt reads. The column list implemented is the one under "Columns and their contracts", which names neither                                       | **Recorded, not decided.** An approved credit note is published as a DOCUMENT — its date, its payer, its currency, its approved state — and its money reaches the report only as the reduction inside the affected invoice's `outstanding`, which the database function computes. No unallocated column is published either. Adding either is a COLUMN the Owner has not named, and inventing one would be this coordinator deciding what the report says. Recorded so the Owner can add them deliberately; `report-engine-seam.md` § 9 rows 14 and 15 | Owner         | recorded — no action here |
-| **CC-35(a)** | the `document` column publishes NO drill-through, unlike every reference column on the three datasets before it                   | A `ReportColumnDefinition` carries ONE `drillThrough` template. This column addresses THREE kinds of document: an invoice resolves through `sal.invoice-detail` (`/invoices/{id}`), a receipt through `sal.receipt-detail` (`/payments/{id}`), and a credit note through nothing — the register holds no credit-note read operation | **Engineering consequence, implemented.** No template is published. Publishing either route would send most rows to a screen that cannot answer for them, and a per-ROW template is a change to the published column contract rather than to this dataset. `documentType` is the discriminator a client needs to choose a route, and the document id travels in the cell either way. Recorded as a named prerequisite (`report-engine-seam.md` § 9 row 12) so FE-014 inherits it rather than discovering it                                            | this slice    | settled — recorded in § 9 |
-| **CC-35(b)** | the `customer` cell carries the payer's id and no name                                                                            | `BillingReadService` publishes `payerPartnerId` with no display name today, and neither the billing nor the payments repository reads `crm.*`. Slice 2 established that a column publishing another module's record must name that module's read code on the dataset's permission list                                              | **Engineering consequence, implemented.** The id travels and the label is null, which is what the invoice screen already shows. Resolving the name is not a lookup but a DISCLOSURE decision — it would add `crm`'s read code to a report whose permission list the Owner fixed at `sal.finance.view` — so it is a named prerequisite (`report-engine-seam.md` § 9 row 13)                                                                                                                                                                             | this slice    | settled — recorded in § 9 |
-| **CC-35(c)** | the reporting module held a numeric conversion, and adding it to the exact-money surface exposed it                               | `countsByState` — the field deprecated in slice 2 — was DERIVED from `work_orders_by_status`'s group measures with `Number.parseInt`, which rule MONEY-02 forbids outright on the financial surface. The gate cannot tell a row count from an amount, and a gate that could be argued with is a gate that gets turned off           | **Engineering consequence, implemented.** The conversion was REMOVED rather than exempted: the deprecated field is now set by its one producer directly from the same counts its groups are built from, so the two still cannot disagree and no count is converted at all. `modules/reporting` is in `MONEY_TREES` with no allow-list entry beside it. This also moves prerequisite 5 (retiring `countsByState`) one step nearer without closing it                                                                                                    | this slice    | closed in this slice      |
+| id           | finding                                                                                                                           | measured                                                                                                                                                                                                                                                                                                                            | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | owner / slice | status                    |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------------------------- |
+| **CC-35**    | D-4's source table names two figures the approved column list does not carry: a credit-note amount, and `sal.receipt_unallocated` | Both exist and both are reachable. `sal.credit_notes.amount` is `numeric(18,4)`; `sal.receipt_unallocated` is a deployed function the payments module already calls on its own receipt reads. The column list implemented is the one under "Columns and their contracts", which names neither                                       | **Recorded, not decided.** An approved credit note is published as a DOCUMENT — its date, its payer, its currency, its approved state — and its money reaches the report only as the reduction inside the affected invoice's `outstanding`, which the database function computes. No unallocated column is published either. Adding either is a COLUMN the Owner has not named, and inventing one would be this coordinator deciding what the report says. Recorded so the Owner can add them deliberately; `report-engine-seam.md` § 9 rows 14 and 15                                                                                                                                                                                                                                                                                                                                                                                                                                                | Owner         | recorded — no action here |
+| **CC-35(a)** | the `document` column publishes NO drill-through, unlike every reference column on the three datasets before it                   | A `ReportColumnDefinition` carries ONE `drillThrough` template. This column addresses THREE kinds of document: an invoice resolves through `sal.invoice-detail` (`/invoices/{id}`), a receipt through `sal.receipt-detail` (`/payments/{id}`), and a credit note through nothing — the register holds no credit-note read operation | **Recorded, not decided — OPEN at Owner level, beside CC-35.** No template is published on this branch and nothing about a row depends on one: `documentType` is the discriminator a client needs to choose a route, and the document id travels in the cell either way. Publishing a single template would send most rows to a screen that cannot answer for them, and a per-KIND template changes the published column contract, which is the Owner's to change. **Recommendation pending Owner approval:** publish the drill-through PER DOCUMENT KIND against the detail operations that already exist — an invoice through `sal.invoice-detail` (`/invoices/{id}`) and a receipt through `sal.receipt-detail` (`/payments/{id}`) — with a credit note carrying none, because the register holds no credit-note read; until that is approved the column stays without a template. Also a named prerequisite (`report-engine-seam.md` § 9 row 12) so FE-014 inherits it rather than discovering it | Owner         | open                      |
+| **CC-35(b)** | the `customer` cell carries the payer's id and no name                                                                            | `BillingReadService` publishes `payerPartnerId` with no display name today, and neither the billing nor the payments repository reads `crm.*`. Slice 2 established that a column publishing another module's record must name that module's read code on the dataset's permission list                                              | **Recorded, not decided — OPEN at Owner level, beside CC-35.** The id travels and the label is null, which is what the invoice screen already shows. Resolving the name is not a lookup but a DISCLOSURE decision: it would add the CRM module's read code, `crm.customer.read`, to a report whose permission list the Owner fixed at `sal.finance.view`. **Recommendation pending Owner approval:** keep the cell id-only. If the Owner wants the name, resolve it through a CRM read and declare `crm.customer.read` beside `sal.finance.view` conjunctively, so the whole report is refused to a caller who may not read customers — the treatment slice 2 gave the work-order reference. Also a named prerequisite (`report-engine-seam.md` § 9 row 13)                                                                                                                                                                                                                                           | Owner         | open                      |
+| **CC-35(c)** | the reporting module held a numeric conversion, and adding it to the exact-money surface exposed it                               | `countsByState` — the field deprecated in slice 2 — was DERIVED from `work_orders_by_status`'s group measures with `Number.parseInt`, which rule MONEY-02 forbids outright on the financial surface. The gate cannot tell a row count from an amount, and a gate that could be argued with is a gate that gets turned off           | **Engineering consequence, implemented.** The conversion was REMOVED rather than exempted: the deprecated field is now set by its one producer directly from the same counts its groups are built from, so the two still cannot disagree and no count is converted at all. `modules/reporting` is in `MONEY_TREES` with no allow-list entry beside it. This also moves prerequisite 5 (retiring `countsByState`) one step nearer without closing it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | this slice    | closed in this slice      |
 
 ### 47.3 What this slice did NOT do
 
@@ -1764,8 +1820,8 @@ renumbered if either collides.** Nothing in this section depends on the number b
 - **No permission was minted and no bundle changed.** `sal.finance.view` is an existing catalogue
   row, and the whole report is refused to a caller who lacks it — where the permission is evaluated,
   before anything is read, rather than where a column is rendered.
-- **No new operation, no new route and no new path.** `rpt.report-run` serves the dataset, and the
-  committed OpenAPI document is byte-unchanged.
+- **No new operation, no new route and no new path.** `rpt.report-run` serves the dataset, and
+  `docs/api/openapi.v1.json` was not changed by this branch.
 - **No export.** Prerequisite P-12 is untouched; `rpt.export` stays excluded on **CC-04**'s grounds.
 - **No frontend.** `apps/web/src` was not edited at all.
 - **No outstanding balance was re-derived.** `sal.invoice_open_receivable` is called, and a case

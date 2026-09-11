@@ -77,6 +77,7 @@ import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
 import { REPORT_DATASETS, REPORT_DATASET_CODES } from '@/modules/reporting';
 import { GET as RUN } from '@/app/api/v1/reports/[reportCode]/rows/route';
+import { GET as LABOR_SESSION_LIST } from '@/app/api/v1/jobs/[jobId]/labor-sessions/route';
 
 let admin: Pool;
 let runtime: Pool;
@@ -1185,6 +1186,38 @@ describe('technician_labor_time — paging', () => {
     const response = await report({ cursor: foreign });
     expect(response.status).toBe(400);
     expect(((await response.json()) as Problem).code).toBe('ERR-PAG-001');
+  });
+
+  it('refuses a cursor minted by the per-job labour session list', async () => {
+    authAs(LABOR_FULL);
+    // Minted by the REAL sibling read rather than hand-built: `tech.labor-session-list`
+    // sorts the same table on the same column in the same direction, so the contract
+    // key is the only thing standing between its cursor and a page of this report
+    // that begins in the wrong place. The two SELECTIONS differ — that list carries
+    // every session on ONE job, running, retired and out-of-period sessions included,
+    // while the report carries a branch's contributing sessions over a period.
+    const listed = await LABOR_SESSION_LIST(
+      new Request(`http://localhost/api/v1/jobs/${jobOne}/labor-sessions?limit=1`),
+      { params: Promise.resolve({ jobId: jobOne }) }
+    );
+    expect(listed.status).toBe(200);
+    const log = (await listed.json()) as {
+      readonly items: readonly unknown[];
+      readonly nextCursor: string | null;
+    };
+    // Non-vacuity: a null cursor would make the refusal below unfalsifiable.
+    expect(log.items).toHaveLength(1);
+    expect(log.nextCursor).not.toBeNull();
+
+    const refused = await report({ limit: '2', cursor: log.nextCursor as string });
+    expect(refused.status).toBe(400);
+    expect(((await refused.json()) as Problem).code).toBe('ERR-PAG-001');
+
+    // The report's OWN cursor still pages on the same request shape, so the refusal
+    // above is the ordering contract and not paging being broken for this dataset.
+    const first = await body(await report({ limit: '2' }));
+    const next = await report({ limit: '2', cursor: first.rows.nextCursor as string });
+    expect(next.status).toBe(200);
   });
 });
 

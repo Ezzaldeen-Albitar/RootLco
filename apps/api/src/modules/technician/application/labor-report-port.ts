@@ -45,7 +45,7 @@ import { iamDirectory } from '@/modules/iam';
 import type { DbHandle } from '@/server/db/transaction';
 import { pageRequest, type Page } from '@/server/db/pagination';
 import {
-  LABOR_SESSION_ORDER,
+  LABOR_REPORT_ORDER,
   type LaborReportFilter,
   type LaborSessionRepository,
 } from '../data/labor-session-repository';
@@ -102,11 +102,14 @@ export class LaborReportPort extends ApplicationService {
    * The branch's recorded labour in a period: a page of sessions and every
    * technician's total over the whole selection.
    *
-   * The ordering contract is the labour log's own, `LABOR_SESSION_ORDER` —
-   * newest start first, id tie-break. Reused rather than reinvented because it is
-   * the SAME ordering over the SAME table, and a second contract key for one
-   * ordering would mean a cursor that is valid in one read and rejected in the
-   * other for no reason a caller could discover.
+   * The ordering contract is the REPORT's own, `LABOR_REPORT_ORDER` — newest start
+   * first, id tie-break, keyed on the report rather than on the table. Not the
+   * per-job log's `LABOR_SESSION_ORDER`, although both sort the same column the
+   * same way: that list answers for ONE job and carries every session on it, and
+   * this report answers for a branch over a period and carries only the
+   * contributing ones. A cursor is a position in a selection, so one minted by the
+   * job's log names a row this read may never return and is refused here
+   * (`ERR-PAG-001`) instead of starting a page in the wrong place.
    *
    * The names for the page and for the totals are resolved in ONE statement over
    * the union of their user ids. Two calls would be two round trips for one
@@ -123,7 +126,7 @@ export class LaborReportPort extends ApplicationService {
       // The cursor decode stays behind this surface, for the reason
       // `WorkOrderReportPort` states: a consumer that decoded the cursor itself
       // would be validating it against a contract it had to guess.
-      pageRequest(LABOR_SESSION_ORDER, page)
+      pageRequest(LABOR_REPORT_ORDER, page)
     );
 
     const userIds = [

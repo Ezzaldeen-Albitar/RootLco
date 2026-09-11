@@ -56,6 +56,29 @@ export const LABOR_SESSION_ORDER = Object.freeze({
 });
 
 /**
+ * Ordering contract for the labour REPORT. Newest start first, id tie-break.
+ *
+ * Deliberately NOT `LABOR_SESSION_ORDER`, although the two sort the same table on
+ * the same column in the same direction. The difference is the SELECTION: the
+ * per-job log answers for ONE job and carries every session on it, running and
+ * retired alike, while the report answers for a BRANCH over a calendar period and
+ * carries only the contributing ones. A cursor is a position in a selection, so one
+ * minted by the job's log names a row this report may never return, and the keyset
+ * predicate would then answer with a page that silently begins in the wrong place
+ * instead of refusing.
+ *
+ * The key therefore names the REPORT rather than the table, which is the same
+ * property `inv.stock_movements:occurred_at_desc` and
+ * `sal.invoice_payment_summary:document_date_desc` carry on the sibling slices: a
+ * cursor issued for the other read is refused with `ERR-PAG-001` rather than
+ * reinterpreted against a different set of rows.
+ */
+export const LABOR_REPORT_ORDER = Object.freeze({
+  key: 'tech.technician_labor_time:started_at_desc',
+  direction: 'desc' as const,
+});
+
+/**
  * The period a labour report covers, in the reporting branch's own timezone.
  *
  * The three period fields are the shape `halfOpenLocalDayRange` consumes, and the
@@ -429,7 +452,7 @@ export class LaborSessionRepository extends Repository {
     const keyset = keysetFragment(
       page,
       { sort: 's.started_at', id: 's.id' },
-      LABOR_SESSION_ORDER,
+      LABOR_REPORT_ORDER,
       values.length + 1
     );
     const rows = await this.run<{
@@ -480,7 +503,7 @@ export class LaborSessionRepository extends Repository {
           id: row.id,
         })),
         page,
-        LABOR_SESSION_ORDER
+        LABOR_REPORT_ORDER
       ),
     };
   }
