@@ -65,3 +65,28 @@ This screen consumes that decision. It extends none of it, and nothing below was
 - An operator without `sal.finance.view` is refused the whole queue and no reduced view is offered.
   That consequence is recorded as **CC-30**; the remedy is an administrator granting the code.
 - No database tier, no hosted check, no browser acceptance and no merge result is claimed here.
+
+## Record note
+
+The integration commit `d75298e3` ("P1-31-FE-001-002: merge develop 01c32937 into the readiness
+queue") carries substantive content beyond conflict resolution, and this paragraph names all of it so
+that the history does not have to be rewritten to make it visible. Four files were resolutions —
+`en.json` and `ar.json` (the union of both key blocks), `delivery-api.test.ts` (the file docblock) and
+`delivery.dom.test.tsx` (the two appended describe regions interleaved, and the session mock) — and
+the delivery detail page merged line by line from the two sides with nothing added that neither side
+held. Beyond those, five changes in that commit came from neither parent. First,
+`scripts/ci/check-p1-31-access.mjs` names `sal.delivery-readiness-list` in `P1_31_OPERATION_IDS` and
+rewords the surrounding docblock sentence; that gate asks the change which first consumes an
+operation to name it, and the entry widens what the gate judges — it adds the `delivery-readiness`
+segment — and suppresses nothing. It was not a repair of a red gate: an id the register lacks is a
+violation there, while an operation the list omits is not, so the tree was green either way. Second,
+`change-control-2026-09-08.md` gains section 42 and its 42.1 identifier allocation, taking **CC-30**,
+both marked PROVISIONAL, because the slice had no change-control entry at all and the identifiers
+between develop's section 39 and this one are held by lanes that have not merged. Third and fourth,
+the FE-001 rows of `task-matrix.md` and `a0-preflight.md` are re-stated: both cited the
+pre-integration local commit `2eceab54` as the artefact proving the row, which the merge itself
+superseded, so each now cites protected `develop` `01c32937` and the dated integration instead — the
+neighbouring rows moved only because a Markdown table reflows every column when one cell changes.
+Fifth, this record was rewritten to separate the Owner's D-3 wording from the slice's own choices and
+to date its status at the integrated head. Each of the five would have been its own commit had it
+been done outside the integration, and none of them was reviewed as a standalone change.
