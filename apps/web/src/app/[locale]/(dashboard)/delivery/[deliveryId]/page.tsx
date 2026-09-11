@@ -161,6 +161,7 @@ export default async function DeliveryDetailPage({
       canComplete={holds(session.permissions, DELIVERY_PERMISSIONS.complete)}
       canManage={holds(session.permissions, DELIVERY_PERMISSIONS.manage)}
       canIssueWarranty={holds(session.permissions, WARRANTY_PERMISSIONS.issue)}
+      canReadWarrantyPolicies={holds(session.permissions, WARRANTY_PERMISSIONS.read)}
     />
   );
 }

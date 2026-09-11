@@ -2,16 +2,33 @@
  * The warranty contract this phase consumes (P1-31, FE-008 warranty record,
  * FE-009 warranty history as far as the backend publishes one).
  *
- * | operation               | method | path                                  | permissions (ALL required) |
- * | ----------------------- | ------ | ------------------------------------- | -------------------------- |
- * | `wty.warranty-list`     | GET    | `/warranties`                         | `wty.warranty.read`        |
- * | `wty.warranty-detail`   | GET    | `/warranties/{warrantyId}`            | `wty.warranty.read`        |
- * | `wty.warranty-generate` | POST   | `/deliveries/{deliveryId}/warranties` | `wty.warranty.issue`       |
+ * | operation                  | method | path                                  | permissions (ALL required) |
+ * | -------------------------- | ------ | ------------------------------------- | -------------------------- |
+ * | `wty.warranty-list`        | GET    | `/warranties`                         | `wty.warranty.read`        |
+ * | `wty.warranty-detail`      | GET    | `/warranties/{warrantyId}`            | `wty.warranty.read`        |
+ * | `wty.warranty-generate`    | POST   | `/deliveries/{deliveryId}/warranties` | `wty.warranty.issue`       |
+ * | `wty.warranty-policy-list` | GET    | `/warranty-policies`                  | `wty.warranty.read`        |
+ * | `wty.warranty-policy-read` | GET    | `/warranty-policies/{policyId}`       | `wty.warranty.read`        |
+ *
+ * The last row is listed because it EXISTS and answers the same code, not because
+ * this feature calls it: the picker needs a policy's identifier, code, name and
+ * state, and the list publishes all four, so no adapter here reads one policy on its
+ * own. It is named so the next reader of this table does not repeat the measurement.
  *
  * Typed from the routes that own the shapes and from `WarrantyView`,
  * `WarrantyRecordListView`, `WarrantyPolicyView`, `WarrantyCoverageView` and
  * `WarrantyItemView` in
- * `apps/api/src/modules/warranty/application/warranty-service.ts`.
+ * `apps/api/src/modules/warranty/application/warranty-service.ts`, and from
+ * `WarrantyPolicySummaryView` in `warranty-policy-service.ts`.
+ *
+ * ## The policy a warranty is issued under is CHOSEN from a published list
+ *
+ * `wty.warranty-policy-list` (P-10) lists a company's warranty policies, is gated on
+ * `wty.warranty.read` — the read code, deliberately, so a warranty clerk can see the
+ * plans they may issue under — and accepts `status`, `cursor` and `limit`. Its own
+ * docblock names the generation form's picker as the reason it exists. So the issue
+ * surface offers the plans by name and never asks an operator to type an identifier
+ * it has no way to discover.
  *
  * ## The list is addressed to ONE branch, and the pair is a TARGET
  *
@@ -32,8 +49,10 @@
  *
  * ## FE-009 is PARTIAL, and the missing half is named rather than simulated
  *
- * `wty.warranty_record_status_history` has no reader anywhere in `apps/api/src`
- * (**CC-10**). So the history this feature can show is the vehicle-filtered LIST —
+ * `wty.warranty_status_history` — the table's real name, spelled as
+ * `20260724095000_wty_warranty.sql` creates it — has no reader anywhere in
+ * `apps/api/src` (**CC-10**, which records the same table under a longer name that no
+ * migration ever used). So the history this feature can show is the vehicle-filtered LIST —
  * every warranty issued for one vehicle, newest first — and not the per-record
  * transition ledger the table holds. The reader is named as a backend prerequisite
  * (**P-18 warranty history reader**) in `warranty-record-screens.md`. No transition
@@ -97,6 +116,18 @@ export type WarrantyStatus = (typeof WARRANTY_STATUSES)[number];
 /** `ck_warranty_policies_status` and `ck_warranty_coverage_status`, mirrored. */
 export const WARRANTY_CONFIGURATION_STATUSES = ['active', 'archived'] as const;
 export type WarrantyConfigurationStatus = (typeof WARRANTY_CONFIGURATION_STATUSES)[number];
+
+/**
+ * The only state a warranty can actually be issued under.
+ *
+ * `wty.warranty-generate` refuses a policy that is not `active` as `ERR-TRN-001`, and
+ * resolves the company's single ACTIVE policy when none is named. So the picker asks
+ * the list for this state rather than filtering the whole set on this side: an
+ * archived plan offered in a control is a choice whose only outcome is a refusal.
+ * The filter is the route's own — `status` is optional there, and the unfiltered list
+ * stays available to a configuration screen that must reach an archived row.
+ */
+export const ISSUABLE_POLICY_STATUS: WarrantyConfigurationStatus = 'active';
 
 /** `ck_warranty_coverage_scope`, mirrored. */
 export const COVERED_SCOPES = ['all', 'service', 'part'] as const;
@@ -189,6 +220,37 @@ export interface WarrantyPolicy {
 }
 
 /**
+ * `WarrantyPolicySummaryView` — one row of `wty.warranty-policy-list`.
+ *
+ * A superset of `WarrantyPolicy`: the four fields a warranty carries are spelled
+ * identically, and the list adds `companyId` and `recordVersion`. The company is why
+ * it is read here at all — the list is TENANT-scoped and answers for every company
+ * the caller's grants reach, so a picker standing on one handover narrows to that
+ * handover's company rather than offering a plan the generation would refuse.
+ * `recordVersion` belongs to the two commands over a policy and is carried because
+ * the wire carries it, not because anything in this feature writes one.
+ */
+export interface WarrantyPolicySummary {
+  readonly id: string;
+  readonly companyId: string;
+  readonly policyCode: string;
+  readonly name: string;
+  readonly status: string;
+  readonly recordVersion: number;
+}
+
+/**
+ * `WarrantyPolicyListView` — the policy list's body.
+ *
+ * The page is NAMED rather than bare: the route answers `{ policies: { ... } }`, and
+ * flattening it here would make this type disagree with the wire at the one place a
+ * disagreement is invisible until runtime.
+ */
+export interface WarrantyPolicyListBody {
+  readonly policies: WarrantyPage<WarrantyPolicySummary>;
+}
+
+/**
  * `WarrantyCoverageView` — the terms a record cites. Every value is operator
  * configuration, and none of it is defaulted anywhere in this application.
  */
@@ -246,8 +308,9 @@ export interface WarrantyRecord {
  * Every field is spelled exactly as the detail read spells it, so a screen that lists
  * warranties and then opens one sees ONE shape rather than two. It carries no
  * coverage terms and no covered items — both belong to the detail read — and it
- * carries the policy in full, because no operation lists warranty policies and a
- * bare policy identifier would be one no caller could resolve.
+ * carries the policy in full, so a row can name the plan it was issued under without
+ * a second read per row. `wty.warranty-policy-list` would resolve a bare identifier,
+ * but one request per listed warranty is not how a list is drawn.
  */
 export interface WarrantyListRow {
   readonly id: string;

@@ -5,6 +5,7 @@ import type { ApiFailure } from '@/lib/api/client';
 import {
   STATUS_BY_KIND,
   branchTargetQuery,
+  query,
   readOperation,
   type BranchTarget,
   type ItemsOnly,
@@ -14,7 +15,13 @@ import {
 import { fromFailure, success, type ActionState } from '@/lib/forms/action-result';
 import type { BranchOption } from '@/features/services/services-contract';
 import { PAGE_SIZE } from './warranty-contract';
-import type { WarrantyListRow, WarrantyPage, WarrantyRecord } from './warranty-contract';
+import type {
+  WarrantyConfigurationStatus,
+  WarrantyListRow,
+  WarrantyPage,
+  WarrantyPolicyListBody,
+  WarrantyRecord,
+} from './warranty-contract';
 
 /**
  * The warranty adapters (P1-31, FE-008 warranty record, FE-009 as far as the
@@ -47,13 +54,22 @@ import type { WarrantyListRow, WarrantyPage, WarrantyRecord } from './warranty-c
  * duplicate that or — worse — be reused across two genuine attempts and turn the
  * second into a replay of the first.
  *
+ * ## The policy list is a read, and it is the picker's whole source
+ *
+ * `wty.warranty-policy-list` answers `wty.warranty.read` — the same code both warranty
+ * reads answer — so a clerk who may issue a warranty can see the plans they may issue
+ * under. It is the reason the generation's `policyId` is choosable at all: before it,
+ * an identifier could only be typed from somewhere outside the product.
+ *
  * ## No history reader exists, and nothing here pretends otherwise
  *
- * `wty.warranty_record_status_history` is written by the database and read by no
- * operation in `apps/api/src` (**CC-10**). There is therefore no history adapter in
- * this file. FE-009 is served by the vehicle-filtered list — the warranties issued
- * for one vehicle, newest first — and the per-record transition ledger waits on the
- * backend prerequisite named in `warranty-record-screens.md` as **P-18**.
+ * `wty.warranty_status_history` — the name `20260724095000_wty_warranty.sql` gives the
+ * table — is written by the database and read by no operation in `apps/api/src`
+ * (**CC-10**, which records it under a longer name no migration ever used). There is
+ * therefore no history adapter in this file. FE-009 is served by the vehicle-filtered
+ * list — the warranties issued for one vehicle, newest first — and the per-record
+ * transition ledger waits on the backend prerequisite named in
+ * `warranty-record-screens.md` as **P-18**.
  */
 
 /** What a warranty list read answers with, refusals included. */
@@ -146,6 +162,39 @@ export async function listBranches(): Promise<ReadState<ItemsOnly<BranchOption>>
  */
 export async function readWarranty(warrantyId: string): Promise<ReadState<WarrantyRecord>> {
   return readOperation<WarrantyRecord>(warrantyPath(warrantyId));
+}
+
+/**
+ * The warranty policies the caller may issue under (`wty.warranty-policy-list`).
+ *
+ * The read the issue surface's picker is built on, and the operation's own docblock
+ * names that picker as the reason it exists. Gated on `wty.warranty.read` rather than
+ * on the administration code, so a clerk who issues warranties can see the plans.
+ *
+ * `status` is the route's one filter and is sent when the caller means it — the panel
+ * asks for the ISSUABLE state, because a plan that is not active is refused by the
+ * generation. An omitted status lists every plan, which is what a configuration
+ * screen would want and is therefore not narrowed away here.
+ *
+ * No company filter is sent, because the route offers none: the read is tenant-scoped
+ * and answers for every company the caller's grants reach. Narrowing to one company is
+ * the caller's job, and the rows carry `companyId` so it can be done exactly.
+ */
+export async function listWarrantyPolicies(
+  input: {
+    readonly status?: WarrantyConfigurationStatus | undefined;
+    readonly cursor?: string | null | undefined;
+    readonly limit?: number | undefined;
+  } = {}
+): Promise<ReadState<WarrantyPolicyListBody>> {
+  return readOperation<WarrantyPolicyListBody>(
+    '/api/v1/warranty-policies' +
+      query({
+        status: input.status ?? null,
+        cursor: input.cursor ?? null,
+        limit: input.limit ?? PAGE_SIZE,
+      })
+  );
 }
 
 /**

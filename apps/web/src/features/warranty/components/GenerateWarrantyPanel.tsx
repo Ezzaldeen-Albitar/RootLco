@@ -1,14 +1,20 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
+import { SelectField } from '@/components/forms/Field';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 
-import { generateWarranty, type WarrantyWriteState } from '../warranty-api';
-import { WARRANTY_ELIGIBLE_DELIVERY_STATUS, WARRANTY_ERROR_CODES } from '../warranty-contract';
+import { generateWarranty, listWarrantyPolicies, type WarrantyWriteState } from '../warranty-api';
+import {
+  ISSUABLE_POLICY_STATUS,
+  WARRANTY_ELIGIBLE_DELIVERY_STATUS,
+  WARRANTY_ERROR_CODES,
+} from '../warranty-contract';
+import type { WarrantyPolicySummary } from '../warranty-contract';
 import { PRIMARY_BUTTON, Section } from './shared';
 
 /**
@@ -32,14 +38,29 @@ import { PRIMARY_BUTTON, Section } from './shared';
  * decides only whether the button is enabled. The server decides again, and when it
  * refuses, its refusal — not a sentence composed here — is what the operator is told.
  *
- * ## Nothing about the warranty is chosen here
+ * ## No warranty TERM is chosen here, and the one choice there is comes from a list
  *
  * Duration, distance limit, covered scope and the effective window are all operator
  * configuration resolved server-side from the coverage effective at the handover
- * date. The only thing a caller may name is a policy, and it is named only when the
- * operator types one: omitting it is what makes the company's single active policy
- * resolve, and a company with none or with several is a configuration error the
- * screen reports rather than guesses its way past.
+ * date. The only thing a caller may name is a policy, and it is PICKED from
+ * `wty.warranty-policy-list` rather than typed: an operator has no way to discover a
+ * policy identifier, and a field that can only be filled by guessing is a field that
+ * is always left empty. Leaving it unchosen stays meaningful — that is what makes the
+ * company's single active policy resolve — so the picker carries an explicit "the
+ * plan already in use" option rather than being required.
+ *
+ * The list is asked for the ISSUABLE state only, and narrowed to the handover's own
+ * company: the read is tenant-scoped and answers for every company the caller reaches,
+ * and offering a plan from another company, or an archived one, is offering a choice
+ * whose only outcome is a refusal.
+ *
+ * ## The picker is an affordance, and its absence is never a dead end
+ *
+ * It is requested only when the page resolved `wty.warranty.read`, which the issue
+ * code does not imply. When the code is absent, when the read is refused, or when the
+ * company has no active plan, the form still submits — with no policy named, which is
+ * exactly the request that resolves the single active one — and says which of those it
+ * is rather than showing an empty control.
  *
  * ## A refusal that means something specific says so
  *
@@ -54,20 +75,56 @@ export function GenerateWarrantyPanel({
   locale,
   messages,
   deliveryId,
+  deliveryCompanyId,
   deliveryStatus,
+  canReadPolicies = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly deliveryId: string;
+  /** The company the handover belongs to. The picker offers this company's plans only. */
+  readonly deliveryCompanyId: string;
   /** The handover's stage, as the delivery read published it. */
   readonly deliveryStatus: string;
+  /**
+   * `wty.warranty.read` — whether the plans are asked for at all.
+   *
+   * Defaulted to false rather than assumed from the issue code: the two are separate
+   * codes and P-7 minted the read one precisely so they could not be collapsed. A
+   * caller who holds only the issue code gets the form without the picker, which is
+   * the request that resolves the company's single active plan.
+   */
+  readonly canReadPolicies?: boolean;
 }) {
   const [policyId, setPolicyId] = useState('');
   const [state, setState] = useState<WarrantyWriteState | null>(null);
   const [sending, setSending] = useState(false);
+  const [policies, setPolicies] = useState<readonly WarrantyPolicySummary[] | null>(null);
+  const [policiesRefused, setPoliciesRefused] = useState(false);
+
+  useEffect(() => {
+    if (!canReadPolicies) return;
+    let live = true;
+    void listWarrantyPolicies({ status: ISSUABLE_POLICY_STATUS }).then((result) => {
+      if (!live) return;
+      if (result.status === 'ok') setPolicies(result.data.policies.items);
+      else setPoliciesRefused(true);
+    });
+    return () => {
+      live = false;
+    };
+  }, [canReadPolicies]);
 
   const handedOver = deliveryStatus === WARRANTY_ELIGIBLE_DELIVERY_STATUS;
   const created = state?.created ?? null;
+
+  // The list answers for every company the caller reaches, so the handover's own
+  // company is applied here. A plan from another company would be refused, and a
+  // control that offers it teaches an operator to ignore refusals.
+  const choices = (policies ?? []).filter((policy) => policy.companyId === deliveryCompanyId);
+  // An empty set is not a picker: with no plan to choose, the operator is told what
+  // will happen instead of being shown a control with nothing in it.
+  const offered = policies !== null && choices.length > 0;
 
   return (
     <Section
@@ -98,20 +155,28 @@ export function GenerateWarrantyPanel({
           );
         }}
       >
-        <label className="flex flex-col gap-1 text-caption text-text-muted">
-          {translate(messages, 'warranty.generate.policyField')}
-          <input
-            type="text"
-            dir="ltr"
-            spellCheck={false}
-            className="rounded-md border border-border bg-surface px-3 py-2 font-mono text-body text-text-primary"
+        {offered ? (
+          <SelectField
+            label={translate(messages, 'warranty.generate.policyField')}
+            description={translate(messages, 'warranty.generate.policyHelp')}
             value={policyId}
             onChange={(event) => setPolicyId(event.target.value)}
+            options={choices.map((policy) => ({
+              value: policy.id,
+              label: `${policy.policyCode} — ${policy.name}`,
+            }))}
+            placeholder={translate(messages, 'warranty.generate.policyPlaceholder')}
           />
-        </label>
-        <p className="text-caption text-text-muted">
-          {translate(messages, 'warranty.generate.policyHelp')}
-        </p>
+        ) : (
+          <p className="text-caption text-text-muted">
+            {translate(
+              messages,
+              policiesRefused
+                ? 'warranty.generate.policiesRefused'
+                : 'warranty.generate.policyNotOffered'
+            )}
+          </p>
+        )}
 
         <div>
           <button

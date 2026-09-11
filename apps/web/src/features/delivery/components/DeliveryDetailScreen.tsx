@@ -72,6 +72,7 @@ export function DeliveryDetailScreen({
   canComplete,
   canManage = false,
   canIssueWarranty = false,
+  canReadWarrantyPolicies = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -91,6 +92,16 @@ export function DeliveryDetailScreen({
    * outcome is a denial.
    */
   readonly canIssueWarranty?: boolean;
+  /**
+   * Whether the caller holds `wty.warranty.read`, which is what the warranty PLAN
+   * picker needs.
+   *
+   * A fifth capability for the reason the fourth is separate: the authority to issue a
+   * warranty and the authority to read one are two codes, and a caller may hold either
+   * without the other. Passing it down means the plans are asked for only when the
+   * answer can be anything but a refusal.
+   */
+  readonly canReadWarrantyPolicies?: boolean;
 }) {
   const [revision, setRevision] = useState(0);
   const refresh = useCallback(() => setRevision((previous) => previous + 1), []);
@@ -211,7 +222,9 @@ export function DeliveryDetailScreen({
           locale={locale}
           messages={messages}
           deliveryId={delivery.id}
+          deliveryCompanyId={delivery.companyId}
           deliveryStatus={delivery.status}
+          canReadPolicies={canReadWarrantyPolicies}
         />
       ) : null}
 

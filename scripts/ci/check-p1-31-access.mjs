@@ -98,6 +98,14 @@ export const P1_31_OPERATION_IDS = Object.freeze([
   // a P1-31 screen calls that is absent here is one this gate does not own.
   'wty.warranty-detail',
   'wty.warranty-generate',
+  // The two policy READS P-10 published. The list feeds the plan picker on the issue
+  // surface — its own route docblock names that picker as the reason it exists — and
+  // the single-policy read is named beside it because they share one resource root:
+  // owning `warranty-policies` is what makes a future policy screen meet this rule on
+  // the day it lands, exactly as `reports` is named below before it has a page.
+  // These two DO widen the segment set, unlike the two above.
+  'wty.warranty-policy-list',
+  'wty.warranty-policy-read',
 ]);
 
 /**
