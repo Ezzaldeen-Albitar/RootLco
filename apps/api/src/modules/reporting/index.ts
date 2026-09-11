@@ -87,6 +87,7 @@ export {
   type ReportColumnKind,
   type ReportDatasetCode,
   type ReportDatasetDefinition,
+  type ReportDrillThroughByKind,
   type ReportParameterDefinition,
 } from './domain/report-datasets';
 

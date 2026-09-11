@@ -369,6 +369,17 @@ The decision also forbids inventing an amount and forbids performing a financial
 browser. Both are already the rules this section's five rules state; D-20 restates them as binding on
 the completion.
 
+**Status — implemented on the same unmerged branch.** The dataset now publishes `unallocatedAmount`
+from `sal.receipt_unallocated` CALLED, `creditNoteAmount` from `sal.credit_notes.amount`,
+`partyId` / `partyName` / `partyRole` in place of `customer`, and a `document` drill-through per
+document kind with a published `null` for the credit note. The groups gain a `(currency,
+credit_note)` group carrying `creditNotes` and an `unallocated` measure on the receipt side; the
+dataset's permission list is still `sal.finance.view` alone. The full record is
+[`report-engine-seam.md`](./report-engine-seam.md) § 13.6 and
+[`change-control-2026-09-08.md`](./change-control-2026-09-08.md) § 47.5. There is still no
+credit-note read operation, which is why one template is null, and that absence is the one named
+prerequisite the completion raises.
+
 ---
 
 ## Summary — what D-4 still owes

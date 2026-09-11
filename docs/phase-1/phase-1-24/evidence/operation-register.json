@@ -10329,7 +10329,8 @@
         "tests/backend/p1-22-currency-coherence.test.ts",
         "tests/backend/p1-22-invoice-lifecycle.test.ts",
         "tests/backend/p1-22-isolation.test.ts",
-        "tests/backend/p1-30-w6-invoices.test.ts"
+        "tests/backend/p1-30-w6-invoices.test.ts",
+        "tests/backend/p1-31-report-engine-invoice-payment.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/invoices/[invoiceId]/route.ts"
@@ -10634,7 +10635,8 @@
         "tests/backend/p1-22-currency-coherence.test.ts",
         "tests/backend/p1-22-isolation.test.ts",
         "tests/backend/p1-22-payments.test.ts",
-        "tests/backend/p1-30-w7-payments.test.ts"
+        "tests/backend/p1-30-w7-payments.test.ts",
+        "tests/backend/p1-31-report-engine-invoice-payment.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/payments/[paymentId]/route.ts"

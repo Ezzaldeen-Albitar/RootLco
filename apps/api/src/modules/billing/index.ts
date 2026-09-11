@@ -81,6 +81,7 @@ export type {
   CommercialSourceLineRow,
   CommercialSourceRow,
   CreditNoteRow,
+  CreditNoteTotalRow,
   InvoiceAmountsRow,
   InvoiceDocumentFilter,
   InvoiceLineAmountsRow,
@@ -115,6 +116,7 @@ export type {
 } from './application/billing-read-service';
 
 export type {
+  CreditNoteTotal,
   InvoiceDocumentEntry,
   InvoiceDocumentSummary,
   InvoiceDocumentTotal,

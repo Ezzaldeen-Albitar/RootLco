@@ -100,6 +100,7 @@ import {
   type Page,
 } from '@/server/db/pagination';
 import { billingModule } from '@/modules/billing';
+import { crmModule } from '@/modules/crm';
 import { iamOrganizationContext } from '@/modules/iam';
 import { inventoryModule } from '@/modules/inventory';
 import { paymentsModule } from '@/modules/payments';
@@ -113,6 +114,7 @@ import {
   type ReportColumnKind,
   type ReportDatasetCode,
   type ReportDatasetDefinition,
+  type ReportDrillThroughByKind,
 } from '../domain/report-datasets';
 
 /** A column as published to a client. */
@@ -127,6 +129,18 @@ export interface ReportColumnView {
    * authority on a path `apps/web` owns.
    */
   readonly drillThrough: string | null;
+  /**
+   * One template per KIND of record, for a column whose rows are not all the
+   * same kind, or null when the column has no such split.
+   *
+   * Published from the Owner's answer of 2026-09-12: `invoice_payment_summary`
+   * carries invoices, receipts and credit notes in one `document` column, and a
+   * single template would send most cells to a screen that cannot answer for
+   * them. `discriminator` names the column whose value selects the template; a
+   * kind with no authorized target route maps to null and is still listed, so a
+   * client can tell an absent screen from an unknown kind.
+   */
+  readonly drillThroughByKind: ReportDrillThroughByKind | null;
 }
 
 /**
@@ -618,6 +632,36 @@ const INVOICE_PAYMENT_DOCUMENT_ORDER: OrderingContract = Object.freeze({
 });
 
 /**
+ * One merged document, before it becomes cells.
+ *
+ * The two ports publish different shapes for different tables, and this is the
+ * one shape the merge orders and the renderer reads. Declaring it makes the
+ * paging step type-checked rather than positional: a column added to one stream
+ * and forgotten on the other does not compile.
+ *
+ * Every amount is a decimal string or null. Null means the document type has no
+ * such amount; it never means zero.
+ */
+interface InvoicePaymentDocument {
+  readonly documentType: 'invoice' | 'credit_note' | 'receipt';
+  readonly documentId: string;
+  readonly documentNumber: string | null;
+  readonly documentDate: string;
+  /** The party the document names. Always present. */
+  readonly partyId: string;
+  /** What that id IS: `payer`, or `invoice_payer` on a credit note. */
+  readonly partyRole: string;
+  readonly currencyCode: string;
+  readonly status: string;
+  readonly invoicedAmount: string | null;
+  readonly receiptAmount: string | null;
+  readonly allocatedAmount: string | null;
+  readonly unallocatedAmount: string | null;
+  readonly creditNoteAmount: string | null;
+  readonly outstanding: string | null;
+}
+
+/**
  * `invoice_payment_summary` — engine slice 4 (D-4, D-5, D-17).
  *
  * ## Two ports, because two modules own the tables
@@ -661,17 +705,31 @@ const INVOICE_PAYMENT_DOCUMENT_ORDER: OrderingContract = Object.freeze({
  * Each group publishes only the measures its document type can carry, and no
  * group publishes a measure at zero for a fact it does not hold — a zero would
  * read as "none of this happened" rather than "this is not that kind of
- * document". Approved credit notes are therefore ROWS and not a group: the
- * Owner's column list names no credit-note amount, so there is no measure to
- * publish, and their effect on money is already inside `outstanding`, which the
- * database function computes.
+ * document". From the Owner's answer of 2026-09-12 there are THREE kinds of
+ * group: an invoice group carries `invoiced` and `outstanding`, a receipt group
+ * carries `receipts`, `allocated` and `unallocated`, and an approved credit-note
+ * group carries `creditNotes`. The credit-note total is its own group rather than
+ * a measure beside `invoiced`, because netting it there would restate money that
+ * `sal.invoice_open_receivable` has already subtracted inside `outstanding`.
+ *
+ * ## The party NAME is resolved once per page, and only for a caller entitled to it
+ *
+ * `crmModule().customerRead.resolveDisplayIdentities` is the CRM module's own
+ * published read. It checks `crm.customer.read` itself and returns an EMPTY map
+ * to a caller who lacks it, so `partyName` is null for such a caller while
+ * `partyId` still travels — the report's declared permission list is unchanged
+ * and nobody is told anything they could not already read. One extra statement
+ * for the page, never one per row, and the ids passed are only the ones the page
+ * publishes.
  *
  * ## Nothing is recomputed
  *
  * Every amount arrives as a decimal string from `numeric(18,4)` and is placed in
  * the cell unchanged — no `Number`, no `toFixed`, no addition here. The sums are
  * computed in SQL over the same rows, so adding a page by hand can never disagree
- * with a group.
+ * with a group. `unallocatedAmount` is `sal.receipt_unallocated` and
+ * `creditNoteAmount` is the credit note's own column; neither is derived from the
+ * other columns on the row.
  */
 const runInvoicePaymentSummary: ReportResolver = async (db, input) => {
   const request = pageRequest(INVOICE_PAYMENT_DOCUMENT_ORDER, {
@@ -696,52 +754,60 @@ const runInvoicePaymentSummary: ReportResolver = async (db, input) => {
     paymentsModule().reportPort.receiptDocuments(db, filter, page),
   ]);
 
-  const merged = [
+  /*
+   * The merged stream carries the DOCUMENTS, not their cells.
+   *
+   * Paging first and rendering afterwards is what lets the party names be
+   * resolved for the rows this page actually publishes and for nothing else: the
+   * two streams together hold up to `2 x (limit + 1)` documents, of which at most
+   * `limit` survive, and resolving names for the discarded ones would read rows
+   * nobody is shown.
+   */
+  const merged: {
+    readonly item: InvoicePaymentDocument;
+    readonly sortValue: string;
+    readonly id: string;
+  }[] = [
     ...billing.documents.map((document) => ({
       item: {
-        cells: [
-          // The number is the human half; a credit note has none, so the label is
-          // absent while the id never is. No drill-through is published on this
-          // column — see the dataset definition.
-          cell('document', document.documentNumber, document.documentId),
-          cell('documentType', null, document.documentType),
-          cell('documentDate', null, document.documentDate),
-          cell('branch', input.branchName, input.branchId),
-          // The payer, as an id with no name. Naming it would put another
-          // module's record in this row; see the dataset definition.
-          cell('customer', null, document.payerPartnerId),
-          cell('currency', null, document.currencyCode),
-          cell('invoicedAmount', null, document.invoicedAmount),
-          // A billing document is not a receipt and has applied nothing: NULL
-          // rather than a zero, which would be a claim that money moved.
-          cell('receiptAmount', null, null),
-          cell('allocatedAmount', null, null),
-          cell('outstanding', null, document.outstanding),
-          // The invoice's own status, or the credit note's approval state.
-          cell('status', null, document.status),
-        ],
+        documentType: document.documentType,
+        documentId: document.documentId,
+        documentNumber: document.documentNumber,
+        documentDate: document.documentDate,
+        partyId: document.partyId,
+        partyRole: document.partyRole,
+        currencyCode: document.currencyCode,
+        status: document.status,
+        invoicedAmount: document.invoicedAmount,
+        // A billing document is not a receipt and has applied nothing: NULL
+        // rather than a zero, which would be a claim that money moved.
+        receiptAmount: null,
+        allocatedAmount: null,
+        unallocatedAmount: null,
+        creditNoteAmount: document.creditNoteAmount,
+        outstanding: document.outstanding,
       },
       sortValue: document.sortValue,
       id: document.documentId,
     })),
     ...payments.documents.map((document) => ({
       item: {
-        cells: [
-          cell('document', document.documentNumber, document.documentId),
-          cell('documentType', null, 'receipt'),
-          cell('documentDate', null, document.documentDate),
-          cell('branch', input.branchName, input.branchId),
-          cell('customer', null, document.payerPartnerId),
-          cell('currency', null, document.currencyCode),
-          cell('invoicedAmount', null, null),
-          cell('receiptAmount', null, document.receiptAmount),
-          cell('allocatedAmount', null, document.allocatedAmount),
-          // A receipt has no outstanding balance of its own. The money it has not
-          // yet applied is a different question, and the Owner's column list does
-          // not ask it.
-          cell('outstanding', null, null),
-          cell('status', null, document.status),
-        ],
+        documentType: 'receipt' as const,
+        documentId: document.documentId,
+        documentNumber: document.documentNumber,
+        documentDate: document.documentDate,
+        partyId: document.partyId,
+        partyRole: document.partyRole,
+        currencyCode: document.currencyCode,
+        status: document.status,
+        invoicedAmount: null,
+        receiptAmount: document.receiptAmount,
+        allocatedAmount: document.allocatedAmount,
+        unallocatedAmount: document.unallocatedAmount,
+        creditNoteAmount: null,
+        // A receipt has no outstanding balance of its own. What it has NOT yet
+        // applied is a different question, and `unallocatedAmount` answers it.
+        outstanding: null,
       },
       sortValue: document.sortValue,
       id: document.documentId,
@@ -752,6 +818,16 @@ const runInvoicePaymentSummary: ReportResolver = async (db, input) => {
     return left.id < right.id ? 1 : -1;
   });
 
+  const documents = buildPageWithCursors(merged, request, INVOICE_PAYMENT_DOCUMENT_ORDER);
+  // ONE statement for the page. The CRM read checks `crm.customer.read` itself
+  // and resolves nothing for a caller who does not hold it, so an unentitled
+  // caller sees every id and no name rather than a refusal or a uuid dressed up
+  // as a label.
+  const parties = await crmModule().customerRead.resolveDisplayIdentities(
+    db,
+    documents.items.map((document) => document.partyId)
+  );
+
   const groups: ReportGroupView[] = [
     ...billing.totals.map((total) => ({
       key: { currency: total.currencyCode, documentType: 'invoice' },
@@ -760,10 +836,22 @@ const runInvoicePaymentSummary: ReportResolver = async (db, input) => {
       label: total.currencyCode,
       measures: { invoiced: total.invoiced, outstanding: total.outstanding },
     })),
+    ...billing.creditNoteTotals.map((total) => ({
+      key: { currency: total.currencyCode, documentType: 'credit_note' },
+      label: total.currencyCode,
+      // ONE measure, and it is not netted against the invoice group's: the money
+      // is already inside `outstanding` there, and subtracting it twice is the
+      // arithmetic the Owner's answer of 2026-09-12 forbids.
+      measures: { creditNotes: total.credited },
+    })),
     ...payments.totals.map((total) => ({
       key: { currency: total.currencyCode, documentType: 'receipt' },
       label: total.currencyCode,
-      measures: { receipts: total.receipts, allocated: total.allocated },
+      measures: {
+        receipts: total.receipts,
+        allocated: total.allocated,
+        unallocated: total.unallocated,
+      },
     })),
   ].sort((left, right) => {
     const currency = (left.key.currency ?? '').localeCompare(right.key.currency ?? '');
@@ -774,7 +862,38 @@ const runInvoicePaymentSummary: ReportResolver = async (db, input) => {
 
   return {
     groups,
-    rows: buildPageWithCursors(merged, request, INVOICE_PAYMENT_DOCUMENT_ORDER),
+    rows: {
+      ...documents,
+      items: documents.items.map((document) => ({
+        cells: [
+          // The number is the human half; a credit note has none, so the label is
+          // absent while the id never is. The route a client follows comes from
+          // the column's per-kind templates and the `documentType` cell below.
+          cell('document', document.documentNumber, document.documentId),
+          cell('documentType', null, document.documentType),
+          cell('documentDate', null, document.documentDate),
+          cell('branch', input.branchName, input.branchId),
+          // The id always; the name only for a caller the CRM read entitles.
+          cell('partyId', null, document.partyId),
+          cell('partyName', null, parties.get(document.partyId)?.displayName ?? null),
+          // What the id IS. `payer` on an invoice and a receipt; `invoice_payer`
+          // on a credit note, which carries no party of its own.
+          cell('partyRole', null, document.partyRole),
+          cell('currency', null, document.currencyCode),
+          // Exact decimal strings. Null - never zero - where the document type
+          // has no such amount, because a zero is a claim about money.
+          cell('invoicedAmount', null, document.invoicedAmount),
+          cell('receiptAmount', null, document.receiptAmount),
+          cell('allocatedAmount', null, document.allocatedAmount),
+          cell('unallocatedAmount', null, document.unallocatedAmount),
+          cell('creditNoteAmount', null, document.creditNoteAmount),
+          cell('outstanding', null, document.outstanding),
+          // The invoice's own status, the receipt's, or the credit note's
+          // approval state.
+          cell('status', null, document.status),
+        ],
+      })),
+    },
   };
 };
 
@@ -888,6 +1007,7 @@ export class ReportRunService extends ApplicationService {
         key: column.key,
         kind: column.kind,
         drillThrough: column.drillThrough ?? null,
+        drillThroughByKind: column.drillThroughByKind ?? null,
       })),
       groups: resolved.groups,
       /*

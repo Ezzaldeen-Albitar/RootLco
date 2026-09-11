@@ -16,6 +16,14 @@
  *
  * D-5: no measure spans two currencies.
  *
+ * The Owner's answer of 2026-09-12 completes the report:
+ * `owner-decisions-2026-09-12.md` § 2 asks for the authoritative credit-note and
+ * unallocated-receipt amounts as separate fields, the permitted party name beside
+ * its identifier under the role it is actually held in, and a document
+ * drill-through resolved by document kind against an authorized target route —
+ * with nothing invented, no financial calculation moved to the browser, and no
+ * missing contract silently omitted.
+ *
  * D-17: every report period is half-open, `[from, to)`, in the selected branch's
  * timezone, converted consistently server-side, with the timezone and the filter
  * context displayed and preserved.
@@ -105,6 +113,14 @@ const REPORT_READ = 'rpt.report.read';
 const FINANCE_VIEW = 'sal.finance.view';
 /** Widens RLS reach without widening authority. Deliberately not a finance code. */
 const REACH_ONLY = 'org.tenant.read';
+/**
+ * The CRM read the party NAME is gated on.
+ *
+ * It is NOT on the dataset's `requiredPermissions`, deliberately: the Owner asked
+ * for the PERMITTED name, so the enrichment narrows for a caller who lacks this
+ * code instead of refusing a finance report to them.
+ */
+const CUSTOMER_READ = 'crm.customer.read';
 
 /** Two currencies whose totals must never meet. `JOD` has three minor units. */
 const USD = 'USD';
@@ -147,6 +163,20 @@ const FIN_RPT_FULL: Principal = {
   subject: 'fx_p1_31_sal_full',
   tenantId: TENANT_A,
   permissions: [REPORT_READ, FINANCE_VIEW],
+};
+
+/**
+ * Both codes AND the CRM read: the only principal entitled to a party NAME.
+ *
+ * `crm.customer.read` is not a report permission and is not declared by the
+ * dataset. It decides one cell.
+ */
+const FIN_RPT_CRM: Principal = {
+  roleId: 'f1340000-0000-4000-8000-000000000161',
+  userId: 'f1340000-0000-4000-8000-000000000162',
+  subject: 'fx_p1_31_sal_crm',
+  tenantId: TENANT_A,
+  permissions: [REPORT_READ, FINANCE_VIEW, CUSTOMER_READ],
 };
 
 /** May run reports; may not see money. Refused by the SERVICE. */
@@ -196,6 +226,7 @@ const FIN_TENANT_B: Principal = {
 
 const PRINCIPALS: readonly Principal[] = [
   FIN_RPT_FULL,
+  FIN_RPT_CRM,
   RPT_ONLY,
   FINANCE_ONLY,
   FIN_SCOPED_S2,
@@ -226,6 +257,10 @@ interface Column {
   readonly key: string;
   readonly kind: string;
   readonly drillThrough: string | null;
+  readonly drillThroughByKind: {
+    readonly discriminator: string;
+    readonly templates: Record<string, string | null>;
+  } | null;
 }
 interface Group {
   readonly key: Record<string, string | null>;
@@ -587,6 +622,24 @@ async function openReceivableOf(invoiceId: string): Promise<string> {
   return row.rows[0]?.amount ?? '';
 }
 
+/** `sal.receipt_unallocated`, read as admin — the OTHER authority the report calls. */
+async function unallocatedOf(receiptId: string): Promise<string> {
+  const row = await admin.query<{ amount: string }>(
+    `SELECT sal.receipt_unallocated($1)::text AS amount`,
+    [receiptId]
+  );
+  return row.rows[0]?.amount ?? '';
+}
+
+/** `sal.credit_notes.amount`, read as admin — the authoritative credit column. */
+async function creditNoteAmountOf(creditId: string): Promise<string> {
+  const row = await admin.query<{ amount: string }>(
+    `SELECT amount::text AS amount FROM sal.credit_notes WHERE id = $1`,
+    [creditId]
+  );
+  return row.rows[0]?.amount ?? '';
+}
+
 // ---- The selection ----------------------------------------------------------
 
 let invoiceUsd: SeededInvoice;
@@ -779,13 +832,29 @@ beforeAll(async () => {
   });
 
   // A USD receipt at the LAST INCLUDED INSTANT — one second before the excluded
-  // day's local midnight.
+  // day's local midnight — of which only PART has been applied. It is the third
+  // allocation state the report has to tell apart: `receiptUsd` is applied in
+  // full, `receiptJod` not at all, and this one in between. Its unallocated
+  // figure is the one `sal.receipt_unallocated` is compared against.
   receiptLastSecond = await seedReceipt({
     branchId: BRANCH_S1,
     currency: USD,
     amount: '10.0000',
     receivedAt: shift(periodCloses, -SECOND),
   });
+  await seedAllocation(receiptLastSecond, invoiceUsd.invoiceId, '4.0000');
+  await admin
+    .query(`SELECT id FROM sal.payment_allocations WHERE receipt_id = $1`, [receiptLastSecond])
+    .then(async (result) => {
+      for (const row of result.rows as { id: string }[]) {
+        await restateInstant(
+          'sal.payment_allocations',
+          'allocated_at',
+          row.id,
+          shift(periodCloses, -SECOND)
+        );
+      }
+    });
 
   // A reversed receipt: a receipt that did not happen.
   receiptReversed = await seedReceipt({
@@ -937,24 +1006,68 @@ describe('the dataset is registered as the Owner approved it', () => {
       'documentType',
       'documentDate',
       'branch',
-      'customer',
+      'partyId',
+      'partyName',
+      'partyRole',
       'currency',
       'invoicedAmount',
       'receiptAmount',
       'allocatedAmount',
+      'unallocatedAmount',
+      'creditNoteAmount',
       'outstanding',
       'status',
     ]);
     expect(
       view.columns.filter((column) => column.kind === 'money').map((column) => column.key)
-    ).toEqual(['invoicedAmount', 'receiptAmount', 'allocatedAmount', 'outstanding']);
+    ).toEqual([
+      'invoicedAmount',
+      'receiptAmount',
+      'allocatedAmount',
+      'unallocatedAmount',
+      'creditNoteAmount',
+      'outstanding',
+    ]);
     expect(view.columns.find((column) => column.key === 'document')?.kind).toBe('reference');
-    expect(view.columns.find((column) => column.key === 'customer')?.kind).toBe('reference');
+    expect(view.columns.find((column) => column.key === 'partyId')?.kind).toBe('reference');
     expect(view.columns.find((column) => column.key === 'documentDate')?.kind).toBe('date');
-    // NO drill-through anywhere on this report: one `document` column addresses
-    // three kinds of document, and a single template would send two thirds of the
-    // rows to a screen that cannot answer for them.
+    // There is no COLUMN-WIDE drill-through, because the route depends on the
+    // row: the `document` column publishes one template per document kind
+    // instead, and every other column publishes neither.
     expect(view.columns.every((column) => column.drillThrough === null)).toBe(true);
+    expect(
+      view.columns
+        .filter((column) => column.key !== 'document')
+        .every((column) => column.drillThroughByKind === null)
+    ).toBe(true);
+  });
+
+  it('resolves the document drill-through per KIND, and publishes no route for a credit note', async () => {
+    authAs(FIN_RPT_FULL);
+    const view = await body(await report());
+    const document = view.columns.find((column) => column.key === 'document');
+    expect(document?.drillThroughByKind?.discriminator).toBe('documentType');
+    // Two authorized target routes that already exist — `sal.invoice-detail` and
+    // `sal.receipt-detail` — and an explicit NULL for the kind that has none.
+    expect(document?.drillThroughByKind?.templates).toEqual({
+      invoice: '/invoices/{id}',
+      receipt: '/payments/{id}',
+      credit_note: null,
+    });
+    // The absence is a measured fact about the operation register, not a
+    // rendering choice: nothing reads a credit note, so there is nothing to open.
+    // The discriminator names a column this report actually publishes, so a
+    // client can choose the template from the cell beside the id.
+    expect(view.columns.map((column) => column.key)).toContain(
+      document?.drillThroughByKind?.discriminator
+    );
+    // Every kind a row can carry is a key in the map, so a client is never left
+    // guessing which of the three it is looking at.
+    const kinds = new Set(view.rows.items.map((item) => cellValue(item, 'documentType')));
+    expect([...kinds].sort()).toEqual(['credit_note', 'invoice', 'receipt']);
+    for (const kind of kinds) {
+      expect(Object.keys(document?.drillThroughByKind?.templates ?? {})).toContain(kind);
+    }
   });
 
   it('echoes the period, the zone and the filter context, and calls itself live', async () => {
@@ -1017,21 +1130,75 @@ describe('the rows are the documents of the period, and only those', () => {
     expect(cellValue(row, 'documentDate')).toBe(periodOpens);
     expect(cellValue(row, 'branch')).toBe(BRANCH_S1);
     expect(cellLabel(row, 'branch')).toBe('P1-31 Finance Reported Branch');
-    expect(cellValue(row, 'customer')).toBe(PARTNER_A);
-    // An id with no name: naming the payer would put another module's record in
-    // this row, and therefore another module's read code on the permission list.
-    expect(cellLabel(row, 'customer')).toBeNull();
+    expect(cellValue(row, 'partyId')).toBe(PARTNER_A);
+    // The party is published under the role it is actually held in. An invoice
+    // names its PAYER, which is not the same claim as "customer".
+    expect(cellValue(row, 'partyRole')).toBe('payer');
+    // This caller does not hold `crm.customer.read`, so the name is withheld and
+    // the id still travels. The entitled caller's case is below.
+    expect(cellValue(row, 'partyName')).toBeNull();
     expect(cellValue(row, 'currency')).toBe(USD);
     expect(cellValue(row, 'invoicedAmount')).toBe('165.0000');
     expect(cellValue(row, 'status')).toBe('issued');
-    // NULL, not zero: an invoice is not a receipt and has applied nothing.
+    // NULL, not zero: an invoice is not a receipt and has applied nothing, and it
+    // is not a credit note either.
     expect(cellValue(row, 'receiptAmount')).toBeNull();
     expect(cellValue(row, 'allocatedAmount')).toBeNull();
-    // 165.0000 less the 65.0000 allocated — and it is the DATABASE FUNCTION's
-    // answer, compared against the function itself rather than against a number
-    // written here.
-    expect(cellValue(row, 'outstanding')).toBe('100.0000');
+    expect(cellValue(row, 'unallocatedAmount')).toBeNull();
+    expect(cellValue(row, 'creditNoteAmount')).toBeNull();
+    // 165.0000 less the 65.0000 and the 4.0000 allocated — and it is the DATABASE
+    // FUNCTION's answer, compared against the function itself rather than against
+    // a number written here.
+    expect(cellValue(row, 'outstanding')).toBe('96.0000');
     expect(cellValue(row, 'outstanding')).toBe(await openReceivableOf(invoiceUsd.invoiceId));
+  });
+
+  it('names the party only for a caller holding the CRM read, and never drops the id', async () => {
+    authAs(FIN_RPT_CRM);
+    const named = await body(await report());
+    const namedRow = named.rows.items.find(
+      (item) => cellValue(item, 'document') === invoiceUsd.invoiceId
+    );
+    expect(namedRow).toBeDefined();
+    if (namedRow === undefined) return;
+    expect(cellValue(namedRow, 'partyId')).toBe(PARTNER_A);
+    expect(cellValue(namedRow, 'partyName')).toBe('Reception Requester');
+    expect(cellValue(namedRow, 'partyRole')).toBe('payer');
+
+    // The SAME report, to a caller who holds both report codes and NOT
+    // `crm.customer.read`: every id is still there and no name is. The gate is
+    // the CRM read itself, so the enrichment can only narrow — the dataset's
+    // declared permission list is untouched and no caller gains anything.
+    authAs(FIN_RPT_FULL);
+    const plain = await body(await report());
+    expect(plain.rows.items.length).toBe(named.rows.items.length);
+    expect(plain.rows.items.every((item) => cellValue(item, 'partyId') !== null)).toBe(true);
+    expect(plain.rows.items.every((item) => cellValue(item, 'partyName') === null)).toBe(true);
+    expect(JSON.stringify(plain)).not.toContain('Reception Requester');
+    // And the permission list the report declares is unchanged by any of it.
+    expect([...REPORT_DATASETS.invoice_payment_summary.requiredPermissions]).toEqual([
+      FINANCE_VIEW,
+    ]);
+  });
+
+  it('names a receipt party as the PAYER and a credit note party as the invoice payer', async () => {
+    authAs(FIN_RPT_CRM);
+    const view = await body(await report());
+    const receipt = rowFor(view, receiptUsd);
+    const credit = rowFor(view, creditNoteId);
+    expect(receipt).toBeDefined();
+    expect(credit).toBeDefined();
+    if (receipt === undefined || credit === undefined) return;
+    // A receipt names who PAID. That party is not necessarily the customer the
+    // work was done for, and the report must not present the one as the other.
+    expect(cellValue(receipt, 'partyRole')).toBe('payer');
+    expect(cellValue(receipt, 'partyId')).toBe(PARTNER_A);
+    expect(cellValue(receipt, 'partyName')).toBe('Reception Requester');
+    // `sal.credit_notes` carries NO party column, so the id is the credited
+    // invoice's payer and the role says exactly that rather than claiming the
+    // note names a party of its own.
+    expect(cellValue(credit, 'partyRole')).toBe('invoice_payer');
+    expect(cellValue(credit, 'partyId')).toBe(PARTNER_A);
   });
 
   it('publishes the receipt with what it has applied, as a column of its own', async () => {
@@ -1044,6 +1211,11 @@ describe('the rows are the documents of the period, and only those', () => {
     expect(cellValue(row, 'receiptAmount')).toBe('65.0000');
     expect(cellValue(row, 'allocatedAmount')).toBe('65.0000');
     expect(cellValue(row, 'invoicedAmount')).toBeNull();
+    expect(cellValue(row, 'creditNoteAmount')).toBeNull();
+    // Applied in full, so an EXACT ZERO is left — and it is the function's zero,
+    // compared against the function itself.
+    expect(cellValue(row, 'unallocatedAmount')).toBe('0.0000');
+    expect(cellValue(row, 'unallocatedAmount')).toBe(await unallocatedOf(receiptUsd));
     // A receipt has no outstanding balance of its own, and a zero here would read
     // as one that had been settled.
     expect(cellValue(row, 'outstanding')).toBeNull();
@@ -1055,7 +1227,26 @@ describe('the rows are the documents of the period, and only those', () => {
     // An EXACT ZERO, because nothing was applied — which is a different fact from
     // the invoice's absent allocation column above.
     expect(cellValue(unallocated, 'allocatedAmount')).toBe('0.0000');
+    expect(cellValue(unallocated, 'unallocatedAmount')).toBe('30.0000');
     expect(cellValue(unallocated, 'status')).toBe('recorded');
+  });
+
+  it('publishes what a PARTIALLY applied receipt has left, from the authority and not a subtraction', async () => {
+    authAs(FIN_RPT_FULL);
+    const view = await body(await report());
+    const row = rowFor(view, receiptLastSecond);
+    expect(row).toBeDefined();
+    if (row === undefined) return;
+    // 10.0000 received, 4.0000 applied, 6.0000 left — and the published figure is
+    // compared against `sal.receipt_unallocated` ITSELF rather than against a
+    // number written here or a difference computed here. The three states the
+    // report must tell apart are now all present: applied in full, applied in
+    // part, and not applied at all.
+    expect(cellValue(row, 'receiptAmount')).toBe('10.0000');
+    expect(cellValue(row, 'allocatedAmount')).toBe('4.0000');
+    expect(cellValue(row, 'unallocatedAmount')).toBe('6.0000');
+    expect(cellValue(row, 'unallocatedAmount')).toBe(await unallocatedOf(receiptLastSecond));
+    expect(cellValue(row, 'status')).toBe('partially_allocated');
   });
 
   it('shows a credited invoice as credited, and the approved credit note as its own document', async () => {
@@ -1068,6 +1259,10 @@ describe('the rows are the documents of the period, and only those', () => {
     // — which counts approved credits — reports nothing left open.
     expect(cellValue(invoice, 'status')).toBe('credited');
     expect(cellValue(invoice, 'invoicedAmount')).toBe('40.0000');
+    // The credit is NOT restated on the invoice row: the function has already
+    // subtracted it inside `outstanding`, and a second subtraction here would be
+    // the arithmetic the Owner's answer forbids.
+    expect(cellValue(invoice, 'creditNoteAmount')).toBeNull();
     expect(cellValue(invoice, 'outstanding')).toBe('0.0000');
     expect(cellValue(invoice, 'outstanding')).toBe(
       await openReceivableOf(invoiceCredited.invoiceId)
@@ -1079,11 +1274,21 @@ describe('the rows are the documents of the period, and only those', () => {
     expect(cellValue(credit, 'documentType')).toBe('credit_note');
     expect(cellValue(credit, 'status')).toBe('approved');
     expect(cellValue(credit, 'currency')).toBe(USD);
-    // A credit note has no number, and the Owner's column list names no
-    // credit-note amount — so the label is absent and every money column is null
-    // rather than zero. Its effect on money is inside the invoice's outstanding.
+    // A credit note has no number, so the label is absent while the id never is.
     expect(cellLabel(credit, 'document')).toBeNull();
-    for (const key of ['invoicedAmount', 'receiptAmount', 'allocatedAmount', 'outstanding']) {
+    // The AUTHORITATIVE column, `sal.credit_notes.amount`, compared against the
+    // table itself rather than against a number written here.
+    expect(cellValue(credit, 'creditNoteAmount')).toBe('40.0000');
+    expect(cellValue(credit, 'creditNoteAmount')).toBe(await creditNoteAmountOf(creditNoteId));
+    // Every other money column is null rather than zero: a credit note is not an
+    // invoice and not a receipt, and a zero would be a claim about money.
+    for (const key of [
+      'invoicedAmount',
+      'receiptAmount',
+      'allocatedAmount',
+      'unallocatedAmount',
+      'outstanding',
+    ]) {
       expect(cellValue(credit, key)).toBeNull();
     }
   });
@@ -1176,6 +1381,10 @@ describe('the totals are per currency and per document type, and never meet', ()
     expect(view.groups.map((group) => [group.key.currency, group.key.documentType])).toEqual([
       [JOD, 'invoice'],
       [JOD, 'receipt'],
+      // The approved credit notes are a group of their own, keyed on their own
+      // document type: netting them into the invoice group would restate money
+      // the database function has already subtracted inside `outstanding`.
+      [USD, 'credit_note'],
       [USD, 'invoice'],
       [USD, 'receipt'],
     ]);
@@ -1185,16 +1394,22 @@ describe('the totals are per currency and per document type, and never meet', ()
   it('totals the invoices and the receipts of each currency separately', async () => {
     authAs(FIN_RPT_FULL);
     const view = await body(await report());
-    // 165.0000 + 40.0000 issued in USD; 100.0000 + 0.0000 still open.
+    // 165.0000 + 40.0000 issued in USD; 96.0000 + 0.0000 still open.
     expect(groupFor(view, USD, 'invoice')?.measures).toEqual({
       invoiced: '205.0000',
-      outstanding: '100.0000',
+      outstanding: '96.0000',
     });
-    // 65.0000 + 10.0000 received in USD, of which 65.0000 has been applied.
+    // 65.0000 + 10.0000 received in USD, of which 69.0000 has been applied and
+    // 6.0000 has not.
     expect(groupFor(view, USD, 'receipt')?.measures).toEqual({
       receipts: '75.0000',
-      allocated: '65.0000',
+      allocated: '69.0000',
+      unallocated: '6.0000',
     });
+    // The approved credit notes of the period, in their own group and in their
+    // own currency. ONE measure, because a credit note is neither an invoice nor
+    // a receipt and publishing the others at zero would claim it was.
+    expect(groupFor(view, USD, 'credit_note')?.measures).toEqual({ creditNotes: '40.0000' });
     expect(groupFor(view, JOD, 'invoice')?.measures).toEqual({
       invoiced: '100.0000',
       outstanding: '100.0000',
@@ -1202,7 +1417,31 @@ describe('the totals are per currency and per document type, and never meet', ()
     expect(groupFor(view, JOD, 'receipt')?.measures).toEqual({
       receipts: '30.0000',
       allocated: '0.0000',
+      unallocated: '30.0000',
     });
+    // No credit note was issued in JOD, so there is no JOD credit-note group at
+    // all — an absent group rather than a zero, which would read as a fact.
+    expect(groupFor(view, JOD, 'credit_note')).toBeUndefined();
+  });
+
+  it('never nets a credit note into the invoice group, and never states it twice', async () => {
+    authAs(FIN_RPT_FULL);
+    const view = await body(await report());
+    const invoices = groupFor(view, USD, 'invoice');
+    const credits = groupFor(view, USD, 'credit_note');
+    expect(invoices).toBeDefined();
+    expect(credits).toBeDefined();
+    if (invoices === undefined || credits === undefined) return;
+    // The 40.0000 credited is published ONCE, in its own group, and reaches the
+    // invoice group only as a REDUCTION inside `outstanding` — which the database
+    // function computed. The invoice group carries no credit measure, so the two
+    // cannot be added together by mistake, and `invoiced` is still the gross that
+    // was issued rather than a gross with the credit already taken off.
+    expect(credits.measures.creditNotes).toBe('40.0000');
+    expect(invoices.measures.creditNotes).toBeUndefined();
+    expect(invoices.measures.invoiced).toBe('205.0000');
+    expect(credits.measures.invoiced).toBeUndefined();
+    expect(credits.measures.outstanding).toBeUndefined();
   });
 
   it('publishes no measure that spans two currencies and no grand total', async () => {
@@ -1224,15 +1463,18 @@ describe('the totals are per currency and per document type, and never meet', ()
     expect(invoices).toBeDefined();
     expect(receipts).toBeDefined();
     if (invoices === undefined || receipts === undefined) return;
-    // The 65.0000 is `allocated` in the RECEIPT group and reaches the invoice
+    // The 69.0000 is `allocated` in the RECEIPT group and reaches the invoice
     // group only as a REDUCTION inside `outstanding` (205.0000 invoiced less
-    // 65.0000 applied less 40.0000 credited = 100.0000). The invoice group
+    // 69.0000 applied less 40.0000 credited = 96.0000). The invoice group
     // publishes no allocation measure at all, which is what makes adding the two
-    // groups impossible to get wrong.
-    expect(receipts.measures.allocated).toBe('65.0000');
+    // groups impossible to get wrong. `unallocated` sits on the receipt side for
+    // the same reason: it is a fact about the receipt and about nothing else.
+    expect(receipts.measures.allocated).toBe('69.0000');
+    expect(receipts.measures.unallocated).toBe('6.0000');
     expect(invoices.measures.allocated).toBeUndefined();
+    expect(invoices.measures.unallocated).toBeUndefined();
     expect(invoices.measures.invoiced).toBe('205.0000');
-    expect(invoices.measures.outstanding).toBe('100.0000');
+    expect(invoices.measures.outstanding).toBe('96.0000');
   });
 
   it('carries every amount as a string, in cells and in measures alike', async () => {
@@ -1244,7 +1486,14 @@ describe('the totals are per currency and per document type, and never meet', ()
       for (const value of Object.values(group.measures)) expect(typeof value).toBe('string');
     }
     for (const row of view.rows.items) {
-      for (const key of ['invoicedAmount', 'receiptAmount', 'allocatedAmount', 'outstanding']) {
+      for (const key of [
+        'invoicedAmount',
+        'receiptAmount',
+        'allocatedAmount',
+        'unallocatedAmount',
+        'creditNoteAmount',
+        'outstanding',
+      ]) {
         const value = cellValue(row, key);
         expect(value === null || typeof value === 'string').toBe(true);
       }
@@ -1253,8 +1502,12 @@ describe('the totals are per currency and per document type, and never meet', ()
     // wire text, at the scale `numeric(18,4)` stores.
     expect(text).toContain('"165.0000"');
     expect(text).toContain('"100.0000"');
+    // The two amounts added on the Owner's answer travel the same way.
+    expect(text).toContain('"6.0000"');
+    expect(text).toContain('"40.0000"');
     expect(text).not.toContain(':165');
     expect(text).not.toContain(':65.0');
+    expect(text).not.toContain(':6.0');
   });
 });
 

@@ -314,6 +314,20 @@ completely; rows 12 to 15 are what slice 4 itself leaves behind:
 | 14  | **No credit-note amount is published anywhere.** D-4's column list names none, so an approved credit note appears as a DOCUMENT — its date, its payer, its currency, its approved state — and its money is visible only as the reduction inside the affected invoice's `outstanding`. Publishing a credit amount is a column the Owner has not named                                                                                                                                                                                                                                                                                                                                                                             | open, raised by slice 4 — an Owner question, not an engineering one                                                                                                                             |
 | 15  | **`sal.receipt_unallocated` is named by D-4 and is published by no column.** The Owner's source table lists "receipts not yet applied"; the column list this slice implements carries `allocatedAmount` and not its complement. The function exists and the payments module already calls it elsewhere, so this is a column decision and not a capability gap                                                                                                                                                                                                                                                                                                                                                                    | open, raised by slice 4 — an Owner question, not an engineering one                                                                                                                             |
 
+**Movement recorded by the slice-4 COMPLETION** (same branch, same unmerged state), after the
+Owner's decision **D-20** of 2026-09-12
+([`owner-decisions-2026-09-12.md`](./owner-decisions-2026-09-12.md) § 2). Rows 12 to 15 were Owner
+questions; the Owner answered all four, and the answers are implemented rather than recorded as
+recommendations. Row 16 is what the completion itself leaves behind:
+
+| #   | prerequisite                                                                                                                                                                                                                                                                                                             | state after the completion                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 12  | the `document` column publishes no drill-through                                                                                                                                                                                                                                                                         | **closed.** The column publishes a template PER KIND — `documentType` is the discriminator, an invoice resolves through `/invoices/{id}` (`sal.invoice-detail`) and a receipt through `/payments/{id}` (`sal.receipt-detail`) — and a credit note maps to a published `null`, because the register still holds no credit-note read. The null is listed rather than omitted so a client can tell an absent screen from an unknown kind                   |
+| 13  | the `customer` cell carries an id and no name                                                                                                                                                                                                                                                                            | **closed, and NOT by the recommendation.** The cell is gone: the report publishes `partyId`, `partyName` and `partyRole`. The name is resolved through `crmModule().customerRead.resolveDisplayIdentities`, which checks `crm.customer.read` for itself and resolves nothing for a caller who lacks it — so the dataset's `requiredPermissions` is still `['sal.finance.view']` alone and the enrichment can only narrow. `partyRole` is what the id IS |
+| 14  | no credit-note amount is published anywhere                                                                                                                                                                                                                                                                              | **closed.** `creditNoteAmount` carries `sal.credit_notes.amount` on a credit-note row and null everywhere else, and a `(currency, credit_note)` group carries the `creditNotes` measure. Neither is netted into the invoice group: the money is already inside `outstanding`, which `sal.invoice_open_receivable` computed                                                                                                                              |
+| 15  | `sal.receipt_unallocated` is published by no column                                                                                                                                                                                                                                                                      | **closed.** `unallocatedAmount` is the function CALLED per row, and `unallocated` is the same function summed inside the receipt group's aggregate. It is never `receiptAmount` less `allocatedAmount` computed in TypeScript, which would be a second authority disagreeing with the receipt screen                                                                                                                                                    |
+| 16  | **there is still NO credit-note READ operation.** The register holds `sal.credit-note-create` and `sal.credit-note-approve` and nothing that reads one, so the `credit_note` drill-through template is a published null. Adding a read is a new operation with its own permission decision, not a change to this dataset | open, raised by the completion                                                                                                                                                                                                                                                                                                                                                                                                                          |
+
 ## 10. What this slice does NOT close
 
 **Measured facts (not part of the decision) — what was actually run, and where.** On 2026-09-11, at
@@ -707,12 +721,77 @@ Neither port performs authorization: the dataset registry declares `sal.finance.
   was not changed by this branch.
 - **No export, and no frontend.** P-12 is untouched, `rpt.export` stays excluded on CC-04's grounds,
   and `apps/web/src` was not edited at all (FE-014 is not started).
-- **No credit-note amount and no unallocated-receipt column.** Both are recorded in § 9 as Owner
-  questions rather than answered here.
-- **No drill-through on `document`, and no payer name.** Both are recorded in § 9 rows 12 and 13
-  and are OPEN Owner-level items — CC-35(a) and CC-35(b), beside CC-35 — not questions settled
-  here. Each carries one recommendation pending Owner approval.
+- **No credit-note amount and no unallocated-receipt column.** Both were recorded in § 9 as Owner
+  questions rather than answered here. **Superseded by § 13.6:** the Owner answered them on
+  2026-09-12 and both are now published.
+- **No drill-through on `document`, and no payer name.** Both were recorded in § 9 rows 12 and 13
+  as OPEN Owner-level items — CC-35(a) and CC-35(b), beside CC-35 — each carrying one recommendation
+  pending Owner approval. **Superseded by § 13.6:** the Owner answered both on 2026-09-12, and the
+  answer to CC-35(b) is not the recommendation that was carried.
 - **`countsByState` is still published.** It is deprecated and correct; removing it is still a later
   slice's work, with a check that no consumer reads it.
 - **No allow-list was widened and no gate was suppressed.** No `@ts-expect-error`, no
   `eslint-disable`, no skipped or retried test.
+
+### 13.6 The completion — the Owner's decision D-20 of 2026-09-12
+
+**Authority:** the Owner, 2026-09-12
+([`owner-decisions-2026-09-12.md`](./owner-decisions-2026-09-12.md) § 2, **D-20**). The three
+absences § 13.5 records, and the two figures § 9 rows 14 and 15 name, were OPEN Owner-level items —
+**CC-35**, **CC-35(a)** and **CC-35(b)**. The Owner decided all of them, and the decision is
+implemented here. Everything headed _Engineering consequence_ below is this coordinator's choice and
+not an Owner decision.
+
+**The Owner's text, quoted.**
+
+> Include authoritative credit-note and unallocated-receipt amounts as separate fields. Show the
+> permitted party name alongside its identifier, labelled according to its actual role rather than
+> confusing payer and customer. Resolve document drill-through by document kind and authorized
+> target route. Do not invent amounts, perform financial calculations in the browser, or silently
+> omit missing contracts.
+
+**Measured facts (not part of the decision).**
+
+- **Both authorities exist and are deployed.** `sal.credit_notes.amount` is `numeric(18,4)` with
+  `CHECK (amount > 0)`, frozen once approved by `sal.guard_dual_control_approval`
+  (`supabase/migrations/20260724092000_sal_payments.sql`). `sal.receipt_unallocated(uuid)` returns
+  `round(amount − Σ allocations, 4)` and `0` for a reversed receipt
+  (`supabase/migrations/20260724093000_sal_financial_events.sql`); the payments module already calls
+  it on its own receipt reads. **Neither had to be written, and neither was re-derived.**
+- **The party columns are payer columns.** `sal.invoices.payer_partner_id` and
+  `sal.receipts.payer_partner_id` both name the PAYER. `sal.credit_notes` has **no party column at
+  all**, so a credit note's party is the payer of the invoice it credits.
+- **A partner name is readable through the CRM module's published surface.**
+  `crmModule().customerRead.resolveDisplayIdentities` checks `crm.customer.read` itself and returns
+  an empty map to a caller who lacks it — the treatment the vehicle module's `namePartners` already
+  takes for the same disclosure question.
+- **Two of the three document kinds have a detail operation and the third has none.** The register
+  holds `sal.invoice-detail` (`/invoices/{id}`), `sal.receipt-detail` (`/payments/{id}`),
+  `sal.credit-note-create` and `sal.credit-note-approve` — and **no credit-note read**.
+
+**Engineering consequence — the drill-through moved onto the COLUMN CONTRACT, per kind.**
+`ReportColumnDefinition` gains `drillThroughByKind`: a `discriminator` naming the column whose cell
+value selects the template, and a `templates` map from that value to a route template or to null.
+`ReportColumnView` publishes it, null for every column that has no such split. A kind with no
+authorized target route is listed carrying `null` rather than omitted, because "there is no screen
+for this" and "this kind is not in the map" are different answers and a client must be able to tell
+them apart.
+
+**Engineering consequence — the party is three columns, and the name is gated where the capability
+lives.** `customer` is replaced by `partyId`, `partyName` and `partyRole`. The id always travels;
+the name is whatever the CRM read resolves, which is nothing at all for a caller without
+`crm.customer.read`; the role is `payer` on an invoice and a receipt and `invoice_payer` on a credit
+note. The dataset's `requiredPermissions` stays `['sal.finance.view']` — adding the CRM code would
+have refused the whole finance report to a caller who may not read customers, which is a broadening
+of the refusal rather than of the disclosure, and the Owner asked for the PERMITTED name.
+
+**Engineering consequence — the two amounts are authorities, and the credit notes are their own
+group.** `unallocatedAmount` is `sal.receipt_unallocated` called per row and summed inside the same
+aggregate the receipt group is built from; `creditNoteAmount` is the credit note's own column. A
+third group kind, `(currency, credit_note)`, carries the single `creditNotes` measure. Netting it
+into the invoice group would restate money `sal.invoice_open_receivable` has already subtracted, and
+publishing the other measures at zero beside it would claim facts a credit note does not hold.
+
+**Engineering consequence — the reporting module now composes `@/modules/crm`.** Through the public
+index only, for one published read. No `crm` SQL entered the billing or payments repositories, and
+neither report port resolves a name.

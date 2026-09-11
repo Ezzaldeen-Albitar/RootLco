@@ -32,13 +32,15 @@
  * aggregate over amounts that were hidden is a confident zero, not an absence.
  * That is the defect D-4 names and the reason the whole report refuses.
  *
- * ## It resolves no names
+ * ## It resolves no names, and that stays true
  *
- * `payerPartnerId` travels as an id with no display name, exactly as
- * `BillingReadService` publishes it today. Naming the payer would mean reading
- * `crm.business_partners` — another module's table, and another module's read
- * code on the dataset's permission list. It is recorded as a named prerequisite
- * instead of being taken silently.
+ * The party travels as an id and a ROLE, never as a name. The Owner's answer of
+ * 2026-09-12 asks for the permitted party NAME beside the identifier, and the
+ * name is resolved by the reporting module through `@/modules/crm`'s published
+ * read — which checks `crm.customer.read` itself and returns nothing to a caller
+ * who lacks it. Reading `crm.business_partners` from here would put another
+ * module's table in this module's SQL, which is the thing the port exists to
+ * prevent.
  */
 import { ApplicationService } from '@/server/layering';
 import type { DbHandle } from '@/server/db/transaction';
@@ -63,7 +65,15 @@ export interface InvoiceDocumentEntry {
   readonly documentNumber: string | null;
   /** An ISO-8601 instant, serialised UTC exactly as every other read publishes one. */
   readonly documentDate: string;
-  readonly payerPartnerId: string;
+  /**
+   * The party the document names, as an id, and the ROLE it names them under.
+   *
+   * An invoice names its payer. A credit note carries no party column at all, so
+   * the id is the credited invoice's payer and the role says so — `invoice_payer`
+   * rather than `payer`, and never `customer`.
+   */
+  readonly partyId: string;
+  readonly partyRole: 'payer' | 'invoice_payer';
   readonly currencyCode: string;
   /** The invoice's `status`, or the credit note's `approval_state`. */
   readonly status: string;
@@ -71,6 +81,13 @@ export interface InvoiceDocumentEntry {
   readonly invoicedAmount: string | null;
   /** `sal.invoice_open_receivable` as an exact decimal string; null on a credit note. */
   readonly outstanding: string | null;
+  /**
+   * `sal.credit_notes.amount` as an exact decimal string; null on an invoice.
+   *
+   * The authoritative column. Nothing derives it from `outstanding` and nothing
+   * subtracts it there: the database function has already counted it.
+   */
+  readonly creditNoteAmount: string | null;
   /**
    * The microsecond-precision position this row occupies in the merged order.
    *
@@ -87,9 +104,9 @@ export interface InvoiceDocumentEntry {
  *
  * PER CURRENCY and never across currencies: there is no exchange rate anywhere
  * in this platform, and a total spanning two currencies would be a number
- * nobody can name. Credit notes carry no total of their own — the report's
- * column list names no credit amount — and their effect is already inside
- * `outstanding`, which the database function computes.
+ * nobody can name. Credit notes are totalled SEPARATELY, below, because they are
+ * a different document type: netting them here would restate money that
+ * `sal.invoice_open_receivable` has already subtracted inside `outstanding`.
  */
 export interface InvoiceDocumentTotal {
   readonly currencyCode: string;
@@ -99,8 +116,22 @@ export interface InvoiceDocumentTotal {
   readonly outstanding: string;
 }
 
+/**
+ * One currency's APPROVED credit-note total over the whole selection.
+ *
+ * Published from 2026-09-12 on the Owner's answer, as its own figure keyed on
+ * its own document type — never added to `invoiced` and never subtracted from
+ * `outstanding`.
+ */
+export interface CreditNoteTotal {
+  readonly currencyCode: string;
+  /** Sum of `sal.credit_notes.amount` over the period's approved notes. */
+  readonly credited: string;
+}
+
 export interface InvoiceDocumentSummary {
   readonly totals: readonly InvoiceDocumentTotal[];
+  readonly creditNoteTotals: readonly CreditNoteTotal[];
   /**
    * The ordered documents, NOT a page: `hasMore` and the next cursor are decided
    * by the reporting module over the merged stream, because a sentinel taken
@@ -138,16 +169,22 @@ export class BillingReportPort extends ApplicationService {
         invoiced: row.invoiced,
         outstanding: row.outstanding,
       })),
+      creditNoteTotals: report.creditNoteTotals.map((row) => ({
+        currencyCode: row.currencyCode,
+        credited: row.credited,
+      })),
       documents: report.documents.map((row) => ({
         documentType: row.documentType,
         documentId: row.documentId,
         documentNumber: row.documentNumber,
         documentDate: row.documentDate.toISOString(),
-        payerPartnerId: row.payerPartnerId,
+        partyId: row.partyId,
+        partyRole: row.partyRole,
         currencyCode: row.currencyCode,
         status: row.status,
         invoicedAmount: row.invoicedAmount,
         outstanding: row.outstanding,
+        creditNoteAmount: row.creditNoteAmount,
         sortValue: row.sortValue,
       })),
     };

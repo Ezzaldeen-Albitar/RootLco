@@ -282,7 +282,6 @@ export interface InvoiceDocumentRow {
   /** `sal.invoices.invoice_number`; always null for a credit note, which has none. */
   readonly documentNumber: string | null;
   readonly documentDate: Date;
-  readonly payerPartnerId: string;
   readonly currencyCode: string;
   /** The invoice's `status`, or the credit note's `approval_state`. */
   readonly status: string;
@@ -290,6 +289,26 @@ export interface InvoiceDocumentRow {
   readonly invoicedAmount: string | null;
   /** `sal.invoice_open_receivable` as a decimal string; null on a credit note. */
   readonly outstanding: string | null;
+  /**
+   * `sal.credit_notes.amount` as a decimal string; null on an invoice.
+   *
+   * The AUTHORITATIVE column, carried through untouched. It is not derived from
+   * the affected invoice's `outstanding` and nothing here subtracts one from the
+   * other: `sal.invoice_open_receivable` already counts approved credits, so a
+   * second derivation would be a second authority for the same money.
+   */
+  readonly creditNoteAmount: string | null;
+  /**
+   * The party this document names, and the ROLE under which it names them.
+   *
+   * An invoice names its `payer_partner_id` and the role is `payer`. A credit
+   * note carries NO party column of its own — `sal.credit_notes` has none — so
+   * the id is the credited invoice's payer and the role says exactly that:
+   * `invoice_payer`. Calling both of them `customer` is what the Owner's
+   * decision of 2026-09-12 forbids, because the two are not the same claim.
+   */
+  readonly partyId: string;
+  readonly partyRole: 'payer' | 'invoice_payer';
   /** The microsecond-precision cursor value for `documentDate`. */
   readonly sortValue: string;
 }
@@ -303,8 +322,23 @@ export interface InvoiceDocumentTotalRow {
   readonly outstanding: string;
 }
 
+/**
+ * One currency's APPROVED credit-note total over the whole selection.
+ *
+ * A total of its own rather than a measure beside `invoiced`, because a credit
+ * note is its own document type: adding it to the invoice group would net two
+ * different facts into one figure, and subtracting it would restate money the
+ * database function has already subtracted inside `outstanding`.
+ */
+export interface CreditNoteTotalRow {
+  readonly currencyCode: string;
+  /** Sum of `sal.credit_notes.amount` over the period's approved notes. */
+  readonly credited: string;
+}
+
 export interface InvoiceDocumentRows {
   readonly totals: readonly InvoiceDocumentTotalRow[];
+  readonly creditNoteTotals: readonly CreditNoteTotalRow[];
   readonly documents: readonly InvoiceDocumentRow[];
 }
 
@@ -901,6 +935,20 @@ export class BillingRepository extends Repository {
    * is applied on the way out only to fix the scale, exactly as `openReceivable`
    * above does and for the same reason.
    *
+   * ## The credit-note amount is the TABLE's column, and it stands alone
+   *
+   * The Owner's answer of 2026-09-12 asks for the authoritative credit-note
+   * amount as a separate field. It is `sal.credit_notes.amount` — `numeric(18,4)`,
+   * `CHECK (amount > 0)`, frozen once approved by `sal.guard_dual_control_approval`
+   * — carried out as a decimal string on the credit-note row and NULL on an
+   * invoice row. It is not netted into `invoicedAmount` and it is not subtracted
+   * from `outstanding` here: `sal.invoice_open_receivable` has already counted it,
+   * and counting it twice is the arithmetic that answer forbids.
+   *
+   * Its currency total is a SEPARATE aggregate for the same reason, keyed on the
+   * credit notes' own `currency_code` — which `sal.approve_credit_note` holds
+   * equal to the invoice's.
+   *
    * ## No allocation column, and that is what prevents the double count
    *
    * Allocations live in `sal.payment_allocations`, which is the payments module's
@@ -940,6 +988,18 @@ export class BillingRepository extends Repository {
           AND i.deleted_at IS NULL
           AND ${halfOpenLocalDayRange('i.issued_at', 4, 5, 6)}`;
 
+    // The approved credit notes of the same period, scoped through the invoice
+    // they credit — the only route from a credit note to a branch, because
+    // `sal.credit_notes` carries its own company and branch and the join keeps
+    // the two in step rather than trusting either alone.
+    const creditNoteScope = `FROM sal.credit_notes c
+         JOIN sal.invoices i
+           ON i.tenant_id = c.tenant_id AND i.company_id = c.company_id
+          AND i.branch_id = c.branch_id AND i.id = c.invoice_id
+        WHERE c.tenant_id = $1 AND c.company_id = $2 AND c.branch_id = $3
+          AND c.approval_state = 'approved'
+          AND ${halfOpenLocalDayRange('c.issued_at', 4, 5, 6)}`;
+
     const totals = await this.run<{
       currency_code: string;
       invoiced: string;
@@ -953,6 +1013,19 @@ export class BillingRepository extends Repository {
          ${invoiceScope}
         GROUP BY i.currency_code
         ORDER BY i.currency_code`,
+      values
+    );
+
+    const creditNoteTotals = await this.run<{
+      currency_code: string;
+      credited: string;
+    }>(
+      db,
+      `SELECT c.currency_code,
+              coalesce(sum(c.amount), 0::numeric(18, 4))::text AS credited
+         ${creditNoteScope}
+        GROUP BY c.currency_code
+        ORDER BY c.currency_code`,
       values
     );
 
@@ -976,33 +1049,32 @@ export class BillingRepository extends Repository {
       document_number: string | null;
       document_date: Date;
       payer_partner_id: string;
+      party_role: 'payer' | 'invoice_payer';
       currency_code: string;
       status: string;
       invoiced_amount: string | null;
       outstanding: string | null;
+      credit_note_amount: string | null;
       sort_value: string;
     }>(
       db,
       `SELECT * FROM (
          SELECT 'invoice'::text AS document_type, i.id AS document_id,
                 i.invoice_number AS document_number, i.issued_at AS document_date,
-                i.payer_partner_id, i.currency_code, i.status,
+                i.payer_partner_id, 'payer'::text AS party_role,
+                i.currency_code, i.status,
                 a.gross_total::text                               AS invoiced_amount,
                 round(sal.invoice_open_receivable(i.id), 4)::text AS outstanding,
+                NULL::text                                        AS credit_note_amount,
                 ${cursorTimestamp('i.issued_at')}                 AS sort_value
            ${invoiceScope}
              ${after('i.issued_at', 'i.id')}
          UNION ALL
          SELECT 'credit_note'::text, c.id, NULL, c.issued_at, i.payer_partner_id,
-                c.currency_code, c.approval_state, NULL, NULL,
+                'invoice_payer'::text,
+                c.currency_code, c.approval_state, NULL, NULL, c.amount::text,
                 ${cursorTimestamp('c.issued_at')}
-           FROM sal.credit_notes c
-           JOIN sal.invoices i
-             ON i.tenant_id = c.tenant_id AND i.company_id = c.company_id
-            AND i.branch_id = c.branch_id AND i.id = c.invoice_id
-          WHERE c.tenant_id = $1 AND c.company_id = $2 AND c.branch_id = $3
-            AND c.approval_state = 'approved'
-            AND ${halfOpenLocalDayRange('c.issued_at', 4, 5, 6)}
+           ${creditNoteScope}
             ${after('c.issued_at', 'c.id')}
        ) d
         ORDER BY d.document_date DESC, d.document_id DESC
@@ -1016,12 +1088,20 @@ export class BillingRepository extends Repository {
         invoiced: row.invoiced,
         outstanding: row.outstanding,
       })),
+      creditNoteTotals: creditNoteTotals.rows.map((row) => ({
+        currencyCode: row.currency_code,
+        credited: row.credited,
+      })),
       documents: rows.rows.map((row) => ({
         documentType: row.document_type,
         documentId: row.document_id,
         documentNumber: row.document_number,
         documentDate: row.document_date,
-        payerPartnerId: row.payer_partner_id,
+        // The id is the same column under both document types; the ROLE is what
+        // differs, and it travels so a reader is never told a credit note names
+        // a party of its own.
+        partyId: row.payer_partner_id,
+        partyRole: row.party_role,
         currencyCode: row.currency_code,
         status: row.status,
         // Carried through as the decimal strings `pg` produced. No arithmetic
@@ -1029,6 +1109,7 @@ export class BillingRepository extends Repository {
         // represent, and one conversion is all it takes to lose the fourth place.
         invoicedAmount: row.invoiced_amount,
         outstanding: row.outstanding,
+        creditNoteAmount: row.credit_note_amount,
         sortValue: row.sort_value,
       })),
     };

@@ -30,13 +30,14 @@
  * empty selection totalled is a confident zero rather than an absence. That is
  * the defect D-4 names, and the refusal above is the reason it cannot occur.
  *
- * ## It resolves no names
+ * ## It resolves no names, and that stays true
  *
- * `payerPartnerId` travels as an id with no display name, exactly as the receipt
- * read publishes it today. Naming the payer would mean reading
- * `crm.business_partners` — another module's table, and another module's read
- * code on the dataset's permission list. It is recorded as a named prerequisite
- * instead of being taken silently.
+ * The party travels as an id and a ROLE — `payer`, which is what the column
+ * actually holds. The Owner's answer of 2026-09-12 asks for the permitted party
+ * NAME beside the identifier, and the name is resolved by the reporting module
+ * through `@/modules/crm`'s published read, which checks `crm.customer.read`
+ * itself. Reading `crm.business_partners` from here would put another module's
+ * table in this module's SQL, which is the thing the port exists to prevent.
  */
 import { ApplicationService } from '@/server/layering';
 import type { DbHandle } from '@/server/db/transaction';
@@ -53,7 +54,13 @@ export interface ReceiptDocumentEntry {
   readonly documentNumber: string;
   /** An ISO-8601 instant, serialised UTC exactly as every other read publishes one. */
   readonly documentDate: string;
-  readonly payerPartnerId: string;
+  /**
+   * The party the receipt names, as an id, and the ROLE it names them under:
+   * `payer`. The party who paid is not necessarily the customer the work was
+   * done for, and the report must not present the one as the other.
+   */
+  readonly partyId: string;
+  readonly partyRole: 'payer';
   readonly currencyCode: string;
   /** `recorded`, `partially_allocated` or `allocated`. Never `reversed`. */
   readonly status: string;
@@ -67,6 +74,17 @@ export interface ReceiptDocumentEntry {
    * more than once to the same one. Never larger than the receipt.
    */
   readonly allocatedAmount: string;
+  /**
+   * What this receipt has NOT yet been applied to any invoice, as an exact
+   * decimal string.
+   *
+   * `sal.receipt_unallocated(id)` — the deployed authority, CALLED. Never
+   * `receiptAmount − allocatedAmount` computed by a consumer: the function
+   * rounds at scale 4 and answers `0` for a reversed receipt, and a second
+   * derivation is how a report and the receipt screen come to state different
+   * balances for one receipt.
+   */
+  readonly unallocatedAmount: string;
   /**
    * The microsecond-precision position this row occupies in the merged order.
    *
@@ -91,6 +109,8 @@ export interface ReceiptDocumentTotal {
   readonly receipts: string;
   /** Sum of those receipts' allocations. */
   readonly allocated: string;
+  /** Sum of `sal.receipt_unallocated` over the same receipts. */
+  readonly unallocated: string;
 }
 
 export interface ReceiptDocumentSummary {
@@ -130,16 +150,19 @@ export class PaymentsReportPort extends ApplicationService {
         currencyCode: row.currencyCode,
         receipts: row.receipts,
         allocated: row.allocated,
+        unallocated: row.unallocated,
       })),
       documents: report.documents.map((row) => ({
         documentId: row.documentId,
         documentNumber: row.documentNumber,
         documentDate: row.documentDate.toISOString(),
-        payerPartnerId: row.payerPartnerId,
+        partyId: row.partyId,
+        partyRole: row.partyRole,
         currencyCode: row.currencyCode,
         status: row.status,
         receiptAmount: row.receiptAmount,
         allocatedAmount: row.allocatedAmount,
+        unallocatedAmount: row.unallocatedAmount,
         sortValue: row.sortValue,
       })),
     };

@@ -242,7 +242,15 @@ export interface ReceiptDocumentRow {
   /** `sal.receipts.receipt_number` — NOT NULL, so never absent. */
   readonly documentNumber: string;
   readonly documentDate: Date;
-  readonly payerPartnerId: string;
+  /**
+   * The party the receipt names, as an id, and the ROLE it names them under.
+   *
+   * `sal.receipts.payer_partner_id`, so the role is `payer` — the party who PAID,
+   * which is not necessarily the customer the work was done for. Publishing the
+   * one under the other's name is what the Owner's answer of 2026-09-12 forbids.
+   */
+  readonly partyId: string;
+  readonly partyRole: 'payer';
   readonly currencyCode: string;
   /** `recorded`, `partially_allocated` or `allocated`. Never `reversed`. */
   readonly status: string;
@@ -250,6 +258,15 @@ export interface ReceiptDocumentRow {
   readonly receiptAmount: string;
   /** Sum of this receipt's allocations, as a decimal string. `0.0000` when none. */
   readonly allocatedAmount: string;
+  /**
+   * `sal.receipt_unallocated(id)` as a decimal string — the AUTHORITY, called.
+   *
+   * Not `amount − allocated` computed here. The function is the deployed
+   * definition the receipt screen already reads, it returns `0` for a reversed
+   * receipt, and a subtraction written in TypeScript would be a second authority
+   * that disagrees with the screen the first time either changes.
+   */
+  readonly unallocatedAmount: string;
   /** The microsecond-precision cursor value for `documentDate`. */
   readonly sortValue: string;
 }
@@ -259,6 +276,8 @@ export interface ReceiptDocumentTotalRow {
   readonly currencyCode: string;
   readonly receipts: string;
   readonly allocated: string;
+  /** Sum of `sal.receipt_unallocated` over the same receipts. */
+  readonly unallocated: string;
 }
 
 export interface ReceiptDocumentRows {
@@ -781,14 +800,20 @@ export class PaymentsRepository extends Repository {
    *
    * A receipt may allocate to many invoices and more than once to the same one,
    * so the column is a sum over `sal.payment_allocations` for that receipt.
-   * `sal.receipt_unallocated` is deliberately NOT called: it answers the
-   * complementary question (what is left), the report's column list names no such
-   * column, and calling it would put a second derivation of the same arithmetic
-   * on the same row.
    *
    * The invoice side of the report publishes no allocation column at all, so this
    * money is counted once as a receipt measure and once as a reduction inside
    * `sal.invoice_open_receivable` — never twice inside one group.
+   *
+   * ## What is LEFT is the function's answer, not a subtraction
+   *
+   * The Owner's answer of 2026-09-12 asks for the authoritative unallocated
+   * amount as a separate field, and the authority is `sal.receipt_unallocated` —
+   * the same deployed function `receiptUnallocated` and the receipt screen
+   * already call. It is CALLED here, per row and inside the aggregate, rather
+   * than derived as `amount − allocated` in TypeScript: the function returns `0`
+   * for a reversed receipt and rounds at scale 4, and a second derivation is how
+   * a report and a screen come to state different balances for one receipt.
    *
    * ## No page is built here
    *
@@ -830,11 +855,14 @@ export class PaymentsRepository extends Repository {
       currency_code: string;
       receipts: string;
       allocated: string;
+      unallocated: string;
     }>(
       db,
       `SELECT r.currency_code,
               sum(r.amount)::text                                     AS receipts,
-              coalesce(sum(al.allocated), 0::numeric(18, 4))::text    AS allocated
+              coalesce(sum(al.allocated), 0::numeric(18, 4))::text    AS allocated,
+              coalesce(sum(sal.receipt_unallocated(r.id)), 0::numeric(18, 4))::text
+                                                                      AS unallocated
          ${scope}
         GROUP BY r.currency_code
         ORDER BY r.currency_code`,
@@ -863,6 +891,7 @@ export class PaymentsRepository extends Repository {
       status: string;
       receipt_amount: string;
       allocated_amount: string;
+      unallocated_amount: string;
       sort_value: string;
     }>(
       db,
@@ -870,6 +899,7 @@ export class PaymentsRepository extends Repository {
               r.received_at AS document_date, r.payer_partner_id, r.currency_code,
               r.status, r.amount::text AS receipt_amount,
               coalesce(al.allocated, 0::numeric(18, 4))::text AS allocated_amount,
+              sal.receipt_unallocated(r.id)::text AS unallocated_amount,
               ${cursorTimestamp('r.received_at')} AS sort_value
          ${scope}
           ${after}
@@ -883,12 +913,15 @@ export class PaymentsRepository extends Repository {
         currencyCode: row.currency_code,
         receipts: row.receipts,
         allocated: row.allocated,
+        unallocated: row.unallocated,
       })),
       documents: rows.rows.map((row) => ({
         documentId: row.document_id,
         documentNumber: row.document_number,
         documentDate: row.document_date,
-        payerPartnerId: row.payer_partner_id,
+        // The payer, under the role the column actually carries.
+        partyId: row.payer_partner_id,
+        partyRole: 'payer' as const,
         currencyCode: row.currency_code,
         status: row.status,
         // Carried through as the decimal strings `pg` produced. No arithmetic
@@ -896,6 +929,7 @@ export class PaymentsRepository extends Repository {
         // represent, and one conversion is all it takes to lose the fourth place.
         receiptAmount: row.receipt_amount,
         allocatedAmount: row.allocated_amount,
+        unallocatedAmount: row.unallocated_amount,
         sortValue: row.sort_value,
       })),
     };

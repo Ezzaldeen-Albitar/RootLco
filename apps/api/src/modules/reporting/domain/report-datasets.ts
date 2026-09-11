@@ -49,12 +49,36 @@
  *   * `money` — an exact decimal string. Never a JSON number and never recomputed
  *     by a consumer; `pg` returns `numeric` as a string and it stays one, which is
  *     the rule `scripts/ci/check-exact-money.mjs` enforces inside the financial
- *     trees. `invoice_payment_summary` emits four of them — `invoicedAmount`,
- *     `receiptAmount`, `allocatedAmount` and `outstanding` — and it is the only
- *     dataset registered today that does.
+ *     trees. `invoice_payment_summary` emits six of them — `invoicedAmount`,
+ *     `receiptAmount`, `allocatedAmount`, `unallocatedAmount`, `creditNoteAmount`
+ *     and `outstanding` — and it is the only dataset registered today that does.
  */
 export type ReportColumnKind =
   'text' | 'date' | 'count' | 'reference' | 'duration' | 'quantity' | 'money';
+
+/**
+ * A drill-through that depends on WHAT THE ROW IS, not only on the column.
+ *
+ * One column may address more than one kind of record — `invoice_payment_summary`
+ * has a single `document` column carrying invoices, receipts and credit notes —
+ * and a single template would send most of its cells to a screen that cannot
+ * answer for them. The Owner decided on 2026-09-12 that the drill-through is
+ * resolved BY DOCUMENT KIND against the authorized target route, so the column
+ * publishes a template per kind instead of one template.
+ *
+ *   * `discriminator` names the COLUMN whose cell value selects the template, so
+ *     a client reads the route from data it already has rather than from a rule
+ *     it had to know.
+ *   * `templates` maps that value to a client route template, or to NULL. A kind
+ *     whose value maps to null has no target: the key is published carrying null
+ *     rather than omitted, because "there is no screen for this" and "this kind
+ *     is unknown to the report" are different answers and a client must be able
+ *     to tell them apart.
+ */
+export interface ReportDrillThroughByKind {
+  readonly discriminator: string;
+  readonly templates: Readonly<Record<string, string | null>>;
+}
 
 export interface ReportColumnDefinition {
   /** Stable key. Cells are emitted in column order and carry the same key. */
@@ -66,6 +90,13 @@ export interface ReportColumnDefinition {
    * makes that an absent KEY rather than a key holding undefined.
    */
   readonly drillThrough?: string;
+  /**
+   * The per-kind alternative to `drillThrough`, for a column whose rows are not
+   * all the same kind of record. The two are mutually exclusive in practice: a
+   * column that has one target publishes `drillThrough`, and a column whose
+   * target depends on the row publishes this instead.
+   */
+  readonly drillThroughByKind?: ReportDrillThroughByKind;
 }
 
 /** One declared parameter of a dataset. Both of today's are required dates. */
@@ -386,32 +417,51 @@ export const REPORT_DATASETS = Object.freeze({
    * receipt applied to an invoice is published once as an allocation and once as
    * a reduction, and no group adds it twice.
    *
+   * ## `unallocatedAmount` and `creditNoteAmount` are AUTHORITIES, not arithmetic
+   *
+   * Both were added on the Owner's answer of 2026-09-12. `unallocatedAmount` is
+   * `sal.receipt_unallocated` CALLED — the same deployed function the receipt
+   * screen reads — and never `receiptAmount` less `allocatedAmount` computed by
+   * anybody. `creditNoteAmount` is `sal.credit_notes.amount` carried through
+   * untouched, and it is neither added into `invoicedAmount` nor subtracted from
+   * `outstanding`, because `sal.invoice_open_receivable` has already counted it.
+   * Each is null on every document type that has no such amount.
+   *
    * ## `credited` is a status and is shown as one
    *
    * D-4: an invoice fully credited is not paid and is not outstanding, and
    * folding it into either bucket misstates both. `status` carries the invoice's
    * own term, the receipt's own term, or the credit note's approval state.
    *
-   * ## `document` publishes NO drill-through, and that is measured
+   * ## `document` drills through BY DOCUMENT KIND (Owner, 2026-09-12)
    *
-   * The cell carries the document id beside its number, so a client that can
-   * resolve one resolves it. No `drillThrough` template is published because a
-   * column carries ONE template while this column addresses THREE kinds of
-   * document — `sal.invoice-detail` on `/invoices/{id}`, `sal.receipt-detail` on
-   * `/payments/{id}`, and nothing at all for a credit note, which has no read
-   * operation of its own. Publishing either route would send half the rows to a
-   * screen that cannot answer for them. Slice 1 set the precedent that a
-   * `reference` column may carry no template, `documentType` is the discriminator
-   * a client needs to choose the route, and the gap is recorded as a named
-   * prerequisite rather than papered over.
+   * The cell carries the document id beside its number, and the column publishes
+   * a template PER KIND rather than one template, because one column addresses
+   * three kinds of document. `documentType` is the discriminator, and the
+   * templates name the routes of the detail operations that already exist:
+   * `sal.invoice-detail` on `/invoices/{id}` and `sal.receipt-detail` on
+   * `/payments/{id}`.
    *
-   * ## `customer` carries an id and no name, for the same reason as the invoice screen
+   * A credit note maps to NULL, and that is a measured absence rather than an
+   * oversight: the operation register holds `sal.credit-note-create` and
+   * `sal.credit-note-approve` and NO credit-note read, so there is no authorized
+   * target route to name. Publishing an invented one would be a link that cannot
+   * resolve. The key is present carrying null so a client can tell "no screen for
+   * this kind" from "this kind is not in the map at all"; a credit-note read
+   * operation is the named prerequisite that would fill it.
    *
-   * `BillingReadService` publishes `payerPartnerId` with no display name today.
-   * Naming the payer means reading `crm.business_partners`, which would put
-   * another module's record in this row and therefore another module's read code
-   * on the list above — the disclosure rule slice 2 paid for. It is a named
-   * prerequisite, not a silent omission.
+   * ## The party is named by its ROLE, and its NAME is capability-gated (Owner, 2026-09-12)
+   *
+   * Three columns rather than one. `partyId` always travels. `partyName` is
+   * resolved through `@/modules/crm`'s published display read, which checks
+   * `crm.customer.read` for itself and resolves nothing for a caller who lacks
+   * it, so the cell is NULL for such a caller and the report's declared
+   * permission list is unchanged — the enrichment narrows and can never widen.
+   * `partyRole` says what the id actually is: `payer` on an invoice and on a
+   * receipt, and `invoice_payer` on a credit note, which carries no party column
+   * of its own and borrows the credited invoice's. The Owner's answer forbids
+   * confusing a payer with a customer, and a column called `customer` over a
+   * `payer_partner_id` was exactly that confusion.
    */
   invoice_payment_summary: Object.freeze({
     code: 'invoice_payment_summary',
@@ -421,27 +471,49 @@ export const REPORT_DATASETS = Object.freeze({
     parameterSchema: PERIOD_PARAMETERS,
     columns: Object.freeze([
       // The number is what a human reads and the id is the machine-readable half.
-      // No `drillThrough` — see above; one column, three kinds of document.
-      Object.freeze({ key: 'document', kind: 'reference' }),
+      // The route depends on WHICH KIND of document the row is, so the column
+      // publishes one template per kind and `documentType` selects it.
+      Object.freeze({
+        key: 'document',
+        kind: 'reference',
+        drillThroughByKind: Object.freeze({
+          discriminator: 'documentType',
+          templates: Object.freeze({
+            // `sal.invoice-detail`.
+            invoice: '/invoices/{id}',
+            // `sal.receipt-detail`.
+            receipt: '/payments/{id}',
+            // NULL, measured: the register holds no credit-note READ operation,
+            // so there is no authorized target route to name.
+            credit_note: null,
+          }),
+        }),
+      }),
       // `invoice`, `receipt` or `credit_note`. The discriminator for every
-      // nullable column below, and for the route a client would choose.
+      // nullable column below, and for the drill-through template above.
       Object.freeze({ key: 'documentType', kind: 'text' }),
       // The document's own business instant, serialised UTC. The DAY it falls on
       // depends on the zone, which is why the envelope states the zone it
       // resolved in.
       Object.freeze({ key: 'documentDate', kind: 'date' }),
       Object.freeze({ key: 'branch', kind: 'text' }),
-      // The payer. An id with no label — see above.
-      Object.freeze({ key: 'customer', kind: 'reference' }),
+      // The party, in three columns: the id that always travels, the name a
+      // caller holding `crm.customer.read` is told and nobody else is, and the
+      // role the id is actually held under. See the definition above.
+      Object.freeze({ key: 'partyId', kind: 'reference' }),
+      Object.freeze({ key: 'partyName', kind: 'text' }),
+      Object.freeze({ key: 'partyRole', kind: 'text' }),
       // The currency every amount on the row is denominated in. D-4 rule 4: there
       // is no rate anywhere in this platform, so no amount is ever comparable
       // across two of these without one being invented.
       Object.freeze({ key: 'currency', kind: 'text' }),
-      // Exact decimal strings, all four. Null where the document type has no such
+      // Exact decimal strings, all six. Null where the document type has no such
       // amount — never zero.
       Object.freeze({ key: 'invoicedAmount', kind: 'money' }),
       Object.freeze({ key: 'receiptAmount', kind: 'money' }),
       Object.freeze({ key: 'allocatedAmount', kind: 'money' }),
+      Object.freeze({ key: 'unallocatedAmount', kind: 'money' }),
+      Object.freeze({ key: 'creditNoteAmount', kind: 'money' }),
       Object.freeze({ key: 'outstanding', kind: 'money' }),
       Object.freeze({ key: 'status', kind: 'text' }),
     ]),
