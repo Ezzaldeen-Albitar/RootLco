@@ -1912,8 +1912,9 @@ recommendation carried for **CC-35(b)** was NOT the answer taken, and the row sa
 - **No migration, no seed row, no audit action, no operation and no path.** The register stays at
   **407** operations and **316** OpenAPI paths; `docs/api/openapi.v1.json` was not changed, and the
   response schema of `rpt.report-run` is bare by repository convention.
-- **No new source file.** Five existing files under `apps/api/src` changed, so the instrumented-file
-  denominator in `tests/ci/baseline-integrity.test.ts` is unmoved at **287**.
+- **No new source file.** **Eight** existing files under `apps/api/src` changed — three in `billing`,
+  two in `payments`, three in `reporting` — and none was added, so the instrumented-file denominator
+  in `tests/ci/baseline-integrity.test.ts` is unmoved at **287**, which the unit tier confirms.
 - **The reporting module now composes `@/modules/crm`** through its public index, for one published
   read. No `crm` SQL entered the billing or payments repositories.
 - **`npm run validate:exact-money` still reports 61 files across 13 trees with no violation.** The
