@@ -1,8 +1,10 @@
 # P1-31 — D-4 report definitions and their column-to-contract mapping
 
-**Status:** OPEN · **Authority:** Owner decision **D-4**, taken 2026-09-09, which defines four baseline
+**Status:** PARTIALLY IMPLEMENTED — engine slice 1 of 4 is implemented on
+`remediation/p1-31-backend-report-engine-work-orders` (PR #364) and is unmerged; slices 2–4 have not
+started · **Authority:** Owner decision **D-4**, taken 2026-09-09, which defines four baseline
 reports and their required columns · **Measured at:** protected `develop` `249c6428`, 2026-09-09 · **Companions:**
-[`a0-preflight.md`](./a0-preflight.md) (D-4 as it stood open), [`task-matrix.md`](./task-matrix.md)
+[`a0-preflight.md`](./a0-preflight.md) (the P-11 row), [`task-matrix.md`](./task-matrix.md)
 (FE-011 … FE-014 rows), `docs/product/owner-requirements-2026-09-06.md` (OWR-2026-09-06-A-12)
 
 ## What this record is, and what it is not
@@ -19,8 +21,10 @@ Three honesty rules apply throughout:
 - **An unknown is written as a named prerequisite, never as a value.** Where a column has no source,
   the row says which read must be built, in which module, and what it must return.
 
-Two questions in the cross-cutting section are marked **proposal, pending Owner confirmation**. They
-are not engineering details: they change what a figure means.
+The two questions the cross-cutting section once carried as proposals — the period convention and
+the timezone — were approved by the Owner on 2026-09-10. One question there remains a
+**recommendation pending Owner approval**: which SOURCE column supplies the branch timezone. It is
+not an engineering detail: it changes what a figure means.
 
 ---
 
@@ -28,7 +32,10 @@ are not engineering details: they change what a figure means.
 
 ### The engine is a code-registered dataset registry
 
-The sanctioned shape is already recorded as **OWR-2026-09-06-A-12**: a report definition binds a
+The shape is the Owner's PLANNED proposal **OWR-2026-09-06-A-12**, adopted here as an engineering
+choice — the Owner's register carries it as "Proposed implementation policy · Planned"
+(`docs/product/owner-requirements-2026-09-06.md:198`) rather than as an approved requirement: a
+report definition binds a
 `report_code` to a **code-registered dataset** — a frozen registry inside the reporting module,
 mirroring the export resource registry — declaring the operation or table, the allowed filters, the
 required permission codes and the scope. Tenant configuration may select, name, scope and version a
@@ -40,8 +47,11 @@ prerequisite read, which is why each section ends with one.
 
 The named prerequisites are:
 
-- **P-11** — the reporting writer and the report engine. The writer half is on an open branch; **the
-  engine half — this registry plus the run operation — has not begun.**
+- **P-11** — the reporting writer and the report engine. The writer merged in PR #361. **Engine
+  slice 1 of 4 — this registry, the run operation and `work_orders_by_status` — is implemented on
+  `remediation/p1-31-backend-report-engine-work-orders` (PR #364) and is NOT merged.** Slices 2–4,
+  covering `technician_labor_time`, `inventory_movements` and `invoice_payment_summary`, have not
+  started.
 - **P-12** — the export operation. Not started, and `rpt.export` remains withheld from the
   provisioning bundle on the Owner decision recorded as **CC-04**.
 
@@ -54,21 +64,24 @@ evaluated. A branch-scoped report run that declared `tenant` would therefore be 
 the permission-blind union of every grant its caller holds, while its query filtered to one branch —
 the two would agree for a single-branch operator and diverge silently for everyone else.
 
-### Period semantics — proposal, pending Owner confirmation
+### Period semantics — APPROVED 2026-09-10; one recommendation remains
 
-**Proposed:** a report period is **half-open, `[from, to)`**, evaluated in the **branch time zone**
-(`org.branches.timezone_name`) for a branch-scoped report.
+**The Owner approved, on 2026-09-10:** half-open `[from, to)` periods in the selected branch's
+timezone, converted consistently for server queries; the timezone and the filter context displayed
+and preserved wherever a result is shown; and cross-branch reporting under one explicit reporting
+timezone, never a silent mixing of local periods. The record is `owner-decisions-2026-09-10.md`
+§ 4, which sits on protected `develop` and reaches this branch at its next sync.
 
-- _Half-open_ because closed-on-both-ends double-counts a boundary instant across two adjacent
-  periods, and because the one existing period filter in the platform — the work-order list — is
-  closed on both ends and therefore cannot be reused as-is for a report (see the first report below).
-- _Branch time zone_ because a workshop day is a local day. `org.branches.timezone_name` is `NOT
-NULL` on every branch and references the approved zone list, so the value always exists.
+**Engineering consequence (not an Owner decision).** A half-open bound is not what the platform's one
+existing period filter gives: the work-order list is closed on both ends and therefore cannot be
+reused as-is for a report (see the first report below). A helper converting a local calendar period
+into UTC query bounds is a named prerequisite.
 
-**The alternative** is the tenant default, `org.tenants.default_timezone`, also `NOT NULL`. It gives
-one answer across a multi-branch organisation at the cost of splitting a branch's own working day.
-**Both are defensible and the choice changes every figure at a period boundary, so it is the Owner's
-and is recorded here rather than taken.**
+**Recommendation pending Owner approval.** Which SOURCE column supplies "the selected branch's
+timezone" is not settled. The recommendation is `org.branches.timezone_name`, `NOT NULL` on every
+branch and referencing the approved zone list. The alternative is the tenant default,
+`org.tenants.default_timezone`, also `NOT NULL`, which gives one answer across a multi-branch
+organisation at the cost of splitting a branch's own working day.
 
 ### Freshness and drill-through
 
@@ -252,16 +265,17 @@ evaluated, not where the column is rendered.
 
 ## Summary — what D-4 still owes
 
-| #   | prerequisite                                                                   | owning module        | blocks                    |
-| --- | ------------------------------------------------------------------------------ | -------------------- | ------------------------- |
-| 1   | The dataset registry and the report run operation (**P-11**, engine half)      | reporting            | all four                  |
-| 2   | The export operation (**P-12**), while `rpt.export` stays withheld (**CC-04**) | reporting and export | FE-011 … FE-014 export    |
-| 3   | `wo.work-order-status-summary`, with a half-open period predicate              | work-order           | `work_orders_by_status`   |
-| 4   | A state-label decision                                                         | Owner / presentation | `work_orders_by_status`   |
-| 5   | A labour-totals port and a job-to-work-order resolution port                   | technician           | `technician_labor_time`   |
-| 6   | Enriched movement rows and `inv.stock-movement-summary`                        | inventory            | `inventory_movements`     |
-| 7   | A restricted-amount reporting read gated on both codes                         | billing and payments | `invoice_payment_summary` |
-| 8   | Confirmation of the period convention and time zone                            | Owner                | all four                  |
+| #   | prerequisite                                                                                                                                               | owning module        | blocks                                                |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- | ----------------------------------------------------- |
+| 1   | The dataset registry and the report run operation (**P-11**, engine half) — implemented on PR #364's branch, unmerged                                      | reporting            | slices 2–4, and all four on `develop` until it merges |
+| 2   | The export operation (**P-12**), while `rpt.export` stays withheld (**CC-04**)                                                                             | reporting and export | FE-011 … FE-014 export                                |
+| 3   | A work-order status summary with a half-open period predicate — met on PR #364's branch by `workOrderModule().reportPort`, unmerged                        | work-order           | `work_orders_by_status` on `develop`                  |
+| 4   | A state-label decision                                                                                                                                     | Owner / presentation | `work_orders_by_status`                               |
+| 5   | A labour-totals port and a job-to-work-order resolution port                                                                                               | technician           | `technician_labor_time`                               |
+| 6   | Enriched movement rows and `inv.stock-movement-summary`                                                                                                    | inventory            | `inventory_movements`                                 |
+| 7   | A restricted-amount reporting read gated on both codes                                                                                                     | billing and payments | `invoice_payment_summary`                             |
+| 8   | The SOURCE column for the branch timezone — a recommendation pending Owner approval; the period convention and timezone semantics were approved 2026-09-10 | Owner                | nothing today                                         |
 
-Until item 1 exists, FE-011 … FE-014 have a definition and no engine, which is exactly the state the
-task matrix records for them.
+Item 1 exists on PR #364's branch and not on `develop`. Until that branch merges, FE-011 … FE-014
+have a definition and no engine on `develop`, which is exactly the state the task matrix records for
+them.

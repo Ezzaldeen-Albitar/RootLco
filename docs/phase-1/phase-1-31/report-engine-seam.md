@@ -1,13 +1,15 @@
 # The report engine — P1-31 prerequisite P-11, slice 1 of 4
 
-**Status:** published on `remediation/p1-31-backend-report-engine-work-orders` · **Authority:**
-prerequisite **P-11** of [`a0-preflight.md`](./a0-preflight.md), Owner decision **D-4** of
-2026-09-09 · **Baseline:** protected `develop` `249c6428`
+**Status:** implemented on branch `remediation/p1-31-backend-report-engine-work-orders`,
+**UNMERGED** at `3cb65df9` · **Authority:** prerequisite **P-11** of
+[`a0-preflight.md`](./a0-preflight.md); Owner decision **D-4** of 2026-09-09 approved the baseline
+of four reports and their columns, and everything below about HOW that baseline is served is an
+engineering consequence rather than an Owner decision · **Baseline:** protected `develop` `249c6428`
 
-This slice makes one report runnable. It publishes the dataset registry the Owner requirement
-describes, one operation that executes a registered dataset, and `work_orders_by_status`
-implemented in the module that owns the tables. It does **not** publish the other three baseline
-reports, the report-configuration writer, or export.
+This slice makes one report runnable on this branch. It adds a dataset registry, one operation that
+executes a registered dataset, and `work_orders_by_status` implemented in the module that owns the
+tables. Nothing here is merged. It does **not** add the other three baseline reports, the
+report-configuration writer, or export.
 
 ---
 
@@ -18,10 +20,14 @@ as a **literal**, with a written reason: the frozen `rpt` schema has no data-sou
 nothing in the approved contracts says what `report_code = 'x'` should select, and inventing one
 would have meant inventing a business report definition nobody approved.
 
-The binding did not arrive as a column and was never going to. It arrived as a requirement:
+The binding did not arrive as a column and was never going to. **Engineering consequence (not an
+Owner decision):** this design takes its shape from the Owner's PLANNED proposal A-12, adopted here
+as an engineering choice. The Owner's register carries it as "Proposed implementation policy ·
+Planned" (`docs/product/owner-requirements-2026-09-06.md:198`), so it is a proposal and not an
+approved requirement:
 
 > a report definition binds a `report_code` to a **code-registered dataset**
-> — `docs/product/owner-requirements-2026-09-06.md:196`, OWR-2026-09-06-A-12
+> — `docs/product/owner-requirements-2026-09-06.md:202`, OWR-2026-09-06-A-12
 
 So the query, the columns and the permission a report needs are declared in **source**, where a
 reviewer can see them and a gate can read them. `rpt.report_configurations` keeps the job it
@@ -84,17 +90,24 @@ The catalogue also suppresses baseline fallback for existing drafts and archived
 
 For a published configuration, `scope_level` is a ceiling, following BR-RPT-001's ordering
 `branch < company < tenant`. The branch-only dataset remains branch-only even if a tenant
-configures a broader ceiling. The existing `parameter_schema` shape
-`{ filters: { name: { type } } }` is an explicit allowlist: every supplied report filter
-(`companyId`, `branchId`, `from`, `to`) must be listed, with the corresponding `uuid` or
-`date` type. The frozen database default `{}` adds no filter restriction; an explicit
-`{ filters: {} }` permits none. Pagination controls are transport parameters. Unknown schema
-properties, filter names, types, or constraints return `ERR-IAM-001` before any dataset read. This
-conservative behavior does not invent a general schema evaluator; supporting richer
-constraints requires an agreed executable vocabulary. A tenant restriction is never silently
-discarded in favor of registry defaults.
+configures a broader ceiling.
 
-**The writer now shares this vocabulary.** As merged, the configuration writer of PR #361 accepted
+**Engineering consequence (not an Owner decision) — the filter vocabulary.** The existing
+`parameter_schema` shape `{ filters: { name: { type } } }` is read as an explicit allowlist: every
+supplied report filter (`companyId`, `branchId`, `from`, `to`) must be listed, with the
+corresponding `uuid` or `date` type. The frozen database default `{}` adds no filter restriction; an
+explicit `{ filters: {} }` permits none. Pagination controls are transport parameters. Unknown
+schema properties, filter names, types, or constraints return `ERR-IAM-001` before any dataset read.
+This conservative behaviour does not invent a general schema evaluator; supporting richer
+constraints requires an agreed executable vocabulary. None of the four names, the two types or the
+refusals is part of D-4 or of any other Owner decision.
+
+What IS the Owner's is the standing rule that code-registered availability must not bypass explicit
+tenant restrictions: a tenant restriction is never silently discarded in favour of registry
+defaults.
+
+**The writer now shares this vocabulary on this branch.** As merged on `develop`, the configuration
+writer of PR #361 accepted
 any bounded JSON object and deferred vocabulary entirely, so publication alone did not prove a
 restriction this engine could evaluate — an administrator could publish `{ branchId: { type:
 'uuid' } }`, with the filter named at the top level rather than under `filters`, and every run of
@@ -103,7 +116,8 @@ therefore no longer stated here in prose and separately in code. They live in
 `readReportParameterVocabulary`, in `apps/api/src/modules/reporting/domain/report-configuration.ts`,
 and BOTH this engine's `assertReportConfiguration` and the version-create route read that one
 function. A schema the engine would refuse is refused at authoring, where the person who wrote it
-can correct it.
+can correct it. That is the behaviour of this unmerged branch; on `develop` the version-create route
+still defers the vocabulary.
 
 The engine's own behaviour did not change in the process, and that was a constraint rather than an
 accident: rows already published in tenant databases must keep the meaning they had, so
@@ -136,37 +150,45 @@ branch is **unreachable through the published route** for a fully-specified pair
 that the 403 arrives first. It is kept as defence in depth because the service is callable without
 that pre-handler probe. This was written the other way round first, and the live run corrected it.
 
-## 5. The timezone decision — OPEN, for the Owner to confirm
+## 5. The period and the timezone — APPROVED 2026-09-10; the source column is not
 
-**Decided here:** a branch-scoped report resolves its period bounds and its day bucketing in the
-**branch's own** timezone, `org.branches.timezone_name`.
+**Approved by the Owner on 2026-09-10**, in the Owner's words: half-open `[from, to)` periods in the
+selected branch's timezone, converted consistently for server queries; timezone and filter context
+displayed and preserved; cross-branch reporting uses one explicit reporting timezone. The record is
+`owner-decisions-2026-09-10.md` § 4, which sits on protected `develop` and reaches this branch at its
+next sync.
 
-This is a coordinator decision recorded as a proposal, not a contract fact. Both candidates exist
-and both are foreign keys into `shared.timezones`:
+**Recommendation pending Owner approval.** One question the approval does not answer is which SOURCE
+column supplies "the selected branch's timezone"; this slice reads `org.branches.timezone_name`, and
+that choice is a recommendation rather than an approved one.
 
-| candidate                                 | argument                                                                                                            |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `org.branches.timezone_name` (**chosen**) | the report is branch-scoped; "orders opened on the 3rd" is a claim about the day where the workshop is              |
-| `org.tenants.default_timezone`            | one tenant-wide calendar makes two branches' reports addable; a branch report would then not match the branch's day |
+**Measured facts (not part of the decision).** Both candidates exist and both are foreign keys into
+`shared.timezones`:
+
+| candidate                                      | argument                                                                                                            |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `org.branches.timezone_name` (**recommended**) | the report is branch-scoped; "orders opened on the 3rd" is a claim about the day where the workshop is              |
+| `org.tenants.default_timezone`                 | one tenant-wide calendar makes two branches' reports addable; a branch report would then not match the branch's day |
 
 **Only two zones are seeded.** `supabase/seeds/01_reference_data.sql` ships `UTC` and `Asia/Amman`,
 and `fk_branches_timezone` refuses anything else — so a branch's zone is one of two values today
-whichever column a report reads, and the decision is about which COLUMN, not about which zone.
+whichever column a report reads, and the open question is about which COLUMN, not about which zone.
 
 **No query in the platform buckets by either column today**, so nothing was matched and nothing was
 broken. If the Owner prefers the tenant default, the change is one lookup in `ReportRunService.run`
 and the test that proves the boundary.
 
-The period is **half-open**: `from` is the first day included, `to` is the first day **excluded** —
-the day after the last one reported. A closed upper bound over a calendar day either swallows the
-next day's first instant or drops the last one's final microsecond, and either shows up only as a
-total that does not add up. `WorkOrderRepository.listWorkOrders` compares `opened_at <= openedTo`,
-a CLOSED bound, which is correct for the board's instant-valued filter and was deliberately **not**
-reused.
+**Engineering consequence (not an Owner decision).** The approved half-open period is implemented as
+`from` the first day included and `to` the first day **excluded** — the day after the last one
+reported. A closed upper bound over a calendar day either swallows the next day's first instant or
+drops the last one's final microsecond, and either shows up only as a total that does not add up.
+`WorkOrderRepository.listWorkOrders` compares `opened_at <= openedTo`, a CLOSED bound, which is
+correct for the board's instant-valued filter and was deliberately **not** reused.
 
 ## 6. The catalogue merge rule — OPEN to Owner override
 
-**Decided here: a configuration row is CUSTOMIZATION, not a precondition.**
+**Engineering consequence (not an Owner decision) — this is CC-27(b), and the Owner has not
+confirmed it: a configuration row is CUSTOMIZATION, not a precondition.**
 
 - `GET /reports` returns the code-registered baselines first, marked `source: 'platform'`, then the
   tenant's own published rows by code, marked `source: 'tenant'`.
@@ -175,8 +197,9 @@ reused.
 - `GET /reports/{reportCode}` answers the tenant's row if one is published, the baseline only
   when no live configuration exists, and `ERR-RES-001` for an unpublished/archived row or an
   unknown code. An explicit tenant decision cannot be bypassed by registry fallback.
-- `executable` is now `REPORT_DATASETS` membership rather than a literal `false`: true for a code
-  the engine implements, false for a published tenant row whose code it does not.
+- `executable` becomes `REPORT_DATASETS` membership rather than a literal `false` — true for a code
+  the engine implements, false for a published tenant row whose code it does not. That is the
+  behaviour on this branch; on `develop` it is still the literal `false` until this branch merges.
 
 Baselines are emitted on the **first page only**. They are bounded by the source tree rather than by
 tenant data, so they cannot make a page unbounded, and the suppression is decided by one bounded
@@ -187,8 +210,9 @@ ascending.
 **The alternative, and why it was not taken.** "A report is invisible until an operator configures
 it" is defensible and is what a strict reading of P1-23 implies. It would mean every tenant must
 author four configuration rows before any report works — and `rpt.report_configurations` has no
-seed and had no writer at the time of this slice. PR #361 subsequently merged the writer;
-the approved baseline availability rule remains. **This is OPEN to Owner override**; reversing it is a change to two
+seed and had no writer at the time of this slice. PR #361 subsequently merged the writer; the
+catalogue-merge rule above is **CC-27(b)**, an engineering decision the Owner has not confirmed, and
+it is what this branch implements. **It is OPEN to Owner override**; reversing it is a change to two
 methods in `ReportCatalogueService` and their cases.
 
 A baseline entry publishes `exportPermissionCode: null` rather than naming `rpt.export`. Report
@@ -245,20 +269,31 @@ name instead of a bare id.
 
 ## 9. Named prerequisites — what a later slice will need
 
-| #   | prerequisite                                                                                                                                                                                                                                                                                                                                                      |
-| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | **Bilingual state labels need a schema change.** `wo.work_order_states.name` is a single `text` column (`supabase/migrations/20260722091000_wo_state_catalogs.sql`), so a client asking for Arabic cannot get a state label from this API. Inventing one here would be a fabricated translation                                                                   |
-| 2   | **`countsByState` is dataset-specific and sits on the shared envelope.** The one dataset registered today groups by work-order state; the other three baseline reports group differently, and generalising the field is their work                                                                                                                                |
-| 3   | **Aggregate and batch ports for the other three reports.** Each needs its own port on its owning module, on the same rule this slice applied — the module that owns the tables answers for them                                                                                                                                                                   |
-| 4   | **Richer executable filter vocabulary.** The writer of PR #361 is integrated and now validates against this engine's vocabulary through one shared function, so the drift is closed. What remains open is the vocabulary's SIZE: four filter names, because four is what the engine implements. A fifth is a change to the engine and to the shared list together |
+| #   | prerequisite                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Bilingual state labels need a schema change.** `wo.work_order_states.name` is a single `text` column (`supabase/migrations/20260722091000_wo_state_catalogs.sql`), so a client asking for Arabic cannot get a state label from this API. Inventing one here would be a fabricated translation                                                                                                                                        |
+| 2   | **`countsByState` is dataset-specific and sits on the shared envelope.** The one dataset registered today groups by work-order state; the other three baseline reports group differently, and generalising the field is their work                                                                                                                                                                                                     |
+| 3   | **Aggregate and batch ports for the other three reports.** Each needs its own port on its owning module, on the same rule this slice applied — the module that owns the tables answers for them                                                                                                                                                                                                                                        |
+| 4   | **Richer executable filter vocabulary.** On this branch the writer of PR #361 is integrated and validates against this engine's vocabulary through one shared function, so the drift is closed here and closes on `develop` only when this branch merges. What remains open is the vocabulary's SIZE: four filter names, because four is what the engine implements. A fifth is a change to the engine and to the shared list together |
 
 ## 10. What this slice does NOT close
 
-The 2026-09-10 continuation adds focused database-free service regression cases for baseline
-availability, scoped dataset permission, published allowlists, unsupported restrictions,
-withdrawal, scope ceilings and export metadata. These are unit evidence; they do not claim a
-database replay, backend-suite run, hosted gate or merge. Final integration and backend evidence
-follow the coordinator's dependency and database ownership sequence.
+**Measured facts (not part of the decision) — what was actually run, and where.** On 2026-09-10, at
+head `3cb65df9`, the following controlled runs were observed against a DISPOSABLE LOCAL CLONE
+database, `p131_report_controls_20260910` on `127.0.0.1:55432`:
+
+| run                                                      | result               |
+| -------------------------------------------------------- | -------------------- |
+| `tests/backend/p1-31-report-engine-work-orders.test.ts`  | 29/29                |
+| `tests/backend/p1-31-report-configuration-seam.test.ts`  | 29/29                |
+| `tests/unit/p1-31-report-configuration-controls.test.ts` | 23/23                |
+| `tests/ci` with `tests/openapi-contract.test.ts`         | 1990/1990            |
+| `npm run test:unit`                                      | 3300/3300, 122 files |
+
+**There was no hosted gate, no run against the shared database, and no merge.** PR #364's remote
+head `59be1698` has no checks recorded, and no hosted result exists for `3cb65df9`. Final
+integration and shared-database evidence follow the coordinator's dependency and database ownership
+sequence. Change control section 40.4 states the same runs in the same terms.
 
 - **No migration and no schema change.** Every statement uses grants and policies that already
   existed; `rpt` is exactly as P1-11 left it.

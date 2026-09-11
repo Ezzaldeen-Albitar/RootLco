@@ -47,7 +47,8 @@ five commands carry `auditClass: 'privileged'`.
 | `rpt.report-configuration-version-publish` | POST   | `.../{configurationId}/versions/{versionId}/publish` | `versionGuarded`               |
 
 The register moves 397 → **404** operations, 309 → **314** paths, 227 → **232** audit actions,
-measured on the merged tree after P-10 (#356) landed ahead of this slice. Five route modules; two of
+measured on the merged tree after P-10 (#356) landed ahead of this slice (measured 2026-09-09 at the
+P-11 writer's merge; not re-measured here). Five route modules; two of
 them carry two verbs, which is why the two counts move by seven and five.
 
 ### Why the reads declare the CONFIGURE code and not the READ code
@@ -126,13 +127,16 @@ size the tenant chooses.
 
 When this seam was written the vocabulary was deferred: what a filter key MEANS was part of the
 report definition, which was Owner decision **D-4**, and validating a vocabulary here would have
-been inventing the reports. That deferral is now closed. D-4 released the engine, the engine reads a
-published `parameter_schema` before it runs a report, and it refuses a run whose schema it does not
-recognise. A writer that accepted any bounded object while the engine accepted four filter names is
-a writer that lets an administrator publish a definition nobody can then execute. So the route reads
-the same definition the engine reads.
+been inventing the reports. That deferral is now closed. **Engineering consequence (not an Owner
+decision):** D-4 approved a baseline of four reports and the columns each must carry; building an
+engine to serve them is this programme's own choice, and that engine reads a published
+`parameter_schema` before it runs a report and refuses a run whose schema it does not recognise. A
+writer that accepted any bounded object while the engine accepted four filter names is a writer that
+lets an administrator publish a definition nobody can then execute. So the route reads the same
+definition the engine reads. The filter vocabulary set out below is engineering rather than any part
+of D-4, and it lives on `remediation/p1-31-backend-report-engine-work-orders`, which is not merged.
 
-### The vocabulary
+### The vocabulary — Engineering consequence (not an Owner decision)
 
 One function, `readReportParameterVocabulary`, in
 `apps/api/src/modules/reporting/domain/report-configuration.ts`. It is the ONLY statement of the
@@ -160,7 +164,7 @@ Four because those are the four the engine implements. Adding a fifth is a chang
 to this list in the same commit, and a unit case asserts the list so the two cannot separate.
 Pagination is transport rather than a report filter, so no cursor or page-size name appears here.
 
-### Why `{ "filters": {} }` is REFUSED at authoring and HONOURED at run time
+### Why `{ "filters": {} }` is REFUSED at authoring and HONOURED at run time — Engineering consequence (not an Owner decision)
 
 It is a well-formed document and its meaning is not in doubt: an allowlist permitting no filter at
 all. The engine honours it exactly, and that behaviour is untouched — a version published before
@@ -201,7 +205,8 @@ it: "the slice that publishes them owns the widening" — the `inv.item.manage` 
 while no route declared it and added by #322 on the day three routes did. Seven operations now
 declare it, so this slice carries it.
 
-**On the merged tree the bundle moves 74 → 76**: 75 with `wty.policy.manage`, which P-10 carried on
+**On the merged tree the bundle moves 74 → 76** (measured 2026-09-09 at the P-11 writer's merge; not
+re-measured here): 75 with `wty.policy.manage`, which P-10 carried on
 the same rule the same day (**CC-01**), and 76 with `rpt.report.configure`. With both closed,
 `rpt.export` is the only deliberate exclusion left, withheld on least-privilege grounds by the Owner
 decision of 2026-09-08 (**CC-04**) rather than for want of a declarer.
@@ -228,13 +233,17 @@ preserves tenant customizations and denials rather than rewriting a role to the 
 ## 10. The writer / engine split, and Owner decision D-4
 
 P-11 as A0 states it asks for a report-configuration writer **and a report engine**. This slice
-publishes the writer and deliberately not the engine.
+publishes the writer and deliberately not the engine. Everything in this section describes `develop`
+before `remediation/p1-31-backend-report-engine-work-orders` merges; that branch implements engine
+slice 1 of 4 and is unmerged.
 
 The reason is not sequencing convenience. `ReportDefinitionView.executable` is the literal `false`
 in P1-23 because the frozen reporting schema **binds no data source to a report code** — there is no
 dataset table, no formula and no field-to-column mapping anywhere in an approved migration. An
 engine built on this schema today would have to invent what each report means, which is the one
-thing the no-fabrication rule forbids. `executable: false` is therefore left exactly as it is.
+thing the no-fabrication rule forbids. `executable: false` is therefore left exactly as it is BY
+THIS SLICE, and remains the literal on `develop` until the engine branch merges, where it becomes
+dataset-registry membership.
 
 **The Owner decided D-4 on 2026-09-09**: a baseline of four reports, named here as the codes they
 will be addressed by — `work_orders_by_status`, `technician_labor_time`, `inventory_movements` and
@@ -260,12 +269,15 @@ surface accepts any code matching `ck_report_configurations_code` exactly as the
 
 ## 12. What this does not close
 
-- **The reporting ENGINE.** No report can be run. `executable` is still the literal `false`, and the
-  D-4 baseline above is a decision, not an implementation.
+- **The reporting ENGINE.** On `develop`, before the engine branch merges, no report can be run and
+  `executable` is still the literal `false`. The D-4 baseline above is an Owner decision; slice 1 of
+  the engine that serves it is implemented on
+  `remediation/p1-31-backend-report-engine-work-orders` (PR #364) and is unmerged, and slices 2–4
+  have not started.
 - **P-12, the export surface.** There is no `POST /reports/{reportCode}:export` route, and
   `rpt.export` remains withheld from the bundle (**CC-04**).
-- **FE-010 … FE-016.** The Frontend items this seam unblocks are untouched; this is a Backend
-  prerequisite and publishes no screen.
+- **FE-010 … FE-016.** The Frontend items this seam unblocks are untouched by this seam and by the
+  engine branch alike; both are Backend work and publish no screen.
 - **`rpt.saved_filters`.** It has no writer either. `ck_saved_filters_scope_within_report` is where
   `scope_level` acquires its enforcement, and nothing here reads or writes that table.
 - **The operator backfill**, section 9 — named, owed, and not performed.
