@@ -38,9 +38,10 @@ import type { BranchOption } from '@/features/services/services-contract';
  *
  * Filtering by vehicle gives the warranties issued for one vehicle, newest first —
  * which is the history this backend publishes. The per-record transition ledger
- * (`wty.warranty_record_status_history`) has no reader anywhere, so the screen says
- * that in its own words instead of assembling a plausible sequence out of a record's
- * current state. An invented ledger is worse than an absent one: it would be believed.
+ * (`wty.warranty_status_history`, as the migration names it) has no reader anywhere,
+ * so the screen says that in its own words instead of assembling a plausible sequence
+ * out of a record's current state. An invented ledger is worse than an absent one: it
+ * would be believed.
  *
  * ## A refusal is never drawn as an empty branch
  *

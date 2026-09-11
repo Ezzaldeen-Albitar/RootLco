@@ -16,22 +16,33 @@ yet supply is named in §6 as a backend prerequisite rather than as a question.
 
 ## 1. What was built
 
-| screen                         | route                     | gate                | operations it calls                    |
-| ------------------------------ | ------------------------- | ------------------- | -------------------------------------- |
-| Branch warranty list           | `/{locale}/warranty`      | `wty.warranty.read` | `wty.warranty-list`, `org.branch-list` |
-| Warranty record — **FE-008**   | `/{locale}/warranty/{id}` | `wty.warranty.read` | `wty.warranty-detail`                  |
-| Issue control, on the handover | `/{locale}/delivery/{id}` | `wty.warranty.read` | `wty.warranty-generate`                |
+| screen                         | route                     | gate                                              | operations it calls                                 |
+| ------------------------------ | ------------------------- | ------------------------------------------------- | --------------------------------------------------- |
+| Branch warranty list           | `/{locale}/warranty`      | `wty.warranty.read`                               | `wty.warranty-list`, `org.branch-list`              |
+| Warranty record — **FE-008**   | `/{locale}/warranty/{id}` | `wty.warranty.read`                               | `wty.warranty-detail`                               |
+| Issue control, on the handover | `/{locale}/delivery/{id}` | `sal.delivery.view` **then** `wty.warranty.issue` | `wty.warranty-generate`, `wty.warranty-policy-list` |
 
 The issue control is a panel of the warranty feature rendered by the delivery detail screen. The
 operation is a subresource of the delivery — a warranty cannot exist without a delivered handover —
 and the operator is standing on the handover when they need it.
+
+**The issue control's gate is two decisions, not one.** The PAGE is the handover, and it resolves
+`sal.delivery.view` and returns on its absence before anything is read; the PANEL is then drawn only
+for a caller who also holds `wty.warranty.issue`, the code its own operation declares. Neither is
+`wty.warranty.read` — that code governs the plan picker inside the panel and nothing else, and an
+earlier version of this table named it here in error.
 
 **Measured facts.** `wty.warranty-list` (`apps/api/src/app/api/v1/warranties/route.ts`) requires
 `companyId` and `branchId`, accepts `vehicleId`, `cursor` and `limit`, is `.strict()`, and declares
 `wty.warranty.read` at `scope: 'branch'`. `wty.warranty-detail`
 (`warranties/[warrantyId]/route.ts`) declares the same code. `wty.warranty-generate`
 (`deliveries/[deliveryId]/warranties/route.ts`) declares `wty.warranty.issue`, answers `201`, takes
-a body of `{ policyId? }` and nothing else, and is registered `idempotent: true`.
+a body of `{ policyId? }` — optional, and an omitted one resolves the company's single active
+plan — and is registered `idempotent: true`. `wty.warranty-policy-list`
+(`warranty-policies/route.ts`) declares `wty.warranty.read` at `scope: 'tenant'`, accepts `status`
+(`active` or `archived`), `cursor` and `limit`, and answers `{ policies: { items, nextCursor,
+hasMore } }`; `wty.warranty-policy-read` (`warranty-policies/[policyId]/route.ts`) declares the same
+code and is not called by this slice.
 
 ---
 
@@ -60,13 +71,21 @@ of operation ids plus three named dashboard areas, one of which is `warranty` �
 screens existed.
 
 **Engineering consequence.** Both new pages resolve `wty.warranty.read` and **return** on its
-absence before anything is awaited that costs a request. `wty.warranty-detail` and
-`wty.warranty-generate` were added to `P1_31_OPERATION_IDS` in the same change that added the
-screens calling them: the gate's scope is an allow-list of operations, so an operation a P1-31
-screen calls that is absent from it is an operation this gate has quietly stopped owning. Neither
-addition widens the segment set — the detail shares the list's `warranties` root and the generation
-is addressed under `deliveries` — so the run moved from **8 pages across 6 segments** to **10 pages
-across 6 segments**.
+absence before anything is awaited that costs a request. Four operations were added to
+`P1_31_OPERATION_IDS` in the same change as the screens that reach them: the gate's scope is an
+allow-list of operations, so an operation a P1-31 screen calls that is absent from it is an
+operation this gate has quietly stopped owning.
+
+`wty.warranty-detail` and `wty.warranty-generate` widen nothing — the detail shares the list's
+`warranties` root and the generation is addressed under `deliveries`. The two policy reads DO widen
+it: both are addressed under `/warranty-policies`, which becomes a seventh owned segment. That is
+deliberate and is the same reason `reports` is named before it has a page — a future policy screen
+meets this rule on the day it lands rather than after somebody notices. No page lives under that
+segment today, so the examined set does not change.
+
+Measured on this branch: the run reports **10 route pages across 7 owned segments** (`deliveries`,
+`delivery`, `reports`, `warranties`, `warranty`, `warranty-policies`, `work-orders`), 0 violations.
+Before this change it reported 10 pages across 6 segments.
 
 ---
 
@@ -104,8 +123,14 @@ history**, for the same kind of reason: no claim table exists in any schema.
 
 ## 6. FE-009 is PARTIAL, and the missing half is named
 
-**Measured fact.** `wty.warranty_record_status_history` is written by the database and read by no
-operation anywhere in `apps/api/src`. This is **CC-10**, unchanged.
+**Measured fact.** `wty.warranty_status_history` is written by the database and read by no
+operation anywhere in `apps/api/src`. This is **CC-10**, unchanged in substance.
+
+> **Name correction.** The table is `wty.warranty_status_history`, created at
+> `supabase/migrations/20260724095000_wty_warranty.sql:288`. CC-10, A0 item 9, the warranty read
+> seam and the warranty policy seam all call it `wty.warranty_record_status_history`, which no
+> migration has ever created. Those records are left as they were written — this note is the
+> correction, and everything this branch authored uses the real name.
 
 **Engineering consequence.** The history FE-009 asks for cannot be built from what is published. So
 FE-009 is served by what CAN be read honestly — the vehicle-filtered list, every warranty issued for
@@ -114,7 +139,7 @@ screen** rather than assembled. A sequence composed from a record's current stat
 and an invented ledger is worse than an absent one.
 
 **Backend prerequisite — P-18, warranty history reader.** A read over
-`wty.warranty_record_status_history`, scoped and gated exactly as the two existing warranty reads
+`wty.warranty_status_history`, scoped and gated exactly as the two existing warranty reads
 are (`wty.warranty.read`, `scope: 'branch'`), publishing the transitions of one record newest first.
 Until it exists, FE-009 cannot be more than it is here. It is a backend seam and is **not** in this
 lane.
@@ -135,6 +160,21 @@ outcome is a denial teaches an operator to ignore denials — and it is disabled
 not `delivered`, a value MIRRORED from `ck_delivery_records_status` rather than invented. The server
 decides again, and when it refuses, its refusal is what the operator is told. The form supplies no
 warranty term of any kind.
+
+**The plan is PICKED, not typed.** `wty.warranty-policy-list` exists, answers `wty.warranty.read`,
+and its own route docblock names the generation form's picker as the reason it exists. So the panel
+reads it — asking for `status=active`, because `wty.warranty-generate` refuses a plan that is not
+active as `ERR-TRN-001` — and offers the plans by code and name. The list is tenant-scoped and
+answers for every company the caller's grants reach, so the panel narrows the offered set to the
+handover's own company: a plan from another company is a choice whose only outcome is a refusal.
+Leaving the plan unchosen remains an explicit, named option, because the route's body accepts an
+omitted `policyId` and that omission is what resolves the company's single active plan.
+
+The picker is requested only when the delivery page resolved `wty.warranty.read`, which
+`wty.warranty.issue` does not imply. When the code is absent, when the read is refused, or when the
+company has no active plan, the control is not drawn at all and the panel says which of those it is
+— and the form still submits, naming no plan. An earlier version of this slice offered a free-text
+field for a plan identifier instead, on the false premise that no operation listed plans.
 
 **The retry key is the transport's.** The operation is registered `idempotent: true` and
 `authorizedClient` reads that fact out of the published contract, so the adapter attaches no key of
@@ -157,35 +197,58 @@ claim knowledge the problem document does not carry.
 - **No migration, no seed, no permission minted.** Both declared codes already exist:
   `wty.warranty.read` was minted by P-7 and `wty.warranty.issue` predates the phase.
 - **No warranty policy or coverage administration screen.** P-10 published seven policy and coverage
-  operations and no screen consumes them. Issuing names a policy by reference because no operation
-  lists policies for a picker; that is the same unresolvable-identifier gap **PPD-04** records, and
-  closing it is a screen this slice did not build.
+  operations. This slice consumes exactly ONE of them — `wty.warranty-policy-list`, read to fill the
+  plan picker. Creating, renaming, archiving or restoring a plan, and everything to do with coverage
+  windows, still has no screen, and building one is not this slice's work.
 - **No history reader, and no simulated history.** See §6.
-- **No allow-list widened and no gate suppressed.** The P1-31 access gate's allow-list was EXTENDED
-  with two operations this change's screens call, which narrows nothing and is the opposite of a
-  waiver. No suppression comment of any kind was added.
+- **No allow-list widened in the permissive direction, and no gate suppressed.** The P1-31 access
+  gate's allow-list was EXTENDED with four operations, which makes the gate own MORE and permit
+  nothing new. No suppression comment of any kind was added.
 - **Nothing merged, pushed or run against an environment.**
 
 ---
 
 ## 9. Verification
 
-Every command below was run locally on this branch. Nothing here is a claim about a hosted run.
+Every command below was run locally on this branch, in the working tree this record describes.
+Nothing here is a claim about a hosted run, and a command that was not run in this record is named
+as not run rather than left to look like a pass.
 
-| command                                                                 | result                                                           |
-| ----------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `npm run typecheck`, `typecheck:web`                                    | pass                                                             |
-| `npm run lint`, `lint:web`                                              | pass — 0 errors; 12 pre-existing warnings, none in touched files |
-| `npm run format:check`, `format:check:web`, `style:check`               | pass                                                             |
-| `npm run validate:web-boundary`                                         | pass — 351 files, 0 violations                                   |
-| `npm run validate:use-server-exports`                                   | pass — 48 modules across 950 files                               |
-| `npm run validate:plain-language`                                       | pass — 2 catalogues, 24 rules, 0 findings                        |
-| `npm run validate:module-boundaries`                                    | pass                                                             |
-| `npm run validate:web-topology`, `web-tokens`, `web-theme`, `web-brand` | pass                                                             |
-| `npm run validate:p1-31-access`                                         | pass — 10 route pages across 6 segments                          |
+| command                                                                 | result                                                                      |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `npm run typecheck`, `typecheck:web`                                    | pass                                                                        |
+| `npm run lint`, `lint:web`                                              | pass — 0 errors; 12 pre-existing warnings, none in touched files            |
+| `npm run format:check`, `format:check:web`, `style:check`               | pass                                                                        |
+| `npm run validate:web-boundary`                                         | pass — 351 files, 0 violations                                              |
+| `npm run validate:use-server-exports`                                   | pass — 48 modules across 950 files                                          |
+| `npm run validate:plain-language`                                       | pass — 2 catalogues, 24 rules, 0 findings                                   |
+| `npm run validate:module-boundaries`                                    | pass                                                                        |
+| `npm run validate:web-topology`, `web-tokens`, `web-theme`, `web-brand` | pass                                                                        |
+| `npm run validate:encoding`, `validate:generated-artifacts`             | pass                                                                        |
+| `npm run validate:p1-31-access`                                         | pass — 10 route pages across 7 owned segments, 0 violations                 |
+| `npm run security:all`                                                  | pass — 2711 tracked files, 0 findings across all four scanners              |
+| `npm run verify:policies`                                               | pass — exit 0                                                               |
+| `validate:phase-ownership` (`p1-31-frontend`, both invocation forms)    | pass — 31 changed files, 0 violations (web 17, docs 12, tooling 1, tests 1) |
+| `npm run test:web`                                                      | pass — 135 files, 3749 tests                                                |
+| `npm run test:unit`                                                     | **1 FAILURE** — 121 files, 3277 tests, 3276 passed; see below               |
 
-The two new web test files are `apps/web/tests/warranty-api.test.ts` (the adapters, transport
-replaced) and `apps/web/tests/warranty.dom.test.tsx` (both route pages, both screens and the issue
-panel, English and Arabic). `apps/web/tests/delivery.dom.test.tsx` gained the three cases that
-measure the issue control's absence without `wty.warranty.issue`, and `navigation.test.ts` moved the
-`warranty` entry from no list into the available one.
+**The one failure, stated rather than worked around.** `tests/ci/web-test-floor.test.ts` case
+`WTF-08` compares the web floor in `.github/ci-baselines/test-count-baseline.json` against the cases
+declared on disk. The tests this slice added take the declared count from 3050 to 3073 while the
+floor is still 3050, so the floor now sits below the tree it is a floor for. The baseline's own
+`howToRaise` says to raise a floor in the commit that adds the tests. That file is in a
+CODEOWNERS-protected directory this lane does not own, so it is **not edited here** and the failure
+is carried as an open item rather than suppressed, waived or narrowed. Nothing else in the tier
+failed.
+
+**Not executed in this record**, and therefore not claimed: `npm run build`, `build:web`,
+`verify:web`, `verify:workspaces`, `verify:repository` as an aggregate, `test:backend`, `test:db`,
+`verify:database`, every `supabase:*` command, every Playwright tier and every acceptance command.
+No environment was provisioned and no hosted run exists.
+
+The two web test files this slice added are `apps/web/tests/warranty-api.test.ts` (the adapters,
+transport replaced) and `apps/web/tests/warranty.dom.test.tsx` (both route pages, both screens and
+the issue panel, English and Arabic). `apps/web/tests/delivery.dom.test.tsx` gained the cases that
+measure the issue control's absence without `wty.warranty.issue` and the plan list's absence without
+`wty.warranty.read`, and `navigation.test.ts` moved the `warranty` entry from no list into the
+available one.
