@@ -222,12 +222,12 @@ contains no `wty.warranty.read`".
 
 ## 13. Dispositions
 
-| id        | finding                                                                                     | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | owner / slice                                                     | status |
-| --------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- | ------ |
-| **CC-07** | `wty.warranty.read` is **included** in the tenant administrator provisioning bundle         | The rule this phase applied is "carry a code only when a shipped operation declares it". Two do: `wty.warranty-list` and the re-pointed `wty.warranty-detail`, so the necessary condition holds where CC-01 and CC-02 have **zero** declarers. The question CC-04 added is REACH, and it answers the other way: `rpt.export` is the platform-wide export switch of P1-15, whereas this code reads warranty records, their coverage terms and their covered jobs and parts in ONE schema — `wty` has 80 columns, all classified `internal`, none `restricted`, and not one monetary. The decisive fact is that **withholding it would REMOVE a capability**: a freshly provisioned administrator can read a warranty today, through `wty.warranty.issue`, which the bundle already holds | **included, deliberately.** Least privilege here means the administrator reads warranties under a READ code instead of an ISSUE code — not that it stops reading them. Re-pointing the route while withholding the code would have been a regression dressed as a restriction. `wty.warranty.issue` is NOT withdrawn: `wty.warranty-generate` still declares it, and an administrator that could not hold it could not delegate a warranty clerk. Bundle **73 → 74**; `tests/backend/p1-31-provisioning-bundle.test.ts` keeps P-1's six and P-7's one as separate constants so neither widening can drift into the other                                                                                                                         | this slice                                                        | closed |
-| **CC-08** | organisations provisioned **before** this slice lose the warranty detail read               | The bundle is written ONCE, inside `platform.organization-provision`, and nothing re-applies it. An organisation provisioned on the 48-, 65-, 67- or 73-code bundle holds `wty.warranty.issue` and NOT `wty.warranty.read`, so from this commit its administrator is refused `GET /warranties/{warrantyId}` with `ERR-IAM-001` — a read it could perform yesterday. It also cannot delegate the code, because `ins_role_permissions_delegable` admits a mapping only when the acting administrator already holds it. This is CC-03's residual with a sharper consequence: CC-03 withholds something new, this one **withdraws something old**                                                                                                                                           | **RESOLVED, by the route this row itself named.** It was accepted and filed rather than silently shipped, on the stated understanding that it "resolves the moment A0 decision **D-2** (the backfill) is answered" — and it was answered the same day. Where it landed: the backfill of **CC-11**, which carried `wty.warranty.read` onto all 24 administrator roles on the shared acceptance environment. The withdrawn read is measured back rather than assumed: `tests/backend/p1-31-tenant-administrator-bundle-backfill.test.ts` **BF-4** is refused `GET /warranties/{warrantyId}` with `ERR-IAM-001` on a stale role and gets past that gate on the same role after the backfill. `wty.warranty.issue` was not touched, here or anywhere | Owner decision D-2, answered; delivered by the D-2 backfill slice | closed |
-| **CC-09** | the warranty list is **not a pure publication** of an existing repository method            | Same class as **CC-05**, and the governing precedent is the same: `sal.work-order-invoice-read` states "This publishes the existing read; it adds no query and no second mapper." Half holds and half does not. Every finder in `WarrantyRepository` is addressed by an identifier the caller must ALREADY possess — a record id, an idempotency key, a delivery id — so there was no branch-wide read to publish and the query is new, as is `findPolicies`, the set form of the existing identity read                                                                                                                                                                                                                                                                                | **accepted, and recorded rather than presented as a publication.** What the rule protects is preserved: **no second mapper and no second wire contract.** Rows come back through the existing `toRecord`, policies through the existing `toPolicy`, and `WarrantyRecordListView` spells every field exactly as `WarrantyView` spells it — the suite asserts key-by-key equality between a list row and the detail body, so the two shapes cannot drift. The policy block is carried rather than a bare `policyId` because no operation lists warranty policies (**PPD-04** / P-10), and publishing an identifier nobody can resolve is the defect this phase keeps finding                                                                       | this slice                                                        | closed |
-| **CC-10** | the list does **not** close `wty.warranty_record_status_history`, and P-6 never asked it to | A0 records item 9 ("warranty history") as blocked on two facts: the chapter declares `GET /api/v1/warranties`, which did not exist, and `wty.warranty_record_status_history` "appears nowhere in `apps/api/src`". **P-6 names only the first.** The second is still true after this slice: the append-only warranty status ledger has no reader, exactly as the delivery ledger had none before P-5 published it                                                                                                                                                                                                                                                                                                                                                                        | **open, unchanged, and stated so it cannot be read as closed.** A reader who sees a warranty list published might reasonably assume **VHM-06 / WF-26 / PPD-13** was fully addressed; only its list limb was. Publishing the ledger read would be a second contract this prerequisite does not sanction, and the P-5 precedent shows what it costs: a new query and a new row shape. It needs a prerequisite of its own or an explicit extension of P-6                                                                                                                                                                                                                                                                                           | a later `wty` read slice, with FE-009                             | open   |
+| id        | finding                                                                                     | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | owner / slice                                                     | status |
+| --------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ------ |
+| **CC-07** | `wty.warranty.read` is **included** in the tenant administrator provisioning bundle         | The rule this phase applied is "carry a code only when a shipped operation declares it". Two do: `wty.warranty-list` and the re-pointed `wty.warranty-detail`, so the necessary condition holds where CC-01 and CC-02 have **zero** declarers. The question CC-04 added is REACH, and it answers the other way: `rpt.export` is the platform-wide export switch of P1-15, whereas this code reads warranty records, their coverage terms and their covered jobs and parts in ONE schema — `wty` has 80 columns, all classified `internal`, none `restricted`, and not one monetary. The decisive fact is that **withholding it would REMOVE a capability**: a freshly provisioned administrator can read a warranty today, through `wty.warranty.issue`, which the bundle already holds | **included, deliberately.** Least privilege here means the administrator reads warranties under a READ code instead of an ISSUE code — not that it stops reading them. Re-pointing the route while withholding the code would have been a regression dressed as a restriction. `wty.warranty.issue` is NOT withdrawn: `wty.warranty-generate` still declares it, and an administrator that could not hold it could not delegate a warranty clerk. Bundle **73 → 74**; `tests/backend/p1-31-provisioning-bundle.test.ts` keeps P-1's six and P-7's one as separate constants so neither widening can drift into the other                                                                                                                                                                                  | this slice                                                        | closed |
+| **CC-08** | organisations provisioned **before** this slice lose the warranty detail read               | The bundle is written ONCE, inside `platform.organization-provision`, and nothing re-applies it. An organisation provisioned on the 48-, 65-, 67- or 73-code bundle holds `wty.warranty.issue` and NOT `wty.warranty.read`, so from this commit its administrator is refused `GET /warranties/{warrantyId}` with `ERR-IAM-001` — a read it could perform yesterday. It also cannot delegate the code, because `ins_role_permissions_delegable` admits a mapping only when the acting administrator already holds it. This is CC-03's residual with a sharper consequence: CC-03 withholds something new, this one **withdraws something old**                                                                                                                                           | **RESOLVED, by the route this row itself named.** It was accepted and filed rather than silently shipped, on the stated understanding that it "resolves the moment A0 decision **D-2** (the backfill) is answered" — and it was answered the same day. Where it landed: the backfill of **CC-11**, which carried `wty.warranty.read` onto all 24 administrator roles on the shared acceptance environment. The withdrawn read is measured back rather than assumed: `tests/backend/p1-31-tenant-administrator-bundle-backfill.test.ts` **BF-4** is refused `GET /warranties/{warrantyId}` with `ERR-IAM-001` on a stale role and gets past that gate on the same role after the backfill. `wty.warranty.issue` was not touched, here or anywhere                                                          | Owner decision D-2, answered; delivered by the D-2 backfill slice | closed |
+| **CC-09** | the warranty list is **not a pure publication** of an existing repository method            | Same class as **CC-05**, and the governing precedent is the same: `sal.work-order-invoice-read` states "This publishes the existing read; it adds no query and no second mapper." Half holds and half does not. Every finder in `WarrantyRepository` is addressed by an identifier the caller must ALREADY possess — a record id, an idempotency key, a delivery id — so there was no branch-wide read to publish and the query is new, as is `findPolicies`, the set form of the existing identity read                                                                                                                                                                                                                                                                                | **accepted, and recorded rather than presented as a publication.** What the rule protects is preserved: **no second mapper and no second wire contract.** Rows come back through the existing `toRecord`, policies through the existing `toPolicy`, and `WarrantyRecordListView` spells every field exactly as `WarrantyView` spells it — the suite asserts key-by-key equality between a list row and the detail body, so the two shapes cannot drift. The policy block is carried rather than a bare `policyId` because no operation lists warranty policies (**PPD-04** / P-10), and publishing an identifier nobody can resolve is the defect this phase keeps finding. **Addendum 2026-09-11:** `wty.warranty-policy-list` (PR #356) lists policies; the generation picker consumes it (see §43/§48) | this slice                                                        | closed |
+| **CC-10** | the list does **not** close `wty.warranty_record_status_history`, and P-6 never asked it to | A0 records item 9 ("warranty history") as blocked on two facts: the chapter declares `GET /api/v1/warranties`, which did not exist, and `wty.warranty_record_status_history` "appears nowhere in `apps/api/src`". **P-6 names only the first.** The second is still true after this slice: the append-only warranty status ledger has no reader, exactly as the delivery ledger had none before P-5 published it                                                                                                                                                                                                                                                                                                                                                                        | **open, unchanged, and stated so it cannot be read as closed.** A reader who sees a warranty list published might reasonably assume **VHM-06 / WF-26 / PPD-13** was fully addressed; only its list limb was. Publishing the ledger read would be a second contract this prerequisite does not sanction, and the P-5 precedent shows what it costs: a new query and a new row shape. It needs a prerequisite of its own or an explicit extension of P-6                                                                                                                                                                                                                                                                                                                                                    | a later `wty` read slice, with FE-009                             | open   |
 
 ## 14. What this slice did NOT do
 
@@ -1689,8 +1689,10 @@ unit and web tiers, and the regenerated P1-27 evidence manifest. The baseline fi
 2026-09-12 — the head that carries the readiness queue (#367) and the warranty record screens
 (#369). It supersedes the earlier integration of **c1b1a8cdd822e3e70667600a0309d36a7d6438c6** on
 2026-09-11; the slice was written against **01c32937c2d6f5f78f5757cb83c6fdf2995f1dad**.
-**Status:** implemented and **unmerged**, open as pull request **#368** against `develop`. This
-document records no hosted run and claims no acceptance.
+**Status:** merged with pull request **#368** into protected `develop` `8c4e6a9c`, and
+restated at that merge on 2026-09-12: section 44 and **CC-32** are settled, so the PROVISIONAL
+markers this section carries read as history rather than as current state. This document records no
+hosted run and claims no acceptance.
 
 The full record is [`delivery-document.md`](./delivery-document.md). In short: the vehicle-handover
 screen gains a printable sheet, composed on the client from reads it already holds, publishing
@@ -2318,3 +2320,172 @@ the evidence, not a detail to leave out.
 | **S4-22** | `creditNoteAmount` equal to `sal.credit_notes.amount`, compared against the table itself, with every other money column on that row null rather than zero                                                                                        |
 | **S4-23** | the credit note NOT restated on the invoice it credits: the invoice row carries no credit amount and its `outstanding` is still the database function's answer                                                                                   |
 | **S4-24** | five groups keyed `(currency, documentType)`, the credit notes in a group of their own, `unallocated` on the receipt side only, no credit measure on the invoice group, and no JOD credit-note group at all — an absent group rather than a zero |
+
+## 48. The warranty plan administration screens (FE-008, policy administration)
+
+**The numbering is settled; the branch is not.** This section records work on
+`feature/p1-31-warranty-policy-administration`. Its base — the warranty record screens — merged
+with PR #369, and this branch now carries the merge of protected `develop`
+`6b3c6c458154bc18589ebb4fb18b6b139ae81b80`, whose register holds sections 44 to 47. Section **48**
+and **CC-36** are the next free heading and the next free identifier at that head, so the
+reservation this section previously stated as provisional is now a read fact and the PROVISIONAL
+marking is withdrawn. The branch itself is still **unmerged** and has **no hosted result**, and
+nothing below claims otherwise.
+
+### 48.1 Identifier allocation — allocated 2026-09-11, SETTLED 2026-09-12 at `develop` `6b3c6c45`
+
+The heading and the identifier were first reserved on 2026-09-11 against `develop` `8c4e6a9c`,
+where the register ran to **section 44** and to **CC-32**: section 43 and **CC-31** are the warranty
+record-screens slice's own reservation, merged with PR #369, and section 44 and **CC-32** are
+FE-007's, merged with PR #368. Several P1-31 lanes were in flight at that head, so the reservation
+was deliberately made ahead of the front and stated as provisional, so that a collision would be a
+reconciliation and never a silent renumbering of somebody else's record.
+
+**Settled by this merge.** `develop` moved on to
+`6b3c6c458154bc18589ebb4fb18b6b139ae81b80` while this branch was being verified: PR #374 merged the
+report engine's dataset slices 2, 3 and 4, which take **sections 45, 46 and 47** and **CC-33**,
+**CC-34** and **CC-35**. This branch has now merged that head, so its own copy of this register
+carries those three sections and the numbering is no longer a reservation read from somewhere else
+— sections 44 to 47 are all present and settled here, and 48 is the next heading in the file.
+
+| id                | lane                                     | state at this head                                              |
+| ----------------- | ---------------------------------------- | --------------------------------------------------------------- |
+| **CC-31**         | the warranty record screens              | section 43, merged with PR #369, on `develop`                   |
+| **CC-32**         | the printable delivery handover document | section 44, merged with PR #368, on `develop`                   |
+| **CC-33 … CC-35** | the report engine dataset slices 2 to 4  | sections 45 to 47, merged with PR #374, on `develop` `6b3c6c45` |
+| **CC-36**         | this slice                               | settled, this branch, section 48                                |
+
+Sections **49 to 52**, and the identifiers above **CC-36**, are held by P1-31 lanes that are still
+on unmerged branches and are not visible at this head.
+
+**Reconciliation rule.** Section 36.1 records it: an identifier is allocated when its finding is
+raised and is never renumbered to follow heading order. If section 48 or **CC-36** were found
+occupied at a later integration, this section would move to the next free heading and this
+identifier to the next free identifier, and the move would be recorded here with its date. No
+existing identifier and no historical result is renumbered to accommodate it.
+
+### 48.2 What was delivered
+
+Two route pages — the warranty plan list at `/{locale}/warranty/policies` and one plan at
+`/{locale}/warranty/policies/{policyId}`, both gated on `wty.warranty.read` and both deciding
+before they read — the five plan and coverage write adapters P-10 published, the single-plan read
+those writes re-read through, the English and Arabic wording for all of it, one link from the
+warranty record list, and two web test files. The full record is
+[`warranty-policy-administration.md`](./warranty-policy-administration.md).
+
+The five writes were added to `P1_31_OPERATION_IDS` in `scripts/ci/check-p1-31-access.mjs` in the
+same change as the screens that reach them. None widens the derived segment set — every one is
+addressed under the `warranty-policies` root the two policy reads on the base branch already
+contributed — so naming them is the only thing that makes them owned. The examined page count moved
+from 11 to 13 across the same 8 segments, because two pages now occupy that segment.
+
+This closes the gap CC-31's section 43.4 named: P-10 published seven policy and coverage operations
+and the record-screens slice consumed exactly one of them. All seven are now consumed.
+
+### 48.3 Dispositions
+
+| id        | what is accepted                                                                     | measured basis                                                                                                                                                                                                                                                                                                                                                        | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                         | owner      | state            |
+| --------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ---------------- |
+| **CC-36** | **one catalogue code, `ERR-CON-001`, carries three distinct causes on this surface** | A stale version, `ex_warranty_coverage_no_overlap` (**BR-WTY-001**) and a plan reference already in use all answer the same code. The problem document's `violations[0].rule` is the only machine-readable discriminator: the overlap and the duplicate reference each name a rule, a stale version names none, and the service's own sentence never crosses the wire | **accepted, and discriminated by the RULE rather than by wording guessed from the code.** The refusal state carries the code and the first violation's rule, and the three are worded apart in the screen's plain language because they send an operator somewhere different. The absence of a rule is itself the stale signal, and a reload is offered beside that refusal and no other. No sentence is invented per code beyond what the problem document carries | this slice | closed, recorded |
+
+### 48.4 What this slice did NOT do
+
+- **No backend file was edited**, no migration was written, no seed changed and no permission was
+  minted. `wty.policy.manage` has been seeded since P1-08 and is declared by P-10's five writes.
+- **No history reader and no simulated history.** **CC-10** is unchanged, FE-009 stays PARTIAL as
+  CC-31 left it, and the backend prerequisite **P-18** is still named and still unbuilt.
+- **No generation path touched.** The issue control and its plan picker belong to the base branch
+  and were not modified.
+- **No delete control for a plan or a coverage window**, because no operation offers one and no
+  application role holds a DELETE grant on either configuration table. Retiring and restoring are
+  what the surface offers.
+- **No gate weakened, no allow-list narrowed and no suppression added.** The access gate's
+  operation list was EXTENDED, which widens what the gate owns rather than what it permits.
+- **No pull request, no merge, no push, no rebase, no hosted run and no acceptance.** The base
+  branch is itself unmerged.
+
+### 48.5 The P1-28 version-sourcing gate — engineering consequence (not an Owner decision)
+
+`tests/ci/p1-28-version-sourcing.test.ts` failed twice against this slice, in two different
+rules, and neither failure was a defect in what the screen does. Both were resolved by changing
+this side, not the gate: no regex was relaxed, no detector was weakened, no allow-list was
+widened and no suppression was added.
+
+**The renewal rule read a shape, not a behaviour.** The gate requires that the function enclosing
+a version-guarded call either calls one of its own parameters or calls something in the refresh
+family, after the call and inside its own body. The plan screen re-read after every write from
+the first commit — but through a single `run(area, write)` helper that took the command as a
+callback, so the re-read was one indirection away from each call site and invisible to a reader
+standing at the call. The three handlers were written out, one per control, each ending with its
+own re-read. The behaviour is unchanged, which is the point: the gate was asking for the
+discipline to be legible where the version is spent, and it was right to ask.
+
+The shape follows `apps/web/src/features/quotations/components/QuotationDetailScreen.tsx`, whose
+issue handler writes and then renews in the same body.
+
+**The count equality is a SUBJECT classifier, and this slice's three adapters are not its**
+**subject.** The gate compares the number of guarded adapters it accounts for against the number
+of version-guarded `apt.*` / `rec.*` operations this application must reach. Three `wty.*`
+adapters demanding a version made that comparison read 10 against 7. They are registered by name
+in `OUT_OF_SUBJECT_ADAPTERS` in `scripts/ci/check-p1-28-version-sourcing.mjs`, exactly as eight
+earlier slices registered theirs: **P1-29 W3** (`transitionWorkOrder`, `updateJob`), **P1-29 W4**
+(`stopLaborSession`, `correctLaborSession`), **P1-29 W7** (four `dia.*` adapters), **P1-29 W8**
+(four `qms.*` / `wo.*` adapters), **P1-30 W1** (`updateService`, `publishServiceVersion`),
+**P1-30 W2** (two price-list adapters), **P1-30 W3** (two quotation adapters) and **P1-30 W6**
+(two invoice adapters). Registration excludes an adapter from the count equality and from
+nothing else: every one of the three is still held to every other rule the gate applies —
+`ifMatch` required, `ifMatch` used, the argument traceable to a read or a command response, and
+the version renewed afterwards — and all three are reported `ok` and `renews` in the run.
+
+**Measured, not assumed.** The gate reports `accountedFor` as **7** after the registration,
+unchanged from the seven apt/rec adapters this contract has always been about, and equal to the
+seven operations expected. `tests/ci/p1-28-version-sourcing.test.ts` therefore needed no edit:
+its `expect(live.accountedFor).toHaveLength(7)` was already the correct number, and the 10 seen
+before the registration was the symptom rather than a new floor. The test file is unchanged by
+this slice.
+
+### 48.6 The local tier record — measured fact, dated 2026-09-12
+
+Both tiers were re-recorded by `check-p1-27-closing-values.mjs --record` at `1f557f37`, the head
+that carries the merge of `develop` `6b3c6c45`, with no executable path dirty:
+
+| tier | files | tests | passed | failed | skipped |
+| ---- | ----- | ----- | ------ | ------ | ------- |
+| unit | 122   | 3301  | 3301   | 0      | 0       |
+| web  | 137   | 3850  | 3850   | 0      | 0       |
+
+These are LOCAL figures. No hosted run of this branch exists and none is claimed.
+
+**Two merges expired two pairs; only the first moved a number.** The pair taken at `4eeac4d3` —
+unit 121/3278, web 136/3797 — was expired by the merge of `develop` `8c4e6a9c`, which brought a
+web test file and a component tree with it, and the record taken at `5e5a607a` after that merge
+read exactly the six figures in the table above. The merge of `develop` `6b3c6c45` then arrived
+carrying that head's own ledger — unit 122/3300, web 136/3802 — which describes `develop` and not
+this tree, so both tiers were run again rather than reconciled on paper. PR #374 is backend and
+documentation only, so the measurement came back unchanged and the re-record simply re-establishes
+the same six numbers against the new head; no derived site moved for it. A record is bound to the
+head it was taken at, and the ledger expired the inherited pair rather than letting it survive as a
+number.
+
+**Engineering consequence of the FIRST merge (not an Owner decision).** The derived sites moved
+with the record taken at `5e5a607a`: on `clean-room-evidence.md`, with their closing-value ledger
+entries, the web file count 136 — 137 in three places, the web executed total 3802 — 3850 in three
+and the unit executed total 3300 — 3301 in one; in `deliverable-manifest.md`, the web file count in
+the three places it appears; and the frontend ownership gate’s own file count 151 — 153 in five
+places across four documents, which moved because the two delivery-document components `develop`
+brought with FE-007 landed inside the trees that gate walks. The evidence manifest was regenerated
+at each step so its digests describe the current bytes.
+
+**Three intermediate readings are stated rather than hidden.** Taking the record at `5e5a607a`
+recorded a FAILING web run twice — two cases in the P1-27 reconciliation tests on the first
+attempt and one more on the second, each a derived site in `deliverable-manifest.md` that had not
+yet moved. Taking it at `1f557f37` recorded a failing unit run once, for the same reason in the
+other direction: the web tier is recorded first, so while the unit tier ran the ledger still
+carried `develop`'s inherited pair and two cases reported the disagreement. In all three the record
+was retaken after the cause was removed, never annotated; the ledger now holds one run per tier
+that exited 0.
+
+The committed floor in `.github/ci-baselines/test-count-baseline.json` was **not** touched. 3850
+executed clears the 3700 floor, `tests/ci/web-test-floor.test.ts` and
+`tests/ci/baseline-integrity.test.ts` both pass against it unchanged, and no rule forced a ratchet,
+so the baseline keeps the figures its own run established.
