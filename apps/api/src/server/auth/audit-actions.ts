@@ -290,6 +290,20 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'A department was renamed, retired or reinstated. Its company, branch and code are immutable, so this never moves a department between branches.',
   },
+  {
+    code: 'org.employee.created',
+    class: 'privileged',
+    entityType: 'org.employee',
+    description:
+      'An employee identity was added to a branch register. Distinct from creating a login account: an employee may have none, which is why org.employees exists rather than a column on an existing table.',
+  },
+  {
+    code: 'org.employee.status_changed',
+    class: 'privileged',
+    entityType: 'org.employee',
+    description:
+      'An employee was retired or reinstated. There is no delete on this register, so this is the only way an employee stops being nameable on a new handover; every handover already recorded keeps its own display-name snapshot.',
+  },
 
   // ---- Attachments (P1-15) ------------------------------------------------
   //

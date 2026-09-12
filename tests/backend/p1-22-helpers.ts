@@ -778,6 +778,65 @@ export interface WorkOrderChain {
  * privileged subject, so a test must call `authAs` again before the request it
  * asserts on.
  */
+/**
+ * The `org.employees` row a fixture delivery names, created on demand (P1-31 P-17).
+ *
+ * `sal.delivery_records.delivering_employee_id` carried NO foreign key until that
+ * slice, which is why every fixture in this repository used to pass `USER_A` — a
+ * LOGIN ACCOUNT id — as the person who handed the vehicle over. It now points at
+ * `org.employees` on `(tenant_id, id)`, and
+ * `sal.stamp_delivering_employee_identity` additionally requires the employee to be
+ * live and active. So a fixture must have one.
+ *
+ * The fixture is still created in the delivery's own branch, which is normal
+ * rather than required: the home branch is informational since the Owner
+ * clarification of 2026-09-10, and the cross-branch case is asserted where it
+ * belongs, in `p1-31-delivering-employee-seam.test.ts`.
+ *
+ * Deliberately created with NO `user_account_id`. Two reasons, and both are
+ * properties of the schema rather than preferences: `uq_employees_user_account_live`
+ * admits ONE employee per account per tenant, so linking `USER_A` would make a
+ * second branch's fixture employee impossible; and an accountless employee is the
+ * case the whole table exists for, so the shared fixture should be one.
+ *
+ * Keyed on `employment_ref` so it is created once per branch and reused, and so the
+ * row is recognisable as fixture state rather than as an organisation's real roster.
+ */
+export async function deliveringEmployeeFor(scope: {
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly tenantId?: string;
+}): Promise<string> {
+  const tenantId = scope.tenantId ?? TENANT_A;
+  const employmentRef = `fx_p122_emp_${scope.branchId}`;
+  const found = await admin.query<{ id: string }>(
+    `SELECT id FROM org.employees WHERE tenant_id = $1 AND employment_ref = $2`,
+    [tenantId, employmentRef]
+  );
+  const existing = found.rows[0]?.id;
+  if (existing !== undefined) return existing;
+  const created = await admin.query<{ id: string }>(
+    `INSERT INTO org.employees
+       (tenant_id, company_id, branch_id, display_name, employment_ref, created_by)
+     VALUES ($1,$2,$3,'Fixture handover officer',$4,$5) RETURNING id`,
+    [tenantId, scope.companyId, scope.branchId, employmentRef, USER_A]
+  );
+  const id = created.rows[0]?.id;
+  if (id === undefined) throw new Error('fixture employee insert returned no row');
+  return id;
+}
+
+/** The same employee, resolved from a work order's own company and branch. */
+export async function deliveringEmployeeForWorkOrder(workOrderId: string): Promise<string> {
+  const { rows } = await admin.query<{ company_id: string; branch_id: string }>(
+    `SELECT company_id, branch_id FROM wo.work_orders WHERE id = $1`,
+    [workOrderId]
+  );
+  const scope = rows[0];
+  if (scope === undefined) throw new Error(`work order ${workOrderId} is not visible`);
+  return deliveringEmployeeFor({ companyId: scope.company_id, branchId: scope.branch_id });
+}
+
 export async function seedWorkOrderChain(
   tag: string,
   options: { readonly companyId?: string; readonly branchId?: string } = {}
@@ -987,12 +1046,21 @@ export async function seedDelivery(
   const odometer = options.odometer ?? DELIVERY_ODOMETER;
   await linkSignatureDocumentToWorkOrder(chain.workOrderId);
 
+  // P1-31 P-17: the delivering employee is now a real `org.employees` identity,
+  // bound by a foreign key and re-checked by a BEFORE INSERT trigger. Resolved
+  // BEFORE the transaction so the fixture employee is committed and visible to the
+  // trigger's own lookup.
+  const deliveringEmployeeId = await deliveringEmployeeFor({
+    companyId: chain.companyId,
+    branchId: chain.branchId,
+  });
+
   return inTenantTransaction(TENANT_A, USER_A, async (client) => {
     const delivery = await client.query<{ id: string }>(
       `INSERT INTO sal.delivery_records
          (tenant_id, company_id, branch_id, work_order_id, reception_visit_id, vehicle_id,
           delivering_employee_id, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$7) RETURNING id`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
       [
         TENANT_A,
         chain.companyId,
@@ -1000,6 +1068,7 @@ export async function seedDelivery(
         chain.workOrderId,
         chain.visitId,
         chain.vehicleId,
+        deliveringEmployeeId,
         USER_A,
       ]
     );
@@ -1216,6 +1285,9 @@ export async function cleanP1_22Fixtures(): Promise<void> {
       'sal.invoice_numbering_configs',
       'sal.invoices',
       'sal.payment_methods',
+      // AFTER sal.delivery_records, because fk_delivery_records_delivering_employee
+      // is ON DELETE RESTRICT and a surviving delivery blocks the employee's delete.
+      'org.employees',
     ]) {
       await client.query(`DELETE FROM ${table} WHERE tenant_id = ANY($1::uuid[])`, [tenants]);
     }

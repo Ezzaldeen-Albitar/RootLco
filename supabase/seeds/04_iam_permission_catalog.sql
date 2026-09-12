@@ -20,6 +20,23 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   ('org.branch.manage',        'org', 'Create and update branches',       'medium', '00000000-0000-4000-8000-000000000001'),
   ('org.department.read',      'org', 'Read the department list',         'low',    '00000000-0000-4000-8000-000000000001'),
   ('org.department.manage',    'org', 'Manage departments/structure',     'medium', '00000000-0000-4000-8000-000000000001'),
+  -- P1-31 prerequisite P-17. The employee register is a NEW surface, so both
+  -- codes are minted here rather than borrowed. The split follows the
+  -- org.department pair immediately above and was decided on the same ground:
+  -- anyone who must CHOOSE a delivering employee needs to read the list, and
+  -- reusing the manage code for that would force every handover clerk to hold
+  -- the authority to alter the organisation's roster — "over-granting by
+  -- omission rather than by decision", which this catalogue names as the failure
+  -- it exists to prevent.
+  --
+  -- Risk 'low' for the read: org.employees carries a display name, an opaque
+  -- employment reference, a scope and a status. No contact detail, no contract,
+  -- no national identifier and no monetary column, so it exposes no restricted
+  -- data. Risk 'medium' for the write, beside org.department.manage: it changes
+  -- who the organisation says its people are, and a retired employee can no
+  -- longer be named on a handover.
+  ('org.employee.read',        'org', 'Read the employee register',       'low',    '00000000-0000-4000-8000-000000000001'),
+  ('org.employee.manage',      'org', 'Create employees and set their status', 'medium', '00000000-0000-4000-8000-000000000001'),
   ('org.settings.manage',      'org', 'Manage company/branch settings',   'high',   '00000000-0000-4000-8000-000000000001'),
   ('org.tax.manage',           'org', 'Manage tax classes and rates',     'high',   '00000000-0000-4000-8000-000000000001'),
   ('org.subscription.manage',  'org', 'Manage tenant subscriptions',      'high',   '00000000-0000-4000-8000-000000000001'),

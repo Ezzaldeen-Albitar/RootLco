@@ -924,6 +924,17 @@ two lanes that allocated between this one and the merged register, one has lande
 | **CC-25** | the delivery write paths (PR #362)                     | open, on a stacked base                                           |
 | **CC-26** | receiver identity-evidence document category (PR #362) | not allocated at that head; minted 2026-09-10 by #362, section 38 |
 
+**Continuation, 2026-09-10** — allocated after this section was written, at protected `develop`
+**07193258**. The row is dated rather than folded into the table above, because that table states
+what was true at **0204f2d1** and rewriting it would destroy the record.
+
+| id        | lane                                                | state at 07193258, 2026-09-10 |
+| --------- | --------------------------------------------------- | ----------------------------- |
+| **CC-26** | the identity-evidence category (PR #362)            | open                          |
+| **CC-27** | the report engine slice                             | in preparation                |
+| **CC-28** | the report engine slice, second identifier          | in preparation                |
+| **CC-29** | the delivering-employee identity (P-17), section 41 | this branch, PROVISIONAL      |
+
 So this slice takes **section 36 provisionally** and **CC-22 firmly**. P-9b has not merged, so that
 one lane landing out of order moves this heading rather than this identifier. **The section number
 must be re-checked against `develop` before this branch merges**, and renumbered if P-9b lands with a
@@ -1463,6 +1474,195 @@ terms.
 | **P11-7** | the shared vocabulary from both ends: `tests/unit/p1-31-report-configuration-controls.test.ts` pins `readReportParameterVocabulary` directly, including that a verdict of `unrecognised` and a denied run are the same answer on the same documents, and that no refusal quotes the submitted schema; `tests/backend/p1-31-report-configuration-seam.test.ts` proves the route accepts the whole four-filter allowlist and `{}`, refuses six documents the engine would refuse, refuses `{ filters: {} }` under its own rule, and writes no version in any refused case |
 | **P11-6** | `executable` in both limbs: true for the registered baseline, false for a PUBLISHED tenant row whose code the engine does not implement                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | **P11-8** | the P1-23 mutation re-target of **CC-27(c)**, measured rather than assumed: each new `from` string counted exactly once in its file, then each mutation applied BY HAND and `tests/backend/p1-23-reporting.test.ts` run alone — 13/13 green unmutated, the M7b mutant failing `never applies a configuration the tenant has not published` and the M8 mutant failing `claims executability only for a registered code`, both with an `AssertionError` and neither with a crash signature. The matrix script itself was not executed                                     |
+
+## 41. What P-17 changed — the delivering employee becomes a real identity
+
+**Slice:** `remediation/p1-31-backend-delivering-employee-identity`, ownership profile
+`p1-31-backend`. **Baseline:** protected `develop` **ae0e0354**, merged into this branch on
+2026-09-12; the slice was written on **07193258**. `main` untouched.
+**Section 41 and CC-29 are CONFIRMED, no longer PROVISIONAL.** They were provisional under the
+section 36.1 rule while sections 38, 39 and 40 were claimed by lanes that had not landed. At
+`develop` **ae0e0354** all three are merged, and section 42 with **CC-30** is allocated to the
+readiness-queue screen, whose own allocation table records section 41 and **CC-29** as still
+claimed by this unmerged lane. Section 41 is unoccupied, **CC-29** is allocated to nothing else,
+and **CC-29a** and **CC-29b** appear nowhere on `develop`.
+
+### 41.1 What was published, and why the table had to be new
+
+`sal.delivery_records.delivering_employee_id` landed in P1-11 as `NOT NULL` **with no foreign key of
+any kind**, so any uuid at all was a legal handover officer and the column recorded a claim rather
+than an identity. Every fixture in this repository demonstrated it, by passing a LOGIN ACCOUNT id or
+`randomUUID()` and being accepted without complaint.
+
+The Owner decision of **2026-09-10** answers **D-12** in six clauses: the delivering employee is a
+**tenant-owned employee identity**, distinct from the login account, from the authenticated actor
+and from the authorized receiver, with a server-validated reference and organisational assignment,
+historical attribution preserved, no HR module, and **an existing suitable personnel entity reused
+before a minimal new schema slice is created**.
+
+**Measured facts (not part of the decision).** That sixth clause is what obliged the reuse question
+to be **measured before anything was proposed**, and the measurement lives in the
+suite rather than in this paragraph: `tech.technician_profiles.user_id` and
+`iam.user_employee_links.user_id` are both `NOT NULL` foreign keys into `iam.user_accounts`, so
+neither can hold a person who has no reason to sign in — which is the person a workshop most often
+sends out to hand a vehicle over.
+
+**Two migrations, both revised in place on the Owner clarification of 2026-09-10** (they are
+unmerged, so the correction is an amendment rather than a third file).
+`20260910090000_org_employees.sql` adds `org.employees`, RLS enabled and forced, three policies —
+a **tenant-wide** `SELECT` to `app_runtime` and `app_readonly` and scope-restricted `INSERT` and
+`UPDATE` to `app_runtime` — and **no `DELETE` grant to anyone**.
+`20260910091000_sal_delivery_delivering_employee_identity.sql` mints one employee per distinct
+RESOLVABLE legacy value, adds the foreign key on **`(tenant_id, delivering_employee_id)`** `NOT
+VALID` and validates it in the same migration only when nothing is unresolved, adds the NULLABLE
+`delivering_employee_display_name` snapshot and the `BEFORE INSERT` trigger that stamps it, adds
+`sal.delivery_legacy_identity_review` for the legacy values that resolve to nobody, and recreates
+the immutable guard so the snapshot and the id it came from are frozen.
+
+**Four operations** under `/api/v1/org/employees`: the list and the detail declare
+`org.employee.read`, the create and the status command declare `org.employee.manage`. **Both codes
+are MINTED** — the register did not exist, so no catalogue code named it — and **both are carried by
+the provisioning bundle (76 to 78)**.
+
+**`sal.delivery-create` now refuses two ways**, per rule on `body.deliveringEmployeeId`: `custom`
+for not visible and `inactive_employee` for retired. There is **no branch rule** — the Owner
+clarification of 2026-09-10 settled that a home branch must not restrict authorized work in another
+branch, so the `employee_branch_mismatch` refusal the first draft shipped was removed together with
+the rule it enforced, and the case that asserted it now asserts the acceptance instead. The request
+BODY is unchanged, so the `sal.delivery-create` payload mirror is untouched; `org` is outside the
+P1-30 payload-parity domains, so the four new operations owe no mirror.
+
+**`deliveringEmployeeDisplayName` is `string | null` in the delivery service view types** —
+`apps/api/src/modules/delivery/application` — and that is the only place any nullability for it is
+stated. `docs/api/openapi.v1.json` publishes `{ "type": "object" }` for every `sal.delivery-*`
+success response and therefore carries no field-level delivery response schema at all, which is a
+pre-existing convention this slice neither introduced nor changed; the web read type does not carry
+the field yet either (section 41.3). `NULL` means one thing and
+only one: this handover was recorded before P-17 and its delivering identity resolved to nobody. No
+delivery created after the migration can carry it, because the trigger stamps a name or refuses the
+insert.
+
+### 41.2 Dispositions
+
+| id         | finding                                                                                     | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | owner / slice                         | state                              |
+| ---------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | ---------------------------------- |
+| **CC-29**  | two of the working assumptions are now Owner DECISIONS; FOUR recommendations remain pending | The Owner clarification of 2026-09-10 settled A-1 (identity independent of a login, approved) and A-2 (the home branch is informational and transferable and must never restrict authorized work in another branch). It did not settle the lifecycle of a backfilled legacy row (A-3), whether `employment_ref` is optional and tenant-unique (A-4), whether administering an employee stays branch-scoped while reading is tenant-wide (A-5), or how an unresolved legacy identity is ever resolved (A-6). The DDL commits to one answer for each of A-3, A-4 and A-5, and to nothing at all for A-6, which ships no command | **Relabelled rather than re-argued.** [`delivering-employee-identity-seam.md`](./delivering-employee-identity-seam.md) section 3 now carries **three** explicit register labels — OWNER DECISION, ENGINEERING CHOICE, RECOMMENDATION PENDING OWNER APPROVAL — and two further labels used outside the register and nowhere in it: **VERIFIED FACT**, at section 9.4 only, and **Engineering consequence (not an Owner decision)**, applied in sections 2, 2a, 4, 5, 6, 7, 8 and 10 to the design elements this lane chose rather than the Owner. A-3, A-4, A-5 and A-6 are each marked **recommendation pending Owner approval** with one concise recommendation sentence, so **four** recommendations are pending and not three. They are: keep `inactive` for backfilled rows; keep `employment_ref` optional and tenant-unique; keep the read/write scope split; and resolve a listed legacy identity through one Owner-approved operator command, never inside a migration. The MINT half of that shape now exists and is not the resolution: `scripts/platform/backfill-delivering-employee-identity.mjs` mints the identities that resolve, lists the ones that do not, and re-runs `VALIDATE CONSTRAINT` only when nothing anywhere is left unresolved — it never decides who an unresolved value names, which is what A-6 still asks the Owner. The migration headers carry the same labels. **No rename and no transfer command ships**: a rename must first say what happens to the snapshots already taken, and a transfer what happens to deliveries recorded in the branch being left                                                                                                                           | Owner, before the next employee slice | open, four recommendations pending |
+| **CC-29a** | the branch rule shipped in the first draft and was WRONG                                    | `DeliveryService.createDelivery` refused an employee whose home branch differed from the work order's, `sal.stamp_delivering_employee_identity` refused the same insert, and the foreign key named all four scope columns — three layers enforcing a restriction the Owner had not asked for                                                                                                                                                                                                                                                                                                                                  | **Removed at all three layers, and the removal is asserted rather than described.** The key names `(tenant_id, id)`, the trigger reads only `display_name` and `status`, and the service has no branch comparison. Case **P17-D4** was inverted from a refusal to a **201 with the snapshot stamped**, and the database obligation that asserted a `22023` for another branch now asserts acceptance plus a new `22023` for another TENANT. `sel_employees_tenant` reads tenant-wide because a branch predicate on the read would have kept the rule alive in the policy after it was removed from the constraint                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | this slice                            | **closed in this slice**           |
+| **CC-29b** | a dangling legacy identity would have FAILED the deployment                                 | The first draft RAISED on any `delivering_employee_id` matching no same-tenant account, and RAISED again on any value used in two branches. On a database with unresolved history the migration simply could not be applied                                                                                                                                                                                                                                                                                                                                                                                                   | **Replaced by report-and-continue, per the Owner clarification.** Unresolvable values are left untouched, recorded in `sal.delivery_legacy_identity_review` (tenant RLS, SELECT to `app_runtime`/`app_readonly`, no write grant to anybody, and an INSERT policy whose `WITH CHECK` is `false` so the refusal is declared rather than inferred from an absence), and the foreign key is added `NOT VALID`. **The mint and the review write moved OUT of the migration on 2026-09-12**, after the hosted run of PR #370: `scripts/ci/migration-replay-checks.mjs` refuses a top-level `INSERT` into a module schema, and it is right to, so the row-level half is now the operator command `scripts/platform/backfill-delivering-employee-identity.mjs` and the migration keeps structure only. **A fresh database validates in the migration** — the `DO` block runs `VALIDATE CONSTRAINT` when `sal.delivery_records` holds zero rows, which is DDL over no rows and passes the scanner. **A populated database validates through the operator command**, after the mint and only when nothing anywhere is left unresolved; until then the key keeps `NOT VALID` and the migration emits a `RAISE NOTICE` naming the command. The shared database held **0** delivery rows when it was read on 2026-09-10, so the command is expected to mint nothing there — still an operator step, not a skipped one. `delivering_employee_display_name` is NULLABLE so history could be preserved rather than completed with a person nobody confirmed. The observation, the controlled proof and the constraint-validation status are separated under their own labels in **41.6**, and must be read there rather than as one sentence | this slice                            | **closed in this slice**           |
+
+### 41.3 What this slice did NOT do
+
+- **No HR module.** Seven columns and a lifecycle. No contract, salary, contact detail, document,
+  department, grade or reporting line, and no second identity model beside `iam.user_accounts`.
+- **No rename, no transfer, and no delete at any level.** `org.employees` grants `DELETE` to no
+  application role and `fk_delivery_records_delivering_employee` is `ON DELETE RESTRICT`.
+- **No screen, and no web CONTRACT change either.** `apps/web` changes only in the generated
+  idempotency manifest, which every published operation moves. The delivery contract mirror in
+  `apps/web/src/features/delivery/delivery-contract.ts` still lacks `deliveringEmployeeDisplayName`,
+  and its docblock still states that `deliveringEmployeeId` has no foreign key anywhere in the
+  platform — which this slice makes false. **That is left deliberately**, because the
+  `p1-31-backend` ownership profile forbids the `web` bucket outright and the correction is a
+  frontend-lane change; widening the profile to slip it through would be exactly the
+  work-around the gate exists to prevent. It is the same class of stale docblock P-14 corrected and
+  is owed to the frontend lane, which is where CC-29 leaves it.
+- **No index for the list ordering**, on the CC-23 precedent: a branch register is small, and no
+  measurement has demonstrated a cost a schema change would buy.
+- **No claim about the hosted replay.** `.github/ci-baselines/schema-baseline.json` moves
+  `migrationCount` 139 to 141, `permissionCount` 119 to 121, `schemaHash` to `075a8c5a…`, and four
+  of the five structural totals — tables 254 to 256, functions 533 to 534, policies 695 to 700,
+  triggers 560 to 563, `security_definer` unchanged at 0. Those figures were **re-measured after
+  the Owner clarification revised both migrations**; the values recorded before it described a shape
+  no longer in the tree and were replaced, not amended. The structural totals and the permission
+  count were measured on a disposable clone replayed from the idle
+  139-migration template inside the coordinator's isolated container, and that same clone reproduced
+  the recorded 139-migration values digit for digit before either migration was applied. The hosted
+  `database-migration-replay` job settled the digest, and against that clone it settled it the other
+  way: it measured `075a8c5a…` where the clone had said `a25718d7…` and refused the baseline. The
+  clone was the defective instrument, not the migrations. It had been created by template from
+  another database and so lacked the database-level `search_path` migration 0001 sets, which makes
+  `pg_get_constraintdef` and `pg_indexes.indexdef` render three extension-dependent definitions in
+  their schema-qualified form; the digest moved while the schema did not. The committed value was
+  re-measured on a database created EMPTY and replayed through all 141 migrations, where the four
+  structural totals and `permissionCount` 121 all reproduced, and applying the missing setting to
+  the defective clone made it hash `075a8c5a…` too. `schemaHashNote` in the baseline carries the
+  diagnosis.
+- **No fake data.** `org.employees` is business data: it is absent from the structural-reference
+  allow-lists in both `scripts/db/validate-seed-state.mjs` and `tests/db/no-fake-data.test.ts`, so it
+  is required to be empty on a provisioned tenant, and the backfill mints only from rows that already
+  exist. `sal.delivery_legacy_identity_review` is business data on the same terms and is written
+  only from rows that already exist. The report-and-continue path is what keeps this true: minting a
+  placeholder person for an unresolvable legacy identity would have been fabricated business data
+  inserted by a migration, which is the precise thing the guard forbids.
+
+### 41.4 The one operator act this slice creates and does not perform
+
+Every organisation already provisioned holds the 76-code bundle and therefore **neither** new code.
+They need **one** run of `scripts/platform/backfill-tenant-administrator-bundle.mjs` after this
+merges — separate from the run P-10 and P-11 already oblige, because it covers two codes those runs
+could not know about.
+
+Until that run happens, an existing organisation's administrator cannot create an employee, and
+because `sal.delivery-create` now refuses an employee that does not exist, **cannot record a
+handover at all**. That is the sharpest consequence of any P1-31 bundle widening, and it is written
+here so it is scheduled rather than discovered. **This slice does not run it, and makes no claim that
+it has been run.**
+
+### 41.5 Record-integrity note (for the Owner)
+
+`tests/ci/p1-27-doc-counts.test.ts:784` requires `docs/phase-1/phase-1-27/closure-record.md` to
+quote the schema hash and migration count that the CURRENT committed baseline carries, so adding the
+two migrations of this slice obliged it to rewrite a row of a record sealed on 2026-08-12 — **139**
+and `8302f675…` became **141** and `075a8c5a…` — which is a repository convention that makes a
+historical record track the live baseline rather than the state it recorded, and one the Owner may
+wish to change.
+
+### 41.6 The observation, the controlled proof, and the constraint-validation status
+
+Three statements that the first draft of this slice allowed to stand as one, separated here under
+their own labels because each is answerable in a different way.
+
+**OBSERVATION — shared database, read-only, 2026-09-10.** `sal.delivery_records` held **0** rows,
+and therefore **0** distinct legacy `(tenant_id, delivering_employee_id)` pairs, of which **0**
+matched a same-tenant account and **0** did not. That is one environment on one day. It proves
+nothing about how the migration behaves on data — an empty table exercises neither branch of the
+backfill — and it is recorded so the number is not later mistaken for evidence.
+
+**CONTROLLED PROOF — disposable clone `p131_employee_20260910` (`127.0.0.1:55432`), rebuilt from
+`p131_candidate` at 139 migrations.** The database cases write legacy-shaped rows themselves, so
+both branches are exercised. Five obligations are each cited by the exact title of the case that
+asserts them in
+[`delivering-employee-identity-seam.md`](./delivering-employee-identity-seam.md) section 9.2: the
+resolvable mint, the untouched unresolvable value and its review row, the validated key on a fully
+resolved database, the trigger's four answers, and the review table's isolation and write refusal.
+Section 9.2 also carries a **Gaps** label, so an obligation no case asserts, or cited against a
+title with no executed run, is named rather than implied. There were **two runs at two different
+commits**, both on **2026-09-10** in container `rootlco-p131-isolation-20260910`, and section 9.2
+records each suite with its result, its exit code **and the commit it was measured at**: the
+database file stood at 21 cases at **244f868f** and at 23 at **750913e3**, because the two
+review-table cases were added between them, and the 285-case backend sweep was measured at
+**244f868f** and not re-run afterwards, the seam file alone being re-run at 750913e3. **No run
+ledger entry exists for the database or the backend tier** — the ledger records the unit and web
+tiers only — and **no hosted result exists** for any of it.
+
+**CONSTRAINT-VALIDATION STATUS.** `fk_delivery_records_delivering_employee` is added **`NOT
+VALID`**; the migration validates it in the same run **only when
+`sal.delivery_legacy_identity_review` is empty**; on any database carrying unresolved legacy
+identities it **remains `NOT VALID`** — binding every future row, proving no past one — until the
+Owner resolves those rows. The resolution path is **not yet decided** and is A-6 in the seam
+register, a **Recommendation pending Owner approval**: resolve a listed row through one
+Owner-approved operator command that names a real employee for it and then re-runs `VALIDATE
+CONSTRAINT`, never inside a migration. The hosted migration replay is **defined** to start from an
+empty database — `.github/workflows/_reusable-database-assurance.yml` asserts that the database
+holds zero application tables at line 235 and applies every migration from zero at line 242 — so it
+is **expected** to end validated. That is an expectation read from the workflow definition and **not
+yet an observed result**; either way it would be a property of that environment and not evidence
+about a populated one.
+
+**Four recommendations are pending — A-3, A-4, A-5 and A-6.** They are stated once each in the
+CC-29 disposition of section 41.2 above and in the seam register (section 3), and are deliberately
+not restated here. **A-1 and A-2 are APPROVED, not pending.**
+
+---
 
 ## 42. The ready-for-delivery queue screen — PROVISIONAL
 
@@ -2694,10 +2894,12 @@ exists.
 **Slice:** `feature/p1-31-operational-overview`, ownership profile `p1-31-frontend`, open as pull
 request **#376**. It was written **STACKED** on `feature/p1-31-report-screens` (section 50, pull
 request **#371**) and carries its head `e3b73277` by merge; **#371 has since merged**, so this branch
-carries protected `develop` `46be4bb28eba760b44bc579e3866d16876614dac` directly and the stack is
-gone. Develop's tree at that head is identical to the head this branch already carried, so the sync
-merge changed no file. This branch is **unmerged**, has **no hosted result**, and nothing below
-claims otherwise. The full record is [`operational-overview.md`](./operational-overview.md).
+carries protected `develop` directly and the stack is gone. It has since been synced a second time
+onto `develop` `811e9891353b466b7788e7ca8a7bddee8496de72`, which carries pull request **#370**, the
+P-17 delivering-employee Backend slice: two migrations, a schema baseline, the `org.employee-*`
+operations, change control section 41, and regenerated registers. That merge DID change files, so
+every figure in section 53.4 was re-taken at it. This branch is **unmerged**, has **no hosted
+result**, and nothing below claims otherwise. The full record is [`operational-overview.md`](./operational-overview.md).
 
 **Authority:** Owner decision **D-19** of 2026-09-12
 ([`owner-decisions-2026-09-12.md`](./owner-decisions-2026-09-12.md) § 1) — FE-010 is an operational
@@ -2709,13 +2911,15 @@ with **four raw tables alone not establishing the intended overview**; and **FE-
 overview for the selected branch, with no hard-coded pilot**. **D-5** of 2026-09-09 § 4 and **D-17**
 of 2026-09-10 § 4 are carried unchanged.
 
-### 53.1 Identifier allocation — PROVISIONAL, dated 2026-09-12, re-checked at `develop` `46be4bb2`
+### 53.1 Identifier allocation — PROVISIONAL, dated 2026-09-12, re-checked at `develop` `811e9891`
 
 The register in this file, at the head this branch carries, runs to **section 48** and **CC-36** and
 additionally holds **section 50** and **CC-38**. Both are now on protected `develop`: section 48 with
-PR #375 and section 50 with PR #371, which merged after this section was first written. Section **49**
-is claimed by a lane that is not on `develop`, and section 48.1 records that sections **49 to 52** and
-the identifiers above **CC-36** are held by P1-31 lanes on unmerged branches.
+PR #375 and section 50 with PR #371, which merged after this section was first written. `develop`
+`811e9891` adds **section 41** and **CC-29** with PR #370, which sits below that ceiling and so moves
+neither the highest section nor the highest identifier. Section **49** is claimed by a lane that is
+not on `develop`, and section 48.1 records that sections **49 to 52** and the identifiers above
+**CC-36** are held by P1-31 lanes on unmerged branches.
 
 So this slice takes **section 53** and **CC-41**, and both stay **PROVISIONAL**. Section 53 is the
 first heading above every number those lanes are recorded as holding, and CC-41 is chosen on the same
@@ -2723,8 +2927,9 @@ basis — **that part is coordination rather than a measurement**, because no un
 is decided until it merges. A heading taken above the claimed range is a gap in the register; a
 heading taken inside it is somebody else's record renumbered, which is worse.
 
-| id        | lane                                               | state, re-read at `develop` `46be4bb2`          |
+| id        | lane                                               | state, re-read at `develop` `811e9891`          |
 | --------- | -------------------------------------------------- | ----------------------------------------------- |
+| **CC-29** | the delivering-employee identity (#370)            | **merged**, section 41                          |
 | **CC-36** | the warranty plan administration screens (#375)    | merged, section 48                              |
 | **CC-37** | a lane not on `develop`                            | claims section 49                               |
 | **CC-38** | the report screens (#371)                          | **merged**, section 50                          |
@@ -2732,13 +2937,14 @@ heading taken inside it is somebody else's record renumbered, which is worse.
 | **CC-40** | the fresh-organisation acceptance harness (QA-005) | **PROVISIONAL** and unmerged, claims section 52 |
 | **CC-41** | this slice                                         | **PROVISIONAL**, this branch, section 53        |
 
-**Why CC-41 keeps its PROVISIONAL marking even though two of the four numbers above are now settled
-on `develop`.** Section 50 and **CC-38** stopped being a claim about a branch when #371 merged, so
-those two rows are facts. The other two are not: the acceptance-harness lane's own record carries
-**section 52** and **CC-40** marked PROVISIONAL on an unmerged branch, and the lane claiming section
-51 is not readable from any head reachable here, so its identifier cannot be read at all. Until both
-merge, CC-39 and CC-40 may land, move or never land, and an identifier chosen above a range that can
-still shift is not measured. **The section number and the identifier are re-checked against `develop`
+**Why CC-41 keeps its PROVISIONAL marking even though three of the numbers above are now settled on
+`develop`.** Section 50 and **CC-38** stopped being a claim about a branch when #371 merged, and
+section 41 and **CC-29** are on `develop` `811e9891`, so those rows are facts. Two are not: the
+acceptance-harness lane's own record still carries **section 52** and **CC-40** marked PROVISIONAL on
+a branch that is not merged and is not published to `origin`, and the lane claiming section 51 is not
+readable from any head reachable here, so its identifier cannot be read at all. Until both merge,
+CC-39 and CC-40 may land, move or never land, and an identifier chosen above a range that can still
+shift is not measured. **The section number and the identifier are re-checked against `develop`
 again before this branch merges.** Section 36.1's rule governs a collision: an identifier is allocated
 when its finding is raised and is never renumbered to follow heading order, so a collision moves THIS
 section and this identifier and leaves every existing one alone.
@@ -2753,9 +2959,13 @@ section and this identifier and leaves every existing one alone.
 | the FE-010 and FE-016 rows of the task matrix and of the A0 preflight; the P1-27 records re-taken at this head                                                                 | nothing |
 
 **No backend file changed.** No route, no service, no repository, no migration, no seed, no
-permission, no audit action and no operation. The operation register is untouched, and the committed
-test-count baseline is untouched: the tree DECLARES 3257 cases across 140 files against a floor of
-3700, so `WTF-08` demands no raise.
+permission, no audit action and no operation. **The operation register gains exactly one line and no
+operation:** regenerating it lists `tests/ci/p1-31-access-gate.test.ts` as a coverage site for the
+existing `rpt.report-run`, because this branch's gate test names that operation, and the earlier
+statement that the register was untouched understated that. Its totals are `develop`'s unchanged —
+411 operations over 319 OpenAPI paths, 121 permission codes, 234 audit actions, all Covered. The
+committed test-count baseline is untouched: the tree DECLARES 3257 cases across 140 files against a
+floor of 3700, so `WTF-08` demands no raise.
 
 ### 53.3 Dispositions
 
@@ -2771,7 +2981,7 @@ here) remain **open and are not closed by this slice**, and nothing in it create
 
 **Measured facts (not part of the decision) — what was actually run, and where.** Every run below was
 local, on this branch, with no database, no browser and no hosted runner. **The table was re-taken at
-the sync merge of `develop` `46be4bb2`**, so no figure below is carried forward from the pre-sync
+the sync merge of `develop` `811e9891`**, so no figure below is carried forward from either pre-sync
 head.
 
 | run                                                                                         | result                                                                                                       |

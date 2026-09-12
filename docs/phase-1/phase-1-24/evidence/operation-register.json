@@ -1,20 +1,20 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 407,
-    "openapiPaths": 316,
-    "openapiOperations": 407,
+    "operations": 411,
+    "openapiPaths": 319,
+    "openapiOperations": 411,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
     "eventsDeliveryTested": 50,
     "outboxForeignWriters": 0,
     "errorCodes": 28,
-    "permissionCodes": 119,
-    "auditActions": 232
+    "permissionCodes": 121,
+    "auditActions": 234
   },
   "counts": {
-    "Covered": 407
+    "Covered": 411
   },
   "operations": [
     {
@@ -5663,6 +5663,149 @@
       "file": "apps/api/src/app/api/v1/org/departments/[departmentId]/route.ts"
     },
     {
+      "id": "org.employee-create",
+      "domain": "iam",
+      "method": "POST",
+      "route": "/api/v1/org/employees",
+      "permissions": ["org.employee.manage"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "org.employee.created",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/org/employees",
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-31-delivering-employee-seam.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/org/employees/route.ts"
+    },
+    {
+      "id": "org.employee-detail",
+      "domain": "iam",
+      "method": "GET",
+      "route": "/api/v1/org/employees/{employeeId}",
+      "permissions": ["org.employee.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/org/employees/{employeeId}",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-31-delivering-employee-seam.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/org/employees/[employeeId]/route.ts"
+    },
+    {
+      "id": "org.employee-list",
+      "domain": "iam",
+      "method": "GET",
+      "route": "/api/v1/org/employees",
+      "permissions": ["org.employee.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/org/employees",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": ["route", "service", "success", "authorization", "isolation", "denial"],
+      "providedEvidence": ["authorization", "denial", "isolation", "route", "service", "success"],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-31-delivering-employee-seam.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/org/employees/route.ts"
+    },
+    {
+      "id": "org.employee-status-set",
+      "domain": "iam",
+      "method": "POST",
+      "route": "/api/v1/org/employees/{employeeId}/status",
+      "permissions": ["org.employee.manage"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "org.employee.status_changed",
+      "idempotent": false,
+      "versionGuarded": true,
+      "openapi": "POST /api/v1/org/employees/{employeeId}/status",
+      "documentedResponses": ["200", "401", "403", "409", "422", "428", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "stale-version",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-31-delivering-employee-seam.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/org/employees/[employeeId]/status/route.ts"
+    },
+    {
       "id": "platform.organization-lifecycle",
       "domain": "platform",
       "method": "POST",
@@ -9828,7 +9971,14 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-22-delivery.test.ts", "tests/backend/p1-22-isolation.test.ts"],
+      "tests": [
+        "tests/backend/p1-22-delivery.test.ts",
+        "tests/backend/p1-22-isolation.test.ts",
+        "tests/backend/p1-29-w9-owner-bootstrap.test.ts",
+        "tests/backend/p1-31-delivering-employee-seam.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
+        "tests/backend/p1-31-tenant-administrator-bundle-backfill.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/deliveries/route.ts"
     },
@@ -9906,7 +10056,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-31-delivery-list-seam.test.ts"],
+      "tests": [
+        "tests/backend/p1-31-delivering-employee-seam.test.ts",
+        "tests/backend/p1-31-delivery-list-seam.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/deliveries/route.ts"
     },

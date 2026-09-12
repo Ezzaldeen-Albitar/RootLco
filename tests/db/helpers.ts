@@ -373,6 +373,12 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('sal.delivery_signatures');
   await deleteFrom('sal.delivery_checklist_results');
   await deleteFrom('sal.delivery_status_history');
+  // Its own tenant FK is ON DELETE RESTRICT, so a review row would block the
+  // tenant delete below. The product writes the table once, in migration 141,
+  // and no application role holds DELETE on it; this connection is the owner and
+  // does, which is what removes the isolation fixtures written by
+  // tests/db/org-employees.test.ts obligation 6.
+  await deleteFrom('sal.delivery_legacy_identity_review');
   await deleteFrom('sal.delivery_records');
   await deleteFrom('sal.delivery_checklist_template_items');
   await deleteFrom('sal.delivery_checklist_templates');
@@ -677,6 +683,10 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('org.storage_locations');
   await deleteFrom('org.warehouses');
   await deleteFrom('org.departments');
+  // AFTER sal.delivery_records above and BEFORE iam.user_accounts and org.branches:
+  // fk_delivery_records_delivering_employee is ON DELETE RESTRICT in one direction
+  // and fk_employees_user_account in the other, so this row sits between them.
+  await deleteFrom('org.employees');
   await deleteFrom('org.cost_centers');
   await deleteFrom('org.branch_status_history');
   await deleteFrom('org.branches');

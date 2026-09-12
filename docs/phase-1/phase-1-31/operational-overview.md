@@ -3,7 +3,9 @@
 **Status:** implemented on `feature/p1-31-operational-overview`, open as pull request **#376** and
 **UNMERGED**. It was written STACKED on `feature/p1-31-report-screens`, whose head **e3b73277** it
 carries by merge; that branch merged with pull request **#371**, so this branch now carries protected
-`develop` `46be4bb28eba760b44bc579e3866d16876614dac` directly and the stack is gone. Nothing here is
+`develop` directly and the stack is gone. It has since been synced again onto `develop`
+`811e9891353b466b7788e7ca8a7bddee8496de72`, which carries pull request **#370**, the P-17
+delivering-employee Backend slice. Nothing here is
 reachable on `develop` until #376 merges. **No hosted run, no database tier, no browser acceptance and
 no end-to-end result is claimed.** The change-control entry is section 53 of
 [`change-control-2026-09-08.md`](./change-control-2026-09-08.md), identifier **CC-41**, both
@@ -69,7 +71,7 @@ four datasets existed; the frontend facts were read at this branch’s original 
 **Both were overtaken while the branch was open and are re-stated where they sit rather than
 silently rewritten:** PR #374 took all four datasets and the generalised run envelope onto
 `develop`, and this branch now carries that head — first through #371, and since that pull request
-merged, directly through `develop` `46be4bb2`.
+merged, directly through `develop`, currently `811e9891`.
 
 - **`ReportRunView` already carries everything the overview must display.** The view
   (`apps/api/src/modules/reporting/application/report-run-service.ts`, lines 262–299) publishes
