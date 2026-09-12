@@ -86,7 +86,21 @@ const listEmployees = vi.fn(async () => ({
 }));
 vi.mock('@/features/delivery/employee-api', () => ({
   listEmployees: () => listEmployees(),
-  readEmployee: vi.fn(),
+}));
+
+/*
+ * The branch directory the same form picks a branch from (FE-002). Its five
+ * states are exercised in `delivery-start.dom.test.tsx`; here it is mocked so
+ * that no case in this file reaches the network owner, and every panel below
+ * withholds the directory read code, so it answers nothing.
+ */
+const listBranches = vi.fn(async () => ({
+  status: 'ok' as const,
+  data: { items: [] },
+  correlationId: 'corr-1',
+}));
+vi.mock('@/features/delivery/branch-api', () => ({
+  listBranches: () => listBranches(),
 }));
 
 const captureDeliverySignature = vi.fn();
@@ -996,8 +1010,10 @@ describe('employee selection cannot be offered without the register read', () =>
       expect(within(region).queryAllByRole('button')).toHaveLength(0);
       expect(createDelivery).not.toHaveBeenCalled();
       // Not asked and refused — not asked at all. A denial the screen could have
-      // predicted has no business in the backend's log.
+      // predicted has no business in the backend's log. The branch directory is
+      // withheld on the same terms and on its own separate code.
       expect(listEmployees).not.toHaveBeenCalled();
+      expect(listBranches).not.toHaveBeenCalled();
       expect(readWorkOrderDelivery).toHaveBeenCalledWith(WORK_ORDER_ID);
       if (locale === 'ar') {
         expect(

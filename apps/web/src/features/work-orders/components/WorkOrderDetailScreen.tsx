@@ -66,6 +66,7 @@ export function WorkOrderDetailScreen({
   canReadDelivery = false,
   canManageDelivery = false,
   canReadEmployees = false,
+  canReadBranches = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -112,6 +113,18 @@ export function WorkOrderDetailScreen({
    * and issues no register read.
    */
   readonly canReadEmployees?: boolean;
+  /**
+   * Whether the branch DIRECTORY may be offered when starting a handover.
+   *
+   * A fourth code — `org.branch.read` — and the one that makes a cross-branch
+   * handover reachable at all. The register read needs a branch, the create
+   * operation applies no branch rule, and the standing tenancy requirement
+   * forbids an operator typing an identifier for one; so the branches are chosen
+   * from the published directory or not chosen at all. Without this the handover
+   * section says the directory is not available and reads the register for the
+   * work order's own branch.
+   */
+  readonly canReadBranches?: boolean;
 }) {
   const [detail, setDetail] = useState<WorkOrderDetail>(initial);
   const [reloadError, setReloadError] = useState<string | null>(null);
@@ -214,6 +227,7 @@ export function WorkOrderDetailScreen({
           branchId={workOrder.branchId}
           canManage={canManageDelivery}
           canReadEmployees={canReadEmployees}
+          canReadBranches={canReadBranches}
         />
       ) : null}
 

@@ -3,13 +3,15 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
-import { SelectField, TextField } from '@/components/forms/Field';
+import { SelectField } from '@/components/forms/Field';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
 
 import { createDelivery, readWorkOrderDelivery, type DeliveryWriteState } from '../api';
+import { listBranches } from '../branch-api';
+import type { DeliveryBranchOption } from '../branch-contract';
 import type { WorkOrderDelivery } from '../delivery-contract';
 import { listEmployees } from '../employee-api';
 import {
@@ -52,7 +54,7 @@ import { PRIMARY_BUTTON } from './PanelShell';
  * P-17 built it. The control returns against that contract and against nothing
  * else.
  *
- * ## Two authorities, and each one alone decides a different thing
+ * ## Three authorities, and each one alone decides a different thing
  *
  * `sal.delivery.manage` decides whether the form is drawn at all. Without it
  * there is no form, not a disabled one: a button whose only outcome is a denial
@@ -65,6 +67,10 @@ import { PRIMARY_BUTTON } from './PanelShell';
  * identifier typed into a box is exactly the unvalidated input the withholding
  * existed to prevent, and the read code is the affordance, not the rule.
  *
+ * `org.branch.read` decides whether the wider branch directory can be offered,
+ * on the same terms: without it no directory read is issued, the panel says so,
+ * and the work order's own branch is what the register is read for.
+ *
  * ## A home branch is offered first and never enforced
  *
  * The Owner clarified on 2026-09-10 that an employee's home branch must not
@@ -72,16 +78,19 @@ import { PRIMARY_BUTTON } from './PanelShell';
  * backend carries that literally: the foreign key names the organisation and
  * nothing narrower, and the create service refuses only an unknown employee and
  * a retired one. So the register is read for the work order's own branch first —
- * that is where the colleague usually stands — and the operator can name another
- * branch of the same organisation and read that one instead. Narrowing the
+ * that is where the colleague usually stands — and the operator can choose
+ * another branch of the same company and read that one instead. Narrowing the
  * candidates to one branch and calling it validation would re-impose, in a
  * browser, the restriction the Owner removed from the database.
  *
- * The branch is named by REFERENCE rather than picked from a list, because this
- * feature consumes no branch directory read and one is not invented here. The
- * field is optional, it starts empty, and an empty field means this work order's
- * own branch. `docs/phase-1/phase-1-31/delivery-start-selector.md` records the
- * directory read that would turn it into a list as a follow-up.
+ * The branch is CHOSEN FROM THE PUBLISHED DIRECTORY, never typed. `org.branch-list`
+ * is the read every other picker in this product consumes, and the standing
+ * tenancy requirement is that no company or branch identifier is ever typed into
+ * a screen — a field demanding one does not merely inconvenience an operator, it
+ * makes the cross-branch handover the Owner's clarification protects unreachable
+ * in practice. Where the directory cannot be offered the panel states that and
+ * falls back to the work order's own branch, which is the branch it would have
+ * read anyway.
  *
  * ## Every refusal on screen is the server's own decision
  *
@@ -101,6 +110,7 @@ export function WorkOrderDeliveryPanel({
   branchId,
   canManage = false,
   canReadEmployees = false,
+  canReadBranches = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -113,6 +123,8 @@ export function WorkOrderDeliveryPanel({
   readonly canManage?: boolean;
   /** `org.employee.read` — whether the register may be offered and read. */
   readonly canReadEmployees?: boolean;
+  /** `org.branch.read` — whether the branch directory may be offered and read. */
+  readonly canReadBranches?: boolean;
 }) {
   const [held, setHeld] = useState<{
     readonly key: string;
@@ -166,6 +178,7 @@ export function WorkOrderDeliveryPanel({
               companyId={companyId}
               branchId={branchId}
               canReadEmployees={canReadEmployees}
+              canReadBranches={canReadBranches}
             />
           ) : null}
         </div>
@@ -215,8 +228,106 @@ const NOT_OFFERED: Candidates = { phase: 'not-offered' };
 const LOADING: Candidates = { phase: 'loading' };
 const NOBODY: Candidates = { phase: 'none' };
 
-/** The shape a branch reference has to have before it is worth a request. */
-const REFERENCE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/**
+ * The branch directory in the same five states, and for the same reason.
+ *
+ * It replaces a text box that asked an operator to type a branch identifier. The
+ * standing tenancy requirement is that tenancy comes from the session and no
+ * company or branch identifier is ever typed, so the box did not merely read
+ * badly — it made the cross-branch handover unreachable for anybody who did not
+ * already know an identifier by heart. `org.branch-list` publishes the same
+ * directory every other picker in this product reads.
+ *
+ * Each phase below decides what the form offers, and NONE of them is a fallback
+ * to a field: where the directory cannot be offered the work order's own branch
+ * is used, which is the branch the register would have been read for anyway.
+ */
+type BranchDirectory =
+  /** No `org.branch.read`. No request is issued, and none may be. */
+  | { readonly phase: 'not-offered' }
+  /** Permitted, and the directory has not answered. The only phase with no control. */
+  | { readonly phase: 'loading' }
+  /** Answered with at least one branch of this work order's company. */
+  | { readonly phase: 'listed'; readonly items: readonly DeliveryBranchOption[] }
+  /** Answered, and this company has no branch this caller may reach. */
+  | { readonly phase: 'none' }
+  /** Did not answer. `retry` is absent for a refusal and for an ended session. */
+  | {
+      readonly phase: 'failed';
+      readonly messageKey: string;
+      readonly retry: (() => void) | null;
+    };
+
+const DIRECTORY_NOT_OFFERED: BranchDirectory = { phase: 'not-offered' };
+const DIRECTORY_LOADING: BranchDirectory = { phase: 'loading' };
+const NO_BRANCH: BranchDirectory = { phase: 'none' };
+
+/**
+ * The branches of this work order's company, in the five states the picker can
+ * be in.
+ *
+ * The operation is tenant-wide and every row carries its company, so the
+ * narrowing happens here rather than in a second read: a handover belongs to its
+ * work order's organisation, and no company may be chosen. That is a DISPLAY
+ * narrowing and not a rule — the register read authorizes the pair again before
+ * a row is read, and the create operation resolves the chosen person once more.
+ */
+function useBranchDirectory(canRead: boolean, companyId: string): BranchDirectory {
+  const [attempt, setAttempt] = useState(0);
+  /** The outcome, TAGGED with the request it answers — see `useEmployees` below. */
+  const [held, setHeld] = useState<{
+    readonly key: string;
+    readonly items: readonly DeliveryBranchOption[] | null;
+    readonly failure: { readonly messageKey: string; readonly retryable: boolean } | null;
+  } | null>(null);
+
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
+  const key = `${companyId}|${attempt}`;
+
+  useEffect(() => {
+    if (!canRead) return;
+    let live = true;
+    void listBranches().then((result) => {
+      if (!live) return;
+      if (result.status === 'ok') {
+        setHeld({
+          key,
+          items: result.data.items.filter((branch) => branch.companyId === companyId),
+          failure: null,
+        });
+        return;
+      }
+      // Three sentences, not one, exactly as the register read below: a refusal
+      // keeps its own wording and offers no second attempt, an ended session
+      // says so, and everything else is a "not right now".
+      const failure =
+        result.status === 'denied'
+          ? { messageKey: 'delivery.start.branchesRefused', retryable: false }
+          : result.status === 'expired'
+            ? { messageKey: 'state.expired.title', retryable: false }
+            : { messageKey: 'delivery.start.branchesUnavailable', retryable: true };
+      setHeld({ key, items: null, failure });
+    });
+    return () => {
+      live = false;
+    };
+  }, [canRead, companyId, key]);
+
+  // Derived last and in this order: permission, then failure, then arrival, then
+  // emptiness — so no caller can read an absent directory as a refusal.
+  if (!canRead) return DIRECTORY_NOT_OFFERED;
+  const answer = held !== null && held.key === key ? held : null;
+  if (answer === null) return DIRECTORY_LOADING;
+  if (answer.failure !== null) {
+    return {
+      phase: 'failed',
+      messageKey: answer.failure.messageKey,
+      retry: answer.failure.retryable ? retry : null,
+    };
+  }
+  if (answer.items === null || answer.items.length === 0) return NO_BRANCH;
+  return { phase: 'listed', items: answer.items };
+}
 
 /**
  * The assignable employees of one branch, in the five states the picker can be
@@ -311,6 +422,7 @@ function StartHandoverForm({
   companyId,
   branchId,
   canReadEmployees,
+  canReadBranches,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -318,16 +430,37 @@ function StartHandoverForm({
   readonly companyId: string;
   readonly branchId: string;
   readonly canReadEmployees: boolean;
+  readonly canReadBranches: boolean;
 }) {
-  const [named, setNamed] = useState('');
+  const [pickedBranch, setPickedBranch] = useState('');
   const [employeeId, setEmployeeId] = useState('');
   const [sending, setSending] = useState(false);
   const [state, setState] = useState<DeliveryWriteState | null>(null);
 
-  // An empty field means this work order's own branch. A value that is not a
-  // reference at all is not sent: the register would refuse the whole request,
-  // and a refusal for a half-typed value is noise rather than an answer.
-  const chosenBranch = REFERENCE.test(named.trim()) ? named.trim() : branchId;
+  /*
+   * Gated on BOTH codes, and the second one is not belt-and-braces. The
+   * directory exists to say which branch's register to read; with no register
+   * read there is nothing for it to answer, and a request whose result cannot be
+   * used is a request that should not be made.
+   */
+  const directory = useBranchDirectory(canReadBranches && canReadEmployees, companyId);
+  const offeredBranches = directory.phase === 'listed' ? directory.items : [];
+
+  /*
+   * The default is the work order's OWN branch, and it is derived rather than
+   * seeded into state: seeding from a prop would either miss the directory
+   * arriving later or need an effect to correct itself, and a chosen branch that
+   * is no longer offered would survive both. So a choice counts only while the
+   * directory still offers it, the work order's own branch is next, and an empty
+   * selection — the directory does not carry this work order's branch — still
+   * reads that branch, because it is the one this handover belongs to.
+   */
+  const selectedBranch = offeredBranches.some((branch) => branch.id === pickedBranch)
+    ? pickedBranch
+    : offeredBranches.some((branch) => branch.id === branchId)
+      ? branchId
+      : '';
+  const chosenBranch = selectedBranch === '' ? branchId : selectedBranch;
   const candidates = useEmployees(canReadEmployees, companyId, chosenBranch);
   const created = state?.created ?? null;
 
@@ -359,13 +492,44 @@ function StartHandoverForm({
             });
           }}
         >
-          <TextField
-            label={translate(messages, 'delivery.start.branchField')}
-            description={translate(messages, 'delivery.start.branchHelp')}
-            value={named}
-            onChange={(event) => setNamed(event.target.value)}
-            dir="ltr"
-          />
+          {directory.phase === 'listed' ? (
+            <SelectField
+              label={translate(messages, 'delivery.start.branchField')}
+              description={translate(messages, 'delivery.start.branchHelp')}
+              value={selectedBranch}
+              onChange={(event) => setPickedBranch(event.target.value)}
+              options={directory.items.map((branch) => ({
+                value: branch.id,
+                label: branch.name,
+              }))}
+              placeholder={translate(messages, 'delivery.start.branchPlaceholder')}
+            />
+          ) : directory.phase === 'loading' ? (
+            <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
+          ) : directory.phase === 'none' ? (
+            <p className="text-caption text-text-muted">
+              {translate(messages, 'delivery.start.branchesNone')}
+            </p>
+          ) : directory.phase === 'failed' ? (
+            <p role="alert" className="flex flex-col gap-2 text-body text-error">
+              {translateDynamic(messages, directory.messageKey)}
+              {directory.retry === null ? null : (
+                <span>
+                  <button
+                    type="button"
+                    className="text-primary underline-offset-2 hover:underline"
+                    onClick={directory.retry}
+                  >
+                    {translate(messages, 'delivery.start.employeesRetry')}
+                  </button>
+                </span>
+              )}
+            </p>
+          ) : (
+            <p className="text-caption text-text-muted">
+              {translate(messages, 'delivery.start.branchesNotOffered')}
+            </p>
+          )}
 
           {candidates.phase === 'listed' ? (
             <SelectField

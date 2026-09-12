@@ -129,19 +129,27 @@ export const P1_31_OPERATION_IDS = Object.freeze([
   'rpt.report-catalogue',
   'rpt.report-read',
   'rpt.report-run',
-  // The two employee READS the FE-002 handover form consumes. P-17 published four
-  // operations on that register; these are the two this phase's screens call, and
-  // the two administration commands beside them are deliberately not claimed —
-  // nothing in P1-31 administers a roster, and an allow-list that named them would
-  // be owning a surface no screen of this phase reaches.
+  // The employee register READ the FE-002 handover form consumes. P-17 published
+  // four operations on that register; this is the one this phase's screens call.
+  // The single-employee read was claimed here too and has been WITHDRAWN with the
+  // adapter that had no consumer (CC-39(b)); the two administration commands were
+  // never claimed, because nothing in P1-31 administers a roster. An allow-list
+  // that names an operation no screen of its phase reaches is owning a surface it
+  // does not have.
   //
-  // They DO widen the segment set, and by a root no P1-31 page lives under today:
+  // It DOES widen the segment set, and by a root no P1-31 page lives under today:
   // the register is addressed under `org`, and `(dashboard)` has no such area. That
   // is the point of naming an operation in the change that first consumes it — the
   // day an organisation screen lands under that segment it meets this rule already
   // written, exactly as `warranty` and `reports` did.
   'org.employee-list',
-  'org.employee-detail',
+  // The branch DIRECTORY the same form consumes. It is not an operation P1-31
+  // published — it has been serving every other picker in the product since
+  // PRE-P1-29 Wave C — and it is claimed here on the rule this gate states for
+  // itself: an operation a P1-31 screen calls that is absent from this list is one
+  // the gate does not own. It shares the `org` root the register contributes, so it
+  // widens nothing about the segments and everything about the claim.
+  'org.branch-list',
 ]);
 
 /**

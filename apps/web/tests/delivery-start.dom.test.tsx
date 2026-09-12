@@ -26,6 +26,12 @@ import { renderLtr, renderRtl } from './render';
  *  - another branch of the same company can be read, because the employee's own
  *    branch is not a rule the server applies and a picker that hid those
  *    colleagues would re-impose in a browser what the database does not carry;
+ *  - that branch is CHOSEN from the published directory and never typed: the
+ *    standing tenancy requirement forbids an operator typing a company or branch
+ *    identifier, and a form that demanded one made the cross-branch handover
+ *    unreachable for anybody who did not know an identifier by heart;
+ *  - where the directory cannot be offered or is refused, the work order's own
+ *    branch is used, the reason is stated, and no further read is issued;
  *  - the two causes behind one refusal code are worded apart, because they send
  *    an operator somewhere different;
  *  - a work order that already has a handover says so in its own words;
@@ -49,7 +55,11 @@ vi.mock('@/features/delivery/api', () => ({
 const listEmployees = vi.fn();
 vi.mock('@/features/delivery/employee-api', () => ({
   listEmployees: (...args: unknown[]) => listEmployees(...args),
-  readEmployee: vi.fn(),
+}));
+
+const listBranches = vi.fn();
+vi.mock('@/features/delivery/branch-api', () => ({
+  listBranches: (...args: unknown[]) => listBranches(...args),
 }));
 
 const { WorkOrderDeliveryPanel } =
@@ -62,6 +72,8 @@ const BRANCH_ID = '22222222-2222-4222-8222-222222222222';
 const OTHER_BRANCH_ID = '66666666-6666-4666-8666-666666666666';
 const EMPLOYEE_ID = '77777777-7777-4777-8777-777777777777';
 const OTHER_EMPLOYEE_ID = '88888888-8888-4888-8888-888888888888';
+const OTHER_COMPANY_ID = '99999999-9999-4999-8999-999999999999';
+const FOREIGN_BRANCH_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
 const okRead = (data: unknown) => ({ status: 'ok' as const, data, correlationId: 'corr-1' });
 const refusedRead = (status: string, correlationId: string | null = 'corr-9') => ({
@@ -82,6 +94,24 @@ const employee = (id: string, displayName: string, employmentRef: string | null)
 
 const page = (items: readonly unknown[]) => okRead({ items, nextCursor: null, hasMore: false });
 
+const branch = (id: string, name: string, companyId: string = COMPANY_ID) => ({
+  id,
+  companyId,
+  name,
+});
+
+/**
+ * The directory as the tenant publishes it: the operation is tenant-wide, so it
+ * carries a branch of another company too, and the form must not offer it.
+ */
+const DIRECTORY = [
+  branch(BRANCH_ID, 'Main workshop'),
+  branch(OTHER_BRANCH_ID, 'North counter'),
+  branch(FOREIGN_BRANCH_ID, 'Another company yard', OTHER_COMPANY_ID),
+];
+
+const directory = (items: readonly unknown[]) => okRead({ items });
+
 /** The two people the register answers with in the ordinary case. */
 const ROSTER = [
   employee(EMPLOYEE_ID, 'Maryam Haddad', 'ref-104'),
@@ -92,15 +122,18 @@ beforeEach(() => {
   readWorkOrderDelivery.mockReset();
   createDelivery.mockReset();
   listEmployees.mockReset();
+  listBranches.mockReset();
   // No live handover, which is the state the Start form is drawn in.
   readWorkOrderDelivery.mockResolvedValue(okRead({ workOrderId: WORK_ORDER_ID, delivery: null }));
   listEmployees.mockResolvedValue(page(ROSTER));
+  listBranches.mockResolvedValue(directory(DIRECTORY));
 });
 
 function renderPanel(
   props: {
     readonly canManage?: boolean;
     readonly canReadEmployees?: boolean;
+    readonly canReadBranches?: boolean;
     readonly locale?: 'en' | 'ar';
   } = {}
 ) {
@@ -115,6 +148,7 @@ function renderPanel(
       branchId={BRANCH_ID}
       canManage={props.canManage ?? true}
       canReadEmployees={props.canReadEmployees ?? true}
+      canReadBranches={props.canReadBranches ?? true}
     />
   );
 }
@@ -133,6 +167,7 @@ describe('the two authorities that decide what the Start control looks like', ()
     expect(within(region).queryAllByRole('button')).toHaveLength(0);
     expect(within(region).queryAllByRole('combobox')).toHaveLength(0);
     expect(listEmployees).not.toHaveBeenCalled();
+    expect(listBranches).not.toHaveBeenCalled();
   });
 
   it('states that the selection cannot be offered without the register read, and reads nothing', async () => {
@@ -144,10 +179,13 @@ describe('the two authorities that decide what the Start control looks like', ()
       within(region).getByText(EN['delivery.start.employeeSelectionUnavailable'] as string)
     ).toBeVisible();
     // Asked and refused would put a denial in the backend's log for a decision
-    // this screen could make. So it is not asked.
+    // this screen could make. So it is not asked — and neither is the branch
+    // directory, whose only purpose is to say which branch's register to read.
     expect(listEmployees).not.toHaveBeenCalled();
+    expect(listBranches).not.toHaveBeenCalled();
     expect(within(region).queryAllByRole('combobox')).toHaveLength(0);
     expect(within(region).queryAllByRole('button')).toHaveLength(0);
+    expect(within(region).queryAllByRole('textbox')).toHaveLength(0);
     expect(createDelivery).not.toHaveBeenCalled();
   });
 });
@@ -231,31 +269,6 @@ describe('choosing who hands the vehicle over', () => {
     expect(link.getAttribute('href')).toBe(`/en/delivery/${DELIVERY_ID}`);
   });
 
-  it('reads ANOTHER branch of the same company when the operator names one', async () => {
-    listEmployees.mockResolvedValueOnce(page(ROSTER));
-    listEmployees.mockResolvedValue(page([employee(OTHER_EMPLOYEE_ID, 'Lina Faraj', null)]));
-    renderPanel();
-    await screen.findByLabelText(labelled('delivery.start.employeeField'));
-
-    const branch = screen.getByLabelText(labelled('delivery.start.branchField'));
-    await userEvent.type(branch, OTHER_BRANCH_ID);
-
-    await waitFor(() =>
-      expect(listEmployees).toHaveBeenLastCalledWith({
-        companyId: COMPANY_ID,
-        branchId: OTHER_BRANCH_ID,
-        status: 'active',
-      })
-    );
-    // The set is REPLACED, not merged: a selection left behind from the previous
-    // branch would be submitted under a name no longer on screen.
-    const picker = await screen.findByLabelText(labelled('delivery.start.employeeField'));
-    await waitFor(() =>
-      expect(within(picker).getByRole('option', { name: 'Lina Faraj' })).toBeTruthy()
-    );
-    expect(within(picker).queryByRole('option', { name: 'Maryam Haddad — ref-104' })).toBeNull();
-  });
-
   it('says when the branch has nobody to name, instead of showing an empty control', async () => {
     listEmployees.mockResolvedValue(page([]));
     renderPanel();
@@ -286,6 +299,138 @@ describe('choosing who hands the vehicle over', () => {
     expect(
       screen.queryByRole('button', { name: EN['delivery.start.employeesRetry'] as string })
     ).toBeNull();
+  });
+});
+
+describe('choosing which branch to look in', () => {
+  it('offers the company’s branches as a list, defaulting to the work order’s own', async () => {
+    renderPanel();
+    const branches = await screen.findByLabelText(labelled('delivery.start.branchField'));
+    expect(within(branches).getByRole('option', { name: 'Main workshop' })).toBeTruthy();
+    expect(within(branches).getByRole('option', { name: 'North counter' })).toBeTruthy();
+    // The directory is tenant-wide and a handover belongs to its work order's
+    // organisation, so another company's branch is never on offer.
+    expect(within(branches).queryByRole('option', { name: 'Another company yard' })).toBeNull();
+    expect((branches as HTMLSelectElement).value).toBe(BRANCH_ID);
+    await waitFor(() =>
+      expect(listEmployees).toHaveBeenCalledWith({
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        status: 'active',
+      })
+    );
+  });
+
+  it('accepts no typed identifier anywhere on the form', async () => {
+    // The standing tenancy requirement: tenancy comes from the session, and a
+    // company or branch identifier is never typed into a screen. The field this
+    // list replaced made the cross-branch handover reachable only by somebody
+    // who already knew an identifier by heart.
+    renderPanel();
+    await screen.findByLabelText(labelled('delivery.start.employeeField'));
+    const form = screen.getByRole('form', { name: EN['delivery.start.formLabel'] as string });
+    expect(within(form).queryAllByRole('textbox')).toHaveLength(0);
+    expect(within(form).queryAllByRole('searchbox')).toHaveLength(0);
+    expect(within(form).queryAllByRole('spinbutton')).toHaveLength(0);
+    expect(form.querySelectorAll('input, textarea')).toHaveLength(0);
+  });
+
+  it('reads ANOTHER branch of the same company when one is chosen, and sends who was picked there', async () => {
+    listEmployees.mockResolvedValueOnce(page(ROSTER));
+    listEmployees.mockResolvedValue(page([employee(OTHER_EMPLOYEE_ID, 'Lina Faraj', null)]));
+    createDelivery.mockResolvedValue({
+      status: 'success',
+      messageKey: 'delivery.start.done',
+      attempt: 1,
+      created: {
+        id: DELIVERY_ID,
+        deliveringEmployeeId: OTHER_EMPLOYEE_ID,
+        deliveringEmployeeDisplayName: 'Lina Faraj',
+        status: 'ready',
+      },
+    });
+    renderPanel();
+    const branches = await screen.findByLabelText(labelled('delivery.start.branchField'));
+    await userEvent.selectOptions(branches, OTHER_BRANCH_ID);
+
+    await waitFor(() =>
+      expect(listEmployees).toHaveBeenLastCalledWith({
+        companyId: COMPANY_ID,
+        branchId: OTHER_BRANCH_ID,
+        status: 'active',
+      })
+    );
+    // The set is REPLACED, not merged: a selection left behind from the previous
+    // branch would be submitted under a name no longer on screen.
+    const picker = await screen.findByLabelText(labelled('delivery.start.employeeField'));
+    await waitFor(() =>
+      expect(within(picker).getByRole('option', { name: 'Lina Faraj' })).toBeTruthy()
+    );
+    expect(within(picker).queryByRole('option', { name: 'Maryam Haddad — ref-104' })).toBeNull();
+    // Choosing a branch re-reads the register and NOT the directory.
+    expect(listBranches).toHaveBeenCalledTimes(1);
+
+    await userEvent.selectOptions(picker, OTHER_EMPLOYEE_ID);
+    await userEvent.click(
+      screen.getByRole('button', { name: EN['delivery.start.submit'] as string })
+    );
+    await waitFor(() =>
+      expect(createDelivery).toHaveBeenCalledWith({
+        workOrderId: WORK_ORDER_ID,
+        deliveringEmployeeId: OTHER_EMPLOYEE_ID,
+      })
+    );
+  });
+
+  it('states that the wider directory is not available, reads none, and keeps the work order’s branch', async () => {
+    renderPanel({ canReadBranches: false });
+    expect(
+      await screen.findByText(EN['delivery.start.branchesNotOffered'] as string)
+    ).toBeVisible();
+    // A denial this screen could predict has no business in the backend's log.
+    expect(listBranches).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText(labelled('delivery.start.branchField'))).toBeNull();
+    await waitFor(() =>
+      expect(listEmployees).toHaveBeenCalledWith({
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        status: 'active',
+      })
+    );
+    // The fallback is a working form, not a dead one: a person can still be named.
+    expect(await screen.findByLabelText(labelled('delivery.start.employeeField'))).toBeTruthy();
+  });
+
+  it('falls back to the work order’s branch when the directory is refused, and asks no further', async () => {
+    listBranches.mockResolvedValue(refusedRead('denied'));
+    renderPanel();
+    expect(await screen.findByText(EN['delivery.start.branchesRefused'] as string)).toBeVisible();
+    // One read, refused, and no second one: re-issuing the same request against
+    // the same refusal fails identically, so no second attempt is offered.
+    expect(listBranches).toHaveBeenCalledTimes(1);
+    expect(screen.queryByLabelText(labelled('delivery.start.branchField'))).toBeNull();
+    await waitFor(() =>
+      expect(listEmployees).toHaveBeenCalledWith({
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        status: 'active',
+      })
+    );
+    expect(listEmployees).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers a second attempt at the directory where one can help', async () => {
+    listBranches.mockResolvedValue(refusedRead('unavailable'));
+    renderPanel();
+    expect(
+      await screen.findByText(EN['delivery.start.branchesUnavailable'] as string)
+    ).toBeVisible();
+    const retry = screen.getByRole('button', {
+      name: EN['delivery.start.employeesRetry'] as string,
+    });
+    listBranches.mockResolvedValue(directory(DIRECTORY));
+    await userEvent.click(retry);
+    expect(await screen.findByLabelText(labelled('delivery.start.branchField'))).toBeTruthy();
   });
 });
 

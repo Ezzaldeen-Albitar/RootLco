@@ -104,11 +104,14 @@ export default async function Page({ params }) {
  *
  * The FE-002 handover form moved the SEGMENT count and not the page count, which
  * is the opposite of the slice before it and is worth stating rather than
- * rounding. It names the two employee reads P-17 published, whose resource root
- * is `org` — a root no other claimed operation derives and no dashboard area is
- * named for — so the derivation gains one segment, while the form itself lives on
- * the work-order detail page the gate already examined. Both numbers below are
- * read off the gate's own report line on this head.
+ * rounding. It names the employee register read P-17 published and the branch
+ * directory read the branch picker consumes, whose shared resource root is `org`
+ * — a root no other claimed operation derives and no dashboard area is named for
+ * — so the derivation gains one segment, while the form itself lives on the
+ * work-order detail page the gate already examined. Withdrawing the unconsumed
+ * single-employee read and claiming the branch directory moved NEITHER number,
+ * because both share that same root. Both numbers below are read off the gate's
+ * own report line on this head.
  */
 const PINNED_PAGES = 15;
 const PINNED_OWNED_SEGMENTS = 9;
@@ -172,14 +175,17 @@ describe('the derivation is P1-31’s own and is not empty', () => {
     expect(P1_31_OPERATION_IDS).toContain(id('rpt', 'report-catalogue'));
     expect(P1_31_OPERATION_IDS).toContain(id('rpt', 'report-read'));
     expect(P1_31_OPERATION_IDS).toContain(id('rpt', 'report-run'));
-    // The two employee reads the FE-002 handover form consumes, named in the
-    // change that first consumes them. The two administration commands beside
-    // them on the same register are deliberately NOT claimed: no screen of this
-    // phase administers a roster, and claiming them would be owning a surface
-    // nothing here reaches.
+    // The two organisation reads the FE-002 handover form consumes, named in the
+    // change that first consumes them: the employee register and the branch
+    // directory the form picks a branch from.
     expect(P1_31_OPERATION_IDS).toContain(id('org', 'employee-list'));
-    expect(P1_31_OPERATION_IDS).toContain(id('org', 'employee-detail'));
-    for (const tail of ['employee-create', 'employee-status-set']) {
+    expect(P1_31_OPERATION_IDS).toContain(id('org', 'branch-list'));
+    // Three operations on the same two subjects are deliberately NOT claimed. The
+    // two administration commands: no screen of this phase administers a roster.
+    // The single-employee read: it was claimed while an adapter with no consumer
+    // existed, and both were withdrawn together — an allow-list naming an
+    // operation nothing reaches is owning a surface it does not have.
+    for (const tail of ['employee-create', 'employee-status-set', 'employee-detail']) {
       expect(P1_31_OPERATION_IDS, `${tail} is not this phase's`).not.toContain(id('org', tail));
     }
     // A stale entry is a VIOLATION rather than a silent shrink, so an honest

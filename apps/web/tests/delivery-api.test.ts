@@ -47,7 +47,8 @@ const {
 } = adapters;
 const { PAGE_SIZE } = await import('@/features/delivery/delivery-contract');
 
-const { listEmployees, readEmployee } = await import('@/features/delivery/employee-api');
+const { listEmployees } = await import('@/features/delivery/employee-api');
+const { listBranches } = await import('@/features/delivery/branch-api');
 const { EMPLOYEE_PAGE_SIZE, MAX_EMPLOYEE_PAGE_SIZE, employeePageSize } =
   await import('@/features/delivery/employee-contract');
 
@@ -707,7 +708,7 @@ describe('the ready-for-delivery queue names its branch and respects the queue c
 
 /* -- the employee register the handover form picks from --------------------- */
 
-describe('the two employee reads the handover form is built on', () => {
+describe('the employee read the handover form is built on', () => {
   const employeeRequest = { companyId: COMPANY_ID, branchId: BRANCH_ID };
 
   it('names the branch pair as a TARGET and asks only for people who may be named', async () => {
@@ -767,16 +768,22 @@ describe('the two employee reads the handover form is built on', () => {
     // "There is nobody here" and "you may not see them" are different sentences.
     expect(state.status).toBe('denied');
   });
+});
 
-  it('reads one employee by the identifier in the path', async () => {
-    get.mockResolvedValue(ok({ id: EMPLOYEE_ID, displayName: 'Maryam Haddad', status: 'active' }));
-    const state = await readEmployee(EMPLOYEE_ID);
+/* -- the branch directory the handover form picks a branch from ------------- */
+
+describe('the branch directory read the handover form picks a branch from', () => {
+  it('names the published directory and sends nothing with it', async () => {
+    get.mockResolvedValue(ok({ items: [] }));
+    const state = await listBranches();
     expect(state.status).toBe('ok');
-    expect(requested()).toBe(`/api/v1/org/employees/${EMPLOYEE_ID}`);
+    // Tenant-wide and parameterless: the company narrowing is the screen's
+    // display decision, and a scope is never claimed from this side.
+    expect(requested()).toBe('/api/v1/org/branches');
   });
 
-  it('reports an unresolvable employee as not found rather than as nobody', async () => {
-    get.mockResolvedValue(failure('not-found'));
-    expect((await readEmployee(EMPLOYEE_ID)).status).toBe('not-found');
+  it('maps a refusal to a refusal rather than to a company with one branch', async () => {
+    get.mockResolvedValue(failure('forbidden'));
+    expect((await listBranches()).status).toBe('denied');
   });
 });
