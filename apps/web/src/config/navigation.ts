@@ -474,9 +474,10 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         labelKey: 'nav.reports',
         icon: 'reports',
         // `/reports`: the report catalogue, built by P1-31 FE-011 … FE-014 on the
-        // Owner's D-4 decision. Gated on `rpt.report.read`, the code all three
-        // report operations declare — the catalogue, the definition read and the
-        // run. The rows a given report returns need that report's own dataset
+        // Owner's D-4 decision, with the operational overview of the four approved
+        // domains below it (FE-010, D-19). Gated on `rpt.report.read`, the code all
+        // three report operations declare — the catalogue, the definition read and
+        // the run. The rows a given report returns need that report's own dataset
         // codes as well, which are per-report and evaluated server-side on every
         // run; naming one of them here would hide the whole module from an
         // operator who may read the catalogue.
@@ -489,6 +490,48 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         permission: 'rpt.report.read',
         status: 'available',
         scope: 'tenant',
+        children: [
+          {
+            /*
+             * The catalogue itself, naming the SAME route as its parent — the
+             * `work-orders.queue` and `administration.overview` pattern, for the
+             * same reason: a parent with children is a disclosure BUTTON when the
+             * sidebar is expanded, and a button carries no `aria-current`, so
+             * `/reports` would mark nothing as the current page without this row.
+             *
+             * `exact`, because `/reports` is a path prefix of both the overview
+             * and every single-report route, and two items claiming to be the
+             * current page is the `P1-28` duplicate-marker defect.
+             */
+            key: 'reports.catalogue',
+            labelKey: 'nav.reportsAll',
+            icon: 'reports',
+            href: '/reports',
+            permission: 'rpt.report.read',
+            status: 'available',
+            scope: 'tenant',
+            exact: true,
+          },
+          {
+            /*
+             * P1-31 FE-010: the operational overview of the four approved report
+             * domains, at `/reports/overview`. Gated on the same `rpt.report.read`
+             * as its parent — the overview issues the same runs, and each report's
+             * own dataset codes are evaluated server-side on every one of them.
+             *
+             * FE-016 is this route with the branch named in the address, so it
+             * needs no entry of its own: a rail link to a branch would be a branch
+             * written into the source, which is exactly what D-19 forbids.
+             */
+            key: 'reports.overview',
+            labelKey: 'nav.reportsOverview',
+            icon: 'reports',
+            href: '/reports/overview',
+            permission: 'rpt.report.read',
+            status: 'available',
+            scope: 'branch',
+          },
+        ],
       },
     ],
   },

@@ -36,7 +36,10 @@ evidences the day it ran and nothing after it.
 
 When this plan was written the harness called operations that were not all on protected `develop`,
 and this section listed the four branches that carried them. **All four are merged.** Re-measured on
-protected `develop` **`811e9891353b466b7788e7ca8a7bddee8496de72`**, which this branch carries:
+protected `develop` **`811e9891353b466b7788e7ca8a7bddee8496de72`**, which is where each of them
+landed. This branch has since taken a second merge of `develop` at
+**`72782f489dd2412a3c3be46c65936252fc68ab00`** — the operational overview, PR #376 — and that head
+carries everything below unchanged:
 
 | #   | what the journey needs                                                                                                   | where it now lives on `develop` `811e9891`                      |
 | --- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
