@@ -187,6 +187,68 @@ function resolveEvidenceDir(requested, stamp) {
  */
 class SectionHalt extends Error {}
 
+/**
+ * The ONE barrier between a server response and the filesystem.
+ *
+ * ## Why this exists rather than a dismissal
+ *
+ * Every evidence file this harness writes is built from what the API answered, which is a
+ * network-to-file edge (`js/http-to-file-access`). The repository's CodeQL policy is
+ * `maximumOpenFindings: 0` with an empty `dismissals` array and a note saying a ceiling
+ * above zero would be "a budget for the next one", so the edge has to be removed rather
+ * than adjudicated — the same way its one historical dismissal was closed.
+ *
+ * It is removed by refusing to carry anything but BOUNDED SCALARS. A value reaches an
+ * evidence file only as a boolean, a finite number, `null`, or a string with no control
+ * characters and at most 200 characters; anything else becomes a marker naming what it was.
+ *
+ * ## What it deliberately does NOT bound
+ *
+ * The NUMBER of entries. A structure is walked entirely, however wide, because dropping
+ * the 41st step or the 41st row of a report would silently shorten the evidence — and an
+ * acceptance artefact that quietly omits what it measured is a worse defect than the one
+ * this function exists to prevent. Depth is capped only so that a cyclic or pathological
+ * structure terminates, well above anything this journey builds.
+ *
+ * ## Why this is a correctness fix and not a gate workaround
+ *
+ * An acceptance record is read by a person and diffed by a reviewer. A misbehaving or
+ * compromised local API could otherwise put a megabyte of anything — control characters,
+ * Markdown that rewrites the table around it, a nested structure deep enough to make the
+ * JSON unreadable — into the artefact the run is judged by. The harness already truncates
+ * one field for readability; this generalises that instinct into a rule and states it.
+ */
+const EVIDENCE_MAX_STRING = 200;
+const EVIDENCE_MAX_DEPTH = 12;
+
+function evidenceSafe(value, depth = 0) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : '[non-finite number]';
+  if (typeof value === 'string') {
+    // Control characters are stripped rather than escaped: they have no meaning in an
+    // evidence record and they are how a terminal or a Markdown table gets rewritten.
+    const clean = value.replace(/[\u0000-\u001f\u007f]/g, ' ');
+    return clean.length > EVIDENCE_MAX_STRING
+      ? `${clean.slice(0, EVIDENCE_MAX_STRING)}…[truncated]`
+      : clean;
+  }
+  if (depth >= EVIDENCE_MAX_DEPTH) return '[too deep]';
+  if (Array.isArray(value)) {
+    return value.map((item) => evidenceSafe(item, depth + 1));
+  }
+  if (typeof value === 'object') {
+    const out = {};
+    for (const [key, item] of Object.entries(value)) {
+      // The KEY is bounded too. A response that answered with an enormous property name
+      // would otherwise put it straight into the artefact.
+      out[evidenceSafe(key, depth + 1)] = evidenceSafe(item, depth + 1);
+    }
+    return out;
+  }
+  return `[${typeof value}]`;
+}
+
 class Ledger {
   constructor() {
     this.steps = [];
@@ -199,17 +261,27 @@ class Ledger {
   add(entry) {
     const n = this.next;
     this.next += 1;
+    /*
+     * Sanitised HERE, at the single point every step passes through, rather than in the
+     * hundred `detail` callbacks that feed it. A barrier that has to be remembered at each
+     * call site is a barrier with a hole in it, and `detail` is the field that carries what
+     * the server said.
+     *
+     * `status` and `expected` are included deliberately: a status is a number for a real
+     * response, and a string only for the states this harness invents ('unreachable'), so
+     * bounding them costs nothing and closes the last way a response could widen a row.
+     */
     const row = {
       n,
-      opId: entry.opId,
-      method: entry.method,
-      path: entry.path,
-      status: entry.status,
-      correlationId: entry.correlationId ?? null,
-      expected: entry.expected,
-      ok: entry.ok,
-      detail: entry.detail ?? {},
-      step: entry.step,
+      opId: evidenceSafe(entry.opId),
+      method: evidenceSafe(entry.method),
+      path: evidenceSafe(entry.path),
+      status: evidenceSafe(entry.status),
+      correlationId: evidenceSafe(entry.correlationId ?? null),
+      expected: evidenceSafe(entry.expected),
+      ok: entry.ok === true,
+      detail: evidenceSafe(entry.detail ?? {}),
+      step: evidenceSafe(entry.step),
     };
     this.steps.push(row);
     if (!row.ok) this.findings.push(row);
@@ -3058,14 +3130,18 @@ function writeEvidence(dir, { ledger, world, ctx, verdict }) {
     auditActionsPresent: world.auditActionsPresent ?? null,
   };
 
+  // `evidenceSafe` again on the way out. The ledger's rows are already bounded, and the
+  // summary is assembled from `world`, which holds ids the server answered — so the barrier
+  // is applied to the value that actually reaches the filesystem rather than trusted to have
+  // been applied to everything that fed it.
   writeFileSync(
     join(dir, 'summary.json'),
-    `${JSON.stringify(summary, null, 2)}\n`,
+    `${JSON.stringify(evidenceSafe(summary), null, 2)}\n`,
     OWNER_ONLY_FILE
   );
   writeFileSync(
     join(dir, 'steps.json'),
-    `${JSON.stringify({ run: ctx.stamp, steps: ledger.steps }, null, 2)}\n`,
+    `${JSON.stringify(evidenceSafe({ run: ctx.stamp, steps: ledger.steps }), null, 2)}\n`,
     OWNER_ONLY_FILE
   );
   writeFileSync(join(dir, 'steps.md'), `${markdownTable(ledger)}\n`, OWNER_ONLY_FILE);
@@ -3089,8 +3165,12 @@ function writeHandoff(dir, { ledger, world, ctx }) {
   const path = join(dir, 'handoff.json');
   writeFileSync(
     path,
+    // `evidenceSafe` here as well. Every id below was answered by the API, so this is the
+    // same network-to-file edge the evidence writer carries, and it is closed the same way.
+    // The two passwords are chosen by this harness rather than read from a response, and
+    // they pass through unchanged: they are short, printable and well under the bound.
     `${JSON.stringify(
-      {
+      evidenceSafe({
         warning:
           'LOCAL ACCEPTANCE CREDENTIALS, single use, for the browser half of this run. ' +
           'Remove this file when the browser half is done. Never commit it.',
@@ -3112,7 +3192,7 @@ function writeHandoff(dir, { ledger, world, ctx }) {
         invoiceId: world.invoiceId ?? null,
         reportPeriod: world.reportPeriod ?? null,
         reportRuns: world.reportRuns ?? null,
-      },
+      }),
       null,
       2
     )}\n`,

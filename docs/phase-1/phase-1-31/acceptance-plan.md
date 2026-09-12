@@ -488,9 +488,32 @@ class of defect matters, and because the fixes changed behaviour rather than ann
 already at that path. A plain write would follow a symlink somebody else had planted there and
 hand the credential over silently; refusing to write is the only answer that cannot.
 
-**No alert was dismissed, suppressed or annotated away.** The count above is the count, and the
-next hosted run is what confirms it — this document does not claim the result of a run it has not
-seen.
+**The two `js/http-to-file-access` alerts survived that first round and were closed structurally in
+a second.** File permissions do not remove a network-to-file edge; only removing the edge does. The
+repository's policy is `maximumOpenFindings: 0` with an **empty** `dismissals` array, and its own
+note records that the one dismissal this repository ever held — the same rule, at
+`scripts/ci/check-commit-checks.mjs` — was **removed because the finding was fixed**, not allowed to
+expire. So the same standard applies here.
+
+The edge is closed by `evidenceSafe`, one barrier every value crosses on its way to the filesystem:
+applied in `Ledger.add`, where all 133 steps are assembled, and again at each `writeFileSync`. A
+value reaches an evidence file only as a boolean, a finite number, `null`, or a string with no
+control characters and at most 200 characters; anything else becomes a marker naming what it was.
+It deliberately does **not** bound how MANY entries it carries — dropping the 41st step or the 41st
+report row would silently shorten the evidence, which is a worse defect than the one the barrier
+prevents — and its depth cap exists only so a cyclic structure terminates.
+
+That is a correctness fix and not a gate manoeuvre. An acceptance record is read by a person and
+diffed by a reviewer, and a misbehaving local API could otherwise put control characters that
+rewrite a terminal, or Markdown that rewrites the table around it, straight into the artefact the
+run is judged by. It was checked both ways before it was committed: a 133-step ledger carrying
+60-row report details passes through with every step, every row and every nested leaf intact, and
+the handoff still satisfies the shape `p1-31-handoff.ts` requires — the UUIDs, the e-mail, the
+password and the report counts all unchanged.
+
+**No alert was dismissed, suppressed or annotated away, and nothing was added to `dismissals`.** The
+counts above are the counts. Whether the policy gate is satisfied is decided by the next hosted run,
+and this document does not claim the result of a run it has not seen.
 
 The §8 list is the whole of what is claimed. The journey's **behaviour** is still unmeasured — a call
 shape that matches a declaration is not a call that has been answered — and the first person to run
