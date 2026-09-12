@@ -82,12 +82,29 @@ test.describe('P1-31 audit log, over the acceptance journey writes', () => {
     }
   });
 
+  /**
+   * This case carries NO skip, and that is deliberate.
+   *
+   * It asserts a property of the screen and not of the journey's records: that the audit log
+   * publishes no export and says so. Nothing about it needs a delivery, a warranty or a report
+   * run, so gating it on the handoff was a mistake — it made a case that can always run look
+   * like one that never can.
+   *
+   * It executes in continuous integration because the governed job signs in as the acceptance
+   * owner, whose permission set (`OWNER_PERMISSIONS` in
+   * `scripts/dev/owner-acceptance/context.mjs`) holds `iam.audit.view`, the code this page
+   * gates on. The heading and the denial's absence are asserted for that reason and not as
+   * decoration: they are what proves the session reached the screen rather than a refusal that
+   * happens to carry no download link either.
+   */
   test('the log offers no export, and says why', async ({ page }, testInfo) => {
-    // test-honesty-allow: TH-002 -- no acceptance handoff on this checkout; see NO_HANDOFF_REASON
-    test.skip(handoff === null, NO_HANDOFF_REASON);
     const locale = localeOf(testInfo.project.name);
 
     await page.goto(`/${locale}/administration/audit-log`);
+
+    await expect(page.getByRole('heading', { name: say(locale, 'audit.title') })).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
+    await expect(page.getByText(say(locale, 'state.denied.title'))).toHaveCount(0);
 
     // The absence is stated rather than left to be noticed: the service publishes no export
     // operation for audit records, so the screen offers none and says so. A download

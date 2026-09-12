@@ -32,6 +32,54 @@ const handoff = readHandoff();
 const PLANS_TITLE_KEY = 'warranty.policies.title';
 
 test.describe('P1-31 warranty screens, over the acceptance journey records', () => {
+  /**
+   * What runs WITHOUT a handoff, and why it is worth running.
+   *
+   * The governed job signs in as the acceptance owner, whose permission set
+   * (`OWNER_PERMISSIONS` in `scripts/dev/owner-acceptance/context.mjs`) holds
+   * `wty.warranty.read` — the code BOTH warranty pages gate on — and does **not** hold
+   * `wty.warranty.manage`, which is what `canManagePolicies` consults before offering the
+   * create panel.
+   *
+   * That asymmetry is the case below, and it is the strongest thing these specs can assert
+   * without journey data: the two reads are REACHABLE, and the write affordance beside them is
+   * WITHHELD from the same session in the same render. A screen that offered the create panel
+   * to a read-only holder would be an over-grant by omission — the exact failure
+   * `warranty-contract.ts` records `wty.warranty.read` as having been minted to end — and no
+   * static check can see it, because the affordance is correct in the source and wrong only in
+   * what it is handed.
+   */
+  test('both warranty reads are reachable, and plan creation is withheld', async ({
+    page,
+  }, testInfo) => {
+    const locale = localeOf(testInfo.project.name);
+
+    for (const [path, titleKey] of [
+      ['warranty', 'warranty.list.title'],
+      ['warranty/policies', PLANS_TITLE_KEY],
+    ] as const) {
+      await page.goto(`/${locale}/${path}`);
+
+      await expect(page.getByRole('heading', { name: say(locale, titleKey) })).toBeVisible();
+      await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
+
+      // The read code IS held, so the gate must let this session through. Asserting the
+      // denial's absence is what makes this a permission case rather than a smoke test: it
+      // fails if the page starts demanding a code it does not declare.
+      await expect(page.getByText(say(locale, 'state.denied.title'))).toHaveCount(0);
+    }
+
+    // Still on the plans screen. The create panel is gated on `wty.warranty.manage`, which
+    // this session does not hold, so the whole panel — heading, explanation and submit — is
+    // absent rather than present-and-disabled.
+    await expect(
+      page.getByRole('heading', { name: say(locale, 'warranty.policies.createHeading') })
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole('button', { name: say(locale, 'warranty.policies.createSubmit') })
+    ).toHaveCount(0);
+  });
+
   test("the branch's warranty list carries the generated warranty", async ({ page }, testInfo) => {
     // test-honesty-allow: TH-002 -- no acceptance handoff on this checkout; see NO_HANDOFF_REASON
     test.skip(handoff === null, NO_HANDOFF_REASON);

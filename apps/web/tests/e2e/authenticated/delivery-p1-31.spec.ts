@@ -61,6 +61,56 @@ async function chooseBranch(page: Page, locale: 'en' | 'ar', h: P131Handoff): Pr
 }
 
 test.describe('P1-31 delivery screens, over the acceptance journey records', () => {
+  /**
+   * What runs WITHOUT a handoff, and why it is worth running.
+   *
+   * The governed job signs in as the acceptance owner, whose permission set
+   * (`OWNER_PERMISSIONS` in `scripts/dev/owner-acceptance/context.mjs`) holds all THREE codes
+   * this queue demands together — `sal.delivery.view`, `wo.work_order.read` and
+   * `sal.finance.view`, the conjunction `DELIVERY_READINESS_PERMISSIONS` names. The screen is
+   * therefore reachable in continuous integration, and what it shows there is one of its two
+   * IDLE states, because the tenant the bootstrap makes carries no work order.
+   *
+   * That is the case below. It asserts the conjunction let this session through, and that the
+   * screen answered with a stated idle state rather than a blank region — the failure mode a
+   * queue has when it renders before it is asked, which reads to an operator as "nothing is
+   * ready" when the truth is "nothing has been requested".
+   */
+  test('the readiness queue is reachable, and idles with its reason stated', async ({
+    page,
+  }, testInfo) => {
+    const locale = localeOf(testInfo.project.name);
+
+    await page.goto(`/${locale}/delivery`);
+
+    await expect(
+      page.getByRole('heading', { name: say(locale, 'delivery.queue.title') })
+    ).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
+
+    // All three codes are held, so the conjunction must pass. This fails if the page starts
+    // demanding a fourth code it does not declare.
+    await expect(page.getByText(say(locale, 'state.denied.title'))).toHaveCount(0);
+
+    /*
+     * Exactly one of the two honest idles, and never neither.
+     *
+     * `noScopes` when the session can reach no company-and-branch pair, `idle` when it can but
+     * has not asked yet. Which one depends on what the bootstrap provisioned, and this case
+     * deliberately does not assert WHICH — that would bind a browser spec to a fixture detail
+     * it does not own. It asserts that the screen said something, because a queue that renders
+     * an empty table instead is the defect, and both sentences are the product's answer to
+     * "why is there nothing here".
+     */
+    const idling = page.getByText(say(locale, 'delivery.queue.idleTitle'));
+    const noScopes = page.getByText(say(locale, 'delivery.queue.noScopesTitle'));
+    const stated = (await idling.count()) + (await noScopes.count());
+    expect(
+      stated,
+      'the queue must state why it is showing nothing — an unexplained blank is the defect'
+    ).toBeGreaterThan(0);
+  });
+
   test('the readiness queue answers for every row it shows', async ({ page }, testInfo) => {
     // test-honesty-allow: TH-002 -- no acceptance handoff on this checkout; see NO_HANDOFF_REASON
     test.skip(handoff === null, NO_HANDOFF_REASON);

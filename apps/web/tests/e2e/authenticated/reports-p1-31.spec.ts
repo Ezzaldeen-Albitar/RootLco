@@ -69,6 +69,53 @@ async function runReport(
 }
 
 test.describe('P1-31 reporting screens, over the acceptance journey records', () => {
+  /**
+   * What runs WITHOUT a handoff, and why it is worth running.
+   *
+   * The governed job stands a full stack up and signs in as the acceptance owner
+   * (`.github/workflows/_reusable-authenticated-browser.yml`, `npm run acceptance:create-owner`).
+   * That account's permission set is `OWNER_PERMISSIONS` in
+   * `scripts/dev/owner-acceptance/context.mjs`, and it does **not** hold `rpt.report.read` —
+   * the code `REPORT_PERMISSIONS.read` names and both reporting pages gate on before they
+   * read anything.
+   *
+   * So continuous integration exercises the REFUSAL, and the refusal is a deliverable: the
+   * page must still render its own title, must state the denial in the shared words, and must
+   * not leak that a catalogue exists by rendering any part of it. Asserting that is not a
+   * consolation prize for the absent journey data — it is the only place this branch proves
+   * the gate runs BEFORE the read, which is the property `check-p1-31-access.mjs` enforces
+   * statically and nothing else has ever confirmed in a browser.
+   */
+  for (const [what, path, titleKey] of [
+    ['catalogue', 'reports', 'reports.catalogue.title'],
+    ['run screen', `reports/${REPORT_CODES[0]}`, 'reports.run.title'],
+  ] as const) {
+    test(`the ${what} refuses a caller without the report read code, and says so`, async ({
+      page,
+    }, testInfo) => {
+      const locale = localeOf(testInfo.project.name);
+
+      await page.goto(`/${locale}/${path}`);
+
+      // The page still owns its heading. A refusal that swallowed the title would leave an
+      // operator unable to tell a denial from a broken route.
+      await expect(page.getByRole('heading', { name: say(locale, titleKey) })).toBeVisible();
+      await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
+
+      await expect(page.getByText(say(locale, 'state.denied.title'))).toBeVisible();
+      await expect(page.getByText(say(locale, 'state.denied.description'))).toBeVisible();
+
+      // Nothing of the reporting surface leaks past the gate. The catalogue's table and the
+      // run form are the two things a caller could otherwise infer the shape of.
+      await expect(
+        page.getByRole('table', { name: say(locale, 'reports.catalogue.caption') })
+      ).toHaveCount(0);
+      await expect(page.getByRole('button', { name: say(locale, 'reports.run.show') })).toHaveCount(
+        0
+      );
+    });
+  }
+
   test('the catalogue offers all four datasets', async ({ page }, testInfo) => {
     // test-honesty-allow: TH-002 -- no acceptance handoff on this checkout; see NO_HANDOFF_REASON
     test.skip(handoff === null, NO_HANDOFF_REASON);
