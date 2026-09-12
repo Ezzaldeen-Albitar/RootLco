@@ -21,9 +21,11 @@ engineering consequence, and it is labelled as one.
 ## 1. The Owner's decisions, in the Owner's words
 
 **D-19 (2026-09-12 § 1) — FE-010 is an operational overview of the four approved report domains.**
-The decision is recorded in `docs/phase-1/phase-1-31/owner-decisions-2026-09-12.md`, which **lands
-with the unmerged report-engine datasets branch** (local commit `a1af21cd`) and is therefore not at
-this head; it was read from that commit and is quoted here rather than summarised:
+The decision is recorded in
+[`owner-decisions-2026-09-12.md`](./owner-decisions-2026-09-12.md). It was first read from the
+then-unmerged report-engine datasets branch (local commit `a1af21cd`), and it **reached protected
+`develop` with PR #374**, so it is present at this head and the quotation below can be checked against
+it. It is quoted rather than summarised:
 
 > FE-010 is an **operational overview of the four approved report domains**, with useful summaries
 > from their authoritative server results, branch and period filters, visible freshness and timezone,
