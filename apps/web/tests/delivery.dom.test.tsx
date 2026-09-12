@@ -860,12 +860,19 @@ describe('the reasons read in Arabic as Arabic', () => {
     const region = screen.getByRole('region', {
       name: AR['delivery.eligibility.heading'] as string,
     });
-    for (const key of [
+    const blockerKeys = [
       'delivery.blocker.financialBalanceOutstanding',
       'delivery.blocker.signatureMissing',
       'delivery.blocker.qualityControlNotPassed',
-    ]) {
-      expect(within(region).getAllByText(AR[key] as string).length).toBeGreaterThan(0);
+    ];
+    // The adapter having been called is not the panel having rendered its
+    // answer, so the labels are awaited rather than read on the next tick.
+    await waitFor(() => {
+      for (const key of blockerKeys) {
+        expect(within(region).getAllByText(AR[key] as string).length).toBeGreaterThan(0);
+      }
+    });
+    for (const key of blockerKeys) {
       // The English of the same reason must not be on screen: a copy-paste that
       // leaves the English string in the Arabic catalogue reads as translated.
       expect(within(region).queryByText(EN[key] as string)).toBeNull();
