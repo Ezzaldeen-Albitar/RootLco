@@ -114,6 +114,7 @@ const delivery = {
   receptionVisitId: VISIT_ID,
   vehicleId: VEHICLE_ID,
   deliveringEmployeeId: EMPLOYEE_ID,
+  deliveringEmployeeDisplayName: 'Maryam Haddad',
   status: 'delivered',
   deliveredAt: '2026-09-10T11:00:00.000Z',
   finalOdometerReadingId: '99999999-9999-4999-8999-999999999999',

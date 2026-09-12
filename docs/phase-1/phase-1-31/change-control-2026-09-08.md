@@ -2889,6 +2889,100 @@ exists.
   gate edit widens a rule's reach. The committed test-count baseline is untouched by this slice.
 - **No hosted run, no database tier, no browser acceptance and no end-to-end result is claimed.**
 
+## 51. Starting a handover with a validated delivering employee (FE-002) — PROVISIONAL
+
+Full record: [`delivery-start-selector.md`](./delivery-start-selector.md).
+
+### 51.1 Identifier allocation — PROVISIONAL, re-read at `develop` `72782f48`
+
+Raised against `develop` `811e9891`, where the register ran to **section 50** and **CC-38**, both
+settled by the report screens slice merged with PR #371. So this slice took **section 51** and
+**CC-39**.
+
+**Re-read after merging `develop` `72782f48`**, which carries the operational overview (PR #376) and
+with it **section 53** and **CC-41**. That pair sits ABOVE this slice's, so it takes nothing from it
+and nothing here is renumbered to follow it: § 48.1's rule is that an identifier is a claim about the
+register at the moment it was raised. Section 51 and CC-39 are unheld by any other record in this
+file at this head.
+
+| identifier | slice                                           | state, re-read at `develop` `72782f48`   |
+| ---------- | ----------------------------------------------- | ---------------------------------------- |
+| **CC-36**  | the warranty plan administration screens (#375) | merged, section 48                       |
+| **CC-37**  | a lane not on `develop`                         | claims **section 49**                    |
+| **CC-38**  | the report screens (#371)                       | merged, section 50                       |
+| **CC-39**  | this slice                                      | **PROVISIONAL**, this branch, section 51 |
+| **CC-40**  | the acceptance harness lane, not on `develop`   | claims **section 52**                    |
+| **CC-41**  | the operational overview (#376)                 | **merged**, section 53                   |
+
+CC-39 stays PROVISIONAL for one reason and one only: **section 49 and CC-37 are a LOWER pair still
+held by a lane that has not merged**, named in § 50.1 as "a lane not on this head". Nothing above
+CC-39 is claimed here. If either number is found taken at merge time this slice's heading and
+identifier move.
+
+### 51.2 What was delivered
+
+The **Start** control on a work order with no handover, withheld in PR #362 and withheld through four
+merges because the field it had to send named nobody. Prerequisite **P-17** merged with PR #370 and
+gave the delivering employee a real identity, so the control returns against that contract: a
+permission-gated picker over the employee register, and a create that sends the work order and the
+chosen person and nothing else.
+
+This is the Frontend half of the Owner's decision of 2026-09-10, quoted verbatim with its path in
+[`delivery-start-selector.md`](./delivery-start-selector.md) § 1, including the clarification that an
+employee's home branch must not restrict authorized work in other branches.
+
+Two docblocks were corrected in the same change because they asserted a rule the repository no longer
+matches: both `apps/web/src/lib/contracts/delivery-contract.ts` and
+`apps/web/src/features/delivery/delivery-contract.ts` stated that the delivering-employee reference
+had no foreign key anywhere in the platform. It has had one since P-17. The delivery record type
+gained the stamped display name the reads already publish, and the delivery screen and the printable
+sheet now show that name where they printed a bare reference.
+
+**Three findings raised against this branch were fixed on it**, and the dispositions below record
+each as a correction rather than folding it in silently. The branch whose people are listed is now
+CHOSEN from the published directory instead of typed as an identifier (**CC-39(a)**); the disposition
+that justified typing it was factually wrong and is corrected in place (**CC-39(a)**); and the
+register's single-employee adapter, which no production surface called, was withdrawn rather than
+annotated (**CC-39(b)**).
+
+### 51.3 Dispositions
+
+| id           | what was found                                                                                                                 | measurement                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | owner      | state                |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------- | -------------------- |
+| **CC-39**    | **one catalogue code, `ERR-VAL-001`, carries two distinct causes on this surface**                                             | An employee the caller cannot resolve answers rule `custom`; a retired one answers rule `inactive_employee`. The create service reports them as distinct rules deliberately, and the problem document's first violation is the only machine-readable discriminator — the service's own sentence never crosses the wire                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | **accepted, and discriminated by the RULE rather than by wording guessed from the code.** The write state carries the code and the first violation's rule, and the two are worded apart in plain language because they send an operator somewhere different: name somebody else, or have the person brought back. The same treatment **CC-36** gave the plan surface's three-cause code. No sentence is invented per code beyond the four the backend genuinely distinguishes                                                                                                                                                                          | this slice | closed, recorded     |
+| **CC-39(a)** | **the other branch a colleague may be named from was TYPED as an identifier, and the disposition that justified it was FALSE** | The form carried a text field an operator typed a branch identifier into. The standing Owner requirement is that tenancy comes from the login and no company or branch identifier is typed, so the cross-branch handover the Owner's clarification of 2026-09-10 protects was unreachable for anybody who did not know an identifier by heart. The earlier disposition claimed a reference field is what the inventory screens ship where no directory list is available; that is untrue and takes one read to measure — `org.branch-list` is consumed at `apps/web/src/features/inventory/api.ts` and rendered through `useBranches` in `apps/web/src/features/inventory/components/shared.tsx`, where the identifier fields are the FALLBACK for a caller who may not read the directory, never the design. The same operation is consumed by the payments, pricing, services, warranty and report screens, and by this feature's own readiness queue | **CORRECTED in this slice, and the earlier disposition is retracted rather than rewritten.** The branch is chosen from `org.branch-list`, narrowed to the work order's company, defaulted to the work order's own branch and gated on `org.branch.read`. Where the directory is not offered, answers with nothing, is refused or does not answer, the reason is stated and the work order's own branch is read — which is the branch the register would have been read for anyway. **No typed input remains on the form**, and a test asserts that. The operation is named in `scripts/ci/check-p1-31-access.mjs` in the change that first consumes it | this slice | closed, corrected    |
+| **CC-39(b)** | **the register's single-employee read was published with no production consumer**                                              | `readEmployee` was called by nothing but its own two tests. Saying so in the adapter's docblock was the earlier disposition, and it is not a disposition: this repository treats _declared but never wired_ as a defect it has shipped repeatedly (P1-27 INT-113), and `apps/web/src/features/delivery/api.ts` states that rule against itself two files away                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | **WITHDRAWN in this slice, superseding the earlier disposition.** The adapter, its contract row, its two tests and the `org.employee-detail` entry in `scripts/ci/check-p1-31-access.mjs` were removed together. Neither gate pin moved, because the register's list read contributes the same resource root. It returns on the day a surface calls it — resolving the person named on a handover recorded before the register existed. No legacy row was repaired here, and the review list P-17 created is the Owner's                                                                                                                               | this slice | closed, withdrawn    |
+| **CC-39(c)** | **the access gate gained an owned segment no dashboard area is named for**                                                     | Claiming the organisation reads this form consumes — the employee register and the branch directory — derives their shared resource root, `org`, taking the derivation from eight segments to nine. The dashboard holds no such area, so the page count did not move: the form lives on the work-order detail page the gate already examined. Withdrawing the single-employee read and claiming the branch directory moved NEITHER number, for the same reason                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | **engineering consequence, implemented.** Both pins in `tests/ci/p1-31-access-gate.test.ts` were re-based from the gate's own report line on this head, and the gate's own list records why the two administration commands on the same register, and the single-employee read withdrawn under CC-39(b), are deliberately NOT claimed. Naming a segment before a screen exists under it is what made the warranty and report pages meet this rule already written                                                                                                                                                                                      | this slice | closed in this slice |
+
+### 51.4 What this slice did NOT do
+
+- **No backend file changed**, and no operation, permission, migration, seed, audit action or
+  generated register moved.
+- **No roster administration surface exists.** Nothing here adds, renames, retires or reinstates an
+  employee, and the two register commands that could are neither mirrored nor claimed.
+- **No login account, employment record, department, contact detail or role is read**, and the
+  employment reference is displayed as the opaque reference it is.
+- **No legacy handover was repaired**, and no unresolved reference was replaced by the authenticated
+  actor or by a guess — the Owner forbade both in the same clarification.
+- **No figure or arithmetic crosses this tier**, as with every other delivery surface.
+- **No gate was weakened, no suppression added and no floor moved.** The committed test-count
+  baseline is untouched. The allow-list in `scripts/ci/check-p1-31-access.mjs` moved in BOTH
+  directions and each move is recorded above: `org.branch-list` was claimed because a screen of this
+  phase now calls it, and `org.employee-detail` was released with the adapter that called nothing.
+  A narrowing that drops a claim this phase cannot support is not a narrowing that hides a
+  violation — no page stopped being examined and no segment stopped being owned.
+- **No hosted run, no database tier, no browser acceptance and no end-to-end result is claimed.**
+
+### 51.5 Proof
+
+Every command, with its numbers, is in [`delivery-start-selector.md`](./delivery-start-selector.md)
+§ 7. It is not duplicated here: a hand-copied total beside a recorded one is exactly the disagreement
+the P1-27 closing-value gate exists to catch, and the recorded tiers live in
+`docs/phase-1/phase-1-27/evidence/local-run-ledger.json` with the commit each was taken at.
+
+**There was no hosted gate, no run against any database, no browser tier and no merge.** The slice is
+open as a pull request; no review verdict and no hosted result is recorded here.
+
 ---
 
 # QA-005 — the fresh-organisation acceptance harness, of 2026-09-12
@@ -2896,11 +2990,12 @@ exists.
 ## 52. The fresh-organisation acceptance harness — **PROVISIONAL** (QA-005)
 
 **Slice:** `feature/p1-31-acceptance-harness`, ownership profile `p1-31-frontend`.
-**Baseline:** protected `develop` **72782f489dd2412a3c3be46c65936252fc68ab00**, merged into this
-branch on 2026-09-12. The branch was authored against `deb404c1` and carries two merges of
-`develop` — `811e9891` first, then `72782f48` when PR #376 landed the operational overview while
-this branch was in flight. Both are recorded by their own commits, and every figure below that
-refers to `develop` refers to `72782f48`.
+**Baseline:** protected `develop` **9b109f639348db424940b00b022cfb36e2160e2c**, merged into this
+branch on 2026-09-13. The branch was authored against `deb404c1` and carries THREE merges of
+`develop`: `811e9891`, then `72782f48` when PR #376 landed the operational overview, then
+`9b109f63` when PR #377 landed the delivery start selector — each of the last two while this
+branch was in flight. Each is recorded by its own commit, and every figure below that refers to
+`develop` refers to `9b109f63`.
 
 ### 52.1 Identifier allocation — the collision RESOLVED, and this slice is the one that renumbered
 
@@ -2917,18 +3012,19 @@ disposition below is **CC-42**, the next free identifier. The section number is 
 free at `811e9891` and is still free at `72782f48` — and no section or identifier belonging to any
 other lane was touched.
 
-| identifier                                  | belongs to                           | state                                      |
-| ------------------------------------------- | ------------------------------------ | ------------------------------------------ |
-| sections 1–48 and 50, **CC-01 … CC-38**     | the earlier P1-31 slices             | settled, on `develop` `72782f48`           |
-| section 49                                  | `feature/p1-31-assurance-evidence`   | unmerged, deliberately held                |
-| section 51                                  | unallocated                          | free                                       |
-| **section 52**                              | this slice                           | free at `72782f48`; claimed here           |
-| section 53, **CC-39**, **CC-40**, **CC-41** | `feature/p1-31-operational-overview` | **settled, on `develop`** — merged as #376 |
-| **CC-42**                                   | this slice                           | the next free identifier; claimed here     |
+| identifier                                  | belongs to                                       | state                                      |
+| ------------------------------------------- | ------------------------------------------------ | ------------------------------------------ |
+| sections 1–48 and 50, **CC-01 … CC-38**     | the earlier P1-31 slices                         | settled, on `develop` `72782f48`           |
+| section 49                                  | `feature/p1-31-assurance-evidence`               | unmerged, deliberately held                |
+| section 51                                  | `feature/p1-31-delivery-start-selector` (FE-002) | **settled, on `develop`** — merged as #377 |
+| **section 52**                              | this slice                                       | free at `72782f48`; claimed here           |
+| section 53, **CC-39**, **CC-40**, **CC-41** | `feature/p1-31-operational-overview`             | **settled, on `develop`** — merged as #376 |
+| **CC-42**                                   | this slice                                       | the next free identifier; claimed here     |
 
 **Why the marking is still PROVISIONAL after all that.** Not because of the numbering, which is now
-settled in both directions: nothing is free below 52 that another lane could grow into except 49 and
-51, both lower, and CC-42 is unoccupied with the collision that threatened it already resolved. It
+settled in both directions: section 51 has since been taken by #377, and the one number below 52
+still free — 49, held by an unmerged branch — is lower than it and cannot grow onto it. CC-42 is
+unoccupied on `develop`, the collision that threatened it already resolved. It
 is provisional because the slice's own subject is: this branch is unmerged, the harness has never
 been executed, and **CC-42** below records a residual that no amount of renumbering touches. The
 marking comes off when the acceptance runs, not when the register settles.
@@ -3099,8 +3195,8 @@ because every file now really does execute, which is what it was written to requ
 - **No test floor moved.** `apps/web/tests/e2e/**` is the Playwright tier and is not counted by
   `web.minTests`, which measures the vitest projects under `apps/web/tests`.
 - **No section or identifier belonging to another lane was renumbered.** The union in this file is
-  `develop`'s sections 44 to 48, 50 and 53 in their own order, with this slice's 52 in its numeric
-  place between them. When `feature/p1-31-operational-overview` merged as #376 and settled the
+  `develop`'s sections 44 to 48, 50, 51 and 53 in their own order, with this slice's 52 in its
+  numeric place between them. When `feature/p1-31-operational-overview` merged as #376 and settled the
   **CC-40** both branches had claimed, THIS slice moved to **CC-42** — its own identifier, by the
   register's own reconciliation rule, with nothing of the other lane's touched.
 

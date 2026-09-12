@@ -55,8 +55,7 @@ const listChecklistResults = vi.fn();
 const listStatusHistory = vi.fn();
 const readWorkOrderDelivery = vi.fn();
 const readActiveChecklistItems = vi.fn();
-// Regression trap: a restored create call must fail the unavailable-selection cases.
-const startDelivery = vi.fn();
+const createDelivery = vi.fn();
 const verifyReceiver = vi.fn();
 const recordChecklistResult = vi.fn();
 const completeDelivery = vi.fn();
@@ -69,10 +68,39 @@ vi.mock('@/features/delivery/api', () => ({
   listStatusHistory: (...args: unknown[]) => listStatusHistory(...args),
   readWorkOrderDelivery: (...args: unknown[]) => readWorkOrderDelivery(...args),
   readActiveChecklistItems: (...args: unknown[]) => readActiveChecklistItems(...args),
-  startDelivery: (...args: unknown[]) => startDelivery(...args),
+  createDelivery: (...args: unknown[]) => createDelivery(...args),
   verifyReceiver: (...args: unknown[]) => verifyReceiver(...args),
   recordChecklistResult: (...args: unknown[]) => recordChecklistResult(...args),
   completeDelivery: (...args: unknown[]) => completeDelivery(...args),
+}));
+
+/*
+ * The employee register the handover form picks from (FE-002). The register's
+ * own behaviour is exercised in `delivery-start.dom.test.tsx`; here it answers
+ * with nothing, so these cases keep their own subject.
+ */
+const listEmployees = vi.fn(async () => ({
+  status: 'ok' as const,
+  data: { items: [], nextCursor: null, hasMore: false },
+  correlationId: 'corr-1',
+}));
+vi.mock('@/features/delivery/employee-api', () => ({
+  listEmployees: () => listEmployees(),
+}));
+
+/*
+ * The branch directory the same form picks a branch from (FE-002). Its five
+ * states are exercised in `delivery-start.dom.test.tsx`; here it is mocked so
+ * that no case in this file reaches the network owner, and every panel below
+ * withholds the directory read code, so it answers nothing.
+ */
+const listBranches = vi.fn(async () => ({
+  status: 'ok' as const,
+  data: { items: [] },
+  correlationId: 'corr-1',
+}));
+vi.mock('@/features/delivery/branch-api', () => ({
+  listBranches: () => listBranches(),
 }));
 
 const captureDeliverySignature = vi.fn();
@@ -182,6 +210,7 @@ const delivery = {
   receptionVisitId: VISIT_ID,
   vehicleId: VEHICLE_ID,
   deliveringEmployeeId: EMPLOYEE_ID,
+  deliveringEmployeeDisplayName: 'Maryam Haddad',
   status: 'ready',
   deliveredAt: null,
   finalOdometerReadingId: null,
@@ -829,7 +858,12 @@ describe('the summary', () => {
     const region = panel('delivery.summary.heading');
     expect(within(region).getByText(VEHICLE_ID)).toBeVisible();
     expect(within(region).getByText(VISIT_ID)).toBeVisible();
-    expect(within(region).getByText(EMPLOYEE_ID)).toBeVisible();
+    // The delivering employee is NOT one of them any more: P1-31 prerequisite
+    // P-17 bound the column to the employee register and the database stamps an
+    // immutable name beside it, so the screen shows the person the server
+    // recorded rather than the reference it used to print.
+    expect(within(region).getByText('Maryam Haddad')).toBeVisible();
+    expect(within(region).queryByText(EMPLOYEE_ID)).toBeNull();
     expect(
       within(region).getByText(EN['delivery.summary.identifiersExplain'] as string)
     ).toBeVisible();
@@ -875,7 +909,15 @@ describe('the reasons read in Arabic as Arabic', () => {
 
 describe('the work order’s own handover section', () => {
   it('says there is none, and offers no way to start one WITHOUT the write code', async () => {
-    renderLtr(<WorkOrderDeliveryPanel locale="en" messages={en} workOrderId={WORK_ORDER_ID} />);
+    renderLtr(
+      <WorkOrderDeliveryPanel
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER_ID}
+        companyId={COMPANY_ID}
+        branchId={BRANCH_ID}
+      />
+    );
     await waitFor(() => expect(readWorkOrderDelivery).toHaveBeenCalledWith(WORK_ORDER_ID));
     const region = screen.getByRole('region', {
       name: EN['delivery.workOrder.heading'] as string,
@@ -894,7 +936,15 @@ describe('the work order’s own handover section', () => {
     readWorkOrderDelivery.mockResolvedValue(
       okRead({ workOrderId: WORK_ORDER_ID, delivery: { ...delivery, status: 'signed' } })
     );
-    renderLtr(<WorkOrderDeliveryPanel locale="en" messages={en} workOrderId={WORK_ORDER_ID} />);
+    renderLtr(
+      <WorkOrderDeliveryPanel
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER_ID}
+        companyId={COMPANY_ID}
+        branchId={BRANCH_ID}
+      />
+    );
     const region = await screen.findByRole('region', {
       name: EN['delivery.workOrder.heading'] as string,
     });
@@ -907,7 +957,15 @@ describe('the work order’s own handover section', () => {
 
   it('reports a refusal of that read rather than reporting no handover', async () => {
     readWorkOrderDelivery.mockResolvedValue(refusedRead('denied', 'corr-403'));
-    renderLtr(<WorkOrderDeliveryPanel locale="en" messages={en} workOrderId={WORK_ORDER_ID} />);
+    renderLtr(
+      <WorkOrderDeliveryPanel
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER_ID}
+        companyId={COMPANY_ID}
+        branchId={BRANCH_ID}
+      />
+    );
     await waitFor(() => expect(readWorkOrderDelivery).toHaveBeenCalled());
     const region = screen.getByRole('region', {
       name: EN['delivery.workOrder.heading'] as string,
@@ -917,9 +975,15 @@ describe('the work order’s own handover section', () => {
   });
 });
 
-describe('employee selection is unavailable when starting a handover', () => {
+/*
+ * The Start control WITHOUT `org.employee.read`. The whole form — the register,
+ * the branch, the refusals and the success — is exercised in
+ * `delivery-start.dom.test.tsx`; what belongs here is the negative the work
+ * order's own section is responsible for.
+ */
+describe('employee selection cannot be offered without the register read', () => {
   it.each(['en', 'ar'] as const)(
-    'offers no employee input or Start action in %s and makes no create call',
+    'offers no employee input or Start action in %s and reads nothing',
     async (locale) => {
       const messages = locale === 'en' ? en : ar;
       const text = locale === 'en' ? EN : AR;
@@ -929,6 +993,8 @@ describe('employee selection is unavailable when starting a handover', () => {
           locale={locale}
           messages={messages}
           workOrderId={WORK_ORDER_ID}
+          companyId={COMPANY_ID}
+          branchId={BRANCH_ID}
           canManage={true}
         />
       );
@@ -942,7 +1008,12 @@ describe('employee selection is unavailable when starting a handover', () => {
       ).toBeVisible();
       expect(within(region).queryAllByRole('textbox')).toHaveLength(0);
       expect(within(region).queryAllByRole('button')).toHaveLength(0);
-      expect(startDelivery).not.toHaveBeenCalled();
+      expect(createDelivery).not.toHaveBeenCalled();
+      // Not asked and refused — not asked at all. A denial the screen could have
+      // predicted has no business in the backend's log. The branch directory is
+      // withheld on the same terms and on its own separate code.
+      expect(listEmployees).not.toHaveBeenCalled();
+      expect(listBranches).not.toHaveBeenCalled();
       expect(readWorkOrderDelivery).toHaveBeenCalledWith(WORK_ORDER_ID);
       if (locale === 'ar') {
         expect(
@@ -959,6 +1030,8 @@ describe('employee selection is unavailable when starting a handover', () => {
         locale="en"
         messages={en}
         workOrderId={WORK_ORDER_ID}
+        companyId={COMPANY_ID}
+        branchId={BRANCH_ID}
         canManage={true}
       />
     );
@@ -968,7 +1041,7 @@ describe('employee selection is unavailable when starting a handover', () => {
       screen.queryByText(EN['delivery.start.employeeSelectionUnavailable'] as string)
     ).toBeNull();
     expect(screen.queryAllByRole('textbox')).toHaveLength(0);
-    expect(startDelivery).not.toHaveBeenCalled();
+    expect(createDelivery).not.toHaveBeenCalled();
   });
 });
 

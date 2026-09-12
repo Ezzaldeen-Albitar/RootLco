@@ -7,6 +7,7 @@ import { fromFailure, success, type ActionState } from '@/lib/forms/action-resul
 import type {
   DeliveryChecklistRecordBody,
   DeliveryCompleteBody,
+  DeliveryCreateBody,
   DeliveryReceiverVerifyBody,
   DeliverySignatureAttachBody,
 } from '@/lib/contracts/delivery-contract';
@@ -28,11 +29,15 @@ import type {
  * The delivery adapters (P1-31, FE-002/003/004/006/007).
  *
  * The reads came first and rendered the custody chain. The writes below are the
- * execution slice, and each one exists because a control on the delivery screen
- * sends it: verifying its receiver, recording a checklist
- * outcome, binding a signature and completing the release. Nothing here is
- * declared ahead of the screen that calls it, which is how a dead declaration
- * gets in.
+ * execution slice, and each one exists because a control on a screen sends it:
+ * opening the handover, verifying its receiver, recording a checklist outcome,
+ * binding a signature and completing the release. Nothing here is declared ahead
+ * of the screen that calls it, which is how a dead declaration gets in.
+ *
+ * The first of the five was withheld until P1-31 prerequisite P-17 gave the
+ * delivering employee an identity to point at. It is here now because the
+ * reference is validated by the server and by the database, which is what the
+ * Owner's decision of 2026-09-10 required before the control could return.
  *
  * Nothing here fetches. `readOperation` calls `authorizedClient()`, the only
  * network owner in this application, and turns a transport outcome into a view
@@ -229,8 +234,68 @@ export async function readActiveChecklistItems(): Promise<ReadState<ActiveCheckl
 export interface DeliveryWriteState extends ActionState {
   /** The catalogue code the problem document carried. Absent when it carried none. */
   readonly code?: string;
+  /**
+   * The first violation's rule token, which is how ONE code's causes are told
+   * apart.
+   *
+   * `ERR-VAL-001` on a handover start means two different things — an employee
+   * this caller cannot resolve, and an employee who has been retired — and the
+   * problem document's `violations` list is the only machine-readable statement
+   * of which. The service's own sentence never crosses the wire.
+   */
+  readonly rule?: string;
   /** The authority a refused override named, when it named one. */
   readonly requiredPermissions?: readonly string[];
+  /**
+   * The handover the server returned, on a start that succeeded.
+   *
+   * Carried so the screen can name the person the SERVER stamped and link to the
+   * record it created, rather than restating the request it sent.
+   */
+  readonly created?: DeliveryRecord;
+}
+
+/**
+ * Open a handover for a work order (`sal.delivery-create`).
+ *
+ * The FIRST act of the custody chain, and the one this application withheld
+ * until the delivering employee had an identity to point at. Both fields are
+ * required and nothing else is sent: the vehicle and the reception visit are
+ * derived from the work order by the service, because
+ * `sal.guard_delivery_coherence` requires them to match it — so a mismatch
+ * cannot be expressed at all.
+ *
+ * ## The employee is not validated here, and could not be
+ *
+ * `deliveringEmployeeId` names a row of the organisation's employee register.
+ * The service resolves it under the caller's own read rules and
+ * `sal.stamp_delivering_employee_identity` decides again inside the
+ * transaction, so the two refusals this adapter carries the code and rule for —
+ * an employee this caller cannot resolve, and one who has been retired — are
+ * the server's decisions read back, never a rule composed on this side.
+ *
+ * The employee's home branch is deliberately NOT among them. The Owner
+ * clarified on 2026-09-10 that it must not restrict authorized work in another
+ * branch of the same organisation, and the backend carries that literally: the
+ * foreign key names the organisation and nothing narrower.
+ *
+ * ## No retry key is minted here
+ *
+ * The operation is registered idempotent, and the transport reads that fact out
+ * of the published contract and attaches a key to every send that needs one. A
+ * key written here would either duplicate that or — worse — be reused across two
+ * genuine attempts and turn the second into a replay of the first.
+ */
+export async function createDelivery(
+  body: DeliveryCreateBody,
+  attempt = 1
+): Promise<DeliveryWriteState> {
+  const client = await authorizedClient();
+  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+
+  const result = await client.send<DeliveryRecord>('POST', '/api/v1/deliveries', body);
+  if (!result.ok) return withCode(fromFailure(result, attempt), result);
+  return { ...success('delivery.start.done', attempt), created: result.data };
 }
 
 /**
@@ -410,9 +475,11 @@ export async function completeDelivery(
  */
 function withCode(state: ActionState, failure: ApiFailure): DeliveryWriteState {
   const problem = failure.problem;
+  const rule = problem?.violations?.[0]?.rule;
   return {
     ...state,
     ...(problem?.code === undefined ? {} : { code: problem.code }),
+    ...(rule === undefined ? {} : { rule }),
     ...(problem?.requiredPermissions === undefined
       ? {}
       : { requiredPermissions: problem.requiredPermissions }),
