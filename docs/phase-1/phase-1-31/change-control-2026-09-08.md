@@ -2489,3 +2489,202 @@ The committed floor in `.github/ci-baselines/test-count-baseline.json` was **not
 executed clears the 3700 floor, `tests/ci/web-test-floor.test.ts` and
 `tests/ci/baseline-integrity.test.ts` both pass against it unchanged, and no rule forced a ratchet,
 so the baseline keeps the figures its own run established.
+
+## 50. The report screens
+
+**Why 50 and not the next unused number.** Sections 44 to 47 were still open when this slice was
+first written, so its number was taken high and marked provisional. They are settled on `develop`
+now, and section 48 merged with PR #375 and is present in this file at the head this branch carries.
+Section 49 sits on a branch that is not merged, so the number stays 50 rather than moving down onto
+a heading another branch is already using.
+
+**Slice:** `feature/p1-31-report-screens`, ownership profile `p1-31-frontend`.
+**Baseline:** protected `develop` **ae0e035480596243c739beec1a40d2ae5c105e7a** (the ready-for-delivery
+queue, #367), branched on 2026-09-12. Nothing was merged into this branch and no sync was taken, so
+the head this section is written against is this branch's own.
+
+The full record is [`report-screens.md`](./report-screens.md).
+
+**The Owner's decisions, in the Owner's words.** **D-4** (2026-09-09 § 3) approves four baseline
+reports and their columns — `work_orders_by_status`, `technician_labor_time`, `inventory_movements`
+and `invoice_payment_summary` — and requires each to specify its period and date semantics, its
+timezone, its authorization, its source, its freshness and its drill-through, with **all calculation
+done on the server**. **D-17** (2026-09-10 § 4) makes every report period **half-open**, `[from, to)`,
+in the **selected branch's timezone**, with the **timezone and the filter context displayed and
+preserved** wherever the result is shown, and no inclusive `to` and no double counting. **D-19**
+(2026-09-12 § 1) defines FE-010 as an operational overview of the four approved domains, binds FE-016
+to the same overview for the selected branch with **no hard-coded pilot**, and forbids inventing
+profit, performance scores or trends. **D-20** (2026-09-12 § 2) completes the invoice and payment
+report: separate authoritative credit-note and unallocated amounts, the permitted party name beside
+its identifier **labelled by its actual role**, drill-through **resolved by document kind and
+authorized target route**, and no invented amounts, no financial calculation in the browser and no
+silently omitted contract. This slice consumes those four and extends none of them.
+
+**Measured facts (not part of the decision).**
+
+- All three reporting operations are on `develop`: `rpt.report-catalogue`, `rpt.report-read` and
+  `rpt.report-run`, each declaring `rpt.report.read`, with the run additionally evaluating the
+  dataset's own read code in the service at its own branch scope.
+- The dataset registry holds **one** entry at this head, `work_orders_by_status`. The other three
+  approved codes live on `remediation/p1-31-backend-report-engine-datasets`, which is unmerged.
+- Two run-envelope shapes therefore exist: the one `develop` publishes, with `countsByState` and no
+  `groups`, `filters` or `branch`; and the one the dataset branch adds, with all three, three further
+  column kinds (`duration`, `quantity`, `money`) and a per-kind drill-through.
+- `schemas.limit` on all three routes refuses a page size above **100** rather than clamping it, and
+  the platform's default for a request that sends none is **50**.
+- `apps/web/src/lib` holds **no** decimal-string display formatter. `formatMoney` needs a currency
+  beside the amount and a canonical four-place scale and converts to a number to reach `Intl`;
+  `trimTrailingZeros` throws on a value that is not canonical; every `lib/format.ts` helper takes a
+  number or constructs a date.
+- Of the three drill-through templates the four datasets publish, **this application serves one** —
+  `/work-orders/{id}`. There is no per-technician page, no invoice detail page and no receipt detail
+  page, and a credit note has no read operation at all.
+- The P1-31 access gate examines **11** route pages across **7** owned segments with the three
+  reporting operations named; it examined **9** across the same **7** before this slice.
+- `validate:p1-27-frontend` reports **151 files across 5 trees, 0 failures**; it reported 149 before.
+- There is no export operation. P-12 is not built and `rpt.export` stays excluded on **CC-04**'s
+  grounds, so a platform baseline publishes no export authority.
+
+**Engineering consequence (not an Owner decision).** The points below are this slice's own choices.
+The Owner named none of them.
+
+- **ONE screen serves every report code.** The catalogue decides which reports exist and whether each
+  can be run; the run envelope decides what one renders. Nothing in the feature branches on a report
+  code, so FE-011 … FE-014 are one screen and the three unregistered codes owe no further frontend
+  work.
+- **Nothing is computed in the browser.** No total is summed, no duration divided, no quantity
+  re-scaled, no amount reformatted. A measure is rendered as the characters the server sent, because
+  no safe formatter exists for a cell that carries no currency and no fixed scale. This is recorded
+  as **CC-38** rather than approximated.
+- **A date and an instant are shown as published.** `Intl` would render them in the browser's
+  timezone while D-17 fixes the period in the branch's, and the disagreement would be invisible.
+- **The period is stated where it is typed** and an empty or reversed one is refused at the form,
+  lexicographically, with no date object constructed. There is **no default period**.
+- **One response at a time.** Previous and Next walk a trail of cursors already visited and every page
+  carries its own period, zone, freshness, filter context and groups, so a page of rows is never shown
+  under another read's generation instant. There are **no page numbers**: the operation publishes no
+  total.
+- **A reference links only to a route this application serves**, and the three drill-through answers
+  D-20 distinguishes — one target, a per-kind target, and a published absence — are kept apart.
+- **The page gate is `rpt.report.read` alone.** The dataset codes are per-report and are left to the
+  service that can evaluate them.
+- **The navigation entry moves to `available` at `tenant` scope**, because the catalogue operation is
+  tenant-scoped. The run's company and branch are a question about the resource and travel through
+  `branchTargetQuery`.
+
+### 50.1 Identifier allocation — allocated 2026-09-12, SETTLED 2026-09-12 at `develop` `6c99e805`
+
+The number was first taken on 2026-09-12 against `develop` `ae0e0354`, where the register ran to
+section **42** and to **CC-30**, and it was marked PROVISIONAL because seven headings between that
+head and this one were claimed by lanes still in flight and none of those branches was readable
+here.
+
+**Settled by this merge.** This branch now carries `develop`
+`6c99e805225b8ba59f6402188d9967c697d1eb13`, whose register is present in this file and runs to
+section **48** and to **CC-36**. Every number this slice was waiting on is now a read fact rather
+than a claim, so the PROVISIONAL marking is withdrawn from both the heading and the identifier.
+
+| id                | lane                                            | state at `6c99e805`, read from this file |
+| ----------------- | ----------------------------------------------- | ---------------------------------------- |
+| **CC-30**         | the ready-for-delivery queue screen (#367)      | merged, section 42                       |
+| **CC-31**         | the warranty record screens (#369)              | merged, section 43                       |
+| **CC-32**         | the printable delivery handover document (#368) | merged, section 44                       |
+| **CC-33 … CC-35** | the report engine dataset slices 2 to 4 (#374)  | merged, sections 45 to 47                |
+| **CC-36**         | the warranty plan administration screens (#375) | merged, section 48                       |
+| **CC-37**         | a lane not on this head                         | claims section 49                        |
+| **CC-38**         | this slice                                      | settled, this branch, section 50         |
+
+So this slice takes **section 50** and **CC-38**, both settled. Section 49 and **CC-37** belong to a
+lane that is not visible here, which is why this heading stays at 50 rather than moving down.
+
+**Reconciliation rule.** Section 36.1 records it: an identifier is allocated when its finding is
+raised and is never renumbered to follow heading order. If section 50 or **CC-38** were found
+occupied at a later integration, this section would move to the next free heading and the move
+would be recorded here with its date. No existing identifier is renumbered to accommodate it.
+
+### 50.2 What changed, and what was minted
+
+| changed                                                                                                                                                                                                                      | minted  |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| 2 route pages, 2 screens, 1 shared presentation module, 1 paging hook, 1 contract, 1 adapter module, 1 label resolver; 1 navigation entry flipped to available and re-scoped                                                 | nothing |
+| 104 English and 104 Arabic messages — the four approved report titles, the catalogue and run copy, and the field names of all four D-4 datasets; 2 new web test files; 2 web suites re-based                                 | nothing |
+| 3 operations added to the P1-31 access gate's allow-list and its pinned page count moved 13 → 15 on the merged head; the committed test-count baseline is NOT touched by this slice                                          | nothing |
+| the FE-011 … FE-014 rows of the task matrix and the A0 preflight; 5 P1-27 records re-based from their own derivations                                                                                                        | nothing |
+| 1 contract repair — an unusable page size now falls back to the platform default of 50 rather than to the route ceiling of 100 — and 1 dead exported refusal map removed, the live mapping being the one in the read adapter | nothing |
+
+**No backend file changed.** No route, no service, no repository, no migration, no seed, no
+permission, no audit action and no operation. The operation register is untouched.
+
+The CI allow-list entry is the three `rpt` operations in `scripts/ci/check-p1-31-access.mjs`, which
+that gate's own docblock requires in the change that first consumes each. It **WIDENS** what the gate
+judges and suppresses nothing: the page count it examines rises from 13 to 15 — both figures read
+off the gate report line on the merged head, not carried forward — and its owned segment
+count is unchanged because the resource root those operations derive is the dashboard area the gate
+already named.
+
+**The web floor does not move, and that is a measurement rather than a preference.** An earlier
+version of this section raised it, against a head where `WTF-08` refused the floor then committed.
+The floor this branch now carries arrived from `develop` at 3700, and on this head the tree DECLARES
+3226 cases across 139 files, so the rule is satisfied with no edit at all. The tier EXECUTES 3940,
+and the largest single file declares 88 cases, which keeps `WTF-09` satisfied at the committed
+headroom of 49. The baseline file is therefore byte-identical to `develop`'s and no figure in it is
+restated here. The executed total is **LOCAL** — no hosted run of this branch exists.
+
+### 50.3 Dispositions
+
+| id           | finding                                                                                                                                                                                | measured                                                                                                                                                                                                                                                                                                                                                                                      | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | owner / slice          | status         |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | -------------- |
+| **CC-38**    | **an amount, a quantity and a duration are displayed as the server's raw exact strings**, so an operator reads `1234.5600` rather than a grouped figure and `5400` rather than an hour | `apps/web/src/lib` holds no decimal-string display formatter: `formatMoney` needs a currency beside the amount and a canonical four-place scale and converts to a number to reach `Intl`, `trimTrailingZeros` throws on anything else, and every `lib/format.ts` helper takes a number. A report cell carries no currency — the currency is a separate column on the one dataset that has one | **accepted, and recorded because an operator will meet it.** D-4 puts every calculation on the server and D-20 forbids financial calculation in the browser; a formatter that guessed the scale or the currency would be changing money on the way to the screen, which is worse than an unformatted figure. The remedy is a decimal-string display helper plus a decision about where a cell's currency comes from, named as a frontend prerequisite in the record rather than improvised here | a later Frontend slice | open, recorded |
+| **CC-38(a)** | **two of the three drill-through targets D-20 names have no screen in this application**, so those references render with no link                                                      | the engine publishes `/work-orders/{id}`, `/technicians/{id}` and, per document kind, `/invoices/{id}` and `/payments/{id}` with an explicit absence for a credit note. `(dashboard)` holds a work-order detail page and no per-technician, invoice-detail or receipt-detail page                                                                                                             | **accepted.** D-20 asks for the **authorized target route**, and a route that answers as missing is not one. A link to a page that does not exist is the defect the navigation model refuses, so the reference is rendered as a reference and the absence is recorded rather than papered over with a link. The screens are named as prerequisites; nothing here creates them                                                                                                                   | a later Frontend slice | open, recorded |
+
+### 50.4 Proof
+
+**Measured facts (not part of the decision) — what was actually run, and where.** Every run below was
+local, on this branch, with no database, no browser and no hosted runner.
+
+| run                                                                             | result                                                                |
+| ------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `npm run typecheck` · `npm run typecheck:web`                                   | pass                                                                  |
+| `npm run lint`                                                                  | pass                                                                  |
+| `npm run lint:web`                                                              | 0 errors; 12 pre-existing warnings, none on a file this slice touched |
+| `npm run format:check` · `npm run format:check:web` · `npm run style:check:web` | pass                                                                  |
+| `npm run security:all`                                                          | pass over 2756 tracked files                                          |
+| `npm run validate:encoding`                                                     | every tracked text file clean UTF-8, no BOM                           |
+| `npm run validate:generated-artifacts`                                          | 2756 tracked files, 7/7 ignore rules, 0 failures                      |
+| `npm run validate:web-boundary`                                                 | 370 files, 0 violations                                               |
+| `npm run validate:use-server-exports`                                           | 50 server modules across 980 source files, 0 violations               |
+| `npm run validate:web-topology`                                                 | 18 expectations, 336 matched files, 0 failures                        |
+| `npm run validate:web-tokens` · `validate:web-theme` · `validate:web-brand`     | 0 violations; 54 colours registered, 0 unresolvable                   |
+| `npm run validate:notification-authority`                                       | 370 files scanned, one authority, mounted once                        |
+| `npm run validate:module-boundaries`                                            | pass, unchanged                                                       |
+| `npm run validate:api-backend-only`                                             | 317 route handlers, 610 source files, 0 failures                      |
+| `npm run validate:plain-language`                                               | 2 catalogues, 24 rules, 0 findings                                    |
+| `npm run validate:p1-31-access`                                                 | 15 route pages across 8 owned segments, 0 violations                  |
+| `npm run validate:p1-26-frontend`                                               | 370 files, 50 server modules, 0 failures                              |
+| `npm run validate:p1-27-frontend`                                               | 155 files across 5 trees, 9 rules, 0 failures                         |
+| focused web — the reports, delivery, warranty and navigation suites             | 318/318 across 8 files                                                |
+| root — `npx vitest run tests/ci tests/openapi-contract.test.ts`                 | 1991/1991 across 69 files                                             |
+| the web tier, through the P1-27 recorder                                        | 3940/3940 across 139 files, 0 failed                                  |
+| `npm run test:unit`, through the P1-27 recorder                                 | 3301/3301 across 122 files, 0 failed                                  |
+| `npm run verify:policies`                                                       | exit 0                                                                |
+| `npm run validate:phase-ownership`, both forms                                  | profile `p1-31-frontend`, 22 changed files, 0 violations              |
+
+**There was no hosted gate, no run against any database, no browser tier and no merge.** Every figure
+above was taken locally on this branch, at the head that carries the merge of `develop` `6c99e805`.
+The slice is open as pull request **#371**; no review verdict and no hosted result is recorded here.
+The four tasks are `implemented/unmerged`; none is `end-to-end verified`, and rule 2 of
+[`task-matrix.md`](./task-matrix.md) keeps that state unreachable until a P1-31 acceptance record
+exists.
+
+### 50.5 What this slice did NOT do, and what is not claimed
+
+- **No backend file changed**, and no operation, permission, migration, seed or audit action moved.
+- **No report definition was authored, published, archived or exported**, and no export path of any
+  kind was added — not an operation call, and not a file assembled in the browser.
+- **No figure was computed, derived, rounded, re-scaled or reformatted anywhere in this tier.**
+- **FE-010 and FE-016 were not built.** D-19 defines them and they are the next slice; a catalogue and
+  a per-report run are not the overview that decision describes, and D-19 says in terms that four raw
+  tables alone do not establish it.
+- **No gate was weakened, no allow-list narrowed, no suppression added and no floor moved.** The one
+  gate edit widens a rule's reach. The committed test-count baseline is untouched by this slice.
+- **No hosted run, no database tier, no browser acceptance and no end-to-end result is claimed.**
