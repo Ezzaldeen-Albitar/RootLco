@@ -129,6 +129,19 @@ export const P1_31_OPERATION_IDS = Object.freeze([
   'rpt.report-catalogue',
   'rpt.report-read',
   'rpt.report-run',
+  // The two employee READS the FE-002 handover form consumes. P-17 published four
+  // operations on that register; these are the two this phase's screens call, and
+  // the two administration commands beside them are deliberately not claimed —
+  // nothing in P1-31 administers a roster, and an allow-list that named them would
+  // be owning a surface no screen of this phase reaches.
+  //
+  // They DO widen the segment set, and by a root no P1-31 page lives under today:
+  // the register is addressed under `org`, and `(dashboard)` has no such area. That
+  // is the point of naming an operation in the change that first consumes it — the
+  // day an organisation screen lands under that segment it meets this rule already
+  // written, exactly as `warranty` and `reports` did.
+  'org.employee-list',
+  'org.employee-detail',
 ]);
 
 /**

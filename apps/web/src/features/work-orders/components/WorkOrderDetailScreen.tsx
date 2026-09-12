@@ -65,6 +65,7 @@ export function WorkOrderDetailScreen({
   canReadInvoice = false,
   canReadDelivery = false,
   canManageDelivery = false,
+  canReadEmployees = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -100,6 +101,17 @@ export function WorkOrderDetailScreen({
    * handovers and may not start one gets the section and no form.
    */
   readonly canManageDelivery?: boolean;
+  /**
+   * Whether the employee register may be OFFERED when starting a handover.
+   *
+   * A third code again — `org.employee.read`, which the two delivery codes do
+   * not imply. The backend split reading the register from administering it so
+   * that choosing who handed a vehicle over never requires the authority to
+   * alter the organisation's roster; this prop is the screen's side of that
+   * split. Without it the handover section says the selection cannot be offered
+   * and issues no register read.
+   */
+  readonly canReadEmployees?: boolean;
 }) {
   const [detail, setDetail] = useState<WorkOrderDetail>(initial);
   const [reloadError, setReloadError] = useState<string | null>(null);
@@ -198,7 +210,10 @@ export function WorkOrderDetailScreen({
           locale={locale}
           messages={messages}
           workOrderId={workOrder.id}
+          companyId={workOrder.companyId}
+          branchId={workOrder.branchId}
           canManage={canManageDelivery}
+          canReadEmployees={canReadEmployees}
         />
       ) : null}
 

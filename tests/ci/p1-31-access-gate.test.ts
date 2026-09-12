@@ -99,15 +99,19 @@ export default async function Page({ params }) {
  * It moved from 13 to 15 with the FE-011 … FE-014 report screens: the catalogue
  * page and the per-report page. BOTH numbers are read off the gate's report line
  * on this merged head rather than carried forward — the branch was written when
- * the line read 9, and `develop` moved it twice before this merge — so 13 is what
- * `develop` reports and 15 is what this head reports. The SEGMENT count did not
- * move with this slice, and that is the measurement worth keeping rather than
- * rounding — `reports` was already a named dashboard area, and the resource root
- * the three new reporting operations derive is also `reports`, so the derived half
- * and the named half agree on it.
+ * the line read 9, and `develop` moved it twice before that merge — so 13 was what
+ * `develop` reported and 15 is what this head reports.
+ *
+ * The FE-002 handover form moved the SEGMENT count and not the page count, which
+ * is the opposite of the slice before it and is worth stating rather than
+ * rounding. It names the two employee reads P-17 published, whose resource root
+ * is `org` — a root no other claimed operation derives and no dashboard area is
+ * named for — so the derivation gains one segment, while the form itself lives on
+ * the work-order detail page the gate already examined. Both numbers below are
+ * read off the gate's own report line on this head.
  */
 const PINNED_PAGES = 15;
-const PINNED_OWNED_SEGMENTS = 8;
+const PINNED_OWNED_SEGMENTS = 9;
 
 describe('the derivation is P1-31’s own and is not empty', () => {
   it('derives the delivery and warranty resource roots from the register', () => {
@@ -116,7 +120,7 @@ describe('the derivation is P1-31’s own and is not empty', () => {
     // meaningless, and the gate itself refuses it.
     expect(segments.length).toBeGreaterThan(0);
     expect(segments.length, segments.join(', ')).toBe(PINNED_OWNED_SEGMENTS);
-    for (const expected of ['deliveries', 'warranties', 'work-orders']) {
+    for (const expected of ['deliveries', 'warranties', 'work-orders', 'org']) {
       expect(segments, `${expected} is a P1-31 resource root`).toContain(expected);
     }
   });
@@ -168,6 +172,16 @@ describe('the derivation is P1-31’s own and is not empty', () => {
     expect(P1_31_OPERATION_IDS).toContain(id('rpt', 'report-catalogue'));
     expect(P1_31_OPERATION_IDS).toContain(id('rpt', 'report-read'));
     expect(P1_31_OPERATION_IDS).toContain(id('rpt', 'report-run'));
+    // The two employee reads the FE-002 handover form consumes, named in the
+    // change that first consumes them. The two administration commands beside
+    // them on the same register are deliberately NOT claimed: no screen of this
+    // phase administers a roster, and claiming them would be owning a surface
+    // nothing here reaches.
+    expect(P1_31_OPERATION_IDS).toContain(id('org', 'employee-list'));
+    expect(P1_31_OPERATION_IDS).toContain(id('org', 'employee-detail'));
+    for (const tail of ['employee-create', 'employee-status-set']) {
+      expect(P1_31_OPERATION_IDS, `${tail} is not this phase's`).not.toContain(id('org', tail));
+    }
     // A stale entry is a VIOLATION rather than a silent shrink, so an honest
     // derivation over the real register reports no problems at all.
     expect(deriveSegments().problems).toEqual([]);

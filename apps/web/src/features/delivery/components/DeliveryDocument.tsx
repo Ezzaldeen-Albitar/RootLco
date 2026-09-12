@@ -162,13 +162,20 @@ export function DeliveryDocument({
             <Identifier value={delivery.receptionVisitId} />
           </Fact>
           {/*
-            The identifier the column holds, and nothing more. Nothing in the
-            platform turns it into a person: the display-name field arrives with
-            a backend slice that is not merged at this head, and a name invented
-            on this side would be printed, signed and taken away.
+            The name the SERVER stamped when the handover was opened — the
+            backend slice that publishes it has merged, so the sheet no longer
+            prints a bare reference where a person belongs. Still not a lookup
+            this side performed: a name invented here would be printed, signed
+            and taken away. A handover recorded before the employee register
+            existed may carry no name, and that one prints the reference it does
+            carry.
           */}
           <Fact label={translate(messages, 'delivery.summary.deliveringEmployee')}>
-            <Identifier value={delivery.deliveringEmployeeId} />
+            {delivery.deliveringEmployeeDisplayName === null ? (
+              <Identifier value={delivery.deliveringEmployeeId} />
+            ) : (
+              delivery.deliveringEmployeeDisplayName
+            )}
           </Fact>
           <Fact label={translate(messages, 'delivery.summary.finalOdometerReading')}>
             <Identifier value={delivery.finalOdometerReadingId} />

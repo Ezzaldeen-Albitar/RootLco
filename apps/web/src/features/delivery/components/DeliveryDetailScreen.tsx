@@ -158,10 +158,24 @@ export function DeliveryDetailScreen({
             label={translate(messages, 'delivery.summary.visit')}
             value={delivery.receptionVisitId}
           />
-          <Reference
-            label={translate(messages, 'delivery.summary.deliveringEmployee')}
-            value={delivery.deliveringEmployeeId}
-          />
+          {/*
+            The NAME the server stamped when the handover was opened, not a
+            lookup this screen performed: the snapshot is what keeps a completed
+            handover readable after a later rename or transfer. A handover
+            recorded before the employee register existed may carry no name at
+            all, and that one shows the reference it does carry rather than a
+            person invented to fill the gap.
+          */}
+          {delivery.deliveringEmployeeDisplayName === null ? (
+            <Reference
+              label={translate(messages, 'delivery.summary.deliveringEmployee')}
+              value={delivery.deliveringEmployeeId}
+            />
+          ) : (
+            <Fact label={translate(messages, 'delivery.summary.deliveringEmployee')}>
+              {delivery.deliveringEmployeeDisplayName}
+            </Fact>
+          )}
           <Reference
             label={translate(messages, 'delivery.summary.finalOdometerReading')}
             value={delivery.finalOdometerReadingId}

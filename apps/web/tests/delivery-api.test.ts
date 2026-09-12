@@ -33,6 +33,7 @@ const adapters = await import('@/features/delivery/api');
 const {
   attachSignature,
   completeDelivery,
+  createDelivery,
   listChecklistResults,
   listSignatures,
   listStatusHistory,
@@ -46,6 +47,10 @@ const {
 } = adapters;
 const { PAGE_SIZE } = await import('@/features/delivery/delivery-contract');
 
+const { listEmployees, readEmployee } = await import('@/features/delivery/employee-api');
+const { EMPLOYEE_PAGE_SIZE, MAX_EMPLOYEE_PAGE_SIZE, employeePageSize } =
+  await import('@/features/delivery/employee-contract');
+
 const { listDeliveryReadiness, readDeliveryReadinessScopes } =
   await import('@/features/delivery/readiness-api');
 const { MAX_READINESS_PAGE_SIZE, READINESS_PAGE_SIZE, readinessPageSize } =
@@ -56,6 +61,8 @@ const WORK_ORDER_ID = '44444444-4444-4444-8444-444444444444';
 const COMPANY_ID = '11111111-1111-4111-8111-111111111111';
 const BRANCH_ID = '22222222-2222-4222-8222-222222222222';
 const CURSOR = 'b3JkZXItY3Vyc29y';
+const EMPLOYEE_ID = '55555555-5555-4555-8555-555555555555';
+const OTHER_BRANCH_ID = '66666666-6666-4666-8666-666666666666';
 
 const ok = (data: unknown) => ({ ok: true as const, data, correlationId: 'corr-1' });
 const failure = (kind: string) => ({ ok: false as const, kind, correlationId: 'corr-9' });
@@ -270,11 +277,96 @@ const refused = (kind: string, code?: string) => ({
   correlationId: 'corr-9',
 });
 
+/**
+ * A refusal carrying a field-level violation.
+ *
+ * `refused` above builds the code alone, which is all the other writes branch
+ * on. The handover start needs the RULE as well: one code carries two causes
+ * there, and the violation list is the only machine-readable statement of which.
+ */
+const refusedWithRule = (kind: string, code: string, rule: string) => ({
+  ok: false as const,
+  kind,
+  problem: { code, violations: [{ path: 'body.deliveringEmployeeId', rule }] },
+  correlationId: 'corr-9',
+});
+
 describe('every write sends the body its route declares, and nothing besides', () => {
-  // Starting with an unvalidated employee identifier is withheld. Keep the
-  // backend body mirror, but do not expose a browser-callable start adapter.
-  it('does not export a start action while employee selection is unavailable', () => {
-    expect(adapters).not.toHaveProperty('startDelivery');
+  it('opens a handover with the work order and the chosen person, and nothing else', async () => {
+    send.mockResolvedValue(
+      ok({
+        id: DELIVERY_ID,
+        workOrderId: WORK_ORDER_ID,
+        deliveringEmployeeId: EMPLOYEE_ID,
+        deliveringEmployeeDisplayName: 'Maryam Haddad',
+        status: 'ready',
+        recordVersion: 1,
+      })
+    );
+    const state = await createDelivery({
+      workOrderId: WORK_ORDER_ID,
+      deliveringEmployeeId: EMPLOYEE_ID,
+    });
+    expect(state.status).toBe('success');
+    expect(sent()[0]).toBe('POST');
+    expect(sent()[1]).toBe('/api/v1/deliveries');
+    // The vehicle and the reception visit are DERIVED by the service from the
+    // work order, so a body that named either would be refused by a trigger
+    // whose message this platform does not echo.
+    expect(sent()[2]).toEqual({
+      workOrderId: WORK_ORDER_ID,
+      deliveringEmployeeId: EMPLOYEE_ID,
+    });
+    // The name shown afterwards is the SERVER's stamp, not the request's echo.
+    expect(state.created?.deliveringEmployeeDisplayName).toBe('Maryam Haddad');
+  });
+
+  it('mints no retry key of its own — the transport reads that from the contract', async () => {
+    send.mockResolvedValue(ok({ id: DELIVERY_ID, recordVersion: 1 }));
+    await createDelivery({ workOrderId: WORK_ORDER_ID, deliveringEmployeeId: EMPLOYEE_ID });
+    // No options argument at all: a key written here would either duplicate the
+    // one the transport attaches or be reused across two genuine attempts.
+    expect(sent()[3]).toBeUndefined();
+    expect(JSON.stringify(sent()[2])).not.toMatch(/idempotency|requestKey|retryKey/i);
+  });
+
+  it('carries the CODE and the RULE, which is how one code’s two causes are told apart', async () => {
+    send.mockResolvedValueOnce(refusedWithRule('validation', 'ERR-VAL-001', 'inactive_employee'));
+    const retired = await createDelivery({
+      workOrderId: WORK_ORDER_ID,
+      deliveringEmployeeId: EMPLOYEE_ID,
+    });
+    expect(retired.code).toBe('ERR-VAL-001');
+    expect(retired.rule).toBe('inactive_employee');
+
+    send.mockResolvedValueOnce(refusedWithRule('validation', 'ERR-VAL-001', 'custom'));
+    const unknown = await createDelivery({
+      workOrderId: WORK_ORDER_ID,
+      deliveringEmployeeId: EMPLOYEE_ID,
+    });
+    expect(unknown.code).toBe('ERR-VAL-001');
+    expect(unknown.rule).toBe('custom');
+  });
+
+  it('carries the conflict code when the work order already has a live handover', async () => {
+    send.mockResolvedValue(refused('conflict', 'ERR-RES-002'));
+    const state = await createDelivery({
+      workOrderId: WORK_ORDER_ID,
+      deliveringEmployeeId: EMPLOYEE_ID,
+    });
+    expect(state.status).toBe('conflict');
+    expect(state.code).toBe('ERR-RES-002');
+    // A refusal is not a success wearing a code, and nothing was created.
+    expect(state.created).toBeUndefined();
+  });
+
+  it('reports an ended session without asking the transport for anything', async () => {
+    authorizedClient.mockResolvedValue(null as unknown);
+    const state = await createDelivery({
+      workOrderId: WORK_ORDER_ID,
+      deliveringEmployeeId: EMPLOYEE_ID,
+    });
+    expect(state.status).toBe('expired');
     expect(send).not.toHaveBeenCalled();
   });
 
@@ -610,5 +702,81 @@ describe('the ready-for-delivery queue names its branch and respects the queue c
     answerQueue(failure('forbidden'));
     expect((await readDeliveryReadinessScopes()).status).toBe('ok');
     expect((await listDeliveryReadiness(request)).status).toBe('denied');
+  });
+});
+
+/* -- the employee register the handover form picks from --------------------- */
+
+describe('the two employee reads the handover form is built on', () => {
+  const employeeRequest = { companyId: COMPANY_ID, branchId: BRANCH_ID };
+
+  it('names the branch pair as a TARGET and asks only for people who may be named', async () => {
+    get.mockResolvedValue(ok(emptyPage));
+    const state = await listEmployees({ ...employeeRequest, status: 'active' });
+    expect(state.status).toBe('ok');
+
+    const path = requested();
+    expect(path.startsWith('/api/v1/org/employees?')).toBe(true);
+    const sentQuery = new URLSearchParams(path.slice(path.indexOf('?') + 1));
+    expect(sentQuery.get('companyId')).toBe(COMPANY_ID);
+    expect(sentQuery.get('branchId')).toBe(BRANCH_ID);
+    // Asked for, not filtered after arrival: filtering a page on this side would
+    // silently shorten it and hide the rows beyond it.
+    expect(sentQuery.get('status')).toBe('active');
+  });
+
+  it('reads ANOTHER branch of the same company when it is asked to', async () => {
+    // The employee's home branch is not a rule the server applies, so a picker
+    // that could only ever read one branch would re-impose in a browser the
+    // restriction the database does not carry.
+    get.mockResolvedValue(ok(emptyPage));
+    await listEmployees({ companyId: COMPANY_ID, branchId: OTHER_BRANCH_ID, status: 'active' });
+    const sentQuery = new URLSearchParams(requested().slice(requested().indexOf('?') + 1));
+    expect(sentQuery.get('branchId')).toBe(OTHER_BRANCH_ID);
+    expect(sentQuery.get('companyId')).toBe(COMPANY_ID);
+  });
+
+  it('never asks for a page larger than the route serves', async () => {
+    get.mockResolvedValue(ok(emptyPage));
+    await listEmployees({ ...employeeRequest, limit: MAX_EMPLOYEE_PAGE_SIZE + 500 });
+    const sentQuery = new URLSearchParams(requested().slice(requested().indexOf('?') + 1));
+    // The route refuses a larger page rather than clamping it, so a request
+    // above the bound is an error instead of a shorter answer.
+    expect(sentQuery.get('limit')).toBe(String(MAX_EMPLOYEE_PAGE_SIZE));
+    expect(employeePageSize(0)).toBe(EMPLOYEE_PAGE_SIZE);
+    expect(employeePageSize(10)).toBe(10);
+  });
+
+  it('sends the cursor it was given back exactly as it arrived', async () => {
+    get.mockResolvedValue(ok(emptyPage));
+    await listEmployees({ ...employeeRequest, cursor: CURSOR });
+    const sentQuery = new URLSearchParams(requested().slice(requested().indexOf('?') + 1));
+    expect(sentQuery.get('cursor')).toBe(CURSOR);
+  });
+
+  it('refuses to send a half-built branch target instead of naming it undefined', async () => {
+    await expect(listEmployees({ companyId: COMPANY_ID, branchId: '' })).rejects.toThrow(
+      /branchId/
+    );
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('maps a refusal to a refusal rather than to an empty register', async () => {
+    get.mockResolvedValue(failure('forbidden'));
+    const state = await listEmployees(employeeRequest);
+    // "There is nobody here" and "you may not see them" are different sentences.
+    expect(state.status).toBe('denied');
+  });
+
+  it('reads one employee by the identifier in the path', async () => {
+    get.mockResolvedValue(ok({ id: EMPLOYEE_ID, displayName: 'Maryam Haddad', status: 'active' }));
+    const state = await readEmployee(EMPLOYEE_ID);
+    expect(state.status).toBe('ok');
+    expect(requested()).toBe(`/api/v1/org/employees/${EMPLOYEE_ID}`);
+  });
+
+  it('reports an unresolvable employee as not found rather than as nobody', async () => {
+    get.mockResolvedValue(failure('not-found'));
+    expect((await readEmployee(EMPLOYEE_ID)).status).toBe('not-found');
   });
 });

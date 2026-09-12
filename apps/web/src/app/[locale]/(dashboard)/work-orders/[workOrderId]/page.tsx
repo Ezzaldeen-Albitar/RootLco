@@ -10,6 +10,7 @@ import {
 import { requireSession } from '@/features/authentication/api/session';
 import { holds } from '@/features/crm/permissions';
 import { DELIVERY_PERMISSIONS } from '@/features/delivery/delivery-contract';
+import { EMPLOYEE_PERMISSIONS } from '@/features/delivery/employee-contract';
 import { readWorkOrderDetail } from '@/features/work-orders/api';
 import { WorkOrderDetailScreen } from '@/features/work-orders/components/WorkOrderDetailScreen';
 import { WORK_ORDER_DETAIL_PERMISSIONS } from '@/features/work-orders/work-orders-contract';
@@ -49,6 +50,15 @@ import { pageMetadata } from '@/lib/page-metadata';
  * operator may not see — the page's own gate-before-read discipline, applied to
  * a section that reads for itself. The code is imported from the delivery
  * feature rather than restated here, so there is one authority for its spelling.
+ *
+ * Three codes reach that section, and each decides a different thing:
+ * `sal.delivery.view` whether it is drawn and read at all, `sal.delivery.manage`
+ * whether a handover may be started, and `org.employee.read` whether the
+ * employee register may be OFFERED when starting one. The third is not implied
+ * by the other two — the backend mints it separately so that naming who handed a
+ * vehicle over never requires the authority to alter the organisation's roster —
+ * and it is resolved here so the section never issues a register read for a
+ * caller who has not been granted it.
  */
 export default async function WorkOrderDetailPage({
   params,
@@ -156,6 +166,7 @@ export default async function WorkOrderDetailPage({
       canReadInvoice={holds(session.permissions, WORK_ORDER_DETAIL_PERMISSIONS.invoiceRead)}
       canReadDelivery={holds(session.permissions, DELIVERY_PERMISSIONS.view)}
       canManageDelivery={holds(session.permissions, DELIVERY_PERMISSIONS.manage)}
+      canReadEmployees={holds(session.permissions, EMPLOYEE_PERMISSIONS.read)}
     />
   );
 }
