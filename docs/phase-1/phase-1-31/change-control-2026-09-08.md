@@ -2608,7 +2608,7 @@ would be recorded here with its date. No existing identifier is renumbered to ac
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | 2 route pages, 2 screens, 1 shared presentation module, 1 paging hook, 1 contract, 1 adapter module, 1 label resolver; 1 navigation entry flipped to available and re-scoped                                                 | nothing |
 | 104 English and 104 Arabic messages — the four approved report titles, the catalogue and run copy, and the field names of all four D-4 datasets; 2 new web test files; 2 web suites re-based                                 | nothing |
-| 3 operations added to the P1-31 access gate's allow-list, its pinned page count moved 13 → 15 on the merged head; the committed web floor raised 3050 → 3720 with its measurement                                            | nothing |
+| 3 operations added to the P1-31 access gate's allow-list and its pinned page count moved 13 → 15 on the merged head; the committed test-count baseline is NOT touched by this slice                                          | nothing |
 | the FE-011 … FE-014 rows of the task matrix and the A0 preflight; 5 P1-27 records re-based from their own derivations                                                                                                        | nothing |
 | 1 contract repair — an unusable page size now falls back to the platform default of 50 rather than to the route ceiling of 100 — and 1 dead exported refusal map removed, the live mapping being the one in the read adapter | nothing |
 
@@ -2622,10 +2622,13 @@ off the gate report line on the merged head, not carried forward — and its own
 count is unchanged because the resource root those operations derive is the dashboard area the gate
 already named.
 
-The web floor raise is **forced, not chosen**: `WTF-08` refuses a floor beneath the cases that exist
-on disk, and this slice takes the declared count to 3093. `measured` and `measuredFiles` move with the
-floor so that all three describe one run, and the run is stated as **LOCAL** — no hosted run of this
-branch exists.
+**The web floor does not move, and that is a measurement rather than a preference.** An earlier
+version of this section raised it, against a head where `WTF-08` refused the floor then committed.
+The floor this branch now carries arrived from `develop` at 3700, and on this head the tree DECLARES
+3226 cases across 139 files, so the rule is satisfied with no edit at all. The tier EXECUTES 3940,
+and the largest single file declares 88 cases, which keeps `WTF-09` satisfied at the committed
+headroom of 49. The baseline file is therefore byte-identical to `develop`'s and no figure in it is
+restated here. The executed total is **LOCAL** — no hosted run of this branch exists.
 
 ### 50.3 Dispositions
 
@@ -2639,36 +2642,39 @@ branch exists.
 **Measured facts (not part of the decision) — what was actually run, and where.** Every run below was
 local, on this branch, with no database, no browser and no hosted runner.
 
-| run                                                                         | result                                                                |
-| --------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `npm run typecheck`                                                         | pass                                                                  |
-| `npm run typecheck:web`                                                     | pass                                                                  |
-| `npm run lint`                                                              | pass                                                                  |
-| `npm run lint:web`                                                          | 0 errors; 12 pre-existing warnings, none on a file this slice touched |
-| `npm run format:check` · `npm run format:check:web`                         | pass                                                                  |
-| `npm run style:check`                                                       | pass                                                                  |
-| `npm run security:all`                                                      | pass over 2726 tracked files                                          |
-| `npm run validate:encoding` · `npm run validate:generated-artifacts`        | pass                                                                  |
-| `npm run validate:web-boundary`                                             | 356 files, 0 violations                                               |
-| `npm run validate:use-server-exports`                                       | 49 server modules, 0 violations                                       |
-| `npm run validate:web-topology`                                             | 18 expectations, 0 failures                                           |
-| `npm run validate:web-tokens` · `validate:web-theme` · `validate:web-brand` | 0 violations; 54 colours resolved                                     |
-| `npm run validate:notification-authority`                                   | one authority, mounted once                                           |
-| `npm run validate:module-boundaries` · `npm run validate:api-backend-only`  | pass, unchanged                                                       |
-| `npm run validate:plain-language`                                           | 2 catalogues, 24 rules, 0 findings                                    |
-| `npm run validate:p1-31-access`                                             | 11 route pages across 7 segments, 0 violations                        |
-| `npm run validate:p1-26-frontend` · `npm run validate:p1-27-frontend`       | 0 failures; 151 files across 5 trees                                  |
-| focused web — the two new files plus the two re-based suites                | 399/399 across 4 files (83 of them the two new files)                 |
-| root — `npx vitest run tests/ci tests/openapi-contract.test.ts`             | 1990/1990 across 69 files                                             |
-| the web tier, through the P1-27 recorder                                    | 3793/3793 across 135 files, 0 failed                                  |
-| `npm run test:unit`, through the P1-27 recorder                             | 3300/3300 across 122 files, 0 failed                                  |
-| `npm run verify:policies`                                                   | exit 0                                                                |
-| `npm run validate:phase-ownership`, both forms                              | profile `p1-31-frontend`                                              |
+| run                                                                             | result                                                                |
+| ------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `npm run typecheck` · `npm run typecheck:web`                                   | pass                                                                  |
+| `npm run lint`                                                                  | pass                                                                  |
+| `npm run lint:web`                                                              | 0 errors; 12 pre-existing warnings, none on a file this slice touched |
+| `npm run format:check` · `npm run format:check:web` · `npm run style:check:web` | pass                                                                  |
+| `npm run security:all`                                                          | pass over 2756 tracked files                                          |
+| `npm run validate:encoding`                                                     | every tracked text file clean UTF-8, no BOM                           |
+| `npm run validate:generated-artifacts`                                          | 2756 tracked files, 7/7 ignore rules, 0 failures                      |
+| `npm run validate:web-boundary`                                                 | 370 files, 0 violations                                               |
+| `npm run validate:use-server-exports`                                           | 50 server modules across 980 source files, 0 violations               |
+| `npm run validate:web-topology`                                                 | 18 expectations, 336 matched files, 0 failures                        |
+| `npm run validate:web-tokens` · `validate:web-theme` · `validate:web-brand`     | 0 violations; 54 colours registered, 0 unresolvable                   |
+| `npm run validate:notification-authority`                                       | 370 files scanned, one authority, mounted once                        |
+| `npm run validate:module-boundaries`                                            | pass, unchanged                                                       |
+| `npm run validate:api-backend-only`                                             | 317 route handlers, 610 source files, 0 failures                      |
+| `npm run validate:plain-language`                                               | 2 catalogues, 24 rules, 0 findings                                    |
+| `npm run validate:p1-31-access`                                                 | 15 route pages across 8 owned segments, 0 violations                  |
+| `npm run validate:p1-26-frontend`                                               | 370 files, 50 server modules, 0 failures                              |
+| `npm run validate:p1-27-frontend`                                               | 155 files across 5 trees, 9 rules, 0 failures                         |
+| focused web — the reports, delivery, warranty and navigation suites             | 318/318 across 8 files                                                |
+| root — `npx vitest run tests/ci tests/openapi-contract.test.ts`                 | 1991/1991 across 69 files                                             |
+| the web tier, through the P1-27 recorder                                        | 3940/3940 across 139 files, 0 failed                                  |
+| `npm run test:unit`, through the P1-27 recorder                                 | 3301/3301 across 122 files, 0 failed                                  |
+| `npm run verify:policies`                                                       | exit 0                                                                |
+| `npm run validate:phase-ownership`, both forms                                  | profile `p1-31-frontend`, 22 changed files, 0 violations              |
 
-**There was no hosted gate, no run against any database, no browser tier and no merge.** No pull
-request existed when this section was written. The four tasks are `implemented/unmerged`; none is
-`end-to-end verified`, and rule 2 of [`task-matrix.md`](./task-matrix.md) keeps that state unreachable
-until a P1-31 acceptance record exists.
+**There was no hosted gate, no run against any database, no browser tier and no merge.** Every figure
+above was taken locally on this branch, at the head that carries the merge of `develop` `6c99e805`.
+The slice is open as pull request **#371**; no review verdict and no hosted result is recorded here.
+The four tasks are `implemented/unmerged`; none is `end-to-end verified`, and rule 2 of
+[`task-matrix.md`](./task-matrix.md) keeps that state unreachable until a P1-31 acceptance record
+exists.
 
 ### 50.5 What this slice did NOT do, and what is not claimed
 
@@ -2679,6 +2685,6 @@ until a P1-31 acceptance record exists.
 - **FE-010 and FE-016 were not built.** D-19 defines them and they are the next slice; a catalogue and
   a per-report run are not the overview that decision describes, and D-19 says in terms that four raw
   tables alone do not establish it.
-- **No gate was weakened, no allow-list narrowed and no suppression added.** The one gate edit widens
-  a rule's reach; the one baseline edit raises a floor a rule refused as too low.
+- **No gate was weakened, no allow-list narrowed, no suppression added and no floor moved.** The one
+  gate edit widens a rule's reach. The committed test-count baseline is untouched by this slice.
 - **No hosted run, no database tier, no browser acceptance and no end-to-end result is claimed.**

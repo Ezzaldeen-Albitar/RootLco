@@ -60,20 +60,27 @@ the Owner.
 ## 2. Measured facts (not part of the decision)
 
 These are the repository facts this slice was built against, at protected `develop` `ae0e0354`.
+**Two of them were superseded while the branch was open and are re-stated where they sit:** PR #374
+took the other three dataset codes and the generalised run envelope onto `develop`, and this branch
+now carries that head. The bullets below keep the figure they were measured at and name the figure
+at the merged head beside it, rather than being silently rewritten.
 
 - **All three reporting operations are on `develop`.** `rpt.report-catalogue`
   (`GET /api/v1/reports`), `rpt.report-read` (`GET /api/v1/reports/{reportCode}`) and
   `rpt.report-run` (`GET /api/v1/reports/{reportCode}/rows`). All three declare `rpt.report.read`;
   the run additionally evaluates the dataset's own read code in the service, at the operation's own
   branch scope, and answers the same uniform refusal the route's check answers.
-- **The registry holds ONE dataset at this head:** `work_orders_by_status`. The other three approved
-  codes are implemented on `remediation/p1-31-backend-report-engine-datasets`, which is unmerged, so
-  on `develop` `executable` is registry membership for one code and `false` for every other.
-- **Two envelope shapes exist.** `develop` publishes `countsByState` and no `groups`, `filters` or
-  `branch`. The dataset branch publishes `groups` (the generalisation of `countsByState`, which it
-  deprecates and derives), `filters` (D-17's echoed company and branch) and `branch` (the resolved
-  branch, named). It also adds three column kinds — `duration`, `quantity` and `money` — and a
-  per-kind `drillThroughByKind`.
+- **The registry held ONE dataset at `ae0e0354`:** `work_orders_by_status`. The other three approved
+  codes were implemented on `remediation/p1-31-backend-report-engine-datasets` and unmerged then.
+  **Superseded:** PR #374 merged all three, so at the head this branch carries every approved code is
+  registry membership. No screen changed for that: one screen serves whatever the catalogue answers.
+- **Two envelope shapes existed at `ae0e0354`.** That head published `countsByState` and no `groups`,
+  `filters` or `branch`; the dataset branch published `groups` (the generalisation of `countsByState`,
+  which it deprecates and derives), `filters` (D-17's echoed company and branch), `branch` (the
+  resolved branch, named), the three column kinds `duration`, `quantity` and `money`, and a per-kind
+  `drillThroughByKind`. **Superseded:** PR #374 took the second shape onto `develop`, so only one
+  envelope exists at the head this branch carries. The screen was written to read both, which is why
+  the supersession changed nothing in it: the deprecated field is resolved in one place.
 - **`schemas.limit` on all three routes refuses a page size above 100** rather than clamping it, and
   the platform's own default for a request that sends none is 50.
 - **The period parameters are calendar DAYS**, `YYYY-MM-DD`, and the route's schema refuses an
@@ -91,10 +98,12 @@ These are the repository facts this slice was built against, at protected `devel
   invoice detail page and no receipt detail page.
 - **The navigation entry for `/reports` already existed**, gated on `rpt.report.read` and marked
   `planned`. `rpt.report.read` is a row of `supabase/seeds/04_iam_permission_catalog.sql`.
-- **The P1-31 access gate examines 11 route pages across 7 owned segments** with the three reporting
-  operations named; it examined 9 across the same 7 before this slice. The segment count did not
-  move because `reports` was already a named dashboard area and is also the resource root the three
-  operations derive.
+- **The P1-31 access gate examines 15 route pages across 8 owned segments** at the merged head, with
+  the three reporting operations named; `develop` reports 13 across the same 8. Both figures are read
+  off the gate's own report line rather than carried forward — the branch was written when that line
+  read 9 across 7, and `develop` moved both numbers twice before this merge. The segment count did
+  not move with THIS slice, because `reports` was already a named dashboard area and is also the
+  resource root the three operations derive.
 - **There is no export operation.** Prerequisite P-12 is not built and `rpt.export` stays excluded
   on **CC-04**'s grounds, so a platform baseline publishes no export authority at all.
 
