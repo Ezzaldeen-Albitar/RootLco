@@ -210,9 +210,10 @@ claim knowledge the problem document does not carry.
 
 ## 9. Verification
 
-Every command below was run locally on this branch, in the working tree this record describes.
-Nothing here is a claim about a hosted run, and a command that was not run in this record is named
-as not run rather than left to look like a pass.
+Every command below was run locally on this branch, at head `467a2681`, before either sync onto
+`develop`. Nothing here is a claim about a hosted run, and a command that was not run in this record
+is named as not run rather than left to look like a pass. §9.1 carries the re-measurement taken
+after the second sync, and it is the current figure wherever the two differ.
 
 | command                                                                 | result                                                                                              |
 | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
@@ -243,9 +244,10 @@ upward only and with nothing suppressed, waived or narrowed: `minTests` 3050 -> 
 3125 -> 3749, `measuredFiles` 117 -> 135. The file classifies as `tooling`, which the
 `p1-31-frontend` ownership profile allows, so this lane may carry it.
 
-**The measured fact.** The web tier of this branch executes 3749 tests across 135 files with 0
-failed and 0 skipped — a local `--record web` run, written to the run ledger with the commit it
-was taken at, not a hosted measurement and not claimed as one.
+**The measured fact.** At `467a2681` the web tier of this branch executed 3749 tests across 135
+files with 0 failed and 0 skipped — a local `--record web` run, written to the run ledger with the
+commit it was taken at, not a hosted measurement and not claimed as one. The figure has since moved
+with the syncs; §9.1 carries the current one.
 
 **The engineering consequence.** The floor is not free to be any number above 3073. `WTF-09` keeps
 the headroom at or below the largest file in the tree (88 declared cases in `api-client.test.ts`),
@@ -267,3 +269,25 @@ the issue panel, English and Arabic). `apps/web/tests/delivery.dom.test.tsx` gai
 measure the issue control's absence without `wty.warranty.issue` and the plan list's absence without
 `wty.warranty.read`, and `navigation.test.ts` moved the `warranty` entry from no list into the
 available one.
+
+### 9.1 Re-measured after the second sync onto `develop` `ae0e0354`
+
+The merge of protected `develop` `ae0e0354` (FE-001's ready-for-delivery queue, #367) brought web
+tests with it, so every tier figure above was re-taken at the merge commit. What moved:
+
+| figure                                     | at `467a2681`      | at the `ae0e0354` merge |
+| ------------------------------------------ | ------------------ | ----------------------- |
+| web tier — files / tests executed          | 135 / 3749         | 135 / 3788              |
+| unit tier — files / tests executed         | 121 / 3277         | 122 / 3300              |
+| `validate:p1-31-access` — pages / segments | 10 / 7             | 11 / 8                  |
+| `validate:p1-27-frontend` — files          | 150 across 5 trees | 151 across 5 trees      |
+| `security:all` — tracked files             | 2711               | 2725                    |
+
+Both tiers were re-recorded with `check-p1-27-closing-values.mjs --record` at the merge commit and
+the P1-27 evidence manifest was regenerated over them; both runs exited 0 with 0 failed. The
+`.github/ci-baselines/test-count-baseline.json` web entry was NOT touched by this sync: `minTests`
+stays 3700 and its `measured` provenance field still records the 3749 run, so the headroom the
+committed floor now describes is 88 rather than 49. Moving that field is a baseline decision and is
+left to the owner of that file rather than taken here.
+
+No hosted run of this branch exists at either head, and none is claimed.

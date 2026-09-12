@@ -1646,9 +1646,12 @@ the pins in `tests/ci/p1-31-access-gate.test.ts` were moved to 11 and 8 in this 
 ### 43.5 The web test floor was ratcheted, and what that costs
 
 **The measured fact.** `apps/web/tests` now DECLARES 3073 cases across 135 files, and the tier
-EXECUTES 3749 with 0 failed and 0 skipped — a local `--record web` run of this branch, recorded
-in `docs/phase-1/phase-1-27/evidence/local-run-ledger.json` with the commit it was taken at. No
-hosted run of this branch exists, and none is claimed.
+EXECUTES 3788 with 0 failed and 0 skipped at this merge base — a local `--record web` run of this
+branch, recorded in `docs/phase-1/phase-1-27/evidence/local-run-ledger.json` with the commit it was
+taken at. It executed 3749 at `467a2681`, before either sync; the 39 additional tests arrived with
+the `ae0e0354` merge, and the baseline's `measured` provenance field still records the 3749 run, so
+the committed floor's headroom now reads 88 rather than 49. Moving that field is a baseline decision
+and was not taken in this sync. No hosted run of this branch exists, and none is claimed.
 
 **Why the floor had to move.** `tests/ci/web-test-floor.test.ts` case `WTF-08` refuses a floor
 beneath cases that physically exist. The committed floor was 3050, the declared count crossed it,
