@@ -64,6 +64,7 @@ export function WorkOrderDetailScreen({
   canReadStock = false,
   canReadInvoice = false,
   canReadDelivery = false,
+  canManageDelivery = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -91,6 +92,14 @@ export function WorkOrderDetailScreen({
    * never issued by a caller that has not resolved the authority for it.
    */
   readonly canReadDelivery?: boolean;
+  /**
+   * Whether the caller may OPEN a handover.
+   *
+   * A separate code from the one that lets the section be read at all:
+   * `sal.delivery-create` declares `sal.delivery.manage`. Somebody who may see
+   * handovers and may not start one gets the section and no form.
+   */
+  readonly canManageDelivery?: boolean;
 }) {
   const [detail, setDetail] = useState<WorkOrderDetail>(initial);
   const [reloadError, setReloadError] = useState<string | null>(null);
@@ -185,7 +194,12 @@ export function WorkOrderDetailScreen({
       ) : null}
 
       {canReadDelivery ? (
-        <WorkOrderDeliveryPanel locale={locale} messages={messages} workOrderId={workOrder.id} />
+        <WorkOrderDeliveryPanel
+          locale={locale}
+          messages={messages}
+          workOrderId={workOrder.id}
+          canManage={canManageDelivery}
+        />
       ) : null}
 
       <LifecyclePanel

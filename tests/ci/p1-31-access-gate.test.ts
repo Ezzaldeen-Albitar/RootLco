@@ -82,12 +82,30 @@ export default async function Page({ params }) {
 }
 `;
 
+/**
+ * What the gate reports over this repository's own application root today.
+ *
+ * These are PINS, not floors. `> 0` cannot tell a page that was deleted from a
+ * page that was never written, and it cannot tell a segment that stopped being
+ * derived from one that never was — both read as health. Pinning the exact
+ * counts makes either direction a red with a diff that says which number moved.
+ *
+ * The pin MOVES whenever a P1-31 route page or an owned segment is added or
+ * removed. Update both numbers from the gate's own report line — run
+ * `node scripts/ci/check-p1-31-access.mjs` and read
+ * `N route page(s) examined across M owned segment(s)` — in the same change
+ * that adds or removes the page or the segment.
+ */
+const PINNED_PAGES = 9;
+const PINNED_OWNED_SEGMENTS = 7;
+
 describe('the derivation is P1-31’s own and is not empty', () => {
   it('derives the delivery and warranty resource roots from the register', () => {
     const segments = ownedSegments();
     // Non-vacuity first: an empty derivation would make every case below
     // meaningless, and the gate itself refuses it.
     expect(segments.length).toBeGreaterThan(0);
+    expect(segments.length, segments.join(', ')).toBe(PINNED_OWNED_SEGMENTS);
     for (const expected of ['deliveries', 'warranties', 'work-orders']) {
       expect(segments, `${expected} is a P1-31 resource root`).toContain(expected);
     }
@@ -247,6 +265,13 @@ describe('the repository’s own run is not vacuous', () => {
     expect(code, out).toBe(0);
     const examined = /(\d+) route page\(s\) examined/.exec(out)?.[1] ?? '0';
     expect(Number(examined)).toBeGreaterThan(0);
+    // And exactly how many, read from the gate's own report line rather than
+    // recounted here, so the assertion cannot drift from what the gate judged.
+    // See PINNED_PAGES / PINNED_OWNED_SEGMENTS above: both move whenever a
+    // P1-31 page or owned segment is added or removed.
+    const owned = /across (\d+) owned segment\(s\)/.exec(out)?.[1] ?? '0';
+    expect(Number(examined), out).toBe(PINNED_PAGES);
+    expect(Number(owned), out).toBe(PINNED_OWNED_SEGMENTS);
   });
 
   it('refuses an application root under the floor, instead of reporting health', () => {

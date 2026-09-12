@@ -135,6 +135,18 @@ export function Fact({
   );
 }
 
+/**
+ * The button that commits a handover act.
+ *
+ * One class shared by the five write controls of this feature rather than five
+ * copies, for the reason `usePagedList` gives about the end-of-set signal: five
+ * hand-written copies is five places for the disabled state to be drawn
+ * differently, and a submit button that does not LOOK disabled while it is
+ * disabled is how an operator comes to believe a click was lost.
+ */
+export const PRIMARY_BUTTON =
+  'rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring';
+
 /** The button every paged panel uses to ask for the next page. */
 export const SECONDARY_BUTTON =
   'rounded-md border border-border px-4 py-2 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle disabled:opacity-60';

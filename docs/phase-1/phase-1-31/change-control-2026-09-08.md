@@ -914,14 +914,15 @@ holds sections 30–33, and the report configuration seam (PR #361) merged next 
 identifier and it is free at that head**, so the id this branch reserved provisionally stands. Of the
 two lanes that allocated between this one and the merged register, one has landed and one has not.
 
-| id        | lane                                             | state at 0204f2d1       |
-| --------- | ------------------------------------------------ | ----------------------- |
-| **CC-19** | the delivery detail screen (PR #357)             | merged, sections 30–33  |
-| **CC-20** | the reporting writer (P-11, PR #361)             | merged, section 34      |
-| **CC-21** | the checklist-template migration (P-9b, PR #363) | open, claims section 35 |
-| **CC-22** | this slice                                       | this branch, section 36 |
-| **CC-24** | the readiness seam                               | in preparation          |
-| **CC-25** | the delivery write paths (PR #362)               | open, on a stacked base |
+| id        | lane                                                   | state at 0204f2d1                                                 |
+| --------- | ------------------------------------------------------ | ----------------------------------------------------------------- |
+| **CC-19** | the delivery detail screen (PR #357)                   | merged, sections 30–33                                            |
+| **CC-20** | the reporting writer (P-11, PR #361)                   | merged, section 34                                                |
+| **CC-21** | the checklist-template migration (P-9b, PR #363)       | open, claims section 35                                           |
+| **CC-22** | this slice                                             | this branch, section 36                                           |
+| **CC-24** | the readiness seam                                     | in preparation                                                    |
+| **CC-25** | the delivery write paths (PR #362)                     | open, on a stacked base                                           |
+| **CC-26** | receiver identity-evidence document category (PR #362) | not allocated at that head; minted 2026-09-10 by #362, section 38 |
 
 **Continuation, 2026-09-10** — allocated after this section was written, at protected `develop`
 **07193258**. The row is dated rather than folded into the table above, because that table states
@@ -938,6 +939,27 @@ So this slice takes **section 36 provisionally** and **CC-22 firmly**. P-9b has 
 one lane landing out of order moves this heading rather than this identifier. **The section number
 must be re-checked against `develop` before this branch merges**, and renumbered if P-9b lands with a
 different allocation. A register whose identifiers collide is worse than one that renumbers.
+
+**Allocation continued — re-checked 2026-09-11, at protected `develop` `01c32937`.** The table
+above records the lanes as the FE-015 slice could see them and is left as written. The identifiers
+allocated after that head are recorded here rather than by editing that slice's record, and each row
+below is now read off the merged tree rather than off an open branch:
+
+| id        | lane                                               | state at `01c32937`               |
+| --------- | -------------------------------------------------- | --------------------------------- |
+| **CC-23** | the branch delivery list (PR #358)                 | merged, section 37                |
+| **CC-25** | the delivery write paths (PR #362)                 | merged, section 38                |
+| **CC-26** | the receiver identity-evidence category (PR #362)  | merged, section 38                |
+| **CC-24** | the delivery-readiness seam (PR #366)              | merged, section 39                |
+| **CC-27** | the report engine, engine half (P-11 1/4, PR #364) | this branch, section 40 — settled |
+| **CC-28** | the same branch, second disposition                | this branch, section 40 — settled |
+
+**CC-24 landed at section 39 rather than at a heading matching its number**, which is the register
+behaving as designed: identifiers are allocated when a finding is raised and are never renumbered to
+follow heading order. With sections 1–39 and **CC-01 … CC-26** all present on `01c32937`, section 40
+is the next free heading and **CC-27/CC-28** the next free identifiers. The coordinator's standing
+allocation gives section 41 to P-17 and section 42 to FE-001, so nothing unmerged can take 40; the
+provisional qualifier this slice carried is therefore dropped.
 
 ### 36.2 What changed
 
@@ -973,8 +995,10 @@ reports to the contracts that can serve them and names the prerequisites that do
   page still decides before it reads.
 - **The default window was not changed.** **D-11** — whether the seven-day default is ratified,
   deferred or changed — **stays open**, and the preflight's warning that shipping FE-015 without it
-  carries the decision into a second phase is now realised rather than avoided. The window itself is
-  proven by test to be seven days and server-computed.
+  carries the decision into a second phase is now realised rather than avoided. Addendum
+  2026-09-10: D-11 was settled by the Owner (seven-day default and 92-day maximum retained; see
+  `owner-decisions-2026-09-10.md` §3). The window itself is proven by test to be seven days and
+  server-computed.
 - **No backend source was touched.** A Frontend lane may not, and nothing here needed it: every
   criterion surfaced was already a bound parameter of the existing operation.
 - **No canonical task was marked done.** The task matrix records FE-015 as `in open PR`, and its
@@ -1141,14 +1165,327 @@ head's hosted gates and coordinator merge review; no phase acceptance is implied
 
 ---
 
+# The delivery execution slice — FE-002 … FE-006 write paths
+
+Section 38 records the delivery execution slice on `feature/p1-31-delivery-execution` (PR #362). The original preparation was based on the delivery detail branch at `626b0d8a`; final integration follows merged #363 at `071932584ffcf39776509227f8dead2022667484`. At that head the register runs to section 37 and CC-25, so this slice takes the next free heading, **section 38**, and retains **CC-25** for the withheld-Start disposition. **CC-24 remains allocated to the readiness seam**, which has not landed and takes a later heading; identifiers are not renumbered to follow heading order. **CC-26 is minted here** for the receiver identity-evidence document category. The full record is `delivery-execution-screen.md`.
+
+This slice is Frontend, tooling, tests and documentation only. It adds no operation, no route, no
+permission, no seed row and no migration, and it touches neither `apps/api/**` nor `supabase/**`.
+
+## 38. The delivery execution write paths
+
+### 38.1 What was delivered
+
+Four existing-record write paths on the handover screen, each gated on the code its own operation declares:
+
+| action                    | operation                       | authority                                                        |
+| ------------------------- | ------------------------------- | ---------------------------------------------------------------- |
+| Confirm the receiver      | `sal.delivery-receiver-verify`  | `sal.delivery.manage`, `sal.delivery.view`                       |
+| Record a checklist result | `sal.delivery-checklist-record` | `sal.delivery.manage`                                            |
+| Add a signature           | `sal.delivery-signature-attach` | `sal.delivery.manage`, `sal.delivery.view`                       |
+| Release the vehicle       | `sal.delivery-complete`         | `sal.delivery.complete`, `sal.delivery.view`, `sal.finance.view` |
+
+Plus the configuration read the checklist needs — the ACTIVE templates and their items, assembled in
+one Server Action from the two P-9 template reads, because no operation publishes "the checklist of
+this handover" and the completion evaluates mandatory items by COMPANY rather than by template.
+
+The mirror registry the payload-parity gate reads is
+`apps/web/src/lib/contracts/delivery-contract.ts` — the path named in `MIRROR_FILES` in
+`scripts/ci/check-p1-30-payload-parity.mjs` — and it is the file that holds the five
+`sal.delivery-*` request bodies. Two files carry the same name: the separate
+`apps/web/src/features/delivery/delivery-contract.ts` holds the read types, the permission codes and
+the view envelopes, not the request bodies. The registry declares **five** writes against these four
+sent paths: `sal.delivery-create` is mirrored there because the payload-parity gate reads its request
+bodies from one frozen list of files, while the Start control that would send it is withheld pending
+the delivering-employee contract recorded as **CC-25** in §38.3.
+
+### 38.2 The properties this slice is accountable for
+
+1. **A control is absent, never present-and-refused,** for a caller without the code its operation
+   declares. Measured for all four existing-record writes.
+2. **The release quotes the version the ELIGIBILITY read published,** never one a preparation step
+   answered with, and a stale version is re-attempted exactly once against a version read again.
+3. **The browser decides no eligibility.** The release button is enabled from what the server
+   published and from nothing else; the completion recomposes the whole decision in its own
+   transaction, and a blocked release renders the re-read blocker list rather than a sentence this
+   tier composed. The blockers are not in the refusal at all — `problemFor` carries no service prose.
+4. **The odometer holds to the COLUMN, not the route.** The route admits two decimals; the column
+   holds one, so the form refuses the second digit and says so in its own help text.
+5. **The waiver rule is a biconditional in the form as well as in the database.** A reason appears
+   only for a waiver, is required there, and is never sent with any other outcome.
+
+### 38.3 Dispositions
+
+- **CC-25 — new-handover Start is withheld pending validated employee selection.** No raw employee UUID input or browser-callable Start adapter remains. The existing backend create contract is preserved; employee, authenticated actor and authorized receiver remain distinct. The Owner answered the employee relation on 2026-09-10 (D-12, see [`owner-decisions-2026-09-10.md`](./owner-decisions-2026-09-10.md) §1): a tenant-owned employee identity, distinct from the login account, the authenticated actor and the authorized receiver, validated on the server. Engineering consequence (not an Owner decision): lane placement follows the P-2..P-11 precedent while D-1 stays open, and the Start control stays withheld until that contract exists.
+- **CC-26 — the receiver's identity evidence is NOT captured, and the missing category
+  is a new backend prerequisite.** The optional evidence field needs a document category that admits
+  a person's proof of identity. The seven seeded categories are all reception categories and the only
+  one whose purpose is an identity document is the VIN evidence category; filing a person's identity
+  document there would be a classification defect. A seed is not on this lane. The field is omitted
+  and the prerequisite is recorded.
+- **The signature capture reuses the seeded signature category and the ONE approved file input.**
+  The document is captured against `rec.reception_visits`, the visit the handover closes and the only
+  linkable entity type in this chain's reach; `sal.delivery_records` is not one.
+  `no-unapproved-file-input` names one path and this slice did not widen it.
+- **The delivery tree joined the form-reset inventory in the change that gave it a form,** rather
+  than after the next audit round found it uncovered.
+
+### 38.4 What this slice did NOT do
+
+- **No end-to-end verification, and none is claimed.** Every request shape is asserted against a
+  replaced transport; every rendering against a replaced adapter. What is owed is an authenticated
+  browser proof on a freshly provisioned organisation, and it is not in this change.
+- **No list screen.** FE-001 waits on the readiness contract the Owner's **D-3** answer routes to the
+  owning prerequisite lane. `/delivery` still has no page and the navigation entry stays `planned`.
+- **No template administration screen.** Two template reads are consumed; no template write is sent,
+  and the five template-write entries stay marked as owed in the payload-parity gate.
+- **No delivery document.** **D-7** approved 2026-09-10 (printable client-composed view); no document or print operation exists yet.
+- **No permission minted and no grant changed.** The three codes consulted are already seeded and are
+  already declared by the operations that use them.
+- **Task-matrix rows are reconciled during final integration.** The 29 canonical tasks remain distinct from slice proof; no phase acceptance is claimed.
+
+---
+
+# The delivery-readiness queue — Owner decision D-3, of 2026-09-09
+
+## 39. What D-3 changed
+
+**Slice:** `remediation/p1-31-backend-delivery-readiness-seam`, ownership profile `p1-31-backend`.
+**Baseline:** protected `develop` **249c6428**, merged up to **0204f2d1**, then **07193258**, then
+**78d34fbc** — the head this branch is integrated against.
+
+The full record is [`delivery-readiness-seam.md`](./delivery-readiness-seam.md). In short:
+
+**The Owner's decision (D-3, settled 2026-09-09), in the Owner's words.** The operational
+ready-for-delivery queue is the set of work orders that satisfy the AUTHORITATIVE SERVER
+delivery-eligibility rules, and it INCLUDES eligible work orders that do not yet have a delivery
+record; it is a different question from the delivery-record list, which lists records that already
+exist. The three constraints the Owner attached: **no new work-order status**, **eligibility is not
+computed in the browser**, **finance permissions are not broadened**.
+
+**Measured fact (not part of the decision).** `GET /api/v1/deliveries` (PR #358) lists delivery
+RECORDS, so a work order that is finished, quality-signed, paid and unencumbered is invisible to it
+precisely because nobody has opened a handover yet — which is when it is most worth showing.
+
+**Engineering consequence (not an Owner decision).** The points below are this slice's own choices,
+made against that answer. The Owner named none of them.
+
+- **One operation.** `GET /api/v1/delivery-readiness` maps to `sal.delivery-readiness-list`, a
+  top-level resource on the `/damaged-stock` precedent rather than a static sibling of
+  `{deliveryId}`.
+- **FOUR of the eight blocker codes**, and the other four are ABSENT rather than reported as
+  satisfied: `delivery_state_invalid`, `checklist_incomplete`, `receiver_not_verified` and
+  `signature_missing` are counted against a delivery row's id and are unaskable for a work order
+  that has none. The four that remain come from the SAME private readers the eligibility
+  composition uses, through a new `composeWorkOrderFacts`, restating none of them.
+- **The three Owner constraints are discharged** in sections 3 and 4 of the record: nothing writes a
+  status, no eligibility input crosses the wire, and requiring three codes narrows rather than
+  broadens.
+- **Nothing was minted.** No migration, no schema change, no seed, no permission, no audit action.
+
+### 39.1 What was published, and what was minted
+
+| published                                                                         | minted  |
+| --------------------------------------------------------------------------------- | ------- |
+| 1 operation, 1 route module, 1 path, 1 application service, 1 work-order port     | nothing |
+| register 405 to **406** operations, 314 to **315** paths, audit actions unchanged | nothing |
+
+### 39.2 Dispositions
+
+| id        | finding                                                                                                                      | measured                                                                                                                                                                                                                                                                                                                                               | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | owner / slice | status |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------- | ------ |
+| **CC-24** | no batch variant of the four fact sources exists, so a page of N costs about **5N** round trips and the page must stay small | `qualityModule().gate.evaluate`, billing's `openReceivableForWorkOrder`, inventory's `reads.openCommitmentsFor` and this module's `findLiveDeliveryForWorkOrder` each answer for ONE work order. There is no batched form of any of them anywhere in `apps/api/src`, so twenty rows cost on the order of a hundred round trips plus the candidate page | **accepted, with the page bounded and the remedy NAMED but not performed.** The default page is 20 and the maximum 50, below the platform 50/100, and the maximum is refused at the BOUNDARY rather than clamped by `resolveLimit` — returning fewer rows than were asked for is right for a cheap list and wrong for one that fans out per row. **Batch fact ports in `quality`, `billing` and `inventory` are the named prerequisite of any larger page.** They are not built here: three modules' public surfaces are not this slice's to change, and inventing a batch port per module with no consumer contract is how one surface ends up with two readers that disagree | later slice   | open   |
+
+**Identifier note — the section number and the identifier are both settled.** **CC-24** is this
+slice's identifier: the allocation table of §36.1 reserves it for "the readiness seam", and no other
+lane claims it. The SECTION NUMBER is now settled too. `develop` **78d34fbc** carries sections 1–38
+and **CC-01 … CC-26**: sections 1–34 and **CC-01 … CC-20** were merged at **0204f2d1**; **#363**
+landed section 35 and **CC-21**, **#360** section 36 and **CC-22**, **#358** section 37 and
+**CC-23**, and **#362** section 38 with **CC-25** and **CC-26**. Section 39 is therefore the next
+free heading and this slice takes it, continuing at **CC-24**. Sections 38 and 39 do not collide and
+neither do their identifiers.
+
+### 39.3 What this slice did NOT do
+
+- **No migration and no schema change.** The one new SQL predicate is a parameter on the existing
+  work-order list query; every statement uses grants that already existed.
+- **No permission was minted and no seed changed.** All three declared codes are pre-existing
+  catalogue rows already carried by the tenant administrator bundle, so no widening obliges an
+  operator act and no backfill is owed.
+- **No work-order status was added.** "Ready" is composed on every read and is written nowhere.
+- **No gate was weakened.** This is a read and it gates nothing: `sal.complete_delivery`,
+  `composeFor` and the eligibility route are untouched, and the four delivery-bound blockers are
+  still enforced exactly where they were.
+- **`apps/web/src` was not edited** except through `lib/api/idempotent-operations.ts`, which a
+  repository script regenerates and which every published operation moves.
+- **No allow-list was widened and no gate suppressed.** `check-p1-30-payload-parity.mjs` filters its
+  scope to `WRITE_METHODS`, so a GET is outside it and no `PENDING` entry was added: declaring one
+  would be a claim about a gate that does not look here.
+- **FE-001 is not built**, and the batch fact ports of CC-24 are not built.
+
+### 39.4 Proof
+
+| id       | what was shown                                                                                                                                                                                                                                                                  |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D3-1** | `tests/backend/p1-31-delivery-readiness-seam.test.ts` — every fixture arranged THROUGH shipped routes: reception conversion, four transition edges, the closure command, `sal.issue_invoice`, the payment and allocation routes, the delivery routes. Nothing planted by UPDATE |
+| **D3-2** | the D-3 claim itself: a closed, settled, unencumbered work order with NO delivery record is returned ready, with no blockers                                                                                                                                                    |
+| **D3-3** | the `cancelled` trap proved rather than assumed — `is_closed` AND `is_cancellation` read off the real catalogue row, then the exclusion asserted                                                                                                                                |
+| **D3-4** | a HANDED-OVER work order raises no blocker and is still not ready, so an empty blocker list is proved insufficient to infer readiness                                                                                                                                           |
+| **D3-5** | the three declared permissions proved necessary and sufficient from four sides, with `sal.finance.view` refused at the operation rather than answered with a softened fact                                                                                                      |
+
+---
+
+# P-11 (1/4) — the report engine, of 2026-09-09
+
+Owner decision **D-4** of 2026-09-09 approved a baseline of four reports — work orders by status,
+technician labour time, inventory movements, and an invoice and payment summary — together with the
+columns each must carry. **Engineering consequence (not an Owner decision):** serving that baseline
+takes a report engine, and prerequisite **P-11** is where it is built; this slice is the first
+quarter of it. Section 40 was added by that slice on branch
+`remediation/p1-31-backend-report-engine-work-orders`, written against protected `develop`
+`249c6428`, with protected `develop` `07193258` merged INTO that branch on 2026-09-10 and protected
+`develop` `01c32937` merged in on 2026-09-11. **Nothing on this branch is merged into any protected
+branch.** The design record is [`report-engine-seam.md`](./report-engine-seam.md).
+
+**Section 40, CC-27 and CC-28 are settled.** The slice originally reserved sections 30–33 and
+**CC-23** against the register it could see at `249c6428`. Both were taken while this branch was
+open: sections 30–33 by the delivery detail screen (#357) and **CC-23** by the branch delivery list
+(#358, section 37). The register on protected `develop` `01c32937` runs **CC-01 … CC-26** across
+sections 1–39: the delivery write paths (#362) landed section 38 with **CC-25** and **CC-26**, and
+the readiness seam (#366) landed section 39 with **CC-24**. This slice therefore continues at
+**section 40** and takes **CC-27 and CC-28** — two dispositions, the second of them raised while
+integrating onto the configuration writer.
+
+Both numbers were re-checked against protected `develop` at this sync and neither collides. The
+provisional qualifier the slice carried while #362 and #366 were open is dropped: §36.1's allocation
+continuation records the same re-check, and the coordinator's standing allocation places the next
+two lanes at sections 41 and 42, so nothing unmerged can take 40. A register whose identifiers
+collide is worse than one that renumbers.
+
+## 40. What P-11 changed — the report engine, engine half
+
+### 40.1 What was published, and what was minted
+
+| published                                                                              | minted  |
+| -------------------------------------------------------------------------------------- | ------- |
+| 1 operation, 1 route module, 1 path, 0 audit actions, 5 module files, 2 module ports   | nothing |
+| 1 shared vocabulary, read by the engine and by the merged version writer (CC-28)       | nothing |
+| register 406 → **407** operations, 315 → **316** paths, audit actions unchanged at 232 | nothing |
+| bundle unchanged at 76 codes on the integrated tree                                    | nothing |
+
+**Measured facts (not part of the decision).** The register figures are read from the generated
+`docs/phase-1/phase-1-24/evidence/operation-register.json`, whose totals at this head are 407
+operations and 316 OpenAPI paths.
+
+- **`rpt.report-run` — `GET /reports/{reportCode}/rows`**, declaring `rpt.report.read` at
+  `scope: 'branch'`, `auditClass: 'none'`, `expensive-read`, `cacheCategory: 'never'`.
+- **The dataset registry**, `apps/api/src/modules/reporting/domain/report-datasets.ts`, holding
+  exactly one entry: `work_orders_by_status`. Its shape follows the Owner's PLANNED proposal
+  **OWR-2026-09-06-A-12** — a report code binds to a CODE-REGISTERED dataset — adopted here as an
+  engineering choice rather than as a requirement: the Owner's register carries A-12 as "Proposed
+  implementation policy · Planned" (`docs/product/owner-requirements-2026-09-06.md:198`). It is not
+  a schema column, because `rpt` still has none.
+- **Two module ports.** `workOrderModule().reportPort` answers for `wo.*`, which is that module's
+  private schema; `iamOrganizationContext().branches` answers for the branch name and timezone the
+  period is resolved in. The second is a THIRD composition root in the iam module, beside
+  `iamDirectory`, so a report run does not boot `installIamRuntime()`.
+- **`executable` stops being a literal on this branch.** It becomes `REPORT_DATASETS` membership on
+  both existing catalogue operations, and the catalogue publishes `source` and `titleKey` beside it.
+  On `develop` it is still the literal `false` until this branch merges.
+- **Nothing was minted.** No permission, no seed row, no migration, no audit action, no bundle
+  change. `rpt.report.read` and `wo.work_order.read` are both existing catalogue rows.
+
+### 40.2 Dispositions
+
+| id           | finding                                                                                                                                                                                                                        | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | owner / slice | status                                                                                                |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------- |
+| **CC-27**    | two engineering decisions were taken ahead of Owner confirmation and both are visible in the wire; (a) has since been settled in part                                                                                          | **(a) Timezone.** `org.branches.timezone_name` and `org.tenants.default_timezone` both exist and are both foreign keys into `shared.timezones`; NO query in the platform buckets by either one today, so there was no precedent to follow and nothing to match. **(b) The catalogue merge.** `rpt.report_configurations` has no seed and, until the P-11 writer slice lands, no writer — so a rule that made a configuration row a PRECONDITION would leave every report unreachable in every tenant                                                                                                                                                                                                                                                                                                                                | **taken and implemented on this branch, which is unmerged.** (a) **The period and timezone semantics were APPROVED by the Owner on 2026-09-10**, in the Owner's words: half-open `[from, to)` periods in the selected branch's timezone, converted consistently for server queries; timezone and filter context displayed and preserved; cross-branch reporting uses one explicit reporting timezone ([`owner-decisions-2026-09-10.md`](./owner-decisions-2026-09-10.md) § 4, recorded on protected `develop` and reaching this branch at the `01c32937` sync). **Recommendation pending Owner approval:** that the selected branch's timezone be read from the SOURCE column `org.branches.timezone_name` rather than `org.tenants.default_timezone`; reversing that one choice is one lookup in `ReportRunService.run` plus the case that proves the boundary. (b) **Engineering decision, not confirmed by the Owner — the catalogue-merge rule, CC-27(b).** A configuration row is CUSTOMIZATION of a report the platform implements, not a precondition for it existing: baselines are visible to every tenant marked `source: 'platform'`, and a tenant row of the same code overrides scope, export permission and parameter schema. Both are written up in the seam record with the alternative and its cost | Owner         | (a) approved 2026-09-10 apart from the source column; (b) open                                        |
+| **CC-27(c)** | this slice redefined two of the three properties the P1-23 hostile mutation matrix attacks, so two of its mutations had no pattern left to apply — reported NOT APPLIED, which fails the matrix rather than passing it quietly | `scripts/p1-23-mutation-matrix.mjs` edits an exact string and fails when it occurs zero times. **M7b** attacked `AND c.status = 'published'` in the by-code SELECT of `report-catalogue-repository.ts`; that predicate is deliberately gone, because the engine must SEE an unpublished configuration in order to refuse it — a read that hid a draft would leave the code looking unconfigured, let the code-registered baseline answer for it, and make a decision the tenant has not published runnable. **M8** attacked the literal `executable: false`, which is now registry membership                                                                                                                                                                                                                                       | **Both re-targeted, neither weakened.** M7b now mutates the publication test at `apps/api/src/modules/reporting/application/report-configuration-policy.ts:29`, dropping `row.status !== 'published'` and leaving `version_number` guarded so the mutant runs: property **a non-published configuration is never applied to a run**. M8 now mutates `apps/api/src/modules/reporting/application/report-catalogue-service.ts:122` from `isReportDatasetCode(row.report_code)` to `true`: property **the catalogue marks a report executable only when its code is registered**. Each `from` string occurs EXACTLY ONCE in its file, counted statically. `tests/backend/p1-23-reporting.test.ts` gained the fixture and the assertions that fail when either property breaks, so the P1-23 artefact stays self-contained; the script's allow-list, its applied-check and its one-suite-per-mutation shape were not touched. The matrix itself was NOT executed here — it runs backend suites and defaults to the shared database; CI runs it                                                                                                                                                                                                                                                                           | this slice    | settled — the re-target is recorded in [`phase-1-23/gate-record.md`](../phase-1-23/gate-record.md) §7 |
+| **CC-28**    | the version WRITER and the report ENGINE disagreed about what a `parameter_schema` MEANS, and only the engine's reading was executable                                                                                         | The writer merged in PR #361 bounds the document's SHAPE — a JSON object, at most 64 top-level keys, at most 16 KiB — and validates nothing about the keys, a deferral it records in its own seam document. The engine reads the same column through an allowlist: `{}`, or `{ filters: { … } }` naming only `companyId` and `branchId` as `uuid` and `from` and `to` as `date`, and it refuses a run it does not recognise. So an administrator holding `rpt.report.configure` could publish a well-formed, accepted definition — `{ branchId: { type: 'uuid' } }`, the filter named at the top level, which is the shape the seam's own examples used — and every subsequent run of that report answered `ERR-IAM-001`, with nothing at authoring time saying why. Neither side was wrong on its own; there were two definitions. | **Closed on this branch.** The vocabulary is stated ONCE, as `readReportParameterVocabulary` in `modules/reporting/domain/report-configuration.ts`, and both the engine's `assertReportConfiguration` and the version-create route read that function, so they cannot drift. The route refuses a schema the engine would refuse, under rule `report_vocabulary`, and refuses `{ filters: {} }` under its own rule `empty_filter_allowlist` — an allowlist permitting no filter would refuse every run, and `{}` already means "no restriction", so the empty allowlist is reached for by mistake rather than on purpose. Refusal was chosen over silent acceptance because refusing costs an administrator one corrected request while accepting costs every reader of that report a refusal they cannot explain. **The ENGINE is unchanged**: a version published before this rule still runs exactly as it did, because rows already in tenant databases must keep the meaning they had. No migration, no permission, no operation, no audit action. Nothing echoes the submitted document into a message.                                                                                                                                                                                                         |
+
+### 40.3 What this slice did NOT do
+
+- **No migration and no schema change.** `rpt` is exactly as P1-11 left it; every statement uses a
+  grant and a policy that already existed.
+- **No permission was minted and no bundle changed by this slice.** `rpt.report.read` and
+  `wo.work_order.read` are both existing catalogue rows. The bundle DID move while this branch was
+  open, but not here: the configuration writer (section 34) closed **CC-02** and added
+  `rpt.report.configure`, leaving `rpt.export` excluded on **CC-04**'s Owner decision as the single
+  remaining deliberate exclusion. This slice adds and removes nothing from that set.
+- **No export path of any kind.** A platform baseline publishes `exportPermissionCode: null` rather
+  than naming `rpt.export`, because naming a code would advertise a path prerequisite P-12 has not
+  built.
+- **The other three baseline reports are not implemented.** The registry holds one entry and a case
+  asserts that it holds exactly one, so the gap cannot close itself quietly.
+- **No configuration WRITER was built here.** The writer is the other half of P-11 and it landed
+  separately (PR #361, section 34); on the integrated tree the two halves meet, but this slice
+  contributed no part of the writer and `rpt.report_configurations` still carries no seed row. It
+  did add ONE rule to the writer's version-create route, and only one: the parameter vocabulary of
+  **CC-28**, which is this engine's own reading of the column moved to where it can be enforced
+  before a definition is stored. No other behaviour of that route was touched.
+- **The ENGINE's treatment of a published schema was not changed.** `{ filters: {} }` is still
+  honoured as an allowlist permitting no filter, and an unrecognised document is still refused.
+  Rows already published in tenant databases keep the meaning they had; the new rule governs what
+  may be created from now on.
+- **Bilingual state labels were not invented.** `wo.work_order_states.name` is a single `text`
+  column, so the report publishes the label the catalogue holds and the seam record names the schema
+  change a translated one would need.
+- **`apps/web/src` was not edited** except through `lib/api/idempotent-operations.ts`, which a
+  repository script regenerates and which every published operation moves.
+- **No allow-list was widened and no gate was suppressed.** `check-p1-30-payload-parity.mjs` does
+  not hold `rpt` operations to a mirror at all, and this is a GET with no body, so no `PENDING`
+  entry was added: declaring one would be a claim about a gate that does not look here.
+
+### 40.4 Proof
+
+**Measured facts (not part of the decision) — where these results come from.** The runs below were
+observed on 2026-09-11 at head `b14818ce`, which is the executable tree of this branch after the
+`01c32937` sync; the two commits that follow it change records only. Every database-bound run used
+a DISPOSABLE LOCAL CLONE, `p131_report_controls_20260910` on `127.0.0.1:55432`, carrying 139
+migrations on PostgreSQL 17.10, with the connection stated in the environment of each command:
+
+| run                                                         | result                                          | database window (UTC) |
+| ----------------------------------------------------------- | ----------------------------------------------- | --------------------- |
+| `npm run test:backend` — the whole tier, on the clone       | 136 files, 2906/2906                            | 09:43:04 → 09:57:30   |
+| `tests/db/rpt-reporting.test.ts`, on the clone              | 3/3                                             | 09:57:47 → 09:57:51   |
+| `tests/backend/p1-23-reporting.test.ts` alone, on the clone | 13/13                                           | not timed separately  |
+| `npm run test:unit`, through the recorder                   | 3300/3300, 122 files                            | no database           |
+| the web tier, through the recorder                          | 3664/3664, 133 files                            | no database           |
+| `npm run verify:policies`                                   | exit 0                                          | no database           |
+| changed-file ownership, in both CI forms                    | CHECK → `p1-31-backend`, 43 files, 0 violations | no database           |
+
+The earlier observation of 2026-09-10 at `3cb65df9` — the engine suite 29/29, the configuration
+seam 29/29, the unit controls 23/23, `tests/ci` with the OpenAPI contract 1990/1990 — is superseded
+by the whole-tier run above, which contains all of them.
+
+**There was no hosted gate, no run against the shared database, and no merge.** PR #364's remote
+head `59be1698` carries no checks, it is behind this local branch, and no hosted result exists for
+`b14818ce` or for any commit after it. The seam record
+[`report-engine-seam.md`](./report-engine-seam.md) section 10 states the same runs in the same
+terms.
+
+| id        | what was shown                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **P11-1** | `tests/backend/p1-31-report-engine-work-orders.test.ts` — the rows, the counts, the period, the cells, the authorization, the code and the paging, on real work orders in a branch this suite owns                                                                                                                                                                                                                                                                                                                                                                      |
+| **P11-2** | the two permissions from BOTH sides: a principal holding `rpt.report.read` alone is refused naming `wo.work_order.read`, one holding `wo.work_order.read` alone is refused naming `rpt.report.read`                                                                                                                                                                                                                                                                                                                                                                     |
+| **P11-3** | the half-open period in the BRANCH zone, on two orders one local minute apart: 23:30 on the last included day is in, 00:00 on the excluded day is out, and a UTC reading of the same period would differ                                                                                                                                                                                                                                                                                                                                                                |
+| **P11-4** | the counts are the SELECTION's and not the page's — a one-row page still reports three states, and both pages carry identical counts                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| **P11-5** | branch isolation with RLS reach deliberately widened into the refused branch, so the refusal is the scoped permission evaluation and not an empty result set                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **P11-7** | the shared vocabulary from both ends: `tests/unit/p1-31-report-configuration-controls.test.ts` pins `readReportParameterVocabulary` directly, including that a verdict of `unrecognised` and a denied run are the same answer on the same documents, and that no refusal quotes the submitted schema; `tests/backend/p1-31-report-configuration-seam.test.ts` proves the route accepts the whole four-filter allowlist and `{}`, refuses six documents the engine would refuse, refuses `{ filters: {} }` under its own rule, and writes no version in any refused case |
+| **P11-6** | `executable` in both limbs: true for the registered baseline, false for a PUBLISHED tenant row whose code the engine does not implement                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| **P11-8** | the P1-23 mutation re-target of **CC-27(c)**, measured rather than assumed: each new `from` string counted exactly once in its file, then each mutation applied BY HAND and `tests/backend/p1-23-reporting.test.ts` run alone — 13/13 green unmutated, the M7b mutant failing `never applies a configuration the tenant has not published` and the M8 mutant failing `claims executability only for a registered code`, both with an `AssertionError` and neither with a crash signature. The matrix script itself was not executed                                     |
+
 ## 41. What P-17 changed — the delivering employee becomes a real identity
 
 **Slice:** `remediation/p1-31-backend-delivering-employee-identity`, ownership profile
-`p1-31-backend`. **Baseline:** protected `develop` **07193258**; `main` untouched.
-**Section 41 and CC-29 are PROVISIONAL**, on the section 36.1 rule: sections 38, 39 and 40 are
-allocated to lanes that have not landed, so one of them landing out of order moves this heading
-rather than this identifier. The number must be re-checked against `develop` before this branch
-merges.
+`p1-31-backend`. **Baseline:** protected `develop` **ae0e0354**, merged into this branch on
+2026-09-12; the slice was written on **07193258**. `main` untouched.
+**Section 41 and CC-29 are CONFIRMED, no longer PROVISIONAL.** They were provisional under the
+section 36.1 rule while sections 38, 39 and 40 were claimed by lanes that had not landed. At
+`develop` **ae0e0354** all three are merged, and section 42 with **CC-30** is allocated to the
+readiness-queue screen, whose own allocation table records section 41 and **CC-29** as still
+claimed by this unmerged lane. Section 41 is unoccupied, **CC-29** is allocated to nothing else,
+and **CC-29a** and **CC-29b** appear nowhere on `develop`.
 
 ### 41.1 What was published, and why the table had to be new
 
@@ -1314,3 +1651,103 @@ about a populated one.
 **Four recommendations are pending — A-3, A-4, A-5 and A-6.** They are stated once each in the
 CC-29 disposition of section 41.2 above and in the seam register (section 3), and are deliberately
 not restated here. **A-1 and A-2 are APPROVED, not pending.**
+
+---
+
+## 42. The ready-for-delivery queue screen — PROVISIONAL
+
+**Slice:** `feature/p1-31-delivery-readiness-queue`, ownership profile `p1-31-frontend`.
+**Baseline:** protected `develop` **c1b1a8cd** (the report engine, #364), merged into this branch on
+2026-09-11; the integrated head is that merge commit, `P1-31-FE-001-008`, the commit this section is
+written against. An earlier sync merged `develop` **01c32937** on the same day. The screen was
+written against **0204f2d1**; the contract it consumes reached `develop` with the readiness seam
+(#366, section 39) and the delivery execution paths (#362, section 38), so this is the first head at
+which the screen compiles against a published contract rather than a proposed one.
+
+The full record is [`delivery-readiness-queue-ui.md`](./delivery-readiness-queue-ui.md).
+
+**The Owner's decision (D-3, settled 2026-09-09), in the Owner's words.** The operational
+ready-for-delivery queue is the set of work orders that satisfy the AUTHORITATIVE SERVER
+delivery-eligibility rules, and it INCLUDES eligible work orders that do not yet have a delivery
+record; it is a different question from the delivery-record list, which lists records that already
+exist. The three constraints the Owner attached: **no new work-order status**, **eligibility is not
+computed in the browser**, **finance permissions are not broadened**. This slice consumes that
+decision and extends none of it.
+
+**Measured facts (not part of the decision).**
+
+- The contract mirrored on this side matches the merged route field for field: the route's
+  `DeliveryReadinessRowView` (`workOrder`, `delivery`, `facts`, `blockers`, `readyToStartDelivery`)
+  over the platform cursor page (`items`, `nextCursor`, `hasMore`), and `DEFAULT_READINESS_PAGE_SIZE`
+  20 / `MAX_READINESS_PAGE_SIZE` 50 as the route declares them.
+- The shared table's first page is **25** rows and its size options are 10, 25, 50 and 100. The
+  route's default of 20 applies only to a request that sends no `limit`, and this screen always
+  sends one, so 25 is what the first page actually asks for; 100 is capped to the route's 50 on this
+  side and the capping is stated to the operator rather than performed silently.
+- The P-16 access gate examines **9** route pages across **7** owned segments with the readiness
+  operation named, and the new page is one of the nine.
+
+**Engineering consequence (not an Owner decision).** The points below are this slice's own choices.
+The Owner named none of them.
+
+- **The page route is `/delivery`**, the singular href already committed in navigation, and the
+  navigation entry moves from planned to available. The plural `deliveries` remains the API spelling.
+- **All three of the operation's codes gate the page** before any read is issued, and each one alone
+  is enough to refuse it. The gate is the page's own; the backend's check is unchanged and remains
+  the authority.
+- **The verdict is rendered, never composed.** `readyToStartDelivery` is taken as given; an empty
+  blocker list is not read as readiness, and no control asks the server to filter by it.
+- **The queue is a separate module from the delivery record contract** — `readiness-contract.ts` and
+  `readiness-api.ts` — so the execution half (#362) and this half did not stand on each other.
+
+### 42.1 Identifier allocation — PROVISIONAL, dated 2026-09-11
+
+`develop` at **c1b1a8cd** carries sections 1–40 and **CC-01 … CC-28**. Section 40, with **CC-27**,
+**CC-27(c)** and **CC-28**, settled on `develop` when the report engine (#364) merged on 2026-09-11,
+so one of the two lanes named below has since landed at the allocation it claimed. One unmerged lane
+still holds a heading and an identifier between that head and this one.
+
+| id                   | lane                                      | state at c1b1a8cd, dated 2026-09-11 |
+| -------------------- | ----------------------------------------- | ----------------------------------- |
+| **CC-24**            | the readiness seam (#366)                 | merged, section 39                  |
+| **CC-25**, **CC-26** | the delivery execution write paths (#362) | merged, section 38                  |
+| **CC-27**, **CC-28** | the report engine (#364)                  | merged, section 40                  |
+| **CC-29**            | an unmerged lane                          | open, claims section 41             |
+| **CC-30**            | this slice                                | this branch, claims section 42      |
+
+So this slice takes **section 42** and **CC-30**, and both stay **PROVISIONAL**: section 40 is
+settled, but section 41 and **CC-29** are still claimed by a lane that has not merged, so that lane
+landing with a different allocation would still move this heading. **The section number and the
+identifier must both be re-checked against `develop` before this branch merges.** A register whose
+identifiers collide is worse than one that renumbers.
+
+### 42.2 What changed, and what was minted
+
+| changed                                                                                                                                                   | minted  |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| 1 route page, 1 screen component, 2 feature modules (contract and adapter), 1 navigation entry flipped to available, 1 parent link on the detail page     | nothing |
+| English and Arabic copy for the selectors, the verdict, the unreadable-check case and the paging notice; 3 web test files extended; 1 CI allow-list entry | nothing |
+
+The CI allow-list entry is `sal.delivery-readiness-list` in `scripts/ci/check-p1-31-access.mjs`,
+which that gate's own docblock requires in the same change that first consumes the operation. It
+WIDENS what the gate judges — the derived segment `delivery-readiness` joins the owned set — and
+suppresses nothing.
+
+### 42.3 Dispositions
+
+| id        | finding                                                                                                     | measured                                                                                                                                                                                                                                                                      | disposition                                                                                                                                                                                                                                                                                                                                                                                                                | owner / slice          | status         |
+| --------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | -------------- |
+| **CC-30** | an operator without `sal.finance.view` is refused the whole queue, and **no reduced view of it is offered** | the operation declares all three codes and the page tests all three; the financial check is composed from rows that live behind the finance code, so a caller without it would be answered from an invisible zero and shown a vehicle as releasable while money is owed on it | **accepted, and recorded because an operator will meet it.** D-3 forbids broadening finance permissions, and a reduced view — the queue with the financial check left blank — is the softened fact the seam already refused at the operation. The remedy is a permission grant by an administrator, not a change here. Recorded so that "the delivery page shows me nothing" is read as a permission fact, not as a defect | a tenant administrator | open, recorded |
+
+### 42.4 What this slice did NOT do, and what is not claimed
+
+- **No backend file changed.** No route, no service, no repository, no migration, no seed, no
+  permission, no audit action and no operation. The operation register is untouched by this slice.
+- **No work-order status was written or invented**, and nothing on this side recomputes a verdict.
+- **No delivery, receiver, signature or checklist result is created from this screen.** It reads,
+  and it links to the pages that write.
+- **No gate was weakened and no allow-list was relaxed.** The one CI edit adds an operation to a
+  gate's reach.
+- **No hosted run, no database tier, no browser acceptance and no end-to-end result is claimed.**
+  The evidence for this slice is the local frontend chain and the focused web run named in the
+  record document. The branch is unmerged as this section is written.
