@@ -48,13 +48,20 @@
 export interface DeliveryCreateBody {
   readonly workOrderId: string;
   /**
-   * Who is handing the vehicle over.
+   * Who is handing the vehicle over — an `org.employees` identifier.
    *
-   * `sal.delivery_records.delivering_employee_id` is `NOT NULL` and the DDL
-   * gives it **no foreign key**, so the route validates the shape of a uuid and
-   * asserts nothing further about which register the identifier belongs to.
-   * Owner requirement OWR-2026-09-06-G-10 leaves that undecided, and this mirror
-   * does not decide it either.
+   * **This comment used to say the column had no foreign key**, and that was
+   * true of the DDL it was written against. P1-31 prerequisite P-17 changed it:
+   * `fk_delivery_records_delivering_employee` binds the column to the employee
+   * register on the organisation and its identifier, and
+   * `sal.stamp_delivering_employee_identity` additionally requires the employee
+   * to be live and active. Owner requirement OWR-2026-09-06-G-10 was answered on
+   * 2026-09-10.
+   *
+   * The employee's home branch is deliberately not part of the rule, on the
+   * Owner's clarification of the same day. The route's schema still asserts only
+   * the SHAPE — the identity is decided by the module and by the database, not
+   * by a refinement here that would drift from both.
    */
   readonly deliveringEmployeeId: string;
 }

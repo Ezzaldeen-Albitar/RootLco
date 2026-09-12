@@ -65,6 +65,8 @@ export function WorkOrderDetailScreen({
   canReadInvoice = false,
   canReadDelivery = false,
   canManageDelivery = false,
+  canReadEmployees = false,
+  canReadBranches = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -100,6 +102,29 @@ export function WorkOrderDetailScreen({
    * handovers and may not start one gets the section and no form.
    */
   readonly canManageDelivery?: boolean;
+  /**
+   * Whether the employee register may be OFFERED when starting a handover.
+   *
+   * A third code again — `org.employee.read`, which the two delivery codes do
+   * not imply. The backend split reading the register from administering it so
+   * that choosing who handed a vehicle over never requires the authority to
+   * alter the organisation's roster; this prop is the screen's side of that
+   * split. Without it the handover section says the selection cannot be offered
+   * and issues no register read.
+   */
+  readonly canReadEmployees?: boolean;
+  /**
+   * Whether the branch DIRECTORY may be offered when starting a handover.
+   *
+   * A fourth code — `org.branch.read` — and the one that makes a cross-branch
+   * handover reachable at all. The register read needs a branch, the create
+   * operation applies no branch rule, and the standing tenancy requirement
+   * forbids an operator typing an identifier for one; so the branches are chosen
+   * from the published directory or not chosen at all. Without this the handover
+   * section says the directory is not available and reads the register for the
+   * work order's own branch.
+   */
+  readonly canReadBranches?: boolean;
 }) {
   const [detail, setDetail] = useState<WorkOrderDetail>(initial);
   const [reloadError, setReloadError] = useState<string | null>(null);
@@ -198,7 +223,11 @@ export function WorkOrderDetailScreen({
           locale={locale}
           messages={messages}
           workOrderId={workOrder.id}
+          companyId={workOrder.companyId}
+          branchId={workOrder.branchId}
           canManage={canManageDelivery}
+          canReadEmployees={canReadEmployees}
+          canReadBranches={canReadBranches}
         />
       ) : null}
 

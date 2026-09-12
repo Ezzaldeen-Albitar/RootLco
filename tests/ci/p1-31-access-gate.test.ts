@@ -100,20 +100,32 @@ export default async function Page({ params }) {
  * page and the per-report page. BOTH numbers are read off the gate’s report line
  * on the merged head rather than carried forward — the report-screens branch was
  * written when the line read 9, and `develop` moved it twice before that merge —
- * so 13 is what `develop` reports and 15 is what that branch reports. The SEGMENT
- * count did not move with that slice: `reports` was already a named dashboard
- * area, and the resource root the three reporting operations derive is also
- * `reports`, so the derived half and the named half agree on it.
+ * so 13 is what `develop` reported and 15 is what that branch reported. The
+ * SEGMENT count did not move with that slice: `reports` was already a named
+ * dashboard area, and the resource root the three reporting operations derive is
+ * also `reports`, so the derived half and the named half agree on it.
  *
  * It moved from 15 to 16 with the FE-010 operational overview at
- * `(dashboard)/reports/overview`, again read off the gate’s report line on this
- * head. The segment count did not move again and no operation was added to the
- * allow-list: the overview consumes the same three reporting operations, four
- * runs of `rpt.report-run` instead of one, so what grew is the number of pages
- * the gate judges and nothing about what it owns.
+ * `(dashboard)/reports/overview`, again read off the gate’s report line. The
+ * segment count did not move again and no operation was added to the allow-list:
+ * the overview consumes the same three reporting operations, four runs of
+ * `rpt.report-run` instead of one, so what grew is the number of pages the gate
+ * judges and nothing about what it owns.
+ *
+ * The FE-002 handover form moved the SEGMENT count and not the page count, which
+ * is the opposite of both slices before it and is worth stating rather than
+ * rounding. It names the employee register read P-17 published and the branch
+ * directory read the branch picker consumes, whose shared resource root is `org`
+ * — a root no other claimed operation derives and no dashboard area is named for
+ * — so the derivation gains one segment, while the form itself lives on the
+ * work-order detail page the gate already examined. Withdrawing the unconsumed
+ * single-employee read and claiming the branch directory moved NEITHER number,
+ * because both share that same root. Both numbers below are read off the gate's
+ * own report line on THIS merged head, which carries the overview page and this
+ * form together.
  */
 const PINNED_PAGES = 16;
-const PINNED_OWNED_SEGMENTS = 8;
+const PINNED_OWNED_SEGMENTS = 9;
 
 describe('the derivation is P1-31’s own and is not empty', () => {
   it('derives the delivery and warranty resource roots from the register', () => {
@@ -122,7 +134,7 @@ describe('the derivation is P1-31’s own and is not empty', () => {
     // meaningless, and the gate itself refuses it.
     expect(segments.length).toBeGreaterThan(0);
     expect(segments.length, segments.join(', ')).toBe(PINNED_OWNED_SEGMENTS);
-    for (const expected of ['deliveries', 'warranties', 'work-orders']) {
+    for (const expected of ['deliveries', 'warranties', 'work-orders', 'org']) {
       expect(segments, `${expected} is a P1-31 resource root`).toContain(expected);
     }
   });
@@ -174,6 +186,19 @@ describe('the derivation is P1-31’s own and is not empty', () => {
     expect(P1_31_OPERATION_IDS).toContain(id('rpt', 'report-catalogue'));
     expect(P1_31_OPERATION_IDS).toContain(id('rpt', 'report-read'));
     expect(P1_31_OPERATION_IDS).toContain(id('rpt', 'report-run'));
+    // The two organisation reads the FE-002 handover form consumes, named in the
+    // change that first consumes them: the employee register and the branch
+    // directory the form picks a branch from.
+    expect(P1_31_OPERATION_IDS).toContain(id('org', 'employee-list'));
+    expect(P1_31_OPERATION_IDS).toContain(id('org', 'branch-list'));
+    // Three operations on the same two subjects are deliberately NOT claimed. The
+    // two administration commands: no screen of this phase administers a roster.
+    // The single-employee read: it was claimed while an adapter with no consumer
+    // existed, and both were withdrawn together — an allow-list naming an
+    // operation nothing reaches is owning a surface it does not have.
+    for (const tail of ['employee-create', 'employee-status-set', 'employee-detail']) {
+      expect(P1_31_OPERATION_IDS, `${tail} is not this phase's`).not.toContain(id('org', tail));
+    }
     // A stale entry is a VIOLATION rather than a silent shrink, so an honest
     // derivation over the real register reports no problems at all.
     expect(deriveSegments().problems).toEqual([]);
