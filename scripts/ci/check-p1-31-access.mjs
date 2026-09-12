@@ -93,14 +93,27 @@ export const P1_31_OPERATION_IDS = Object.freeze([
   'sal.work-order-delivery-read',
   'sal.delivery-readiness-list',
   'wty.warranty-list',
+  // The three reporting operations the FE-011 … FE-014 screens consume. Their
+  // resource root is `reports`, which `P1_31_AREAS` already names — so these
+  // entries widen nothing about the segments and everything about the CLAIM:
+  // this gate's docblock requires an operation to be listed in the same change
+  // that first consumes it, and an id that stops existing must be a violation
+  // rather than a quiet shrink.
+  'rpt.report-catalogue',
+  'rpt.report-read',
+  'rpt.report-run',
 ]);
 
 /**
  * The dashboard route segments P1-31's screens live under.
  *
  * `delivery` is singular and deliberately so — it is the href already committed
- * in navigation. `warranty` and `reports` have no page yet and are named now,
- * so that the first screen under either meets a rule that predates it.
+ * in navigation. `warranty` has no page yet and is named now, so that the first
+ * screen under it meets a rule that predates it. `reports` was named on the same
+ * grounds and now HAS pages: the FE-011 … FE-014 catalogue and report screens.
+ * Its resource root is also `reports`, so the derived and the named halves agree
+ * on that segment — which is why adding the three reporting operations moved the
+ * page count and not the segment count.
  */
 export const P1_31_AREAS = Object.freeze(['delivery', 'warranty', 'reports']);
 
