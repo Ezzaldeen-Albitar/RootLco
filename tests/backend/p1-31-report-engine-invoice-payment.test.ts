@@ -1199,6 +1199,11 @@ describe('the rows are the documents of the period, and only those', () => {
     // note names a party of its own.
     expect(cellValue(credit, 'partyRole')).toBe('invoice_payer');
     expect(cellValue(credit, 'partyId')).toBe(PARTNER_A);
+    // The name is enriched by DOCUMENT PARTY and not by document kind, so an
+    // entitled reader sees it on the credit note too — under `invoice_payer`,
+    // which is the whole point: the name and the role travel together, and a
+    // reader who is told the name is never left to guess what it is the name OF.
+    expect(cellValue(credit, 'partyName')).toBe('Reception Requester');
   });
 
   it('publishes the receipt with what it has applied, as a column of its own', async () => {
