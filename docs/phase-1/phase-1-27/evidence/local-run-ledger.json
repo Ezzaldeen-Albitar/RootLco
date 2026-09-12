@@ -7,17 +7,30 @@
     "unit": {
       "command": "npx vitest run --reporter=json",
       "tests": 3300,
-      "passed": 3300,
+      "passed": 3297,
       "failed": 0,
-      "skipped": 0,
+      "skipped": 3,
       "files": 122,
       "exitCode": 0,
       "reporterSuccess": true,
       "failedSuites": [],
       "filesWithoutCases": [],
-      "measuredAtCommit": "709151226ea111e1be3f85b41fa7e3913517ac30",
+      "measuredAtCommit": "1e4aaf56b7a74c2e2c4533ae6551c669ee697ef4",
       "dirtyExecutablePaths": [],
-      "measuredAt": "2026-09-12T09:10:07.329Z"
+      "measuredAt": "2026-09-12T11:16:27Z",
+      "provenance": {
+        "source": "hosted",
+        "runId": "34690517756",
+        "runUrl": "https://github.com/Ezzaldeen-Albitar/RootLco/actions/runs/34690517756",
+        "workflow": "PR CI",
+        "job": "103544854518",
+        "jobName": "unit-tests-coverage / unit-coverage",
+        "step": "Unit tier with coverage",
+        "headSha": "1e4aaf56b7a74c2e2c4533ae6551c669ee697ef4",
+        "artifact": "evidence-unit-coverage",
+        "artifactDigest": "sha256:2ddcfd79eddac40aabff51760cfecfb236a16a1fa826b7005e45aa28b8ef700b",
+        "field": "vitest-unit.json"
+      }
     },
     "web": {
       "command": "npm run test --workspace @rootlco/web -- --reporter=json",
@@ -30,9 +43,22 @@
       "reporterSuccess": true,
       "failedSuites": [],
       "filesWithoutCases": [],
-      "measuredAtCommit": "709151226ea111e1be3f85b41fa7e3913517ac30",
+      "measuredAtCommit": "1e4aaf56b7a74c2e2c4533ae6551c669ee697ef4",
       "dirtyExecutablePaths": [],
-      "measuredAt": "2026-09-12T08:24:04.372Z"
+      "measuredAt": "2026-09-12T11:19:09Z",
+      "provenance": {
+        "source": "hosted",
+        "runId": "34690517756",
+        "runUrl": "https://github.com/Ezzaldeen-Albitar/RootLco/actions/runs/34690517756",
+        "workflow": "PR CI",
+        "job": "103544854532",
+        "jobName": "Web quality / web-quality",
+        "step": "Web component tier",
+        "headSha": "1e4aaf56b7a74c2e2c4533ae6551c669ee697ef4",
+        "artifact": "evidence-web-quality",
+        "artifactDigest": "sha256:1eb57bda06496ace2f3c110cf7dc9917cedff26dc3c021916aa46dab49406d56",
+        "field": "apps/web/vitest-web.json"
+      }
     }
   }
 }
