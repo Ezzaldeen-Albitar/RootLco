@@ -1,15 +1,16 @@
 # P1-31 FE-010 and FE-016 — the operational overview
 
-**Status:** implemented on `feature/p1-31-operational-overview`, **STACKED** on
-`feature/p1-31-report-screens`, whose head **e3b73277** this branch carries by merge. That branch is
-**UNMERGED** and open as pull request **#371**, and it in turn carries protected `develop`
-`6c99e805225b8ba59f6402188d9967c697d1eb13`. So this branch merges after #371, and nothing here is
-reachable on `develop` until both do. **No hosted run, no database tier, no browser acceptance and no
-end-to-end result is claimed.** The change-control entry is section 53 of
+**Status:** implemented on `feature/p1-31-operational-overview`, open as pull request **#376** and
+**UNMERGED**. It was written STACKED on `feature/p1-31-report-screens`, whose head **e3b73277** it
+carries by merge; that branch merged with pull request **#371**, so this branch now carries protected
+`develop` `46be4bb28eba760b44bc579e3866d16876614dac` directly and the stack is gone. Nothing here is
+reachable on `develop` until #376 merges. **No hosted run, no database tier, no browser acceptance and
+no end-to-end result is claimed.** The change-control entry is section 53 of
 [`change-control-2026-09-08.md`](./change-control-2026-09-08.md), identifier **CC-41**, both
-**PROVISIONAL** — the register at this head runs to section 48 and carries section 50, and sections 49,
-51 and 52 are held by P1-31 lanes that are not readable here, so both numbers are re-checked before
-this branch merges. This record replaces no other and changes no chapter status.
+**PROVISIONAL** — the register at this head runs to section 48 and carries section 50, which is now
+merged, and sections 49, 51 and 52 are held by P1-31 lanes that are not merged, so both numbers are
+re-checked again before this branch merges. This record replaces no other and changes no chapter
+status.
 
 **Authority:** Owner decision **D-19** of 2026-09-12 (the operational overview, which also binds
 FE-016), with **D-5** of 2026-09-09 (what a branch summary is) and **D-17** of 2026-09-10 (the period
@@ -67,7 +68,8 @@ the report run service on the then-unmerged datasets branch (`a1af21cd`), becaus
 four datasets existed; the frontend facts were read at this branch’s original base, **9ee54fb9**.
 **Both were overtaken while the branch was open and are re-stated where they sit rather than
 silently rewritten:** PR #374 took all four datasets and the generalised run envelope onto
-`develop`, and this branch now carries that head through #371.
+`develop`, and this branch now carries that head — first through #371, and since that pull request
+merged, directly through `develop` `46be4bb2`.
 
 - **`ReportRunView` already carries everything the overview must display.** The view
   (`apps/api/src/modules/reporting/application/report-run-service.ts`, lines 262–299) publishes
@@ -181,10 +183,10 @@ The points below are this slice's own choices. The Owner named none of them.
 
 ## 4. Task standing
 
-| task         | standing                                                                                                      |
-| ------------ | ------------------------------------------------------------------------------------------------------------- |
-| P1-31-FE-010 | **implemented / unmerged** on this branch. Not reviewed, not merged, not end-to-end verified                  |
-| P1-31-FE-016 | **implemented / unmerged** — the same screen with the branch fixed by the address; no second screen was built |
+| task         | standing                                                                                          |
+| ------------ | ------------------------------------------------------------------------------------------------- |
+| P1-31-FE-010 | **in open PR** — pull request #376 on this branch. Not merged, not end-to-end verified            |
+| P1-31-FE-016 | **in open PR** — the same screen with the branch fixed by the address; no second screen was built |
 
 Rule 2 of [`task-matrix.md`](./task-matrix.md) keeps `end-to-end verified` unreachable until a P1-31
 acceptance record exists. Neither task claims it.
@@ -213,8 +215,8 @@ no screen for (**CC-38(a)**). Nothing in this slice creates either.
   three. A section whose dataset the catalogue answers as not executable still renders as not
   runnable rather than as a zero — that path is kept and tested, because it is what an unpublished
   or archived configuration must look like. **No end-to-end result is claimed for any of the four:**
-  this branch is stacked on the unmerged #371, so the overview is not reachable on `develop` until
-  both merge, and nothing here has been exercised against a database or a browser.
+  #371 has merged, so the overview is not reachable on `develop` until this branch's own pull request
+  #376 merges, and nothing here has been exercised against a database or a browser.
 - **No gate was weakened, no allow-list narrowed and no suppression added.** The one gate figure that
   moved is the P1-31 access gate's pinned page count, which rose from 15 to 16 because a page was
   added, read off the gate's own report line on this head. Its owned-segment count is unchanged at 8

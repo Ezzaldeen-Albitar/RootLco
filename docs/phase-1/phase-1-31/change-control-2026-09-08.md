@@ -2691,12 +2691,13 @@ exists.
 
 ## 53. The operational overview — **PROVISIONAL** (FE-010, FE-016)
 
-**Slice:** `feature/p1-31-operational-overview`, ownership profile `p1-31-frontend`, **STACKED** on
-`feature/p1-31-report-screens` (section 50, pull request **#371**) and carrying its head
-`e3b73277` by merge. That branch in turn carries protected `develop`
-`6c99e805225b8ba59f6402188d9967c697d1eb13`. This branch is **unmerged**, has **no hosted result**,
-and nothing below claims otherwise. The full record is
-[`operational-overview.md`](./operational-overview.md).
+**Slice:** `feature/p1-31-operational-overview`, ownership profile `p1-31-frontend`, open as pull
+request **#376**. It was written **STACKED** on `feature/p1-31-report-screens` (section 50, pull
+request **#371**) and carries its head `e3b73277` by merge; **#371 has since merged**, so this branch
+carries protected `develop` `46be4bb28eba760b44bc579e3866d16876614dac` directly and the stack is
+gone. Develop's tree at that head is identical to the head this branch already carried, so the sync
+merge changed no file. This branch is **unmerged**, has **no hosted result**, and nothing below
+claims otherwise. The full record is [`operational-overview.md`](./operational-overview.md).
 
 **Authority:** Owner decision **D-19** of 2026-09-12
 ([`owner-decisions-2026-09-12.md`](./owner-decisions-2026-09-12.md) § 1) — FE-010 is an operational
@@ -2708,33 +2709,39 @@ with **four raw tables alone not establishing the intended overview**; and **FE-
 overview for the selected branch, with no hard-coded pilot**. **D-5** of 2026-09-09 § 4 and **D-17**
 of 2026-09-10 § 4 are carried unchanged.
 
-### 53.1 Identifier allocation — PROVISIONAL, dated 2026-09-12
+### 53.1 Identifier allocation — PROVISIONAL, dated 2026-09-12, re-checked at `develop` `46be4bb2`
 
 The register in this file, at the head this branch carries, runs to **section 48** and **CC-36** and
-additionally holds **section 50** and **CC-38**, which are the stacked report-screens slice's own and
-are settled there. Section **49** is claimed in that register by a lane that is not readable here, and
-section 48.1 records that sections **49 to 52** and the identifiers above **CC-36** are held by P1-31
-lanes on unmerged branches.
+additionally holds **section 50** and **CC-38**. Both are now on protected `develop`: section 48 with
+PR #375 and section 50 with PR #371, which merged after this section was first written. Section **49**
+is claimed by a lane that is not on `develop`, and section 48.1 records that sections **49 to 52** and
+the identifiers above **CC-36** are held by P1-31 lanes on unmerged branches.
 
-So this slice takes **section 53** and **CC-41**, and both are **PROVISIONAL**. Section 53 is the
+So this slice takes **section 53** and **CC-41**, and both stay **PROVISIONAL**. Section 53 is the
 first heading above every number those lanes are recorded as holding, and CC-41 is chosen on the same
-basis — **that part is coordination rather than a measurement**, because the identifiers those three
-lanes carry cannot be read at this head, only their section numbers can. A heading taken above the
-claimed range is a gap in the register; a heading taken inside it is somebody else's record
-renumbered, which is worse.
+basis — **that part is coordination rather than a measurement**, because no unmerged lane's identifier
+is decided until it merges. A heading taken above the claimed range is a gap in the register; a
+heading taken inside it is somebody else's record renumbered, which is worse.
 
-| id        | lane                                                   | state at this head, read from this file  |
-| --------- | ------------------------------------------------------ | ---------------------------------------- |
-| **CC-36** | the warranty plan administration screens (#375)        | merged, section 48                       |
-| **CC-37** | a lane not readable here                               | claims section 49                        |
-| **CC-38** | the report screens (#371), which this branch stacks on | settled on that branch, section 50       |
-| —         | two lanes not readable here                            | claim sections 51 and 52                 |
-| **CC-41** | this slice                                             | **PROVISIONAL**, this branch, section 53 |
+| id        | lane                                               | state, re-read at `develop` `46be4bb2`          |
+| --------- | -------------------------------------------------- | ----------------------------------------------- |
+| **CC-36** | the warranty plan administration screens (#375)    | merged, section 48                              |
+| **CC-37** | a lane not on `develop`                            | claims section 49                               |
+| **CC-38** | the report screens (#371)                          | **merged**, section 50                          |
+| —         | a lane not readable from any head reachable here   | claims section 51                               |
+| **CC-40** | the fresh-organisation acceptance harness (QA-005) | **PROVISIONAL** and unmerged, claims section 52 |
+| **CC-41** | this slice                                         | **PROVISIONAL**, this branch, section 53        |
 
-**The section number and the identifier are both re-checked against `develop` before this branch
-merges.** Section 36.1's rule governs a collision: an identifier is allocated when its finding is
-raised and is never renumbered to follow heading order, so a collision moves THIS section and this
-identifier and leaves every existing one alone.
+**Why CC-41 keeps its PROVISIONAL marking even though two of the four numbers above are now settled
+on `develop`.** Section 50 and **CC-38** stopped being a claim about a branch when #371 merged, so
+those two rows are facts. The other two are not: the acceptance-harness lane's own record carries
+**section 52** and **CC-40** marked PROVISIONAL on an unmerged branch, and the lane claiming section
+51 is not readable from any head reachable here, so its identifier cannot be read at all. Until both
+merge, CC-39 and CC-40 may land, move or never land, and an identifier chosen above a range that can
+still shift is not measured. **The section number and the identifier are re-checked against `develop`
+again before this branch merges.** Section 36.1's rule governs a collision: an identifier is allocated
+when its finding is raised and is never renumbered to follow heading order, so a collision moves THIS
+section and this identifier and leaves every existing one alone.
 
 ### 53.2 What changed, and what was minted
 
@@ -2763,34 +2770,36 @@ here) remain **open and are not closed by this slice**, and nothing in it create
 ### 53.4 Proof
 
 **Measured facts (not part of the decision) — what was actually run, and where.** Every run below was
-local, on this branch, with no database, no browser and no hosted runner.
+local, on this branch, with no database, no browser and no hosted runner. **The table was re-taken at
+the sync merge of `develop` `46be4bb2`**, so no figure below is carried forward from the pre-sync
+head.
 
-| run                                                                                         | result                                                                |
-| ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `npm run typecheck` · `npm run typecheck:web`                                               | pass                                                                  |
-| `npm run lint`                                                                              | pass                                                                  |
-| `npm run lint:web`                                                                          | 0 errors; 12 pre-existing warnings, none on a file this slice touched |
-| `npm run format:check` · `format:check:web` · `style:check:web`                             | pass                                                                  |
-| `npm run security:all`                                                                      | pass over 2762 tracked files                                          |
-| `npm run validate:encoding`                                                                 | every tracked text file clean UTF-8, no BOM                           |
-| `npm run validate:generated-artifacts`                                                      | 2762 tracked files, 7/7 ignore rules, 0 failures                      |
-| `npm run validate:web-boundary`                                                             | 374 files, 0 violations                                               |
-| `npm run validate:use-server-exports`                                                       | 50 server modules across 984 source files, 0 violations               |
-| `npm run validate:web-topology`                                                             | 18 expectations, 338 matched files, 0 failures                        |
-| `npm run validate:web-tokens` · `validate:web-theme` · `validate:web-brand`                 | 0 violations; 54 colours registered, 0 unresolvable                   |
-| `npm run validate:notification-authority`                                                   | 374 files scanned, one authority, mounted once                        |
-| `npm run validate:module-boundaries`                                                        | pass, unchanged                                                       |
-| `npm run validate:api-backend-only`                                                         | 317 route handlers, 610 source files, 0 failures                      |
-| `npm run validate:plain-language`                                                           | 2 catalogues, 24 rules, 0 findings                                    |
-| `npm run validate:p1-31-access`                                                             | 16 route pages across 8 owned segments, 0 violations                  |
-| `npm run validate:p1-26-frontend`                                                           | 374 files, 50 server modules, 0 failures                              |
-| `npm run validate:p1-27-frontend`                                                           | 156 files across 5 trees, 9 rules, 0 failures                         |
-| focused web — the overview suite plus the reports, delivery, warranty and navigation suites | 350/350 across 9 files                                                |
-| root — `npx vitest run tests/ci tests/openapi-contract.test.ts`                             | 1991/1991 across 69 files                                             |
-| the web tier, through the P1-27 recorder                                                    | 3977/3977 across 140 files, 0 failed                                  |
-| `npm run test:unit`, through the P1-27 recorder                                             | 3301/3301 across 122 files, 0 failed                                  |
-| `npm run verify:policies`                                                                   | exit 0                                                                |
-| `npm run validate:phase-ownership`, both forms                                              | profile `p1-31-frontend`, 35 changed files, 0 violations              |
+| run                                                                                         | result                                                                                                       |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `npm run typecheck` · `npm run typecheck:web`                                               | pass                                                                                                         |
+| `npm run lint`                                                                              | pass                                                                                                         |
+| `npm run lint:web`                                                                          | 0 errors; 12 pre-existing warnings, none on a file this slice touched                                        |
+| `npm run format:check` · `format:check:web` · `style:check:web`                             | pass                                                                                                         |
+| `npm run security:all`                                                                      | pass over 2762 tracked files                                                                                 |
+| `npm run validate:encoding`                                                                 | every tracked text file clean UTF-8, no BOM                                                                  |
+| `npm run validate:generated-artifacts`                                                      | 2762 tracked files, 7/7 ignore rules, 0 failures                                                             |
+| `npm run validate:web-boundary`                                                             | 374 files, 0 violations                                                                                      |
+| `npm run validate:use-server-exports`                                                       | 50 server modules across 984 source files, 0 violations                                                      |
+| `npm run validate:web-topology`                                                             | 18 expectations, 338 matched files, 0 failures                                                               |
+| `npm run validate:web-tokens` · `validate:web-theme` · `validate:web-brand`                 | 0 violations; 54 colours registered, 0 unresolvable                                                          |
+| `npm run validate:notification-authority`                                                   | 374 files scanned, one authority, mounted once                                                               |
+| `npm run validate:module-boundaries`                                                        | pass, unchanged                                                                                              |
+| `npm run validate:api-backend-only`                                                         | 317 route handlers, 610 source files, 0 failures                                                             |
+| `npm run validate:plain-language`                                                           | 2 catalogues, 24 rules, 0 findings                                                                           |
+| `npm run validate:p1-31-access`                                                             | 16 route pages across 8 owned segments, 0 violations                                                         |
+| `npm run validate:p1-26-frontend`                                                           | 374 files, 50 server modules, 0 failures                                                                     |
+| `npm run validate:p1-27-frontend`                                                           | 156 files across 5 trees, 9 rules, 0 failures                                                                |
+| focused web — the overview suite plus the reports, delivery, warranty and navigation suites | 393/393 across 10 files                                                                                      |
+| root — `npx vitest run tests/ci tests/openapi-contract.test.ts`                             | 1991/1991 across 69 files                                                                                    |
+| the web tier, through the P1-27 recorder                                                    | 3977/3977 across 140 files, 0 failed                                                                         |
+| `npm run test:unit`, through the P1-27 recorder                                             | 3301/3301 across 122 files, 0 failed                                                                         |
+| `npm run verify:policies`                                                                   | exit 0                                                                                                       |
+| `npm run validate:phase-ownership`, both forms                                              | profile `p1-31-frontend`, 26 changed files (web 13, docs 12, tests 1) against `origin/develop`, 0 violations |
 
 The local `verify:workspaces` aggregate is not run, under the standing 2026-09-09 targeted-local plus
 required-hosted policy. Hosted builds, browser checks and the required gates remain mandatory and
