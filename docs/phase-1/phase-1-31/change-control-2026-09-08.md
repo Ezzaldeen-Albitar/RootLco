@@ -1568,14 +1568,24 @@ insert.
 - **No index for the list ordering**, on the CC-23 precedent: a branch register is small, and no
   measurement has demonstrated a cost a schema change would buy.
 - **No claim about the hosted replay.** `.github/ci-baselines/schema-baseline.json` moves
-  `migrationCount` 139 to 141, `permissionCount` 119 to 121, `schemaHash` to `a25718d7…`, and four
-  of the five structural totals — tables 254 to 256, functions 533 to 534, policies 695 to 699,
+  `migrationCount` 139 to 141, `permissionCount` 119 to 121, `schemaHash` to `075a8c5a…`, and four
+  of the five structural totals — tables 254 to 256, functions 533 to 534, policies 695 to 700,
   triggers 560 to 563, `security_definer` unchanged at 0. Those figures were **re-measured after
   the Owner clarification revised both migrations**; the values recorded before it described a shape
-  no longer in the tree and were replaced, not amended. Every figure was measured on a disposable clone replayed from the idle
+  no longer in the tree and were replaced, not amended. The structural totals and the permission
+  count were measured on a disposable clone replayed from the idle
   139-migration template inside the coordinator's isolated container, and that same clone reproduced
   the recorded 139-migration values digit for digit before either migration was applied. The hosted
-  `database-migration-replay` job settles it, as always.
+  `database-migration-replay` job settled the digest, and against that clone it settled it the other
+  way: it measured `075a8c5a…` where the clone had said `a25718d7…` and refused the baseline. The
+  clone was the defective instrument, not the migrations. It had been created by template from
+  another database and so lacked the database-level `search_path` migration 0001 sets, which makes
+  `pg_get_constraintdef` and `pg_indexes.indexdef` render three extension-dependent definitions in
+  their schema-qualified form; the digest moved while the schema did not. The committed value was
+  re-measured on a database created EMPTY and replayed through all 141 migrations, where the four
+  structural totals and `permissionCount` 121 all reproduced, and applying the missing setting to
+  the defective clone made it hash `075a8c5a…` too. `schemaHashNote` in the baseline carries the
+  diagnosis.
 - **No fake data.** `org.employees` is business data: it is absent from the structural-reference
   allow-lists in both `scripts/db/validate-seed-state.mjs` and `tests/db/no-fake-data.test.ts`, so it
   is required to be empty on a provisioned tenant, and the backfill mints only from rows that already
@@ -1602,7 +1612,7 @@ it has been run.**
 `tests/ci/p1-27-doc-counts.test.ts:784` requires `docs/phase-1/phase-1-27/closure-record.md` to
 quote the schema hash and migration count that the CURRENT committed baseline carries, so adding the
 two migrations of this slice obliged it to rewrite a row of a record sealed on 2026-08-12 — **139**
-and `8302f675…` became **141** and `a25718d7…` — which is a repository convention that makes a
+and `8302f675…` became **141** and `075a8c5a…` — which is a repository convention that makes a
 historical record track the live baseline rather than the state it recorded, and one the Owner may
 wish to change.
 

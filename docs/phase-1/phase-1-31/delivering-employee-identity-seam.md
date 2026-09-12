@@ -389,11 +389,24 @@ rather than averaged away:
   measured against a tree other than the one this head carries.
 - The baseline values were re-measured on the rebuilt clone at that head rather than carried
   forward: **141** migrations, **121** permissions, `tables` **256**, `functions` **534**,
-  `policies` **700**, `triggers` **563**, `security_definer` **0**, and `schemaHash` **a25718d7**.
+  `policies` **700**, `triggers` **563**, `security_definer` **0**, and `schemaHash` **075a8c5a**.
   The same queries against the idle 139-migration template answer 254 / 533 / 695 / 560 / 0, so the
   delta is measured and not asserted. `structuralTotals` remains CI's figure to confirm for the
   reason `schema-baseline.json` states; this is the local companion measurement and is not a hosted
   result.
+- The `schemaHash` above is a CORRECTION. The rebuilt clone measured `a25718d7…`, and the hosted
+  `migration-replay` and `security-matrix` jobs at head **849760fe** both measured `075a8c5a…` and
+  refused the baseline. The migrations were re-read before the baseline was: they are not at fault,
+  and neither are the five structural totals or the permission count, all of which reproduce on a
+  database created EMPTY and replayed through all 141 migrations. The clone was: created by template
+  from another database, it lacked the database-level `search_path` migration 0001 sets with
+  `ALTER DATABASE`, so `pg_get_constraintdef` and `pg_indexes.indexdef` rendered the citext operator
+  and the pg_trgm operator class in `ck_user_accounts_email_shape`, `ix_item_master_name_trgm` and
+  `ix_search_metadata_normalized_value_trgm` in their schema-qualified form. `schema-inventory.mjs`
+  hashes those rendered definitions, so the digest moved while the schema did not — applying the one
+  missing setting to that same clone made it hash `075a8c5a…` with nothing else changed. The digest
+  is also identical before and after `validate:seed-state`, so neither migration depends on a
+  seeded row.
 
 **No run ledger entry exists for either the database or the backend tier.**
 `docs/phase-1/phase-1-27/evidence/local-run-ledger.json` records the `unit` and `web` tiers and
@@ -521,6 +534,6 @@ question this slice does not answer or an operator act it creates and does not p
 `tests/ci/p1-27-doc-counts.test.ts:784` requires `docs/phase-1/phase-1-27/closure-record.md` to
 quote the schema hash and migration count that the CURRENT committed baseline carries, so adding the
 two migrations of this slice obliged it to rewrite a row of a record sealed on 2026-08-12 — **139**
-and `8302f675…` became **141** and `a25718d7…` — which is a repository convention that makes a
+and `8302f675…` became **141** and `075a8c5a…` — which is a repository convention that makes a
 historical record track the live baseline rather than the state it recorded, and one the Owner may
 wish to change.
