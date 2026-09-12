@@ -77,10 +77,11 @@ const REGISTER = join(ROOT, 'docs', 'phase-1', 'phase-1-24', 'evidence', 'operat
 /**
  * The operations P1-31 published, by id.
  *
- * The delivery read seam (P-2 through P-5) and the warranty list the phase's
- * chapter declares. An operation added by a later P1-31 task belongs here in the
- * same change that adds it — that is one line, and it is the line that makes the
- * new screen's segment owned.
+ * The delivery read seam (P-2 through P-5), the readiness queue the FE-001
+ * screen consumes, and the warranty list the phase's chapter declares. An
+ * operation added by a later P1-31 task belongs here in the same change that
+ * adds it — that is one line, and it is the line that makes the new screen's
+ * segment owned.
  */
 export const P1_31_OPERATION_IDS = Object.freeze([
   'sal.delivery-read',
@@ -90,15 +91,33 @@ export const P1_31_OPERATION_IDS = Object.freeze([
   'sal.delivery-checklist-result-list',
   'sal.delivery-status-history',
   'sal.work-order-delivery-read',
+  'sal.delivery-readiness-list',
   'wty.warranty-list',
+  // FE-008 added the warranty record screen and its issue surface. The detail read
+  // shares the `warranties` resource root the list already contributes, and the
+  // generation is addressed under `deliveries`, so neither widens the segment set —
+  // they are named because the rule is an allow-list of OPERATIONS, and an operation
+  // a P1-31 screen calls that is absent here is one this gate does not own.
+  'wty.warranty-detail',
+  'wty.warranty-generate',
+  // The two policy READS P-10 published. The list feeds the plan picker on the issue
+  // surface — its own route docblock names that picker as the reason it exists — and
+  // the single-policy read is named beside it because they share one resource root:
+  // owning `warranty-policies` is what makes a future policy screen meet this rule on
+  // the day it lands, exactly as `reports` is named below before it has a page.
+  // These two DO widen the segment set, unlike the two above.
+  'wty.warranty-policy-list',
+  'wty.warranty-policy-read',
 ]);
 
 /**
  * The dashboard route segments P1-31's screens live under.
  *
  * `delivery` is singular and deliberately so — it is the href already committed
- * in navigation. `warranty` and `reports` have no page yet and are named now,
- * so that the first screen under either meets a rule that predates it.
+ * in navigation. `warranty` was named before its screens existed and now carries
+ * them, which is the point of naming an area early: FE-008's two pages met a rule
+ * that predated them. `reports` still has no page and stays named for the same
+ * reason.
  */
 export const P1_31_AREAS = Object.freeze(['delivery', 'warranty', 'reports']);
 

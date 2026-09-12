@@ -6,6 +6,7 @@ import { formatDateTime } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
+import { GenerateWarrantyPanel } from '@/features/warranty/components/GenerateWarrantyPanel';
 import type { DeliveryRecord } from '../delivery-contract';
 import { ChecklistResultsPanel } from './ChecklistResultsPanel';
 import { StatusLabel } from './CodeLabel';
@@ -71,6 +72,8 @@ export function DeliveryDetailScreen({
   canReadFinance,
   canComplete,
   canManage = false,
+  canIssueWarranty = false,
+  canReadWarrantyPolicies = false,
   canReadWorkOrder = false,
 }: {
   readonly locale: Locale;
@@ -82,12 +85,32 @@ export function DeliveryDetailScreen({
   /** Whether the caller holds the write code the preparation acts declare. */
   readonly canManage?: boolean;
   /**
+   * Whether the caller holds `wty.warranty.issue`.
+   *
+   * A fourth capability rather than a fold into `canComplete`, for the same reason
+   * the other three are separate: issuing a warranty is the code `wty.warranty-generate`
+   * declares, and releasing a vehicle is not. Resolving each control against the code
+   * ITS OWN operation declares is what stops a screen offering a button whose only
+   * outcome is a denial.
+   */
+  readonly canIssueWarranty?: boolean;
+  /**
+   * Whether the caller holds `wty.warranty.read`, which is what the warranty PLAN
+   * picker needs.
+   *
+   * A fifth capability for the reason the fourth is separate: the authority to issue a
+   * warranty and the authority to read one are two codes, and a caller may hold either
+   * without the other. Passing it down means the plans are asked for only when the
+   * answer can be anything but a refusal.
+   */
+  readonly canReadWarrantyPolicies?: boolean;
+  /**
    * Whether the caller holds the code the work-order read declares.
    *
-   * Consulted by the printable sheet alone. It is the only read reachable from
-   * this screen that resolves a customer name, a registration plate or a
-   * work-order number, and a caller without the code is not asked to spend a
-   * request discovering that.
+   * A sixth capability, consulted by the printable sheet alone. It is the only
+   * read reachable from this screen that resolves a customer name, a
+   * registration plate or a work-order number, and a caller without the code is
+   * not asked to spend a request discovering that.
    */
   readonly canReadWorkOrder?: boolean;
 }) {
@@ -196,6 +219,23 @@ export function DeliveryDetailScreen({
           state={eligibility.state}
           withheld={eligibility.withheld}
           onDone={refresh}
+        />
+      ) : null}
+
+      {/*
+        The warranty control is drawn only for a caller holding the code the
+        generation declares. It is placed after the release because that is the
+        order of the acts: a warranty is dated from the handover, and the database
+        refuses to issue one against a handover that has not completed.
+      */}
+      {canIssueWarranty ? (
+        <GenerateWarrantyPanel
+          locale={locale}
+          messages={messages}
+          deliveryId={delivery.id}
+          deliveryCompanyId={delivery.companyId}
+          deliveryStatus={delivery.status}
+          canReadPolicies={canReadWarrantyPolicies}
         />
       ) : null}
 
