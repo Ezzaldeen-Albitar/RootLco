@@ -1783,8 +1783,8 @@ either number as settled until that reseating happens.
 `feature/p1-31-warranty-policy-administration`. Its base — the warranty record screens — merged
 with PR #369, and this branch is integrated onto protected `develop` `8c4e6a9c` as of 2026-09-12.
 The branch itself is still **unmerged** and has **no hosted result**. Nothing below claims
-otherwise, and the section stays provisional because sections 45 to 47 and CC-33 to CC-35 are
-still unmerged, so a collision on this heading or this identifier remains possible.
+otherwise, and the section stays provisional until the branch is re-seated onto a head that
+carries sections 45 to 47, which merged into `develop` after this integration (see 48.1).
 
 ### 48.1 Identifier allocation — PROVISIONAL, dated 2026-09-11, re-read 2026-09-12
 
@@ -1796,12 +1796,21 @@ reserves a heading and an identifier deliberately ahead of the front, and states
 provisional so that a collision is a reconciliation and never a silent renumbering of somebody
 else's record.
 
-| id                | lane                                          | state at this head                            |
-| ----------------- | --------------------------------------------- | --------------------------------------------- |
-| **CC-31**         | the warranty record screens                   | section 43, merged with PR #369, on `develop` |
-| **CC-32**         | the printable delivery handover document      | section 44, merged with PR #368, on `develop` |
-| **CC-33 … CC-35** | reserved for the lanes in flight at this head | not allocated here                            |
-| **CC-36**         | this slice                                    | **PROVISIONAL**, this branch, section 48      |
+**Re-read later the same day, after this integration.** `develop` moved on to
+`6b3c6c458154bc18589ebb4fb18b6b139ae81b80` while this branch was being verified: PR #374 merged
+the report engine's dataset slices 2, 3 and 4, which take **sections 45, 46 and 47** and
+**CC-33**, **CC-34** and **CC-35**. The reservation below therefore holds at that head too — **section
+48** and **CC-36** are the next free heading and the next free identifier there. This section stays
+PROVISIONAL all the same, because this branch is integrated onto `8c4e6a9c` and its own copy of this
+register does not carry sections 45 to 47: the numbering is only settled once the branch is
+re-seated onto a head that does, and that re-seating is not claimed here.
+
+| id                | lane                                     | state at this head                                                                      |
+| ----------------- | ---------------------------------------- | --------------------------------------------------------------------------------------- |
+| **CC-31**         | the warranty record screens              | section 43, merged with PR #369, on `develop`                                           |
+| **CC-32**         | the printable delivery handover document | section 44, merged with PR #368, on `develop`                                           |
+| **CC-33 … CC-35** | the report engine dataset slices 2 to 4  | sections 45 to 47, merged with PR #374, on `develop` `6b3c6c45`, after this integration |
+| **CC-36**         | this slice                               | **PROVISIONAL**, this branch, section 48                                                |
 
 **Reconciliation rule.** If section 48 or **CC-36** is occupied when this branch integrates, this
 section moves to the next free heading and this identifier to the next free identifier, and the
@@ -1889,28 +1898,39 @@ its `expect(live.accountedFor).toHaveLength(7)` was already the correct number, 
 before the registration was the symptom rather than a new floor. The test file is unchanged by
 this slice.
 
-### 48.6 The local tier record — measured fact, dated 2026-09-11
+### 48.6 The local tier record — measured fact, dated 2026-09-12
 
-Both tiers were re-recorded by `check-p1-27-closing-values.mjs --record` at `4eeac4d3`, the head
-that carries this slice’s write handlers, with no executable path dirty:
+Both tiers were re-recorded by `check-p1-27-closing-values.mjs --record` at `5e5a607a`, the head
+that carries the merge of `develop` `8c4e6a9c`, with no executable path dirty:
 
 | tier | files | tests | passed | failed | skipped |
 | ---- | ----- | ----- | ------ | ------ | ------- |
-| unit | 121   | 3278  | 3278   | 0      | 0       |
-| web  | 136   | 3797  | 3797   | 0      | 0       |
+| unit | 122   | 3301  | 3301   | 0      | 0       |
+| web  | 137   | 3850  | 3850   | 0      | 0       |
 
-These are LOCAL figures. No hosted run of this branch exists and none is claimed. The previous
-pair was taken at `467a2681`, before the plan screens and their tests landed, and a record taken
-at a head the branch has left behind is exactly what the run ledger expires.
+These are LOCAL figures. No hosted run of this branch exists and none is claimed. This pair
+supersedes the pair taken at `4eeac4d3` — unit 121/3278, web 136/3797 — which the merge
+expired: a record is bound to the head it was taken at, and `develop` brought a test file and a
+component tree with it. The pair the merge inherited from `develop` (unit 122/3300, web 137/3802)
+was itself expired by this branch’s own executable paths, and the run ledger said so rather than
+letting either survive as a number.
 
 **Engineering consequence (not an Owner decision).** The derived sites moved with the record: on
-`clean-room-evidence.md`, with their closing-value ledger entries, the web file count 135 → 136
-in three places, the web executed total 3749 → 3797 in three and the unit executed total
-3277 → 3278 in one; in `deliverable-manifest.md`, the web file count in the three places it
-appears; and the frontend ownership gate’s own file count 150 → 152 in five places across four
-documents, which moved because the two plan route pages landed inside the trees that gate walks.
-The evidence manifest was regenerated so its digests describe these bytes.
+`clean-room-evidence.md`, with their closing-value ledger entries, the web file count 136 — 137
+in three places, the web executed total 3802 — 3850 in three and the unit executed total
+3300 — 3301 in one; in `deliverable-manifest.md`, the web file count in the three places it
+appears; and the frontend ownership gate’s own file count 151 — 153 in five places across four
+documents, which moved because the two delivery-document components `develop` brought with FE-007
+landed inside the trees that gate walks. The evidence manifest was regenerated so its digests
+describe these bytes.
 
-The committed floor in `.github/ci-baselines/test-count-baseline.json` was **not** touched. 3797
-executed clears the 3700 floor, and no rule forced a ratchet, so the baseline keeps the figures
-its own run established.
+The first attempt to take this record recorded a FAILING web run — two cases in
+`p1-27-doc-reconciliation.test.ts`, and one more on the second attempt, each one a derived site in
+`deliverable-manifest.md` that had not yet moved. The record was retaken after the sites moved, not
+annotated: the ledger now holds a run that exited 0, and the two intermediate readings are stated
+here rather than hidden.
+
+The committed floor in `.github/ci-baselines/test-count-baseline.json` was **not** touched. 3850
+executed clears the 3700 floor, `tests/ci/web-test-floor.test.ts` and
+`tests/ci/baseline-integrity.test.ts` both pass against it unchanged, and no rule forced a ratchet,
+so the baseline keeps the figures its own run established.
