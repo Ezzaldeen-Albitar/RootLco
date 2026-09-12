@@ -15,9 +15,9 @@
       "reporterSuccess": true,
       "failedSuites": [],
       "filesWithoutCases": [],
-      "measuredAtCommit": "15ae4827a49b3594880c95172abf7cccaf67b406",
+      "measuredAtCommit": "3444d01e3d3dccd5e9d587174ff5d8c6f4e4192f",
       "dirtyExecutablePaths": [],
-      "measuredAt": "2026-09-12T14:07:11.902Z"
+      "measuredAt": "2026-09-12T15:34:31.561Z"
     },
     "web": {
       "command": "npm run test --workspace @rootlco/web -- --reporter=json",
@@ -30,9 +30,9 @@
       "reporterSuccess": true,
       "failedSuites": [],
       "filesWithoutCases": [],
-      "measuredAtCommit": "15ae4827a49b3594880c95172abf7cccaf67b406",
+      "measuredAtCommit": "3444d01e3d3dccd5e9d587174ff5d8c6f4e4192f",
       "dirtyExecutablePaths": [],
-      "measuredAt": "2026-09-12T13:58:28.044Z"
+      "measuredAt": "2026-09-12T15:27:12.148Z"
     }
   }
 }
