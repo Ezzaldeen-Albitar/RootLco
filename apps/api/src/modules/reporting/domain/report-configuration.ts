@@ -70,11 +70,14 @@ export const MAX_REPORT_NAME = 200;
  *
  * `parameter_schema` is `jsonb NOT NULL DEFAULT '{}'` and the frozen schema
  * constrains its CONTENT in no way at all — no CHECK, no domain, no trigger. So
- * the only honest thing this surface can do is bound the SHAPE and record that
- * the VOCABULARY is undecided: what a key means, and which filters a report
- * accepts, belongs with the engine and the Owner decision D-4 that must precede
- * it. Validating a vocabulary here would be inventing the report definitions
- * nobody has approved.
+ * this bound is the SIZE half of what the surface owes, and it is now the outer
+ * of two: `readReportParameterVocabulary` below decides what the keys may MEAN.
+ *
+ * The size bound is kept even though the vocabulary admits at most one top-level
+ * key, because it is the cheap refusal. A 16 KiB document is rejected on its size
+ * without the vocabulary reader ever walking it, and a bound that only fires
+ * ahead of a stricter rule is still the bound that decides how much of a tenant's
+ * document this process handles.
  *
  * Sixty-four is a bound on a filter allowlist a person authors, not on a data
  * structure a machine generates.
@@ -91,3 +94,98 @@ export const MAX_PARAMETER_SCHEMA_KEYS = 64;
  * character costs the column bytes and not characters.
  */
 export const MAX_PARAMETER_SCHEMA_BYTES = 16 * 1024;
+
+/**
+ * The report parameter vocabulary — the ONE definition of it in this codebase.
+ *
+ * `rpt.report_configuration_versions.parameter_schema` is `jsonb NOT NULL
+ * DEFAULT '{}'` with no constraint of any kind over its content, so what a
+ * schema MEANS is decided in code or nowhere. It was decided in code twice, in
+ * opposite directions, and this module exists to make that impossible: the
+ * version WRITER accepted any bounded JSON object while the report ENGINE
+ * refused everything outside this allowlist. An administrator could therefore
+ * publish a schema that every run of the report would then refuse, and nothing
+ * told them so. Both sides now read this function, so neither can drift.
+ *
+ * The four names are the four the engine implements, and each carries the type
+ * the engine parses the supplied value as. Adding a fifth is a change to the
+ * engine and to this list in the same commit, which is the point of one list.
+ *
+ * `companyId` and `branchId` are uuid; `from` and `to` are date. Pagination is
+ * transport and is not a report filter, so no cursor or limit name appears here.
+ */
+export const REPORT_FILTER_TYPES = {
+  companyId: 'uuid',
+  branchId: 'uuid',
+  from: 'date',
+  to: 'date',
+} as const;
+
+export type ReportFilterName = keyof typeof REPORT_FILTER_TYPES;
+
+/** The filter names a schema may declare, in the order this module states them. */
+export const REPORT_FILTER_NAMES = Object.keys(REPORT_FILTER_TYPES) as readonly ReportFilterName[];
+
+/**
+ * What one `parameter_schema` document means.
+ *
+ * Three outcomes and not two, because the empty object and the empty allowlist
+ * are DIFFERENT documents that a boolean would flatten together:
+ *
+ * - `unrestricted` — `{}`, the column's own default. A version that declares no
+ *   filters at all, which places no restriction on a run. This is the shape
+ *   every version created without a `parameterSchema` carries, so it must be
+ *   the permissive one or the default would forbid what it defaults to.
+ * - `allowlist` — `{ filters: { … } }`. The run may supply the named filters and
+ *   no others. `names` MAY be empty: `{ filters: {} }` is a well-formed document
+ *   that permits nothing, and the caller decides what to do about it. The engine
+ *   honours it; the writer refuses it.
+ * - `unrecognised` — anything else. `reason` says which rule was broken without
+ *   quoting the submitted document, because a refusal is displayed and logged
+ *   and must not carry a tenant's input into either.
+ *
+ * Fails closed by construction: a document this function does not recognise is
+ * never treated as an empty restriction.
+ */
+export type ReportParameterVocabulary =
+  | { readonly kind: 'unrestricted' }
+  | { readonly kind: 'allowlist'; readonly names: readonly ReportFilterName[] }
+  | { readonly kind: 'unrecognised'; readonly reason: string };
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Reads a `parameter_schema` document against the vocabulary above. */
+export function readReportParameterVocabulary(schema: unknown): ReportParameterVocabulary {
+  if (!isJsonObject(schema)) {
+    return { kind: 'unrecognised', reason: 'it is not a JSON object' };
+  }
+  if (Object.keys(schema).some((key) => key !== 'filters')) {
+    return { kind: 'unrecognised', reason: 'it declares a top-level key other than filters' };
+  }
+  if (Object.keys(schema).length === 0) return { kind: 'unrestricted' };
+  if (!isJsonObject(schema.filters)) {
+    return { kind: 'unrecognised', reason: 'filters is not a JSON object' };
+  }
+  const names: ReportFilterName[] = [];
+  for (const [name, rule] of Object.entries(schema.filters)) {
+    if (!Object.hasOwn(REPORT_FILTER_TYPES, name)) {
+      return { kind: 'unrecognised', reason: 'it names a filter this platform does not implement' };
+    }
+    if (!isJsonObject(rule) || Object.keys(rule).some((key) => key !== 'type')) {
+      return {
+        kind: 'unrecognised',
+        reason: 'a filter rule declares something other than exactly one key, type',
+      };
+    }
+    if (rule.type !== REPORT_FILTER_TYPES[name as ReportFilterName]) {
+      return {
+        kind: 'unrecognised',
+        reason: 'a filter declares a type the platform does not read it as',
+      };
+    }
+    names.push(name as ReportFilterName);
+  }
+  return { kind: 'allowlist', names };
+}

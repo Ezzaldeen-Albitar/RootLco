@@ -1,12 +1,13 @@
 # P1-31 — the warranty plan administration screens (FE-008, policy administration)
 
-**Date:** 2026-09-11 · **Branch:** `feature/p1-31-warranty-policy-administration` · **Base:**
-`feature/p1-31-warranty-record-screens` `d79ffa45` · **Lane:** `p1-31-frontend` (web, docs,
-tooling, tests)
+**Date:** 2026-09-11, integrated 2026-09-12 · **Branch:**
+`feature/p1-31-warranty-policy-administration` · **Base:** `develop` `deb404c1` (it began on
+`feature/p1-31-warranty-record-screens` `d79ffa45`, which merged with PR #369) · **Lane:**
+`p1-31-frontend` (web, docs, tooling, tests)
 
-**Status, stated plainly.** This work is **unmerged** and is **stacked on another unmerged
-branch**: its base is `feature/p1-31-warranty-record-screens`, not `develop`, so it cannot land
-before that branch does. There is **no pull request**, **no hosted run** and **no acceptance
+**Status, stated plainly.** This work is **unmerged**. It is no longer stacked: the branch it was
+written on top of merged with PR #369, and this branch has been merged with protected `develop`
+`deb404c1`, so it now stands on `develop` alone. There is **no hosted run** and **no acceptance
 result** of any kind. Every figure below comes from a local run on the branch named above. No
 environment was provisioned, no migration was written, no backend file was edited and no gate was
 waived.
@@ -69,9 +70,10 @@ directory or typed; a caller without it reaches the same companies by typing.
 ## 3. Gate before read, and the allow-list that had to grow
 
 **Measured facts (not part of the decision).** `scripts/ci/check-p1-31-access.mjs` derives its
-owned segments from an allow-list of operation ids plus three named dashboard areas. Before this
-change it reported **10 route pages across 7 owned segments**; the seventh, `warranty-policies`,
-was contributed by the two policy reads on the base branch and had no page occupying it.
+owned segments from an allow-list of operation ids plus three named dashboard areas. At the `develop` head this branch is
+integrated onto it reported **11 route pages across 8 owned segments**; one of the eight,
+`warranty-policies`, was contributed by the two policy reads that merged with PR #369 and had no
+page occupying it.
 
 **Engineering consequence (not an Owner decision).** The five writes were added to
 `P1_31_OPERATION_IDS` in the same change as the screens that reach them. The gate's scope is an
@@ -82,9 +84,9 @@ None of the five widens the derived segment set: every one is addressed under th
 `warranty-policies` root the two reads already contributed. What moved is the examined page count,
 because two pages now occupy that segment.
 
-Measured on this branch: the run reports **12 route pages across 7 owned segments** (`deliveries`,
-`delivery`, `reports`, `warranties`, `warranty`, `warranty-policies`, `work-orders`), **0
-violations**.
+Measured on this branch: the run reports **13 route pages across 8 owned segments** (`deliveries`,
+`delivery`, `delivery-readiness`, `reports`, `warranties`, `warranty`, `warranty-policies`,
+`work-orders`), **0 violations**.
 
 The gate's own test keeps the five ids ASSEMBLED from parts rather than written as literals,
 because the P1-24 register credits any test file whose raw text carries an operation id as evidence
@@ -232,8 +234,9 @@ is shown and none is invented.
 - **No gate weakened, no allow-list narrowed and no suppression added.** The P1-31 access gate's
   operation list was EXTENDED by five operations, which widens what the gate OWNS rather than what
   it permits. No `@ts-expect-error`, `eslint-disable` or `stylelint-disable` was introduced.
-- **No pull request, no merge, no push, no rebase, no hosted run and no acceptance.** The base
-  branch is itself unmerged, so this branch cannot be pushed usefully before it is.
+- **No merge into `develop`, no rebase, no hosted run and no acceptance.** `develop` `deb404c1` was
+  merged INTO this branch, never the other way, and the integration is a merge commit rather than a
+  rebase. No hosted job has reported on this head and nothing here stands in for one.
 
 ---
 
@@ -252,7 +255,7 @@ rather than left to look like a pass.
 | `npm run validate:use-server-exports`                     | pass — 48 modules across 954 files                                 |
 | `npm run validate:plain-language`                         | pass — 2 catalogues, 24 rules, 0 findings                          |
 | `npm run validate:module-boundaries`                      | pass — 599 files in `apps/api/src`                                 |
-| `npm run validate:p1-31-access`                           | pass — 12 route pages across 7 owned segments, 0 violations        |
+| `npm run validate:p1-31-access`                           | pass — 13 route pages across 8 owned segments, 0 violations        |
 | `npm run validate:p1-28-version-sourcing`                 | pass — 7 expected, 30 adapters, 31 call sites, 0 violations        |
 | `npm run security:all`                                    | pass — 2717 tracked files, all four scanners                       |
 | focused web tests                                         | pass                                                               |
