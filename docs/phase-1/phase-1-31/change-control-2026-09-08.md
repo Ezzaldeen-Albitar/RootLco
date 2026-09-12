@@ -2446,35 +2446,44 @@ this slice.
 
 ### 48.6 The local tier record — measured fact, dated 2026-09-12
 
-Both tiers were re-recorded by `check-p1-27-closing-values.mjs --record` at `5e5a607a`, the head
-that carries the merge of `develop` `8c4e6a9c`, with no executable path dirty:
+Both tiers were re-recorded by `check-p1-27-closing-values.mjs --record` at `1f557f37`, the head
+that carries the merge of `develop` `6b3c6c45`, with no executable path dirty:
 
 | tier | files | tests | passed | failed | skipped |
 | ---- | ----- | ----- | ------ | ------ | ------- |
 | unit | 122   | 3301  | 3301   | 0      | 0       |
 | web  | 137   | 3850  | 3850   | 0      | 0       |
 
-These are LOCAL figures. No hosted run of this branch exists and none is claimed. This pair
-supersedes the pair taken at `4eeac4d3` — unit 121/3278, web 136/3797 — which the merge
-expired: a record is bound to the head it was taken at, and `develop` brought a test file and a
-component tree with it. The pair the merge inherited from `develop` (unit 122/3300, web 137/3802)
-was itself expired by this branch’s own executable paths, and the run ledger said so rather than
-letting either survive as a number.
+These are LOCAL figures. No hosted run of this branch exists and none is claimed.
 
-**Engineering consequence (not an Owner decision).** The derived sites moved with the record: on
-`clean-room-evidence.md`, with their closing-value ledger entries, the web file count 136 — 137
-in three places, the web executed total 3802 — 3850 in three and the unit executed total
-3300 — 3301 in one; in `deliverable-manifest.md`, the web file count in the three places it
-appears; and the frontend ownership gate’s own file count 151 — 153 in five places across four
-documents, which moved because the two delivery-document components `develop` brought with FE-007
-landed inside the trees that gate walks. The evidence manifest was regenerated so its digests
-describe these bytes.
+**Two merges expired two pairs; only the first moved a number.** The pair taken at `4eeac4d3` —
+unit 121/3278, web 136/3797 — was expired by the merge of `develop` `8c4e6a9c`, which brought a
+web test file and a component tree with it, and the record taken at `5e5a607a` after that merge
+read exactly the six figures in the table above. The merge of `develop` `6b3c6c45` then arrived
+carrying that head's own ledger — unit 122/3300, web 136/3802 — which describes `develop` and not
+this tree, so both tiers were run again rather than reconciled on paper. PR #374 is backend and
+documentation only, so the measurement came back unchanged and the re-record simply re-establishes
+the same six numbers against the new head; no derived site moved for it. A record is bound to the
+head it was taken at, and the ledger expired the inherited pair rather than letting it survive as a
+number.
 
-The first attempt to take this record recorded a FAILING web run — two cases in
-`p1-27-doc-reconciliation.test.ts`, and one more on the second attempt, each one a derived site in
-`deliverable-manifest.md` that had not yet moved. The record was retaken after the sites moved, not
-annotated: the ledger now holds a run that exited 0, and the two intermediate readings are stated
-here rather than hidden.
+**Engineering consequence of the FIRST merge (not an Owner decision).** The derived sites moved
+with the record taken at `5e5a607a`: on `clean-room-evidence.md`, with their closing-value ledger
+entries, the web file count 136 — 137 in three places, the web executed total 3802 — 3850 in three
+and the unit executed total 3300 — 3301 in one; in `deliverable-manifest.md`, the web file count in
+the three places it appears; and the frontend ownership gate’s own file count 151 — 153 in five
+places across four documents, which moved because the two delivery-document components `develop`
+brought with FE-007 landed inside the trees that gate walks. The evidence manifest was regenerated
+at each step so its digests describe the current bytes.
+
+**Three intermediate readings are stated rather than hidden.** Taking the record at `5e5a607a`
+recorded a FAILING web run twice — two cases in the P1-27 reconciliation tests on the first
+attempt and one more on the second, each a derived site in `deliverable-manifest.md` that had not
+yet moved. Taking it at `1f557f37` recorded a failing unit run once, for the same reason in the
+other direction: the web tier is recorded first, so while the unit tier ran the ledger still
+carried `develop`'s inherited pair and two cases reported the disagreement. In all three the record
+was retaken after the cause was removed, never annotated; the ledger now holds one run per tier
+that exited 0.
 
 The committed floor in `.github/ci-baselines/test-count-baseline.json` was **not** touched. 3850
 executed clears the 3700 floor, `tests/ci/web-test-floor.test.ts` and

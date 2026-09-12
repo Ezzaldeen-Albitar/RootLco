@@ -7,7 +7,7 @@
 
 **Status, stated plainly.** This work is **unmerged**. It is no longer stacked: the branch it was
 written on top of merged with PR #369, and this branch has been merged with protected `develop`
-`deb404c1`, so it now stands on `develop` alone. There is **no hosted run** and **no acceptance
+twice — `deb404c1`, then `6b3c6c45` after PR #374 — so it now stands on `develop` alone. There is **no hosted run** and **no acceptance
 result** of any kind. Every figure below comes from a local run on the branch named above. No
 environment was provisioned, no migration was written, no backend file was edited and no gate was
 waived.
@@ -234,9 +234,10 @@ is shown and none is invented.
 - **No gate weakened, no allow-list narrowed and no suppression added.** The P1-31 access gate's
   operation list was EXTENDED by five operations, which widens what the gate OWNS rather than what
   it permits. No `@ts-expect-error`, `eslint-disable` or `stylelint-disable` was introduced.
-- **No merge into `develop`, no rebase, no hosted run and no acceptance.** `develop` `deb404c1` was
-  merged INTO this branch, never the other way, and the integration is a merge commit rather than a
-  rebase. No hosted job has reported on this head and nothing here stands in for one.
+- **No merge into `develop`, no rebase, no hosted run and no acceptance.** `develop` was merged
+  INTO this branch — `deb404c1`, then `6b3c6c45` — never the other way, and each integration is a
+  merge commit rather than a rebase. No hosted job has reported on this head and nothing here
+  stands in for one.
 
 ---
 
@@ -252,35 +253,43 @@ rather than left to look like a pass.
 | `npm run lint`, `lint:web`                                | pass — 0 errors; pre-existing warnings only, none in touched files |
 | `npm run format:check`, `format:check:web`, `style:check` | pass                                                               |
 | `npm run validate:web-boundary`                           | pass — 361 files, 0 violations                                     |
-| `npm run validate:use-server-exports`                     | pass — 49 modules across 966 files                                 |
+| `npm run validate:use-server-exports`                     | pass — 49 modules across 971 files                                 |
 | `npm run validate:plain-language`                         | pass — 2 catalogues, 24 rules, 0 findings                          |
-| `npm run validate:module-boundaries`                      | pass — 605 files in `apps/api/src`                                 |
+| `npm run validate:module-boundaries`                      | pass — 610 files in `apps/api/src`                                 |
 | `npm run validate:p1-31-access`                           | pass — 13 route pages across 8 owned segments, 0 violations        |
 | `npm run validate:p1-28-version-sourcing`                 | pass — 7 expected, 30 adapters, 31 call sites, 0 violations        |
-| `npm run security:all`                                    | pass — 2735 tracked files, all four scanners                       |
+| `npm run security:all`                                    | pass — 2744 tracked files, all four scanners                       |
 | focused web tests                                         | pass                                                               |
 | `npx vitest run tests/ci tests/openapi-contract.test.ts`  | pass                                                               |
 | `--record unit`                                           | 122 files, 3301 tests, 3301 passed, 0 failed, 0 skipped            |
 | `--record web`                                            | 137 files, 3850 tests, 3850 passed, 0 failed, 0 skipped            |
 | `npm run evidence:p1-27`                                  | regenerated — 41 evidence documents                                |
 | `npm run verify:policies`                                 | pass — exit 0                                                      |
-| `validate:phase-ownership p1-31-frontend`                 | pass — 27 changed files, 0 violations, both forms                  |
+| `validate:phase-ownership p1-31-frontend`                 | pass — 26 changed files, 0 violations, both forms                  |
 
 **Not executed in this record**, and therefore not claimed: `npm run build`, `build:web`,
 `verify:web`, `verify:workspaces`, `verify:repository` as an aggregate, `test:backend`, `test:db`,
 `verify:database`, every `supabase:*` command, every Playwright tier and every acceptance command.
 No environment was provisioned and no hosted run exists.
 
-Both tiers were re-recorded at `5e5a607a`, the head that carries the merge of `develop`
-`8c4e6a9c`, with no executable path dirty; the pair taken at `4eeac4d3` (unit 121/3278, web
-136/3797) expired with that merge. The sites that read those figures moved with them: on
+Both tiers were re-recorded at `1f557f37`, the head that carries the merge of `develop`
+`6b3c6c45`, with no executable path dirty — unit 122 files / 3301 tests and web 137 files / 3850
+tests, both exiting 0.
+
+Two merges expired two pairs, and only the first moved a number. The pair taken at `4eeac4d3`
+(unit 121/3278, web 136/3797) expired with the merge of `develop` `8c4e6a9c`, which brought a web
+test file and a component tree with it; the record taken at `5e5a607a` after that merge read
+exactly the figures above, and the sites that read them moved with them: on
 `clean-room-evidence.md`, with their closing-value ledger entries, the web file count 136 → 137
 in three places, the web executed total 3802 → 3850 in three and the unit executed total
 3300 → 3301 in one; in `deliverable-manifest.md`, the web file count in the three places it
 appears; and the frontend ownership gate’s own file count 151 → 153 in five places across four
 documents, which moved because the two delivery-document components the merge brought with FE-007
-landed inside the trees that gate walks. The evidence manifest was regenerated so its digests
-describe these bytes. The committed floor in
+landed inside the trees that gate walks. The merge of `develop` `6b3c6c45` then arrived carrying
+that head’s own ledger — unit 122/3300, web 136/3802 — which describes `develop` and not this
+tree, so both tiers were run again; PR #374 is backend and documentation only, so the measurement
+came back unchanged and no derived site moved for it. The evidence manifest was regenerated at
+each step so its digests describe the current bytes. The committed floor in
 `.github/ci-baselines/test-count-baseline.json` was NOT touched: 3850 clears the 3700 floor,
 `tests/ci/web-test-floor.test.ts` and `tests/ci/baseline-integrity.test.ts` pass against it
 unchanged, and nothing forced a ratchet.
