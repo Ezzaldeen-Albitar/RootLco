@@ -536,7 +536,7 @@ describe('the release checks respect the second permission the operation demands
     await waitFor(() => expect(readEligibility).toHaveBeenCalledWith(DELIVERY_ID));
     const region = panel('delivery.eligibility.heading');
     expect(
-      within(region).getByText(EN['delivery.eligibility.notEligible'] as string)
+      await within(region).findByText(EN['delivery.eligibility.notEligible'] as string)
     ).toBeVisible();
     expect(
       within(region).getAllByText(EN['delivery.blocker.financialBalanceOutstanding'] as string)
@@ -551,6 +551,11 @@ describe('the release checks respect the second permission the operation demands
     renderScreen();
     await waitFor(() => expect(readEligibility).toHaveBeenCalled());
     const region = panel('delivery.eligibility.heading');
+    // The rows are counted only once the read has been DRAWN. Counting them on
+    // the "it was asked" wait alone would count the rows of a loading panel.
+    expect(
+      await within(region).findByText(EN['delivery.eligibility.factUnreadable'] as string)
+    ).toBeVisible();
     const unreadable = region.querySelectorAll('[data-established="no"]');
     const established = region.querySelectorAll('[data-established="yes"]');
     // Exactly the one unestablished fact, and the established ones beside it —
@@ -558,9 +563,6 @@ describe('the release checks respect the second permission the operation demands
     // drawn that way.
     expect(unreadable).toHaveLength(1);
     expect(established).toHaveLength(2);
-    expect(
-      within(region).getByText(EN['delivery.eligibility.factUnreadable'] as string)
-    ).toBeVisible();
     // The source is offered for support on the unreadable row only.
     expect(unreadable[0]?.textContent).toContain('quality gate');
   });
@@ -568,19 +570,23 @@ describe('the release checks respect the second permission the operation demands
   it('says who may override the one overridable reason, and which side of it the reader is on', async () => {
     const held = renderScreen({ canComplete: true });
     await waitFor(() => expect(readEligibility).toHaveBeenCalled());
-    expect(screen.getByText(EN['delivery.eligibility.overridableByYou'] as string)).toBeVisible();
+    expect(
+      await screen.findByText(EN['delivery.eligibility.overridableByYou'] as string)
+    ).toBeVisible();
     held.unmount();
 
     renderScreen({ canComplete: false });
     await waitFor(() => expect(readEligibility).toHaveBeenCalledTimes(2));
-    expect(screen.getByText(EN['delivery.eligibility.overridableByOther'] as string)).toBeVisible();
+    expect(
+      await screen.findByText(EN['delivery.eligibility.overridableByOther'] as string)
+    ).toBeVisible();
   });
 
   it('names the required checklist items still open, and says the list is a sample', async () => {
     renderScreen();
     await waitFor(() => expect(readEligibility).toHaveBeenCalled());
     const region = panel('delivery.eligibility.heading');
-    expect(within(region).getByText('Fuel level agreed')).toBeVisible();
+    expect(await within(region).findByText('Fuel level agreed')).toBeVisible();
     expect(
       within(region).getByText(EN['delivery.eligibility.gapsExplain'] as string)
     ).toBeVisible();
@@ -591,7 +597,7 @@ describe('the release checks respect the second permission the operation demands
     renderScreen();
     await waitFor(() => expect(readEligibility).toHaveBeenCalled());
     const region = panel('delivery.eligibility.heading');
-    expect(within(region).getByText(EN['state.denied.title'] as string)).toBeVisible();
+    expect(await within(region).findByText(EN['state.denied.title'] as string)).toBeVisible();
     expect(within(region).queryByText(EN['delivery.eligibility.eligible'] as string)).toBeNull();
   });
 });
@@ -816,7 +822,7 @@ describe('the history', () => {
     renderScreen();
     await waitFor(() => expect(listStatusHistory).toHaveBeenCalled());
     expect(
-      within(panel('delivery.history.heading')).getByText(
+      await within(panel('delivery.history.heading')).findByText(
         EN['delivery.history.noneTitle'] as string
       )
     ).toBeVisible();
@@ -1239,6 +1245,17 @@ describe('releasing the vehicle', () => {
     readEligibility.mockResolvedValue(okRead(clearEligibility));
     renderScreen({ canComplete: false, canManage: true });
     await waitFor(() => expect(readEligibility).toHaveBeenCalled());
+    // The control is drawn or not drawn on the authority alone — the panel
+    // renders its region unconditionally and only its CONTENTS wait on the
+    // read — so the absence below already discriminates. Waiting for the CLEAR
+    // verdict adds the other half of the claim: the vehicle is releasable and
+    // the control is still not there, so it is the missing authority holding
+    // it back and not a screen that had yet to settle.
+    expect(
+      await within(panel('delivery.eligibility.heading')).findByText(
+        EN['delivery.eligibility.eligible'] as string
+      )
+    ).toBeVisible();
     expect(
       screen.queryByRole('region', { name: EN['delivery.completion.heading'] as string })
     ).toBeNull();
