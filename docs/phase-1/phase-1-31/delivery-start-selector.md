@@ -62,6 +62,8 @@ Read from `apps/api` on the base commit named above. Nothing in this section was
 | the state vocabulary is two values                                                                                                                                                           | `EMPLOYEE_STATUSES` in the same file                                                        |
 | `org.employee-detail` — `GET /api/v1/org/employees/{employeeId}`, the SAME read permission; absent, soft-deleted, out of reach and another organisation's all answer alike                   | `apps/api/src/app/api/v1/org/employees/[employeeId]/route.ts`                               |
 | reading the register and ADMINISTERING it are two codes, split so that choosing a delivering employee never requires the authority to alter a roster                                         | the list route's own docblock                                                               |
+| `org.branch-list` — `GET /api/v1/org/branches`, permission `org.branch.read`, scope `tenant`, no parameters, and every published row carries the company its branch belongs to               | `apps/api/src/app/api/v1/org/branches/route.ts`                                             |
+| that same directory read is already consumed by the inventory, payments, pricing, services, warranty and report screens, and by this feature's own readiness queue                           | `listBranches` in each feature's adapter, and `readiness-api.ts` here                       |
 | `sal.delivery-create` — `POST /api/v1/deliveries`, permission `sal.delivery.manage`, strict body of exactly `workOrderId` and `deliveringEmployeeId`                                         | `apps/api/src/app/api/v1/deliveries/route.ts`                                               |
 | it is registered idempotent, and the generated client table already marks it, so the transport attaches the retry header without a caller minting one                                        | `apps/web/src/lib/api/idempotent-operations.ts`                                             |
 | the 201 view carries `deliveringEmployeeDisplayName`, which may be absent only on a handover recorded before P-17 whose reference resolved to nobody                                         | `DeliveryView` in `apps/api/src/modules/delivery/application/delivery-service.ts`           |
@@ -76,6 +78,10 @@ On a work order with no handover, an operator holding `sal.delivery.manage` and 
 is shown who may hand the vehicle over, chooses one of them, and starts the handover. The screen then
 names the person the SERVER recorded and links to the handover it created.
 
+The people offered are those based at the work order's own branch. An operator also holding
+`org.branch.read` may CHOOSE another branch of the same company from the published directory and see
+the people based there instead. No identifier is ever typed.
+
 The delivery screen and the printable sheet now show that person's name where they printed a bare
 reference before.
 
@@ -84,15 +90,21 @@ reference before.
 Every choice below is this slice's, not the Owner's.
 
 1. **The employee mirror lives in the delivery feature.** `employee-contract.ts` and
-   `employee-api.ts` under `apps/web/src/features/delivery/` carry the two reads and nothing else.
-   The register's two administration commands are not mirrored: no screen of this phase administers a
-   roster, and a mirror row for an operation nothing calls is the dead declaration this phase has
-   repeatedly shipped.
-2. **Three authorities, three separate decisions.** `sal.delivery.view` decides whether the handover
+   `employee-api.ts` under `apps/web/src/features/delivery/` carry the ONE read this screen issues and
+   nothing else. The register's two administration commands are not mirrored: no screen of this phase
+   administers a roster, and a mirror row for an operation nothing calls is the dead declaration this
+   phase has repeatedly shipped — which is exactly what the single-employee read turned out to be
+   here, and why it was withdrawn (item 12). The branch directory is mirrored beside it in
+   `branch-contract.ts` and `branch-api.ts`, on its own permission, because it is the organisation's
+   and not the register's.
+2. **Four authorities, four separate decisions.** `sal.delivery.view` decides whether the handover
    section is drawn and read at all; `sal.delivery.manage` decides whether the Start form is drawn;
-   `org.employee.read` decides whether the register may be offered. The third is resolved on the
-   route page and threaded down, so a caller without it issues NO register read — asking and being
-   refused would put a denial in the backend's log for a decision the screen could make.
+   `org.employee.read` decides whether the register may be offered; `org.branch.read` decides whether
+   the branch directory may be. The last two are resolved on the route page and threaded down, so a
+   caller without one issues NO read for it — asking and being refused would put a denial in the
+   backend's log for a decision the screen could make. The directory is additionally withheld from a
+   caller who may not read the register at all: it exists to say which branch's register to read, and
+   a request whose answer cannot be used should not be made.
 3. **Without the register read the form is not offered at all**, and no reference field is offered in
    its place. An identifier typed into a box is exactly the unvalidated input the withholding existed
    to prevent.
@@ -107,12 +119,17 @@ Every choice below is this slice's, not the Owner's.
    one branch would re-impose in a browser the restriction the Owner removed from the database. The
    selection is cleared when the branch changes, so a value left behind from the previous set cannot be
    submitted under a name no longer on screen.
-7. **The other branch is named by REFERENCE, not picked from a list, and that is a limitation rather
-   than a design.** This slice consumes no branch directory read and does not invent one: adding
-   `org.branch-list` here would add a fourth authority to a form whose subject is the employee, and
-   the Owner's decision names no branch picker. **Follow-up, not claimed as done:** offer the
-   company's branches as a list, gated on `org.branch.read`, with the reference field as the fallback
-   the inventory screens already use. Recorded as **CC-39(a)**.
+7. **The other branch is CHOSEN from the published directory, and never typed.** It was a text field
+   an operator entered a branch identifier into until the review of this branch, and that was wrong
+   twice over: the standing Owner requirement is that tenancy comes from the login and no company or
+   branch identifier is typed, and the justification recorded for it — that a reference field is what
+   the inventory screens ship where no directory list is available — was factually untrue. Those
+   screens ship a LIST from `org.branch-list` and keep identifier fields only as the fallback for a
+   caller who may not read it. So the form reads the same directory, narrows it to the work order's
+   company, defaults to the work order's own branch, and states the reason and falls back to that
+   branch wherever the directory is not offered, answers with nothing, is refused or does not answer.
+   No typed input remains on the form, and a test asserts it. The correction is recorded in place as
+   **CC-39(a)**.
 8. **Both refusals of one code are worded apart, from the server's own violation.** `ERR-VAL-001`
    carries two causes here and the problem document's first violation is the only machine-readable
    discriminator. They lead an operator to different actions — name somebody else, or have the person
@@ -132,17 +149,21 @@ Every choice below is this slice's, not the Owner's.
     reference had no foreign key anywhere in the platform. That was true when written and stopped
     being true with P-17. The retraction is stated in place rather than quietly reverted, which is the
     treatment this repository already gives the same class of defect in `lib/api/client.ts`.
-12. **`readEmployee` has no production consumer at this head.** It is published because the
-    register's detail read is the pair of the list this feature consumes, and it is said out loud in
-    its own docblock rather than left to be inferred from its test count. **Follow-up, not claimed as
-    done:** resolve the person named on a handover recorded before the register existed — those rows
-    carry a reference and no stored name, and the screens show the reference. Recorded as
-    **CC-39(b)**.
-13. **The access gate now owns one more segment.** Adding the two employee reads to
-    `P1_31_OPERATION_IDS` derives a new resource root, `org`, which no dashboard area is named for
-    today. The page count did not move, because the form lives on the work-order detail page the gate
-    already examined. Both pins in `tests/ci/p1-31-access-gate.test.ts` were re-based from the gate's
-    own report line on this head.
+12. **`readEmployee` was WITHDRAWN, because nothing called it.** It was published as the pair of the
+    list this feature consumes and admitted in its own docblock to having no production consumer,
+    which is not a disposition of a dead declaration — this repository names that defect class
+    (P1-27 INT-113) and `apps/web/src/features/delivery/api.ts` states the rule against itself. The
+    adapter, its contract row, its two tests and the `org.employee-detail` entry in the access gate
+    were removed together. It returns on the day a surface calls it: resolving the person named on a
+    handover recorded before the register existed, whose row carries a reference and no stored name.
+    Recorded as **CC-39(b)**.
+13. **The access gate now owns one more segment.** Adding the organisation reads this form consumes
+    — the employee register and the branch directory — to `P1_31_OPERATION_IDS` derives a new
+    resource root, `org`, which no dashboard area is named for today. The page count did not move,
+    because the form lives on the work-order detail page the gate already examined. Withdrawing the
+    single-employee read and claiming the branch directory moved NEITHER number, because both share
+    that same root. Both pins in `tests/ci/p1-31-access-gate.test.ts` were read off the gate's own
+    report line on this head.
 
 ## 5. What this slice did NOT do
 
@@ -153,13 +174,17 @@ Every choice below is this slice's, not the Owner's.
   employee, and no screen of this phase can.
 - **No login account, employment record, department, contact detail or role is read.** The employment
   reference is displayed as the opaque reference it is and is never resolved.
-- **No branch directory read was added**, and no branch list is offered — see § 4 item 7.
+- **No branch directory read was INVENTED.** `org.branch-list` has been published and consumed by
+  other screens since PRE-P1-29 Wave C; this form reads it too, on its own permission, and adds no
+  operation of its own — see § 4 item 7.
 - **No legacy handover was repaired.** A row recorded before P-17 whose reference resolved to nobody
   still carries no name, and the screens show the reference rather than inventing a person. The
   review list P-17 created is the Owner's, and this slice ships no resolution command for it.
 - **No figure, amount or arithmetic crosses this tier**, as with every other delivery surface.
-- **No gate was weakened, no allow-list narrowed, no suppression added and no floor moved.** The one
-  gate edit widens a rule's reach, and the committed test-count baseline is untouched.
+- **No gate was weakened, no suppression added and no floor moved.** The committed test-count
+  baseline is untouched. The access gate's allow-list moved in both directions — `org.branch-list`
+  claimed because this screen calls it, `org.employee-detail` released with the adapter that called
+  nothing — and neither move changed the pages examined or the segments owned.
 - **No hosted run, no database tier, no browser acceptance and no end-to-end result is claimed.**
 
 ## 6. Identifier allocation — PROVISIONAL, read from the register on this base
