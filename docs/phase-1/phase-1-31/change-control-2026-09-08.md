@@ -1715,7 +1715,7 @@ local, on this branch, with no database, no browser and no hosted runner.
 | `npm run validate:plain-language`                                           | 2 catalogues, 24 rules, 0 findings                                    |
 | `npm run validate:p1-31-access`                                             | 11 route pages across 7 segments, 0 violations                        |
 | `npm run validate:p1-26-frontend` · `npm run validate:p1-27-frontend`       | 0 failures; 151 files across 5 trees                                  |
-| focused web — `tests/reports.dom.test.tsx`, `tests/reports-api.test.ts`     | 83/83 across 2 files                                                  |
+| focused web — the two new files plus the two re-based suites                | 399/399 across 4 files (83 of them the two new files)                 |
 | root — `npx vitest run tests/ci tests/openapi-contract.test.ts`             | 1990/1990 across 69 files                                             |
 | the web tier, through the P1-27 recorder                                    | 3793/3793 across 135 files, 0 failed                                  |
 | `npm run test:unit`, through the P1-27 recorder                             | 3300/3300 across 122 files, 0 failed                                  |
