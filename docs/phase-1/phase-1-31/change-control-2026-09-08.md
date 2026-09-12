@@ -2690,6 +2690,76 @@ executed clears the 3700 floor, `tests/ci/web-test-floor.test.ts` and
 `tests/ci/baseline-integrity.test.ts` both pass against it unchanged, and no rule forced a ratchet,
 so the baseline keeps the figures its own run established.
 
+## 49. The assurance evidence index for the thirteen non-Frontend tasks
+
+Full record: [`security-and-qa-evidence.md`](./security-and-qa-evidence.md), which carries the same
+allocation table in its own § 14. Slice: `feature/p1-31-assurance-evidence-v2`, ownership profile
+`p1-31-frontend` (docs bucket), docs-only. **Baseline:** protected `develop`
+**9b109f639348db424940b00b022cfb36e2160e2c** (PR #377 merge). `main` untouched.
+
+### 49.1 Identifier allocation — SETTLED, not provisional
+
+Read on `develop` `9b109f63`, where this file holds sections **1 … 48, 50, 51 and 53** and
+identifiers **CC-01 … CC-41**. **Section 49 and CC-37 are the lowest free pair.** Sections 50.1 and
+51.1 both record that pair as claimed by "a lane not on `develop`" — that lane is the **abandoned
+first version of this very record**, written at `develop` `01c32937`, never merged and never opened
+as a pull request. This record supersedes it and therefore takes the pair it reserved, rather than
+leaving a permanent hole in the numbering.
+
+| identifier | slice                                                                | state, read at `develop` `9b109f63`     |
+| ---------- | -------------------------------------------------------------------- | --------------------------------------- |
+| **CC-36**  | the warranty plan administration screens (#375)                      | merged, section 48                      |
+| **CC-37**  | **this record** (superseding the abandoned first version of it)      | **SETTLED**, this branch, section 49    |
+| **CC-38**  | the report screens (#371)                                            | merged, section 50                      |
+| **CC-39**  | the Start selector (#377)                                            | merged, section 51                      |
+| **CC-40**  | the fresh-organisation acceptance harness (QA-005), **open PR #378** | not on `develop`, claims **section 52** |
+| **CC-41**  | the operational overview (#376)                                      | merged, section 53                      |
+
+**Why this pair is not PROVISIONAL.** § 48.1's rule is that an identifier is a claim about the
+register at the moment it was raised, and § 51.1 marked its own pair provisional only because a
+LOWER pair was held by an unmerged lane. **No lower pair is held here.** The one unmerged claim on
+this register is **PR #378** (`feature/p1-31-acceptance-harness`, open at head `0a1bba2a`), which
+holds **section 52 and CC-40** — both ABOVE this pair. So nothing here is taken from #378 and
+nothing here is renumbered to follow it.
+
+### 49.2 What was delivered
+
+One document, [`security-and-qa-evidence.md`](./security-and-qa-evidence.md), plus pointers to its
+sections in the thirteen non-Frontend rows of [`task-matrix.md`](./task-matrix.md). **No State value
+in the matrix was changed**, because this record adds a proving artefact and does not move a state.
+
+The chapter names SEC-001 … SEC-004, QA-001 … QA-005, DO-001, DO-002, DOC-001 and DOC-002 and
+**defines none of them**: each of the four chains repeats one boilerplate sentence across every row,
+and every row cites a test id that returns zero files (A0's **D-16**). The operational definitions
+are therefore **transposed from `docs/phase-1/phase-1-28/canonical-plan.md:172-212`**, the only
+in-repository precedent that states what each id means, exactly as
+[`../phase-1-30/w8-security-and-qa-evidence.md`](../phase-1-30/w8-security-and-qa-evidence.md) did —
+and the file says so rather than presenting the transposition as the chapter's words.
+
+Every figure in it is a static read of this head or the reported output of a static checker named
+beside it. **No test tier, build, database operation or deployment was run to produce it, and no
+acceptance result is claimed** — none exists, which is § 9's own finding.
+
+### 49.3 Dispositions
+
+| id           | finding                                                                                     | measured                                                                                                                                                                                                                                                                  | disposition                                                                                                                                                                                                                                               | owner / slice         | state            |
+| ------------ | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ---------------- |
+| **CC-37**    | the thirteen non-Frontend canonical tasks have no definition in the P1-31 chapter           | Each chain carries one repeated boilerplate sentence; all three cited test ids (`TC-WTY-001`, `TC-RPT-001`, `TC-QMS-001`) return zero files, filed by A0 as **D-16**                                                                                                      | **transposed from P1-28 and declared as a transposition.** Closing a row against its own cited Test reference is impossible, so the alternative was to close nothing or to invent a definition and present it as the chapter's                            | this record           | closed, recorded |
+| **CC-37(a)** | eleven `wty.`/`rpt.` writes on this surface are held to no payload-mirror gate              | `P1_30_DOMAINS` in `scripts/ci/check-p1-30-payload-parity.mjs` is `['svc','quo','inv','sal']` and its mirror allow-list names seven files under `apps/web/src/lib/contracts/`; the warranty and report mirrors live in their feature trees instead                        | **recorded, not worked around.** Widening another phase's gate is not a docs slice's to do, and a gate widened without its red-proof moving is worse than a recorded gap                                                                                  | a later slice         | open, recorded   |
+| **CC-37(b)** | the seven `rpt.report-configuration-*` writes have no consumer outside a generated manifest | `apps/web` references them only in `src/lib/api/idempotent-operations.ts`, which is generated from the Backend register; no screen and no adapter calls them                                                                                                              | **recorded as the declared-but-never-wired shape this repository has shipped before (P1-27 INT-113).** No screen is invented here to justify them and no operation is withdrawn — both belong to whoever owns the writer                                  | Owner / a later slice | open, recorded   |
+| **CC-37(c)** | the tenant-administrator bundle backfill has a prerequisite no repository record named      | The operator artefact of 2026-09-12 (outside this repository) records the backfill refusing **exit 5**, fail-closed, because the target database's permission catalogue lacked the two codes P-17 minted; it completed only after the declared catalogue seed was applied | **recorded as a fact about the act, not as a defect in the script** — the guard is correct and the refusal is the useful part. The remedy is the operator runbook that **DO-001 and DO-002 both owe** and that does not exist; the ordering must be in it | a later slice         | open, recorded   |
+
+### 49.4 What this slice did NOT do
+
+- **Moved no State value** in `task-matrix.md`, and moved no chapter status.
+- **Ran no test tier, no build, no migration and no database operation.** The gates it ran are
+  static checkers, named in the pull request.
+- **Claimed no acceptance result, no hosted run and no approval.** The record has been routed to
+  nobody.
+- **Changed no source file, no gate and no allow-list.** Docs only.
+- **Did not re-quote a figure a generated register owns**, which is the stale-count defect
+  `scripts/ci/check-p1-27-doc-counts.mjs` exists to refuse.
+
 ## 50. The report screens
 
 **Why 50 and not the next unused number.** Sections 44 to 47 were still open when this slice was
