@@ -1678,19 +1678,119 @@ total and its two restatements — with their five closing-value ledger entries,
 unit and web tiers, and the regenerated P1-27 evidence manifest. The baseline file classifies as
 `tooling`, a bucket the `p1-31-frontend` ownership profile allows.
 
+---
+
+# FE-007 — the printable delivery handover document, of 2026-09-11
+
+## 44. What the FE-007 slice changed — the printable delivery handover document (PROVISIONAL)
+
+**Slice:** `feature/p1-31-delivery-document`, ownership profile `p1-31-frontend`.
+**Baseline:** protected `develop` **deb404c1901d2b270a71f5336978d09a04e16293**, merged in on
+2026-09-12 — the head that carries the readiness queue (#367) and the warranty record screens
+(#369). It supersedes the earlier integration of **c1b1a8cdd822e3e70667600a0309d36a7d6438c6** on
+2026-09-11; the slice was written against **01c32937c2d6f5f78f5757cb83c6fdf2995f1dad**.
+**Status:** merged with pull request **#368** into protected `develop` `8c4e6a9c`, and
+restated at that merge on 2026-09-12: section 44 and **CC-32** are settled, so the PROVISIONAL
+markers this section carries read as history rather than as current state. This document records no
+hosted run and claims no acceptance.
+
+The full record is [`delivery-document.md`](./delivery-document.md). In short: the vehicle-handover
+screen gains a printable sheet, composed on the client from reads it already holds, publishing
+nothing and writing nothing.
+
+**The Owner's decision (D-7, 2026-09-10), in the Owner's words.** The delivery document is a
+**permission-checked printable operational view**. Stored immutable document versions **remain
+deferred** and arrive, if ever, through their own contract rather than as a side effect of a print
+view. The printable view is **never described as an immutable archive**, in the interface, the
+documentation or a commit message. It is **permission-checked**: a caller sees only what the reads
+they already hold publish. Recorded in
+[`owner-decisions-2026-09-10.md`](./owner-decisions-2026-09-10.md) §2.
+
+**Measured facts (not part of the decision).** The shared print frame, the print stylesheet and the
+invoice screen's print panel already exist and are the approach D-7 names. Six delivery reads are
+already consumed by this screen. The release checks declare the financial read code on top of the
+delivery one. The delivering employee, the vehicle, the visit and the final odometer reading are
+bare identifiers with no reader in the platform. A work-order summary read DOES exist and publishes
+a work-order number, a customer display name, a registration plate and a make and model under
+`wo.work_order.read`. The session carries no company or branch NAME.
+
+**Engineering consequence (not an Owner decision).** The sheet is a panel of the existing screen
+rather than a second route; its reads happen when it is opened; the release checks are reused from
+the screen's one eligibility answer rather than read again; the work-order read is used under its
+own code and is not made without it; each part prints the OUTCOME of its read rather than an empty
+section; one page of each list is printed and truncation is said; the signature image and the
+identity evidence stay references; no company, branch or organisation name and no figure is
+printed; the footer disclaimer is a translated string in both catalogues.
+
+### 44.1 What was published, and what was minted (PROVISIONAL)
+
+| published | minted  |
+| --------- | ------- |
+| nothing   | nothing |
+
+No operation, no route, no path, no permission, no audit action, no migration and no seed. The
+operation register and the permission catalogue are unchanged, and `npm run validate:p1-31-access`
+reports the same derivation over the same page count as it does on the base commit.
+
+### 44.2 Dispositions (PROVISIONAL)
+
+| id        | finding                                                                                                                                                                                    | measured                                                                                                                                                                                                                                                                                                                 | disposition                                                                                                                                                                                                                                                                                                                                                                                              | owner / slice | status |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------ |
+| **CC-32** | the printed sheet carries a **reference** for the delivering employee where a person's name belongs, so a customer-facing printout names nobody for the person who handed the vehicle over | `sal.delivery_records.delivering_employee_id` has no reader anywhere in the platform, and the display-name field arrives with the backend slice D-12 describes, which is not merged at this head. The reception acknowledgement solved the same problem with a stamped identity, and no equivalent exists for a handover | **accepted, and the remedy is NAMED rather than performed.** The sheet prints the identifier as the labelled reference it is and states that the system holds no name for it. Inventing a name on this tier — or resolving one from a live directory read — would print, and hand to a customer, either a fabrication or the account's name TODAY rather than at the handover. The fix is the D-12 slice | later slice   | open   |
+
+**Identifier note — the section number and the identifier are PROVISIONAL, allocated 2026-09-11.**
+At the base commit `c1b1a8cd` the register runs to **section 40** and **CC-01 … CC-28**: the
+report engine (P-11) settled **section 40** with **CC-27** and **CC-28** at this sync, and the
+sections and identifiers below 40 are settled with it. P1-31 lanes are still in flight and unmerged
+at that head, and each will take a heading — and, where it raises one, an identifier — before this
+slice can be integrated. Rather than claim a number another lane
+may already hold, this slice takes **section 44** and **CC-32** provisionally: far enough ahead to
+avoid a collision, and to be **re-seated against the then-current register at integration**, exactly
+as §38 and §39 were seated against the head they were integrated onto. Nothing downstream may treat
+either number as settled until that reseating happens.
+
+### 44.3 What this slice did NOT do (PROVISIONAL)
+
+- **No stored document version.** Nothing is created, uploaded, registered or linked. Stored
+  immutable versions remain deferred per D-7, and this printout is not one and does not claim to be.
+- **No backend print route and no new operation.** `apps/api` and `supabase` are not edited at all.
+- **No permission was minted.** `wo.work_order.read` is a pre-existing code the work-order screens
+  already consult; it is resolved on the delivery route page for the sheet's work-order read and
+  gates nothing else.
+- **Nothing is written from the sheet.** Neither new file imports a write adapter, and the test
+  suite asserts every write of this feature untouched while the sheet is composed and printed.
+- **No gate was weakened and no allow-list widened.** No suppression comment was added.
+- **No acceptance is claimed.** Pull request #368 is open and unmerged; this document records no
+  hosted run, no browser pass and no environment.
+
+### 44.4 Proof (PROVISIONAL)
+
+| id       | what was shown                                                                                                                              |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D7-1** | a caller the route refuses reaches no control and makes none of the reads the sheet needs                                                   |
+| **D7-2** | nothing is read for the sheet until it is opened                                                                                            |
+| **D7-3** | the opened sheet carries the frame the print stylesheet finds, with the rows the mocked reads published                                     |
+| **D7-4** | the customer, the plate and the work-order number come from the work-order read when its code is held, and that read is NOT made without it |
+| **D7-5** | the financial half is absent, unrequested and SAID to be absent without the financial read code                                             |
+| **D7-6** | a refused part prints as a refusal with the backend's reference, never as an empty section, and a truncated list says so                    |
+| **D7-7** | the disclaimer D-7 requires is on the sheet in English and in Arabic                                                                        |
+| **D7-8** | the print control appears only after the reads land and sits inside the toolbar the print stylesheet hides                                  |
+| **D7-9** | every write adapter of this feature is untouched throughout                                                                                 |
+
 ## 48. The warranty plan administration screens — **PROVISIONAL** (FE-008, policy administration)
 
 **This whole section is PROVISIONAL, and so is its identifier.** It records work on
 `feature/p1-31-warranty-policy-administration`. Its base — the warranty record screens — merged
-with PR #369, and this branch is integrated onto protected `develop` `deb404c1` as of 2026-09-12.
+with PR #369, and this branch is integrated onto protected `develop` `8c4e6a9c` as of 2026-09-12.
 The branch itself is still **unmerged** and has **no hosted result**. Nothing below claims
-otherwise, and the section stays provisional because sections 44 to 47 and CC-32 to CC-35 are
+otherwise, and the section stays provisional because sections 45 to 47 and CC-33 to CC-35 are
 still unmerged, so a collision on this heading or this identifier remains possible.
 
 ### 48.1 Identifier allocation — PROVISIONAL, dated 2026-09-11, re-read 2026-09-12
 
-At `develop` `deb404c1` the register runs to **section 43** and to **CC-31**, which are the warranty
-record-screens slice's own reservation and are now merged. Several P1-31 lanes are still in flight
+At `develop` `8c4e6a9c` the register runs to **section 44** and to **CC-32**: section 43 and
+**CC-31** are the warranty record-screens slice's own reservation, merged with PR #369, and
+section 44 and **CC-32** are FE-007's, merged with PR #368. Several P1-31 lanes are still in flight
 at that head, so this slice does not claim the next number in sequence either. It
 reserves a heading and an identifier deliberately ahead of the front, and states the reservation as
 provisional so that a collision is a reconciliation and never a silent renumbering of somebody
@@ -1699,7 +1799,8 @@ else's record.
 | id                | lane                                          | state at this head                            |
 | ----------------- | --------------------------------------------- | --------------------------------------------- |
 | **CC-31**         | the warranty record screens                   | section 43, merged with PR #369, on `develop` |
-| **CC-32 … CC-35** | reserved for the lanes in flight at this head | not allocated here                            |
+| **CC-32**         | the printable delivery handover document      | section 44, merged with PR #368, on `develop` |
+| **CC-33 … CC-35** | reserved for the lanes in flight at this head | not allocated here                            |
 | **CC-36**         | this slice                                    | **PROVISIONAL**, this branch, section 48      |
 
 **Reconciliation rule.** If section 48 or **CC-36** is occupied when this branch integrates, this
