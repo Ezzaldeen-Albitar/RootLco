@@ -76,6 +76,11 @@ describe('the navigation model', () => {
       // a page nobody can reach is not delivered.
       'customer-duplicates',
       'customers',
+      // P1-31 FE-001: the ready-for-delivery queue at `/delivery`, gated on
+      // `sal.delivery.view` — the module's own read code. The queue itself needs
+      // `wo.work_order.read` and `sal.finance.view` as well, and the page says
+      // so; a navigation gate names one code, as every other row here does.
+      'delivery',
       'gallery',
       // P1-30 W4: item search, stock availability and reservations at `/inventory`.
       'inventory',
@@ -111,6 +116,10 @@ describe('the navigation model', () => {
       // /reception/walk-in, gated on the permission its first operation
       // (customer search) requires.
       'walk-in',
+      // P1-31 FE-008 landed the branch's warranty records at /warranty, gated on
+      // `wty.warranty.read` — the code BOTH warranty reads declare, minted by P-7
+      // so that reading a warranty no longer borrows the authority to issue one.
+      'warranty',
       // The work-order board landed with P1-29 W1 at /work-orders, gated on
       // `wo.work_order.read` — the permission its only operation requires.
       'work-orders',
@@ -132,8 +141,8 @@ describe('the navigation model', () => {
       // `billing` left this list in P1-30 W6, and `payments` was ADDED as an
       // available entry in W7 (the module had no navigation row before it).
       // `customers` and `vehicles` left this list in P1-27, and `appointments`
-      // in P1-28, when the screens they point at were built.
-      'delivery',
+      // in P1-28, when the screens they point at were built. `delivery` left
+      // this list in P1-31 FE-001.
       'documents',
       // `inventory` left this list in P1-30 W4.
       'notifications',
