@@ -363,8 +363,11 @@ let a record claim phase coverage it does not have.
 Static checks on the source of the harness and the specs. Nothing was executed against a database, a
 server or a browser.
 
-Every command below was run on the merged head. **One of them FAILED**, and the table says so rather
-than omitting it: a list of checks that quietly drops the one that went red is worse than no list.
+Every command below was run on the merged head and every one of them passed. One of them — the last
+— failed on the first attempt, over a registration these four specs owed and had never been given;
+§8.1 records what that was, what decided the repair, and the hosted consequence that the repair does
+**not** remove. It is written out rather than quietly re-run to green, because a list of checks that
+drops the one that went red is worse than no list.
 
 | check                                                    | scope                                                   |
 | -------------------------------------------------------- | ------------------------------------------------------- |
@@ -383,16 +386,40 @@ than omitting it: a list of checks that quietly drops the one that went red is w
 | `node scripts/check-scope-exclusions.mjs`                | no excluded name                                        |
 | `node scripts/ci/check-test-honesty.mjs`                 | every conditional skip carries its recorded reason      |
 | `npm run security:all`                                   | the aggregate security gate                             |
-| `npx vitest run tests/ci tests/openapi-contract.test.ts` | **FAILED: 1 failed, 1990 passed across 69 files**       |
+| `npx vitest run tests/ci tests/openapi-contract.test.ts` | 1991 passed, 0 failed, 69 files — see §8.1              |
 
-**The failure is `tests/ci/e2e-tier-coverage.test.ts`**, and it is about these four specs. That gate
-requires every spec under `apps/web/tests/e2e/authenticated/` to be named in the governed spec list
-in `.github/ci-baselines/unrun-test-tiers.json`; the list names seven paths and none of these four.
-It has been red since the specs were committed, before any merge — the branch never ran `tests/ci`.
-It is not fixed here: the file is CODEOWNERS-protected, and whether a committed-but-skipping spec
-belongs on the governed list at all is a decision, not a transcription. The change-control record
-sets out both halves. **Until it is decided this branch is not green, and nothing in this document
-says otherwise.**
+### 8.1 The registration these four specs owed, and the hosted consequence of it
+
+`tests/ci/e2e-tier-coverage.test.ts` requires every spec under
+`apps/web/tests/e2e/authenticated/` to be named in `.github/ci-baselines/unrun-test-tiers.json` —
+under `governed.specs` if a gate-governed job executes it, in `unrun` if none does. The list named
+seven paths and none of these four, so the tier was RED from the moment the specs were committed,
+before any merge. **It is now registered under `governed.specs`, and the fact decided which list:**
+
+- `apps/web/playwright.config.ts:204` and `:215` give the `authenticated-en` and `authenticated-ar`
+  projects `testMatch: /authenticated[\\/].*\.spec\.ts/` — a directory-wide glob that matches these
+  four the moment they exist. `authenticated-tablet` at `:255` matches only
+  `(administration|appointments-and-receptions)` and does not.
+- `.github/workflows/_reusable-authenticated-browser.yml:416` sets `ROOTLCO_E2E_AUTH: '1'` and runs
+  `npm run test:web-e2e-authenticated`. The job is in the `needs` of both `ci-gate` and
+  `protected-gate`.
+
+So the governed job **does** execute them, and `unrun` was not available anyway: that file's own
+`policy` fails a declaration whose spec is executed by the gate, and the last case in the coverage
+test fails any `/authenticated/` entry in `unrun` while the tier is governed. Registration was the
+only lawful answer, and it is a registration — no rule was relaxed, no directory exempted, no
+suppression added.
+
+**What registration does not buy is a green hosted check, and this plan will not imply that it
+does.** The `A run that collected nothing is a failure, not a pass` step of the same workflow reads
+the spec **directory**, counts only results whose status is not `skipped`, and exits 1 naming every
+file that contributed none. All eleven cases in each of these four specs skip while
+`ROOTLCO_P131_HANDOFF` is unset, which it is on every checkout and on every runner, so the
+`authenticated-browser` check is **expected to be RED on this branch**. That is the guard behaving
+exactly as designed against four specs that cannot yet run; it was already true before the
+registration, because the step reads the directory rather than the list. Closing it needs the
+harness to have been run and its handoff carried to the browser tier — which is §1 through §6 of
+this plan, and is the work that remains.
 
 A second static measurement was taken after `develop` `811e9891` was merged in, and it is the one
 that matters: **every operation the harness calls was re-read against the declaration on that head**

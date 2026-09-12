@@ -2929,7 +2929,8 @@ else moves. This slice does not pre-emptively renumber, because CC-40 is unoccup
 
 ### 52.2 What this slice changed
 
-Three artefacts, no product code, no backend file, no migration, no seed, no permission.
+Three artefacts plus one CI registration, and no product code, no backend file, no migration, no
+seed, no permission.
 
 - `scripts/dev/owner-acceptance/p1-31-journey.mjs` — the HTTP acceptance journey: fifteen sections,
   numbered steps, fifteen refusal and isolation cases, and a JSON and Markdown evidence pair written
@@ -2940,6 +2941,11 @@ Three artefacts, no product code, no backend file, no migration, no seed, no per
   world the HTTP half made through `ROOTLCO_P131_HANDOFF`.
 - `docs/phase-1/phase-1-31/acceptance-plan.md` — the preconditions, the step table, the browser
   matrix, the case table, the evidence layout, and how a PASS is judged per Frontend task.
+
+- `.github/ci-baselines/unrun-test-tiers.json` — the four spec paths added to `governed.specs`, with
+  the reading that decided the list recorded beside them. This is the registration every
+  authenticated spec owes; the finding below sets out why it is that list and not `unrun`, and what
+  it does and does not buy.
 
 **No npm script was added.** Adding one would move `validate:command-coverage` and put a phase
 artefact into the repository's permanent command surface; the plan states the invocation instead.
@@ -2994,27 +3000,46 @@ workspace, and the harness is never executed by any tier. **That is itself the f
 harness's call shapes were only verified by reading the declarations one by one, and a reader should
 not take the fix as evidence that no seventh defect remains.
 
-**A seventh finding is OPEN and this slice did not fix it.** `tests/ci/e2e-tier-coverage.test.ts`
-requires that every spec under `apps/web/tests/e2e/authenticated/` be named in the governed spec
-list in `.github/ci-baselines/unrun-test-tiers.json`. The list holds seven paths and names none of
-this slice's four, so **the root unit tier is RED on this branch** and has been since the specs were
-committed — at `ed657ed8`, before any merge. The branch never ran `tests/ci`, which is why the
-failure travelled this far unseen.
+**A seventh finding was found, and it is REGISTERED rather than fixed or waived.**
+`tests/ci/e2e-tier-coverage.test.ts` requires that every spec under
+`apps/web/tests/e2e/authenticated/` be named in `.github/ci-baselines/unrun-test-tiers.json` — under
+`governed.specs` when a gate-governed job executes it, in `unrun` when none does. The list held seven
+paths and named none of this slice's four, so **the root unit tier was RED on this branch** and had
+been since the specs were committed at `ed657ed8`, before any merge. The branch never ran `tests/ci`,
+which is why the failure travelled three commits unseen.
 
-It is left open deliberately, for two reasons, and neither is that it is hard:
+**Which list they belong on was decided by reading, not by preference.** The evidence, quoted:
 
-- The file is under `.github/ci-baselines/`, which is CODEOWNERS-protected and self-certifying. No
-  instruction to this slice authorised an edit there, and widening a CI declaration to make a gate
-  stop reporting is exactly the move the standing rule against working around a failing gate exists
-  to prevent.
-- The choice is a judgement, not a transcription. Naming the four specs under `governed.specs`
-  asserts that the governed hosted tier EXECUTES them. It would — and all eleven cases would skip,
-  because no hosted run has a `ROOTLCO_P131_HANDOFF`. Whether a committed-but-skipping spec belongs
-  on the governed list, or in the `unrun` list this file's own docblock records as deliberately
-  emptied, decides what a green `authenticated-browser` result means from here on. That is the
-  Owner's or the integration lane's decision and not this slice's.
+- `apps/web/playwright.config.ts:204` and `:215` — the `authenticated-en` and `authenticated-ar`
+  projects both carry `testMatch: /authenticated[\\/].*\.spec\.ts/`. That is a directory-wide glob
+  and it matches these four the moment the files exist. `authenticated-tablet` at `:255` carries
+  `testMatch: /authenticated[\\/](administration|appointments-and-receptions)\.spec\.ts/` and does
+  not match them.
+- `.github/workflows/_reusable-authenticated-browser.yml:416` — the step `The authenticated browser
+tier` sets `ROOTLCO_E2E_AUTH: '1'` and runs `npm run test:web-e2e-authenticated`. That job is
+  called by `pr-ci.yml` and `protected-develop-verification.yml` and sits in the `needs` of both
+  `ci-gate` and `protected-gate`.
 
-Until it is decided, **this branch cannot be reported green**, and nothing below claims it is.
+The governed job therefore **does** execute them, so `governed.specs` is the truthful list. `unrun`
+was not available in any case, and two independent rules say so: the declaration file's own `policy`
+field fails an entry whose spec **is** executed by the pull-request gate — "a declaration must not
+be able to hide a runnable tier" — and the last case of the coverage test fails any `/authenticated/`
+path in `unrun` while the tier is governed, because "a debt must not outlive its repayment". The four
+paths were added to `governed.specs` with the reason recorded beside them in the file. No rule was
+relaxed, no directory exempted, no suppression added, and no threshold moved.
+
+**Registration does not make the hosted check green, and this record will not let that be assumed.**
+The step immediately after the tier in the same workflow — `A run that collected nothing is a
+failure, not a pass` — reads the spec **directory** with `readdirSync`, counts only results whose
+status is not `skipped`, and exits 1 naming every file that contributed none. All eleven cases in
+each of these four specs skip while `ROOTLCO_P131_HANDOFF` is unset, which it is on every checkout
+and on every runner, so **the `authenticated-browser` check is expected to be RED on this branch**.
+
+That is the guard working exactly as designed against four specs that cannot yet run. It is not
+caused by the registration — the step reads the directory, so committing the files caused it and
+listing them changes nothing about it — and it is not to be answered by weakening the step. What
+answers it is a run: the harness executed against the acceptance stack and its handoff carried to the
+browser tier, which is §1 to §6 of the acceptance plan and is the work that remains.
 
 ### 52.4 Dispositions
 
@@ -3030,9 +3055,14 @@ Until it is decided, **this branch cannot be reported green**, and nothing below
   on this tree; this slice ran nothing against the database itself.
 - **No merge, no acceptance record.** Section 6 of the plan describes how a PASS would be judged; no
   PASS is claimed, and rule 2 of `task-matrix.md` is unaffected.
-- **No gate was weakened, no allow-list widened and no suppression added.** One `eslint-disable`
+- **No gate was weakened, no exemption granted and no suppression added.** One `eslint-disable`
   written during authoring was removed rather than justified, because the rule it named reported
-  nothing.
+  nothing. The one CI file this slice touches is named rather than glossed: four paths were ADDED to
+  `governed.specs` in `.github/ci-baselines/unrun-test-tiers.json`. That list is not an allow-list
+  and adding to it removes no check — it is the assertion that a gate-governed job executes those
+  files, which `tests/ci/e2e-tier-coverage.test.ts` then holds against the real directory in both
+  directions. Nothing was added to `unrun`, which is the list that would have excused them, and the
+  hosted consequence of the registration is stated above rather than left for a reader to discover.
 - **No test floor moved.** `apps/web/tests/e2e/**` is the Playwright tier and is not counted by
   `web.minTests`, which measures the vitest projects under `apps/web/tests`.
 - **No section or identifier belonging to another lane was renumbered.** The union in this file is
