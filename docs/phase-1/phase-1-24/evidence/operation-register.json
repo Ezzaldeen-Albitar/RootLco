@@ -9393,7 +9393,8 @@
         "tests/backend/p1-31-report-engine-inventory-movements.test.ts",
         "tests/backend/p1-31-report-engine-invoice-payment.test.ts",
         "tests/backend/p1-31-report-engine-technician-labor.test.ts",
-        "tests/backend/p1-31-report-engine-work-orders.test.ts"
+        "tests/backend/p1-31-report-engine-work-orders.test.ts",
+        "tests/ci/p1-31-access-gate.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/reports/[reportCode]/rows/route.ts"

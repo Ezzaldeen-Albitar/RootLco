@@ -97,16 +97,22 @@ export default async function Page({ params }) {
  * that adds or removes the page or the segment.
  *
  * It moved from 13 to 15 with the FE-011 … FE-014 report screens: the catalogue
- * page and the per-report page. BOTH numbers are read off the gate's report line
- * on this merged head rather than carried forward — the branch was written when
- * the line read 9, and `develop` moved it twice before this merge — so 13 is what
- * `develop` reports and 15 is what this head reports. The SEGMENT count did not
- * move with this slice, and that is the measurement worth keeping rather than
- * rounding — `reports` was already a named dashboard area, and the resource root
- * the three new reporting operations derive is also `reports`, so the derived half
- * and the named half agree on it.
+ * page and the per-report page. BOTH numbers are read off the gate’s report line
+ * on the merged head rather than carried forward — the report-screens branch was
+ * written when the line read 9, and `develop` moved it twice before that merge —
+ * so 13 is what `develop` reports and 15 is what that branch reports. The SEGMENT
+ * count did not move with that slice: `reports` was already a named dashboard
+ * area, and the resource root the three reporting operations derive is also
+ * `reports`, so the derived half and the named half agree on it.
+ *
+ * It moved from 15 to 16 with the FE-010 operational overview at
+ * `(dashboard)/reports/overview`, again read off the gate’s report line on this
+ * head. The segment count did not move again and no operation was added to the
+ * allow-list: the overview consumes the same three reporting operations, four
+ * runs of `rpt.report-run` instead of one, so what grew is the number of pages
+ * the gate judges and nothing about what it owns.
  */
-const PINNED_PAGES = 15;
+const PINNED_PAGES = 16;
 const PINNED_OWNED_SEGMENTS = 8;
 
 describe('the derivation is P1-31’s own and is not empty', () => {
