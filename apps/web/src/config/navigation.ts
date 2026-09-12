@@ -428,6 +428,22 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         status: 'available',
         scope: 'branch',
       },
+      {
+        key: 'warranty',
+        labelKey: 'nav.warranty',
+        // The delivery glyph, deliberately reused. A warranty is issued from a
+        // handover and reached from beside it, and inventing a second glyph for a
+        // screen one step along the same act would say they are unrelated things.
+        icon: 'delivery',
+        // `/warranty`: the branch's warranty records, built by P1-31 FE-008. Gated
+        // on `wty.warranty.read`, the code BOTH warranty reads declare — minted by
+        // P-7 so that reading a warranty no longer borrows the authority to issue
+        // one. Issuing is offered on the handover screen, not by this gate.
+        href: '/warranty',
+        permission: 'wty.warranty.read',
+        status: 'available',
+        scope: 'branch',
+      },
     ],
   },
   {

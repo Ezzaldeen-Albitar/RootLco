@@ -224,9 +224,15 @@ describe('no request asks for more rows than the route accepts', () => {
   it('keeps a size the route accepts, and repairs one that is not a size at all', () => {
     expect(reportPageSize(REPORT_PAGE_SIZE)).toBe(REPORT_PAGE_SIZE);
     expect(reportPageSize(1)).toBe(1);
-    expect(reportPageSize(0)).toBe(MAX_REPORT_PAGE_SIZE);
-    expect(reportPageSize(-5)).toBe(MAX_REPORT_PAGE_SIZE);
-    expect(reportPageSize(12.5)).toBe(MAX_REPORT_PAGE_SIZE);
+    // An input that is not a whole number of rows falls back to the platform
+    // default, NOT to the ceiling: the repair must not turn a caller's mistake
+    // into the heaviest read the route allows. The two are different numbers,
+    // so this case would still pass if the fallback were the ceiling - hence
+    // the explicit inequality below.
+    expect(reportPageSize(0)).toBe(REPORT_PAGE_SIZE);
+    expect(reportPageSize(-5)).toBe(REPORT_PAGE_SIZE);
+    expect(reportPageSize(12.5)).toBe(REPORT_PAGE_SIZE);
+    expect(REPORT_PAGE_SIZE).toBeLessThan(MAX_REPORT_PAGE_SIZE);
   });
 
   it('sends the capped size on the run and on the catalogue', async () => {

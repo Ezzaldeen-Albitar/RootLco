@@ -222,12 +222,12 @@ contains no `wty.warranty.read`".
 
 ## 13. Dispositions
 
-| id        | finding                                                                                     | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | owner / slice                                                     | status |
-| --------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- | ------ |
-| **CC-07** | `wty.warranty.read` is **included** in the tenant administrator provisioning bundle         | The rule this phase applied is "carry a code only when a shipped operation declares it". Two do: `wty.warranty-list` and the re-pointed `wty.warranty-detail`, so the necessary condition holds where CC-01 and CC-02 have **zero** declarers. The question CC-04 added is REACH, and it answers the other way: `rpt.export` is the platform-wide export switch of P1-15, whereas this code reads warranty records, their coverage terms and their covered jobs and parts in ONE schema — `wty` has 80 columns, all classified `internal`, none `restricted`, and not one monetary. The decisive fact is that **withholding it would REMOVE a capability**: a freshly provisioned administrator can read a warranty today, through `wty.warranty.issue`, which the bundle already holds | **included, deliberately.** Least privilege here means the administrator reads warranties under a READ code instead of an ISSUE code — not that it stops reading them. Re-pointing the route while withholding the code would have been a regression dressed as a restriction. `wty.warranty.issue` is NOT withdrawn: `wty.warranty-generate` still declares it, and an administrator that could not hold it could not delegate a warranty clerk. Bundle **73 → 74**; `tests/backend/p1-31-provisioning-bundle.test.ts` keeps P-1's six and P-7's one as separate constants so neither widening can drift into the other                                                                                                                         | this slice                                                        | closed |
-| **CC-08** | organisations provisioned **before** this slice lose the warranty detail read               | The bundle is written ONCE, inside `platform.organization-provision`, and nothing re-applies it. An organisation provisioned on the 48-, 65-, 67- or 73-code bundle holds `wty.warranty.issue` and NOT `wty.warranty.read`, so from this commit its administrator is refused `GET /warranties/{warrantyId}` with `ERR-IAM-001` — a read it could perform yesterday. It also cannot delegate the code, because `ins_role_permissions_delegable` admits a mapping only when the acting administrator already holds it. This is CC-03's residual with a sharper consequence: CC-03 withholds something new, this one **withdraws something old**                                                                                                                                           | **RESOLVED, by the route this row itself named.** It was accepted and filed rather than silently shipped, on the stated understanding that it "resolves the moment A0 decision **D-2** (the backfill) is answered" — and it was answered the same day. Where it landed: the backfill of **CC-11**, which carried `wty.warranty.read` onto all 24 administrator roles on the shared acceptance environment. The withdrawn read is measured back rather than assumed: `tests/backend/p1-31-tenant-administrator-bundle-backfill.test.ts` **BF-4** is refused `GET /warranties/{warrantyId}` with `ERR-IAM-001` on a stale role and gets past that gate on the same role after the backfill. `wty.warranty.issue` was not touched, here or anywhere | Owner decision D-2, answered; delivered by the D-2 backfill slice | closed |
-| **CC-09** | the warranty list is **not a pure publication** of an existing repository method            | Same class as **CC-05**, and the governing precedent is the same: `sal.work-order-invoice-read` states "This publishes the existing read; it adds no query and no second mapper." Half holds and half does not. Every finder in `WarrantyRepository` is addressed by an identifier the caller must ALREADY possess — a record id, an idempotency key, a delivery id — so there was no branch-wide read to publish and the query is new, as is `findPolicies`, the set form of the existing identity read                                                                                                                                                                                                                                                                                | **accepted, and recorded rather than presented as a publication.** What the rule protects is preserved: **no second mapper and no second wire contract.** Rows come back through the existing `toRecord`, policies through the existing `toPolicy`, and `WarrantyRecordListView` spells every field exactly as `WarrantyView` spells it — the suite asserts key-by-key equality between a list row and the detail body, so the two shapes cannot drift. The policy block is carried rather than a bare `policyId` because no operation lists warranty policies (**PPD-04** / P-10), and publishing an identifier nobody can resolve is the defect this phase keeps finding                                                                       | this slice                                                        | closed |
-| **CC-10** | the list does **not** close `wty.warranty_record_status_history`, and P-6 never asked it to | A0 records item 9 ("warranty history") as blocked on two facts: the chapter declares `GET /api/v1/warranties`, which did not exist, and `wty.warranty_record_status_history` "appears nowhere in `apps/api/src`". **P-6 names only the first.** The second is still true after this slice: the append-only warranty status ledger has no reader, exactly as the delivery ledger had none before P-5 published it                                                                                                                                                                                                                                                                                                                                                                        | **open, unchanged, and stated so it cannot be read as closed.** A reader who sees a warranty list published might reasonably assume **VHM-06 / WF-26 / PPD-13** was fully addressed; only its list limb was. Publishing the ledger read would be a second contract this prerequisite does not sanction, and the P-5 precedent shows what it costs: a new query and a new row shape. It needs a prerequisite of its own or an explicit extension of P-6                                                                                                                                                                                                                                                                                           | a later `wty` read slice, with FE-009                             | open   |
+| id        | finding                                                                                     | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | owner / slice                                                     | status |
+| --------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ------ |
+| **CC-07** | `wty.warranty.read` is **included** in the tenant administrator provisioning bundle         | The rule this phase applied is "carry a code only when a shipped operation declares it". Two do: `wty.warranty-list` and the re-pointed `wty.warranty-detail`, so the necessary condition holds where CC-01 and CC-02 have **zero** declarers. The question CC-04 added is REACH, and it answers the other way: `rpt.export` is the platform-wide export switch of P1-15, whereas this code reads warranty records, their coverage terms and their covered jobs and parts in ONE schema — `wty` has 80 columns, all classified `internal`, none `restricted`, and not one monetary. The decisive fact is that **withholding it would REMOVE a capability**: a freshly provisioned administrator can read a warranty today, through `wty.warranty.issue`, which the bundle already holds | **included, deliberately.** Least privilege here means the administrator reads warranties under a READ code instead of an ISSUE code — not that it stops reading them. Re-pointing the route while withholding the code would have been a regression dressed as a restriction. `wty.warranty.issue` is NOT withdrawn: `wty.warranty-generate` still declares it, and an administrator that could not hold it could not delegate a warranty clerk. Bundle **73 → 74**; `tests/backend/p1-31-provisioning-bundle.test.ts` keeps P-1's six and P-7's one as separate constants so neither widening can drift into the other                                                                                                                                                                                  | this slice                                                        | closed |
+| **CC-08** | organisations provisioned **before** this slice lose the warranty detail read               | The bundle is written ONCE, inside `platform.organization-provision`, and nothing re-applies it. An organisation provisioned on the 48-, 65-, 67- or 73-code bundle holds `wty.warranty.issue` and NOT `wty.warranty.read`, so from this commit its administrator is refused `GET /warranties/{warrantyId}` with `ERR-IAM-001` — a read it could perform yesterday. It also cannot delegate the code, because `ins_role_permissions_delegable` admits a mapping only when the acting administrator already holds it. This is CC-03's residual with a sharper consequence: CC-03 withholds something new, this one **withdraws something old**                                                                                                                                           | **RESOLVED, by the route this row itself named.** It was accepted and filed rather than silently shipped, on the stated understanding that it "resolves the moment A0 decision **D-2** (the backfill) is answered" — and it was answered the same day. Where it landed: the backfill of **CC-11**, which carried `wty.warranty.read` onto all 24 administrator roles on the shared acceptance environment. The withdrawn read is measured back rather than assumed: `tests/backend/p1-31-tenant-administrator-bundle-backfill.test.ts` **BF-4** is refused `GET /warranties/{warrantyId}` with `ERR-IAM-001` on a stale role and gets past that gate on the same role after the backfill. `wty.warranty.issue` was not touched, here or anywhere                                                          | Owner decision D-2, answered; delivered by the D-2 backfill slice | closed |
+| **CC-09** | the warranty list is **not a pure publication** of an existing repository method            | Same class as **CC-05**, and the governing precedent is the same: `sal.work-order-invoice-read` states "This publishes the existing read; it adds no query and no second mapper." Half holds and half does not. Every finder in `WarrantyRepository` is addressed by an identifier the caller must ALREADY possess — a record id, an idempotency key, a delivery id — so there was no branch-wide read to publish and the query is new, as is `findPolicies`, the set form of the existing identity read                                                                                                                                                                                                                                                                                | **accepted, and recorded rather than presented as a publication.** What the rule protects is preserved: **no second mapper and no second wire contract.** Rows come back through the existing `toRecord`, policies through the existing `toPolicy`, and `WarrantyRecordListView` spells every field exactly as `WarrantyView` spells it — the suite asserts key-by-key equality between a list row and the detail body, so the two shapes cannot drift. The policy block is carried rather than a bare `policyId` because no operation lists warranty policies (**PPD-04** / P-10), and publishing an identifier nobody can resolve is the defect this phase keeps finding. **Addendum 2026-09-11:** `wty.warranty-policy-list` (PR #356) lists policies; the generation picker consumes it (see §43/§48) | this slice                                                        | closed |
+| **CC-10** | the list does **not** close `wty.warranty_record_status_history`, and P-6 never asked it to | A0 records item 9 ("warranty history") as blocked on two facts: the chapter declares `GET /api/v1/warranties`, which did not exist, and `wty.warranty_record_status_history` "appears nowhere in `apps/api/src`". **P-6 names only the first.** The second is still true after this slice: the append-only warranty status ledger has no reader, exactly as the delivery ledger had none before P-5 published it                                                                                                                                                                                                                                                                                                                                                                        | **open, unchanged, and stated so it cannot be read as closed.** A reader who sees a warranty list published might reasonably assume **VHM-06 / WF-26 / PPD-13** was fully addressed; only its list limb was. Publishing the ledger read would be a second contract this prerequisite does not sanction, and the P-5 precedent shows what it costs: a new query and a new row shape. It needs a prerequisite of its own or an explicit extension of P-6                                                                                                                                                                                                                                                                                                                                                    | a later `wty` read slice, with FE-009                             | open   |
 
 ## 14. What this slice did NOT do
 
@@ -1562,7 +1562,941 @@ suppresses nothing.
   The evidence for this slice is the local frontend chain and the focused web run named in the
   record document. The branch is unmerged as this section is written.
 
-## 50. The report screens — PROVISIONAL
+---
+
+## 43. The warranty record screens — **PROVISIONAL** (FE-008, FE-009 partial)
+
+**This whole section is PROVISIONAL, and so is its identifier.** It records work on
+`feature/p1-31-warranty-record-screens`, opened against `develop` `01c32937`, re-based by merge onto
+protected `develop` `c1b1a8cd` on 2026-09-11 and onto protected `develop` `ae0e0354` on 2026-09-12.
+The branch is **unmerged** and has **no hosted result**; it carries an open pull request. Nothing
+below claims otherwise.
+
+### 43.1 Identifier allocation — PROVISIONAL, dated 2026-09-11, re-checked at the `ae0e0354` sync
+
+At the base head this register ran to **section 39** and to **CC-26**. **At the merge base this
+section now sits on — protected `develop` `ae0e0354` — it runs to section 42 and to CC-30**: the
+report engine (P-11) landed section 40 with **CC-27** and **CC-28**, and the ready-for-delivery
+queue (FE-001) landed section 42 with **CC-30**; all three are **settled**, not in flight. Section
+41 is still held by the coordinator's standing allocation for a lane that has not merged, so this
+slice does **not** claim the next number in sequence. It keeps the heading and identifier it
+reserved deliberately ahead of the front, and the reservation **stays PROVISIONAL** precisely
+because 41 is unmerged: a collision must be a reconciliation and never a silent renumbering of
+somebody else's record.
+
+| id               | lane                                         | state at this base                             |
+| ---------------- | -------------------------------------------- | ---------------------------------------------- |
+| **CC-24**        | the readiness queue (D-3)                    | section 39, merged into this base              |
+| **CC-25**        | the delivery write paths                     | section 38, merged into this base              |
+| **CC-26**        | receiver identity-evidence document category | section 38, merged into this base              |
+| **CC-27, CC-28** | the report engine (P-11, engine half)        | **section 40, settled, merged into this base** |
+| **CC-29**        | reserved for the lane at section 41          | not allocated here; unmerged at this head      |
+| **CC-30**        | the ready-for-delivery queue (FE-001)        | **section 42, settled, merged into this base** |
+| **CC-31**        | this slice                                   | **PROVISIONAL**, this branch, section 43       |
+
+**Reconciliation rule.** If section 43 or **CC-31** is occupied when this branch integrates, this
+section moves to the next free heading and this identifier to the next free identifier, and the move
+is recorded here with its date. No existing identifier and no historical result is renumbered to
+accommodate it. Both syncs exercised exactly that rule in the other direction: section 40 with
+**CC-27/CC-28**, and then section 42 with **CC-30**, arrived while this branch was open, neither
+collided with 43 or **CC-31**, and nothing here was renumbered.
+
+### 43.2 What was delivered
+
+Two route pages — the branch warranty list at `/{locale}/warranty` and the warranty record at
+`/{locale}/warranty/{warrantyId}`, both gated on `wty.warranty.read` and both deciding before they
+read — a warranty feature (contract, adapters, shared pieces, two screens), an issue control drawn
+on the handover screen for a caller holding `wty.warranty.issue`, a `warranty` navigation entry at
+`available`, the English and Arabic wording for all of it, and two new web test files. The full
+record is [`warranty-record-screens.md`](./warranty-record-screens.md).
+
+`wty.warranty-detail`, `wty.warranty-generate` and the two policy reads were added to
+`P1_31_OPERATION_IDS` in `scripts/ci/check-p1-31-access.mjs`. That gate's scope is an allow-list of
+OPERATIONS, so an operation a P1-31 screen calls and the list omits is one the gate has quietly
+stopped owning. The detail and the generation share resource roots already derived and widen
+nothing; the two policy reads add one owned segment. Measured at this merge base, the gate reports
+**11 route pages across 8 owned segments**, against the 9 and 7 that `develop` `ae0e0354` pins, and
+the pins in `tests/ci/p1-31-access-gate.test.ts` were moved to 11 and 8 in this sync.
+
+### 43.3 Disposition
+
+| id        | what is accepted                                                                       | measured basis                                                                                                                                                                                                                                                                                                                                                              | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | owner               | state          |
+| --------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | -------------- |
+| **CC-31** | **FE-009 ships PARTIAL: a vehicle-filtered list, and no per-record transition ledger** | `wty.warranty_status_history` (the table’s real name; CC-10 above records it as `wty.warranty_record_status_history`, which no migration ever created) is written by the database and read by **no operation anywhere** in `apps/api/src` — **CC-10**, unchanged. The only history that can be read honestly is `wty.warranty-list` filtered by its one filter, `vehicleId` | **accepted, with the missing half NAMED and NOT simulated.** The record screen states in the operator's own language that the transition record cannot be read yet. No sequence is composed from the record's current state: an invented ledger would be believed, which is worse than an absent one. The backend prerequisite is named as **P-18 — warranty history reader**, a `wty.warranty.read` branch-scoped read over the existing table. It is a Backend seam and is not in this lane | a Backend seam lane | open, recorded |
+
+### 43.4 What this slice did NOT do
+
+- **No backend file was edited**, no migration was written, no seed changed and no permission was
+  minted. Both codes the screens consult already exist.
+- **No warranty policy or coverage administration screen.** P-10 published seven policy and coverage
+  operations and this slice consumes exactly one of them — `wty.warranty-policy-list`, which fills
+  the plan picker on the issue control, so a plan is CHOSEN by name rather than named by an
+  identifier an operator cannot discover. Creating, renaming, archiving or restoring a plan, and
+  everything to do with coverage windows, still has no screen.
+- **No history reader and no simulated history.** See CC-31.
+- **No gate was weakened, no allow-list narrowed and no suppression added.** The web test floor was
+  raised, which makes a gate stricter rather than weaker — see 43.5. The P1-31 access gate's
+  operation list was EXTENDED by four operations, which widens what the gate owns rather than what
+  it permits. The two policy reads add an eighth owned route segment, `warranty-policies`, which no
+  page occupies yet.
+- **No merge into any protected branch, no hosted run and no acceptance.** The branch carries an
+  open pull request, #369, and is pushed; neither is a result. Every figure quoted in this section
+  is from a LOCAL run.
+
+### 43.5 The web test floor was ratcheted, and what that costs
+
+**The measured fact.** `apps/web/tests` now DECLARES 3073 cases across 135 files, and the tier
+EXECUTES 3788 with 0 failed and 0 skipped at this merge base — a local `--record web` run of this
+branch, recorded in `docs/phase-1/phase-1-27/evidence/local-run-ledger.json` with the commit it was
+taken at. It executed 3749 at `467a2681`, before either sync; the 39 additional tests arrived with
+the `ae0e0354` merge, and the baseline's `measured` provenance field still records the 3749 run, so
+the committed floor's headroom now reads 88 rather than 49. Moving that field is a baseline decision
+and was not taken in this sync. No hosted run of this branch exists, and none is claimed.
+
+**Why the floor had to move.** `tests/ci/web-test-floor.test.ts` case `WTF-08` refuses a floor
+beneath cases that physically exist. The committed floor was 3050, the declared count crossed it,
+and the baseline's own `howToRaise` says to raise a floor in the commit that adds the tests. The
+three values move together so that all three describe ONE run: `minTests` 3050 -> 3700, `measured`
+3125 -> 3749, `measuredFiles` 117 -> 135. Upward only; nothing in the baseline was lowered, and the
+unit and backend entries were left alone because their `measured` is hosted run 19 provenance
+rather than a local figure.
+
+**The engineering consequence.** The floor was not chosen; it was forced into a window from three
+sides. `WTF-08` puts it at or above 3073. `WTF-09` refuses a headroom wider than the largest file
+in the tree (88 declared cases in `api-client.test.ts`, which executes 136), so it may not sit
+below 3661. `tests/ci/baseline-integrity.test.ts` refuses a headroom under one per cent of the
+measurement, so it may not sit above 3711. 3700 is the round number inside [3661, 3711]. The
+headroom therefore narrows from 75 executed tests to 49, and the guarantee sentence in the baseline
+states that bound rather than a slogan: any net loss of more than 49 executed tests is detected,
+which still covers the deletion of any single web test file. The cost is that the next slice to add
+web tests has less room before it must move the floor again, and a slice that DELETES web tests
+must state why rather than let the count drift down.
+
+**What travelled with it.** The two derived sites that read `web.minTests` and the three that read
+the recorded web total — the clean-room floor row and the sentence beside it, the current-tree
+total and its two restatements — with their five closing-value ledger entries, the re-recorded
+unit and web tiers, and the regenerated P1-27 evidence manifest. The baseline file classifies as
+`tooling`, a bucket the `p1-31-frontend` ownership profile allows.
+
+---
+
+# FE-007 — the printable delivery handover document, of 2026-09-11
+
+## 44. What the FE-007 slice changed — the printable delivery handover document (PROVISIONAL)
+
+**Slice:** `feature/p1-31-delivery-document`, ownership profile `p1-31-frontend`.
+**Baseline:** protected `develop` **deb404c1901d2b270a71f5336978d09a04e16293**, merged in on
+2026-09-12 — the head that carries the readiness queue (#367) and the warranty record screens
+(#369). It supersedes the earlier integration of **c1b1a8cdd822e3e70667600a0309d36a7d6438c6** on
+2026-09-11; the slice was written against **01c32937c2d6f5f78f5757cb83c6fdf2995f1dad**.
+**Status:** merged with pull request **#368** into protected `develop` `8c4e6a9c`, and
+restated at that merge on 2026-09-12: section 44 and **CC-32** are settled, so the PROVISIONAL
+markers this section carries read as history rather than as current state. This document records no
+hosted run and claims no acceptance.
+
+The full record is [`delivery-document.md`](./delivery-document.md). In short: the vehicle-handover
+screen gains a printable sheet, composed on the client from reads it already holds, publishing
+nothing and writing nothing.
+
+**The Owner's decision (D-7, 2026-09-10), in the Owner's words.** The delivery document is a
+**permission-checked printable operational view**. Stored immutable document versions **remain
+deferred** and arrive, if ever, through their own contract rather than as a side effect of a print
+view. The printable view is **never described as an immutable archive**, in the interface, the
+documentation or a commit message. It is **permission-checked**: a caller sees only what the reads
+they already hold publish. Recorded in
+[`owner-decisions-2026-09-10.md`](./owner-decisions-2026-09-10.md) §2.
+
+**Measured facts (not part of the decision).** The shared print frame, the print stylesheet and the
+invoice screen's print panel already exist and are the approach D-7 names. Six delivery reads are
+already consumed by this screen. The release checks declare the financial read code on top of the
+delivery one. The delivering employee, the vehicle, the visit and the final odometer reading are
+bare identifiers with no reader in the platform. A work-order summary read DOES exist and publishes
+a work-order number, a customer display name, a registration plate and a make and model under
+`wo.work_order.read`. The session carries no company or branch NAME.
+
+**Engineering consequence (not an Owner decision).** The sheet is a panel of the existing screen
+rather than a second route; its reads happen when it is opened; the release checks are reused from
+the screen's one eligibility answer rather than read again; the work-order read is used under its
+own code and is not made without it; each part prints the OUTCOME of its read rather than an empty
+section; one page of each list is printed and truncation is said; the signature image and the
+identity evidence stay references; no company, branch or organisation name and no figure is
+printed; the footer disclaimer is a translated string in both catalogues.
+
+### 44.1 What was published, and what was minted (PROVISIONAL)
+
+| published | minted  |
+| --------- | ------- |
+| nothing   | nothing |
+
+No operation, no route, no path, no permission, no audit action, no migration and no seed. The
+operation register and the permission catalogue are unchanged, and `npm run validate:p1-31-access`
+reports the same derivation over the same page count as it does on the base commit.
+
+### 44.2 Dispositions (PROVISIONAL)
+
+| id        | finding                                                                                                                                                                                    | measured                                                                                                                                                                                                                                                                                                                 | disposition                                                                                                                                                                                                                                                                                                                                                                                              | owner / slice | status |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------ |
+| **CC-32** | the printed sheet carries a **reference** for the delivering employee where a person's name belongs, so a customer-facing printout names nobody for the person who handed the vehicle over | `sal.delivery_records.delivering_employee_id` has no reader anywhere in the platform, and the display-name field arrives with the backend slice D-12 describes, which is not merged at this head. The reception acknowledgement solved the same problem with a stamped identity, and no equivalent exists for a handover | **accepted, and the remedy is NAMED rather than performed.** The sheet prints the identifier as the labelled reference it is and states that the system holds no name for it. Inventing a name on this tier — or resolving one from a live directory read — would print, and hand to a customer, either a fabrication or the account's name TODAY rather than at the handover. The fix is the D-12 slice | later slice   | open   |
+
+**Identifier note — the section number and the identifier are PROVISIONAL, allocated 2026-09-11.**
+At the base commit `c1b1a8cd` the register runs to **section 40** and **CC-01 … CC-28**: the
+report engine (P-11) settled **section 40** with **CC-27** and **CC-28** at this sync, and the
+sections and identifiers below 40 are settled with it. P1-31 lanes are still in flight and unmerged
+at that head, and each will take a heading — and, where it raises one, an identifier — before this
+slice can be integrated. Rather than claim a number another lane
+may already hold, this slice takes **section 44** and **CC-32** provisionally: far enough ahead to
+avoid a collision, and to be **re-seated against the then-current register at integration**, exactly
+as §38 and §39 were seated against the head they were integrated onto. Nothing downstream may treat
+either number as settled until that reseating happens.
+
+### 44.3 What this slice did NOT do (PROVISIONAL)
+
+- **No stored document version.** Nothing is created, uploaded, registered or linked. Stored
+  immutable versions remain deferred per D-7, and this printout is not one and does not claim to be.
+- **No backend print route and no new operation.** `apps/api` and `supabase` are not edited at all.
+- **No permission was minted.** `wo.work_order.read` is a pre-existing code the work-order screens
+  already consult; it is resolved on the delivery route page for the sheet's work-order read and
+  gates nothing else.
+- **Nothing is written from the sheet.** Neither new file imports a write adapter, and the test
+  suite asserts every write of this feature untouched while the sheet is composed and printed.
+- **No gate was weakened and no allow-list widened.** No suppression comment was added.
+- **No acceptance is claimed.** Pull request #368 is open and unmerged; this document records no
+  hosted run, no browser pass and no environment.
+
+### 44.4 Proof (PROVISIONAL)
+
+| id       | what was shown                                                                                                                              |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D7-1** | a caller the route refuses reaches no control and makes none of the reads the sheet needs                                                   |
+| **D7-2** | nothing is read for the sheet until it is opened                                                                                            |
+| **D7-3** | the opened sheet carries the frame the print stylesheet finds, with the rows the mocked reads published                                     |
+| **D7-4** | the customer, the plate and the work-order number come from the work-order read when its code is held, and that read is NOT made without it |
+| **D7-5** | the financial half is absent, unrequested and SAID to be absent without the financial read code                                             |
+| **D7-6** | a refused part prints as a refusal with the backend's reference, never as an empty section, and a truncated list says so                    |
+| **D7-7** | the disclaimer D-7 requires is on the sheet in English and in Arabic                                                                        |
+| **D7-8** | the print control appears only after the reads land and sits inside the toolbar the print stylesheet hides                                  |
+| **D7-9** | every write adapter of this feature is untouched throughout                                                                                 |
+
+## 45. What P-11 changed — the report engine, dataset slice 2 (`technician_labor_time`)
+
+**Slice:** `remediation/p1-31-backend-report-engine-datasets`, ownership profile `p1-31-backend`.
+**Baseline:** `remediation/p1-31-backend-report-engine-work-orders` at `c7fb9f9e` — PR #364's
+branch, which is itself UNMERGED. This slice is STACKED on it and inherits its unmerged state.
+**Restated at the `8c4e6a9c` merge, 2026-09-12:** PR #364 has since merged, so the base of this
+slice is now protected `develop` `8c4e6a9c` and the stacking above is history rather than current
+state. Sections 42 and 43 are allocated and settled on `develop`, and section 44 has since been
+taken by the FE-007 printable delivery handover document, merged as #368 — so the heading numbers
+45, 46 and 47 are settled and no longer provisional. Section 41 remains unwritten and is not a
+number this lane holds. **CC-33**, **CC-34** and **CC-35** stay as allocated: section 44 raised
+**CC-32**, so nothing collides.
+
+**Identifier allocation — re-checked 2026-09-12 against protected `develop` `8c4e6a9c`.** Section
+36.1 records the register's rule: identifiers are allocated when a finding is raised and are never
+renumbered to follow heading order. The rows below were first read from `c7fb9f9e`, which was behind
+protected `develop`; they have since been read off the merged tree at `8c4e6a9c`, which is why the
+heading number and the identifier are now settled rather than provisional.
+
+| id                   | lane                                                 | state as this branch can see it                           |
+| -------------------- | ---------------------------------------------------- | --------------------------------------------------------- |
+| **CC-27**, **CC-28** | the report engine, engine half (P-11 1/4, PR #364)   | this branch's base, section 40 — settled                  |
+| section 41           | the coordinator's standing allocation: P-17          | still not written at the `deb404c1` merge                 |
+| section 42           | the ready-for-delivery queue screen (FE-001)         | on protected `develop` — settled                          |
+| section 43           | the warranty record screens (FE-008, FE-009 partial) | on protected `develop` — settled                          |
+| section 44           | the printable delivery handover document (FE-007)    | on protected `develop` (#368) — settled, raised **CC-32** |
+| **CC-29 … CC-32**    | not allocated by this lane                           | **CC-32** is section 44’s; the rest sit between 40 and 45 |
+| **CC-33**            | this slice                                           | this branch, section 45 — settled, no collision           |
+
+**The section number and the identifier were re-checked against protected `develop` `8c4e6a9c` at
+this merge and neither collides, so neither is renumbered.** A register whose identifiers collide is
+worse than one that renumbers. Nothing in this section depends on the number being right.
+
+### 45.1 What was published, and what was minted
+
+| published                                                                             | minted  |
+| ------------------------------------------------------------------------------------- | ------- |
+| 1 dataset, 0 operations, 0 routes, 0 paths, 0 audit actions, 2 new module files       | nothing |
+| 2 module port methods (1 new port, 1 method on an existing one), 1 ordering contract  | nothing |
+| register unchanged at **407** operations and **316** OpenAPI paths; audit actions 232 | nothing |
+| bundle unchanged                                                                      | nothing |
+
+**Measured facts (not part of the decision).**
+
+- **`technician_labor_time`** joins the dataset registry, which now holds exactly **two** entries. A
+  case asserts the exact list, so a third cannot arrive quietly.
+- **The report has an ordering contract of its OWN**, `tech.technician_labor_time:started_at_desc`,
+  keyed on the report rather than on the table. The per-job labour log keeps
+  `tech.labor_sessions:started_at_desc`. Both sort `started_at` descending with the row id as the
+  tie-break over the same table, and the SELECTIONS differ — one job's whole log against a branch's
+  contributing sessions in a period — so a cursor minted by the list is refused with `ERR-PAG-001`
+  rather than starting a report page in the wrong place. A case mints the cursor through the list
+  route itself and shows the report refusing it.
+- **`tech.labor_sessions` has no status column and no cancelled state.** The soft delete and
+  `source = 'correction'` are its entire lifecycle
+  (`supabase/migrations/20260722099000_tech_labor_sessions.sql`). It also has no duration column, and
+  a session names a JOB rather than a work order.
+- **OpenAPI paths/operations unchanged (407/316).** `docs/api/openapi.v1.json` was not changed by
+  this branch, and the response schema of `rpt.report-run` is BARE by repository convention
+  (`a0-preflight.md` records it for QA-002), so the envelope fields are described only in the
+  named wire types exported from `apps/api/src/modules/reporting/index.ts`. No operation, path, permission,
+  audit action, migration or seed row moved. `tech.technician.read` and `wo.work_order.read` are
+  both existing catalogue rows; the dataset naming the second one NARROWS what the report
+  discloses and mints nothing.
+- **Two new source files** under `apps/api/src`: `server/db/period.ts` and
+  `modules/technician/application/labor-report-port.ts`. The instrumented-file denominator in
+  `tests/ci/baseline-integrity.test.ts` moves 282 → 284 with the admitted count 283 → 285. **The
+  coverage FLOORS are untouched**; re-establishing them needs a hosted measurement run, which this
+  slice did not perform and does not claim.
+- **The generated P1-24 operation register was regenerated** and lists the new suite against the
+  operations its text references. It was not hand-edited.
+- **The P1-27 evidence manifest was regenerated** (`npm run evidence:p1-27`) because two documents it
+  digests carry derived `tests/backend` file counts that a new test file moves, 136 → 137 and
+  145 → 146.
+
+### 45.2 Dispositions
+
+| id           | finding                                                                                                                      | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | owner / slice | status                    |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------------------------- |
+| **CC-33**    | this report publishes a WORK-ORDER reference, and the caller must therefore hold the work-order module's own read code       | **Measured facts (not part of the decision).** `technician_labor_time` resolves each labour session's job to its WORK ORDER and publishes that reference as a column, because D-4 names "work-order reference" among the report's columns. As first implemented the dataset declared ONE required code, `tech.technician.read` — the code `tech.labor-session-list` already declares for the same rows (`apps/api/src/app/api/v1/jobs/[jobId]/labor-sessions/route.ts`). That operation, however, answers for ONE job the caller already holds; this report enumerates a branch's sessions and names each one's work order and display number. So a caller holding `rpt.report.read` and `tech.technician.read` and NOT `wo.work_order.read` would learn which work orders carried labour in the branch. D-4 names the column and does not state which permission it sits behind | **Engineering consequence (not an Owner decision), taken and implemented on this branch, which is unmerged.** TWO codes: `requiredPermissions` is `['tech.technician.read', 'wo.work_order.read']` and the check is CONJUNCTIVE — the whole report is refused to a caller who lacks either, never answered with the reference column blanked. A report is not a way to be told something the record's own read operation would refuse, and the delivery readiness seam set the precedent that a read spanning two modules names both modules' codes and fails closed. **This is a narrowing, not a broadening:** no caller gains anything, and the only callers affected are those who could previously see a reference they could not have read directly. Both codes are existing catalogue rows; no permission was minted and no bundle moved. **The row is closed by implementation rather than left open for the Owner** — the disclosure it raised no longer exists. What remains, if the Owner wants it, is the opposite question: whether a caller who may read labour but not work orders should receive the report with the reference column ABSENT instead of a refusal. That is a change to D-4's column list and therefore the Owner's, and nothing on this branch presumes an answer. Stated in `report-engine-seam.md` § 11.3 and on the registry entry itself | this slice    | settled — implemented     |
+| **CC-33(a)** | the `technician` column publishes a drill-through template for a client screen that does not exist                           | `apps/web` has `technicians/me` and no per-technician route at this head; FE-012 is not started. Slice 1 set the precedent that `drillThrough` is a TEMPLATE the client resolves against its own route table, not a URL the API builds — `report-run-service.ts` says so in the type's own docblock — and slice 1 also left `customer` and `vehicle` without one although both have screens, so the repository carries no rule either way                                                                                                                                                                                                                                                                                                                                                                                                                                        | **Engineering consequence, implemented.** The template is published as `/technicians/{id}`. A client without that route renders no link; nothing about the row depends on it, because the profile id travels in the cell. It is recorded as a named prerequisite (`report-engine-seam.md` § 9 row 7) so FE-012 inherits it rather than discovering it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | this slice    | settled — recorded in § 9 |
+| **CC-33(b)** | the shared run envelope was changed, and `countsByState` — a field slice 1 published — is now deprecated rather than removed | Slice 1 recorded the limitation in its own seam record as named prerequisite 2: `countsByState` is one dataset's grouping sitting on a shared envelope, and the reports after it group differently                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | **Closed on this branch.** `groups` carries every group of the whole selection with string-valued measures. `countsByState` is retained, marked deprecated, and DERIVED from `work_orders_by_status`'s own groups so the two cannot disagree; it is empty for every other dataset. It is NOT removed here: removing a published field in the same change that adds its replacement leaves a consumer no window in which both exist. Its removal is a named prerequisite (§ 9 row 5) and belongs with a check that nothing still reads it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | this slice    | settled                   |
+
+### 45.3 What this slice did NOT do
+
+- **No migration and no schema change.** Every statement uses grants and policies that already
+  existed; `tech` and `wo` are untouched.
+- **No permission was minted and no bundle changed.** `tech.technician.read` and
+  `wo.work_order.read` are both existing catalogue rows; this is the first report to require the
+  first one, and the second is the code `wo.work-order-read` already declares.
+- **No new operation, no new route and no new path.** `rpt.report-run` serves the dataset, and
+  `docs/api/openapi.v1.json` was not changed by this branch.
+- **No export.** Prerequisite P-12 is untouched; `rpt.export` stays excluded on **CC-04**'s grounds
+  and a baseline still names no export permission.
+- **No frontend.** `apps/web/src` was not edited at all — not even through
+  `lib/api/idempotent-operations.ts`, because no published operation moved.
+- **The remaining two baseline reports are not implemented.** `inventory_movements` and
+  `invoice_payment_summary` are named prerequisites and nothing here narrows them.
+- **`WorkOrderRepository.statusSummary` was not redesigned.** Its period predicate now comes from
+  `server/db/period.ts` instead of being written in the method; the expression, the bind values and
+  their positions are unchanged, and engine slice 1's suite is what says the move changed nothing.
+- **No allow-list was widened and no gate was suppressed.** No `@ts-expect-error`, no
+  `eslint-disable`, no skipped or retried test. `scripts/check-operation-test-coverage.mjs` was NOT
+  edited: the new suite declares a `COVERAGE-EVIDENCE` block beside its assertions, and
+  `rpt.report-run`'s required evidence was already provided by slice 1's file, so the manifest
+  needed no change and adding one would have been an edit outside this lane's declared scope.
+- **The P1-23 and P1-24 mutation matrices were not run**, and no mutation was re-targeted: this
+  slice redefines no property either matrix attacks.
+
+### 45.4 Proof
+
+**Measured facts (not part of the decision) — where these results come from.** The runs below were
+observed on 2026-09-11 at this branch's head. Every database-bound run used a DISPOSABLE LOCAL
+CLONE, `p131_report_controls_20260910` on `127.0.0.1:55432`, carrying 139 migrations, with
+`DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` stated explicitly in the environment
+of each command and the environment printed before each one:
+
+| run                                                                                         | result                 | database window (UTC) |
+| ------------------------------------------------------------------------------------------- | ---------------------- | --------------------- |
+| `tests/backend/p1-31-report-engine-technician-labor.test.ts`, on the clone                  | 22/22                  | 12:54:35 → 12:54:46   |
+| the four reporting backend suites together, on the clone                                    | 4 files, 93/93         | 12:54:52 → 12:55:16   |
+| `tests/unit/p1-31-report-configuration-controls.test.ts` + `tests/openapi-contract.test.ts` | 27/27                  | no database           |
+| `npm run test:unit` (whole unit tier)                                                       | 3300/3300 in 122 files | no database           |
+| `tests/ci` (whole directory)                                                                | 1986/1986 in 68 files  | no database           |
+
+**There was no hosted gate, no run against the shared database, and no merge.** This branch has no
+remote head and no checks recorded, and its base PR #364 is itself unmerged. Final integration and
+shared-database evidence follow the coordinator's dependency and database ownership sequence, at
+this branch's own turn after #364 merges.
+
+| id        | what was shown                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **S2-1**  | `tests/backend/p1-31-report-engine-technician-labor.test.ts` — the columns in the Owner's order and their kinds, the rows, the groups, the period, the authorization and the paging, on real sessions against real jobs on real work orders in a branch this suite owns                                                                                                                                                                                                          |
+| **S2-2**  | the permissions from BOTH sides: a principal holding `rpt.report.read` alone is refused naming `tech.technician.read` by the SERVICE, one holding `tech.technician.read` alone is refused naming `rpt.report.read` by the ROUTE, and one holding `rpt.report.read` and `tech.technician.read` but NOT `wo.work_order.read` is refused naming the work-order code — with the fully-granted caller answering on the same request, so the refusal is that one code and nothing else |
+| **S2-3**  | the three contributing rules, each on its own fixture technician because the partial GiST EXCLUDE forbids them coexisting on one: a running session excluded, a soft-deleted session excluded, and a corrected session counted ONCE on its amended window — with the retired original proved still present in the table                                                                                                                                                          |
+| **S2-4**  | the half-open period in the BRANCH zone on FOUR instants: local midnight on the first included day is IN, one second earlier is OUT, one second before local midnight on the excluded day is IN, and that midnight itself is OUT                                                                                                                                                                                                                                                 |
+| **S2-5**  | the absence of a cancelled bucket proved against `information_schema`: `tech.labor_sessions` has no `status`, `state` or `cancelled_at` column, so there is nothing to exclude and nothing is shown                                                                                                                                                                                                                                                                              |
+| **S2-6**  | the groups sum exactly — one technician's two sessions total the sum of the two durations the rows carry — and the groups are identical on both pages of a paged run, so they answer for the selection and not for the page                                                                                                                                                                                                                                                      |
+| **S2-7**  | the null technician label as a COUNTERFACTUAL: the same rows read by a principal without `iam.user.read` carry the same ids and no names, and nothing is invented or refused                                                                                                                                                                                                                                                                                                     |
+| **S2-8**  | branch isolation with RLS reach deliberately widened into the refused branch, so the refusal is the scoped permission evaluation and not an empty result set; and the sibling branch's own sessions are invisible to the reported branch                                                                                                                                                                                                                                         |
+| **S2-9**  | `countsByState` empty for this dataset and still correct for `work_orders_by_status`, derived from that dataset's groups — slice 1's suite is unchanged in that respect and still green                                                                                                                                                                                                                                                                                          |
+| **S2-10** | the period helper changed nothing: `WorkOrderRepository.statusSummary` now composes it, and slice 1's boundary, counting and paging cases pass unmodified                                                                                                                                                                                                                                                                                                                        |
+
+---
+
+### 45.5 Remediation — `P1-31-P-11-025`, 2026-09-11
+
+**Measured facts (not part of the decision).** A review of this branch found the labour report
+paging on the PER-JOB log's ordering contract key, `tech.labor_sessions:started_at_desc`, so a
+cursor minted by `tech.labor-session-list` was accepted by a read over a different selection. The
+report now carries its own key, `tech.technician_labor_time:started_at_desc`, and the per-job list
+keeps the table's. **S2-11** is the case that says so: the cursor is minted by the list ROUTE
+itself, the report refuses it with `ERR-PAG-001`, and the report's own cursor still pages on the
+same request shape — so the refusal is the contract key and not paging being broken for the
+dataset. No operation, path, permission, audit action, migration or seed row moved, and the
+published wire shape is unchanged: a cursor is opaque.
+
+Three record corrections were made in the same commit and are not code changes: the OpenAPI
+sentences in § 45.1, § 46.1, § 47.1 and the three "did NOT do" lists now state that
+`docs/api/openapi.v1.json` was not changed by this branch and that the response schema is bare by
+repository convention; the `money` column-kind docblock in
+`apps/api/src/modules/reporting/domain/report-datasets.ts` no longer says no dataset emits one,
+because `invoice_payment_summary` emits four; and **CC-35(a)** and **CC-35(b)** are reclassified
+from settled engineering consequences to OPEN Owner-level items beside **CC-35**, each carrying one
+recommendation pending Owner approval.
+
+Re-measured at the remediation head against the same DISPOSABLE LOCAL CLONE,
+`p131_report_controls_20260910` on `127.0.0.1:55432`, carrying 139 migrations, with
+`DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` stated explicitly and the
+environment printed before each command:
+
+| run                                                             | result           | database window (UTC) |
+| --------------------------------------------------------------- | ---------------- | --------------------- |
+| `tests/backend/p1-31-report-engine-technician-labor.test.ts`    | 25/25            | 18:52:05 → 18:52:16   |
+| `tests/backend/p1-31-report-engine-work-orders.test.ts`         | 29/29            | 18:52:44 → 18:52:58   |
+| `tests/backend/p1-31-report-engine-inventory-movements.test.ts` | 25/25            | 18:53:02 → 18:53:15   |
+| `tests/backend/p1-31-report-engine-invoice-payment.test.ts`     | 26/26            | 18:53:19 → 18:53:34   |
+| the six reporting backend suites together, on the clone         | 6 files, 147/147 | 18:53:39 → 18:54:17   |
+
+The figures in § 45.4, § 46.4 and § 47.4 were observed at each slice's own head and are left as
+recorded there; the table above is this head's measurement. There was still no hosted gate, no run
+against the shared database and no merge.
+
+---
+
+## 46. What P-11 changed — the report engine, dataset slice 3 (`inventory_movements`)
+
+**Slice:** `remediation/p1-31-backend-report-engine-datasets`, ownership profile `p1-31-backend`.
+**Baseline:** `remediation/p1-31-backend-report-engine-work-orders` at `c7fb9f9e` — PR #364's
+branch, which is itself UNMERGED. This slice is STACKED on it and inherits its unmerged state.
+**Restated at the `8c4e6a9c` merge, 2026-09-12:** PR #364 has since merged, so the base of this
+slice is now protected `develop` `8c4e6a9c` and the stacking above is history rather than current
+state. Sections 42 and 43 are allocated and settled on `develop`, and section 44 has since been
+taken by the FE-007 printable delivery handover document, merged as #368 — so the heading numbers
+45, 46 and 47 are settled and no longer provisional. Section 41 remains unwritten and is not a
+number this lane holds. **CC-33**, **CC-34** and **CC-35** stay as allocated: section 44 raised
+**CC-32**, so nothing collides.
+
+**Identifier allocation — re-checked 2026-09-12 against protected `develop` `8c4e6a9c`.** Section
+36.1 records the register's rule: identifiers are allocated when a finding is raised and are never
+renumbered to follow heading order. **CC-34** is this section's allocation, taken from the same base
+as **CC-33** and re-checked with it. **Neither the section number nor the identifier collides on
+`develop` `8c4e6a9c`, so neither is renumbered.** Nothing in this section depends on the number
+being right.
+
+### 46.1 What was published, and what was minted
+
+| published                                                                             | minted  |
+| ------------------------------------------------------------------------------------- | ------- |
+| 1 dataset, 0 operations, 0 routes, 0 paths, 0 audit actions, 1 new module file        | nothing |
+| 1 module port (1 repository method, 1 ordering contract)                              | nothing |
+| register unchanged at **407** operations and **316** OpenAPI paths; audit actions 232 | nothing |
+| bundle unchanged                                                                      | nothing |
+
+**Measured facts (not part of the decision).**
+
+- **`inventory_movements`** joins the dataset registry, which now holds exactly **three** entries. A
+  case asserts the exact list, so a fourth cannot arrive quietly.
+- **`inv.stock_movements` is append-only and immutable**, has no unit column, and its `occurred_at`
+  is assigned `now()` by `shared.stamp_status_history` on every insert
+  (`supabase/migrations/20260723094000_inv_ledger.sql`, `tg_stock_movements_stamp`). `app_runtime`
+  holds SELECT and INSERT on it and no UPDATE.
+- **`movement_type` is CHECK-constrained to five terms** and `transfer` is not among them.
+- **OpenAPI paths/operations unchanged (407/316).** `docs/api/openapi.v1.json` was not changed by
+  this branch, and the response schema of `rpt.report-run` is BARE by repository convention
+  (`a0-preflight.md` records it for QA-002), so the envelope fields are described only in the
+  named wire types exported from `apps/api/src/modules/reporting/index.ts`. No operation, path, permission,
+  audit action, migration or seed row moved. `inv.stock.read` is an existing catalogue row.
+- **One new source file** under `apps/api/src`:
+  `modules/inventory/application/inventory-report-port.ts`. The instrumented-file denominator in
+  `tests/ci/baseline-integrity.test.ts` moves 284 → 285 with the admitted count 285 → 286. **The
+  coverage FLOORS are untouched**; re-establishing them needs a hosted measurement run, which this
+  slice did not perform and does not claim.
+- **The generated P1-24 operation register was regenerated** and lists the new suite against the
+  operation its text references. It was not hand-edited.
+- **The P1-27 evidence manifest was regenerated** (`npm run evidence:p1-27`) because two documents it
+  digests carry derived `tests/backend` file counts that a new test file moves, 137 → 138 and
+  146 → 147.
+
+### 46.2 Dispositions
+
+| id           | finding                                                                                                             | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | owner / slice | status                    |
+| ------------ | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------------------------- |
+| **CC-34**    | D-4 names a TRANSFER whose distinct meaning must be preserved, and the ledger cannot express one                    | **Measured facts (not part of the decision).** `ck_stock_movements_type` constrains `movement_type` to `opening`, `issue`, `return`, `damage`, `adjustment`. The `transfer` movement kind and the `transit` location type were dropped in Phase 1-10, and `modules/inventory/index.ts` states the disclaimer in the module's own surface. There is no primitive a transfer could be assembled from, and a two-movement "transfer" composed in the report would mint a business fact the ledger cannot express | **Engineering consequence (not an Owner decision), implemented.** The report renders the FIVE terms that exist and shows **no transfer bucket**, because an empty one reads as a real zero for a concept that does not exist. What D-4's sentence binds and this dataset does implement is the other half: a RETURN is never netted against an ISSUE — the group key carries the movement type and the `in` and `out` halves are two measures, never one signed sum. `signed_qty` exists on the table and is deliberately not read. Recorded so the Owner can see that the word in the decision has no referent in the schema; **making one is a migration and a module scope change, neither of which this slice takes** | Owner         | recorded — no action here |
+| **CC-34(a)** | the `item` column publishes NO drill-through, unlike every other reference column                                   | The register holds `inv.item-search`, a LIST, and no per-item read operation. Slice 1 set the precedent that `drillThrough` is optional on a `reference` column — `customer` and `vehicle` both carry none                                                                                                                                                                                                                                                                                                    | **Engineering consequence, implemented.** No template is published. Naming a route for an operation that does not exist would publish a link that cannot resolve, and the item id travels in the cell either way, so a client that can resolve an item resolves it. Recorded as a named prerequisite (`report-engine-seam.md` § 9 row 9) so FE-013 inherits it rather than discovering it                                                                                                                                                                                                                                                                                                                                 | this slice    | settled — recorded in § 9 |
+| **CC-34(b)** | the unit on a report row is the item's CURRENT unit, because the movement records none                              | `inv.stock_movements` has no `uom_id` column; the unit is `inv.item_master.uom_id`. Proved against `information_schema` in the suite rather than asserted                                                                                                                                                                                                                                                                                                                                                     | **Engineering consequence, implemented and recorded.** The report joins the item's unit and puts it in the group key, which is what makes D-5's separation visible rather than implicit. The consequence, stated plainly: re-pointing an item's unit restates its whole movement history. Carrying the unit on the movement is a schema change and therefore a migration nobody has authorised; it is `report-engine-seam.md` § 9 row 10                                                                                                                                                                                                                                                                                  | this slice    | settled — recorded in § 9 |
+| **CC-34(c)** | the ledger cannot record a BACKDATED movement, so a period report over `occurred_at` reports when a row was WRITTEN | `tg_stock_movements_stamp` runs `shared.stamp_status_history`, which assigns `NEW.occurred_at := now()` unconditionally, and `app_runtime` holds SELECT and INSERT and no UPDATE. The suite proves all three against the deployed function, trigger and grants                                                                                                                                                                                                                                                | **Recorded, not changed.** The report is exactly as accurate as the column, and for movements posted as they happen the two coincide. What nobody can do is post a movement dated earlier, which a tenant migrating history would need. It is `report-engine-seam.md` § 9 row 11. **The suite's own fixtures restate `occurred_at` with an admin UPDATE after inserting through the full provenance guard**, and say so in the file: `app_runtime` cannot perform that UPDATE, so the fixture is visibly not exercising an application path                                                                                                                                                                               | this slice    | settled — recorded in § 9 |
+
+### 46.3 What this slice did NOT do
+
+- **No migration and no schema change.** Every statement uses grants and policies that already
+  existed; `inv` is untouched.
+- **No permission was minted and no bundle changed.** `inv.stock.read` is an existing catalogue row,
+  and this is the first report to require it.
+- **No new operation, no new route and no new path.** `rpt.report-run` serves the dataset, and
+  `docs/api/openapi.v1.json` was not changed by this branch.
+- **No export.** Prerequisite P-12 is untouched; `rpt.export` stays excluded on **CC-04**'s grounds.
+- **No frontend.** `apps/web/src` was not edited at all.
+- **`InventoryReadService` was not changed.** The report port is a new class beside it, because that
+  service takes a scope authorizer and writes an `inv.movement_history.read` audit row on every call.
+- **The last baseline report is not implemented.** `invoice_payment_summary` is a named prerequisite
+  and nothing here narrows it.
+- **No allow-list was widened and no gate was suppressed.** No `@ts-expect-error`, no
+  `eslint-disable`, no skipped or retried test. `scripts/check-operation-test-coverage.mjs` was NOT
+  edited: the new suite declares a `COVERAGE-EVIDENCE` block beside its assertions, and
+  `rpt.report-run`'s required evidence was already provided by slice 1's file.
+- **The P1-23 and P1-24 mutation matrices were not run**, and no mutation was re-targeted: this
+  slice redefines no property either matrix attacks.
+
+### 46.4 Proof
+
+**Measured facts (not part of the decision) — where these results come from.** The runs below were
+observed on 2026-09-11 at this branch's head. Every database-bound run used a DISPOSABLE LOCAL
+CLONE, `p131_report_controls_20260910` on `127.0.0.1:55432`, carrying 139 migrations, with
+`DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` stated explicitly in the environment
+of each command and the environment printed before each one:
+
+| run                                                             | result                 | database window (UTC) |
+| --------------------------------------------------------------- | ---------------------- | --------------------- |
+| `tests/backend/p1-31-report-engine-inventory-movements.test.ts` | 25/25                  | 14:46:28 → 14:46:37   |
+| the five reporting backend suites together, on the clone        | 5 files, 120/120       | 14:47:44 → 14:48:16   |
+| the six inventory backend suites, on the clone                  | 6 files, 163/163       | 14:48:24 → 14:49:11   |
+| `npm run test:unit` (whole unit tier, includes `tests/ci`)      | 3300/3300 in 122 files | no database           |
+
+**There was no hosted gate, no run against the shared database, and no merge.** This branch has no
+remote head and no checks recorded, and its base PR #364 is itself unmerged. Final integration and
+shared-database evidence follow the coordinator's dependency and database ownership sequence, at
+this branch's own turn after #364 merges.
+
+| id        | what was shown                                                                                                                                                                                                                                                                                                     |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **S3-1**  | `tests/backend/p1-31-report-engine-inventory-movements.test.ts` — the columns in the Owner's order and their kinds, the rows, the groups, the period, the authorization and the paging, on real movements cited to real approved opening lines, part issues, part returns, damage records and approved adjustments |
+| **S3-2**  | all FIVE movement types with the direction the CHECK constrains, including the damage PAIR from one source row, out of the warehouse and in to quarantine                                                                                                                                                          |
+| **S3-3**  | the absence of `transfer` proved against the live `ck_stock_movements_type` definition and against the table, so the report's silence about it is a schema fact rather than a fixture gap                                                                                                                          |
+| **S3-4**  | totals separated by `(item, unit, movement type)` with exact decimal strings, the two units genuinely incompatible (`each` is a count, `litre` a volume), and NO measure spanning two items or two units                                                                                                           |
+| **S3-5**  | a return never netted against an issue: 4.000 issued and 1.500 returned, with 2.500 appearing in no measure and the two kept as two groups                                                                                                                                                                         |
+| **S3-6**  | the half-open period in the BRANCH zone on FOUR instants: local midnight on the first included day is IN, one second earlier is OUT, one second before local midnight on the excluded day is IN, and that midnight itself is OUT — with each excluded movement's quantity absent from every total                  |
+| **S3-7**  | the permissions from BOTH sides: a principal holding `rpt.report.read` alone is refused naming `inv.stock.read` by the SERVICE, one holding `inv.stock.read` alone is refused naming `rpt.report.read` by the ROUTE                                                                                                |
+| **S3-8**  | branch isolation with RLS reach deliberately widened into the refused branch, so the refusal is the scoped permission evaluation and not an empty result set; and the sibling branch's own movement is invisible to the reported branch                                                                            |
+| **S3-9**  | paging over a NON-UNIQUE sort column: three pages reconstruct the whole selection exactly, with the damage pair — which shares an instant — split across a page boundary, which is where a sort-only cursor loses a row; and the groups are identical on every page                                                |
+| **S3-10** | a cursor minted for the LEDGER SCREEN's ordering over the same table refused with `ERR-PAG-001` rather than reinterpreted                                                                                                                                                                                          |
+| **S3-11** | every quantity a STRING at `numeric(12,3)` scale, in cells and in measures alike, so no value made a trip through a JSON number                                                                                                                                                                                    |
+| **S3-12** | the two ledger limitations measured against the deployed database rather than asserted: no unit column on the movement, and `occurred_at` stamped from the transaction clock with `app_runtime` holding SELECT and INSERT only                                                                                     |
+
+---
+
+## 47. What P-11 changed — the report engine, dataset slice 4 (`invoice_payment_summary`)
+
+**Slice:** `remediation/p1-31-backend-report-engine-datasets`, ownership profile `p1-31-backend`.
+**Baseline:** `remediation/p1-31-backend-report-engine-work-orders` at `c7fb9f9e` — PR #364's
+branch, which is itself UNMERGED. This slice is STACKED on it and inherits its unmerged state.
+**Restated at the `8c4e6a9c` merge, 2026-09-12:** PR #364 has since merged, so the base of this
+slice is now protected `develop` `8c4e6a9c` and the stacking above is history rather than current
+state. Sections 42 and 43 are allocated and settled on `develop`, and section 44 has since been
+taken by the FE-007 printable delivery handover document, merged as #368 — so the heading numbers
+45, 46 and 47 are settled and no longer provisional. Section 41 remains unwritten and is not a
+number this lane holds. **CC-33**, **CC-34** and **CC-35** stay as allocated: section 44 raised
+**CC-32**, so nothing collides.
+
+**Identifier allocation — re-checked 2026-09-12 against protected `develop` `8c4e6a9c`.** Section
+36.1 records the register's rule: identifiers are allocated when a finding is raised and are never
+renumbered to follow heading order. **CC-35** is this section's allocation, taken from the same base
+as **CC-33** and **CC-34** and re-checked with them. **Neither the section number nor the identifier
+collides on `develop` `8c4e6a9c`, so neither is renumbered.** Nothing in this section depends on the
+number being right.
+
+### 47.1 What was published, and what was minted
+
+| published                                                                             | minted  |
+| ------------------------------------------------------------------------------------- | ------- |
+| 1 dataset, 0 operations, 0 routes, 0 paths, 0 audit actions, 2 new module files       | nothing |
+| 2 module ports (1 repository method each)                                             | nothing |
+| register unchanged at **407** operations and **316** OpenAPI paths; audit actions 232 | nothing |
+| bundle unchanged                                                                      | nothing |
+
+**Measured facts (not part of the decision).**
+
+- **`invoice_payment_summary`** joins the dataset registry, which now holds exactly **four** entries
+  — the whole of what D-4 approves. A case asserts the exact list, so a fifth cannot arrive quietly.
+- **OpenAPI paths/operations unchanged (407/316).** `docs/api/openapi.v1.json` was not changed by
+  this branch, and the response schema of `rpt.report-run` is BARE by repository convention
+  (`a0-preflight.md` records it for QA-002), so the envelope fields are described only in the
+  named wire types exported from `apps/api/src/modules/reporting/index.ts`. No operation, path, permission,
+  audit action, migration or seed row moved. `sal.finance.view` is an existing catalogue row.
+- **Two new source files** under `apps/api/src`:
+  `modules/billing/application/billing-report-port.ts` and
+  `modules/payments/application/payments-report-port.ts` — one per module that owns part of the row.
+  The instrumented-file denominator in `tests/ci/baseline-integrity.test.ts` moves 285 → 287 with the
+  admitted count 286 → 288. **The coverage FLOORS are untouched**; re-establishing them needs a
+  hosted measurement run, which this slice did not perform and does not claim.
+- **`scripts/ci/check-exact-money.mjs` now scans `modules/reporting`**, taking the gate from 12 to
+  13 declared trees and to 61 scanned files, 9 of which are this module. It was WIDENED, not weakened: no rule, allow-list or
+  suppression changed.
+- **Every financial instant is stamped from `now()`** by the protected primitives, and no route or
+  function accepts one from a caller — so the suite writes each document through the full primitive
+  and then restates its single instant with triggers suspended in a superuser transaction, which
+  `app_runtime` cannot do. The file says so at its head.
+- **The generated P1-24 operation register was regenerated** and lists the new suite against the
+  operation its text references. It was not hand-edited.
+- **The P1-27 evidence manifest was regenerated** (`npm run evidence:p1-27`) because two documents it
+  digests carry derived `tests/backend` file counts that a new test file moves, 138 → 139 and
+  147 → 148.
+
+### 47.2 Dispositions
+
+| id           | finding                                                                                                                           | measured                                                                                                                                                                                                                                                                                                                            | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | owner / slice | status                                                 |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------------------------------------------------------ |
+| **CC-35**    | D-4's source table names two figures the approved column list does not carry: a credit-note amount, and `sal.receipt_unallocated` | Both exist and both are reachable. `sal.credit_notes.amount` is `numeric(18,4)`; `sal.receipt_unallocated` is a deployed function the payments module already calls on its own receipt reads. The column list implemented is the one under "Columns and their contracts", which names neither                                       | **Recorded, not decided.** An approved credit note is published as a DOCUMENT — its date, its payer, its currency, its approved state — and its money reaches the report only as the reduction inside the affected invoice's `outstanding`, which the database function computes. No unallocated column is published either. Adding either is a COLUMN the Owner has not named, and inventing one would be this coordinator deciding what the report says. Recorded so the Owner can add them deliberately; `report-engine-seam.md` § 9 rows 14 and 15 **DECIDED BY THE OWNER 2026-09-12** (`owner-decisions-2026-09-12.md` § 2, D-20): both figures are published as separate fields, from the authoritative column and the deployed function, with neither netted into a figure `sal.invoice_open_receivable` has already computed                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Owner         | decided by the Owner 2026-09-12; implemented in § 47.5 |
+| **CC-35(a)** | the `document` column publishes NO drill-through, unlike every reference column on the three datasets before it                   | A `ReportColumnDefinition` carries ONE `drillThrough` template. This column addresses THREE kinds of document: an invoice resolves through `sal.invoice-detail` (`/invoices/{id}`), a receipt through `sal.receipt-detail` (`/payments/{id}`), and a credit note through nothing — the register holds no credit-note read operation | **Recorded, not decided — OPEN at Owner level, beside CC-35.** No template is published on this branch and nothing about a row depends on one: `documentType` is the discriminator a client needs to choose a route, and the document id travels in the cell either way. Publishing a single template would send most rows to a screen that cannot answer for them, and a per-KIND template changes the published column contract, which is the Owner's to change. **Recommendation pending Owner approval:** publish the drill-through PER DOCUMENT KIND against the detail operations that already exist — an invoice through `sal.invoice-detail` (`/invoices/{id}`) and a receipt through `sal.receipt-detail` (`/payments/{id}`) — with a credit note carrying none, because the register holds no credit-note read; until that is approved the column stays without a template. Also a named prerequisite (`report-engine-seam.md` § 9 row 12) so FE-014 inherits it rather than discovering it **DECIDED BY THE OWNER 2026-09-12** (`owner-decisions-2026-09-12.md` § 2, D-20): the drill-through is resolved by document kind against an authorized target route, and the kind with no read operation carries a published NULL rather than an invented route — the absence recorded, not omitted | Owner         | decided by the Owner 2026-09-12; implemented in § 47.5 |
+| **CC-35(b)** | the `customer` cell carries the payer's id and no name                                                                            | `BillingReadService` publishes `payerPartnerId` with no display name today, and neither the billing nor the payments repository reads `crm.*`. Slice 2 established that a column publishing another module's record must name that module's read code on the dataset's permission list                                              | **Recorded, not decided — OPEN at Owner level, beside CC-35.** The id travels and the label is null, which is what the invoice screen already shows. Resolving the name is not a lookup but a DISCLOSURE decision: it would add the CRM module's read code, `crm.customer.read`, to a report whose permission list the Owner fixed at `sal.finance.view`. **Recommendation pending Owner approval:** keep the cell id-only. If the Owner wants the name, resolve it through a CRM read and declare `crm.customer.read` beside `sal.finance.view` conjunctively, so the whole report is refused to a caller who may not read customers — the treatment slice 2 gave the work-order reference. Also a named prerequisite (`report-engine-seam.md` § 9 row 13) **DECIDED BY THE OWNER 2026-09-12** (`owner-decisions-2026-09-12.md` § 2, D-20), and NOT by the recommendation above: the permitted party name is shown beside its identifier under the role it is actually held in, and the name is gated where the capability lives — the CRM read itself — so the report’s declared permission list is unchanged and the enrichment can only narrow                                                                                                                                                       | Owner         | decided by the Owner 2026-09-12; implemented in § 47.5 |
+| **CC-35(c)** | the reporting module held a numeric conversion, and adding it to the exact-money surface exposed it                               | `countsByState` — the field deprecated in slice 2 — was DERIVED from `work_orders_by_status`'s group measures with `Number.parseInt`, which rule MONEY-02 forbids outright on the financial surface. The gate cannot tell a row count from an amount, and a gate that could be argued with is a gate that gets turned off           | **Engineering consequence, implemented.** The conversion was REMOVED rather than exempted: the deprecated field is now set by its one producer directly from the same counts its groups are built from, so the two still cannot disagree and no count is converted at all. `modules/reporting` is in `MONEY_TREES` with no allow-list entry beside it. This also moves prerequisite 5 (retiring `countsByState`) one step nearer without closing it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | this slice    | closed in this slice                                   |
+
+### 47.3 What this slice did NOT do
+
+- **No migration and no schema change.** Every statement uses grants and policies that already
+  existed; `sal` is untouched.
+- **No permission was minted and no bundle changed.** `sal.finance.view` is an existing catalogue
+  row, and the whole report is refused to a caller who lacks it — where the permission is evaluated,
+  before anything is read, rather than where a column is rendered.
+- **No new operation, no new route and no new path.** `rpt.report-run` serves the dataset, and
+  `docs/api/openapi.v1.json` was not changed by this branch.
+- **No export.** Prerequisite P-12 is untouched; `rpt.export` stays excluded on **CC-04**'s grounds.
+- **No frontend.** `apps/web/src` was not edited at all.
+- **No outstanding balance was re-derived.** `sal.invoice_open_receivable` is called, and a case
+  compares the published figure against the function itself rather than against a number written in
+  the test.
+- **Neither module read the other's tables.** Billing answers for invoices and credit notes,
+  payments for receipts and allocations, and the reporting module merges the two ordered streams.
+- **No allow-list was widened and no gate was suppressed.** No `@ts-expect-error`, no
+  `eslint-disable`, no skipped or retried test. `scripts/check-operation-test-coverage.mjs` was NOT
+  edited: the new suite declares a `COVERAGE-EVIDENCE` block beside its assertions.
+- **The P1-23 and P1-24 mutation matrices were not run**, and no mutation was re-targeted: this
+  slice redefines no property either matrix attacks.
+
+### 47.4 Proof
+
+**Measured facts (not part of the decision) — where these results come from.** The runs below were
+observed on 2026-09-11 at this branch's head. Every database-bound run used a DISPOSABLE LOCAL
+CLONE, `p131_report_controls_20260910` on `127.0.0.1:55432`, carrying 139 migrations, with
+`DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` stated explicitly in the environment
+of each command and the environment printed before each one:
+
+| run                                                         | result                 | database window (UTC) |
+| ----------------------------------------------------------- | ---------------------- | --------------------- |
+| `tests/backend/p1-31-report-engine-invoice-payment.test.ts` | 26/26                  | 17:25:13 → 17:25:25   |
+| the six reporting backend suites together, on the clone     | 6 files, 146/146       | 17:25:35 → 17:26:18   |
+| the eight billing and payments backend suites, on the clone | 8 files, 168/168       | 17:26:23 → 17:27:52   |
+| the six inventory backend suites, on the clone              | 6 files, 173/173       | 17:27:57 → 17:28:59   |
+| `npm run test:unit` (whole unit tier, includes `tests/ci`)  | 3300/3300 in 122 files | no database           |
+
+**There was no hosted gate, no run against the shared database, and no merge.** This branch has no
+remote head and no checks recorded, and its base PR #364 is itself unmerged. Final integration and
+shared-database evidence follow the coordinator's dependency and database ownership sequence, at
+this branch's own turn after #364 merges.
+
+| id        | what was shown                                                                                                                                                                                                                                                                    |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **S4-1**  | the columns in the Owner's order and their kinds, the rows, the groups, the period, the authorization and the paging, on real invoices, receipts, allocations and an approved credit note produced by the protected `sal` primitives                                              |
+| **S4-2**  | the WHOLE report refused to a caller holding `rpt.report.read` alone, naming `sal.finance.view` — with the response text carrying no amount and, specifically, no `0.0000` standing in for one; and refused at the ROUTE to a caller holding `sal.finance.view` alone             |
+| **S4-3**  | `outstanding` equal to `sal.invoice_open_receivable` for a PARTIAL allocation (165.0000 invoiced, 65.0000 applied, 100.0000 open), compared against the function itself rather than against a number written in the test                                                          |
+| **S4-4**  | a fully credited invoice published as `credited` with the function reporting `0.0000` open, and the approved credit note published as its own document with every money column null                                                                                               |
+| **S4-5**  | a reversed receipt absent from the rows and from every total, with its `reversed` status read back as admin so the absence is a report decision and not a fixture gap                                                                                                             |
+| **S4-6**  | two currencies never summed: four groups keyed `(currency, documentType)`, each measure inside one currency, and the cross-currency sums absent from the payload entirely                                                                                                         |
+| **S4-7**  | an allocation counted ONCE — `allocated` on the receipt group, absent as a measure on the invoice group, and reaching the invoice only as the reduction inside `outstanding`                                                                                                      |
+| **S4-8**  | the half-open period in the BRANCH zone on four instants: local midnight on the first included day is IN, one second earlier is OUT, one second before the excluded day's local midnight is IN, that midnight is OUT — with a widened period then showing both excluded documents |
+| **S4-9**  | the zone itself: the first included instant falls on the PREVIOUS calendar day in UTC, so a period resolved server-side would drop the invoice that sits on it                                                                                                                    |
+| **S4-10** | paging over a MERGE of two modules' streams: four pages reconstruct the selection exactly, an invoice and a receipt sharing an instant EXACTLY stay adjacent across the page boundary, and the groups are byte-identical on every page                                            |
+| **S4-11** | a malformed cursor and one minted for the RECEIPT SCREEN's ordering both refused with `ERR-PAG-001` rather than reinterpreted                                                                                                                                                     |
+| **S4-12** | every amount a STRING at `numeric(18,4)` scale, in cells and in measures alike, quoted in the wire text, so no value made a trip through a JSON number                                                                                                                            |
+| **S4-13** | branch isolation with RLS reach deliberately widened into the refused branch, so the refusal is the scoped permission evaluation and not an empty result set; and the sibling branch's own documents are invisible to the reported branch, and vice versa                         |
+
+---
+
+### 47.5 Completion — `P1-31-P-11-026`, 2026-09-12
+
+**Authority:** the Owner, 2026-09-12
+([`owner-decisions-2026-09-12.md`](./owner-decisions-2026-09-12.md) § 2, **D-20**). **CC-35**,
+**CC-35(a)** and **CC-35(b)** were OPEN Owner-level items, each carrying one recommendation pending
+Owner approval. The Owner decided all three, and this commit implements the decision. The
+recommendation carried for **CC-35(b)** was NOT the answer taken, and the row says so.
+
+**What changed on the published contract.**
+
+- **`invoice_payment_summary` publishes fifteen columns rather than eleven.** `customer` is replaced
+  by `partyId`, `partyName` and `partyRole`; `unallocatedAmount` and `creditNoteAmount` join the
+  money columns, which are now six. Every added money column is null — never zero — on a document
+  type that has no such amount.
+- **The `document` column publishes `drillThroughByKind`** instead of nothing:
+  `{ discriminator: 'documentType', templates: { invoice: '/invoices/{id}', receipt:
+'/payments/{id}', credit_note: null } }`. `ReportColumnDefinition` and `ReportColumnView` carry the
+  new shape, and it is null on every other column of every dataset.
+- **A third group kind.** The groups are still keyed `(currency, documentType)`; a
+  `(currency, credit_note)` group now carries the single `creditNotes` measure, and the receipt group
+  carries `unallocated` beside `receipts` and `allocated`. No measure spans two currencies and no
+  group publishes another type's measure at zero.
+
+**Measured facts (not part of the decision).**
+
+- **Both authorities already existed and neither was re-derived.** `sal.credit_notes.amount` is the
+  credit-note figure; `sal.receipt_unallocated(uuid)` is the unallocated figure, called per row and
+  summed inside the same aggregate the receipt group is built from. Nothing subtracts one column
+  from another in TypeScript, and nothing subtracts the credit note from `outstanding` — the
+  database function has already done that.
+- **No permission moved.** The dataset's `requiredPermissions` is still `['sal.finance.view']`. The
+  party NAME is gated by `crm.customer.read` inside `crmModule().customerRead
+.resolveDisplayIdentities`, which resolves nothing for a caller who lacks it. A caller who holds the
+  CRM code could read the same name from the customer surface, so nobody gains anything: the
+  enrichment narrows and cannot widen.
+- **No migration, no seed row, no audit action, no operation and no path.** The register stays at
+  **407** operations and **316** OpenAPI paths; `docs/api/openapi.v1.json` was not changed, and the
+  response schema of `rpt.report-run` is bare by repository convention.
+- **No new source file.** **Eight** existing files under `apps/api/src` changed — three in `billing`,
+  two in `payments`, three in `reporting` — and none was added, so the instrumented-file denominator
+  in `tests/ci/baseline-integrity.test.ts` is unmoved at **287**, which the unit tier confirms.
+- **The reporting module now composes `@/modules/crm`** through its public index, for one published
+  read. No `crm` SQL entered the billing or payments repositories.
+- **`npm run validate:exact-money` still reports 61 files across 13 trees with no violation.** The
+  two new money columns are decimal strings end to end; no allow-list or suppression was touched.
+- **Section 47.4's S4-6 recorded FOUR groups.** That was the count before this completion; there are
+  now five, because approved credit notes have a group of their own. The earlier figures are left as
+  recorded at the head that produced them, and the table below is this head's measurement.
+
+**What this completion did NOT do.**
+
+- **It did not create a credit-note read operation.** The register still holds none, which is why the
+  `credit_note` drill-through template is a published `null` and the absence is recorded
+  (`report-engine-seam.md` § 9 row 16) rather than filled with an invented route.
+- **It did not add a frontend.** `apps/web/src` was not edited; FE-010, FE-014 and FE-016 are not
+  started.
+- **It did not run the P1-23 or P1-24 mutation matrices**, and no mutation was re-targeted.
+- **It widened no allow-list and suppressed no gate.** No `@ts-expect-error`, no `eslint-disable`, no
+  skipped or retried test.
+
+**Proof.** Observed at this branch's head; every window below is UTC on 2026-09-11, which is the
+local morning of 2026-09-12. Every database-bound run used the DISPOSABLE LOCAL CLONE
+`p131_report_controls_20260910` on `127.0.0.1:55432`, carrying 139 migrations, with `DB_HOST` /
+`DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` stated explicitly in the environment of each
+command and the environment printed before each one. **There was no hosted gate, no run against the
+shared database, and no merge.**
+
+| run                                                         | result               | database window (UTC) |
+| ----------------------------------------------------------- | -------------------- | --------------------- |
+| `tests/backend/p1-31-report-engine-invoice-payment.test.ts` | 31/31                | 22:05:08 → 22:05:30   |
+| the six reporting backend suites together, on the clone     | 6 files, 152/152     | 22:05:44 → 22:08:46   |
+| the nine billing and payments backend suites, on the clone  | 9 files, 171/171     | 22:09:15 → 22:10:54   |
+| `npm run test:unit` (no database)                           | 122 files, 3300/3300 | —                     |
+
+The **six reporting suites** are `p1-23-reporting`, `p1-31-report-configuration-seam` and the four
+`p1-31-report-engine-*` suites. The **nine billing and payments suites** are `p1-22-concurrency`,
+`p1-22-credit-note`, `p1-22-currency-coherence`, `p1-22-invoice-lifecycle`, `p1-22-isolation`,
+`p1-22-payments`, `p1-24-cross-domain-journey`, `p1-30-w6-invoices` and `p1-30-w7-payments` — named
+rather than counted, because a count alone does not say which suites were exercised.
+
+**The DB-free gates, all at this head.** `typecheck` and `typecheck:api` clean; `lint` and
+`lint:api` clean; `format:check` and `format:check:api` clean; `validate:module-boundaries` 610
+files with no violation; `validate:api-backend-only` 317 handlers and 610 source files, 0 failures;
+`validate:exact-money` 61 files across 13 trees with no violation; `verify:contracts` clean with the
+register still at **407** operations and **316** OpenAPI paths; `security:all` clean over 2718
+tracked files. `verify:policies` reports **only** `RUN_RECORD_STALE` for the `unit` and `web` run
+records, which is the expected state for an unmerged branch whose executable paths have moved since
+the recorded run — no other problem is reported.
+
+**One measured flake, recorded rather than smoothed over.** A later filtered re-run of
+`tests/ci tests/openapi-contract.test.ts` alone timed out at the 30 s per-test limit on
+`tests/ci/p1-28-access-gate.test.ts > finds the eleven pages by what they LOAD`, a filesystem walk
+over `apps/web` routes. It is a timeout under machine load and not an assertion failure, the file is
+untouched by this branch, and the same test passed inside the full `npm run test:unit` run recorded
+above. It is stated here because a check that behaved differently on a second run is a fact about
+the evidence, not a detail to leave out.
+
+| id        | what was shown                                                                                                                                                                                                                                   |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **S4-14** | the fifteen columns in order, the six money columns named as money, and no column-wide `drillThrough` anywhere                                                                                                                                   |
+| **S4-15** | the `document` drill-through resolved PER KIND — `documentType` as the discriminator, `/invoices/{id}` and `/payments/{id}` against the two detail operations, and an explicit `null` for a credit note                                          |
+| **S4-16** | every document kind a row can carry present as a key in the template map, so a client is never left without an answer for a kind it is shown                                                                                                     |
+| **S4-17** | the party NAME published only to a caller holding `crm.customer.read`, null to a caller holding both report codes without it, the identifier present in both cases, and the name absent from that caller's payload entirely                      |
+| **S4-18** | the declared permission list unchanged at `['sal.finance.view']` while the name is gated, so the enrichment narrows and never widens                                                                                                             |
+| **S4-19** | the role published as what the id IS: `payer` on an invoice and on a receipt, `invoice_payer` on a credit note, which carries no party column of its own                                                                                         |
+| **S4-20** | `unallocatedAmount` equal to `sal.receipt_unallocated` for a PARTIALLY applied receipt (10.0000 received, 4.0000 applied, 6.0000 left), compared against the function itself rather than against a number written in the test                    |
+| **S4-21** | the same column an exact `0.0000` for a receipt applied in full and the receipt's whole amount for one never applied — the three allocation states told apart                                                                                    |
+| **S4-22** | `creditNoteAmount` equal to `sal.credit_notes.amount`, compared against the table itself, with every other money column on that row null rather than zero                                                                                        |
+| **S4-23** | the credit note NOT restated on the invoice it credits: the invoice row carries no credit amount and its `outstanding` is still the database function's answer                                                                                   |
+| **S4-24** | five groups keyed `(currency, documentType)`, the credit notes in a group of their own, `unallocated` on the receipt side only, no credit measure on the invoice group, and no JOD credit-note group at all — an absent group rather than a zero |
+
+## 48. The warranty plan administration screens (FE-008, policy administration)
+
+**The numbering is settled; the branch is not.** This section records work on
+`feature/p1-31-warranty-policy-administration`. Its base — the warranty record screens — merged
+with PR #369, and this branch now carries the merge of protected `develop`
+`6b3c6c458154bc18589ebb4fb18b6b139ae81b80`, whose register holds sections 44 to 47. Section **48**
+and **CC-36** are the next free heading and the next free identifier at that head, so the
+reservation this section previously stated as provisional is now a read fact and the PROVISIONAL
+marking is withdrawn. The branch itself is still **unmerged** and has **no hosted result**, and
+nothing below claims otherwise.
+
+### 48.1 Identifier allocation — allocated 2026-09-11, SETTLED 2026-09-12 at `develop` `6b3c6c45`
+
+The heading and the identifier were first reserved on 2026-09-11 against `develop` `8c4e6a9c`,
+where the register ran to **section 44** and to **CC-32**: section 43 and **CC-31** are the warranty
+record-screens slice's own reservation, merged with PR #369, and section 44 and **CC-32** are
+FE-007's, merged with PR #368. Several P1-31 lanes were in flight at that head, so the reservation
+was deliberately made ahead of the front and stated as provisional, so that a collision would be a
+reconciliation and never a silent renumbering of somebody else's record.
+
+**Settled by this merge.** `develop` moved on to
+`6b3c6c458154bc18589ebb4fb18b6b139ae81b80` while this branch was being verified: PR #374 merged the
+report engine's dataset slices 2, 3 and 4, which take **sections 45, 46 and 47** and **CC-33**,
+**CC-34** and **CC-35**. This branch has now merged that head, so its own copy of this register
+carries those three sections and the numbering is no longer a reservation read from somewhere else
+— sections 44 to 47 are all present and settled here, and 48 is the next heading in the file.
+
+| id                | lane                                     | state at this head                                              |
+| ----------------- | ---------------------------------------- | --------------------------------------------------------------- |
+| **CC-31**         | the warranty record screens              | section 43, merged with PR #369, on `develop`                   |
+| **CC-32**         | the printable delivery handover document | section 44, merged with PR #368, on `develop`                   |
+| **CC-33 … CC-35** | the report engine dataset slices 2 to 4  | sections 45 to 47, merged with PR #374, on `develop` `6b3c6c45` |
+| **CC-36**         | this slice                               | settled, this branch, section 48                                |
+
+Sections **49 to 52**, and the identifiers above **CC-36**, are held by P1-31 lanes that are still
+on unmerged branches and are not visible at this head.
+
+**Reconciliation rule.** Section 36.1 records it: an identifier is allocated when its finding is
+raised and is never renumbered to follow heading order. If section 48 or **CC-36** were found
+occupied at a later integration, this section would move to the next free heading and this
+identifier to the next free identifier, and the move would be recorded here with its date. No
+existing identifier and no historical result is renumbered to accommodate it.
+
+### 48.2 What was delivered
+
+Two route pages — the warranty plan list at `/{locale}/warranty/policies` and one plan at
+`/{locale}/warranty/policies/{policyId}`, both gated on `wty.warranty.read` and both deciding
+before they read — the five plan and coverage write adapters P-10 published, the single-plan read
+those writes re-read through, the English and Arabic wording for all of it, one link from the
+warranty record list, and two web test files. The full record is
+[`warranty-policy-administration.md`](./warranty-policy-administration.md).
+
+The five writes were added to `P1_31_OPERATION_IDS` in `scripts/ci/check-p1-31-access.mjs` in the
+same change as the screens that reach them. None widens the derived segment set — every one is
+addressed under the `warranty-policies` root the two policy reads on the base branch already
+contributed — so naming them is the only thing that makes them owned. The examined page count moved
+from 11 to 13 across the same 8 segments, because two pages now occupy that segment.
+
+This closes the gap CC-31's section 43.4 named: P-10 published seven policy and coverage operations
+and the record-screens slice consumed exactly one of them. All seven are now consumed.
+
+### 48.3 Dispositions
+
+| id        | what is accepted                                                                     | measured basis                                                                                                                                                                                                                                                                                                                                                        | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                         | owner      | state            |
+| --------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ---------------- |
+| **CC-36** | **one catalogue code, `ERR-CON-001`, carries three distinct causes on this surface** | A stale version, `ex_warranty_coverage_no_overlap` (**BR-WTY-001**) and a plan reference already in use all answer the same code. The problem document's `violations[0].rule` is the only machine-readable discriminator: the overlap and the duplicate reference each name a rule, a stale version names none, and the service's own sentence never crosses the wire | **accepted, and discriminated by the RULE rather than by wording guessed from the code.** The refusal state carries the code and the first violation's rule, and the three are worded apart in the screen's plain language because they send an operator somewhere different. The absence of a rule is itself the stale signal, and a reload is offered beside that refusal and no other. No sentence is invented per code beyond what the problem document carries | this slice | closed, recorded |
+
+### 48.4 What this slice did NOT do
+
+- **No backend file was edited**, no migration was written, no seed changed and no permission was
+  minted. `wty.policy.manage` has been seeded since P1-08 and is declared by P-10's five writes.
+- **No history reader and no simulated history.** **CC-10** is unchanged, FE-009 stays PARTIAL as
+  CC-31 left it, and the backend prerequisite **P-18** is still named and still unbuilt.
+- **No generation path touched.** The issue control and its plan picker belong to the base branch
+  and were not modified.
+- **No delete control for a plan or a coverage window**, because no operation offers one and no
+  application role holds a DELETE grant on either configuration table. Retiring and restoring are
+  what the surface offers.
+- **No gate weakened, no allow-list narrowed and no suppression added.** The access gate's
+  operation list was EXTENDED, which widens what the gate owns rather than what it permits.
+- **No pull request, no merge, no push, no rebase, no hosted run and no acceptance.** The base
+  branch is itself unmerged.
+
+### 48.5 The P1-28 version-sourcing gate — engineering consequence (not an Owner decision)
+
+`tests/ci/p1-28-version-sourcing.test.ts` failed twice against this slice, in two different
+rules, and neither failure was a defect in what the screen does. Both were resolved by changing
+this side, not the gate: no regex was relaxed, no detector was weakened, no allow-list was
+widened and no suppression was added.
+
+**The renewal rule read a shape, not a behaviour.** The gate requires that the function enclosing
+a version-guarded call either calls one of its own parameters or calls something in the refresh
+family, after the call and inside its own body. The plan screen re-read after every write from
+the first commit — but through a single `run(area, write)` helper that took the command as a
+callback, so the re-read was one indirection away from each call site and invisible to a reader
+standing at the call. The three handlers were written out, one per control, each ending with its
+own re-read. The behaviour is unchanged, which is the point: the gate was asking for the
+discipline to be legible where the version is spent, and it was right to ask.
+
+The shape follows `apps/web/src/features/quotations/components/QuotationDetailScreen.tsx`, whose
+issue handler writes and then renews in the same body.
+
+**The count equality is a SUBJECT classifier, and this slice's three adapters are not its**
+**subject.** The gate compares the number of guarded adapters it accounts for against the number
+of version-guarded `apt.*` / `rec.*` operations this application must reach. Three `wty.*`
+adapters demanding a version made that comparison read 10 against 7. They are registered by name
+in `OUT_OF_SUBJECT_ADAPTERS` in `scripts/ci/check-p1-28-version-sourcing.mjs`, exactly as eight
+earlier slices registered theirs: **P1-29 W3** (`transitionWorkOrder`, `updateJob`), **P1-29 W4**
+(`stopLaborSession`, `correctLaborSession`), **P1-29 W7** (four `dia.*` adapters), **P1-29 W8**
+(four `qms.*` / `wo.*` adapters), **P1-30 W1** (`updateService`, `publishServiceVersion`),
+**P1-30 W2** (two price-list adapters), **P1-30 W3** (two quotation adapters) and **P1-30 W6**
+(two invoice adapters). Registration excludes an adapter from the count equality and from
+nothing else: every one of the three is still held to every other rule the gate applies —
+`ifMatch` required, `ifMatch` used, the argument traceable to a read or a command response, and
+the version renewed afterwards — and all three are reported `ok` and `renews` in the run.
+
+**Measured, not assumed.** The gate reports `accountedFor` as **7** after the registration,
+unchanged from the seven apt/rec adapters this contract has always been about, and equal to the
+seven operations expected. `tests/ci/p1-28-version-sourcing.test.ts` therefore needed no edit:
+its `expect(live.accountedFor).toHaveLength(7)` was already the correct number, and the 10 seen
+before the registration was the symptom rather than a new floor. The test file is unchanged by
+this slice.
+
+### 48.6 The local tier record — measured fact, dated 2026-09-12
+
+Both tiers were re-recorded by `check-p1-27-closing-values.mjs --record` at `1f557f37`, the head
+that carries the merge of `develop` `6b3c6c45`, with no executable path dirty:
+
+| tier | files | tests | passed | failed | skipped |
+| ---- | ----- | ----- | ------ | ------ | ------- |
+| unit | 122   | 3301  | 3301   | 0      | 0       |
+| web  | 137   | 3850  | 3850   | 0      | 0       |
+
+These are LOCAL figures. No hosted run of this branch exists and none is claimed.
+
+**Two merges expired two pairs; only the first moved a number.** The pair taken at `4eeac4d3` —
+unit 121/3278, web 136/3797 — was expired by the merge of `develop` `8c4e6a9c`, which brought a
+web test file and a component tree with it, and the record taken at `5e5a607a` after that merge
+read exactly the six figures in the table above. The merge of `develop` `6b3c6c45` then arrived
+carrying that head's own ledger — unit 122/3300, web 136/3802 — which describes `develop` and not
+this tree, so both tiers were run again rather than reconciled on paper. PR #374 is backend and
+documentation only, so the measurement came back unchanged and the re-record simply re-establishes
+the same six numbers against the new head; no derived site moved for it. A record is bound to the
+head it was taken at, and the ledger expired the inherited pair rather than letting it survive as a
+number.
+
+**Engineering consequence of the FIRST merge (not an Owner decision).** The derived sites moved
+with the record taken at `5e5a607a`: on `clean-room-evidence.md`, with their closing-value ledger
+entries, the web file count 136 — 137 in three places, the web executed total 3802 — 3850 in three
+and the unit executed total 3300 — 3301 in one; in `deliverable-manifest.md`, the web file count in
+the three places it appears; and the frontend ownership gate’s own file count 151 — 153 in five
+places across four documents, which moved because the two delivery-document components `develop`
+brought with FE-007 landed inside the trees that gate walks. The evidence manifest was regenerated
+at each step so its digests describe the current bytes.
+
+**Three intermediate readings are stated rather than hidden.** Taking the record at `5e5a607a`
+recorded a FAILING web run twice — two cases in the P1-27 reconciliation tests on the first
+attempt and one more on the second, each a derived site in `deliverable-manifest.md` that had not
+yet moved. Taking it at `1f557f37` recorded a failing unit run once, for the same reason in the
+other direction: the web tier is recorded first, so while the unit tier ran the ledger still
+carried `develop`'s inherited pair and two cases reported the disagreement. In all three the record
+was retaken after the cause was removed, never annotated; the ledger now holds one run per tier
+that exited 0.
+
+The committed floor in `.github/ci-baselines/test-count-baseline.json` was **not** touched. 3850
+executed clears the 3700 floor, `tests/ci/web-test-floor.test.ts` and
+`tests/ci/baseline-integrity.test.ts` both pass against it unchanged, and no rule forced a ratchet,
+so the baseline keeps the figures its own run established.
+
+## 50. The report screens
+
+**Why 50 and not the next unused number.** Sections 44 to 47 were still open when this slice was
+first written, so its number was taken high and marked provisional. They are settled on `develop`
+now, and section 48 merged with PR #375 and is present in this file at the head this branch carries.
+Section 49 sits on a branch that is not merged, so the number stays 50 rather than moving down onto
+a heading another branch is already using.
 
 **Slice:** `feature/p1-31-report-screens`, ownership profile `p1-31-frontend`.
 **Baseline:** protected `develop` **ae0e035480596243c739beec1a40d2ae5c105e7a** (the ready-for-delivery
@@ -1638,51 +2572,63 @@ The Owner named none of them.
   tenant-scoped. The run's company and branch are a question about the resource and travel through
   `branchTargetQuery`.
 
-### 50.1 Identifier allocation — PROVISIONAL, dated 2026-09-12
+### 50.1 Identifier allocation — allocated 2026-09-12, SETTLED 2026-09-12 at `develop` `6c99e805`
 
-`develop` at **ae0e0354** carries sections **1 … 40** and **42**, and **CC-01 … CC-30**. Section 41
-and **CC-29** are claimed by a lane that is not on this head; sections 43 … 49 and **CC-31 … CC-37**
-are claimed by the coordinator for lanes in flight. **Those claims were not measured by this slice** —
-none of those branches is checked out here — and they are recorded as claims rather than as facts.
+The number was first taken on 2026-09-12 against `develop` `ae0e0354`, where the register ran to
+section **42** and to **CC-30**, and it was marked PROVISIONAL because seven headings between that
+head and this one were claimed by lanes still in flight and none of those branches was readable
+here.
 
-| id                | lane                                       | state at ae0e0354, dated 2026-09-12 |
-| ----------------- | ------------------------------------------ | ----------------------------------- |
-| **CC-24**         | the readiness seam (#366)                  | merged, section 39                  |
-| **CC-25 … CC-26** | the delivery execution write paths (#362)  | merged, section 38                  |
-| **CC-27 … CC-28** | the report engine (#364)                   | merged, section 40                  |
-| **CC-30**         | the ready-for-delivery queue screen (#367) | merged, section 42                  |
-| **CC-29**         | a lane not on this head                    | claims section 41                   |
-| **CC-31 … CC-37** | lanes in flight, allocated by coordination | claim sections 43 … 49              |
-| **CC-38**         | this slice                                 | this branch, claims section 50      |
+**Settled by this merge.** This branch now carries `develop`
+`6c99e805225b8ba59f6402188d9967c697d1eb13`, whose register is present in this file and runs to
+section **48** and to **CC-36**. Every number this slice was waiting on is now a read fact rather
+than a claim, so the PROVISIONAL marking is withdrawn from both the heading and the identifier.
 
-So this slice takes **section 50** and **CC-38**, and both stay **PROVISIONAL**: seven of the section
-numbers between the merged head and this one are claimed by lanes that have not merged, and any of
-them landing with a different allocation would move this heading. **The section number and the
-identifier must both be re-checked against `develop` before this branch merges.** A register whose
-identifiers collide is worse than one that renumbers.
+| id                | lane                                            | state at `6c99e805`, read from this file |
+| ----------------- | ----------------------------------------------- | ---------------------------------------- |
+| **CC-30**         | the ready-for-delivery queue screen (#367)      | merged, section 42                       |
+| **CC-31**         | the warranty record screens (#369)              | merged, section 43                       |
+| **CC-32**         | the printable delivery handover document (#368) | merged, section 44                       |
+| **CC-33 … CC-35** | the report engine dataset slices 2 to 4 (#374)  | merged, sections 45 to 47                |
+| **CC-36**         | the warranty plan administration screens (#375) | merged, section 48                       |
+| **CC-37**         | a lane not on this head                         | claims section 49                        |
+| **CC-38**         | this slice                                      | settled, this branch, section 50         |
+
+So this slice takes **section 50** and **CC-38**, both settled. Section 49 and **CC-37** belong to a
+lane that is not visible here, which is why this heading stays at 50 rather than moving down.
+
+**Reconciliation rule.** Section 36.1 records it: an identifier is allocated when its finding is
+raised and is never renumbered to follow heading order. If section 50 or **CC-38** were found
+occupied at a later integration, this section would move to the next free heading and the move
+would be recorded here with its date. No existing identifier is renumbered to accommodate it.
 
 ### 50.2 What changed, and what was minted
 
-| changed                                                                                                                                                                                      | minted  |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| 2 route pages, 2 screens, 1 shared presentation module, 1 paging hook, 1 contract, 1 adapter module, 1 label resolver; 1 navigation entry flipped to available and re-scoped                 | nothing |
-| 104 English and 104 Arabic messages — the four approved report titles, the catalogue and run copy, and the field names of all four D-4 datasets; 2 new web test files; 2 web suites re-based | nothing |
-| 3 operations added to the P1-31 access gate's allow-list, its pinned page count moved 9 → 11; the committed web floor raised 3050 → 3720 with its measurement                                | nothing |
-| the FE-011 … FE-014 rows of the task matrix and the A0 preflight; 5 P1-27 records re-based from their own derivations                                                                        | nothing |
+| changed                                                                                                                                                                                                                      | minted  |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| 2 route pages, 2 screens, 1 shared presentation module, 1 paging hook, 1 contract, 1 adapter module, 1 label resolver; 1 navigation entry flipped to available and re-scoped                                                 | nothing |
+| 104 English and 104 Arabic messages — the four approved report titles, the catalogue and run copy, and the field names of all four D-4 datasets; 2 new web test files; 2 web suites re-based                                 | nothing |
+| 3 operations added to the P1-31 access gate's allow-list and its pinned page count moved 13 → 15 on the merged head; the committed test-count baseline is NOT touched by this slice                                          | nothing |
+| the FE-011 … FE-014 rows of the task matrix and the A0 preflight; 5 P1-27 records re-based from their own derivations                                                                                                        | nothing |
+| 1 contract repair — an unusable page size now falls back to the platform default of 50 rather than to the route ceiling of 100 — and 1 dead exported refusal map removed, the live mapping being the one in the read adapter | nothing |
 
 **No backend file changed.** No route, no service, no repository, no migration, no seed, no
 permission, no audit action and no operation. The operation register is untouched.
 
 The CI allow-list entry is the three `rpt` operations in `scripts/ci/check-p1-31-access.mjs`, which
 that gate's own docblock requires in the change that first consumes each. It **WIDENS** what the gate
-judges and suppresses nothing: the page count it examines rises from 9 to 11, and its owned segment
+judges and suppresses nothing: the page count it examines rises from 13 to 15 — both figures read
+off the gate report line on the merged head, not carried forward — and its owned segment
 count is unchanged because the resource root those operations derive is the dashboard area the gate
 already named.
 
-The web floor raise is **forced, not chosen**: `WTF-08` refuses a floor beneath the cases that exist
-on disk, and this slice takes the declared count to 3093. `measured` and `measuredFiles` move with the
-floor so that all three describe one run, and the run is stated as **LOCAL** — no hosted run of this
-branch exists.
+**The web floor does not move, and that is a measurement rather than a preference.** An earlier
+version of this section raised it, against a head where `WTF-08` refused the floor then committed.
+The floor this branch now carries arrived from `develop` at 3700, and on this head the tree DECLARES
+3226 cases across 139 files, so the rule is satisfied with no edit at all. The tier EXECUTES 3940,
+and the largest single file declares 88 cases, which keeps `WTF-09` satisfied at the committed
+headroom of 49. The baseline file is therefore byte-identical to `develop`'s and no figure in it is
+restated here. The executed total is **LOCAL** — no hosted run of this branch exists.
 
 ### 50.3 Dispositions
 
@@ -1696,36 +2642,39 @@ branch exists.
 **Measured facts (not part of the decision) — what was actually run, and where.** Every run below was
 local, on this branch, with no database, no browser and no hosted runner.
 
-| run                                                                         | result                                                                |
-| --------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `npm run typecheck`                                                         | pass                                                                  |
-| `npm run typecheck:web`                                                     | pass                                                                  |
-| `npm run lint`                                                              | pass                                                                  |
-| `npm run lint:web`                                                          | 0 errors; 12 pre-existing warnings, none on a file this slice touched |
-| `npm run format:check` · `npm run format:check:web`                         | pass                                                                  |
-| `npm run style:check`                                                       | pass                                                                  |
-| `npm run security:all`                                                      | pass over 2726 tracked files                                          |
-| `npm run validate:encoding` · `npm run validate:generated-artifacts`        | pass                                                                  |
-| `npm run validate:web-boundary`                                             | 356 files, 0 violations                                               |
-| `npm run validate:use-server-exports`                                       | 49 server modules, 0 violations                                       |
-| `npm run validate:web-topology`                                             | 18 expectations, 0 failures                                           |
-| `npm run validate:web-tokens` · `validate:web-theme` · `validate:web-brand` | 0 violations; 54 colours resolved                                     |
-| `npm run validate:notification-authority`                                   | one authority, mounted once                                           |
-| `npm run validate:module-boundaries` · `npm run validate:api-backend-only`  | pass, unchanged                                                       |
-| `npm run validate:plain-language`                                           | 2 catalogues, 24 rules, 0 findings                                    |
-| `npm run validate:p1-31-access`                                             | 11 route pages across 7 segments, 0 violations                        |
-| `npm run validate:p1-26-frontend` · `npm run validate:p1-27-frontend`       | 0 failures; 151 files across 5 trees                                  |
-| focused web — the two new files plus the two re-based suites                | 399/399 across 4 files (83 of them the two new files)                 |
-| root — `npx vitest run tests/ci tests/openapi-contract.test.ts`             | 1990/1990 across 69 files                                             |
-| the web tier, through the P1-27 recorder                                    | 3793/3793 across 135 files, 0 failed                                  |
-| `npm run test:unit`, through the P1-27 recorder                             | 3300/3300 across 122 files, 0 failed                                  |
-| `npm run verify:policies`                                                   | exit 0                                                                |
-| `npm run validate:phase-ownership`, both forms                              | profile `p1-31-frontend`                                              |
+| run                                                                             | result                                                                |
+| ------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `npm run typecheck` · `npm run typecheck:web`                                   | pass                                                                  |
+| `npm run lint`                                                                  | pass                                                                  |
+| `npm run lint:web`                                                              | 0 errors; 12 pre-existing warnings, none on a file this slice touched |
+| `npm run format:check` · `npm run format:check:web` · `npm run style:check:web` | pass                                                                  |
+| `npm run security:all`                                                          | pass over 2756 tracked files                                          |
+| `npm run validate:encoding`                                                     | every tracked text file clean UTF-8, no BOM                           |
+| `npm run validate:generated-artifacts`                                          | 2756 tracked files, 7/7 ignore rules, 0 failures                      |
+| `npm run validate:web-boundary`                                                 | 370 files, 0 violations                                               |
+| `npm run validate:use-server-exports`                                           | 50 server modules across 980 source files, 0 violations               |
+| `npm run validate:web-topology`                                                 | 18 expectations, 336 matched files, 0 failures                        |
+| `npm run validate:web-tokens` · `validate:web-theme` · `validate:web-brand`     | 0 violations; 54 colours registered, 0 unresolvable                   |
+| `npm run validate:notification-authority`                                       | 370 files scanned, one authority, mounted once                        |
+| `npm run validate:module-boundaries`                                            | pass, unchanged                                                       |
+| `npm run validate:api-backend-only`                                             | 317 route handlers, 610 source files, 0 failures                      |
+| `npm run validate:plain-language`                                               | 2 catalogues, 24 rules, 0 findings                                    |
+| `npm run validate:p1-31-access`                                                 | 15 route pages across 8 owned segments, 0 violations                  |
+| `npm run validate:p1-26-frontend`                                               | 370 files, 50 server modules, 0 failures                              |
+| `npm run validate:p1-27-frontend`                                               | 155 files across 5 trees, 9 rules, 0 failures                         |
+| focused web — the reports, delivery, warranty and navigation suites             | 318/318 across 8 files                                                |
+| root — `npx vitest run tests/ci tests/openapi-contract.test.ts`                 | 1991/1991 across 69 files                                             |
+| the web tier, through the P1-27 recorder                                        | 3940/3940 across 139 files, 0 failed                                  |
+| `npm run test:unit`, through the P1-27 recorder                                 | 3301/3301 across 122 files, 0 failed                                  |
+| `npm run verify:policies`                                                       | exit 0                                                                |
+| `npm run validate:phase-ownership`, both forms                                  | profile `p1-31-frontend`, 22 changed files, 0 violations              |
 
-**There was no hosted gate, no run against any database, no browser tier and no merge.** No pull
-request existed when this section was written. The four tasks are `implemented/unmerged`; none is
-`end-to-end verified`, and rule 2 of [`task-matrix.md`](./task-matrix.md) keeps that state unreachable
-until a P1-31 acceptance record exists.
+**There was no hosted gate, no run against any database, no browser tier and no merge.** Every figure
+above was taken locally on this branch, at the head that carries the merge of `develop` `6c99e805`.
+The slice is open as pull request **#371**; no review verdict and no hosted result is recorded here.
+The four tasks are `implemented/unmerged`; none is `end-to-end verified`, and rule 2 of
+[`task-matrix.md`](./task-matrix.md) keeps that state unreachable until a P1-31 acceptance record
+exists.
 
 ### 50.5 What this slice did NOT do, and what is not claimed
 
@@ -1736,6 +2685,6 @@ until a P1-31 acceptance record exists.
 - **FE-010 and FE-016 were not built.** D-19 defines them and they are the next slice; a catalogue and
   a per-report run are not the overview that decision describes, and D-19 says in terms that four raw
   tables alone do not establish it.
-- **No gate was weakened, no allow-list narrowed and no suppression added.** The one gate edit widens
-  a rule's reach; the one baseline edit raises a floor a rule refused as too low.
+- **No gate was weakened, no allow-list narrowed, no suppression added and no floor moved.** The one
+  gate edit widens a rule's reach. The committed test-count baseline is untouched by this slice.
 - **No hosted run, no database tier, no browser acceptance and no end-to-end result is claimed.**

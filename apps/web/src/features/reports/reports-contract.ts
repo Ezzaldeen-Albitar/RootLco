@@ -66,23 +66,6 @@ export const REPORT_PERMISSIONS = {
 } as const;
 
 /**
- * The refusals a report read can answer, mirrored so each is rendered as itself.
- *
- * `ERR-IAM-001` is the uniform denial — the caller may not run reports at all,
- * or may not read the rows this dataset returns, or named a company/branch pair
- * outside their tenant; the three are deliberately indistinguishable, and this
- * side must not invent a distinction. `ERR-RES-001` is an unknown report code, a
- * draft, an archived configuration, or a published configuration with no live
- * version. `ERR-VAL-001` is a malformed request, which for this screen means the
- * period: a `to` that is not after `from`.
- */
-export const REPORT_REFUSALS = {
-  notPermitted: 'ERR-IAM-001',
-  notFound: 'ERR-RES-001',
-  invalidRequest: 'ERR-VAL-001',
-} as const;
-
-/**
  * How a column's cells are rendered, mirrored from `ReportColumnKind`.
  *
  * Four kinds exist on `develop` and three more arrive with the dataset slice.
@@ -384,9 +367,19 @@ export const MAX_REPORT_PAGE_SIZE = 100;
  */
 export const REPORT_PAGE_SIZE = 50;
 
-/** The size a request actually carries. Never above the route's ceiling. */
+/**
+ * The size a request actually carries. Never above the route's ceiling.
+ *
+ * A request that is not a whole number of rows — 0, a negative, a fraction —
+ * falls back to `REPORT_PAGE_SIZE`, the platform's own default, and NOT to the
+ * ceiling. Answering an unusable input with the largest page the route allows
+ * turns a caller's mistake into the heaviest read available; answering it with
+ * the same size the operation would have chosen for a request that sent no
+ * `limit` at all leaves the caller exactly where they would have been. The
+ * ceiling still applies to a request that is whole and merely too large.
+ */
 export function reportPageSize(requested: number): number {
-  if (!Number.isInteger(requested) || requested < 1) return MAX_REPORT_PAGE_SIZE;
+  if (!Number.isInteger(requested) || requested < 1) return REPORT_PAGE_SIZE;
   return requested > MAX_REPORT_PAGE_SIZE ? MAX_REPORT_PAGE_SIZE : requested;
 }
 

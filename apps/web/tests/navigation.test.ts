@@ -127,6 +127,10 @@ describe('the navigation model', () => {
       // /reception/walk-in, gated on the permission its first operation
       // (customer search) requires.
       'walk-in',
+      // P1-31 FE-008 landed the branch's warranty records at /warranty, gated on
+      // `wty.warranty.read` — the code BOTH warranty reads declare, minted by P-7
+      // so that reading a warranty no longer borrows the authority to issue one.
+      'warranty',
       // The work-order board landed with P1-29 W1 at /work-orders, gated on
       // `wo.work_order.read` — the permission its only operation requires.
       'work-orders',

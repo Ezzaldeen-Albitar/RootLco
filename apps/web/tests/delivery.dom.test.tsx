@@ -80,6 +80,27 @@ vi.mock('@/features/delivery/signature-capture', () => ({
   captureDeliverySignature: (...args: unknown[]) => captureDeliverySignature(...args),
 }));
 
+/*
+ * The handover screen draws the warranty issue control (FE-008) for a caller who
+ * holds the code the generation declares. These cases hold none of it, so the
+ * control is never reached — but the adapter module is still loaded through the
+ * import graph, and the transport is not this file's subject. Replaced here, and
+ * exercised for real in `warranty.dom.test.tsx`.
+ */
+const generateWarranty = vi.fn();
+const listWarrantyPolicies = vi.fn(async () => ({
+  status: 'ok' as const,
+  data: { policies: { items: [], nextCursor: null, hasMore: false } },
+  correlationId: 'corr-1',
+}));
+vi.mock('@/features/warranty/warranty-api', () => ({
+  generateWarranty: (...args: unknown[]) => generateWarranty(...args),
+  listWarranties: vi.fn(),
+  listBranches: vi.fn(),
+  readWarranty: vi.fn(),
+  listWarrantyPolicies: () => listWarrantyPolicies(),
+}));
+
 const searchCustomerDirectory = vi.fn();
 vi.mock('@/lib/customers/directory', () => ({
   searchCustomerDirectory: (...args: unknown[]) => searchCustomerDirectory(...args),
@@ -1414,6 +1435,57 @@ describe('the execution controls read in Arabic as Arabic', () => {
         name: EN['delivery.checklist.record'] as string,
       })
     ).toBeNull();
+  });
+});
+
+describe('the warranty control follows the code its own operation declares', () => {
+  it('is absent for a caller who may release the vehicle but not issue a warranty', () => {
+    // `wty.warranty.issue` is neither delivery write code. A caller holding both of
+    // those and not this one sees no warranty control at all, rather than a button
+    // whose only outcome is a denial.
+    renderScreen({ canComplete: true, canManage: true, canIssueWarranty: false });
+    expect(
+      screen.queryByRole('region', { name: EN['warranty.generate.heading'] as string })
+    ).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: EN['warranty.generate.submit'] as string })
+    ).toBeNull();
+  });
+
+  it('is drawn for a caller who holds the issue code, and withheld before handover', () => {
+    // Both halves: present, and present in the state this handover is actually in.
+    // The stage is `ready` here, and the database refuses to date a warranty from a
+    // handover that has not completed.
+    renderScreen({ canIssueWarranty: true });
+    expect(
+      screen.getByRole('region', { name: EN['warranty.generate.heading'] as string })
+    ).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: EN['warranty.generate.submit'] as string })
+    ).toBeDisabled();
+  });
+
+  it('is usable once the vehicle has been handed over', () => {
+    renderScreen({
+      delivery: { ...delivery, status: 'delivered', deliveredAt: '2026-09-08T09:00:00.000Z' },
+      canIssueWarranty: true,
+    });
+    expect(
+      screen.getByRole('button', { name: EN['warranty.generate.submit'] as string })
+    ).toBeEnabled();
+  });
+
+  it('asks for no warranty plan without the warranty READ code', async () => {
+    // Issuing and reading are two codes. A caller holding only the issue code gets
+    // the control and no plan list is requested, because the answer could only be a
+    // refusal — and the request that names no plan is still the one that works.
+    renderScreen({ canIssueWarranty: true });
+    await waitFor(() => expect(listWarrantyPolicies).not.toHaveBeenCalled());
+  });
+
+  it('asks for the plans when the caller holds the warranty read code', async () => {
+    renderScreen({ canIssueWarranty: true, canReadWarrantyPolicies: true });
+    await waitFor(() => expect(listWarrantyPolicies).toHaveBeenCalled());
   });
 });
 
