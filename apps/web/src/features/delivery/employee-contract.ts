@@ -1,25 +1,28 @@
 /**
  * The employee register, as the handover surface consumes it (P1-31, FE-002).
  *
- * | operation            | method | path                        | permissions (ALL required) |
- * | -------------------- | ------ | --------------------------- | -------------------------- |
- * | `org.employee-list`  | GET    | `/org/employees`            | `org.employee.read`        |
- * | `org.employee-detail`| GET    | `/org/employees/{employeeId}` | `org.employee.read`      |
+ * | operation           | method | path             | permissions (ALL required) |
+ * | ------------------- | ------ | ---------------- | -------------------------- |
+ * | `org.employee-list` | GET    | `/org/employees` | `org.employee.read`        |
  *
- * Typed from the routes that own the shapes —
- * `apps/api/src/app/api/v1/org/employees/route.ts` and its `{employeeId}`
- * sibling — and from `EmployeeView` in
+ * Typed from the route that owns the shape —
+ * `apps/api/src/app/api/v1/org/employees/route.ts` — and from `EmployeeView` in
  * `apps/api/src/modules/iam/application/employee-administration-service.ts`.
+ *
+ * The register's single-employee read was mirrored here too and no surface ever
+ * called it, so it was withdrawn: a declaration nothing reaches is the defect
+ * class this repository has named (P1-27 INT-113), and it returns on the day a
+ * screen needs it. Recorded as CC-39(b).
  *
  * ## Why the delivery feature carries this and not an organisation feature
  *
  * The register exists, in the Owner's own words, so that a handover names a
  * **tenant-owned employee identity** rather than an unvalidated reference. The
  * one screen in this application that needs it is the one that starts a
- * handover, and this mirror is typed for exactly that need: two reads, no
- * writes, and no administration surface. The four operations the backend
- * publishes include a create and a status command; neither is mirrored here,
- * because nothing in this feature may administer a roster.
+ * handover, and this mirror is typed for exactly that need: the one read that
+ * screen issues, no writes, and no administration surface. The four operations
+ * the backend publishes include a create and a status command; neither is
+ * mirrored here, because nothing in this feature may administer a roster.
  *
  * ## The branch is a TARGET, and both halves are required
  *
@@ -66,7 +69,7 @@
 /** The permissions the employee register publishes, as the backend registers them. */
 export const EMPLOYEE_PERMISSIONS = {
   /**
-   * Both reads. Deliberately NOT the code that administers the register:
+   * The register read. Deliberately NOT the code that administers the register:
    * choosing who handed a vehicle over must not require the authority to alter
    * the organisation's roster, and the backend split the two codes for exactly
    * that reason.
