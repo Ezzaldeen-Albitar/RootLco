@@ -13,6 +13,8 @@ import { holds } from '@/features/crm/permissions';
 import { readDelivery } from '@/features/delivery/api';
 import { DeliveryDetailScreen } from '@/features/delivery/components/DeliveryDetailScreen';
 import { DELIVERY_PERMISSIONS } from '@/features/delivery/delivery-contract';
+import { WARRANTY_PERMISSIONS } from '@/features/warranty/warranty-contract';
+import { WORK_ORDER_PERMISSIONS } from '@/features/work-orders/work-orders-contract';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 import { pageMetadata } from '@/lib/page-metadata';
@@ -53,7 +55,24 @@ import { pageMetadata } from '@/lib/page-metadata';
  * declares is what stops a screen offering a button whose only outcome is a
  * denial.
  *
- * **All three are affordances, never enforcement.** Every read and every write is
+ * `wty.warranty.issue` is the fourth, added with FE-008. It is the code
+ * `wty.warranty-generate` declares and it is neither of the delivery write codes, so
+ * it is resolved on its own: a caller who may release a vehicle does not necessarily
+ * have the authority to issue the warranty that follows it.
+ *
+ * `wty.warranty.read` is the fifth, and it rides alongside the fourth without
+ * being folded into it: issuing a warranty and reading the published plans are
+ * two codes, and a caller may hold either without the other. It is what the plan
+ * picker inside the warranty control needs.
+ *
+ * `wo.work_order.read` is the sixth, and it is consulted for the printable
+ * handover sheet alone (FE-007). The work-order read is the only read reachable
+ * from this screen that resolves a customer name, a registration plate or a
+ * work-order number; without the code it is not asked, and the sheet prints the
+ * identifiers the delivery record carries instead. It does not gate the page,
+ * because a handover is readable without it.
+ *
+ * **All six are affordances, never enforcement.** Every read and every write is
  * decided again by the backend against the actual record.
  */
 export default async function DeliveryDetailPage({
@@ -159,6 +178,9 @@ export default async function DeliveryDetailPage({
       canReadFinance={holds(session.permissions, DELIVERY_PERMISSIONS.financeView)}
       canComplete={holds(session.permissions, DELIVERY_PERMISSIONS.complete)}
       canManage={holds(session.permissions, DELIVERY_PERMISSIONS.manage)}
+      canIssueWarranty={holds(session.permissions, WARRANTY_PERMISSIONS.issue)}
+      canReadWarrantyPolicies={holds(session.permissions, WARRANTY_PERMISSIONS.read)}
+      canReadWorkOrder={holds(session.permissions, WORK_ORDER_PERMISSIONS.read)}
     />
   );
 }

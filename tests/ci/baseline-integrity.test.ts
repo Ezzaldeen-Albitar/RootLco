@@ -507,7 +507,7 @@ describe('the coverage include lists are pinned, because they are the denominato
       typeScriptFilesUnder(pattern.slice(0, -'/**/*.ts'.length))
     );
     expect(files.filter((file) => file.endsWith('.d.ts'))).toEqual([]);
-    expect(files.length).toBe(283);
+    expect(files.length).toBe(288);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -545,10 +545,39 @@ describe('the coverage include lists are pinned, because they are the denominato
      * `modules/iam/data/branch-context-repository.ts` (the branch timezone the
      * period is resolved in). The floors are untouched for the reason above.
      *
-     * The 283 above is these 282 plus `server/openapi/document.ts`, which the
+     * 284 with the P1-31 report engine slice 2 (P-11, `technician_labor_time`):
+     * two more files, and both are a layer rather than a choice —
+     * `server/db/period.ts` (the half-open local-day predicate, written ONCE
+     * because Owner decision D-17 requires every report period to be converted
+     * consistently and a second copy is how two reports over one period stop
+     * adding up) and
+     * `modules/technician/application/labor-report-port.ts` (the technician
+     * module answering for `tech.*`, which the reporting module may not read).
+     * The floors are untouched for the reason above: re-establishing them needs
+     * a hosted measurement run, which this slice did not perform and does not
+     * claim.
+     *
+     * 285 with the P1-31 report engine slice 3 (P-11, `inventory_movements`):
+     * ONE more file, `modules/inventory/application/inventory-report-port.ts`,
+     * the inventory module answering for `inv.*` — which the reporting module may
+     * not read, and which could not be a method on `InventoryReadService` because
+     * that service writes an `inv.movement_history.read` audit row on every call
+     * and a report run is audited as itself.
+     *
+     * 287 with engine slice 4 (`invoice_payment_summary`): TWO more, one per
+     * module that owns part of the row — `modules/billing/application/
+     * billing-report-port.ts` for the invoices and credit notes, and
+     * `modules/payments/application/payments-report-port.ts` for the receipts and
+     * their allocations. Neither module reads the other's tables, which is what
+     * keeps an allocation from being published twice.
+     *
+     * The floors are untouched for the reason above: re-establishing them needs a
+     * hosted measurement run, which these slices did not perform and do not claim.
+     *
+     * The 288 above is these 287 plus `server/openapi/document.ts`, which the
      * include list admits and `exclude` then removes; the two numbers moving
-     * together by five is what says no file slipped in behind the exclusion.
+     * together by two is what says no file slipped in behind the exclusion.
      */
-    expect(instrumented.length).toBe(282);
+    expect(instrumented.length).toBe(287);
   });
 });
