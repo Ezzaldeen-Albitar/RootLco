@@ -471,6 +471,27 @@ the change-control record names them. A harness whose call shapes disagree with 
 have produced a run full of `ERR-INT-002` and `ERR-CON-002` refusals and read as forty product
 defects.
 
+### 8.2 What CodeQL found in the harness, and what was changed
+
+The hosted `CodeQL` analysis raised **seven** alerts on the first pull-request run, every one of
+them in `scripts/dev/owner-acceptance/p1-31-journey.mjs` and every one of them real. They are
+recorded here because a harness that writes single-use credentials is exactly the file where this
+class of defect matters, and because the fixes changed behaviour rather than annotations.
+
+| alert                           | what it was                                                                                                                                          | what changed                                                                                                                    |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `js/insecure-temporary-file` ×4 | the default evidence directory was a PREDICTABLE path under a shared temporary directory, and it holds `handoff.json` — a password                   | the default is now `mkdtempSync`, which asks the operating system for an unguessable name and creates it atomically, owner-only |
+| `js/http-to-file-access` ×2     | server responses — a customer, a vehicle, an invoice — written to files in that shared directory with default permissions                            | the directory is created `0o700` and every evidence file is written `0o600`                                                     |
+| `js/incomplete-sanitization`    | the Markdown table escaped `\|` without first escaping `\`, so a value ending in a backslash escaped the escape and one cell ate the rest of the row | the backslash is escaped first, and the comment states why the order is the point                                               |
+
+`handoff.json` is additionally written with the `wx` flag: create, and **fail** if anything is
+already at that path. A plain write would follow a symlink somebody else had planted there and
+hand the credential over silently; refusing to write is the only answer that cannot.
+
+**No alert was dismissed, suppressed or annotated away.** The count above is the count, and the
+next hosted run is what confirms it — this document does not claim the result of a run it has not
+seen.
+
 The §8 list is the whole of what is claimed. The journey's **behaviour** is still unmeasured — a call
 shape that matches a declaration is not a call that has been answered — and the first person to run
 it should expect to find further defects in the harness as well as in the product. The P1-30 record's

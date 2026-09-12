@@ -54,7 +54,7 @@
  * would be deleted underneath itself by a routine test run in another worktree.
  */
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -139,14 +139,29 @@ function assertConfirmed() {
  * check is that nobody can be surprised by an untracked evidence tree appearing in
  * `git status` during an acceptance run.
  */
+/**
+ * Where the evidence and the handoff go.
+ *
+ * ## Why the default path is RANDOM and created here
+ *
+ * The handoff carries a single-use password. A predictable path under a shared temporary
+ * directory — which `%LOCALAPPDATA%\Temp` and `/tmp` both are — can be pre-created by
+ * anybody else on the machine as a directory they own or as a symlink somewhere else, and
+ * this process would then write the credential straight through it. `mkdtempSync` asks the
+ * operating system for a name nobody can predict and creates it atomically with owner-only
+ * permission, which is the only shape that closes it. (`js/insecure-temporary-file`.)
+ *
+ * A path given with `--evidence-dir` is the caller's own choice and is used as written; the
+ * refusal below still applies to it, and `writeHandoff` still refuses to overwrite.
+ */
 function resolveEvidenceDir(requested, stamp) {
   const base =
     requested ??
-    join(
-      process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, 'Temp') : tmpdir(),
-      'claude',
-      'p1-31-acceptance',
-      stamp
+    mkdtempSync(
+      join(
+        process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, 'Temp') : tmpdir(),
+        `p1-31-acceptance-${stamp}-`
+      )
     );
   const absolute = resolve(base);
   const inside = relative(REPO_ROOT, absolute);
@@ -2965,7 +2980,16 @@ function halfOpenPeriod() {
 // ---------------------------------------------------------------------------
 
 function markdownTable(ledger) {
-  const escape = (value) => String(value).replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+  /**
+   * The BACKSLASH is escaped first, and the order is the whole point.
+   *
+   * Escaping `|` into `\|` without escaping `\` first means a value ending in a backslash
+   * produces `\\|`, where the backslash escapes itself and the pipe goes back to being a
+   * column separator — one cell then eats the rest of the row and the table silently
+   * misreports what a step answered. (`js/incomplete-sanitization`.)
+   */
+  const escape = (value) =>
+    String(value).replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
   const detail = (row) => {
     const text = JSON.stringify(row.detail ?? {});
     return escape(text.length > 180 ? `${text.slice(0, 177)}...` : text);
@@ -2984,8 +3008,19 @@ function markdownTable(ledger) {
   return lines.join('\n');
 }
 
+/**
+ * `0o700` on the directory and `0o600` on every file in it.
+ *
+ * The evidence records what the server answered, which on this journey includes a
+ * customer, a vehicle and an invoice belonging to the organisations the run made. It is
+ * written outside the repository on a developer machine, and the default location is a
+ * shared temporary directory, so owner-only is the right default and stating it here is
+ * cheaper than discovering it was missing. (`js/http-to-file-access`.)
+ */
+const OWNER_ONLY_FILE = { encoding: 'utf8', mode: 0o600 };
+
 function writeEvidence(dir, { ledger, world, ctx, verdict }) {
-  mkdirSync(dir, { recursive: true });
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
 
   const summary = {
     warning:
@@ -3023,13 +3058,17 @@ function writeEvidence(dir, { ledger, world, ctx, verdict }) {
     auditActionsPresent: world.auditActionsPresent ?? null,
   };
 
-  writeFileSync(join(dir, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`, 'utf8');
+  writeFileSync(
+    join(dir, 'summary.json'),
+    `${JSON.stringify(summary, null, 2)}\n`,
+    OWNER_ONLY_FILE
+  );
   writeFileSync(
     join(dir, 'steps.json'),
     `${JSON.stringify({ run: ctx.stamp, steps: ledger.steps }, null, 2)}\n`,
-    'utf8'
+    OWNER_ONLY_FILE
   );
-  writeFileSync(join(dir, 'steps.md'), `${markdownTable(ledger)}\n`, 'utf8');
+  writeFileSync(join(dir, 'steps.md'), `${markdownTable(ledger)}\n`, OWNER_ONLY_FILE);
   return summary;
 }
 
@@ -3077,7 +3116,16 @@ function writeHandoff(dir, { ledger, world, ctx }) {
       null,
       2
     )}\n`,
-    'utf8'
+    // `wx` — create, and FAIL if anything is already there.
+    //
+    // This file is the one artefact of the run that carries a password. A plain write
+    // would follow a symlink somebody else planted at this path and hand the credential
+    // over silently; refusing to write at all is the only answer that cannot do that.
+    // `0o600` keeps it owner-only once created. A second run gets a fresh directory from
+    // `resolveEvidenceDir`, so the refusal never fires on an honest re-run — and when a
+    // caller reuses `--evidence-dir`, being told to remove the old handoff first is the
+    // correct outcome, because the plan makes removal a step of the run.
+    { encoding: 'utf8', mode: 0o600, flag: 'wx' }
   );
   ledger.note(`handoff written for the browser half; remove it when that half is done`);
   return path;
