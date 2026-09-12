@@ -103,6 +103,12 @@ describe('the navigation model', () => {
       // rows a given report returns need that report's own dataset codes as
       // well; those are per-report and only the server can evaluate them.
       'reports',
+      // P1-31 FE-010: the catalogue child names its parent's own route so the
+      // disclosure parent has a link to mark as the current page, and the
+      // operational overview at `/reports/overview` is the FE-010 screen. Both
+      // carry `rpt.report.read`, the code the parent already names.
+      'reports.catalogue',
+      'reports.overview',
       'settings',
       'settings.currencies',
       'settings.languages',

@@ -101,8 +101,14 @@ export default async function Page({ params }) {
  * measurement worth keeping rather than rounding — `reports` was already a named
  * dashboard area, and the resource root the three new reporting operations derive
  * is also `reports`, so the derived half and the named half agree on it.
+ *
+ * It moved from 11 to 12 with the FE-010 operational overview at
+ * `(dashboard)/reports/overview`. The segment count did not move again, and no
+ * operation was added to the allow-list: the overview consumes the same three
+ * reporting operations, four runs of `rpt.report-run` instead of one, so what grew
+ * is the number of pages the gate judges and nothing about what it owns.
  */
-const PINNED_PAGES = 11;
+const PINNED_PAGES = 12;
 const PINNED_OWNED_SEGMENTS = 7;
 
 describe('the derivation is P1-31’s own and is not empty', () => {
