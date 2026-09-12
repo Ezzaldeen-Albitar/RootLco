@@ -104,10 +104,22 @@ export const P1_31_OPERATION_IDS = Object.freeze([
   // surface — its own route docblock names that picker as the reason it exists — and
   // the single-policy read is named beside it because they share one resource root:
   // owning `warranty-policies` is what makes a future policy screen meet this rule on
-  // the day it lands, exactly as `reports` is named below before it has a page.
+  // the day it lands, exactly as `reports` below was named before it had a page.
   // These two DO widen the segment set, unlike the two above.
   'wty.warranty-policy-list',
   'wty.warranty-policy-read',
+  // The five policy and coverage WRITES P-10 published, added with the plan
+  // administration screens that reach them. None of them widens the segment set —
+  // every one is addressed under the `warranty-policies` root the two reads above
+  // already contributed — so naming them here is the only thing that makes them
+  // owned. An allow-list that omits an operation its own phase's screens call is an
+  // allow-list that has quietly stopped owning it, which is the failure mode this
+  // shape trades a namespace for.
+  'wty.warranty-policy-create',
+  'wty.warranty-policy-rename',
+  'wty.warranty-policy-status-set',
+  'wty.warranty-coverage-create',
+  'wty.warranty-coverage-status-set',
   // The three reporting operations the FE-011 … FE-014 screens consume. Their
   // resource root is `reports`, which `P1_31_AREAS` already names — so these
   // entries widen nothing about the segments and everything about the CLAIM:

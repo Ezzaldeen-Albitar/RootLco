@@ -96,13 +96,17 @@ export default async function Page({ params }) {
  * `N route page(s) examined across M owned segment(s)` — in the same change
  * that adds or removes the page or the segment.
  *
- * It moved from 9 to 11 with the FE-011 … FE-014 report screens: the catalogue
- * page and the per-report page. The SEGMENT count did not move, and that is the
- * measurement worth keeping rather than rounding — `reports` was already a named
- * dashboard area, and the resource root the three new reporting operations derive
- * is also `reports`, so the derived half and the named half agree on it.
+ * It moved from 13 to 15 with the FE-011 … FE-014 report screens: the catalogue
+ * page and the per-report page. BOTH numbers are read off the gate's report line
+ * on this merged head rather than carried forward — the branch was written when
+ * the line read 9, and `develop` moved it twice before this merge — so 13 is what
+ * `develop` reports and 15 is what this head reports. The SEGMENT count did not
+ * move with this slice, and that is the measurement worth keeping rather than
+ * rounding — `reports` was already a named dashboard area, and the resource root
+ * the three new reporting operations derive is also `reports`, so the derived half
+ * and the named half agree on it.
  */
-const PINNED_PAGES = 11;
+const PINNED_PAGES = 15;
 const PINNED_OWNED_SEGMENTS = 8;
 
 describe('the derivation is P1-31’s own and is not empty', () => {
@@ -144,6 +148,20 @@ describe('the derivation is P1-31’s own and is not empty', () => {
     // phase's screens call is an allow-list that has quietly stopped owning them.
     expect(P1_31_OPERATION_IDS).toContain(id('wty', 'warranty-detail'));
     expect(P1_31_OPERATION_IDS).toContain(id('wty', 'warranty-generate'));
+    // The plan administration screens call five WRITES, and every one of them is
+    // addressed under a resource root the two policy reads already contributed. So
+    // none of them widens the derived segment set, and being named here is the only
+    // thing that makes the gate own them. That is exactly the case an allow-list
+    // exists to cover and a namespace rule would miss.
+    for (const tail of [
+      'warranty-policy-create',
+      'warranty-policy-rename',
+      'warranty-policy-status-set',
+      'warranty-coverage-create',
+      'warranty-coverage-status-set',
+    ]) {
+      expect(P1_31_OPERATION_IDS, `${tail} is owned`).toContain(id('wty', tail));
+    }
     // The three reporting operations the FE-011 … FE-014 screens consume. Named
     // here in the change that first consumes them, which is what this gate's
     // docblock requires of every operation it claims.
@@ -153,6 +171,14 @@ describe('the derivation is P1-31’s own and is not empty', () => {
     // A stale entry is a VIOLATION rather than a silent shrink, so an honest
     // derivation over the real register reports no problems at all.
     expect(deriveSegments().problems).toEqual([]);
+  });
+
+  it('owns the plan resource root the administration screens live under', () => {
+    // The five writes are owned WITHOUT widening the segment set, which is the
+    // claim above. Asserted from the other side: the root is derived, and it is
+    // derived from the reads as well, so removing a write leaves it in place while
+    // removing the reads would not.
+    expect(ownedSegments()).toContain(['warranty', 'policies'].join('-'));
   });
 
   it('reports a stale allow-list entry rather than skipping it', () => {
