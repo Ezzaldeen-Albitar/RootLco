@@ -348,6 +348,13 @@ export const OUT_OF_SUBJECT_ADAPTERS = Object.freeze({
   // P1-30 W6: both guard the INVOICE's record version, sourced from the detail read.
   issueInvoice: 'sal.invoice-issue — P1-30 W6, not an apt/rec operation',
   cancelInvoice: 'sal.invoice-cancel — P1-30 W6, not an apt/rec operation',
+  // P1-31 FE-008: the first two guard the PLAN's record version and the third guards
+  // the COVERAGE WINDOW's own, each sourced from the plan read the screen re-runs.
+  renameWarrantyPolicy: 'wty.warranty-policy-rename — P1-31 FE-008, not an apt/rec operation',
+  setWarrantyPolicyStatus:
+    'wty.warranty-policy-status-set — P1-31 FE-008, not an apt/rec operation',
+  setCoverageWindowStatus:
+    'wty.warranty-coverage-status-set — P1-31 FE-008, not an apt/rec operation',
 });
 
 export function expectedAdapterOperations(guarded, manifest, decisions) {
