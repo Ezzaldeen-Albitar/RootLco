@@ -49,9 +49,13 @@ The named prerequisites are:
 
 - **P-11** — the reporting writer and the report engine. The writer merged in PR #361. **Engine
   slice 1 of 4 — this registry, the run operation and `work_orders_by_status` — is implemented on
-  `remediation/p1-31-backend-report-engine-work-orders` (PR #364) and is NOT merged.** Slices 2–4,
-  covering `technician_labor_time`, `inventory_movements` and `invoice_payment_summary`, have not
-  started.
+  `remediation/p1-31-backend-report-engine-work-orders` (PR #364) and is NOT merged.** **Engine
+  slice 2 — `technician_labor_time` — is implemented on
+  `remediation/p1-31-backend-report-engine-datasets`, which is STACKED on that branch and is
+  likewise NOT merged and carries no hosted result. Engine slices 3 and 4 —
+  `inventory_movements` and `invoice_payment_summary` — are implemented on the same branch and are
+  equally unmerged.** All four datasets D-4 approves now exist in code; none of them has a hosted
+  result, and none of the four screens has been started.
 - **P-12** — the export operation. Not started, and `rpt.export` remains withheld from the
   provisioning bundle on the Owner decision recorded as **CC-04**.
 
@@ -162,6 +166,29 @@ produce two totals, and a client-side subtraction over a paged set silently tota
 2. **A job-to-work-order resolution port**, so a session can be attributed to the work order the
    report groups by.
 
+### Status — implemented on an unmerged branch
+
+**Engine slice 2 implements this definition** on `remediation/p1-31-backend-report-engine-datasets`,
+stacked on PR #364's branch. Both are UNMERGED and neither carries a hosted result.
+
+Every prerequisite this section named is answered, and none was answered by relaxing the definition:
+
+| prerequisite named above                   | how it was answered                                                                                                                             |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| a technician NAME, not just an id          | resolved through the iam directory from `tech.technician_profiles.user_id`; `null` for a caller without `iam.user.read`, never invented         |
+| there is no duration column                | computed in SQL as `extract(epoch from (ended_at - started_at))::bigint`, carried as an integer string of WHOLE SECONDS and never as a float    |
+| the row carries `job_id`, not a work order | `workOrderModule().reportPort.workOrdersForJobs` — the owning module answers for `wo.jobs`; the technician repository never joins a `wo.` table |
+| there is no status column                  | the report states the absence instead of showing an empty bucket; contributing is `ended_at IS NOT NULL AND deleted_at IS NULL`                 |
+
+The columns are the Owner's five in the Owner's order, plus `source`, so an amended figure can be
+told from an original one. The period is half-open on `started_at` in the branch's timezone (D-17).
+The required permissions are `tech.technician.read` **and** `wo.work_order.read`, checked
+conjunctively: the report publishes a work-order reference, and a report is not a way to be told
+something the record's own read operation would refuse, so a caller lacking either code is refused
+the WHOLE report rather than served one with the reference column blanked. Both are existing
+catalogue rows and nothing was minted. That is recorded as **CC-33**, now closed by implementation.
+The full record is [`report-engine-seam.md`](./report-engine-seam.md) § 11.
+
 ---
 
 ## 3. `inventory_movements`
@@ -205,6 +232,38 @@ property of the item, so it cannot be derived from a movement row alone.
    quantity across unlike items: summing litres and pieces into a single figure produces a number that
    looks authoritative and means nothing. The unit is part of the grouping key precisely so that the
    query cannot be written the other way.
+
+### Status — implemented on an unmerged branch
+
+**Engine slice 3 implements this definition** on `remediation/p1-31-backend-report-engine-datasets`,
+stacked on PR #364's branch. Both are UNMERGED and neither carries a hosted result.
+
+Every prerequisite this section named is answered, and none was answered by relaxing the definition:
+
+| prerequisite named above                            | how it was answered                                                                                                                                                                                                                            |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the row carries no item name, unit or location code | `InventoryRepository.movementReport` joins `inv.item_master`, `inv.units_of_measure` and `inv.stock_locations` in the same statement, so the report row carries the SKU, the item name, the unit code and name, and the location code and name |
+| a summary grouping by `(item, unit, movement_type)` | the group key is exactly `(item, unit, movementType)` with `quantityIn` and `quantityOut` as two FILTERed sums. There is no grand total, no cross-item measure and no signed sum                                                               |
+
+The columns are the Owner's, in the Owner's order, with `direction` published beside `movementType`
+because `ck_stock_movements_type_direction` constrains the pair together and a reader who cannot see
+the direction cannot tell an adjustment up from an adjustment down. Nothing else was added. The
+period is half-open on `occurred_at` in the branch's timezone (D-17). The required permission is
+`inv.stock.read`, the code `inv.stock-movement-list` declares for the same rows — one code, because
+every column is `inv` master data or the ledger itself.
+
+**Two absences this slice measured and did not paper over**, both recorded as named prerequisites in
+[`report-engine-seam.md`](./report-engine-seam.md) § 9:
+
+- **The ledger has no unit column.** The unit on a report row is the item's unit AS IT IS NOW, so
+  re-pointing an item's unit restates its movement history. The unit is in the group key anyway,
+  which is what makes the separation visible rather than implicit.
+- **The ledger cannot record a backdated movement.** `shared.stamp_status_history` assigns
+  `occurred_at := now()` on every insert and `app_runtime` holds SELECT and INSERT and no UPDATE, so
+  a movement's date is the date it was written. The report is correct over that column; what nobody
+  can do is post a movement dated earlier.
+
+The full record is [`report-engine-seam.md`](./report-engine-seam.md) § 12.
 
 ---
 
@@ -262,20 +321,79 @@ present it as one.
 the whole report rather than nulling a column — the refusal has to happen where the permission is
 evaluated, not where the column is rendered.
 
+### Status — implemented on an unmerged branch
+
+**Engine slice 4 implements this definition** on `remediation/p1-31-backend-report-engine-datasets`,
+stacked on PR #364's branch. Both are UNMERGED and neither carries a hosted result.
+
+The named prerequisite above is answered, and it was not answered by relaxing the definition: the
+dataset declares `sal.finance.view`, `ReportRunService` evaluates it BEFORE it reads anything and
+refuses the whole report with `ERR-IAM-001`, and a case proves the refusal carries no amount and no
+zero standing in for one.
+
+The five rules are implemented as written. `outstanding` is `sal.invoice_open_receivable` CALLED,
+compared in a test against the function itself rather than against a number written in the test;
+`credited` travels as the invoice's own status and the function reports nothing open for it; a
+reversed receipt is excluded from the rows and from every total; the groups are keyed on the
+currency so no measure can span two; every amount is a decimal string at `numeric(18,4)` scale, and
+the reporting module is now inside the exact-money gate's scanned surface.
+
+The rows are DOCUMENTS of three kinds — an invoice by its `issued_at`, a receipt by its
+`received_at`, an approved credit note by its own `issued_at` — with `documentType` as the
+discriminator and a NULL, never a zero, in every amount column a type has no equivalent for. The
+period is half-open in the branch's timezone (D-17).
+
+### Completed by the Owner's decision D-20 of 2026-09-12
+
+Three absences this slice measured and did not paper over were raised in the change-control register
+as **OPEN Owner-level items** — CC-35, CC-35(a) and CC-35(b) — each carrying one recommendation
+pending Owner approval, and recorded as named prerequisites in
+[`report-engine-seam.md`](./report-engine-seam.md) § 9 rows 12 to 15. The Owner decided all three on
+2026-09-12 ([`owner-decisions-2026-09-12.md`](./owner-decisions-2026-09-12.md) § 2, **D-20**):
+
+- **The authoritative credit-note and unallocated-receipt amounts are included as separate fields**
+  (CC-35), which is what this section's own source table names under "credit notes" and "receipts
+  not yet applied". Authoritative means the table's own column and the deployed function — not a
+  figure derived from the other columns on the row, and not netted into `outstanding`, which
+  `sal.invoice_open_receivable` has already computed.
+- **The permitted party name is shown alongside its identifier, labelled according to its actual
+  role** (CC-35(b)), rather than confusing payer and customer. The Owner did NOT take the
+  recommendation of adding `crm.customer.read` to the report's permission list: the name is gated
+  where the capability lives, so a caller without it sees the identifier and no name, and the
+  report's declared permission list is unchanged.
+- **The document drill-through is resolved by document kind and authorized target route**
+  (CC-35(a)). The kind with no read operation carries a published null rather than an invented
+  route, and the absence is recorded — the decision forbids silently omitting a missing contract.
+
+The decision also forbids inventing an amount and forbids performing a financial calculation in the
+browser. Both are already the rules this section's five rules state; D-20 restates them as binding on
+the completion.
+
+**Status — implemented on the same unmerged branch.** The dataset now publishes `unallocatedAmount`
+from `sal.receipt_unallocated` CALLED, `creditNoteAmount` from `sal.credit_notes.amount`,
+`partyId` / `partyName` / `partyRole` in place of `customer`, and a `document` drill-through per
+document kind with a published `null` for the credit note. The groups gain a `(currency,
+credit_note)` group carrying `creditNotes` and an `unallocated` measure on the receipt side; the
+dataset's permission list is still `sal.finance.view` alone. The full record is
+[`report-engine-seam.md`](./report-engine-seam.md) § 13.6 and
+[`change-control-2026-09-08.md`](./change-control-2026-09-08.md) § 47.5. There is still no
+credit-note read operation, which is why one template is null, and that absence is the one named
+prerequisite the completion raises.
+
 ---
 
 ## Summary — what D-4 still owes
 
-| #   | prerequisite                                                                                                                                               | owning module        | blocks                                                |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- | ----------------------------------------------------- |
-| 1   | The dataset registry and the report run operation (**P-11**, engine half) — implemented on PR #364's branch, unmerged                                      | reporting            | slices 2–4, and all four on `develop` until it merges |
-| 2   | The export operation (**P-12**), while `rpt.export` stays withheld (**CC-04**)                                                                             | reporting and export | FE-011 … FE-014 export                                |
-| 3   | A work-order status summary with a half-open period predicate — met on PR #364's branch by `workOrderModule().reportPort`, unmerged                        | work-order           | `work_orders_by_status` on `develop`                  |
-| 4   | A state-label decision                                                                                                                                     | Owner / presentation | `work_orders_by_status`                               |
-| 5   | A labour-totals port and a job-to-work-order resolution port                                                                                               | technician           | `technician_labor_time`                               |
-| 6   | Enriched movement rows and `inv.stock-movement-summary`                                                                                                    | inventory            | `inventory_movements`                                 |
-| 7   | A restricted-amount reporting read gated on both codes                                                                                                     | billing and payments | `invoice_payment_summary`                             |
-| 8   | The SOURCE column for the branch timezone — a recommendation pending Owner approval; the period convention and timezone semantics were approved 2026-09-10 | Owner                | nothing today                                         |
+| #   | prerequisite                                                                                                                                                                               | owning module        | blocks                                                |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------- | ----------------------------------------------------- |
+| 1   | The dataset registry and the report run operation (**P-11**, engine half) — implemented on PR #364's branch, unmerged                                                                      | reporting            | slices 2–4, and all four on `develop` until it merges |
+| 2   | The export operation (**P-12**), while `rpt.export` stays withheld (**CC-04**)                                                                                                             | reporting and export | FE-011 … FE-014 export                                |
+| 3   | A work-order status summary with a half-open period predicate — met on PR #364's branch by `workOrderModule().reportPort`, unmerged                                                        | work-order           | `work_orders_by_status` on `develop`                  |
+| 4   | A state-label decision                                                                                                                                                                     | Owner / presentation | `work_orders_by_status`                               |
+| 5   | A labour-totals port and a job-to-work-order resolution port — MET on the slice-2 branch by `technicianModule().reportPort` and `workOrderModule().reportPort.workOrdersForJobs`, unmerged | technician           | `technician_labor_time` on `develop`                  |
+| 6   | Enriched movement rows and `inv.stock-movement-summary`                                                                                                                                    | inventory            | `inventory_movements`                                 |
+| 7   | A restricted-amount reporting read gated on both codes                                                                                                                                     | billing and payments | `invoice_payment_summary`                             |
+| 8   | The SOURCE column for the branch timezone — a recommendation pending Owner approval; the period convention and timezone semantics were approved 2026-09-10                                 | Owner                | nothing today                                         |
 
 Item 1 exists on PR #364's branch and not on `develop`. Until that branch merges, FE-011 … FE-014
 have a definition and no engine on `develop`, which is exactly the state the task matrix records for

@@ -415,8 +415,10 @@ describe('declarations', () => {
     // `wty.policy.manage` with it (CC-01, now closed); and 76 since P1-31 P-11
     // published the report configuration write surface and carried
     // `rpt.report.configure` with it (CC-02, now closed); the two inventory codes
-    // this case owns are unaffected by all four.
-    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(76);
+    // and 78 since P1-31 P-17 minted the two employee-register codes and carried
+    // both, because a delivery cannot be created without an employee to name;
+    // the two inventory codes this case owns are unaffected by all five.
+    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(78);
   });
 });
 

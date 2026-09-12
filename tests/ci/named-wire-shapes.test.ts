@@ -127,8 +127,12 @@ describe('every route body serialises a named type', () => {
     // and `composed` does not. The envelope exists BECAUSE this gate refuses an
     // inline return type, and naming it is what let the cell, column and period
     // shapes be named as well.
-    expect(summary.bodies).toBe(407);
-    expect(summary.named).toBe(354);
+    // 411 with the P1-31 employee register (P-17): four operations, two GETs and
+    // two writes, every one of them serialising `EmployeeView` or
+    // `Page<EmployeeView>` — a NAMED interface either way — so `named` moves by
+    // four and `composed` does not.
+    expect(summary.bodies).toBe(411);
+    expect(summary.named).toBe(358);
     expect(summary.composed).toBe(53);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

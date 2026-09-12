@@ -172,7 +172,16 @@ describe('catalogue fallback cannot resurrect a tenant withdrawal', () => {
       code: 'ERR-RES-001',
     });
     const page = await service.listPublished(db, {});
-    expect(page.items).toEqual([]);
+    // The withdrawn code is gone, and ONLY that one. From engine slice 2 the
+    // registry holds more than one baseline, so asserting an empty page would
+    // assert the registry's size rather than the suppression rule — and would
+    // have to be rewritten by every slice that adds a dataset, which is how a
+    // property quietly turns into a count.
+    expect(page.items.map((item) => item.reportCode)).not.toContain(input.reportCode);
+    expect(page.items.map((item) => item.reportCode)).toContain('technician_labor_time');
+    expect(page.items.find((item) => item.reportCode === 'technician_labor_time')?.source).toBe(
+      'platform'
+    );
   });
 
   it('keeps absent baseline export unavailable and preserves an explicit tenant export permission', async () => {

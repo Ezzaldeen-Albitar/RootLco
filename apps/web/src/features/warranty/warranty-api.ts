@@ -17,10 +17,17 @@ import type { BranchOption } from '@/features/services/services-contract';
 import { PAGE_SIZE } from './warranty-contract';
 import type {
   WarrantyConfigurationStatus,
+  WarrantyCoverageCreateBody,
+  WarrantyCoverageTerms,
   WarrantyListRow,
   WarrantyPage,
+  WarrantyPolicyCreateBody,
+  WarrantyPolicyDetail,
   WarrantyPolicyListBody,
+  WarrantyPolicyRenameBody,
+  WarrantyPolicySummary,
   WarrantyRecord,
+  WarrantyStatusSetBody,
 } from './warranty-contract';
 
 /**
@@ -60,6 +67,19 @@ import type {
  * reads answer — so a clerk who may issue a warranty can see the plans they may issue
  * under. It is the reason the generation's `policyId` is choosable at all: before it,
  * an identifier could only be typed from somewhere outside the product.
+ *
+ * ## The five plan-administration writes are guarded from the CALL SHAPE outwards
+ *
+ * Three of them are version-guarded, and the backend answers `ERR-CON-002` when
+ * `If-Match` is missing. That refusal is unreachable from here by construction rather
+ * than by care: each of those three adapters takes the version as a REQUIRED
+ * argument, so a call that omits it does not compile. The version passed is always the
+ * one the screen last read from the server, and every mutation re-reads, so the next
+ * command decides against the state the operator is actually looking at.
+ *
+ * No adapter mints an idempotency key. The transport reads `idempotent` out of the
+ * published contract, which is why the plan create, the coverage create and the plan
+ * status command carry one while the coverage status command deliberately does not.
  *
  * ## No history reader exists, and nothing here pretends otherwise
  *
@@ -105,6 +125,32 @@ function warrantyPath(warrantyId: string): string {
  */
 function deliveryWarrantiesPath(deliveryId: string): string {
   return `/api/v1/deliveries/${encodeURIComponent(deliveryId)}/warranties`;
+}
+
+/**
+ * The path of one warranty plan.
+ *
+ * A function DECLARATION for the reason `warrantyPath` states: the P1-28 access gate
+ * resolves helper-built paths by parsing exactly this shape, and a path it cannot
+ * resolve is an operation it cannot see.
+ */
+function policyPath(policyId: string): string {
+  return `/api/v1/warranty-policies/${encodeURIComponent(policyId)}`;
+}
+
+/** The path a window of cover terms is added under. */
+function coverageWindowsPath(policyId: string): string {
+  return `${policyPath(policyId)}/coverage-windows`;
+}
+
+/**
+ * The path one window's state command is addressed to.
+ *
+ * It names BOTH rows, which is what makes the two record versions easy to confuse;
+ * the adapter below takes the coverage row's own and nothing else.
+ */
+function coverageStatusPath(policyId: string, coverageId: string): string {
+  return `${coverageWindowsPath(policyId)}/${encodeURIComponent(coverageId)}/status`;
 }
 
 /**
@@ -195,6 +241,231 @@ export async function listWarrantyPolicies(
         limit: input.limit ?? PAGE_SIZE,
       })
   );
+}
+
+/**
+ * One warranty plan with its windows of cover terms (`wty.warranty-policy-read`).
+ *
+ * Gated on `wty.warranty.read` rather than on the administration code, so a clerk who
+ * issues warranties can see the terms they will be issued under. It is the read the
+ * plan screen is drawn from AND the read every mutation on that screen re-runs, so
+ * what an operator sees after a change is the server's own answer — including the new
+ * `recordVersion`, which is the `If-Match` their next command needs.
+ *
+ * A `not-found` covers both "no such plan" and "a plan in a company you cannot
+ * reach": the service decides absence BEFORE it decides scope, so a refusal never
+ * confirms that an identifier names a real row somewhere.
+ */
+export async function readWarrantyPolicy(
+  policyId: string
+): Promise<ReadState<WarrantyPolicyDetail>> {
+  return readOperation<WarrantyPolicyDetail>(policyPath(policyId));
+}
+
+/**
+ * What one plan-administration write answers with.
+ *
+ * `policy` and `coverage` carry the row the server returned, so the screen can show
+ * the result of the write rather than the request that produced it. `code` and `rule`
+ * together are what tell the three meanings of `ERR-CON-001` apart — a stale version,
+ * a window already covered, a plan reference already used — which the HTTP kind
+ * collapses into one bare conflict.
+ */
+export interface PolicyWriteState extends ActionState {
+  /** The plan the server returned, on a plan write that succeeded. */
+  readonly policy?: WarrantyPolicySummary;
+  /** The window the server returned, on a coverage write that succeeded. */
+  readonly coverage?: WarrantyCoverageTerms;
+  /** The catalogue code the problem document carried, when it carried one. */
+  readonly code?: string;
+  /** The first violation's rule, which is how one code's causes are told apart. */
+  readonly rule?: string;
+  /** The authority a refusal named, when it named one. */
+  readonly requiredPermissions?: readonly string[];
+}
+
+/**
+ * Create a plan for one company (`wty.warranty-policy-create`).
+ *
+ * `companyId` is required by the route and is a claim the service re-authorizes
+ * against the caller's grants; it is not a scope this side asserts. No retry key is
+ * attached here — the operation is registered idempotent and the transport mints one
+ * for every send that needs it.
+ *
+ * Cover terms may travel in the same body, and when they do they land in the SAME
+ * transaction as the plan header. The screen does not use that yet: it creates the
+ * plan and then adds windows on the plan's own screen, where an overlap refusal names
+ * the window it refused instead of failing the whole creation.
+ */
+export async function createWarrantyPolicy(
+  body: WarrantyPolicyCreateBody,
+  attempt = 1
+): Promise<PolicyWriteState> {
+  const client = await authorizedClient();
+  if (!client) return EXPIRED_WRITE(attempt);
+
+  const result = await client.send<WarrantyPolicySummary>(
+    'POST',
+    '/api/v1/warranty-policies',
+    body
+  );
+  if (!result.ok) return refusal(fromFailure(result, attempt), result);
+  return { ...success('warranty.policies.created', attempt), policy: result.data };
+}
+
+/**
+ * Rename one plan (`wty.warranty-policy-rename`).
+ *
+ * `ifMatch` is REQUIRED, and that is the whole defence against `ERR-CON-002`: the
+ * backend refuses a version-guarded write without the header, and an optional
+ * argument here would make a call that omits it compile. It is the PLAN's version,
+ * which is what this operation's own read publishes as its ETag.
+ *
+ * The plan reference is not renameable and no field for it is sent: the route refuses
+ * it, because a re-coded plan is a different configuration wearing the old identity.
+ */
+export async function renameWarrantyPolicy(
+  policyId: string,
+  body: WarrantyPolicyRenameBody,
+  ifMatch: number,
+  attempt = 1
+): Promise<PolicyWriteState> {
+  const client = await authorizedClient();
+  if (!client) return EXPIRED_WRITE(attempt);
+
+  const result = await client.send<WarrantyPolicySummary>('PATCH', policyPath(policyId), body, {
+    ifMatch,
+  });
+  if (!result.ok) return refusal(fromFailure(result, attempt), result);
+  return { ...success('warranty.policies.renamed', attempt), policy: result.data };
+}
+
+/**
+ * Retire or restore one plan (`wty.warranty-policy-status-set`).
+ *
+ * There is no delete and there cannot be: no application role holds a DELETE grant on
+ * either warranty configuration table, and every warranty record cites its plan by
+ * id. Retiring removes the plan from the set a generation resolves; restoring is
+ * offered because a retired plan still holds its reference, so an archive-only
+ * command would burn that reference for the company permanently.
+ *
+ * Version-guarded AND idempotent: the version makes the transition decide against the
+ * state the operator actually read, and the transport's key makes a retried request
+ * return the first answer instead of a version conflict indistinguishable from a real
+ * one.
+ */
+export async function setWarrantyPolicyStatus(
+  policyId: string,
+  body: WarrantyStatusSetBody,
+  ifMatch: number,
+  attempt = 1
+): Promise<PolicyWriteState> {
+  const client = await authorizedClient();
+  if (!client) return EXPIRED_WRITE(attempt);
+
+  const result = await client.send<WarrantyPolicySummary>(
+    'POST',
+    `${policyPath(policyId)}/status`,
+    body,
+    { ifMatch }
+  );
+  if (!result.ok) return refusal(fromFailure(result, attempt), result);
+  return { ...success('warranty.policies.statusChanged', attempt), policy: result.data };
+}
+
+/**
+ * Add one window of cover terms to a plan (`wty.warranty-coverage-create`).
+ *
+ * Adding is the ONLY way to change a plan's terms. The database freezes the plan and
+ * the start date of an existing window, and this surface refuses to move the end date
+ * in place as well, because warranties issued under a window cite it for their whole
+ * life and re-closing it would silently restate terms a customer is already bound to.
+ * Retire the window and add the one you meant.
+ *
+ * `durationMonths` crosses the wire as a JSON number because a count of months is not
+ * a measurement. `odometerAllowance` crosses as an exact decimal STRING and is never
+ * parsed on this side; omitting it is what an unlimited distance means.
+ */
+export async function createCoverageWindow(
+  policyId: string,
+  body: WarrantyCoverageCreateBody,
+  attempt = 1
+): Promise<PolicyWriteState> {
+  const client = await authorizedClient();
+  if (!client) return EXPIRED_WRITE(attempt);
+
+  const result = await client.send<WarrantyCoverageTerms>(
+    'POST',
+    coverageWindowsPath(policyId),
+    body
+  );
+  if (!result.ok) return refusal(fromFailure(result, attempt), result);
+  return { ...success('warranty.policies.coverageAdded', attempt), coverage: result.data };
+}
+
+/**
+ * Retire or restore one window of cover terms (`wty.warranty-coverage-status-set`).
+ *
+ * This is the command that actually changes what the next vehicle is granted: the
+ * issue primitive selects coverage on the WINDOW's state and never reads the plan's.
+ * Warranties already issued under a retired window stay readable and intact.
+ *
+ * `ifMatch` is the COVERAGE row's own version, never the plan's. The two are separate
+ * counters on separate rows and the path names both, which is exactly the shape a
+ * caller gets wrong silently — so the argument is required and is taken from the row
+ * the operator is acting on.
+ *
+ * A restore can be refused, and that refusal is not a fault: the overlap rule is
+ * partial on active rows, so a retired window's dates may have been re-covered while
+ * it was away. This operation is deliberately NOT idempotent for that reason, and the
+ * transport attaches no key to it.
+ */
+export async function setCoverageWindowStatus(
+  policyId: string,
+  coverageId: string,
+  body: WarrantyStatusSetBody,
+  ifMatch: number,
+  attempt = 1
+): Promise<PolicyWriteState> {
+  const client = await authorizedClient();
+  if (!client) return EXPIRED_WRITE(attempt);
+
+  const result = await client.send<WarrantyCoverageTerms>(
+    'POST',
+    coverageStatusPath(policyId, coverageId),
+    body,
+    { ifMatch }
+  );
+  if (!result.ok) return refusal(fromFailure(result, attempt), result);
+  return { ...success('warranty.policies.coverageStatusChanged', attempt), coverage: result.data };
+}
+
+/** An ended session, reported without asking the transport for anything. */
+const EXPIRED_WRITE = (attempt: number): PolicyWriteState => ({
+  status: 'expired',
+  messageKey: 'state.expired.title',
+  attempt,
+});
+
+/**
+ * Carries the catalogue code, the first violation's rule and any named authority.
+ *
+ * The RULE is what `withCode` below does not carry and this surface cannot do
+ * without: `ERR-CON-001` means three different things here, and the problem
+ * document's `violations` list is the only machine-readable statement of which. A
+ * stale version carries no rule at all, so its absence is itself the signal.
+ */
+function refusal(state: ActionState, failure: ApiFailure): PolicyWriteState {
+  const problem = failure.problem;
+  const rule = problem?.violations?.[0]?.rule;
+  return {
+    ...state,
+    ...(problem?.code === undefined ? {} : { code: problem.code }),
+    ...(rule === undefined ? {} : { rule }),
+    ...(problem?.requiredPermissions === undefined
+      ? {}
+      : { requiredPermissions: problem.requiredPermissions }),
+  };
 }
 
 /**

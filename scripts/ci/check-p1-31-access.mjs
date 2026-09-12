@@ -104,10 +104,31 @@ export const P1_31_OPERATION_IDS = Object.freeze([
   // surface — its own route docblock names that picker as the reason it exists — and
   // the single-policy read is named beside it because they share one resource root:
   // owning `warranty-policies` is what makes a future policy screen meet this rule on
-  // the day it lands, exactly as `reports` is named below before it has a page.
+  // the day it lands, exactly as `reports` below was named before it had a page.
   // These two DO widen the segment set, unlike the two above.
   'wty.warranty-policy-list',
   'wty.warranty-policy-read',
+  // The five policy and coverage WRITES P-10 published, added with the plan
+  // administration screens that reach them. None of them widens the segment set —
+  // every one is addressed under the `warranty-policies` root the two reads above
+  // already contributed — so naming them here is the only thing that makes them
+  // owned. An allow-list that omits an operation its own phase's screens call is an
+  // allow-list that has quietly stopped owning it, which is the failure mode this
+  // shape trades a namespace for.
+  'wty.warranty-policy-create',
+  'wty.warranty-policy-rename',
+  'wty.warranty-policy-status-set',
+  'wty.warranty-coverage-create',
+  'wty.warranty-coverage-status-set',
+  // The three reporting operations the FE-011 … FE-014 screens consume. Their
+  // resource root is `reports`, which `P1_31_AREAS` already names — so these
+  // entries widen nothing about the segments and everything about the CLAIM:
+  // this gate's docblock requires an operation to be listed in the same change
+  // that first consumes it, and an id that stops existing must be a violation
+  // rather than a quiet shrink.
+  'rpt.report-catalogue',
+  'rpt.report-read',
+  'rpt.report-run',
 ]);
 
 /**
@@ -116,8 +137,11 @@ export const P1_31_OPERATION_IDS = Object.freeze([
  * `delivery` is singular and deliberately so — it is the href already committed
  * in navigation. `warranty` was named before its screens existed and now carries
  * them, which is the point of naming an area early: FE-008's two pages met a rule
- * that predated them. `reports` still has no page and stays named for the same
- * reason.
+ * that predated them. `reports` was named on the same grounds and now HAS pages
+ * too: the FE-011 … FE-014 catalogue and report screens. Its resource root is also
+ * `reports`, so the derived and the named halves agree on that segment — which is
+ * why adding the three reporting operations moved the page count and not the
+ * segment count.
  */
 export const P1_31_AREAS = Object.freeze(['delivery', 'warranty', 'reports']);
 

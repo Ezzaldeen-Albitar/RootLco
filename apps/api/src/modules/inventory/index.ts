@@ -43,6 +43,7 @@ import { InventoryReadService } from './application/inventory-read-service';
 import { InventoryStockService } from './application/inventory-stock-service';
 import { InventoryIntakeService } from './application/inventory-intake-service';
 import { InventoryCatalogService } from './application/inventory-catalog-service';
+import { InventoryReportPort } from './application/inventory-report-port';
 
 export type {
   BalanceReconciliationRow,
@@ -50,6 +51,7 @@ export type {
   ItemListFilter,
   ItemRow,
   MovementListFilter,
+  MovementReportFilter,
   MovementRow,
   OpeningBatchHeaderRow,
   OpeningLineRow,
@@ -90,6 +92,12 @@ export type {
   ReservationView,
   ReturnView,
 } from './application/inventory-stock-service';
+
+export type {
+  MovementReportEntry,
+  MovementReportSummary,
+  MovementReportTotal,
+} from './application/inventory-report-port';
 
 export type {
   CustomerSuppliedPartView,
@@ -164,6 +172,12 @@ export const inventoryModule = composeModule({
       // never stock, never cost — so the opening batch stays the sole path by
       // which stock appears from nothing.
       catalog: new InventoryCatalogService(repository),
+      // P1-31 P-11 slice 3. The REPORTING port. Separate from `reads` because
+      // `InventoryReadService.listMovements` takes a scope authorizer and writes
+      // an `inv.movement_history.read` audit row on every call — a report run is
+      // audited as itself, and a second entry attributed to an operation the
+      // caller never invoked would be a false trail.
+      reportPort: new InventoryReportPort(repository),
     };
   },
 });

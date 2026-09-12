@@ -55,6 +55,7 @@ import {
   type Page,
   type PageRequest,
 } from '@/server/db/pagination';
+import { halfOpenLocalDayRange } from '@/server/db/period';
 import type { DbHandle } from '@/server/db/transaction';
 import { assertAllocationUsesPrimitive } from '../domain/payments';
 
@@ -194,6 +195,94 @@ export interface ReceiptUnallocatedRow {
   readonly unallocated: string;
   readonly currencyCode: string;
   readonly status: string;
+}
+
+/**
+ * The period, the branch and the cursor a report document read is bounded by
+ * (P1-31 P-11, engine slice 4).
+ *
+ * `toExclusive` rather than `to`, because the name is the contract: a reader who
+ * sees `to` assumes the last day reported, and that assumption is the off-by-one
+ * the half-open period exists to prevent (D-17).
+ */
+export interface ReceiptDocumentFilter {
+  /** REQUIRED. The authorized scope, and a predicate on every statement. */
+  readonly companyId: string;
+  readonly branchId: string;
+  /** Inclusive first day, `YYYY-MM-DD`, in `timezoneName`. */
+  readonly from: string;
+  /** First day EXCLUDED — the day after the last one reported, `YYYY-MM-DD`. */
+  readonly toExclusive: string;
+  /** An IANA zone name: the reporting branch's `org.branches.timezone_name`. */
+  readonly timezoneName: string;
+}
+
+/**
+ * Where the page starts and how many rows it may hold.
+ *
+ * A DECODED position rather than an encoded cursor: this report's rows are a
+ * MERGE of two modules' documents, so the ordering contract — and therefore the
+ * cursor's identity, its decode and its minting — belongs to the reporting module
+ * that merges them. A second contract declared here would be a second definition
+ * of one order, and the two would drift.
+ *
+ * `limit` is the number of rows to return and includes whatever sentinel the
+ * caller intends: this statement adds none, because the merge decides `hasMore`
+ * over the combined stream and a per-stream sentinel would answer for the wrong
+ * selection.
+ */
+export interface ReportDocumentPage {
+  readonly after: { readonly sortValue: string; readonly id: string } | null;
+  readonly limit: number;
+}
+
+/** One receipt of the reported period, with what it has been applied to. */
+export interface ReceiptDocumentRow {
+  readonly documentId: string;
+  /** `sal.receipts.receipt_number` — NOT NULL, so never absent. */
+  readonly documentNumber: string;
+  readonly documentDate: Date;
+  /**
+   * The party the receipt names, as an id, and the ROLE it names them under.
+   *
+   * `sal.receipts.payer_partner_id`, so the role is `payer` — the party who PAID,
+   * which is not necessarily the customer the work was done for. Publishing the
+   * one under the other's name is what the Owner's answer of 2026-09-12 forbids.
+   */
+  readonly partyId: string;
+  readonly partyRole: 'payer';
+  readonly currencyCode: string;
+  /** `recorded`, `partially_allocated` or `allocated`. Never `reversed`. */
+  readonly status: string;
+  /** `sal.receipts.amount` as a decimal string. */
+  readonly receiptAmount: string;
+  /** Sum of this receipt's allocations, as a decimal string. `0.0000` when none. */
+  readonly allocatedAmount: string;
+  /**
+   * `sal.receipt_unallocated(id)` as a decimal string — the AUTHORITY, called.
+   *
+   * Not `amount − allocated` computed here. The function is the deployed
+   * definition the receipt screen already reads, it returns `0` for a reversed
+   * receipt, and a subtraction written in TypeScript would be a second authority
+   * that disagrees with the screen the first time either changes.
+   */
+  readonly unallocatedAmount: string;
+  /** The microsecond-precision cursor value for `documentDate`. */
+  readonly sortValue: string;
+}
+
+/** One currency's receipt totals over the WHOLE selection. */
+export interface ReceiptDocumentTotalRow {
+  readonly currencyCode: string;
+  readonly receipts: string;
+  readonly allocated: string;
+  /** Sum of `sal.receipt_unallocated` over the same receipts. */
+  readonly unallocated: string;
+}
+
+export interface ReceiptDocumentRows {
+  readonly totals: readonly ReceiptDocumentTotalRow[];
+  readonly documents: readonly ReceiptDocumentRow[];
 }
 
 /**
@@ -693,6 +782,157 @@ export class PaymentsRepository extends Repository {
       [context.principal.tenantId, receiptId, scope.companyId, scope.branchId, limit + 1]
     );
     return rows.rows.map(toAllocation);
+  }
+
+  /**
+   * The branch's RECEIPTS in a period, with the receipt totals of the whole
+   * selection (P1-31 P-11, engine slice 4).
+   *
+   * ## A reversed receipt is a receipt that did not happen
+   *
+   * `status = 'reversed'` is excluded from both statements, which D-4 requires
+   * explicitly. Its allocations disappear with it, because they are only ever
+   * summed against a receipt that survives the predicate — the same exclusion
+   * `sal.invoice_open_receivable` performs on the invoice side, so the two sides
+   * of this report agree about which money moved.
+   *
+   * ## The allocated column is the receipt's own, and it is summed here ONCE
+   *
+   * A receipt may allocate to many invoices and more than once to the same one,
+   * so the column is a sum over `sal.payment_allocations` for that receipt.
+   *
+   * The invoice side of the report publishes no allocation column at all, so this
+   * money is counted once as a receipt measure and once as a reduction inside
+   * `sal.invoice_open_receivable` — never twice inside one group.
+   *
+   * ## What is LEFT is the function's answer, not a subtraction
+   *
+   * The Owner's answer of 2026-09-12 asks for the authoritative unallocated
+   * amount as a separate field, and the authority is `sal.receipt_unallocated` —
+   * the same deployed function `receiptUnallocated` and the receipt screen
+   * already call. It is CALLED here, per row and inside the aggregate, rather
+   * than derived as `amount − allocated` in TypeScript: the function returns `0`
+   * for a reversed receipt and rounds at scale 4, and a second derivation is how
+   * a report and a screen come to state different balances for one receipt.
+   *
+   * ## No page is built here
+   *
+   * These rows are one of TWO ordered streams the reporting module merges, so this
+   * returns ordered rows with their cursor values and mints no cursor. See
+   * `ReportDocumentPage`.
+   */
+  public async receiptDocuments(
+    db: DbHandle,
+    filter: ReceiptDocumentFilter,
+    page: ReportDocumentPage
+  ): Promise<ReceiptDocumentRows> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.from,
+      filter.toExclusive,
+      filter.timezoneName,
+    ];
+    // Written once and used by both statements. A second copy is how an aggregate
+    // and its rows come to answer for different selections. The LATERAL sums the
+    // receipt's own allocations; `LEFT JOIN` keeps a receipt that has none, which
+    // `coalesce` then renders as an exact zero rather than an absence.
+    const scope = `FROM sal.receipts r
+         LEFT JOIN LATERAL (
+           SELECT sum(pa.amount) AS allocated
+             FROM sal.payment_allocations pa
+            WHERE pa.tenant_id = r.tenant_id AND pa.company_id = r.company_id
+              AND pa.branch_id = r.branch_id AND pa.receipt_id = r.id
+         ) al ON true
+        WHERE r.tenant_id = $1 AND r.company_id = $2 AND r.branch_id = $3
+          AND r.deleted_at IS NULL
+          AND r.status <> 'reversed'
+          AND ${halfOpenLocalDayRange('r.received_at', 4, 5, 6)}`;
+
+    const totals = await this.run<{
+      currency_code: string;
+      receipts: string;
+      allocated: string;
+      unallocated: string;
+    }>(
+      db,
+      `SELECT r.currency_code,
+              sum(r.amount)::text                                     AS receipts,
+              coalesce(sum(al.allocated), 0::numeric(18, 4))::text    AS allocated,
+              coalesce(sum(sal.receipt_unallocated(r.id)), 0::numeric(18, 4))::text
+                                                                      AS unallocated
+         ${scope}
+        GROUP BY r.currency_code
+        ORDER BY r.currency_code`,
+      values
+    );
+
+    // The keyset predicate, written here rather than taken from `keysetFragment`,
+    // because the cursor belongs to the reporting module's MERGED ordering and
+    // arrives already decoded. The comparison is the same row-value form
+    // `keysetFragment` emits for a descending order.
+    const cursorIndex = values.length + 1;
+    let after = '';
+    if (page.after !== null) {
+      values.push(page.after.sortValue, page.after.id);
+      after = `AND (r.received_at, r.id) < ($${cursorIndex}, $${cursorIndex + 1})`;
+    }
+    const limitIndex = values.length + 1;
+    values.push(page.limit);
+
+    const rows = await this.run<{
+      document_id: string;
+      document_number: string;
+      document_date: Date;
+      payer_partner_id: string;
+      currency_code: string;
+      status: string;
+      receipt_amount: string;
+      allocated_amount: string;
+      unallocated_amount: string;
+      sort_value: string;
+    }>(
+      db,
+      `SELECT r.id AS document_id, r.receipt_number AS document_number,
+              r.received_at AS document_date, r.payer_partner_id, r.currency_code,
+              r.status, r.amount::text AS receipt_amount,
+              coalesce(al.allocated, 0::numeric(18, 4))::text AS allocated_amount,
+              sal.receipt_unallocated(r.id)::text AS unallocated_amount,
+              ${cursorTimestamp('r.received_at')} AS sort_value
+         ${scope}
+          ${after}
+        ORDER BY r.received_at DESC, r.id DESC
+        LIMIT $${limitIndex}`,
+      values
+    );
+
+    return {
+      totals: totals.rows.map((row) => ({
+        currencyCode: row.currency_code,
+        receipts: row.receipts,
+        allocated: row.allocated,
+        unallocated: row.unallocated,
+      })),
+      documents: rows.rows.map((row) => ({
+        documentId: row.document_id,
+        documentNumber: row.document_number,
+        documentDate: row.document_date,
+        // The payer, under the role the column actually carries.
+        partyId: row.payer_partner_id,
+        partyRole: 'payer' as const,
+        currencyCode: row.currency_code,
+        status: row.status,
+        // Carried through as the decimal strings `pg` produced. No arithmetic
+        // happens here and none may: `numeric(18,4)` holds values a double cannot
+        // represent, and one conversion is all it takes to lose the fourth place.
+        receiptAmount: row.receipt_amount,
+        allocatedAmount: row.allocated_amount,
+        unallocatedAmount: row.unallocated_amount,
+        sortValue: row.sort_value,
+      })),
+    };
   }
 
   // -------------------------------------------------------------------------

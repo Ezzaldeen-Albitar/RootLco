@@ -72,6 +72,7 @@ export type {
   WorkOrderStateCountRow,
 } from './data/work-order-repository';
 export type {
+  JobWorkOrderReference,
   WorkOrderStateCount,
   WorkOrderStatusSummary,
 } from './application/work-order-report-port';
@@ -178,8 +179,10 @@ export const workOrderModule = composeModule({
       // of one tenant's configuration.
       jobBoard: new JobBoardService(new JobBoardRepository(), catalog),
       // P1-31 P-11. The port the REPORTING module consumes, and the only part of
-      // this module it can reach: one method, sharing the repository and the
-      // state catalogue above rather than constructing second copies of either.
+      // this module it can reach: two reads, sharing the repository and the state
+      // catalogue above rather than constructing second copies of either. Slice 2
+      // added `workOrdersForJobs`, because `tech.labor_sessions` carries a job id
+      // and `wo.jobs` is this module's to answer for.
       reportPort: new WorkOrderReportPort(repository, catalog),
     };
   },

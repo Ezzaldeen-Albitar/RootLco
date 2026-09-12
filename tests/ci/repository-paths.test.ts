@@ -253,7 +253,10 @@ describe('the API application lives in the workspace', () => {
     // path from the definition read rather than a query parameter on it, so a
     // slice that had overloaded an existing route would move neither count and
     // this case would not have noticed.
-    expect(routeFiles.length).toBe(317);
+    // 320 with the P1-31 employee register (P-17): four operations over THREE new
+    // modules. The collection module co-locates the list and the create, so one
+    // path carries two verbs — four and three, the same asymmetry.
+    expect(routeFiles.length).toBe(320);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -274,7 +277,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 407 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 411 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -332,7 +335,9 @@ describe('the API application lives in the workspace', () => {
     // 406 at the integration of the two: the readiness queue is one operation over
     // one NEW module, so both counts move by one there.
     // 407 with the report engine (P-11): one operation over one new module.
-    expect(report.operations).toHaveLength(407);
+    // 411 with the P1-31 employee register (P-17): four operations over three new
+    // modules, for the reason stated above the route-module count.
+    expect(report.operations).toHaveLength(411);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the

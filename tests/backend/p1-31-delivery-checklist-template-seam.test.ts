@@ -99,6 +99,7 @@ import {
   authAs,
   cleanP1_22Fixtures,
   establishP1_22Fixtures,
+  deliveringEmployeeForWorkOrder,
   seedWorkOrderChain,
 } from './p1-22-helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
@@ -1067,7 +1068,13 @@ async function openA9Delivery(
     new Request('http://localhost/api/v1/deliveries', {
       method: 'POST',
       headers: jsonHeaders({ key: randomUUID() }),
-      body: JSON.stringify({ workOrderId: chain.workOrderId, deliveringEmployeeId: randomUUID() }),
+      // A real `org.employees` identity in this branch, not an arbitrary uuid: since
+      // P1-31 P-17 the column carries a foreign key and a BEFORE INSERT eligibility
+      // trigger, so a random uuid is refused rather than stored.
+      body: JSON.stringify({
+        workOrderId: chain.workOrderId,
+        deliveringEmployeeId: await deliveringEmployeeForWorkOrder(chain.workOrderId),
+      }),
     })
   );
   expect(opened.status).toBe(201);

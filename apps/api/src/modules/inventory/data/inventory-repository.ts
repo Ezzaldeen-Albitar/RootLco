@@ -33,6 +33,7 @@ import {
   type Page,
   type PageRequest,
 } from '@/server/db/pagination';
+import { halfOpenLocalDayRange } from '@/server/db/period';
 
 /** Items are listed by SKU — a total order backed by `uq_item_master_sku`. */
 export const ITEM_ORDER: OrderingContract = Object.freeze({ key: 'sku', direction: 'asc' });
@@ -46,6 +47,31 @@ export const ITEM_ORDER: OrderingContract = Object.freeze({ key: 'sku', directio
  * skip or repeat rows across a page boundary.
  */
 export const MOVEMENT_ORDER: OrderingContract = Object.freeze({ key: 'seq', direction: 'desc' });
+
+/**
+ * The REPORT's ordering over the same ledger: newest `occurred_at` first, id
+ * tie-break (P1-31 P-11, engine slice 3).
+ *
+ * Deliberately NOT `MOVEMENT_ORDER`, and the difference is the point. The ledger
+ * list sorts on `seq`, which is a strict total order; this report is a report
+ * ABOUT A PERIOD, and the period is expressed on `occurred_at` (D-17). Sorting a
+ * period report on an insertion sequence would let a movement whose `occurred_at`
+ * falls on the third be paged between two that fall on the fifth — a page that is
+ * correct as a set and unreadable as a report.
+ *
+ * `occurred_at` is not unique, so it is not a total order on its own; the keyset
+ * carries the row id as the tie-break, exactly as the labour report does over
+ * `started_at`, and the cursor value is the microsecond-precision string rather
+ * than a JS `Date` (`P1-27-INT-006`).
+ *
+ * The key is QUALIFIED, unlike `MOVEMENT_ORDER` above: the two orderings are over
+ * the same table and a cursor minted for one must be refused by the other, which a
+ * bare `occurred_at_desc` could not guarantee.
+ */
+export const MOVEMENT_REPORT_ORDER: OrderingContract = Object.freeze({
+  key: 'inv.stock_movements:occurred_at_desc',
+  direction: 'desc',
+});
 
 /**
  * Reservations are listed newest-first by `created_at` (Phase 1-30 A2, S-14).
@@ -315,6 +341,87 @@ export interface MovementListFilter {
   readonly referenceKind?: string;
   readonly occurredFrom?: string;
   readonly occurredTo?: string;
+}
+
+/**
+ * The period a movement report covers, in the reporting branch's own timezone.
+ *
+ * The three period fields are the shape `halfOpenLocalDayRange` consumes, and the
+ * calendar days are DAYS rather than instants for the reason D-17 gives: a caller
+ * who sent an instant would carry an offset of their own choosing, which would
+ * silently override the zone the period is supposed to be expressed in.
+ */
+export interface MovementReportFilter {
+  /** REQUIRED. The authorized scope, and a predicate on every statement. */
+  readonly companyId: string;
+  readonly branchId: string;
+  /** Inclusive first day, `YYYY-MM-DD`, in `timezoneName`. */
+  readonly from: string;
+  /** First day EXCLUDED — the day after the last one reported, `YYYY-MM-DD`. */
+  readonly toExclusive: string;
+  /** An IANA zone name: the reporting branch's `org.branches.timezone_name`. */
+  readonly timezoneName: string;
+}
+
+/**
+ * One movement of the reported period, with the master data a report row names.
+ *
+ * Every quantity is a decimal STRING. `inv.stock_movements.quantity` is
+ * `numeric(12,3)`, `pg` returns OID 1700 as text and this repository never
+ * overrides that, because IEEE-754 cannot represent the third decimal place.
+ */
+export interface MovementReportRow {
+  readonly id: string;
+  readonly occurredAt: Date;
+  readonly referenceKind: string;
+  readonly referenceId: string;
+  readonly movementType: string;
+  readonly direction: string;
+  readonly itemId: string;
+  readonly sku: string;
+  readonly itemName: string;
+  readonly locationId: string;
+  readonly locationCode: string;
+  readonly locationName: string;
+  /** A decimal string. Always positive — `ck_stock_movements_quantity`. */
+  readonly quantity: string;
+  /** `inv.units_of_measure.code` of the item's own unit. */
+  readonly uomCode: string;
+  readonly uomName: string;
+}
+
+/**
+ * One total of the WHOLE selection, keyed by item, unit and movement type.
+ *
+ * ## Why the key carries all three, and why there is no grand total
+ *
+ * Owner decision D-5 forbids a single quantity across unlike items, and D-4
+ * requires totals "separated by item and by compatible unit". The unit is in the
+ * key even though an item has exactly one unit today, because the key is what
+ * makes the separation VISIBLE: a consumer reading the group can see which unit
+ * the number is in without resolving the item, and an item whose unit is ever
+ * re-pointed cannot silently merge two incompatible histories into one figure.
+ *
+ * The movement type is in the key because D-4 requires that "the distinct
+ * meanings of a return and a transfer are preserved". Netting a return against
+ * an issue would destroy exactly that distinction, so the two never meet in one
+ * measure: the totals are per type, and within a type the `in` and `out` halves
+ * are separate columns rather than a signed sum.
+ */
+export interface MovementReportTotalRow {
+  readonly itemId: string;
+  readonly sku: string;
+  readonly uomCode: string;
+  readonly movementType: string;
+  /** Sum of `quantity` over `direction = 'in'`, as a decimal string. */
+  readonly quantityIn: string;
+  /** Sum of `quantity` over `direction = 'out'`, as a decimal string. */
+  readonly quantityOut: string;
+}
+
+export interface MovementReportRows {
+  readonly totals: readonly MovementReportTotalRow[];
+  readonly page: Page<MovementReportRow>;
 }
 
 export interface OpeningBatchRow {
@@ -2264,6 +2371,174 @@ export class InventoryRepository extends Repository {
       sortValue: row.seq,
       id: row.id,
     }));
+  }
+
+  /**
+   * The branch's stock movements in a calendar period, and the totals of the
+   * whole selection (P1-31 prerequisite P-11, engine slice 3 — D-4, D-5, D-17).
+   *
+   * ## Why this is not `listMovements` with two more filters
+   *
+   * `listMovements` answers the ledger screen: it pages on `seq`, it accepts
+   * instants, and it returns no master data beyond the SKU. This read answers a
+   * REPORT: the period is a half-open range of calendar days in the branch's own
+   * zone, the page is ordered by the instant the report is about, and each row
+   * carries the unit and the location the Owner's column list names. Bolting both
+   * onto one method would have given the ledger screen a second ordering contract
+   * and a timezone it has no use for.
+   *
+   * ## ONE scope predicate, composed by both statements
+   *
+   * The totals and the page are computed over the same `FROM`/`WHERE`, written
+   * once and interpolated into both. Two copies is how a total stops matching the
+   * rows it is supposed to total — the specific defect a report cannot survive,
+   * because nothing about it fails.
+   *
+   * ## The totals are separated, never netted
+   *
+   * `GROUP BY item, unit, movement type` with `in` and `out` as two FILTERed sums
+   * rather than one signed sum over `signed_qty`. D-4 requires that a return and a
+   * transfer keep their distinct meanings and D-5 forbids one quantity across
+   * unlike items; a signed sum collapses a return into a negative issue, which is
+   * the arithmetic those decisions exist to prevent. `signed_qty` is not selected
+   * at all here.
+   *
+   * A FILTERed `sum` over an empty set is NULL, and the zero is supplied as
+   * `0::numeric(12,3)` so the measure is a decimal string of the same scale as a
+   * real one. The SUM ITSELF IS NEVER CAST: casting it back to `numeric(12,3)`
+   * would make a large branch's total raise an overflow rather than report a
+   * number, and nothing is rounded on the way out.
+   *
+   * ## No `deleted_at` filter, because the ledger has no delete
+   *
+   * `inv.stock_movements` is append-only and immutable — it has no `deleted_at`
+   * and no status column. Every row that exists happened, which is why the period
+   * and the branch are the only things narrowing this selection.
+   */
+  public async movementReport(
+    db: DbHandle,
+    filter: MovementReportFilter,
+    request: PageRequest
+  ): Promise<MovementReportRows> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.from,
+      filter.toExclusive,
+      filter.timezoneName,
+    ];
+    // Company and branch are predicates, not options. RLS narrows too, but on the
+    // permission-blind grant union — so this is the predicate that makes the read
+    // match the scope that was actually authorized.
+    const scope = `FROM inv.stock_movements m
+         JOIN inv.item_master i ON i.tenant_id = m.tenant_id AND i.id = m.item_id
+         JOIN inv.units_of_measure u ON u.id = i.uom_id
+         JOIN inv.stock_locations l
+           ON l.tenant_id = m.tenant_id AND l.company_id = m.company_id
+          AND l.branch_id = m.branch_id AND l.id = m.location_id
+        WHERE m.tenant_id = $1 AND m.company_id = $2 AND m.branch_id = $3
+          AND ${halfOpenLocalDayRange('m.occurred_at', 4, 5, 6)}`;
+
+    const totals = await this.run<{
+      item_id: string;
+      sku: string;
+      uom_code: string;
+      movement_type: string;
+      quantity_in: string;
+      quantity_out: string;
+    }>(
+      db,
+      `SELECT m.item_id, i.sku, u.code AS uom_code, m.movement_type,
+              coalesce(sum(m.quantity) FILTER (WHERE m.direction = 'in'),
+                       0::numeric(12, 3))::text  AS quantity_in,
+              coalesce(sum(m.quantity) FILTER (WHERE m.direction = 'out'),
+                       0::numeric(12, 3))::text  AS quantity_out
+         ${scope}
+        GROUP BY m.item_id, i.sku, u.code, m.movement_type
+        ORDER BY i.sku, u.code, m.movement_type`,
+      values
+    );
+
+    const keyset = keysetFragment(
+      request,
+      { sort: 'm.occurred_at', id: 'm.id' },
+      MOVEMENT_REPORT_ORDER,
+      values.length + 1
+    );
+    const rows = await this.run<{
+      id: string;
+      occurred_at: Date;
+      reference_kind: string;
+      reference_id: string;
+      movement_type: string;
+      direction: string;
+      item_id: string;
+      sku: string;
+      item_name: string;
+      location_id: string;
+      location_code: string;
+      location_name: string;
+      quantity: string;
+      uom_code: string;
+      uom_name: string;
+      sort_value: string;
+    }>(
+      db,
+      `SELECT m.id, m.occurred_at, m.reference_kind, m.reference_id, m.movement_type,
+              m.direction, m.item_id, i.sku, i.name AS item_name, m.location_id,
+              l.location_code, l.name AS location_name, m.quantity,
+              u.code AS uom_code, u.name AS uom_name,
+              ${cursorTimestamp('m.occurred_at')} AS sort_value
+         ${scope}
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+
+    return {
+      totals: totals.rows.map((row) => ({
+        itemId: row.item_id,
+        sku: row.sku,
+        uomCode: row.uom_code,
+        movementType: row.movement_type,
+        quantityIn: row.quantity_in,
+        quantityOut: row.quantity_out,
+      })),
+      // `buildPageWithCursors` rather than `buildPage`, because the cursor value
+      // is NOT the published timestamp. `pg` decodes `timestamptz` into a JS
+      // `Date`, which holds milliseconds while PostgreSQL stores microseconds, and
+      // a cursor minted from `.toISOString()` silently SKIPS every row sharing the
+      // boundary row's millisecond at a higher microsecond (`P1-27-INT-006`). The
+      // `sort_value` column above is the microsecond-precision string.
+      page: buildPageWithCursors(
+        rows.rows.map((row) => ({
+          item: {
+            id: row.id,
+            occurredAt: row.occurred_at,
+            referenceKind: row.reference_kind,
+            referenceId: row.reference_id,
+            movementType: row.movement_type,
+            direction: row.direction,
+            itemId: row.item_id,
+            sku: row.sku,
+            itemName: row.item_name,
+            locationId: row.location_id,
+            locationCode: row.location_code,
+            locationName: row.location_name,
+            quantity: row.quantity,
+            uomCode: row.uom_code,
+            uomName: row.uom_name,
+          },
+          sortValue: row.sort_value,
+          id: row.id,
+        })),
+        request,
+        MOVEMENT_REPORT_ORDER
+      ),
+    };
   }
 
   // -------------------------------------------------------------------------

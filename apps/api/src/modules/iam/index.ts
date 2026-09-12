@@ -30,6 +30,7 @@ import { clientEnv, serverEnv } from '@/config/env';
 import { AppFailure } from '@/server/errors/app-failure';
 
 import { IdentityRepository } from './data/identity-repository';
+import { EmployeeRepository } from './data/employee-repository';
 import { AuthorizationRepository } from './data/authorization-repository';
 import { OrganizationRepository } from './data/organization-repository';
 import { OrganizationAdministrationRepository } from './data/organization-administration-repository';
@@ -50,6 +51,7 @@ import { AccessAdministrationService } from './application/access-administration
 import { OrganizationSettingsService } from './application/organization-settings-service';
 import { OrganizationAdministrationService } from './application/organization-administration-service';
 import { AuditViewService } from './application/audit-view-service';
+import { EmployeeAdministrationService } from './application/employee-administration-service';
 
 import {
   identityProvider,
@@ -96,6 +98,27 @@ export type { UserView, UserDetailView } from './application/user-administration
 export type { UserDisplayIdentity } from './data/identity-repository';
 export type { BranchContextRow } from './data/branch-context-repository';
 export type { SettingView, TenantSettingsView } from './application/organization-settings-service';
+/**
+ * The employee register's wire shapes (P1-31 prerequisite P-17).
+ *
+ * `EmployeeAssignmentView` is published for one caller and one purpose: the
+ * delivery module decides whether a person may be named as the delivering
+ * employee, and it must be able to say WHICH rule was broken — not visible, or
+ * retired. A boolean port could not, and a delivery-side copy of the register
+ * read would be a second identity model. It carries no company and no branch,
+ * because the Owner clarification of 2026-09-10 made the home branch
+ * informational: there is no third rule for a consumer to apply.
+ */
+export type {
+  EmployeeAssignmentView,
+  EmployeeView,
+} from './application/employee-administration-service';
+export {
+  EMPLOYEE_STATUSES,
+  MAX_EMPLOYEE_DISPLAY_NAME,
+  MAX_EMPLOYEE_EMPLOYMENT_REF,
+} from './application/employee-administration-service';
+export { EMPLOYEE_ORDER } from './data/employee-repository';
 
 /**
  * Builds the Supabase adapter from configuration.
@@ -204,8 +227,8 @@ export const iamDirectory = composeModule({
 /**
  * The provider-free ORGANIZATION reads (P1-31 prerequisite P-11).
  *
- * A third root rather than a key on `iamDirectory`, for the reason that one has
- * a docblock at all: `iamDirectory` is the IDENTITY directory, and a branch's
+ * A root of its own rather than a key on `iamDirectory`, for the reason that
+ * one has a docblock at all: `iamDirectory` is the IDENTITY directory, and a branch's
  * timezone is not an identity. Two roots that mean two things are cheaper to
  * read than one whose name has stopped describing its contents.
  *
@@ -214,7 +237,7 @@ export const iamDirectory = composeModule({
  * one organizational column would make a report run depend on
  * `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` and answer
  * `ERR-SYS-001` wherever they are unset. `composeModule` memoises per closure,
- * so this root cannot boot either of the others.
+ * so this root cannot boot any of the others.
  *
  * The same rule binds it: nothing needing an `IdentityProvider` may be added
  * here, and `tests/foundation/iam-directory-composition.test.ts` is what holds
@@ -224,6 +247,33 @@ export const iamOrganizationContext = composeModule({
   module: 'iam',
   create: () => ({
     branches: new BranchContextRepository(),
+  }),
+});
+
+/**
+ * The employee register's composition root (P1-31 prerequisite P-17).
+ *
+ * Provider-free, for the reason the paragraph above `iamDirectory` gives and with
+ * the same measurement behind it: `org.employees` needs no `IdentityProvider`,
+ * the four `org.employee-*` routes consult it, and the delivery module consults
+ * it on EVERY `sal.delivery-create`. Composing `iamModule()` for that would make
+ * an unrelated domain write depend on `NEXT_PUBLIC_SUPABASE_URL` and
+ * `NEXT_PUBLIC_SUPABASE_ANON_KEY` and answer `ERR-SYS-001` wherever they are
+ * unset — which is exactly what wiring the vehicle history read that way did.
+ *
+ * A ROOT OF ITS OWN rather than a second accessor on `iamDirectory`, and the
+ * reason is not taste. `iamDirectory` is the identity PROJECTION a ledger needs — two
+ * fields, `id` and `displayName` — and its own header says so; an employee
+ * register is a different surface with a different lifecycle, and folding it in
+ * would make that header false. `composeModule` memoises per closure, so the
+ * four roots are independent and none can boot another.
+ *
+ * Nothing that needs an `IdentityProvider` may be added here either.
+ */
+export const iamRegistryModule = composeModule({
+  module: 'iam',
+  create: () => ({
+    employees: new EmployeeAdministrationService(new EmployeeRepository()),
   }),
 });
 

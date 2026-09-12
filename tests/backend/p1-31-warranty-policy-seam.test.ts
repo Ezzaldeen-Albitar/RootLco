@@ -1306,8 +1306,10 @@ describe('P-10 the provisioning bundle', () => {
     expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toContain(POLICY_MANAGE);
     // Nothing else moved, and nothing is duplicated. 75 when this slice landed;
     // 76 once P-11 carried `rpt.report.configure` on the same rule the same day,
-    // closing CC-02 — which is why the assertion below is now a POSITIVE one.
-    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(76);
+    // closing CC-02; 78 once P-17 minted the two employee-register codes and
+    // carried both, because a delivery cannot be created without an employee to
+    // name — which is why the assertion below is now a POSITIVE one.
+    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(78);
     expect(new Set(TENANT_ADMINISTRATOR_ROLE.permissionCodes).size).toBe(
       TENANT_ADMINISTRATOR_ROLE.permissionCodes.length
     );

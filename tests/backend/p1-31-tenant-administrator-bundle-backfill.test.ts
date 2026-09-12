@@ -101,11 +101,11 @@ import {
 } from '@/app/api/v1/warranties/[warrantyId]/route';
 
 /**
- * The nine codes the four P1-31 widenings added (#322 P-1's six, #349 P-7's one,
- * P-10's one and P-11's one). Written out rather than derived: removing these
- * from a freshly provisioned role reproduces the 67-code bundle the real
- * organisations hold, and a list computed from the constant under test would
- * prove nothing.
+ * The eleven codes the five P1-31 widenings added (#322 P-1's six, #349 P-7's
+ * one, P-10's one, P-11's one and P-17's two). Written out rather than derived:
+ * removing these from a freshly provisioned role reproduces the 67-code bundle
+ * the real organisations hold, and a list computed from the constant under test
+ * would prove nothing.
  *
  * `wty.policy.manage` joined on 2026-09-09 when P-10 published the five
  * operations that declare it, closing CC-01, and `rpt.report.configure` the same
@@ -126,9 +126,16 @@ const P1_31_ADDED = Object.freeze([
   'wty.warranty.read',
   'wty.policy.manage',
   'rpt.report.configure',
+  // P1-31 prerequisite P-17, both MINTED by that slice. They are the reason this
+  // backfill owes a FOURTH operator run: an organisation provisioned on the
+  // 76-code bundle has no employee register at all, and `sal.delivery-create`
+  // now refuses a delivering employee that does not exist — so without this run
+  // that organisation cannot record a single handover.
+  'org.employee.read',
+  'org.employee.manage',
 ]);
 
-/** The bundle before the four P1-31 widenings. Unchanged by all four. */
+/** The bundle before the five P1-31 widenings. Unchanged by all five. */
 const BUNDLE_BEFORE = 67;
 
 /** A real catalogue code the bundle deliberately does NOT carry (P1-31 CC-04). */
@@ -306,7 +313,7 @@ async function backfillAuditCount(tenantId: string): Promise<number> {
   return rows[0]?.n ?? 0;
 }
 
-/** Removes the eight P1-31 codes, reproducing the 67-code bundle on a fresh role. */
+/** Removes the eleven P1-31 codes, reproducing the 67-code bundle on a fresh role. */
 async function makeStale(tenant: Provisioned): Promise<void> {
   await admin.query(
     `DELETE FROM iam.role_permissions

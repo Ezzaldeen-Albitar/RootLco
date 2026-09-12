@@ -2,8 +2,20 @@
  * GET /api/v1/reports/{reportCode}/rows (P1-31 prerequisite P-11).
  *
  * RUNS a registered report over one branch and one calendar period, and returns
- * its columns, a keyset page of rows, and the count of every work-order state
- * over the whole selection.
+ * its columns, a keyset page of rows, and the GROUPS of the whole selection with
+ * their measures — states and their counts for `work_orders_by_status`,
+ * technicians and their recorded seconds for `technician_labor_time`. The
+ * grouping is the dataset's; the envelope around it is the engine's and is the
+ * same shape for every report.
+ *
+ * The envelope also echoes the filter context — the company and branch, beside
+ * the period and the zone it was resolved in — because the Owner's D-17 requires
+ * that a number never be readable without the selection that produced it.
+ *
+ * `countsByState` is still published and is still correct for
+ * `work_orders_by_status`, derived from that dataset's own groups. It is
+ * DEPRECATED: it named one dataset's grouping on a shared envelope, and `groups`
+ * is its replacement. It is empty for every other dataset.
  *
  * ## Why `/rows` rather than the definition path
  *

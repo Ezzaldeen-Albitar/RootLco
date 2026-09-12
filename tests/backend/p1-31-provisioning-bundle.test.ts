@@ -4,13 +4,14 @@
  * The P1-31 A0 preflight (`docs/phase-1/phase-1-31/a0-preflight.md`, "The
  * closure that sits above all sixteen") measured that the two roles
  * `platform.organization-provision` writes held ZERO of the nine codes P1-31
- * needs, and that `ins_role_permissions_delegable` admits a mapping only when
+ * originally needed, and that `ins_role_permissions_delegable` admits a mapping only when
  * the acting administrator already holds the code being mapped. That is a
  * CLOSURE, not an inconvenience: no principal in an organisation created by the
  * shipped operation could hold a P1-31 code, or ever be granted one.
  *
- * EIGHT of the nine are added. ONE is deliberately EXCLUDED, and the ground it
- * is excluded on is not the ground the other two were:
+ * EIGHT of the nine are added, and three more codes minted by later P1-31 slices
+ * joined them (P-7, P-17). ONE of the original nine is deliberately EXCLUDED, and
+ * the ground it is excluded on is not the ground the other two were:
  *
  *  - `rpt.export` — two shipped operations DO declare it. It is withheld on
  *    least-privilege grounds by an explicit Owner decision (P1-31 CC-04): it is
@@ -35,15 +36,15 @@
  * for the by-decision one, and MORE THAN ZERO for every added code.
  * This suite proves the split on real rows rather than on the constant:
  *
- *   P31-B1  the bundle's delta is exactly the nine, nothing else moved, every
- *           one of the nine is declared by a REGISTERED operation, the undeclared
+ *   P31-B1  the bundle's delta is exactly `ADDED_ALL`, nothing else moved, every
+ *           one of them is declared by a REGISTERED operation, the undeclared
  *           exclusion list is EMPTY, and the by-decision exclusion IS declared —
  *           so the two kinds cannot be confused with each other
  *   P31-B2  an organisation created by the SHIPPED provisioning operation gives
  *           its administrator role all eight, and neither exclusion
  *   P31-B3  the Owner of that organisation effectively holds all eight, holds no
  *           excluded code, and the role holds nothing beyond the bundle
- *   P31-B4  the Owner can MAP each of the nine onto a role it creates — the
+ *   P31-B4  the Owner can MAP each added code onto a role it creates — the
  *           exact act `ins_role_permissions_delegable` refused before
  *   P31-B5  the ONE remaining EXCLUDED code is refused, with the registered
  *           refusal: 403 ERR-IAM-001, `requiredPermissions` naming the code
@@ -169,8 +170,34 @@ const ADDED_BY_P11 = Object.freeze(['rpt.report.configure']);
  */
 const ADDED_BY_P10 = Object.freeze(['wty.policy.manage']);
 
-/** Every code the four P1-31 widenings added. */
-const ADDED_ALL = Object.freeze([...ADDED, ...ADDED_BY_P7, ...ADDED_BY_P10, ...ADDED_BY_P11]);
+/**
+ * The TWO codes prerequisite P-17 adds, on the slice that mints them.
+ *
+ * Kept apart from the four lists above for the reason they are kept apart from
+ * each other: this widening answers a fifth question. `org.employee.read` and
+ * `org.employee.manage` are the phase's second and third MINTED codes — new rows
+ * in the catalogue seed, not pre-existing ones released from an exclusion — and
+ * they are carried because the four operations that publish the employee
+ * register declare them, which is the necessary condition P-1 states.
+ *
+ * The consequence of withholding is the sharpest of the five. P-17 also gives
+ * `sal.delivery_records.delivering_employee_id` the foreign key it never had, so
+ * `sal.delivery-create` now refuses an employee that does not exist and nothing
+ * else in the product creates one. A freshly provisioned administrator without
+ * these codes could not record a single handover. Their own proof is
+ * `tests/backend/p1-31-delivering-employee-seam.test.ts`; what this file owes is
+ * the arithmetic and the register measurement.
+ */
+const ADDED_BY_P17 = Object.freeze(['org.employee.read', 'org.employee.manage']);
+
+/** Every code the five P1-31 widenings added. */
+const ADDED_ALL = Object.freeze([
+  ...ADDED,
+  ...ADDED_BY_P7,
+  ...ADDED_BY_P10,
+  ...ADDED_BY_P11,
+  ...ADDED_BY_P17,
+]);
 
 /**
  * Withheld because NOTHING declares it — P1-31 CC-01 and CC-02. This list is now
@@ -198,7 +225,7 @@ const EXCLUDED_BY_DECISION = Object.freeze(['rpt.export']);
 /** Every withheld code, whatever the ground: the bundle must carry none of them. */
 const EXCLUDED = Object.freeze([...EXCLUDED_UNDECLARED, ...EXCLUDED_BY_DECISION]);
 
-/** The bundle before this slice: 48 → 65 (#321) → 67 (#322). */
+/** The bundle before this slice: 48 → 65 (#321) → 67 (#322). Eleven added: 78. */
 const BUNDLE_BEFORE = 67;
 
 const IDENTITY_PROVIDER = 'test_harness';
@@ -509,18 +536,18 @@ describe('P1-31 P-1 — the derivation', () => {
 });
 
 describe('P1-31 P-1 — an organisation created by the shipped provisioning operation', () => {
-  it('P31-B2 its administrator role holds all nine added codes, and not the excluded one', async () => {
+  it('P31-B2 its administrator role holds every added code, and not the excluded one', async () => {
     const codes = await codesOfRole(probe.tenantAdministratorRoleId);
     for (const code of ADDED_ALL) expect(codes).toContain(code);
     for (const code of EXCLUDED) expect(codes).not.toContain(code);
   });
 
-  it('P31-B3 the Owner effectively holds all nine, no excluded code, and the role holds nothing beyond the bundle', async () => {
+  it('P31-B3 the Owner effectively holds every added code, no excluded code, and the role holds nothing beyond the bundle', async () => {
     const held = await codesHeldBy(probe.ownerAccountId);
     for (const code of ADDED_ALL) expect(held).toContain(code);
     for (const code of EXCLUDED) expect(held).not.toContain(code);
 
-    // Nothing was permitted BEYOND the nine: the role's rows are exactly the
+    // Nothing was permitted BEYOND the added set: the role's rows are exactly the
     // server-owned bundle, so a code that is not in the constant is not held.
     expect(await codesOfRole(probe.tenantAdministratorRoleId)).toEqual(
       [...TENANT_ADMINISTRATOR_ROLE.permissionCodes].sort()

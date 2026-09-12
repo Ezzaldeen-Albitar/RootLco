@@ -21,8 +21,15 @@
  */
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
-import { buildPage, keysetFragment, type Page, type PageRequest } from '@/server/db/pagination';
+import {
+  buildPage,
+  buildPageWithCursors,
+  keysetFragment,
+  type Page,
+  type PageRequest,
+} from '@/server/db/pagination';
 import { cursorTimestamp } from '@/server/db/pagination';
+import { halfOpenLocalDayRange } from '@/server/db/period';
 import {
   timelineWindowSql,
   type TimelineSourceRow,
@@ -47,6 +54,74 @@ export const LABOR_SESSION_ORDER = Object.freeze({
   key: 'tech.labor_sessions:started_at_desc',
   direction: 'desc' as const,
 });
+
+/**
+ * Ordering contract for the labour REPORT. Newest start first, id tie-break.
+ *
+ * Deliberately NOT `LABOR_SESSION_ORDER`, although the two sort the same table on
+ * the same column in the same direction. The difference is the SELECTION: the
+ * per-job log answers for ONE job and carries every session on it, running and
+ * retired alike, while the report answers for a BRANCH over a calendar period and
+ * carries only the contributing ones. A cursor is a position in a selection, so one
+ * minted by the job's log names a row this report may never return, and the keyset
+ * predicate would then answer with a page that silently begins in the wrong place
+ * instead of refusing.
+ *
+ * The key therefore names the REPORT rather than the table, which is the same
+ * property `inv.stock_movements:occurred_at_desc` and
+ * `sal.invoice_payment_summary:document_date_desc` carry on the sibling slices: a
+ * cursor issued for the other read is refused with `ERR-PAG-001` rather than
+ * reinterpreted against a different set of rows.
+ */
+export const LABOR_REPORT_ORDER = Object.freeze({
+  key: 'tech.technician_labor_time:started_at_desc',
+  direction: 'desc' as const,
+});
+
+/**
+ * The period a labour report covers, in the reporting branch's own timezone.
+ *
+ * The three period fields are the shape `halfOpenLocalDayRange` consumes, and the
+ * calendar days are DAYS rather than instants for the reason D-17 gives: a caller
+ * who sent an instant would carry an offset of their own choosing, which would
+ * silently override the zone the period is supposed to be expressed in.
+ */
+export interface LaborReportFilter {
+  readonly companyId: string;
+  readonly branchId: string;
+  /** Inclusive first day, `YYYY-MM-DD`, in `timezoneName`. */
+  readonly from: string;
+  /** EXCLUSIVE day, `YYYY-MM-DD` — the day after the last one reported. */
+  readonly toExclusive: string;
+  /** An `org.branches.timezone_name` value. Bound as a parameter, never inlined. */
+  readonly timezoneName: string;
+}
+
+/** One CONTRIBUTING session, with its duration already computed in SQL. */
+export interface LaborReportRow {
+  readonly id: string;
+  readonly technicianProfileId: string;
+  /** `tech.technician_profiles.user_id` — the only id a display name resolves from. */
+  readonly technicianUserId: string;
+  readonly jobId: string;
+  readonly startedAt: Date;
+  /** WHOLE seconds as an integer string. Never a float, never a JSON number. */
+  readonly durationSeconds: string;
+  readonly source: string;
+}
+
+/** One technician's total over the WHOLE selection, not over a page. */
+export interface TechnicianLaborTotalRow {
+  readonly technicianProfileId: string;
+  readonly technicianUserId: string;
+  readonly durationSeconds: string;
+}
+
+/** The aggregate and the page it accompanies, from one call. */
+export interface LaborReportRows {
+  readonly totals: readonly TechnicianLaborTotalRow[];
+  readonly page: Page<LaborReportRow>;
+}
 
 interface SessionColumns {
   id: string;
@@ -283,6 +358,154 @@ export class LaborSessionRepository extends Repository {
       sortValue: row.startedAt.toISOString(),
       id: row.id,
     }));
+  }
+
+  /**
+   * The branch's CONTRIBUTING labour sessions in a calendar period, plus each
+   * technician's total over the whole selection (P1-31 P-11, engine slice 2).
+   *
+   * ## The three rules that decide which rows contribute, and why they are here
+   *
+   * `ended_at IS NOT NULL` — an OPEN session has no duration. Treating one as
+   * running to `now()` would make the same report over the same closed period
+   * return a different total every time it is run, which is the property that
+   * makes a report untrustworthy rather than merely wrong.
+   *
+   * `deleted_at IS NULL` — a corrected session is soft-deleted and REPLACED by a
+   * linked row carrying `correction_of_id` (`tech.correct_labor_session`).
+   * Counting both would double-count every correction. The replacement is counted
+   * once, on its own amended window, and it is visible as a correction because
+   * `source` travels with it.
+   *
+   * There is no third predicate for a cancelled state, because there is no
+   * cancelled state: `tech.labor_sessions` has no status column at all
+   * (`supabase/migrations/20260722099000_tech_labor_sessions.sql`). The report
+   * says so rather than showing an empty bucket that reads as a real zero.
+   *
+   * ## Two statements, and why the totals are not derived from the page
+   *
+   * The same rule `WorkOrderRepository.statusSummary` states: counting the page
+   * would answer for at most `limit` rows and call it the branch's total, which is
+   * the P1-28 round-two defect. The aggregate runs over the SAME predicate without
+   * the keyset window. The predicate is written once, as `scope` below, because a
+   * second copy is how an aggregate and its rows come to answer for different
+   * selections.
+   *
+   * ## The duration is computed in SQL, in WHOLE SECONDS, as text
+   *
+   * `extract(epoch from (ended_at - started_at))` is exact seconds of an interval;
+   * `::bigint` makes it a whole number and `::text` keeps it one all the way to
+   * the wire. No float is constructed at any point, and the TOTAL is the sum of
+   * the very same per-row expression — so a reader who adds the durations on a
+   * page and compares them with the group can never find a rounding disagreement,
+   * which `sum()` over an unrounded value would eventually produce.
+   *
+   * The client never subtracts two timestamps: D-4 requires the calculation to be
+   * the server's, and two browsers in two zones must not produce two totals.
+   *
+   * ## The profile join, and why it does not filter `deleted_at`
+   *
+   * The join exists only to carry `user_id` out, because that is the only id a
+   * display name resolves from and this module holds no names of its own. It is an
+   * INNER join and cannot drop a row: `fk_labor_sessions_technician` is composite
+   * and `ON DELETE RESTRICT`. It deliberately does NOT require a live profile — a
+   * retired technician's recorded hours still happened, and excluding them would
+   * quietly reduce a branch's total.
+   */
+  async laborReport(
+    db: DbHandle,
+    filter: LaborReportFilter,
+    page: PageRequest
+  ): Promise<LaborReportRows> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.from,
+      filter.toExclusive,
+      filter.timezoneName,
+    ];
+    // One predicate, written once and used by both statements.
+    const scope = `FROM tech.labor_sessions s
+         JOIN tech.technician_profiles p
+           ON p.tenant_id = s.tenant_id AND p.company_id = s.company_id
+          AND p.branch_id = s.branch_id AND p.id = s.technician_profile_id
+        WHERE s.tenant_id = $1 AND s.company_id = $2 AND s.branch_id = $3
+          AND s.ended_at IS NOT NULL AND s.deleted_at IS NULL
+          AND ${halfOpenLocalDayRange('s.started_at', 4, 5, 6)}`;
+    const duration = `extract(epoch FROM (s.ended_at - s.started_at))::bigint`;
+
+    const totals = await this.run<{
+      technician_profile_id: string;
+      user_id: string;
+      duration_seconds: string;
+    }>(
+      db,
+      `SELECT s.technician_profile_id, p.user_id, sum(${duration})::text AS duration_seconds
+         ${scope}
+        GROUP BY s.technician_profile_id, p.user_id
+        ORDER BY s.technician_profile_id`,
+      values
+    );
+
+    const keyset = keysetFragment(
+      page,
+      { sort: 's.started_at', id: 's.id' },
+      LABOR_REPORT_ORDER,
+      values.length + 1
+    );
+    const rows = await this.run<{
+      id: string;
+      technician_profile_id: string;
+      user_id: string;
+      job_id: string;
+      started_at: Date;
+      source: string;
+      duration_seconds: string;
+      sort_value: string;
+    }>(
+      db,
+      `SELECT s.id, s.technician_profile_id, p.user_id, s.job_id, s.started_at, s.source,
+              (${duration})::text AS duration_seconds,
+              ${cursorTimestamp('s.started_at')} AS sort_value
+         ${scope}
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+
+    return {
+      totals: totals.rows.map((row) => ({
+        technicianProfileId: row.technician_profile_id,
+        technicianUserId: row.user_id,
+        durationSeconds: row.duration_seconds,
+      })),
+      // `buildPageWithCursors` rather than `buildPage`, because the cursor value
+      // is NOT the published timestamp. `pg` decodes `timestamptz` into a JS
+      // `Date`, which holds milliseconds while PostgreSQL stores microseconds, and
+      // a cursor minted from `.toISOString()` silently SKIPS every row sharing the
+      // boundary row's millisecond at a higher microsecond (`P1-27-INT-006`). The
+      // `sort_value` column above is the microsecond-precision string.
+      page: buildPageWithCursors(
+        rows.rows.map((row) => ({
+          item: {
+            id: row.id,
+            technicianProfileId: row.technician_profile_id,
+            technicianUserId: row.user_id,
+            jobId: row.job_id,
+            startedAt: row.started_at,
+            durationSeconds: row.duration_seconds,
+            source: row.source,
+          },
+          sortValue: row.sort_value,
+          id: row.id,
+        })),
+        page,
+        LABOR_REPORT_ORDER
+      ),
+    };
   }
 
   /**

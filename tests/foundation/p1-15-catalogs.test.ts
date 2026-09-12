@@ -297,6 +297,8 @@ const EXPECTED_AUDIT_ACTIONS = [
   'org.company.updated',
   'org.department.created',
   'org.department.updated',
+  'org.employee.created',
+  'org.employee.status_changed',
   'org.tenant.provisioned',
   'org.tenant.settings_updated',
   'org.tenant.status_changed',

@@ -31,8 +31,12 @@ export type {
   ReportDefinitionView,
 } from './application/report-catalogue-service';
 export type {
+  ReportBranchView,
   ReportCellView,
   ReportColumnView,
+  ReportFilterContextView,
+  ReportGroupView,
+  ReportPeriodInput,
   ReportPeriodView,
   ReportRowView,
   ReportRunInput,
@@ -83,6 +87,7 @@ export {
   type ReportColumnKind,
   type ReportDatasetCode,
   type ReportDatasetDefinition,
+  type ReportDrillThroughByKind,
   type ReportParameterDefinition,
 } from './domain/report-datasets';
 

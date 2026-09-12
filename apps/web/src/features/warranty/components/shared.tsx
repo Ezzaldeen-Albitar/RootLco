@@ -16,7 +16,10 @@ import type { ReadFailureStatus } from '@/lib/api/read-operation';
 import {
   CONFIGURATION_STATUS_LABEL_KEYS,
   COVERED_SCOPE_LABEL_KEYS,
+  DUPLICATE_POLICY_CODE_RULE,
   ITEM_KIND_LABEL_KEYS,
+  OVERLAPPING_COVERAGE_RULE,
+  POLICY_ERROR_CODES,
   WARRANTY_STATUS_LABEL_KEYS,
   labelKeyFor,
 } from '../warranty-contract';
@@ -224,4 +227,62 @@ export function CoveredScopeLabel(props: { readonly messages: Messages; readonly
 /** Whether a covered item is a job or a part. */
 export function ItemKindLabel(props: { readonly messages: Messages; readonly kind: string }) {
   return <CodeLabel messages={props.messages} table={ITEM_KIND_LABEL_KEYS} value={props.kind} />;
+}
+
+/**
+ * The part of a refused plan-administration write these helpers read.
+ *
+ * A structural shape rather than the adapter's own state type, so the pieces shared by
+ * two screens do not depend on the module that performs the writes. Every field is
+ * optional because every one of them is a runtime fact about a response.
+ */
+export interface PolicyRefusal {
+  readonly code?: string | undefined;
+  readonly rule?: string | undefined;
+  readonly messageKey?: string | undefined;
+}
+
+/**
+ * Was this refusal a STALE VIEW rather than a rule the write broke?
+ *
+ * The one refusal the operator can clear without changing anything they typed: the
+ * record moved while the screen was open, so re-reading it and sending the same
+ * change again succeeds. It is the conflict code with NO violation rule — the two
+ * other causes that share the code both name one — and the screens offer a reload
+ * beside it for exactly this case and no other.
+ */
+export function isStaleView(state: PolicyRefusal): boolean {
+  return state.code === POLICY_ERROR_CODES.conflict && state.rule === undefined;
+}
+
+/**
+ * The sentence a refused plan-administration write is reported with.
+ *
+ * Read off the catalogue code, and off the first violation rule where the code alone
+ * is ambiguous. `ERR-CON-001` carries THREE meanings on this surface and the three
+ * lead an operator somewhere entirely different — re-read and retry, retire the
+ * window that is in the way, choose another reference — so collapsing them into one
+ * conflict sentence would send two out of three people to the wrong place.
+ *
+ * Anything the backend does not distinguish keeps the shared wording. Inventing a
+ * sentence per code would claim knowledge the problem document does not carry: the
+ * service's own message never crosses the wire.
+ */
+export function refusalKeyFor(state: PolicyRefusal): string {
+  if (state.code === POLICY_ERROR_CODES.conflict) {
+    if (state.rule === OVERLAPPING_COVERAGE_RULE) return 'warranty.policies.refusedOverlap';
+    if (state.rule === DUPLICATE_POLICY_CODE_RULE) return 'warranty.policies.refusedDuplicateCode';
+    return 'warranty.policies.refusedStale';
+  }
+  if (state.code === POLICY_ERROR_CODES.missingVersion) {
+    // Unreachable from this feature: every version-guarded adapter takes the version
+    // as a required argument. Named anyway, because a wording chosen on the day it
+    // appears would be chosen under pressure and would probably say "stale", which is
+    // the one thing this is not.
+    return 'warranty.policies.refusedNotSent';
+  }
+  if (state.code === POLICY_ERROR_CODES.invalid) return 'warranty.policies.refusedInvalid';
+  if (state.code === POLICY_ERROR_CODES.denied) return 'warranty.policies.refusedDenied';
+  if (state.code === POLICY_ERROR_CODES.missing) return 'warranty.policies.refusedMissing';
+  return state.messageKey ?? 'action.failed';
 }

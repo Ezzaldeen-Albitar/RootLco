@@ -10,10 +10,38 @@
  * | `wty.warranty-policy-list` | GET    | `/warranty-policies`                  | `wty.warranty.read`        |
  * | `wty.warranty-policy-read` | GET    | `/warranty-policies/{policyId}`       | `wty.warranty.read`        |
  *
- * The last row is listed because it EXISTS and answers the same code, not because
- * this feature calls it: the picker needs a policy's identifier, code, name and
- * state, and the list publishes all four, so no adapter here reads one policy on its
- * own. It is named so the next reader of this table does not repeat the measurement.
+ * The plan ADMINISTRATION surface (P1-31, FE-008 policy administration) adds the five
+ * writes P-10 published, every one of them on the administration code and none of
+ * them on the read:
+ *
+ * | operation                          | method | path                                                            | permissions           |
+ * | ---------------------------------- | ------ | --------------------------------------------------------------- | --------------------- |
+ * | `wty.warranty-policy-create`       | POST   | `/warranty-policies`                                              | `wty.policy.manage`   |
+ * | `wty.warranty-policy-rename`       | PATCH  | `/warranty-policies/{policyId}`                                   | `wty.policy.manage`   |
+ * | `wty.warranty-policy-status-set`   | POST   | `/warranty-policies/{policyId}/status`                            | `wty.policy.manage`   |
+ * | `wty.warranty-coverage-create`     | POST   | `/warranty-policies/{policyId}/coverage-windows`                  | `wty.policy.manage`   |
+ * | `wty.warranty-coverage-status-set` | POST   | `/warranty-policies/{policyId}/coverage-windows/{coverageId}/status` | `wty.policy.manage`  |
+ *
+ * `wty.warranty-policy-read` is no longer read-but-uncalled: the plan screen is
+ * addressed against it, and every mutation re-reads through it so what the screen
+ * shows afterwards is the server's answer rather than the request this side sent.
+ *
+ * ## Three of the five require `If-Match`, and two of those require a key as well
+ *
+ * `rename`, `policy-status-set` and `coverage-status-set` are registered
+ * `versionGuarded`, so the backend raises `ERR-CON-002` without the header. Every
+ * adapter here takes the version as a REQUIRED argument, so there is no call shape
+ * that omits it. `create`, `coverage-create` and `policy-status-set` are registered
+ * idempotent and the TRANSPORT mints their key from the published contract —
+ * `coverage-status-set` deliberately is not, because a restore can be refused by
+ * rows written since and a replayed success would hide that refusal.
+ *
+ * ## The two versions are different counters
+ *
+ * A plan and a window of cover terms each carry their own `recordVersion`, on
+ * different rows, and the plan screen holds both at once. Sending one where the
+ * other belongs is the mistake this surface makes easy, so the two never share a
+ * variable and the coverage commands take the COVERAGE row's version.
  *
  * Typed from the routes that own the shapes and from `WarrantyView`,
  * `WarrantyRecordListView`, `WarrantyPolicyView`, `WarrantyCoverageView` and
@@ -101,6 +129,18 @@ export const WARRANTY_PERMISSIONS = {
    * caller without this code still reaches every branch their grants allow.
    */
   branchRead: 'org.branch.read',
+  /**
+   * The authority to CREATE a plan, rename one, retire or restore one, and to add
+   * or retire a window of cover terms.
+   *
+   * Seeded since P1-08 and declared by the five policy and coverage WRITES P-10
+   * published. It is deliberately not `read`: `wty.warranty-detail` records that
+   * borrowing this code for a read "would be worse: it grants coverage
+   * administration", which is exactly what these five operations are. The
+   * administration screens are gated on `read` and draw their controls on this, so a
+   * warranty clerk sees the plans and an administrator changes them.
+   */
+  policyManage: 'wty.policy.manage',
 } as const;
 
 /** `ck_warranty_records_status`, mirrored. */
@@ -357,3 +397,166 @@ export const WARRANTY_ERROR_CODES = {
   /** The authority to issue was not held. */
   denied: 'ERR-IAM-001',
 } as const;
+
+/* ------------------------------------------------------------------ *
+ * Plan administration (P1-31, FE-008 policy administration)
+ *
+ * The five WRITES P-10 published, plus the single-policy read they are all
+ * addressed against. Every bound below is transcribed from
+ * `apps/api/src/modules/warranty/domain/warranty.ts`, which is itself the module's
+ * transcription of the CHECK constraints — so a control refuses what the column
+ * refuses and the operator is told by the field rather than by a request that was
+ * rejected whole.
+ * ------------------------------------------------------------------ */
+
+/**
+ * `ck_warranty_policies_code`, mirrored: a lower-case machine reference.
+ *
+ * It is chosen once and never changed. The rename operation accepts the NAME and
+ * refuses this field, because a re-coded plan is a different configuration wearing
+ * the old one's identity and a warranty issued last year would cite a code that has
+ * since moved.
+ */
+export const POLICY_CODE_FORMAT = /^[a-z][a-z0-9_]{1,62}$/;
+
+/** `MAX_POLICY_NAME` in the warranty domain — the boundary's bound, not a column's. */
+export const MAX_POLICY_NAME = 200;
+
+/** `ck_warranty_coverage_duration`, mirrored. A count of months, never an amount. */
+export const MIN_DURATION_MONTHS = 1;
+export const MAX_DURATION_MONTHS = 2147483647;
+
+/** `ck_warranty_coverage_odometer`, mirrored. A distance, carried as an exact string. */
+export const MIN_ODOMETER_ALLOWANCE = 1;
+export const MAX_ODOMETER_ALLOWANCE = 2147483647;
+
+/** The date spelling both coverage routes accept. */
+export const COVERAGE_DATE_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * A whole number, as a STRING.
+ *
+ * Used to admit `odometerAllowance` before it is sent, and the value is never
+ * converted on the way: the route takes a string of digits, the column is
+ * `numeric`, and turning a distance into a double to check it is the one place a
+ * reading could quietly change. `durationMonths` is separate — it crosses the wire
+ * as a JSON number because a count of months is not a measurement.
+ */
+export const WHOLE_NUMBER = /^\d+$/;
+
+/**
+ * `WarrantyCoverageTermsView` — one window of cover terms on the administration
+ * surface.
+ *
+ * A superset of `WarrantyCoverage`, which a warranty carries: the six fields that
+ * describe the terms are spelled identically, and this adds `policyId` and
+ * `recordVersion`. The version is the COVERAGE row's own and is what its status
+ * command expects in `If-Match` — never the plan's, which is a different counter on
+ * a different row. The two live in one screen, which is exactly the shape a caller
+ * can get wrong silently.
+ */
+export interface WarrantyCoverageTerms {
+  readonly id: string;
+  readonly policyId: string;
+  readonly coveredScope: string;
+  readonly durationMonths: number;
+  readonly odometerAllowance: string | null;
+  readonly effectiveFrom: string;
+  readonly effectiveTo: string | null;
+  readonly status: string;
+  readonly recordVersion: number;
+}
+
+/**
+ * `WarrantyPolicyDetailView` — a plan WITH its cover terms, in a published order.
+ *
+ * The coverage is not paged and is not filtered by state. Retired windows arrive
+ * with the rest deliberately: they are the history that explains a warranty issued
+ * under terms since replaced, and hiding them would make the restore command
+ * unreachable.
+ */
+export interface WarrantyPolicyDetail {
+  readonly policy: WarrantyPolicySummary;
+  readonly coverage: readonly WarrantyCoverageTerms[];
+}
+
+/**
+ * The body `wty.warranty-coverage-create` accepts, and the same shape the plan
+ * create route embeds under `coverage[]`.
+ *
+ * `odometerAllowance` is OMITTED rather than sent empty when the terms set no
+ * distance limit — that is what a NULL column means there, and the route's body is
+ * `.strict()` about an empty string. `effectiveTo` is omitted the same way for a
+ * window that is still in force.
+ */
+export interface WarrantyCoverageCreateBody {
+  readonly coveredScope: CoveredScope;
+  readonly durationMonths: number;
+  readonly odometerAllowance?: string;
+  readonly effectiveFrom: string;
+  readonly effectiveTo?: string;
+}
+
+/**
+ * The body `wty.warranty-policy-create` accepts.
+ *
+ * `companyId` is a CLAIM rather than a scope: the service re-authorizes it against
+ * the caller's own grants before a row is written. `status` is refused by the route
+ * — a plan cannot be created already retired — and so is `id`.
+ */
+export interface WarrantyPolicyCreateBody {
+  readonly companyId: string;
+  readonly policyCode: string;
+  readonly name: string;
+  readonly coverage?: readonly WarrantyCoverageCreateBody[];
+}
+
+/** The body `wty.warranty-policy-rename` accepts: the name and nothing else. */
+export interface WarrantyPolicyRenameBody {
+  readonly name: string;
+}
+
+/** The body both status commands accept. */
+export interface WarrantyStatusSetBody {
+  readonly status: WarrantyConfigurationStatus;
+}
+
+/**
+ * The catalogue codes the five administration writes answer with.
+ *
+ * `ERR-CON-002` is listed and is never expected: the backend raises it when
+ * `If-Match` is absent, and every version-guarded adapter in this feature takes the
+ * version as a REQUIRED argument, so the header cannot be left off from here. It is
+ * named so that the day it appears it is recognised as a defect on this side rather
+ * than reported to an operator as an ordinary conflict.
+ */
+export const POLICY_ERROR_CODES = {
+  /**
+   * A conflict. THREE different causes share this code and the screen must tell
+   * them apart by the violation rule below, because they lead an operator
+   * somewhere different: a stale version (no rule), a window already covered
+   * (`overlapping_coverage`), and a plan reference already used
+   * (`duplicate_code`).
+   */
+  conflict: 'ERR-CON-001',
+  /** `If-Match` was absent. Unreachable from this feature; see above. */
+  missingVersion: 'ERR-CON-002',
+  /** The input was refused at the boundary or by a CHECK constraint. */
+  invalid: 'ERR-VAL-001',
+  /** The authority was not held. */
+  denied: 'ERR-IAM-001',
+  /** The plan or the window could not be resolved. */
+  missing: 'ERR-RES-001',
+} as const;
+
+/**
+ * `ex_warranty_coverage_no_overlap` refused the row — BR-WTY-001.
+ *
+ * Raised both by adding a window over a covered one and by restoring a window whose
+ * dates have been re-covered since. The backend gives both the same rule because to
+ * a caller they mean the same thing, and the screen says so in one sentence.
+ */
+export const OVERLAPPING_COVERAGE_RULE = 'overlapping_coverage';
+
+/** `uq_warranty_policies_code` refused the row: the reference is already in use. */
+export const DUPLICATE_POLICY_CODE_RULE = 'duplicate_code';
