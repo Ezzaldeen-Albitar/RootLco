@@ -156,12 +156,17 @@ export interface ComposedEligibility {
  * odometer-history operation, which is where that `numeric(12,1)` already crosses
  * as a string.
  *
- * `deliveringEmployeeId` is published as the bare identifier the column holds.
- * `sal.delivery_records.delivering_employee_id` is NOT NULL **with no foreign key**
- * and nothing in this platform resolves it to a name — an unlabelled register row
- * in `docs/product/owner-workflow-requirements.md` and Owner requirement
- * OWR-2026-09-06-G-10 both record that, and G-10 is Undecided. This read publishes
- * what the column holds and invents no identity for it.
+ * `deliveringEmployeeId` is an `org.employees` id, and the name beside it is the
+ * SNAPSHOT the database stamped when the handover was recorded — not a lookup
+ * performed here. That distinction is the whole of P1-31 prerequisite P-17: the
+ * column carried NO foreign key until then, nothing in the platform resolved it
+ * to a person, and the unlabelled register row in
+ * `docs/product/owner-workflow-requirements.md` behind Owner requirement
+ * OWR-2026-09-06-G-10 recorded exactly that gap. The Owner decision of
+ * 2026-09-10 closed it. This read still performs no join and invents no
+ * identity: it publishes the id the row holds and the name the row holds —
+ * including `null`, which is what a handover recorded before P-17 carries when
+ * its delivering employee id resolved to nobody.
  */
 export interface DeliveryRecordView {
   readonly id: string;
@@ -171,6 +176,12 @@ export interface DeliveryRecordView {
   readonly receptionVisitId: string;
   readonly vehicleId: string;
   readonly deliveringEmployeeId: string;
+  /**
+   * The stamped snapshot, not a resolved name. Immutable once written, and
+   * `null` on a pre-P-17 handover whose delivering identity was never resolved
+   * — the one thing this read will not do is invent a name for it.
+   */
+  readonly deliveringEmployeeDisplayName: string | null;
   readonly status: string;
   readonly deliveredAt: string | null;
   /** A `veh.odometer_readings` id. NOT a reading value. */
@@ -321,6 +332,7 @@ export const toDeliveryView = (row: DeliveryRecordRow): DeliveryRecordView => ({
   receptionVisitId: row.receptionVisitId,
   vehicleId: row.vehicleId,
   deliveringEmployeeId: row.deliveringEmployeeId,
+  deliveringEmployeeDisplayName: row.deliveringEmployeeDisplayName,
   status: row.status,
   deliveredAt: row.deliveredAt === null ? null : row.deliveredAt.toISOString(),
   finalOdometerReadingId: row.finalOdometerReadingId,

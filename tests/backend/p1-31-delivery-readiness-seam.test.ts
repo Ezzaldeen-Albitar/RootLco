@@ -99,6 +99,7 @@ import {
   WORK_ORDER_READ,
   authAs,
   cleanP1_22Fixtures,
+  deliveringEmployeeForWorkOrder,
   establishP1_22Fixtures,
   linkSignatureDocumentToWorkOrder,
   seedIssuedInvoice,
@@ -376,9 +377,15 @@ async function settleInvoice(invoice: IssuedInvoice): Promise<void> {
 /** Opens a delivery through `POST /deliveries`. The record is born `ready`. */
 async function openDelivery(workOrderId: string): Promise<DeliveryView> {
   await linkSignatureDocumentToWorkOrder(workOrderId);
+  // P1-31 P-17: `deliveringEmployeeId` is an `org.employees` identity bound by a
+  // foreign key and re-checked by a BEFORE INSERT trigger, so a login account id
+  // is refused here with ERR-VAL-001. The shared helper mints one employee per
+  // branch and reuses it, and resolving it from the work order keeps the fixture
+  // in the branch the delivery is opened in.
+  const deliveringEmployeeId = await deliveringEmployeeForWorkOrder(workOrderId);
   authAs(SAL_FULL);
   const response = await CREATE_DELIVERY(
-    post('http://localhost/api/v1/deliveries', { workOrderId, deliveringEmployeeId: USER_A })
+    post('http://localhost/api/v1/deliveries', { workOrderId, deliveringEmployeeId })
   );
   if (response.status !== 201) {
     throw new Error(

@@ -10,7 +10,7 @@
  * The backend requires an `Idempotency-Key` header on every operation it
  * registers as idempotent, and answers `400 ERR-INT-002` without one — before
  * authorization is evaluated. That set is NOT "the POST operations": it is
- * currently 173 operations (PATCH 3, POST 164, PUT 6).
+ * currently 174 operations (PATCH 3, POST 165, PUT 6).
  *
  * The client used to infer the answer from the HTTP method, which was wrong for
  * every non-POST member of that set. This table is the contract instead of a
@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 13, export 1, financial 14, none 176, privileged 190, security 13.
+ * Currently approval 13, export 1, financial 14, none 178, privileged 192, security 13.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 407 of them. */
+/** Every operation the contract publishes. 411 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -1483,6 +1483,34 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     template: '/org/departments/{departmentId}',
     method: 'PATCH',
     operationId: 'org.department-update',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/org/employees',
+    method: 'GET',
+    operationId: 'org.employee-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/org/employees',
+    method: 'POST',
+    operationId: 'org.employee-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/org/employees/{employeeId}',
+    method: 'GET',
+    operationId: 'org.employee-detail',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/org/employees/{employeeId}/status',
+    method: 'POST',
+    operationId: 'org.employee-status-set',
     idempotent: false,
     auditClass: 'privileged',
   },

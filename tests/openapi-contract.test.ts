@@ -412,6 +412,13 @@ import '@/app/api/v1/report-configurations/[configurationId]/versions/[versionId
 // P1-31 prerequisite P-10, the warranty POLICY and COVERAGE seam (PPD-04). Imported
 // for the same reason: an unimported route is simply ABSENT from the generated
 // document rather than reported as missing.
+// P1-31 prerequisite P-17, the employee register. Imported for the same reason:
+// an unimported route is simply ABSENT from the generated document rather than
+// reported as missing.
+import '@/app/api/v1/org/employees/route';
+import '@/app/api/v1/org/employees/[employeeId]/route';
+import '@/app/api/v1/org/employees/[employeeId]/status/route';
+
 import '@/app/api/v1/warranty-policies/route';
 import '@/app/api/v1/warranty-policies/[policyId]/route';
 import '@/app/api/v1/warranty-policies/[policyId]/status/route';

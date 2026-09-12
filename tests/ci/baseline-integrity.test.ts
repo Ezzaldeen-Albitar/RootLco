@@ -507,7 +507,7 @@ describe('the coverage include lists are pinned, because they are the denominato
       typeScriptFilesUnder(pattern.slice(0, -'/**/*.ts'.length))
     );
     expect(files.filter((file) => file.endsWith('.d.ts'))).toEqual([]);
-    expect(files.length).toBe(288);
+    expect(files.length).toBe(290);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -571,13 +571,20 @@ describe('the coverage include lists are pinned, because they are the denominato
      * their allocations. Neither module reads the other's tables, which is what
      * keeps an allocation from being published twice.
      *
+     * 289 with the P1-31 employee register (P-17): TWO more, and both are a layer
+     * this slice needed rather than a file it chose —
+     * `modules/iam/data/employee-repository.ts` (the register's only SQL) and
+     * `modules/iam/application/employee-administration-service.ts` (the rules the
+     * four operations and the delivery write share).
+     *
      * The floors are untouched for the reason above: re-establishing them needs a
      * hosted measurement run, which these slices did not perform and do not claim.
      *
-     * The 288 above is these 287 plus `server/openapi/document.ts`, which the
+     * The 290 above is these 289 plus `server/openapi/document.ts`, which the
      * include list admits and `exclude` then removes; the two numbers moving
-     * together by two is what says no file slipped in behind the exclusion.
+     * together by the same count is what says no file slipped in behind the
+     * exclusion.
      */
-    expect(instrumented.length).toBe(287);
+    expect(instrumented.length).toBe(289);
   });
 });

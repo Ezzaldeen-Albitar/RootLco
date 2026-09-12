@@ -81,6 +81,7 @@ import {
   outboxCountFor,
   seedIssuedInvoice,
   type IssuedInvoice,
+  deliveringEmployeeForWorkOrder,
 } from './p1-22-helpers';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
 import { GET as READ_WORK_ORDER } from '@/app/api/v1/work-orders/[workOrderId]/route';
@@ -325,7 +326,10 @@ describe('TC-INT-001 — one work order from the front door to the warranty', ()
       CREATE_DELIVERY,
       '/deliveries',
       {},
-      { workOrderId: invoice.workOrderId, deliveringEmployeeId: USER_A }
+      {
+        workOrderId: invoice.workOrderId,
+        deliveringEmployeeId: await deliveringEmployeeForWorkOrder(invoice.workOrderId),
+      }
     );
     expect(delivery.status).toBe(201);
     const deliveryId = delivery.body.id;
@@ -482,7 +486,10 @@ describe('TC-P1-24-001 — an invalid lifecycle order is refused at the seam', (
       CREATE_DELIVERY,
       '/deliveries',
       {},
-      { workOrderId: invoice.workOrderId, deliveringEmployeeId: USER_A }
+      {
+        workOrderId: invoice.workOrderId,
+        deliveringEmployeeId: await deliveringEmployeeForWorkOrder(invoice.workOrderId),
+      }
     );
     expect(delivery.status).toBe(201);
 
@@ -530,7 +537,7 @@ describe('TC-P1-24-002 — a duplicate command commits once', () => {
           headers: { 'content-type': 'application/json', 'idempotency-key': key },
           body: JSON.stringify({
             workOrderId: invoice.workOrderId,
-            deliveringEmployeeId: USER_A,
+            deliveringEmployeeId: await deliveringEmployeeForWorkOrder(invoice.workOrderId),
           }),
         }),
         { params: Promise.resolve({}) }

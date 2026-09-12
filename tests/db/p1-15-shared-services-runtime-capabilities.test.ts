@@ -270,7 +270,7 @@ beforeEach(async () => {
 // ---------------------------------------------------------------------------
 
 describe('P1-15 / global security posture', () => {
-  it('the repository declares exactly 139 migrations, with the newest nine named', () => {
+  it('the repository declares exactly 141 migrations, with the newest twelve named', () => {
     // Counted from the repository, not from `supabase_migrations.schema_migrations`:
     // that bookkeeping table is created by the Supabase CLI and does not exist in
     // CI, where the database is built by `npm run db:apply-migrations` against a
@@ -345,15 +345,21 @@ describe('P1-15 / global security posture', () => {
     //
     // The window is WIDENED as each slice lands rather than being allowed to
     // slide — four, then five with Wave C, six with BR-02, seven with P1-29 W9,
-    // eight with the P1-30 opening-count index, now nine with the P1-31 P-9b
-    // completion-gate replacement. Sliding it would
+    // eight with the P1-30 opening-count index, nine with the P1-31 P-9b
+    // completion-gate replacement, and two more with the P1-31 P-17 identity
+    // pair. Sliding it would
     // drop M1 out and quietly falsify the paragraph above: the assertion would
     // no longer touch the first of the four while the comment still claimed it
     // pinned their order.
-    expect(files).toHaveLength(139);
-    expect(files.at(-10)).toBe('20260831091000_org_tenant_status_transition_guard.sql');
-    expect(files.at(-9)).toBe('20260831092000_org_tenant_status_history_emission.sql');
-    expect(files.at(-8)).toBe('20260831093000_iam_platform_privilege_graph.sql');
+    //
+    // That running count is a count of CONTRIBUTING SLICES and it had drifted one
+    // behind the list of names — the P1-30 tenant-bootstrap migration added a name
+    // without moving it — so the number in the test title is restated from the
+    // tree instead: twelve names below, 141 files.
+    expect(files).toHaveLength(141);
+    expect(files.at(-12)).toBe('20260831091000_org_tenant_status_transition_guard.sql');
+    expect(files.at(-11)).toBe('20260831092000_org_tenant_status_history_emission.sql');
+    expect(files.at(-10)).toBe('20260831093000_iam_platform_privilege_graph.sql');
     // The tail GROWS by contributing branch rather than sliding, so that any one
     // migration vanishing in a merge — and taking its grants with it — fails here
     // rather than somewhere confusing.
@@ -365,21 +371,21 @@ describe('P1-15 / global security posture', () => {
     // approval-at-selection-time declaratively, and — deliberately — WITHOUT
     // re-reading mutable status, so a version retired after publication does not
     // retroactively invalidate an event already emitted.
-    expect(files.at(-7)).toBe('20260901090000_org_company_status_lifecycle.sql');
+    expect(files.at(-9)).toBe('20260901090000_org_company_status_lifecycle.sql');
     // PRE-P1-29 Wave C: the legal-company status lifecycle. One migration for one
     // coherent subsystem — the history table, its stamp and coherence guards, the
     // emitter that makes a raw UPDATE record itself, and the transition function.
-    expect(files.at(-6)).toBe('20260901100000_wo_jobs_department_routing.sql');
+    expect(files.at(-8)).toBe('20260901100000_wo_jobs_department_routing.sql');
     // PRE-P1-29 BR-02: the job/department routing relationship. One column, one
     // composite FK, one index — the smallest migration in the tail, and the only
     // one that moves schemaHash while leaving every structural total alone.
-    expect(files.at(-5)).toBe('20260902120000_wo_job_blocker_events.sql');
+    expect(files.at(-7)).toBe('20260902120000_wo_job_blocker_events.sql');
     // 136 is P1-29 W9, the First-Owner bootstrap's two owed privileges: one
     // authority-predicated SELECT policy on iam.permissions (column-scoped to
     // id and permission_code) and EXECUTE on the delegation backstop for
     // app_platform. No object, no role, no permission code; the policy is
     // asserted by name in foundation.test.ts and the count is pinned here.
-    expect(files.at(-4)).toBe('20260902130000_iam_platform_bootstrap_catalogue_and_backstop.sql');
+    expect(files.at(-6)).toBe('20260902130000_iam_platform_bootstrap_catalogue_and_backstop.sql');
     // 137 is the P1-30 tenant-bootstrap corrective slice: schema USAGE on `sal`,
     // SELECT and INSERT on sal.payment_methods, and the two policies that let
     // provisioning give a tenant its own copies of the canonical ASM-14 methods.
@@ -387,7 +393,7 @@ describe('P1-15 / global security posture', () => {
     // method at all — fk_receipts_method resolves (tenant_id, payment_method_id)
     // and a platform row's tenant_id is NULL. No object, no role, no permission
     // code; both policies are asserted by name in foundation.test.ts.
-    expect(files.at(-3)).toBe('20260906090000_sal_payment_method_tenant_bootstrap.sql');
+    expect(files.at(-5)).toBe('20260906090000_sal_payment_method_tenant_bootstrap.sql');
     // 138 is the P1-30 opening-count uniqueness index: one partial unique index on
     // inv.stock_movements, at most one `opening` movement per
     // (tenant, company, branch, item, location). Until it existed, two DRAFT
@@ -399,7 +405,7 @@ describe('P1-15 / global security posture', () => {
     // and no policy: this is the migration that moves schemaHash while leaving
     // every structural total alone, and the index is asserted by definition in
     // tests/backend/p1-30-opening-count-uniqueness.test.ts (OC-0).
-    expect(files.at(-2)).toBe('20260907090000_inv_opening_movement_cell_uniqueness.sql');
+    expect(files.at(-4)).toBe('20260907090000_inv_opening_movement_cell_uniqueness.sql');
     // 139 is P1-31 P-9b, closing CC-14: sal.complete_delivery re-issued with the
     // template join, so only an ACTIVE, non-deleted checklist template gates a
     // handover. Until it existed, deactivating a template withdrew nothing from
@@ -410,7 +416,22 @@ describe('P1-15 / global security posture', () => {
     // hashes function IDENTITY and not BODY. Its behaviour is asserted in
     // tests/db/sal-delivery.test.ts and the eligibility mirror in
     // tests/backend/p1-31-delivery-checklist-template-seam.test.ts.
-    expect(files.at(-1)).toBe('20260909090000_sal_complete_delivery_active_template_gate.sql');
+    expect(files.at(-3)).toBe('20260909090000_sal_complete_delivery_active_template_gate.sql');
+    // 140 is P1-31 P-17, the employee register: org.employees, tenant-wide to read
+    // and branch-scoped to write, with DELETE granted to no application role. It
+    // mints two permission codes (org.employee.read, org.employee.manage) in
+    // supabase/seeds/04_iam_permission_catalog.sql, which is pinned in
+    // .github/ci-baselines/schema-baseline.json rather than here, and it adds no
+    // grant, role or policy on a `shared` relation, so every inventory assertion in
+    // this file is unchanged by it.
+    expect(files.at(-2)).toBe('20260910090000_org_employees.sql');
+    // 141 binds sal.delivery_records.delivering_employee_id to that register on
+    // (tenant_id, id) and takes an immutable display-name snapshot. The legacy mint
+    // is NOT in it — a migration may not INSERT business rows, so that half is
+    // scripts/platform/backfill-delivering-employee-identity.mjs — and the review
+    // table it creates carries a SELECT policy plus an INSERT policy that refuses
+    // every row. Again nothing in `shared` moves.
+    expect(files.at(-1)).toBe('20260910091000_sal_delivery_delivering_employee_identity.sql');
   });
 
   it('migration 121 changes the shared surface DELIBERATELY, and the change is bounded', () => {

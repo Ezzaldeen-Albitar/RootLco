@@ -112,6 +112,7 @@ import {
   seedDeliveredDelivery,
   seedIssuedInvoice,
   seedWorkOrderChain,
+  deliveringEmployeeForWorkOrder,
 } from './p1-22-helpers';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
 import { allOperations } from '@/server/auth/operation-registry';
@@ -175,6 +176,8 @@ interface DeliveryBody {
   readonly branchId: string;
   readonly workOrderId: string;
   readonly deliveringEmployeeId: string;
+  /** The snapshot `sal.stamp_delivering_employee_identity` writes (P1-31 P-17). */
+  readonly deliveringEmployeeDisplayName: string | null;
   readonly status: string;
 }
 
@@ -683,7 +686,7 @@ describe('cross-tenant: tenant B cannot reach tenant A', () => {
     authAs(SAL_TENANT_B);
     const created = await createDelivery({
       workOrderId: delivery.workOrderId,
-      deliveringEmployeeId: USER_A,
+      deliveringEmployeeId: await deliveringEmployeeForWorkOrder(delivery.workOrderId),
     });
     expect(created.status).toBe(404);
     expect((await bodyOf<ProblemBody>(created)).code).toBe('ERR-RES-001');
@@ -793,7 +796,7 @@ describe('scoped permission and not RLS invisibility (P1-18-A-01)', () => {
     authAs(SAL_PERMISSION_ELSEWHERE);
     const created = await createDelivery({
       workOrderId: delivery.workOrderId,
-      deliveringEmployeeId: USER_A,
+      deliveringEmployeeId: await deliveringEmployeeForWorkOrder(delivery.workOrderId),
     });
     expect(created.status).toBe(403);
     expect((await bodyOf<ProblemBody>(created)).code).toBe('ERR-IAM-001');
@@ -875,8 +878,12 @@ describe('cross-branch: a caller granted only in branch A2', () => {
 
     authAs(SAL_SCOPED_A2);
     expect(
-      (await createDelivery({ workOrderId: delivery.workOrderId, deliveringEmployeeId: USER_A }))
-        .status
+      (
+        await createDelivery({
+          workOrderId: delivery.workOrderId,
+          deliveringEmployeeId: await deliveringEmployeeForWorkOrder(delivery.workOrderId),
+        })
+      ).status
     ).toBe(404);
     authAs(SAL_SCOPED_A2);
     expect((await readEligibility(delivery.deliveryId)).status).toBe(404);
@@ -959,7 +966,7 @@ describe('cross-company: a caller whose authority names another company in tenan
     authAs(SAL_OTHER_COMPANY);
     const created = await createDelivery({
       workOrderId: delivery.workOrderId,
-      deliveringEmployeeId: USER_A,
+      deliveringEmployeeId: await deliveringEmployeeForWorkOrder(delivery.workOrderId),
     });
     expect(created.status).toBe(403);
     expect((await bodyOf<ProblemBody>(created)).code).toBe('ERR-IAM-001');
@@ -1415,7 +1422,7 @@ describe('a forged actor cannot be expressed on sal.delivery-create, and created
       authAs(SAL_FULL);
       const response = await createDelivery({
         workOrderId: chain.workOrderId,
-        deliveringEmployeeId: USER_A,
+        deliveringEmployeeId: await deliveringEmployeeForWorkOrder(chain.workOrderId),
         ...forged,
       });
       expect(response.status, `forged ${Object.keys(forged)[0]}`).toBe(422);
@@ -1429,7 +1436,7 @@ describe('a forged actor cannot be expressed on sal.delivery-create, and created
     authAs(SAL_FULL);
     const created = await createDelivery({
       workOrderId: chain.workOrderId,
-      deliveringEmployeeId: USER_A,
+      deliveringEmployeeId: await deliveringEmployeeForWorkOrder(chain.workOrderId),
     });
     expect(created.status).toBe(201);
     const delivery = await bodyOf<DeliveryBody>(created);
@@ -1442,7 +1449,9 @@ describe('a forged actor cannot be expressed on sal.delivery-create, and created
     // `created_by` is the session principal even though the body named a different
     // person as the one handing the vehicle over, which is the distinction a forged
     // actor would try to blur.
-    expect(delivery.deliveringEmployeeId).toBe(USER_A);
+    expect(delivery.deliveringEmployeeId).toBe(
+      await deliveringEmployeeForWorkOrder(chain.workOrderId)
+    );
     expect(await deliveryActorOf(delivery.id)).toBe(SAL_FULL.userId);
     expect(await deliveryActorOf(delivery.id)).not.toBe(delivery.deliveringEmployeeId);
 

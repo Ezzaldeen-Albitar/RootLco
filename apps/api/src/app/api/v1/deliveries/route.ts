@@ -47,9 +47,14 @@ export const dynamic = 'force-dynamic';
 export const CreateBody = z
   .object({
     workOrderId: schemas.uuid,
-    // Who is handing the vehicle over. `sal.delivery_records.delivering_employee_id`
-    // carries no FK, so this is validated as a uuid and bound to the row; the schema
-    // asserts nothing further about it.
+    // Who is handing the vehicle over: an `org.employees` id. Since P1-31
+    // prerequisite P-17 the column carries a composite foreign key on
+    // `(tenant_id, delivering_employee_id)` and
+    // `sal.stamp_delivering_employee_identity` additionally requires the
+    // employee to be live and active. Their home branch is not part of the
+    // rule. The schema still asserts only the SHAPE — the identity is decided
+    // by the module and the database, not by a zod refinement that would drift
+    // from both.
     deliveringEmployeeId: schemas.uuid,
   })
   .strict();
