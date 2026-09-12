@@ -26,11 +26,14 @@
  *    tenant-scoped run operation would be decided by the scope-blind
  *    `iam.has_permission`, and `app.branch_ids` is the permission-blind union of
  *    every active grant (P1-18-A-01).
- * 2. THIS service then evaluates the dataset's own `requiredPermission` —
- *    `wo.work_order.read` for the only dataset registered today — against the
- *    same company and branch, through `callerHoldsPermission`, which asks the
- *    same deployed `iam.has_permission_in_scope` every other check asks. A
- *    caller who may run reports but may not read work orders is refused.
+ * 2. THIS service then evaluates EVERY code in the dataset's own
+ *    `requiredPermissions` — `wo.work_order.read` for `work_orders_by_status`,
+ *    `tech.technician.read` AND `wo.work_order.read` for
+ *    `technician_labor_time` — against the same
+ *    company and branch, through `callerHoldsPermission`, which asks the same
+ *    deployed `iam.has_permission_in_scope` every other check asks. A caller who
+ *    may run reports but may not read the underlying rows is refused, and the
+ *    refusal is of the WHOLE report rather than of some of its columns.
  * 3. An explicit tenant configuration must be published with a live published
  *    version. Its scope ceiling and understood filter allowlist are enforced
  *    before branch resolution or dataset reads. Unknown restrictions fail
@@ -71,18 +74,37 @@
  * day either swallows the next day's first instant or drops the last one's final
  * microsecond, and either shows up only as a total that does not add up.
  *
- * The branch timezone rather than the tenant default (`org.tenants
- * .default_timezone`) is a coordinator DECISION recorded for the Owner to
- * confirm, not a contract fact: both columns exist, both are foreign keys into
- * `shared.timezones`, and no query in the platform buckets by either today. It
- * is written down in `docs/phase-1/phase-1-31/report-engine-seam.md`.
+ * The half-open semantics and the branch zone were APPROVED by the Owner on
+ * 2026-09-10 (decision D-17). What remains a recommendation pending Owner
+ * approval is the SOURCE COLUMN: that the selected branch's zone be read from
+ * `org.branches.timezone_name` rather than `org.tenants.default_timezone`. Both
+ * columns exist and both are foreign keys into `shared.timezones`. Reversing the
+ * choice is ONE lookup — `iamOrganizationContext().branches.findBranch` below —
+ * which is why every dataset takes the resolved zone as an argument and no
+ * dataset reads a timezone for itself. It is written down in
+ * `docs/phase-1/phase-1-31/report-engine-seam.md`.
+ *
+ * The predicate that applies the period is `halfOpenLocalDayRange`
+ * (`server/db/period.ts`), written once and composed by every dataset, because
+ * D-17 requires the conversion to be CONSISTENT and two repositories writing the
+ * comparison from memory is how two reports over one period stop adding up.
  */
 import { ApplicationService } from '@/server/layering';
 import { AppFailure } from '@/server/errors/app-failure';
 import { callerHoldsPermission } from '@/server/auth/authorization';
 import type { DbHandle } from '@/server/db/transaction';
-import type { Page } from '@/server/db/pagination';
+import {
+  buildPageWithCursors,
+  pageRequest,
+  type OrderingContract,
+  type Page,
+} from '@/server/db/pagination';
+import { billingModule } from '@/modules/billing';
+import { crmModule } from '@/modules/crm';
 import { iamOrganizationContext } from '@/modules/iam';
+import { inventoryModule } from '@/modules/inventory';
+import { paymentsModule } from '@/modules/payments';
+import { technicianModule } from '@/modules/technician';
 import { workOrderModule } from '@/modules/work-order';
 import type { ReportCatalogueRepository } from '../data/report-catalogue-repository';
 import { assertReportConfiguration } from './report-configuration-policy';
@@ -92,6 +114,7 @@ import {
   type ReportColumnKind,
   type ReportDatasetCode,
   type ReportDatasetDefinition,
+  type ReportDrillThroughByKind,
 } from '../domain/report-datasets';
 
 /** A column as published to a client. */
@@ -106,6 +129,18 @@ export interface ReportColumnView {
    * authority on a path `apps/web` owns.
    */
   readonly drillThrough: string | null;
+  /**
+   * One template per KIND of record, for a column whose rows are not all the
+   * same kind, or null when the column has no such split.
+   *
+   * Published from the Owner's answer of 2026-09-12: `invoice_payment_summary`
+   * carries invoices, receipts and credit notes in one `document` column, and a
+   * single template would send most cells to a screen that cannot answer for
+   * them. `discriminator` names the column whose value selects the template; a
+   * kind with no authorized target route maps to null and is still listed, so a
+   * client can tell an absent screen from an unknown kind.
+   */
+  readonly drillThroughByKind: ReportDrillThroughByKind | null;
 }
 
 /**
@@ -140,6 +175,72 @@ export interface ReportStateCountView {
   readonly count: number;
 }
 
+/**
+ * One GROUP and its measures, computed over the WHOLE scoped selection.
+ *
+ * This is the generalisation slice 1 named as a prerequisite: `countsByState` put
+ * one dataset's grouping on the shared envelope, and the other three baseline
+ * reports group by something else. Three fields, and each is a decision:
+ *
+ *   * `key` — the grouping columns and their values, BY NAME, so a client reading
+ *     `{ state: 'open' }` or `{ technician: '<uuid>' }` does not have to know
+ *     which dataset it asked for to know what it is looking at. A value may be
+ *     null: "no party was named" is a group, and collapsing it into a bucket
+ *     called "other" would hide it.
+ *   * `label` — what a human reads, or null when the source has nothing to show
+ *     or this caller may not be told. Never the key stringified: a label the API
+ *     invented is a label that will disagree with the one the detail screen shows.
+ *   * `measures` — measure name to value, and every value is a STRING. A count, a
+ *     duration in seconds, a quantity and an amount are all exact integers or
+ *     exact decimals, and JSON numbers are the one representation that cannot
+ *     carry all four without losing something. The column whose `kind` matches
+ *     the measure says how to render it.
+ *
+ * Computed over the SELECTION and never over the page — the P1-28 round-two rule.
+ */
+export interface ReportGroupView {
+  readonly key: Readonly<Record<string, string | null>>;
+  readonly label: string | null;
+  readonly measures: Readonly<Record<string, string>>;
+}
+
+/**
+ * The filter context the rows were produced under, echoed back.
+ *
+ * D-17 requires that the timezone and the filter context be displayed and
+ * preserved wherever a result is shown, printed or recorded, so that a number can
+ * never be read without the period that produced it. The period already travelled;
+ * the scope did not, and a printed page showing a total with no branch on it is
+ * exactly the artefact that decision forbids.
+ */
+export interface ReportFilterContextView {
+  readonly companyId: string;
+  readonly branchId: string;
+}
+
+/** The branch the report was run for, named as well as identified. */
+export interface ReportBranchView {
+  readonly id: string;
+  readonly name: string;
+}
+
+/**
+ * A resolved period, as a dataset read receives it.
+ *
+ * `toExclusive` rather than `to`, because the name is the contract: a reader who
+ * sees `to` assumes the last day reported, and that assumption is the off-by-one
+ * the half-open period exists to prevent. Published from this module's index so a
+ * port on another module can accept exactly this shape instead of restating it.
+ */
+export interface ReportPeriodInput {
+  /** First day included, `YYYY-MM-DD`. */
+  readonly from: string;
+  /** First day EXCLUDED — the day after the last one reported, `YYYY-MM-DD`. */
+  readonly toExclusive: string;
+  /** The IANA zone the two days are resolved in: the branch's own. */
+  readonly timezoneName: string;
+}
+
 export interface ReportPeriodView {
   /** First day included, `YYYY-MM-DD`. */
   readonly from: string;
@@ -152,13 +253,11 @@ export interface ReportPeriodView {
 /**
  * The run result.
  *
- * `countsByState` is on the envelope rather than inside a dataset-specific
- * payload, and that is a LIMITATION of slice 1 stated rather than hidden: the
- * one dataset registered today groups by work-order state, so the engine's
- * result type names that grouping. The other three baseline reports (P-11's
- * remaining slices) group differently, and generalising this field is their
- * work — it is listed as a named prerequisite in the seam record so the next
- * slice does not discover it.
+ * Slice 1 put `countsByState` on this envelope and recorded the limitation
+ * openly: the one dataset registered then grouped by work-order state, so the
+ * shared result type named that grouping, and the seam record listed
+ * generalising it as a named prerequisite for the next slice. This is that
+ * slice, and `groups` is the generalisation.
  */
 export interface ReportRunView {
   readonly reportCode: string;
@@ -166,6 +265,10 @@ export interface ReportRunView {
   readonly titleKey: string;
   readonly scope: 'branch';
   readonly period: ReportPeriodView;
+  /** The company and branch the rows were selected under (D-17). */
+  readonly filters: ReportFilterContextView;
+  /** The reported branch, named. The run resolves it anyway, for the timezone. */
+  readonly branch: ReportBranchView;
   /** When the rows were read. */
   readonly generatedAt: string;
   /**
@@ -175,6 +278,22 @@ export interface ReportRunView {
    */
   readonly freshness: 'live';
   readonly columns: readonly ReportColumnView[];
+  /** Every group of the WHOLE selection, with its measures. Dataset-shaped. */
+  readonly groups: readonly ReportGroupView[];
+  /**
+   * @deprecated Superseded by `groups`. Read `groups` instead.
+   *
+   * Kept, and kept CORRECT, for `work_orders_by_status` only — it is DERIVED from
+   * that dataset's groups rather than computed a second time, so the two cannot
+   * disagree. It is empty for every other dataset, which is the honest answer: a
+   * technician's recorded hours have no work-order state, and filling this field
+   * with something would be inventing a grouping the report does not have.
+   *
+   * It survives this slice rather than being removed in it because removing a
+   * published field and adding its replacement in one change gives a consumer no
+   * window in which both exist. Its removal is a named prerequisite of the slice
+   * that retires it.
+   */
   readonly countsByState: readonly ReportStateCountView[];
   readonly rows: Page<ReportRowView>;
 }
@@ -192,21 +311,42 @@ export interface ReportRunInput {
 }
 
 /** What a resolver is handed once the period and the scope are settled. */
-interface ResolverInput {
+interface ResolverInput extends ReportPeriodInput {
   readonly companyId: string;
   readonly branchId: string;
   readonly branchName: string;
-  readonly from: string;
-  readonly toExclusive: string;
-  readonly timezoneName: string;
   readonly cursor?: string | undefined;
   readonly limit?: number | undefined;
 }
 
-/** What a resolver returns. The envelope around it is assembled below. */
+/**
+ * What a resolver returns. The envelope around it is assembled below.
+ *
+ * TWO fields and no dataset-specific third: a resolver produces the groups of the
+ * whole selection and one page of rows, and every other field on the envelope is
+ * the engine's, computed identically for every dataset. That is what stops the
+ * next slice from adding a fourth field named after its own grouping — the defect
+ * `countsByState` is.
+ */
 interface ResolverResult {
-  readonly countsByState: readonly ReportStateCountView[];
+  readonly groups: readonly ReportGroupView[];
   readonly rows: Page<ReportRowView>;
+  /**
+   * The DEPRECATED `countsByState`, set by its one producer and by nothing else.
+   *
+   * It is not the dataset-specific third field the comment above warns against —
+   * it is that field's retirement in progress. `work_orders_by_status` fills it
+   * from the SAME `counts` array its groups are built from, so the two cannot
+   * disagree, and the numbers never make a trip through a string on the way.
+   *
+   * That round trip is why this exists at all: the previous derivation read the
+   * count back out of a group MEASURE with `Number.parseInt`, and a numeric
+   * conversion is forbidden outright on the financial surface this module joined
+   * in engine slice 4 — a gate that cannot tell a row count from an amount is a
+   * gate worth keeping strict. Removing the conversion rather than exempting the
+   * file is the fix; this field and the one it feeds disappear together.
+   */
+  readonly countsByState?: readonly ReportStateCountView[];
 }
 
 type ReportResolver = (db: DbHandle, input: ResolverInput) => Promise<ResolverResult>;
@@ -244,7 +384,21 @@ const runWorkOrdersByStatus: ReportResolver = async (db, input) => {
   const stateNames = new Map(summary.counts.map((entry) => [entry.stateCode, entry.stateName]));
 
   return {
-    countsByState: summary.counts,
+    // One group per state, in the port's own order. The count is a string here
+    // like every other measure.
+    groups: summary.counts.map((entry) => ({
+      key: { state: entry.stateCode },
+      label: entry.stateName,
+      measures: { count: String(entry.count) },
+    })),
+    // The deprecated field, from the SAME array the groups above are built from
+    // rather than read back out of them. One source, so the two cannot report
+    // different numbers for one state, and no count is converted to reach it.
+    countsByState: summary.counts.map((entry) => ({
+      stateCode: entry.stateCode,
+      stateName: entry.stateName,
+      count: entry.count,
+    })),
     rows: {
       ...summary.workOrders,
       items: summary.workOrders.items.map((order) => ({
@@ -281,6 +435,469 @@ const runWorkOrdersByStatus: ReportResolver = async (db, input) => {
 };
 
 /**
+ * `technician_labor_time` — engine slice 2 (D-4, D-17).
+ *
+ * ## Two ports, because two modules own the tables
+ *
+ * `tech.labor_sessions` is the technician module's and `wo.jobs` is the work-order
+ * module's, so the rows come from `technicianModule().reportPort` and the
+ * work-order each session belongs to comes from `workOrderModule().reportPort`.
+ * Neither query is written here. That is not ceremony: `tech.labor_sessions`
+ * carries `job_id` and no work-order column, so the only alternative was a join
+ * across a private schema, which ADR-001 rule 3 forbids and the boundary checker
+ * refuses.
+ *
+ * ## The second call is over the PAGE, deliberately
+ *
+ * The work-order references are resolved for the ids on the page and for nothing
+ * else, in ONE batched statement. The TOTALS do not need them — the report groups
+ * by technician, not by work order — so resolving them for the whole selection
+ * would read rows nobody displays.
+ *
+ * ## A missing reference renders as absent, never as a guess
+ *
+ * `workOrder` may be null when a session's job is outside the reported branch,
+ * which is a state the scoped resolution produces rather than an error. The cell
+ * carries null on both halves; nothing substitutes the job id for the work order
+ * id, because a client drilling through would then open the wrong record.
+ *
+ * ## Nothing is recomputed
+ *
+ * The duration arrives as an integer string computed in SQL, and it is placed in
+ * the cell unchanged. No subtraction, no division into hours, no `Number`: a
+ * duration that is divided once is a duration that carries a rounding error into
+ * every total built on it, and D-4 says this figure is a duration and not a
+ * derived measure of anything.
+ */
+const runTechnicianLaborTime: ReportResolver = async (db, input) => {
+  const report = await technicianModule().reportPort.laborTotals(
+    db,
+    {
+      companyId: input.companyId,
+      branchId: input.branchId,
+      from: input.from,
+      toExclusive: input.toExclusive,
+      timezoneName: input.timezoneName,
+    },
+    { cursor: input.cursor, limit: input.limit }
+  );
+  const references = await workOrderModule().reportPort.workOrdersForJobs(
+    db,
+    report.sessions.items.map((session) => session.jobId),
+    { companyId: input.companyId, branchId: input.branchId }
+  );
+  const byJob = new Map(references.map((entry) => [entry.jobId, entry]));
+
+  return {
+    groups: report.totals.map((total) => ({
+      key: { technician: total.technicianProfileId },
+      label: total.technicianName,
+      measures: { durationSeconds: total.durationSeconds },
+    })),
+    rows: {
+      ...report.sessions,
+      items: report.sessions.items.map((session) => {
+        const workOrder = byJob.get(session.jobId);
+        return {
+          cells: [
+            // Null label when this caller may not be told who the technician is.
+            // The profile id travels either way, so the row is never anonymous to
+            // a caller who can already resolve it elsewhere.
+            cell('technician', session.technicianName, session.technicianProfileId),
+            cell('branch', input.branchName, input.branchId),
+            cell('workOrder', workOrder?.label ?? null, workOrder?.workOrderId ?? null),
+            // The session's START instant, serialised UTC like every other
+            // published timestamp. Which DAY it falls on depends on the zone,
+            // which is why the envelope states the zone it resolved in.
+            cell('workLogDate', null, session.startedAt),
+            // Whole seconds. The column's `kind` is `duration`, which is how a
+            // client knows this string is not a count.
+            cell('duration', null, session.durationSeconds),
+            // The raw three-term vocabulary. No label, because the catalogue has
+            // none to give and an English word invented here would ship as though
+            // it were one.
+            cell('source', null, session.source),
+          ],
+        };
+      }),
+    },
+  };
+};
+
+/**
+ * `inventory_movements` — engine slice 3 (D-4, D-5, D-17).
+ *
+ * ## One port, because one module owns every table in the row
+ *
+ * The ledger, the item, its unit and the location are all `inv.*`, which is the
+ * inventory module's private schema (ADR-001 rule 3). So one call to
+ * `inventoryModule().reportPort` produces the whole row and the whole total, and
+ * nothing is joined or resolved here.
+ *
+ * ## The groups are keyed on THREE things, and that is the Owner's rule
+ *
+ * `(itemId, uomCode, movementType)`. D-5 forbids a single quantity across unlike
+ * items and D-4 requires totals "separated by item and by compatible unit", so
+ * the item and the unit are both in the key: two units of one item can never
+ * merge into one number, because they are two groups.
+ *
+ * The movement type is in the key because D-4 requires the distinct meanings of
+ * the movement kinds to be preserved. Within a type the `in` and `out` halves are
+ * TWO MEASURES rather than one signed sum, so a return is never netted against an
+ * issue. Nothing on this envelope is a grand total.
+ *
+ * ## Nothing is recomputed
+ *
+ * Every quantity arrives as a decimal string from `numeric(12,3)` and is placed
+ * in the cell unchanged — no `Number`, no `toFixed`, no addition here. The sums
+ * are computed in SQL over the same expression the rows carry, so adding a page
+ * by hand can never disagree with the group.
+ */
+const runInventoryMovements: ReportResolver = async (db, input) => {
+  const report = await inventoryModule().reportPort.movementSummary(
+    db,
+    {
+      companyId: input.companyId,
+      branchId: input.branchId,
+      from: input.from,
+      toExclusive: input.toExclusive,
+      timezoneName: input.timezoneName,
+    },
+    { cursor: input.cursor, limit: input.limit }
+  );
+
+  return {
+    groups: report.totals.map((total) => ({
+      key: {
+        item: total.itemId,
+        unit: total.uomCode,
+        movementType: total.movementType,
+      },
+      // The SKU is what a human reads; the unit and the type are already legible
+      // in the key, and repeating them in the label would be this module
+      // inventing a format for a string a client renders.
+      label: total.sku,
+      measures: { quantityIn: total.quantityIn, quantityOut: total.quantityOut },
+    })),
+    rows: {
+      ...report.movements,
+      items: report.movements.items.map((movement) => ({
+        cells: [
+          // The movement's own business instant, serialised UTC. Which DAY it
+          // falls on depends on the zone, which is why the envelope states the
+          // zone it resolved in.
+          cell('occurredAt', null, movement.occurredAt),
+          // The kind labels the reference and the id identifies it. The two are
+          // not concatenated: joining them would make this module the authority
+          // on how a reference is spelled, which belongs to whoever renders it.
+          cell('reference', movement.referenceKind, movement.referenceId),
+          // The raw five-term vocabulary and the two-term direction. No labels,
+          // because no catalogue carries a name for either and an English word
+          // invented here would ship as though it were one.
+          cell('movementType', null, movement.movementType),
+          cell('direction', null, movement.direction),
+          cell('item', movement.sku, movement.itemId),
+          // The location's NAME is what a human reads and its CODE is the
+          // machine-readable half — the `state` column's treatment in slice 1,
+          // for the same reason: `uq_stock_locations_code` makes the code unique
+          // within a branch, so it identifies the location as well as an id
+          // would, and it is the string a store actually uses. Both columns are
+          // NOT NULL, so neither half is ever absent.
+          cell('location', movement.locationName, movement.locationCode),
+          // A decimal string, unrounded, in the unit the next cell names.
+          cell('quantity', null, movement.quantity),
+          cell('unit', movement.uomName, movement.uomCode),
+        ],
+      })),
+    },
+  };
+};
+
+/**
+ * The ordering of the MERGED document stream, and the identity of its cursor.
+ *
+ * Declared HERE rather than in either module, because neither module owns the
+ * order: the rows are invoices and credit notes from `@/modules/billing` and
+ * receipts from `@/modules/payments`, interleaved by document date. A contract
+ * declared twice is a contract that drifts, so the two ports accept an ALREADY
+ * DECODED position and this module owns the decode, the merge and the minting.
+ *
+ * The key names the report rather than a table, which is the property that makes
+ * a cursor minted for the invoice list or the receipt list refuse here instead of
+ * being reinterpreted against a different order.
+ */
+const INVOICE_PAYMENT_DOCUMENT_ORDER: OrderingContract = Object.freeze({
+  key: 'sal.invoice_payment_summary:document_date_desc',
+  direction: 'desc',
+});
+
+/**
+ * One merged document, before it becomes cells.
+ *
+ * The two ports publish different shapes for different tables, and this is the
+ * one shape the merge orders and the renderer reads. Declaring it makes the
+ * paging step type-checked rather than positional: a column added to one stream
+ * and forgotten on the other does not compile.
+ *
+ * Every amount is a decimal string or null. Null means the document type has no
+ * such amount; it never means zero.
+ */
+interface InvoicePaymentDocument {
+  readonly documentType: 'invoice' | 'credit_note' | 'receipt';
+  readonly documentId: string;
+  readonly documentNumber: string | null;
+  readonly documentDate: string;
+  /** The party the document names. Always present. */
+  readonly partyId: string;
+  /** What that id IS: `payer`, or `invoice_payer` on a credit note. */
+  readonly partyRole: string;
+  readonly currencyCode: string;
+  readonly status: string;
+  readonly invoicedAmount: string | null;
+  readonly receiptAmount: string | null;
+  readonly allocatedAmount: string | null;
+  readonly unallocatedAmount: string | null;
+  readonly creditNoteAmount: string | null;
+  readonly outstanding: string | null;
+}
+
+/**
+ * `invoice_payment_summary` — engine slice 4 (D-4, D-5, D-17).
+ *
+ * ## Two ports, because two modules own the tables
+ *
+ * `sal.invoices`, `sal.invoice_amounts` and `sal.credit_notes` are the billing
+ * module's; `sal.receipts` and `sal.payment_allocations` are the payments
+ * module's. Each answers for its own tables and neither reads the other's, which
+ * is what keeps `outstanding` the database function's answer and keeps the
+ * allocation total on the receipt where it belongs.
+ *
+ * ## The page is a MERGE of two ordered streams
+ *
+ * Each port returns at most `limit + 1` rows strictly after the cursor in ONE
+ * shared order — document date descending, row id as the tie-break. Merging two
+ * such streams and keeping the first `limit + 1` yields exactly the next page of
+ * the union: a row that was left out of either stream ranks below every row that
+ * was kept, so it cannot belong on this page.
+ *
+ * The tie-break compares the ids as TEXT here and as `uuid` in SQL, and the two
+ * orders are the same one: PostgreSQL compares a uuid by its bytes, the canonical
+ * text form is lower-case hexadecimal with the dashes at fixed positions, and
+ * hexadecimal digits sort identically in both.
+ *
+ * The cursor is minted from `sortValue`, a MICROSECOND-precision string the ports
+ * publish beside each row, never from the ISO instant on the row itself. A cursor
+ * minted from a JS `Date` silently SKIPS every row sharing the boundary row's
+ * millisecond at a higher microsecond (`P1-27-INT-006`), and a receipt and an
+ * invoice written in one transaction share their instant exactly.
+ *
+ * ## The groups never span a currency, and never double-count
+ *
+ * The key is `(currency, documentType)`. Currency, because there is no exchange
+ * rate anywhere in this platform and a cross-currency total would be a number
+ * nobody can name (D-4 rule 4, D-5). Document type, because the measures of an
+ * invoice and of a receipt are different facts about the same money: a receipt
+ * applied to an invoice is counted once as `receipts`/`allocated` in its own
+ * group and once as a REDUCTION inside `outstanding` in the invoice's, and adding
+ * an allocation column to the invoice side is precisely the double count a reader
+ * would then sum.
+ *
+ * Each group publishes only the measures its document type can carry, and no
+ * group publishes a measure at zero for a fact it does not hold — a zero would
+ * read as "none of this happened" rather than "this is not that kind of
+ * document". From the Owner's answer of 2026-09-12 there are THREE kinds of
+ * group: an invoice group carries `invoiced` and `outstanding`, a receipt group
+ * carries `receipts`, `allocated` and `unallocated`, and an approved credit-note
+ * group carries `creditNotes`. The credit-note total is its own group rather than
+ * a measure beside `invoiced`, because netting it there would restate money that
+ * `sal.invoice_open_receivable` has already subtracted inside `outstanding`.
+ *
+ * ## The party NAME is resolved once per page, and only for a caller entitled to it
+ *
+ * `crmModule().customerRead.resolveDisplayIdentities` is the CRM module's own
+ * published read. It checks `crm.customer.read` itself and returns an EMPTY map
+ * to a caller who lacks it, so `partyName` is null for such a caller while
+ * `partyId` still travels — the report's declared permission list is unchanged
+ * and nobody is told anything they could not already read. One extra statement
+ * for the page, never one per row, and the ids passed are only the ones the page
+ * publishes.
+ *
+ * ## Nothing is recomputed
+ *
+ * Every amount arrives as a decimal string from `numeric(18,4)` and is placed in
+ * the cell unchanged — no `Number`, no `toFixed`, no addition here. The sums are
+ * computed in SQL over the same rows, so adding a page by hand can never disagree
+ * with a group. `unallocatedAmount` is `sal.receipt_unallocated` and
+ * `creditNoteAmount` is the credit note's own column; neither is derived from the
+ * other columns on the row.
+ */
+const runInvoicePaymentSummary: ReportResolver = async (db, input) => {
+  const request = pageRequest(INVOICE_PAYMENT_DOCUMENT_ORDER, {
+    cursor: input.cursor,
+    limit: input.limit,
+  });
+  const filter = {
+    companyId: input.companyId,
+    branchId: input.branchId,
+    from: input.from,
+    toExclusive: input.toExclusive,
+    timezoneName: input.timezoneName,
+  };
+  // One row of headroom per stream, which is what lets the merge decide `hasMore`
+  // over the union rather than trusting either stream's own end.
+  const page = {
+    after: request.cursor === null ? null : { sortValue: request.cursor.v, id: request.cursor.i },
+    limit: request.limit + 1,
+  };
+  const [billing, payments] = await Promise.all([
+    billingModule().reportPort.invoiceDocuments(db, filter, page),
+    paymentsModule().reportPort.receiptDocuments(db, filter, page),
+  ]);
+
+  /*
+   * The merged stream carries the DOCUMENTS, not their cells.
+   *
+   * Paging first and rendering afterwards is what lets the party names be
+   * resolved for the rows this page actually publishes and for nothing else: the
+   * two streams together hold up to `2 x (limit + 1)` documents, of which at most
+   * `limit` survive, and resolving names for the discarded ones would read rows
+   * nobody is shown.
+   */
+  const merged: {
+    readonly item: InvoicePaymentDocument;
+    readonly sortValue: string;
+    readonly id: string;
+  }[] = [
+    ...billing.documents.map((document) => ({
+      item: {
+        documentType: document.documentType,
+        documentId: document.documentId,
+        documentNumber: document.documentNumber,
+        documentDate: document.documentDate,
+        partyId: document.partyId,
+        partyRole: document.partyRole,
+        currencyCode: document.currencyCode,
+        status: document.status,
+        invoicedAmount: document.invoicedAmount,
+        // A billing document is not a receipt and has applied nothing: NULL
+        // rather than a zero, which would be a claim that money moved.
+        receiptAmount: null,
+        allocatedAmount: null,
+        unallocatedAmount: null,
+        creditNoteAmount: document.creditNoteAmount,
+        outstanding: document.outstanding,
+      },
+      sortValue: document.sortValue,
+      id: document.documentId,
+    })),
+    ...payments.documents.map((document) => ({
+      item: {
+        documentType: 'receipt' as const,
+        documentId: document.documentId,
+        documentNumber: document.documentNumber,
+        documentDate: document.documentDate,
+        partyId: document.partyId,
+        partyRole: document.partyRole,
+        currencyCode: document.currencyCode,
+        status: document.status,
+        invoicedAmount: null,
+        receiptAmount: document.receiptAmount,
+        allocatedAmount: document.allocatedAmount,
+        unallocatedAmount: document.unallocatedAmount,
+        creditNoteAmount: null,
+        // A receipt has no outstanding balance of its own. What it has NOT yet
+        // applied is a different question, and `unallocatedAmount` answers it.
+        outstanding: null,
+      },
+      sortValue: document.sortValue,
+      id: document.documentId,
+    })),
+  ].sort((left, right) => {
+    if (left.sortValue !== right.sortValue) return left.sortValue < right.sortValue ? 1 : -1;
+    if (left.id === right.id) return 0;
+    return left.id < right.id ? 1 : -1;
+  });
+
+  const documents = buildPageWithCursors(merged, request, INVOICE_PAYMENT_DOCUMENT_ORDER);
+  // ONE statement for the page. The CRM read checks `crm.customer.read` itself
+  // and resolves nothing for a caller who does not hold it, so an unentitled
+  // caller sees every id and no name rather than a refusal or a uuid dressed up
+  // as a label.
+  const parties = await crmModule().customerRead.resolveDisplayIdentities(
+    db,
+    documents.items.map((document) => document.partyId)
+  );
+
+  const groups: ReportGroupView[] = [
+    ...billing.totals.map((total) => ({
+      key: { currency: total.currencyCode, documentType: 'invoice' },
+      // The currency code IS what a human reads for a currency; a name would be
+      // a label this module invented for a catalogue row it did not read.
+      label: total.currencyCode,
+      measures: { invoiced: total.invoiced, outstanding: total.outstanding },
+    })),
+    ...billing.creditNoteTotals.map((total) => ({
+      key: { currency: total.currencyCode, documentType: 'credit_note' },
+      label: total.currencyCode,
+      // ONE measure, and it is not netted against the invoice group's: the money
+      // is already inside `outstanding` there, and subtracting it twice is the
+      // arithmetic the Owner's answer of 2026-09-12 forbids.
+      measures: { creditNotes: total.credited },
+    })),
+    ...payments.totals.map((total) => ({
+      key: { currency: total.currencyCode, documentType: 'receipt' },
+      label: total.currencyCode,
+      measures: {
+        receipts: total.receipts,
+        allocated: total.allocated,
+        unallocated: total.unallocated,
+      },
+    })),
+  ].sort((left, right) => {
+    const currency = (left.key.currency ?? '').localeCompare(right.key.currency ?? '');
+    return currency === 0
+      ? (left.key.documentType ?? '').localeCompare(right.key.documentType ?? '')
+      : currency;
+  });
+
+  return {
+    groups,
+    rows: {
+      ...documents,
+      items: documents.items.map((document) => ({
+        cells: [
+          // The number is the human half; a credit note has none, so the label is
+          // absent while the id never is. The route a client follows comes from
+          // the column's per-kind templates and the `documentType` cell below.
+          cell('document', document.documentNumber, document.documentId),
+          cell('documentType', null, document.documentType),
+          cell('documentDate', null, document.documentDate),
+          cell('branch', input.branchName, input.branchId),
+          // The id always; the name only for a caller the CRM read entitles.
+          cell('partyId', null, document.partyId),
+          cell('partyName', null, parties.get(document.partyId)?.displayName ?? null),
+          // What the id IS. `payer` on an invoice and a receipt; `invoice_payer`
+          // on a credit note, which carries no party of its own.
+          cell('partyRole', null, document.partyRole),
+          cell('currency', null, document.currencyCode),
+          // Exact decimal strings. Null - never zero - where the document type
+          // has no such amount, because a zero is a claim about money.
+          cell('invoicedAmount', null, document.invoicedAmount),
+          cell('receiptAmount', null, document.receiptAmount),
+          cell('allocatedAmount', null, document.allocatedAmount),
+          cell('unallocatedAmount', null, document.unallocatedAmount),
+          cell('creditNoteAmount', null, document.creditNoteAmount),
+          cell('outstanding', null, document.outstanding),
+          // The invoice's own status, the receipt's, or the credit note's
+          // approval state.
+          cell('status', null, document.status),
+        ],
+      })),
+    },
+  };
+};
+
+/**
  * Code → resolver, TOTAL by construction.
  *
  * `Record<ReportDatasetCode, …>` over the registry's own key union: a dataset
@@ -291,6 +908,9 @@ const runWorkOrdersByStatus: ReportResolver = async (db, input) => {
  */
 const RESOLVERS: Readonly<Record<ReportDatasetCode, ReportResolver>> = Object.freeze({
   work_orders_by_status: runWorkOrdersByStatus,
+  technician_labor_time: runTechnicianLaborTime,
+  inventory_movements: runInventoryMovements,
+  invoice_payment_summary: runInvoicePaymentSummary,
 });
 
 /** `YYYY-MM-DD`, validated again here because this service is callable directly. */
@@ -320,17 +940,25 @@ export class ReportRunService extends ApplicationService {
 
     // FIRST. See the file header: resolving the branch before this would let a
     // caller who cannot read the data learn whether a branch exists.
-    const permitted = await callerHoldsPermission(db, definition.requiredPermission, {
-      companyId: input.companyId,
-      branchId: input.branchId,
-    });
-    if (!permitted) {
+    //
+    // EVERY declared code, and the WHOLE report is refused on the first one the
+    // caller lacks. Not a partial report with the unreadable columns blanked: a
+    // blanked column inside a total is a total that silently under-reports, and a
+    // reader cannot tell it from a real one.
+    for (const required of definition.requiredPermissions) {
+      const permitted = await callerHoldsPermission(db, required, {
+        companyId: input.companyId,
+        branchId: input.branchId,
+      });
+      if (permitted) continue;
       throw new AppFailure('ERR-IAM-001', {
-        message: `Denied ${definition.code}: missing ${definition.requiredPermission}`,
+        message: `Denied ${definition.code}: missing ${required}`,
         // The same disclosure `requirePermissions` makes, for the same reason:
         // the required code is documented API metadata, and the RESOURCE is
-        // never named.
-        safeDetails: { requiredPermissions: [definition.requiredPermission] },
+        // never named. The code NAMED is the first one missing rather than the
+        // whole declared list, so a caller learns what to ask for without being
+        // told which of the others they already hold.
+        safeDetails: { requiredPermissions: [required] },
       });
     }
 
@@ -369,14 +997,30 @@ export class ReportRunService extends ApplicationService {
       titleKey: definition.titleKey,
       scope: definition.scope,
       period: { from: input.from, to: input.to, timezone: branch.timezoneName },
+      // D-17: the filter context travels with the numbers, so a printed or
+      // recorded result can never be read without the selection that produced it.
+      filters: { companyId: input.companyId, branchId: input.branchId },
+      branch: { id: input.branchId, name: branch.name },
       generatedAt: new Date().toISOString(),
       freshness: 'live',
       columns: definition.columns.map((column) => ({
         key: column.key,
         kind: column.kind,
         drillThrough: column.drillThrough ?? null,
+        drillThroughByKind: column.drillThroughByKind ?? null,
       })),
-      countsByState: resolved.countsByState,
+      groups: resolved.groups,
+      /*
+       * The DEPRECATED field, from its one producer.
+       *
+       * `work_orders_by_status` is the only dataset that sets it, and it sets it
+       * from the same counts its groups are built from — so the two can never
+       * report different numbers for one state. Every other dataset leaves it
+       * empty, which is the honest answer: a technician's recorded hours, a stock
+       * movement and an invoice have no work-order state, and filling this field
+       * would be inventing a grouping the report does not have.
+       */
+      countsByState: resolved.countsByState ?? [],
       rows: resolved.rows,
     };
   }

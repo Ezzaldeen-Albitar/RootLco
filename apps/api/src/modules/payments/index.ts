@@ -61,14 +61,17 @@ import { PaymentMethodBootstrapRepository } from './data/payment-method-bootstra
 import { PaymentService } from './application/payment-service';
 import { PaymentReadService } from './application/payment-read-service';
 import { PaymentMethodBootstrapService } from './application/payment-method-bootstrap-service';
+import { PaymentsReportPort } from './application/payments-report-port';
 
 export type {
   PaymentAllocationRow,
   PaymentMethodRow,
+  ReceiptDocumentFilter,
   ReceiptListRow,
   ReceiptRow,
   ReceiptScope,
   ReceiptUnallocatedRow,
+  ReportDocumentPage,
 } from './data/payments-repository';
 
 export type {
@@ -85,6 +88,12 @@ export type {
   ReceiptDetailView,
   ReceiptListView,
 } from './application/payment-read-service';
+
+export type {
+  ReceiptDocumentEntry,
+  ReceiptDocumentSummary,
+  ReceiptDocumentTotal,
+} from './application/payments-report-port';
 
 export {
   ALLOCATION_PRIMITIVE,
@@ -138,6 +147,11 @@ export const paymentsModule = composeModule({
     return {
       reads: new PaymentReadService(repository),
       payments: new PaymentService(repository),
+      // P1-31 P-11 slice 4. The REPORTING port. Separate from `reads` because
+      // that service is the receipt screen's — bounded by a payer or an invoice,
+      // publishing the unallocated remainder and the allocation history — and a
+      // period report shares none of those shapes.
+      reportPort: new PaymentsReportPort(repository),
       methodBootstrap: new PaymentMethodBootstrapService(new PaymentMethodBootstrapRepository()),
     };
   },

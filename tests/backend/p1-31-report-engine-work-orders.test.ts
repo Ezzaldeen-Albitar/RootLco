@@ -921,7 +921,16 @@ describe('the catalogue reports what the engine can actually run', () => {
   it('registers exactly the datasets the engine implements', async () => {
     // Non-vacuity for the whole slice: a registry that had quietly emptied would
     // make every `executable` assertion above pass for the wrong reason.
-    expect([...REPORT_DATASET_CODES]).toEqual([REPORT_CODE]);
+    //
+    // FOUR codes from engine slice 4 onward — the whole of what D-4 approves —
+    // and the list is exhaustive rather than a `toContain`: a fifth dataset is a
+    // deliberate edit here instead of a silent widening of the catalogue.
+    expect([...REPORT_DATASET_CODES]).toEqual([
+      REPORT_CODE,
+      'technician_labor_time',
+      'inventory_movements',
+      'invoice_payment_summary',
+    ]);
   });
 });
 
