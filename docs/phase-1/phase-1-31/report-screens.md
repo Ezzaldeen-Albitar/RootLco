@@ -1,11 +1,13 @@
 # P1-31 FE-011 … FE-014 — the report screens
 
 **Status:** implemented on `feature/p1-31-report-screens`, branched from protected `develop`
-`ae0e035480596243c739beec1a40d2ae5c105e7a`, **UNMERGED**. No pull request exists as this record is
-written, and none is claimed. **No hosted run, no database tier, no browser acceptance and no
-end-to-end result is claimed.** The change-control entry is section 50 of
-[`change-control-2026-09-08.md`](./change-control-2026-09-08.md), identifier **CC-38**, both
-PROVISIONAL. This record does not replace the 29-task matrix and changes no chapter status.
+`ae0e035480596243c739beec1a40d2ae5c105e7a` and since carrying the merge of `develop`
+`6c99e805225b8ba59f6402188d9967c697d1eb13`, **UNMERGED** and **open as pull request #371**. A merge
+of that request is not claimed, and no review verdict is recorded here. **No hosted run, no database
+tier, no browser acceptance and no end-to-end result is claimed.** The change-control entry is
+section 50 of [`change-control-2026-09-08.md`](./change-control-2026-09-08.md), identifier **CC-38**,
+both settled at that merged head. This record does not replace the 29-task matrix and changes no
+chapter status.
 
 **Authority:** Owner decision **D-4** of 2026-09-09 (the approved baseline of four reports and their
 columns), **D-17** of 2026-09-10 (the period and the timezone), and **D-19** / **D-20** of
@@ -230,6 +232,22 @@ browser: that would be a copy of restricted data leaving through a path with no 
 authorization and no record of it. Authoring a report definition is a separate surface with its own
 authority and is not built here. The adapter module publishes four reads and nothing that sends.
 
+### 3.11 An unusable page size falls back to the platform default, not to the ceiling
+
+`reportPageSize` repairs a request that is not a whole number of rows — zero, a negative, a fraction.
+It first answered such a request with `MAX_REPORT_PAGE_SIZE`, the largest page the route accepts,
+which turns a caller's mistake into the heaviest read available. It now answers with
+`REPORT_PAGE_SIZE`, the same size the operation would have chosen for a request that named no limit
+at all, so a repaired request costs what an ordinary one costs. The ceiling still applies to a
+request that is a whole number and merely too large, and the two constants are different numbers, so
+the test asserts the inequality as well as the value.
+
+The same file previously exported a `REPORT_REFUSALS` map of three error codes. Nothing imported it.
+The refusal a caller actually branches on is decided in `apps/web/src/lib/api/read-operation.ts`,
+which maps the client's failure kind to the screen's status, so a second unused declaration of the
+same idea is a place for the two to drift apart. It was removed rather than wired, because wiring it
+would have meant two authorities for one mapping.
+
 ## 4. What each task stands at
 
 | task       | this slice                                                                                                       |
@@ -267,10 +285,12 @@ terms that four raw tables alone do not establish the intended one.
   kind was added.
 - **No figure was computed, derived, rounded, re-scaled or reformatted anywhere in this tier.**
 - **No gate was weakened and no allow-list was relaxed.** The one CI edit adds three operations to
-  the P1-31 access gate's reach and moves its pinned page count from 9 to 11, read from the gate's
-  own report line.
+  the P1-31 access gate's reach and moves its pinned page count from 13 to 15, both numbers read
+  from the gate's own report line on the merged head rather than carried forward from the figure
+  this branch first measured.
 - **No hosted run, no database tier, no browser acceptance and no end-to-end result is claimed.** The
   evidence is the local frontend chain and the focused web run recorded in change control section 50.
-- **D-19 and D-20 are recorded in `owner-decisions-2026-09-12.md`, which lives on the unmerged
-  dataset branch at this head.** They are quoted above from that record; they are not restated as
-  approved facts of `develop`, and this slice does not move that file onto this branch.
+- **D-19 and D-20 are recorded in [`owner-decisions-2026-09-12.md`](./owner-decisions-2026-09-12.md),
+  which reached protected `develop` with the dataset slices and is present at this head.** They are
+  quoted above from that record rather than restated, and this slice neither adds to that file nor
+  changes it.

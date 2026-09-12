@@ -2604,19 +2604,21 @@ would be recorded here with its date. No existing identifier is renumbered to ac
 
 ### 50.2 What changed, and what was minted
 
-| changed                                                                                                                                                                                      | minted  |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| 2 route pages, 2 screens, 1 shared presentation module, 1 paging hook, 1 contract, 1 adapter module, 1 label resolver; 1 navigation entry flipped to available and re-scoped                 | nothing |
-| 104 English and 104 Arabic messages — the four approved report titles, the catalogue and run copy, and the field names of all four D-4 datasets; 2 new web test files; 2 web suites re-based | nothing |
-| 3 operations added to the P1-31 access gate's allow-list, its pinned page count moved 9 → 11; the committed web floor raised 3050 → 3720 with its measurement                                | nothing |
-| the FE-011 … FE-014 rows of the task matrix and the A0 preflight; 5 P1-27 records re-based from their own derivations                                                                        | nothing |
+| changed                                                                                                                                                                                                                      | minted  |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| 2 route pages, 2 screens, 1 shared presentation module, 1 paging hook, 1 contract, 1 adapter module, 1 label resolver; 1 navigation entry flipped to available and re-scoped                                                 | nothing |
+| 104 English and 104 Arabic messages — the four approved report titles, the catalogue and run copy, and the field names of all four D-4 datasets; 2 new web test files; 2 web suites re-based                                 | nothing |
+| 3 operations added to the P1-31 access gate's allow-list, its pinned page count moved 13 → 15 on the merged head; the committed web floor raised 3050 → 3720 with its measurement                                            | nothing |
+| the FE-011 … FE-014 rows of the task matrix and the A0 preflight; 5 P1-27 records re-based from their own derivations                                                                                                        | nothing |
+| 1 contract repair — an unusable page size now falls back to the platform default of 50 rather than to the route ceiling of 100 — and 1 dead exported refusal map removed, the live mapping being the one in the read adapter | nothing |
 
 **No backend file changed.** No route, no service, no repository, no migration, no seed, no
 permission, no audit action and no operation. The operation register is untouched.
 
 The CI allow-list entry is the three `rpt` operations in `scripts/ci/check-p1-31-access.mjs`, which
 that gate's own docblock requires in the change that first consumes each. It **WIDENS** what the gate
-judges and suppresses nothing: the page count it examines rises from 9 to 11, and its owned segment
+judges and suppresses nothing: the page count it examines rises from 13 to 15 — both figures read
+off the gate report line on the merged head, not carried forward — and its owned segment
 count is unchanged because the resource root those operations derive is the dashboard area the gate
 already named.
 
