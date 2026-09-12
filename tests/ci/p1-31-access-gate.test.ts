@@ -97,13 +97,23 @@ export default async function Page({ params }) {
  * that adds or removes the page or the segment.
  *
  * It moved from 13 to 15 with the FE-011 … FE-014 report screens: the catalogue
- * page and the per-report page. BOTH numbers are read off the gate's report line
- * on this merged head rather than carried forward — the branch was written when
- * the line read 9, and `develop` moved it twice before that merge — so 13 was what
- * `develop` reported and 15 is what this head reports.
+ * page and the per-report page. BOTH numbers are read off the gate’s report line
+ * on the merged head rather than carried forward — the report-screens branch was
+ * written when the line read 9, and `develop` moved it twice before that merge —
+ * so 13 is what `develop` reported and 15 is what that branch reported. The
+ * SEGMENT count did not move with that slice: `reports` was already a named
+ * dashboard area, and the resource root the three reporting operations derive is
+ * also `reports`, so the derived half and the named half agree on it.
+ *
+ * It moved from 15 to 16 with the FE-010 operational overview at
+ * `(dashboard)/reports/overview`, again read off the gate’s report line. The
+ * segment count did not move again and no operation was added to the allow-list:
+ * the overview consumes the same three reporting operations, four runs of
+ * `rpt.report-run` instead of one, so what grew is the number of pages the gate
+ * judges and nothing about what it owns.
  *
  * The FE-002 handover form moved the SEGMENT count and not the page count, which
- * is the opposite of the slice before it and is worth stating rather than
+ * is the opposite of both slices before it and is worth stating rather than
  * rounding. It names the employee register read P-17 published and the branch
  * directory read the branch picker consumes, whose shared resource root is `org`
  * — a root no other claimed operation derives and no dashboard area is named for
@@ -111,9 +121,10 @@ export default async function Page({ params }) {
  * work-order detail page the gate already examined. Withdrawing the unconsumed
  * single-employee read and claiming the branch directory moved NEITHER number,
  * because both share that same root. Both numbers below are read off the gate's
- * own report line on this head.
+ * own report line on THIS merged head, which carries the overview page and this
+ * form together.
  */
-const PINNED_PAGES = 15;
+const PINNED_PAGES = 16;
 const PINNED_OWNED_SEGMENTS = 9;
 
 describe('the derivation is P1-31’s own and is not empty', () => {

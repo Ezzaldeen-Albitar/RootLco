@@ -200,6 +200,11 @@ screens slice (PR #371, merged at `46be4bb2`).
 | **CC-38**  | the report screens (#371)                       | merged, section 50                       |
 | **CC-39**  | this slice                                      | **PROVISIONAL**, this branch, section 51 |
 
+**Re-read after merging `develop` `72782f48`**, which carries the operational overview (PR #376) and
+with it **section 53** and **CC-41**. That pair sits above this slice's, so it takes nothing from it
+and nothing here is renumbered: an identifier is a claim about the register at the moment it was
+raised. The register table in change control § 51.1 was re-taken at that head.
+
 So this slice takes **section 51** and **CC-39**. Both are marked PROVISIONAL for one reason and one
 only: **section 49 and CC-37 are a LOWER pair still held by a lane that has not merged**, named in
 section 50.1 of the register as "a lane not on this head". If that lane lands under a different
