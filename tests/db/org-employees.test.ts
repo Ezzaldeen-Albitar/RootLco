@@ -24,11 +24,14 @@
  *      other-tenant employee, ACCEPTS one whose home branch is another branch of
  *      the same tenant, and stamps the display-name snapshot from the row rather
  *      than from the caller;
- *   5. the migration's own statements, read from the committed file, mint exactly
- *      one employee per RESOLVABLE legacy value and leave an unresolvable one
- *      untouched and listed for review;
+ *   5. the operator command's own core, imported from
+ *      `scripts/platform/backfill-delivering-employee-identity.mjs` rather than
+ *      retyped, mints exactly one employee per RESOLVABLE legacy value, stamps
+ *      its snapshot, and leaves an unresolvable one untouched and listed for
+ *      review — while the migration itself ships no row write at all;
  *   6. the review list that step 5 produces is readable only inside its own
- *      tenant and writable by no application role at all.
+ *      tenant and writable by no application role at all, its INSERT policy
+ *      refusing every row on purpose.
  *
  * The read scope and the missing branch rule are both the Owner clarification of
  * 2026-09-10: an employee's home branch is informational and transferable, and it
@@ -63,6 +66,11 @@ import {
   seedP111Base,
   cleanP111Committed,
 } from './p1-11-helpers';
+import {
+  BACKFILL_AUDIT_ACTION,
+  backfillOneTenant,
+  validationVerdict,
+} from '../../scripts/platform/backfill-delivering-employee-identity.mjs';
 
 const SYS = '00000000-0000-4000-8000-000000000001';
 
@@ -87,40 +95,6 @@ type Q = { query: Client['query'] };
 let admin: Pool;
 let runtime: Pool;
 let readonly: Pool;
-
-/**
- * The migration's OWN mint statement, sliced out of the committed file.
- *
- * Read rather than retyped, and that is the whole point of obligation 5: a
- * transcription would prove that a copy behaves, not that the shipped migration
- * does. The slice runs from the single `INSERT INTO org.employees` to the `;` that
- * closes it, and the assertions below fail loudly if the file ever stops carrying
- * exactly one such statement.
- */
-function backfillStatement(): string {
-  return soleStatement('INSERT INTO org.employees');
-}
-
-/**
- * The migration's OWN review statement, sliced out of the same file.
- *
- * Read for the same reason as the mint: what has to be proved is that the
- * SHIPPED statement records an unresolvable legacy value instead of guessing a
- * person for it, and a retyped copy would prove nothing about the shipped one.
- */
-function reviewStatement(): string {
-  return soleStatement('INSERT INTO sal.delivery_legacy_identity_review');
-}
-
-function soleStatement(opening: string): string {
-  const source = readFileSync(join(MIGRATION_DIR, BACKFILL_MIGRATION), 'utf8');
-  const start = source.indexOf(opening);
-  expect(start).toBeGreaterThan(-1);
-  expect(source.indexOf(opening, start + 1)).toBe(-1);
-  const end = source.indexOf(';', start);
-  expect(end).toBeGreaterThan(start);
-  return source.slice(start, end + 1);
-}
 
 const insertEmployee = async (
   c: Q,
@@ -606,15 +580,41 @@ describe('4. the eligibility trigger, and the snapshot it stamps', () => {
 });
 
 // ===========================================================================
-describe('5. the backfill, replayed from the committed migration file', () => {
-  it('mints exactly one employee per legacy value, and never invents a person', async () => {
-    const statement = backfillStatement();
-    // The shape the migration relies on, asserted before it is run: the mint takes
-    // its id from the legacy column and its name from the same-tenant account.
-    expect(statement).toContain('record.delivering_employee_id');
-    expect(statement).toContain('account.display_name');
-    expect(statement).toContain("'inactive'");
+describe('5. the legacy mint, driven as the operator command drives it', () => {
+  /*
+   * The mint and the review write USED to be statements in migration 141, and
+   * these cases used to slice them out of the committed file and replay them.
+   * `scripts/ci/migration-replay-checks.mjs` refused that migration on the hosted
+   * run — correctly: a migration that INSERTs into `org.employees` is, to any
+   * scanner and any reviewer, indistinguishable from one that ships fabricated
+   * people. The row-level work now lives in
+   * `scripts/platform/backfill-delivering-employee-identity.mjs`, so these cases
+   * drive THAT — `backfillOneTenant`, the command's own core, imported rather than
+   * retyped, on the very rows an operator would meet. Both proofs survive the
+   * move: a resolvable legacy value is minted and stamped, an unresolvable one is
+   * left untouched and listed, and the key validates in the first case and refuses
+   * to in the second. The command's STRUCTURAL properties — that no statement it
+   * can execute is a DELETE, a TRUNCATE or a DROP, and that its single UPDATE can
+   * only fill a NULL snapshot — are asserted in
+   * `tests/backend/p1-31-delivering-employee-backfill.test.ts` (DEB-1), which is
+   * also where its input and authority gates are proved.
+   */
 
+  /** The real organisation row, read rather than invented. */
+  const tenantTarget = async (): Promise<{
+    id: string;
+    tenant_code: string;
+    status: string;
+  }> =>
+    (
+      await admin.query<{ id: string; tenant_code: string; status: string }>(
+        `SELECT id, tenant_code, status FROM org.tenants WHERE id = $1`,
+        [TENANT_A]
+      )
+    ).rows[0]!;
+
+  it('mints exactly one employee per legacy value, stamps it, and never invents a person', async () => {
+    const target = await tenantTarget();
     const client = await admin.connect();
     try {
       await client.query('BEGIN');
@@ -638,21 +638,42 @@ describe('5. the backfill, replayed from the committed migration file', () => {
         { query: client.query.bind(client) },
         'p17bf'
       );
-      await client.query(
-        `INSERT INTO sal.delivery_records
-           (tenant_id, company_id, branch_id, work_order_id, reception_visit_id, vehicle_id,
-            delivering_employee_id, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$7)`,
-        [TENANT_A, COMPANY_A1, BRANCH_A1, wo, visit, vehicle, P11.APPROVER_USER]
-      );
+      const delivery = (
+        await client.query<{ id: string }>(
+          `INSERT INTO sal.delivery_records
+             (tenant_id, company_id, branch_id, work_order_id, reception_visit_id, vehicle_id,
+              delivering_employee_id, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$7) RETURNING id`,
+          [TENANT_A, COMPANY_A1, BRANCH_A1, wo, visit, vehicle, P11.APPROVER_USER]
+        )
+      ).rows[0];
 
-      const minted = await client.query(statement);
+      // Every delivery of this tenant carrying NO snapshot, listed BEFORE the
+      // command runs. The stamped count it reports is compared with how many of
+      // exactly THESE rows ended up carrying one, rather than with a number this
+      // test chose or with a count the command could have computed itself.
+      const nullBefore = (
+        await client.query<{ id: string }>(
+          `SELECT id FROM sal.delivery_records
+            WHERE tenant_id = $1 AND delivering_employee_display_name IS NULL`,
+          [TENANT_A]
+        )
+      ).rows.map((row) => row.id);
+      expect(nullBefore).toContain(delivery?.id);
+
+      const result = await backfillOneTenant(client, target, {
+        operatorAccountId: USER_A,
+        environment: 'local-acceptance',
+      });
+
       // TWO legacy rows for the same person would still mint ONE employee: the
       // statement is DISTINCT ON (tenant, legacy value), which is what makes the
       // legacy uuid usable as a primary key. The home branch it takes from the
       // earliest of those rows is informational, so which one it picks is not a
-      // decision the migration has to defend — only that it picks exactly one.
-      expect(minted.rowCount).toBe(1);
+      // decision the command has to defend — only that it picks exactly one.
+      expect(result.minted).toEqual([P11.APPROVER_USER]);
+      expect(result.unresolved).toEqual([]);
+      expect(result.outcome).toBe('processed');
 
       const employee = await client.query<{
         id: string;
@@ -673,8 +694,34 @@ describe('5. the backfill, replayed from the committed migration file', () => {
       );
       expect(row?.display_name).toBe(account.rows[0]?.display_name);
 
-      // And the foreign key the migration adds next is now satisfiable AND
-      // validatable, which is the property the mint exists to establish.
+      // The snapshot the migration can no longer take, because the identity it
+      // names is minted after the migration has run. NULL means "never resolved",
+      // so a row the command DID resolve must not keep one.
+      const filled = (
+        await client.query<{ n: string }>(
+          `SELECT count(*)::text AS n FROM sal.delivery_records
+            WHERE id = ANY($1::uuid[]) AND delivering_employee_display_name IS NOT NULL`,
+          [nullBefore]
+        )
+      ).rows[0]?.n;
+      expect(String(result.stamped)).toBe(filled);
+      expect(result.stamped).toBeGreaterThanOrEqual(1);
+      const stamped = await client.query<{ delivering_employee_display_name: string | null }>(
+        `SELECT delivering_employee_display_name FROM sal.delivery_records WHERE id = $1`,
+        [delivery?.id]
+      );
+      expect(stamped.rows[0]?.delivering_employee_display_name).toBe(account.rows[0]?.display_name);
+
+      // The operator act is recorded in the tenant it changed.
+      const audit = await client.query<{ actor_id: string }>(
+        `SELECT actor_id FROM iam.audit_records WHERE tenant_id = $1 AND action = $2`,
+        [TENANT_A, BACKFILL_AUDIT_ACTION]
+      );
+      expect(audit.rowCount).toBe(1);
+      expect(audit.rows[0]?.actor_id).toBe(USER_A);
+
+      // And the foreign key the migration adds is now satisfiable AND validatable,
+      // which is the property the mint exists to establish.
       await client.query(
         `ALTER TABLE sal.delivery_records
            ADD CONSTRAINT fk_delivery_records_delivering_employee
@@ -691,10 +738,8 @@ describe('5. the backfill, replayed from the committed migration file', () => {
     }
   });
 
-  it('leaves an UNRESOLVABLE legacy value untouched, lists it for review, and cannot validate the key', async () => {
-    const mint = backfillStatement();
-    const review = reviewStatement();
-
+  it('leaves an UNRESOLVABLE legacy value untouched, lists it, and withholds validation', async () => {
+    const target = await tenantTarget();
     const client = await admin.connect();
     try {
       await client.query('BEGIN');
@@ -729,13 +774,12 @@ describe('5. the backfill, replayed from the committed migration file', () => {
         )
       ).rows[0];
 
-      // Nothing is minted for it — the mint joins iam.user_accounts and this
-      // value is in no such row.
-      const minted = await client.query(mint);
-      expect(minted.rowCount).toBe(0);
+      const result = await backfillOneTenant(client, target);
+      // Nothing is minted for it — the mint joins iam.user_accounts and this value
+      // is in no such row.
+      expect(result.minted).toEqual([]);
+      expect(result.unresolved).toContain(delivery?.id);
 
-      const recorded = await client.query(review);
-      expect(recorded.rowCount).toBe(1);
       const listed = await client.query<{ legacy_value: string; delivery_id: string }>(
         `SELECT delivery_id, legacy_value FROM sal.delivery_legacy_identity_review
           WHERE delivery_id = $1`,
@@ -756,15 +800,18 @@ describe('5. the backfill, replayed from the committed migration file', () => {
       expect(untouched.rows[0]?.delivering_employee_id).toBe(UNKNOWN_EMPLOYEE);
       expect(untouched.rows[0]?.delivering_employee_display_name).toBeNull();
 
-      // And the key still lands, NOT VALID, so every FUTURE row is bound while
-      // the unresolved history survives. Validating it is what fails, which is
-      // precisely why the migration only validates when the review list is empty.
+      // And the key still lands, NOT VALID, so every FUTURE row is bound while the
+      // unresolved history survives. The command WITHHOLDS validation here, and
+      // that refusal is not a matter of taste: validating is what fails.
       await client.query(
         `ALTER TABLE sal.delivery_records
            ADD CONSTRAINT fk_delivery_records_delivering_employee
            FOREIGN KEY (tenant_id, delivering_employee_id)
            REFERENCES org.employees (tenant_id, id) ON DELETE RESTRICT NOT VALID`
       );
+      const verdict = await validationVerdict(client);
+      expect(verdict.verdict).toBe('withheld');
+      expect(verdict.unresolved).not.toBe('0');
       await expect(
         client.query(
           `ALTER TABLE sal.delivery_records
@@ -777,15 +824,21 @@ describe('5. the backfill, replayed from the committed migration file', () => {
     }
   });
 
-  it('states the no-guess rule in SQL rather than in prose, and this database is fully resolved', () => {
+  it('ships NO mint in the migration, and names the command that owns it', () => {
     const source = readFileSync(join(MIGRATION_DIR, BACKFILL_MIGRATION), 'utf8');
-    // The decision under test, read from the shipped file: the migration adds the
-    // key NOT VALID and validates it only when nothing is unresolved. The refusal
-    // that used to be here — a RAISE on a dangling value — was removed with the
-    // Owner clarification of 2026-09-10, so its absence is asserted too.
+    // The defect the hosted run found, asserted so it cannot come back: no row
+    // write into either table, at any level of this file.
+    expect(source).not.toMatch(/INSERT\s+INTO\s+org\.employees/i);
+    expect(source).not.toMatch(/INSERT\s+INTO\s+sal\.delivery_legacy_identity_review/i);
+    expect(source).toContain('scripts/platform/backfill-delivering-employee-identity.mjs');
+    // The structure it does keep, and the ONE condition under which it is entitled
+    // to claim the history satisfies the key: no history at all.
     expect(source).toContain('NOT VALID');
     expect(source).toContain('VALIDATE CONSTRAINT fk_delivery_records_delivering_employee');
+    expect(source).toContain('SELECT count(*) INTO v_deliveries FROM sal.delivery_records;');
     expect(source).toContain('RAISE NOTICE');
+    // The refusal that used to be here — a RAISE on a dangling value — was removed
+    // with the Owner clarification of 2026-09-10, so its absence is asserted too.
     expect(source).not.toContain('P-17 migration refused');
   });
 
@@ -807,8 +860,8 @@ describe('5. the backfill, replayed from the committed migration file', () => {
 // ===========================================================================
 describe('6. the review list is tenant-isolated and read-only to every application role', () => {
   /*
-   * Nothing in the product reads or writes this table: the migration writes it
-   * once and no operation publishes it. That is exactly why its policy is
+   * Nothing in the product reads or writes this table: the operator command
+   * writes it and no operation publishes it. That is exactly why its policy is
    * asserted here rather than assumed — a list nothing exercises is a list
    * whose isolation nothing would have caught. Both halves matter and neither
    * implies the other: a row readable across the tenant boundary would expose
@@ -822,7 +875,9 @@ describe('6. the review list is tenant-isolated and read-only to every applicati
    *
    * `delivery_id` is deliberately not a foreign key (the migration says why),
    * so these fixtures need no delivery behind them; `tenant_id` IS one, and
-   * both tenants exist in the shared org fixtures.
+   * both tenants exist in the shared org fixtures. The admin connection writes
+   * them because it owns the table — the same privileged identity the operator
+   * command runs on, and the only one that can.
    */
   const REVIEW_DELIVERY_A = 'f1310000-0000-4000-8000-0000001700c1';
   const REVIEW_LEGACY_A = 'f1310000-0000-4000-8000-0000001700c2';
@@ -879,9 +934,12 @@ describe('6. the review list is tenant-isolated and read-only to every applicati
 
   it('refuses INSERT, UPDATE and DELETE from the runtime login (42501)', async () => {
     await withRolledBackTx(runtime, ctxA, async (c) => {
-      // Its OWN tenant, and a row shaped exactly like the one the migration
-      // writes, so each refusal below is the absent grant and the absent policy
-      // rather than a tenant predicate the statement failed to satisfy.
+      // Its OWN tenant, and a row shaped exactly like the one the operator
+      // command writes, so each refusal below is the absent GRANT rather than a
+      // tenant predicate the statement failed to satisfy. `42501` is the privilege
+      // check, which happens before any policy is consulted: the table does carry
+      // an INSERT policy, and it refuses every row (`WITH CHECK (false)`), so the
+      // decision is declared in pg_policy instead of inferred from an absence.
       await expectFail(
         c,
         '42501',
@@ -902,5 +960,32 @@ describe('6. the review list is tenant-isolated and read-only to every applicati
         [TENANT_A]
       );
     });
+  });
+
+  it('declares the refusal as a policy that admits nothing, not as a missing policy', async () => {
+    // Every sal, wty and rpt table owes a tenant-scoped SELECT and INSERT policy
+    // (tests/db/p1-11-isolation.test.ts enumerates them from the catalog). This
+    // table is deliberately unwritable, so the invariant is met by a policy whose
+    // WITH CHECK is `false` rather than by exempting the table: the decision is
+    // readable in pg_policy instead of inferred from an absence. The 42501 above
+    // is what actually stops a write; this is what says why nobody was granted it.
+    const { rows } = await admin.query<{ polname: string; cmd: string; qual: string | null }>(
+      `SELECT p.polname, p.polcmd AS cmd, pg_get_expr(p.polwithcheck, p.polrelid) AS qual
+         FROM pg_policy p
+         JOIN pg_class c ON c.oid = p.polrelid
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'sal' AND c.relname = 'delivery_legacy_identity_review'
+        ORDER BY p.polname`
+    );
+    expect(rows.map((row) => row.polname)).toEqual([
+      'ins_delivery_legacy_identity_review_refused',
+      'sel_delivery_legacy_identity_review_tenant',
+    ]);
+    const insert = rows.find((row) => row.cmd === 'a');
+    expect(insert?.polname).toBe('ins_delivery_legacy_identity_review_refused');
+    expect(insert?.qual).toBe('false');
+    // No UPDATE and no DELETE policy at all: those need no declaration, because
+    // nothing in the design ever wanted one.
+    expect(rows.map((row) => row.cmd).sort()).toEqual(['a', 'r']);
   });
 });

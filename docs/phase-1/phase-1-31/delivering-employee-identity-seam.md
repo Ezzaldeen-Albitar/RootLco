@@ -240,7 +240,7 @@ Legacy `delivering_employee_id` values were unconstrained uuids, so each distinc
 `(tenant, value)` is judged on its own — which is the Owner clarification, and it is why the
 migration no longer has a single all-or-nothing answer:
 
-| the legacy value                                | what migration 141 does                                                                                                                        |
+| the legacy value                                | what the operator command does                                                                                                                 |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | matches an `iam.user_accounts` id of the tenant | mints one `org.employees` row **carrying the legacy uuid as its own `id`**, linked to that account, named from it, `status = 'inactive'` (A-3) |
 | matches nothing                                 | **leaves it untouched**, lists the delivery in `sal.delivery_legacy_identity_review`, and leaves its `delivering_employee_display_name` `NULL` |
@@ -251,23 +251,48 @@ delivery and is **informational** (A-2), which is why an id appearing in two bra
 ambiguous and no longer a reason to refuse. The `created_by` of the minted row is that same account,
 because there is no other honest actor to name.
 
-**Engineering consequence (not an Owner decision).** The foreign key is added **`NOT VALID`** and a
-`DO` block validates it **only when the review list is empty**. A `NOT VALID` key with conditional
-validation is this lane's way of satisfying the Owner's instruction that nothing be fabricated and
-that the migration not fail; the Owner named neither the constraint state nor the condition. The
-consequences are exact and worth stating plainly:
+**The mint is an operator command, and that is a gate rather than a preference.** Both writes above
+are row writes, and `scripts/ci/migration-replay-checks.mjs` refuses a top-level
+`INSERT INTO <module schema>.<table>` in any migration — it refused this one on the hosted run of
+PR #370. The rule is right and stays: to any scanner and any reviewer, a migration that INSERTs into
+`org.employees` is indistinguishable from one that ships fabricated people. So migration 141 creates
+**structure only**, and the row-level half lives in
+`scripts/platform/backfill-delivering-employee-identity.mjs` — modelled on the tenant administrator
+bundle backfill: an explicit target environment, a named scope or `--all`, a dry run, one
+transaction per tenant, printed minted and unmatched counts, an evidence JSON, and an authority gate
+on the EXISTING `platform.organization.provision` grant, for which no code is minted. It also
+**stamps** the snapshot of the rows whose identity it mints, inside the same transaction, with
+`tg_delivery_records_immutable` disabled for that statement alone and re-enabled in a `finally`: the
+transaction holds `ACCESS EXCLUSIVE` on the table, so no other session ever writes it unguarded.
 
-- a fresh database, and any database whose history all resolves, ends with the key **fully
-  validated** — every past row proved, every future row bound;
-- a database carrying unresolved history keeps the key **`NOT VALID`**, which still binds every
-  future row, and the migration emits a `RAISE NOTICE` with the count rather than a silent pass;
+**Engineering consequence (not an Owner decision).** The foreign key is added **`NOT VALID`**. The
+migration's `DO` block validates it **only when `sal.delivery_records` is empty**, and the operator
+command validates it after the mint **only when nothing anywhere is left unresolved**. A `NOT VALID`
+key with conditional validation is this lane's way of satisfying the Owner's instruction that
+nothing be fabricated and that the migration not fail; the Owner named neither the constraint state
+nor the condition. The consequences are exact and worth stating plainly:
+
+- a fresh database ends with the key **fully validated** by the migration itself — there is no
+  history to judge, and `VALIDATE CONSTRAINT` is DDL, which is why it may live in a migration while
+  the mint may not;
+- a database carrying history keeps the key **`NOT VALID`** until the operator command runs, which
+  still binds every future row, and the migration emits a `RAISE NOTICE` naming that command rather
+  than passing silently;
+- after the command, a database whose history all resolves ends **fully validated**; one carrying an
+  unresolved value keeps the key `NOT VALID` and the command reports the count;
 - nothing is ever rewritten to make the constraint validate. The alternative — substituting the
-  migrating actor, or minting a placeholder person — would have produced a green constraint over a
+  operator, or minting a placeholder person — would have produced a green constraint over a
   **falsified custody history**, which is the one outcome this seam exists to prevent.
 
 `sal.delivery_legacy_identity_review` is tenant-scoped, RLS-forced, and **read-only to every
-application role**: no role holds `INSERT`, `UPDATE` or `DELETE` on it. It is written once, by the
-migration. Evidence a tenant can edit is not evidence.
+application role**: no role holds `INSERT`, `UPDATE` or `DELETE` on it, and it is written by the
+operator command on a privileged connection. Evidence a tenant can edit is not evidence. It carries
+an INSERT policy all the same — `ins_delivery_legacy_identity_review_refused`, `WITH CHECK (false)`
+— because every `sal`, `wty` and `rpt` table owes a SELECT and an INSERT policy and
+`tests/db/p1-11-isolation.test.ts` enumerates them from the catalog. The invariant is met the honest
+way rather than by exempting the table: the refusal is a declared decision readable in `pg_policy`
+instead of an absence a reader has to interpret, while the `42501` that actually stops a runtime
+write is the missing grant, asserted unchanged.
 
 `delivering_employee_display_name` is therefore **NULLABLE**, and `NULL` has exactly one meaning:
 this handover's delivering identity was never resolved. Every row created after this migration
@@ -275,12 +300,18 @@ carries a name, because the trigger stamps one or refuses the insert. The immuta
 column either way — a `NULL` snapshot cannot be filled in by an application write, which is why the
 unresolved rows are listed for the Owner instead of being quietly completed.
 
-`tests/db/org-employees.test.ts` replays the migration's **own** mint and review statements, sliced
-out of the committed file rather than retyped, against legacy-shaped rows written inside a
-transaction that drops the key and the guard and then puts them back. Both halves are proved: a
-resolvable value mints a linked row and the key then validates; an unresolvable one survives
-untouched, appears in the review table, and the key lands `NOT VALID` while `VALIDATE` fails with
-`23503`. A transcription would have proved that a copy behaves.
+`tests/db/org-employees.test.ts` drives the command's **own** core — `backfillOneTenant`, imported
+from the module rather than retyped — against legacy-shaped rows written inside a transaction that
+drops the key and the guard and then puts them back. Both halves are proved: a resolvable value
+mints a linked row, its snapshot is stamped, the operator act is recorded in that tenant's audit
+chain, and the key then validates; an unresolvable one survives untouched with a `NULL` snapshot,
+appears in the review table, the command answers `withheld`, and `VALIDATE` fails with `23503`. The
+same file asserts that the migration ships **no** `INSERT` into either table. A transcription would
+have proved that a copy behaves. `tests/backend/p1-31-delivering-employee-backfill.test.ts` adds the
+mechanism: no statement the command can execute is a `DELETE`, a `TRUNCATE` or a `DROP`, its single
+`UPDATE` can only fill a `NULL` snapshot, the input gate refuses an unnamed environment, a
+mismatched confirmation and an ambiguous scope, and the authority gate refuses both an absent
+account and a real account holding no unrevoked grant of the platform code.
 
 **Measured facts (not part of the decision).** The structural movement these two migrations cause —
 `structuralTotals`, `schemaHash` and `permissionCount` in
@@ -358,7 +389,7 @@ rather than averaged away:
   measured against a tree other than the one this head carries.
 - The baseline values were re-measured on the rebuilt clone at that head rather than carried
   forward: **141** migrations, **121** permissions, `tables` **256**, `functions` **534**,
-  `policies` **699**, `triggers` **563**, `security_definer` **0**, and `schemaHash` **ce41a44c**.
+  `policies` **700**, `triggers` **563**, `security_definer` **0**, and `schemaHash` **a25718d7**.
   The same queries against the idle 139-migration template answer 254 / 533 / 695 / 560 / 0, so the
   delta is measured and not asserted. `structuralTotals` remains CI's figure to confirm for the
   reason `schema-baseline.json` states; this is the local companion measurement and is not a hosted
@@ -374,14 +405,16 @@ Each obligation
 below is cited by the **exact title** of the case that asserts it, so the claim is checkable against
 the file rather than against this table.
 
-| obligation                                                                                                                                       | file                                                   | describe › exact test title                                                                                                                                                                                                                                                                                                                                                                                                                 | state                                                                                                                   |
-| ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| **(a)** a legacy value matching a same-tenant account mints a linked `org.employees` row whose `id` IS the legacy value, named from that account | `tests/db/org-employees.test.ts`                       | `5. the backfill, replayed from the committed migration file` › `mints exactly one employee per legacy value, and never invents a person`                                                                                                                                                                                                                                                                                                   | **covered**                                                                                                             |
-| **(b)** an unmatched legacy value survives untouched, is listed in `sal.delivery_legacy_identity_review`, and leaves the key `NOT VALID`         | `tests/db/org-employees.test.ts`                       | `5. the backfill, replayed from the committed migration file` › `leaves an UNRESOLVABLE legacy value untouched, lists it for review, and cannot validate the key`                                                                                                                                                                                                                                                                           | **covered**                                                                                                             |
-| **(c)** a database with no unmatched rows ends with the key **validated** (`convalidated = true`)                                                | `tests/db/org-employees.test.ts`                       | `3. the delivering employee is a real identity` › `carries the composite foreign key on (tenant_id, delivering_employee_id), ON DELETE RESTRICT`, which reads `pg_constraint.convalidated` rather than the printed definition; the resolved path is proved end to end inside `5. …` › `mints exactly one employee per legacy value, and never invents a person`, which runs `VALIDATE CONSTRAINT` after the mint and requires it to succeed | **covered**                                                                                                             |
-| **(d)** the trigger refuses an inactive, a soft-deleted and an other-tenant employee, and accepts an active employee of another branch           | `tests/db/org-employees.test.ts`                       | `4. the eligibility trigger, and the snapshot it stamps` › `refuses a RETIRED employee (22023)` (the status value it writes is `inactive`), › `refuses a SOFT-DELETED employee (22023)`, › `refuses an employee of ANOTHER TENANT (22023)`, › `ACCEPTS an employee based in ANOTHER BRANCH of the same tenant, and stamps them`                                                                                                             | **covered**                                                                                                             |
-| **(d)** the same two answers at the route, not only at the primitive                                                                             | `tests/backend/p1-31-delivering-employee-seam.test.ts` | `sal.delivery-create now names a real person` › `P17-D3 refuses a RETIRED employee with rule inactive_employee (denial)` and › `P17-D4 ACCEPTS an active employee of another branch of the same tenant, and stamps them (success)`                                                                                                                                                                                                          | **covered**                                                                                                             |
-| **(e)** the review table is tenant-isolated and refuses writes from every application role                                                       | `tests/db/org-employees.test.ts`                       | `6. the review list is tenant-isolated and read-only to every application role` › `shows a runtime and a read-only session their own tenant row and not the other` and › `refuses INSERT, UPDATE and DELETE from the runtime login (42501)`                                                                                                                                                                                                 | **covered — executed at 750913e3**, in the 23 / 23 run; both cases were added by d25ca30a and did not exist at 244f868f |
+| obligation                                                                                                                                       | file                                                   | describe › exact test title                                                                                                                                                                                                                                                                                                                                                                                                                            | state                                                                                                                   |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| **(a)** a legacy value matching a same-tenant account mints a linked `org.employees` row whose `id` IS the legacy value, named from that account | `tests/db/org-employees.test.ts`                       | `5. the legacy mint, driven as the operator command drives it` › `mints exactly one employee per legacy value, stamps it, and never invents a person`                                                                                                                                                                                                                                                                                                  | **covered**                                                                                                             |
+| **(b)** an unmatched legacy value survives untouched, is listed in `sal.delivery_legacy_identity_review`, and leaves the key `NOT VALID`         | `tests/db/org-employees.test.ts`                       | `5. the legacy mint, driven as the operator command drives it` › `leaves an UNRESOLVABLE legacy value untouched, lists it, and withholds validation`                                                                                                                                                                                                                                                                                                   | **covered**                                                                                                             |
+| **(c)** a database with no unmatched rows ends with the key **validated** (`convalidated = true`)                                                | `tests/db/org-employees.test.ts`                       | `3. the delivering employee is a real identity` › `carries the composite foreign key on (tenant_id, delivering_employee_id), ON DELETE RESTRICT`, which reads `pg_constraint.convalidated` rather than the printed definition; the resolved path is proved end to end inside `5. …` › `mints exactly one employee per legacy value, stamps it, and never invents a person`, which runs `VALIDATE CONSTRAINT` after the mint and requires it to succeed | **covered**                                                                                                             |
+| **(d)** the trigger refuses an inactive, a soft-deleted and an other-tenant employee, and accepts an active employee of another branch           | `tests/db/org-employees.test.ts`                       | `4. the eligibility trigger, and the snapshot it stamps` › `refuses a RETIRED employee (22023)` (the status value it writes is `inactive`), › `refuses a SOFT-DELETED employee (22023)`, › `refuses an employee of ANOTHER TENANT (22023)`, › `ACCEPTS an employee based in ANOTHER BRANCH of the same tenant, and stamps them`                                                                                                                        | **covered**                                                                                                             |
+| **(d)** the same two answers at the route, not only at the primitive                                                                             | `tests/backend/p1-31-delivering-employee-seam.test.ts` | `sal.delivery-create now names a real person` › `P17-D3 refuses a RETIRED employee with rule inactive_employee (denial)` and › `P17-D4 ACCEPTS an active employee of another branch of the same tenant, and stamps them (success)`                                                                                                                                                                                                                     | **covered**                                                                                                             |
+| **(e)** the review table is tenant-isolated and refuses writes from every application role                                                       | `tests/db/org-employees.test.ts`                       | `6. the review list is tenant-isolated and read-only to every application role` › `shows a runtime and a read-only session their own tenant row and not the other`, › `refuses INSERT, UPDATE and DELETE from the runtime login (42501)` and › `declares the refusal as a policy that admits nothing, not as a missing policy`                                                                                                                         | **covered — executed at 750913e3**, in the 23 / 23 run; both cases were added by d25ca30a and did not exist at 244f868f |
+
+| **(f)** the operator command that owns the mint cannot rewrite history, and its input and authority gates refuse | `tests/backend/p1-31-delivering-employee-backfill.test.ts` | `P1-31 P-17 — the operator command cannot rewrite history (DEB-1)` › `issues no DELETE, no TRUNCATE and no DROP, and exactly one UPDATE`, › `mints only what an account of the same tenant already identifies`, › `re-enables the immutability guard on every path, including a failing one`, › `names the constraint it may validate, and validates nothing while anything is unresolved`; `… the input gate refuses before it connects (DEB-2)` and `… the authority gate is real (DEB-3)`, four and three cases — eleven in the file | **covered — added by the PR #370 remediation of 2026-09-12** |
 
 **Gaps.** None — and the test for that is stricter than "a case exists". Every title cited above
 both exists in the file named beside it **and** was executed in a run listed in the table of runs:
@@ -405,16 +438,25 @@ different movement, the migrations are to be re-read rather than the baseline re
 Stated precisely, because "the key is validated" is true of some databases and false of others:
 
 - `fk_delivery_records_delivering_employee` is added **`NOT VALID`**.
-- The migration validates it **in the same run only when `sal.delivery_legacy_identity_review` is
-  empty** — that is, only when nothing was left unresolved.
-- On a database carrying unresolved legacy identities it **remains `NOT VALID`** — binding every
-  future row, proving no past one — **until the Owner resolves those rows**. The resolution path is
-  **not yet decided**; it is A-6 in the register, a recommendation pending Owner approval, and this
-  slice ships no command for it.
+- **A fresh database validates in the migration.** The `DO` block runs `VALIDATE CONSTRAINT` when
+  `sal.delivery_records` holds **zero rows** — there is no history to judge, and `VALIDATE` is DDL,
+  which is why it may stay in a migration while the mint may not.
+- **A populated database validates through the operator command**, after the mint, and only when
+  nothing anywhere is left unresolved: `scripts/platform/backfill-delivering-employee-identity.mjs`
+  counts unresolved deliveries in EVERY tenant, not only those a scoped run named, and withholds
+  validation otherwise. Until it runs, the key **remains `NOT VALID`** — binding every future row,
+  proving no past one.
+- **The shared database held 0 delivery rows when it was read on 2026-09-10** (section 9.1, an
+  observation), so that run is expected to mint nothing there. It is an operator step all the same,
+  not a skipped one: an environment nobody has read may hold history.
+- A legacy value that resolves to nobody is still never resolved by this slice. Who decides the
+  person is **A-6** in the register, a recommendation pending Owner approval; the command lists such
+  rows and refuses to validate over them.
 - The hosted migration replay is **defined** to start from an empty database — the
   `database-migration-replay` job in `.github/workflows/_reusable-database-assurance.yml` asserts
   that the database holds zero application tables at line 235 and applies every migration from zero
-  at line 242 — so it is **expected** to end with the key validated. That is an expectation read
+  at line 242 — so `sal.delivery_records` is empty there and it is **expected** to end with the key
+  validated by that `DO` block. That is an expectation read
   from the workflow definition and **not yet an observed result**; no hosted run of this slice has
   been observed. Either way it would be a property of the replay environment and **not** evidence
   about a populated one.
@@ -464,16 +506,21 @@ question this slice does not answer or an operator act it creates and does not p
   and section 41.3 of the change control; the correction is owed to the frontend lane.
 - **No index for the list ordering**, on the `sal.delivery-list` precedent (CC-23): a branch's
   employee register is small, and no measurement has demonstrated a cost a schema change would buy.
-- **One operator act, created and NOT performed.** Every organisation already provisioned holds the
-  76-code bundle and therefore neither new code. They need one backfill run of the existing tenant
-  administrator bundle backfill after this merges. This slice does not run it and makes no claim
-  that it has been run.
+- **Two operator acts, created and NOT performed.** The first: every organisation already
+  provisioned holds the 76-code bundle and therefore neither new code, so they need one run of the
+  existing tenant administrator bundle backfill after this merges. The second:
+  `scripts/platform/backfill-delivering-employee-identity.mjs` must run once against every
+  environment holding pre-P-17 deliveries, to mint the identities that resolve, list the ones that
+  do not, and validate `fk_delivery_records_delivering_employee` when nothing is left unresolved.
+  The shared database held **0** delivery rows when it was read on 2026-09-10, so that run is
+  expected to mint nothing there — an operator step all the same. This slice performs neither and
+  makes no claim that either has been run.
 
 ## 11. Record-integrity note (for the Owner)
 
 `tests/ci/p1-27-doc-counts.test.ts:784` requires `docs/phase-1/phase-1-27/closure-record.md` to
 quote the schema hash and migration count that the CURRENT committed baseline carries, so adding the
 two migrations of this slice obliged it to rewrite a row of a record sealed on 2026-08-12 — **139**
-and `8302f675…` became **141** and `ce41a44c…` — which is a repository convention that makes a
+and `8302f675…` became **141** and `a25718d7…` — which is a repository convention that makes a
 historical record track the live baseline rather than the state it recorded, and one the Owner may
 wish to change.
