@@ -784,6 +784,7 @@ async function sectionCommercialSetup(ledger, ctx, token, world, scope) {
       step: 'service version published',
       expected: 200,
       token,
+      idempotencyKey: randomUUID(),
       ifMatch: service.body?.recordVersion ?? 1,
       detail: (r) => ({ state: r.body?.state ?? null }),
     });
@@ -795,6 +796,7 @@ async function sectionCommercialSetup(ledger, ctx, token, world, scope) {
       step: 'service made available at the branch',
       expected: [200, 201],
       token,
+      idempotencyKey: randomUUID(),
       body: { companyId: scope.companyId, branchId: scope.branchId, isAvailable: true },
     });
 
@@ -816,14 +818,20 @@ async function sectionCommercialSetup(ledger, ctx, token, world, scope) {
     });
     const priceListId = required(ledger, priceList.body?.id, 'the price list id');
 
+    // `versionGuarded: true`, and the guarded record is the LIST rather than the
+    // version being created — the same trap the publish below carries. Neither the
+    // create nor the publish bumps `svc.price_lists.record_version`
+    // (`requireLockedList` compares and refuses; it does not write), so both send the
+    // figure the list create answered.
     const priceVersion = await call(ledger, ctx.api, {
       opId: 'svc.price-list-version-create',
       method: 'POST',
       path: `/api/v1/price-lists/${priceListId}/versions`,
-      step: 'price list version created',
+      step: 'price list version created (If-Match = the LIST record version)',
       expected: 201,
       token,
       idempotencyKey: randomUUID(),
+      ifMatch: priceList.body?.recordVersion ?? 1,
       body: { effectiveFrom: today() },
       detail: (r) => ({ id: r.body?.id ?? null }),
     });
@@ -850,6 +858,7 @@ async function sectionCommercialSetup(ledger, ctx, token, world, scope) {
       step: 'price list version published (If-Match = the LIST record version)',
       expected: 200,
       token,
+      idempotencyKey: randomUUID(),
       ifMatch: priceList.body?.recordVersion ?? 1,
     });
 
@@ -1124,6 +1133,7 @@ async function inviteAndActivate(ledger, ctx, adminToken, { label, email, displa
     step: `${label} invited with the administrator role`,
     expected: 201,
     token: adminToken,
+    idempotencyKey: randomUUID(),
     body: { email, displayName, roleIds: [roleId] },
     detail: (r) => ({ state: r.body?.state ?? r.body?.status ?? null }),
   });
@@ -1145,6 +1155,7 @@ async function inviteAndActivate(ledger, ctx, adminToken, { label, email, displa
     step: `${label} activated by the administrator`,
     expected: 200,
     token: adminToken,
+    idempotencyKey: randomUUID(),
     body: { reason: 'P1-31 acceptance journey second person' },
     detail: (r) => ({ state: r.body?.state ?? r.body?.status ?? null }),
   });
@@ -1156,6 +1167,7 @@ async function inviteAndActivate(ledger, ctx, adminToken, { label, email, displa
     step: `${label} granted the administrator role at the branch`,
     expected: [201, 409],
     token: adminToken,
+    idempotencyKey: randomUUID(),
     body: {
       userId,
       roleId,
@@ -1234,6 +1246,7 @@ async function buildWorkOrder(ledger, ctx, token, world, scope, label) {
     step: `${label} journey: vehicle linked to the customer`,
     expected: [200, 201],
     token,
+    idempotencyKey: randomUUID(),
     body: { vehicleId, relationshipRole: 'owner' },
   });
 
@@ -1266,6 +1279,7 @@ async function buildWorkOrder(ledger, ctx, token, world, scope, label) {
     step: `${label} journey: the customer recorded on the visit as the authorized receiver`,
     expected: [200, 201],
     token,
+    idempotencyKey: randomUUID(),
     body: { partnerId: customerId, relationshipRole: 'authorized_receiver' },
     detail: (r) => ({ role: r.body?.relationshipRole ?? null }),
   });
@@ -1277,6 +1291,7 @@ async function buildWorkOrder(ledger, ctx, token, world, scope, label) {
     step: `${label} journey: the customer AUTHORIZES the work`,
     expected: 201,
     token,
+    idempotencyKey: randomUUID(),
     body: {
       authorizingRole: 'service_requester',
       partnerId: customerId,
@@ -1299,13 +1314,14 @@ async function buildWorkOrder(ledger, ctx, token, world, scope, label) {
     }),
   });
 
-  await call(ledger, ctx.api, {
+  const approved = await call(ledger, ctx.api, {
     opId: 'rec.reception-approve',
     method: 'POST',
     path: `/api/v1/receptions/${receptionId}/approve`,
     step: `${label} journey: reception approved`,
     expected: 200,
     token,
+    idempotencyKey: randomUUID(),
     ifMatch: detail.body?.recordVersion ?? 1,
     detail: (r) => ({
       state: r.body?.state ?? null,
@@ -1313,6 +1329,9 @@ async function buildWorkOrder(ledger, ctx, token, world, scope, label) {
     }),
   });
 
+  // The conversion is `versionGuarded` too, and the approval above bumped the
+  // reception. Its own answer carries the counter forward, so the version is taken
+  // from the write that moved it rather than from the read that preceded it.
   const converted = await call(ledger, ctx.api, {
     opId: 'rec.reception-convert-to-work-order',
     method: 'POST',
@@ -1321,6 +1340,7 @@ async function buildWorkOrder(ledger, ctx, token, world, scope, label) {
     expected: 200,
     token,
     idempotencyKey: randomUUID(),
+    ifMatch: approved.body?.recordVersion ?? approved.etag ?? 1,
     detail: (r) => ({ workOrderId: r.body?.workOrderId ?? null }),
   });
   const workOrderId = required(ledger, converted.body?.workOrderId, `the ${label} work order id`);
@@ -1389,7 +1409,11 @@ async function sectionWorkExecution(ledger, ctx, token, world, scope) {
       token,
       idempotencyKey: randomUUID(),
       body: { title: 'Pre-handover check' },
-      detail: (r) => ({ id: r.body?.id ?? null, state: r.body?.state ?? null }),
+      detail: (r) => ({
+        id: r.body?.id ?? null,
+        state: r.body?.state ?? null,
+        recordVersion: r.body?.recordVersion ?? null,
+      }),
     });
     const jobId = required(ledger, job.body?.id, 'the job id');
     world.jobId = jobId;
@@ -1420,10 +1444,18 @@ async function sectionWorkExecution(ledger, ctx, token, world, scope) {
       token,
       idempotencyKey: randomUUID(),
       body: { technicianProfileId },
-      detail: (r) => ({ id: r.body?.id ?? null }),
+      detail: (r) => ({
+        id: r.body?.id ?? null,
+        recordVersion: r.body?.recordVersion ?? null,
+      }),
     });
     const sessionId = required(ledger, session.body?.id, 'the labour session id');
 
+    // `versionGuarded: true` and NOT idempotent — the one combination on this
+    // journey, and the reason no `Idempotency-Key` is sent here: the operation
+    // declares none, so the header would be ignored and the evidence would name a
+    // guarantee this write does not offer. The If-Match is the session's own
+    // counter, answered by the start above.
     await call(ledger, ctx.api, {
       opId: 'tech.labor-session-stop',
       method: 'POST',
@@ -1431,7 +1463,7 @@ async function sectionWorkExecution(ledger, ctx, token, world, scope) {
       step: 'labour session STOPPED, so the recorded time is a closed interval',
       expected: 200,
       token,
-      idempotencyKey: randomUUID(),
+      ifMatch: session.body?.recordVersion ?? session.etag ?? 1,
       detail: (r) => ({ endedAt: r.body?.endedAt ?? null }),
     });
 
@@ -1447,6 +1479,9 @@ async function sectionWorkExecution(ledger, ctx, token, world, scope) {
       detail: (r) => ({ id: r.body?.id ?? null }),
     });
 
+    // The job's own counter, from the create. The assignment, the two labour-session
+    // writes and the work log are all child inserts and none of them updates
+    // `wo.jobs`, so the figure the create answered is still current here.
     await call(ledger, ctx.api, {
       opId: 'wo.job-transition',
       method: 'POST',
@@ -1455,8 +1490,26 @@ async function sectionWorkExecution(ledger, ctx, token, world, scope) {
       expected: 200,
       token,
       idempotencyKey: randomUUID(),
+      ifMatch: job.body?.recordVersion ?? job.etag ?? 1,
       body: { toState: 'done' },
       detail: (r) => ({ state: r.body?.state ?? null }),
+    });
+
+    // Re-read rather than carried: nothing on this journey has answered the work
+    // order's counter since the conversion made it, and a job reaching `done` may
+    // move the parent. The read is the same one the closure step takes, for the same
+    // reason, and a stale guess here would answer 409 and read as a state defect.
+    const workOrderBeforeCompletion = await call(ledger, ctx.api, {
+      opId: 'wo.work-order-detail',
+      method: 'GET',
+      path: `/api/v1/work-orders/${workOrderId}`,
+      step: 'work order detail, for the If-Match the completion needs',
+      expected: 200,
+      token,
+      detail: (r) => ({
+        state: r.body?.state ?? null,
+        recordVersion: r.body?.recordVersion ?? null,
+      }),
     });
 
     await call(ledger, ctx.api, {
@@ -1467,6 +1520,7 @@ async function sectionWorkExecution(ledger, ctx, token, world, scope) {
       expected: 200,
       token,
       idempotencyKey: randomUUID(),
+      ifMatch: workOrderBeforeCompletion.body?.recordVersion ?? 1,
       body: { toState: 'completed' },
       detail: (r) => ({ state: r.body?.state ?? null }),
     });
@@ -1508,7 +1562,7 @@ async function sectionQualityControl(ledger, ctx, token, world) {
     world.qcRecordId = recordId;
 
     const read = await call(ledger, ctx.api, {
-      opId: 'qms.qc-record-read',
+      opId: 'qms.qc-record-detail',
       method: 'GET',
       path: `/api/v1/quality-controls/${recordId}`,
       step: 'quality-control record read, for its checks and record version',
@@ -1542,7 +1596,7 @@ async function sectionQualityControl(ledger, ctx, token, world) {
     }
 
     const current = await call(ledger, ctx.api, {
-      opId: 'qms.qc-record-read',
+      opId: 'qms.qc-record-detail',
       method: 'GET',
       path: `/api/v1/quality-controls/${recordId}`,
       step: 'quality-control record re-read, for the If-Match the finalisation needs',
@@ -2773,6 +2827,7 @@ async function refusalWithoutFinanceView(ledger, ctx, adminToken, world, scope) 
       step: 'a role WITHOUT sal.finance.view created',
       expected: 201,
       token: adminToken,
+      idempotencyKey: randomUUID(),
       body: { roleCode, name: 'Handover acceptance, no financial view' },
       detail: (r) => ({ id: r.body?.id ?? null }),
     });
@@ -2786,6 +2841,7 @@ async function refusalWithoutFinanceView(ledger, ctx, adminToken, world, scope) 
         step: `restricted role granted ${permissionCode}`,
         expected: [200, 201],
         token: adminToken,
+        idempotencyKey: randomUUID(),
         body: { permissionCode, effect: 'allow' },
       });
     }
@@ -2798,6 +2854,7 @@ async function refusalWithoutFinanceView(ledger, ctx, adminToken, world, scope) 
       step: 'a third person invited with the restricted role',
       expected: 201,
       token: adminToken,
+      idempotencyKey: randomUUID(),
       body: {
         email,
         displayName: 'Handover acceptance restricted operator',
@@ -2819,6 +2876,7 @@ async function refusalWithoutFinanceView(ledger, ctx, adminToken, world, scope) 
       step: 'third person activated',
       expected: 200,
       token: adminToken,
+      idempotencyKey: randomUUID(),
       body: { reason: 'P1-31 acceptance restricted operator' },
     });
 
@@ -2829,6 +2887,7 @@ async function refusalWithoutFinanceView(ledger, ctx, adminToken, world, scope) 
       step: 'third person granted the restricted role at the branch',
       expected: [201, 409],
       token: adminToken,
+      idempotencyKey: randomUUID(),
       body: {
         userId,
         roleId,

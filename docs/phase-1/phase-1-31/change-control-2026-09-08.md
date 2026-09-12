@@ -2968,6 +2968,54 @@ described as pending.
 **What the merge did not settle is the run.** The world the specs read still does not exist on any
 checkout, and no acceptance result is claimed anywhere in this slice.
 
+**The re-read against the merged contracts found six defects in the harness, and they are fixed
+here.** Every one of the 124 call sites was compared against the `defineOperation` declaration on
+`811e9891` — method, path, whether the operation requires an `Idempotency-Key`, whether it requires
+an `If-Match`. Four classes came out of it:
+
+| what was wrong                                                                                                                                                                            | how it would have presented                     | fix                                                            |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | -------------------------------------------------------------- |
+| an operation id that does not exist: `qms.qc-record-read` at two sites, where the route at `GET /quality-controls/{recordId}` declares `qms.qc-record-detail`                             | correct request, wrong name in the evidence     | the declared id                                                |
+| fifteen call sites to twelve operations declaring `idempotent: true` sent no `Idempotency-Key`; the platform makes the header mandatory for those (`requireIdempotencyKey`), not optional | `ERR-INT-002` on each                           | a fresh key per call, as the other sites already send          |
+| five call sites to five operations declaring `versionGuarded: true` sent no `If-Match`; `parseIfMatch` refuses when the operation declares the guard                                      | `ERR-CON-002` on each                           | the counter its own row answered, and a re-read where none had |
+| one call site sent an `Idempotency-Key` to `tech.labor-session-stop`, which declares the version guard and **not** idempotency                                                            | silently ignored; a false claim in the evidence | the header removed and the `If-Match` it actually needs added  |
+
+Two of those are worth naming individually because the correction was a judgement and not a
+substitution. `svc.price-list-version-create` is guarded against the price **list**, not the version
+it creates — the same trap the P1-30 W2 record names for the publish — and neither write bumps
+`svc.price_lists.record_version`, so both send the figure the list create answered. And
+`wo.work-order-transition` had no counter available anywhere on the journey, so a read of
+`wo.work-order-detail` was added immediately before it, which is the idiom the closure step three
+sections later already uses and states its reason for.
+
+None of the six was caused by the merge. They were in the first three commits, and a static check
+cannot see them: a string in an object literal is not type-checked against a route in another
+workspace, and the harness is never executed by any tier. **That is itself the finding** — the
+harness's call shapes were only verified by reading the declarations one by one, and a reader should
+not take the fix as evidence that no seventh defect remains.
+
+**A seventh finding is OPEN and this slice did not fix it.** `tests/ci/e2e-tier-coverage.test.ts`
+requires that every spec under `apps/web/tests/e2e/authenticated/` be named in the governed spec
+list in `.github/ci-baselines/unrun-test-tiers.json`. The list holds seven paths and names none of
+this slice's four, so **the root unit tier is RED on this branch** and has been since the specs were
+committed — at `ed657ed8`, before any merge. The branch never ran `tests/ci`, which is why the
+failure travelled this far unseen.
+
+It is left open deliberately, for two reasons, and neither is that it is hard:
+
+- The file is under `.github/ci-baselines/`, which is CODEOWNERS-protected and self-certifying. No
+  instruction to this slice authorised an edit there, and widening a CI declaration to make a gate
+  stop reporting is exactly the move the standing rule against working around a failing gate exists
+  to prevent.
+- The choice is a judgement, not a transcription. Naming the four specs under `governed.specs`
+  asserts that the governed hosted tier EXECUTES them. It would — and all eleven cases would skip,
+  because no hosted run has a `ROOTLCO_P131_HANDOFF`. Whether a committed-but-skipping spec belongs
+  on the governed list, or in the `unrun` list this file's own docblock records as deliberately
+  emptied, decides what a green `authenticated-browser` result means from here on. That is the
+  Owner's or the integration lane's decision and not this slice's.
+
+Until it is decided, **this branch cannot be reported green**, and nothing below claims it is.
+
 ### 52.4 Dispositions
 
 | id        | disposition                                                                                                                      | why it is recorded rather than fixed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | owner                | state                       |

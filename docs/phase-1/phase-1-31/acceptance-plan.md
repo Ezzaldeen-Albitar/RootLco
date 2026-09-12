@@ -32,52 +32,52 @@ evidences the day it ran and nothing after it.
 
 ## 1. Preconditions
 
-### 1.1 The merges this acceptance requires
+### 1.1 The merges this acceptance required — all four are now on `develop`
 
-The harness calls operations that are not all on protected `develop`. Running it against `develop`
-alone would produce a run whose failures are absences rather than defects, which is worse than no run
-at all. So the acceptance is taken against a build of an integration head carrying the four branches
-below, and the merge list is part of the evidence.
+When this plan was written the harness called operations that were not all on protected `develop`,
+and this section listed the four branches that carried them. **All four are merged.** Re-measured on
+protected `develop` **`811e9891353b466b7788e7ca8a7bddee8496de72`**, which this branch carries:
 
-Measured on protected `develop` **`8c4e6a9c`** (PR #368 merge — the FE-007 delivery document; this
-branch is based on its predecessor `deb404c1` and does not carry #368).
+| #   | what the journey needs                                                                                                   | where it now lives on `develop` `811e9891`                      |
+| --- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| 1   | `org.employee-create` / `org.employee-list` / `org.employee-status-set`, `deliveringEmployeeId` on `sal.delivery-create` | P-17, change-control section 41; two migrations; bundle 76 → 78 |
+| 2   | the four dataset definitions and the `rpt.report-run` engine behind them                                                 | P-11, sections 40 and 45 to 47                                  |
+| 3   | the warranty plans screens (`/warranty/policies`)                                                                        | section 48                                                      |
+| 4   | the report catalogue and the report screens (`/reports`, `/reports/{reportCode}`)                                        | section 50                                                      |
 
-| #   | branch                                                   | head       | what the journey needs from it                                                                                                         |
-| --- | -------------------------------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `remediation/p1-31-backend-delivering-employee-identity` | `6cf67b7c` | `org.employee-create` / `org.employee-status-set`, the `deliveringEmployeeId` on `sal.delivery-create`, two migrations, bundle 76 → 78 |
-| 2   | `remediation/p1-31-backend-report-engine-datasets`       | `a1af21cd` | the four dataset definitions and the `rpt.report-run` engine behind them                                                               |
-| 3   | `feature/p1-31-warranty-policy-administration`           | `28e8fb82` | the warranty plans screens (`/warranty/policies`)                                                                                      |
-| 4   | `feature/p1-31-operational-overview`                     | `9ee54fb9` | the report catalogue and the report screens (`/reports`, `/reports/{code}`)                                                            |
+So the acceptance is taken against a build of `develop` itself plus this branch, and no integration
+head has to be assembled first. Two consequences of that, because each turns a silent absence into a
+loud one:
 
-Two consequences are worth stating, because each turns a silent absence into a loud one:
+- **The bundle count is still the check, and it is no longer conditional.**
+  `apps/api/src/modules/iam/domain/bootstrap-roles.ts` declares **78** codes on `develop`
+  `811e9891`. The harness asserts 78 on the session read (step group 2), so a build that has somehow
+  lost P-17 fails at step 18 rather than forty steps later with an unexplained refusal.
+- **The two message-catalogue conditions are now regression guards rather than live skips.** The
+  warranty-plans and report cases ask whether the screen's own strings exist —
+  `warranty.policies.title` and `reports.catalogue.title` — and both resolve in `en.json` and
+  `ar.json` at this head, so both sets of cases run once a handoff is present. The conditions are
+  kept because a skip that states its reason is the honest answer if a screen is ever withdrawn, and
+  because they do **not** assert a 404, which also passes on a build that is merely broken.
 
-- **The bundle count is the merge check.** `develop` `8c4e6a9c` carries **76** administrator
-  permission codes; with branch 1 merged it carries **78**. The harness asserts 78 on the session
-  read (step group 2), so a build missing branch 1 fails at step 18 rather than forty steps later
-  with an unexplained refusal.
-- **The screens that are not yet merged skip with their reason stated.** The warranty-plans and
-  report cases ask the message catalogue whether the screen's own strings exist and skip with the
-  reason written out when they do not. They do **not** assert a 404, because a 404 also passes on a
-  build that is merely broken.
+### 1.2 The shared local database — the operator steps are DONE
 
-### 1.2 The shared local database, and the migration path
+This section previously described a migration path an operator still had to walk. **It has been
+walked.** The evidence is outside the repository, at
+`orchestration/evidence/p1-31/p17-operator-20260912/`, whose `README.md` records each step with the
+raw output of every command beside it:
 
-The local Supabase stack is **shared across every worktree in this checkout**, and several P1-31
-lanes have applied migrations to it from their own branches. The recorded migration history and the
-files on the integration head therefore disagree, and `supabase migration up` refuses to guess.
+| what the plan required                            | state on the shared local database                                                      |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| the migration ledger reconciled, never by a reset | 13 versions repaired, then the two P-17 migrations applied, each in its own transaction |
+| the applied count                                 | **141**, equal to the 141 `supabase/migrations/*.sql` files in this tree                |
+| the permission catalogue                          | **121** codes, from the declared seed `supabase/seeds/04_iam_permission_catalog.sql`    |
+| the tenant administrator bundle                   | **78**, backfilled from 76 across every organisation that held it                       |
 
 **Never `supabase db reset`.** It destroys the acceptance environment, which is a recorded standing
-trap. The path is:
-
-1. `npx supabase migration list` — read which versions the CLI reports as recorded and which as
-   applied. The P1-31 lanes have seen **eleven** versions out of step.
-2. `npx supabase migration repair --status applied <version>` for each version the listing reports as
-   out of step. **The exact list is read from the command's own output at run time and is not
-   transcribed here**: a list written from memory would be a fabricated measurement, and repairing a
-   version that is not in fact applied is how a migration gets skipped silently.
-3. `npx supabase migration up` — apply whatever remains.
-4. Confirm the applied count is **141**: `develop` `8c4e6a9c` holds 139 migration files and branch 1
-   of §1.1 adds two. A count other than 141 means the tree under test is not the tree §1.1 describes.
+trap, and it is no less true now that the ledger is straight than it was before. An operator who
+finds the counts disagreeing with the four above should read the evidence directory first: the tree
+under test is then not the tree this plan describes, and the disagreement is the finding.
 
 ### 1.3 Exclusivity
 
@@ -147,34 +147,42 @@ a harness that stops at the first surprise records one fact and hides every fact
 that cannot produce a value a later step needs records a `BLOCKED` row and abandons **that section
 only**, so the isolation probes and the audit read still answer for themselves.
 
-| §   | section                                  | what it establishes                                                                                                                                                                                                                                                                                                                               |
-| --- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | platform operator and two organisations  | operator credential through the reset route and the mailbox; `platform.organization-provision` twice; activation through the status route when provisioning did not activate; both owners' credentials and logins                                                                                                                                 |
-| 2   | session and branch                       | the first administrator holds **78** permission codes; the branch list answers one branch, and its company and branch ids are the scope everything below uses                                                                                                                                                                                     |
-| 3   | service catalogue and pricing            | a published service, a published price list assigned to the branch, and a price the **server** resolved. Not P1-31's surface, and here because without a priced line the invoice carries no amount and the financial blocker is vacuous                                                                                                           |
-| 4   | inventory and opening stock              | category, unit looked up by its seeded code, item, warehouse, storage place, opening batch, a line, the maker≠checker refusal, a second person invited and activated through the shipped routes, the approval, on-hand, and one `opening` movement                                                                                                |
-| 5   | customer, vehicle, reception, work order | the P1-30 steps 45–52 chain, plus the `authorized_receiver` party role recorded on the **visit** — `sal.guard_authorized_receiver` reads the visit's roles, not the delivery's                                                                                                                                                                    |
-| 6   | the people and the work                  | an **active** employee (the person who will hand over), a technician profile, a job, an assignment, a **closed** labour session, a work log, job → `done`, work order → `completed`                                                                                                                                                               |
-| 7   | quality control                          | a QC record opened, its checks answered, and the record finalised **passed**. An opened record carrying no checks is stated as a note rather than asserted either way                                                                                                                                                                             |
-| 8   | invoice, receipt, allocation             | service line, preview, invoice created with an explicit `payerPartnerId`, issued against the **invoice's** record version, cash method found by code, receipt, allocation, outstanding **zero**. Every amount is the decimal string the server published                                                                                          |
-| 9   | work-order closure                       | closure eligibility, then `{ "toState": "closed" }` with `If-Match`                                                                                                                                                                                                                                                                               |
-| 10  | handover configuration                   | a checklist template with **two mandatory items**, set **active**; a warranty policy with a coverage window, plus a second service-only window                                                                                                                                                                                                    |
-| 11  | the handover                             | readiness queue with the **four work-order facts established**; delivery opened; the three inline refusal cases; receiver verified; a signature document authorized, stored and registered, then bound; both checklist items recorded; eligibility clear; completion with the final odometer as a **decimal string**; `delivered`; status history |
-| 12  | warranty                                 | `wty.warranty-generate` under the named policy; the branch list carries it; the detail carries its terms; the plans list reads                                                                                                                                                                                                                    |
-| 13  | reports                                  | a tenant configuration created, a version created with `parameterSchema` **omitted**, published, status set; the catalogue offers all four codes; all four run over a **half-open** day period                                                                                                                                                    |
-| 14  | the audit trail                          | the log for the branch carries `sal.delivery.completed` and `wty.warranty.issued` — the two `auditAction` values the last two writes declare                                                                                                                                                                                                      |
-| 15  | refusal cases                            | §4 below                                                                                                                                                                                                                                                                                                                                          |
+| §   | section                                  | what it establishes                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| --- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | platform operator and two organisations  | operator credential through the reset route and the mailbox; `platform.organization-provision` twice; activation through the status route when provisioning did not activate; both owners' credentials and logins                                                                                                                                                                                                                                                                       |
+| 2   | session and branch                       | the first administrator holds **78** permission codes; the branch list answers one branch, and its company and branch ids are the scope everything below uses                                                                                                                                                                                                                                                                                                                           |
+| 3   | service catalogue and pricing            | a published service, a published price list assigned to the branch, and a price the **server** resolved. Not P1-31's surface, and here because without a priced line the invoice carries no amount and the financial blocker is vacuous                                                                                                                                                                                                                                                 |
+| 4   | inventory and opening stock              | category, unit looked up by its seeded code, item, warehouse, storage place, opening batch, a line, the maker≠checker refusal, a second person invited and activated through the shipped routes, the approval, on-hand, and one `opening` movement                                                                                                                                                                                                                                      |
+| 5   | customer, vehicle, reception, work order | the P1-30 steps 45–52 chain, plus the `authorized_receiver` party role recorded on the **visit** — `sal.guard_authorized_receiver` reads the visit's roles, not the delivery's                                                                                                                                                                                                                                                                                                          |
+| 6   | the people and the work                  | an **active** employee (the person who will hand over), a technician profile, a job, an assignment, a **closed** labour session, a work log, job → `done`, work order → `completed`. Every one of those transitions is `versionGuarded`, so each sends the counter the write or read that last touched **its own row** answered — and the work order is re-read immediately before its completion, because nothing on the journey has answered its counter since the conversion made it |
+| 7   | quality control                          | a QC record opened, its checks answered, and the record finalised **passed**. An opened record carrying no checks is stated as a note rather than asserted either way                                                                                                                                                                                                                                                                                                                   |
+| 8   | invoice, receipt, allocation             | service line, preview, invoice created with an explicit `payerPartnerId`, issued against the **invoice's** record version, cash method found by code, receipt, allocation, outstanding **zero**. Every amount is the decimal string the server published                                                                                                                                                                                                                                |
+| 9   | work-order closure                       | closure eligibility, then `{ "toState": "closed" }` with `If-Match`                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| 10  | handover configuration                   | a checklist template with **two mandatory items**, set **active**; a warranty policy with a coverage window, plus a second service-only window                                                                                                                                                                                                                                                                                                                                          |
+| 11  | the handover                             | readiness queue with the **four work-order facts established**; delivery opened; the three inline refusal cases; receiver verified; a signature document authorized, stored and registered, then bound; both checklist items recorded; eligibility clear; completion with the final odometer as a **decimal string**; `delivered`; status history                                                                                                                                       |
+| 12  | warranty                                 | `wty.warranty-generate` under the named policy; the branch list carries it; the detail carries its terms; the plans list reads                                                                                                                                                                                                                                                                                                                                                          |
+| 13  | reports                                  | a tenant configuration created, a version created with `parameterSchema` **omitted**, published, status set; the catalogue offers all four codes; all four run over a **half-open** day period                                                                                                                                                                                                                                                                                          |
+| 14  | the audit trail                          | the log for the branch carries `sal.delivery.completed` and `wty.warranty.issued` — the two `auditAction` values the last two writes declare                                                                                                                                                                                                                                                                                                                                            |
+| 15  | refusal cases                            | §4 below                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
-### 2.1 Three contract details the harness gets right and a reader would get wrong
+### 2.1 Four contract details the harness gets right and a reader would get wrong
 
 - **`finalOdometerValue`, not `odometerValue`.** `sal.delivery-complete`'s body names
   `finalOdometerValue`, an unsigned decimal string with at most two decimals, and `odometerUnit` is
   optional (`sal.complete_delivery` defaults to `km`). The harness sends `'12345.6'` and `'km'`.
-- **`If-Match` on the price-list publish is the LIST's record version**, not the version's. The P1-30
-  W2 record names this trap; sending the version's own counter answers 409.
+- **`If-Match` on the price-list version CREATE and on the publish is both times the LIST's record
+  version**, not the version's. The P1-30 W2 record names the trap for the publish; the create is
+  `versionGuarded` in exactly the same way and against the same row. Neither write bumps the list's
+  counter — `requireLockedList` compares it and refuses, and does not write — so both send the figure
+  the list create answered. Sending the version's own counter answers 409.
 - **`parameterSchema` is omitted on the configuration version, not sent empty.** The filter
   allow-list it carries must not be empty (`empty_filter_allowlist`), and omission is the shape that
   means "this configuration declares no tenant filter vocabulary".
+- **`tech.labor-session-stop` is `versionGuarded` and NOT idempotent**, the only operation on this
+  journey with that combination. It therefore carries an `If-Match` and deliberately carries no
+  `Idempotency-Key`: the platform requires the header only for an operation that declares
+  `idempotent: true`, and sending one here would put a replay guarantee into the evidence that this
+  write does not offer. Every other guarded write on the journey takes both.
 
 ---
 
@@ -355,18 +363,46 @@ let a record claim phase coverage it does not have.
 Static checks on the source of the harness and the specs. Nothing was executed against a database, a
 server or a browser.
 
-| check                                       | scope                                                                  |
-| ------------------------------------------- | ---------------------------------------------------------------------- |
-| `node --check` on the harness               | the harness parses as an ES module                                     |
-| `npm run typecheck:web`                     | the four specs and the handoff helper compile                          |
-| `npm run lint:web`, `npm run lint`          | no errors                                                              |
-| `npm run format:check:web`, `format:check`  | both trees                                                             |
-| `npm run validate:encoding`                 | the six new files are UTF-8 without a byte-order mark                  |
-| `node scripts/check-no-fake-data.mjs`       | no fabricated business record anywhere in the new files                |
-| `node scripts/check-scope-exclusions.mjs`   | no excluded name                                                       |
-| `node scripts/ci/check-test-honesty.mjs`    | every conditional skip carries its recorded reason                     |
-| `node scripts/ci/check-phase-ownership.mjs` | `scripts/dev/` is the `tooling` bucket, which `p1-31-frontend` permits |
+Every command below was run on the merged head. **One of them FAILED**, and the table says so rather
+than omitting it: a list of checks that quietly drops the one that went red is worse than no list.
 
-The §8 list is the whole of what is claimed. The journey's **behaviour** is unmeasured, and the first
-person to run it should expect to find defects in the harness as well as in the product — the P1-30
-record's amendment A1 found one in its own driver and named it as such.
+| check                                                    | scope                                                   |
+| -------------------------------------------------------- | ------------------------------------------------------- |
+| `node --check` on the harness                            | the harness parses as an ES module                      |
+| `npm run typecheck`, `typecheck:web`                     | the four specs and the handoff helper compile           |
+| `npm run lint`, `lint:web`                               | no errors                                               |
+| `npm run format:check`, `format:check:web`               | both trees                                              |
+| `npm run validate:p1-24-register`                        | the register regenerates unchanged at 411 operations    |
+| `npm run validate:web-boundary`                          | the specs reach no API source and no Node-only module   |
+| `npm run validate:use-server-exports`                    | unaffected, and proved so                               |
+| `npm run validate:module-boundaries`                     | unaffected, and proved so                               |
+| `npm run validate:p1-31-access`                          | the phase access gate                                   |
+| `npm run validate:encoding`                              | the new files are UTF-8 without a byte-order mark       |
+| `npm run validate:generated-artifacts`                   | no generated artefact was hand-edited or committed      |
+| `node scripts/check-no-fake-data.mjs`                    | no fabricated business record anywhere in the new files |
+| `node scripts/check-scope-exclusions.mjs`                | no excluded name                                        |
+| `node scripts/ci/check-test-honesty.mjs`                 | every conditional skip carries its recorded reason      |
+| `npm run security:all`                                   | the aggregate security gate                             |
+| `npx vitest run tests/ci tests/openapi-contract.test.ts` | **FAILED: 1 failed, 1990 passed across 69 files**       |
+
+**The failure is `tests/ci/e2e-tier-coverage.test.ts`**, and it is about these four specs. That gate
+requires every spec under `apps/web/tests/e2e/authenticated/` to be named in the governed spec list
+in `.github/ci-baselines/unrun-test-tiers.json`; the list names seven paths and none of these four.
+It has been red since the specs were committed, before any merge — the branch never ran `tests/ci`.
+It is not fixed here: the file is CODEOWNERS-protected, and whether a committed-but-skipping spec
+belongs on the governed list at all is a decision, not a transcription. The change-control record
+sets out both halves. **Until it is decided this branch is not green, and nothing in this document
+says otherwise.**
+
+A second static measurement was taken after `develop` `811e9891` was merged in, and it is the one
+that matters: **every operation the harness calls was re-read against the declaration on that head**
+— the method, the path, whether the operation requires an `Idempotency-Key`, and whether it requires
+an `If-Match`. That comparison found real defects in the harness and they are fixed on this branch;
+the change-control record names them. A harness whose call shapes disagree with the contracts would
+have produced a run full of `ERR-INT-002` and `ERR-CON-002` refusals and read as forty product
+defects.
+
+The §8 list is the whole of what is claimed. The journey's **behaviour** is still unmeasured — a call
+shape that matches a declaration is not a call that has been answered — and the first person to run
+it should expect to find further defects in the harness as well as in the product. The P1-30 record's
+amendment A1 found one in its own driver and named it as such.
