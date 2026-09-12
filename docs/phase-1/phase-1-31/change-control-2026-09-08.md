@@ -2990,26 +2990,28 @@ head.
 | `npm run lint`                                                                              | pass                                                                                                         |
 | `npm run lint:web`                                                                          | 0 errors; 12 pre-existing warnings, none on a file this slice touched                                        |
 | `npm run format:check` · `format:check:web` · `style:check:web`                             | pass                                                                                                         |
-| `npm run security:all`                                                                      | pass over 2762 tracked files                                                                                 |
+| `npm run security:all`                                                                      | pass over 2774 tracked files                                                                                 |
 | `npm run validate:encoding`                                                                 | every tracked text file clean UTF-8, no BOM                                                                  |
-| `npm run validate:generated-artifacts`                                                      | 2762 tracked files, 7/7 ignore rules, 0 failures                                                             |
+| `npm run validate:generated-artifacts`                                                      | 2774 tracked files, 7/7 ignore rules, 0 failures                                                             |
+| `npm run validate:p1-24-register`                                                           | register current and reconciled — 411 operations, 319 OpenAPI paths, all Covered                             |
+| `npm run validate:command-coverage`                                                         | 95/95 reachable locally, 96/96 invoked by hosted CI                                                          |
 | `npm run validate:web-boundary`                                                             | 374 files, 0 violations                                                                                      |
-| `npm run validate:use-server-exports`                                                       | 50 server modules across 984 source files, 0 violations                                                      |
+| `npm run validate:use-server-exports`                                                       | 50 server modules across 989 source files, 0 violations                                                      |
 | `npm run validate:web-topology`                                                             | 18 expectations, 338 matched files, 0 failures                                                               |
 | `npm run validate:web-tokens` · `validate:web-theme` · `validate:web-brand`                 | 0 violations; 54 colours registered, 0 unresolvable                                                          |
 | `npm run validate:notification-authority`                                                   | 374 files scanned, one authority, mounted once                                                               |
-| `npm run validate:module-boundaries`                                                        | pass, unchanged                                                                                              |
-| `npm run validate:api-backend-only`                                                         | 317 route handlers, 610 source files, 0 failures                                                             |
+| `npm run validate:module-boundaries`                                                        | 615 files scanned in `apps/api/src`, 11 rules, 0 violations                                                  |
+| `npm run validate:api-backend-only`                                                         | 320 route handlers, 615 source files, 0 failures                                                             |
 | `npm run validate:plain-language`                                                           | 2 catalogues, 24 rules, 0 findings                                                                           |
 | `npm run validate:p1-31-access`                                                             | 16 route pages across 8 owned segments, 0 violations                                                         |
 | `npm run validate:p1-26-frontend`                                                           | 374 files, 50 server modules, 0 failures                                                                     |
 | `npm run validate:p1-27-frontend`                                                           | 156 files across 5 trees, 9 rules, 0 failures                                                                |
 | focused web — the overview suite plus the reports, delivery, warranty and navigation suites | 393/393 across 10 files                                                                                      |
 | root — `npx vitest run tests/ci tests/openapi-contract.test.ts`                             | 1991/1991 across 69 files                                                                                    |
-| the web tier, through the P1-27 recorder                                                    | 3977/3977 across 140 files, 0 failed                                                                         |
-| `npm run test:unit`, through the P1-27 recorder                                             | 3301/3301 across 122 files, 0 failed                                                                         |
+| the web tier, through the P1-27 recorder                                                    | 3977/3977 across 140 files, 0 failed, recorded at `4797dbbe`                                                 |
+| `npm run test:unit`, through the P1-27 recorder                                             | 3301/3301 across 122 files, 0 failed, recorded at `4797dbbe`                                                 |
 | `npm run verify:policies`                                                                   | exit 0                                                                                                       |
-| `npm run validate:phase-ownership`, both forms                                              | profile `p1-31-frontend`, 26 changed files (web 13, docs 12, tests 1) against `origin/develop`, 0 violations |
+| `npm run validate:phase-ownership`, both forms                                              | profile `p1-31-frontend`, 27 changed files (web 13, docs 13, tests 1) against `origin/develop`, 0 violations |
 
 The local `verify:workspaces` aggregate is not run, under the standing 2026-09-09 targeted-local plus
 required-hosted policy. Hosted builds, browser checks and the required gates remain mandatory and
