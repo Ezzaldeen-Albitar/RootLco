@@ -1313,6 +1313,11 @@ describe('database foundation', () => {
       'ins_delivery_checklist_results_scope',
       'ins_delivery_checklist_template_items_scope',
       'ins_delivery_checklist_templates_scope',
+      // WITH CHECK (false), deliberately: the review list is written only by
+      // scripts/platform/backfill-delivering-employee-identity.mjs on a privileged
+      // connection, and app_runtime holds no INSERT grant. The policy exists so the
+      // refusal is a declared decision rather than an absence (P1-31 CC-29b).
+      'ins_delivery_legacy_identity_review_refused',
       'ins_delivery_records_scope',
       'ins_delivery_signatures_gated',
       'ins_delivery_status_history_scope',
