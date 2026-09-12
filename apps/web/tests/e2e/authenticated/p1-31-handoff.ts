@@ -5,7 +5,8 @@ import { REPO_ROOT } from '../origin';
 /**
  * What the P1-31 acceptance harness hands the browser half, and how to read it.
  *
- * `scripts/dev/owner-acceptance/p1-31-journey.mjs` walks the whole delivery, warranty and
+ * `orchestration/acceptance/p1-31-journey.mjs` — held OUTSIDE this repository, for the
+ * reason §1.7 of the acceptance plan gives — walks the whole delivery, warranty and
  * reporting chain over HTTP and then writes one JSON document naming the records it made.
  * The four `*-p1-31.spec.ts` files read it and walk the SCREENS over those same records.
  *
@@ -62,7 +63,7 @@ export const HANDOFF_ENV = 'ROOTLCO_P131_HANDOFF';
  */
 export const NO_HANDOFF_REASON =
   `no P1-31 acceptance handoff: set ${HANDOFF_ENV} to the handoff.json that ` +
-  'scripts/dev/owner-acceptance/p1-31-journey.mjs wrote. These cases assert on the records ' +
+  'orchestration/acceptance/p1-31-journey.mjs wrote. These cases assert on the records ' +
   'that run made, so without it there is nothing to assert and nothing is claimed.';
 
 /** The handoff, or `null` when this checkout has not run an acceptance. */

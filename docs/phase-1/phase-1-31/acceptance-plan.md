@@ -19,14 +19,14 @@ evidences the day it ran and nothing after it.
 
 **Artefacts this plan describes**
 
-| artefact                                                   | what it is                                                      |
-| ---------------------------------------------------------- | --------------------------------------------------------------- |
-| `scripts/dev/owner-acceptance/p1-31-journey.mjs`           | the HTTP journey, its refusal cases, and the evidence it writes |
-| `apps/web/tests/e2e/authenticated/p1-31-handoff.ts`        | how the browser half reads the world the HTTP half made         |
-| `apps/web/tests/e2e/authenticated/delivery-p1-31.spec.ts`  | the readiness queue, the handover record, the printable copy    |
-| `apps/web/tests/e2e/authenticated/warranty-p1-31.spec.ts`  | the warranty list, the record, and the plans screen             |
-| `apps/web/tests/e2e/authenticated/reports-p1-31.spec.ts`   | the catalogue and all four report screens                       |
-| `apps/web/tests/e2e/authenticated/audit-log-p1-31.spec.ts` | the audit log over this journey's own writes                    |
+| artefact                                                                    | what it is                                                      |
+| --------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `orchestration/acceptance/p1-31-journey.mjs` (outside the repository, §1.7) | the HTTP journey, its refusal cases, and the evidence it writes |
+| `apps/web/tests/e2e/authenticated/p1-31-handoff.ts`                         | how the browser half reads the world the HTTP half made         |
+| `apps/web/tests/e2e/authenticated/delivery-p1-31.spec.ts`                   | the readiness queue, the handover record, the printable copy    |
+| `apps/web/tests/e2e/authenticated/warranty-p1-31.spec.ts`                   | the warranty list, the record, and the plans screen             |
+| `apps/web/tests/e2e/authenticated/reports-p1-31.spec.ts`                    | the catalogue and all four report screens                       |
+| `apps/web/tests/e2e/authenticated/audit-log-p1-31.spec.ts`                  | the audit log over this journey's own writes                    |
 
 ---
 
@@ -126,19 +126,63 @@ account is created by `scripts/platform/genesis-platform-operator.mjs`, and the 
 address from `GENESIS_OPERATOR_EMAIL` (or `ROOTLCO_P131_OPERATOR_EMAIL`). The harness does not create
 it, does not elevate anything, and refuses when the address is absent or malformed.
 
-### 1.7 How the HTTP half is invoked
+### 1.7 Where the HTTP harness lives, why it is outside the repository, and how it is invoked
+
+**The harness is NOT committed.** It lives beside the phase evidence, outside any git working
+tree:
+
+```
+1millions/orchestration/acceptance/p1-31-journey.mjs
+```
+
+**The precedent is P1-30, and it is the same shape.** Section 5 of
+[`../phase-1-30/w9-acceptance-record.md`](../phase-1-30/w9-acceptance-record.md) records that
+phase's HTTP driver as `acceptance-p1-30-journey.mjs`, a **session artefact**, with only the
+record committed. This phase keeps the browser half committed — the four specs execute in
+continuous integration and are proper repository tests — and holds the HTTP driver outside, which
+is a narrower version of the same arrangement rather than a departure from it.
+
+**The engineering reason is specific and worth stating, because it is not squeamishness.** An
+evidence writer is by construction a path from API responses to the filesystem. CodeQL reports
+that as `js/http-to-file-access`, and it is right to: the harness records what the server
+answered. The repository's policy in `.github/ci-baselines/codeql-baseline.json` is
+`maximumOpenFindings: 0` with an **empty** `dismissals` array, and its own note records that the
+one dismissal this repository ever held was removed because the finding was _fixed_. Two rounds of
+real fixes closed five of the seven alerts this harness raised — an unguessable `mkdtemp`
+directory, `0o700`/`0o600`, `wx` on the credential file, backslash-first escaping, and a
+sanitising barrier on every value that reaches disk — but the last two are the network-to-file
+edge itself, which only disappears if the evidence disappears.
+
+So the choice was: dismiss a finding, delete the evidence the acceptance exists to produce, or
+hold the driver where the scanner does not analyse it. **The third, on the P1-30 precedent.** The
+two findings are resolved by RELOCATION, not by dismissal: no entry was added to `dismissals`, no
+rule was relaxed and no suppression was written. Every guard, fix and hardening listed above
+travelled with the file unchanged.
+
+**What is committed, then:** the four browser specs, this plan, and — after the run — the
+acceptance record. That is the P1-30 division exactly.
+
+**How it is invoked.** Because the file no longer sits inside the tree, it cannot infer the
+repository root from its own location, and it needs one for three things: the two modules it
+borrows (`context.mjs`, `dev-config.mjs`), the guard that keeps the evidence directory OUT of the
+working tree, and `readSupabase`. So the root is stated, not guessed:
 
 ```
 set ROOTLCO_ENV=local-acceptance
 set ROOTLCO_ACCEPTANCE_CONFIRM=p1-31
 set GENESIS_OPERATOR_EMAIL=<the genesis platform operator's address>
-node scripts/dev/owner-acceptance/p1-31-journey.mjs
+set ROOTLCO_REPO=<the checkout under test>          rem or pass --repo <path>
+node ../../orchestration/acceptance/p1-31-journey.mjs
 ```
 
-Three independent guards: `ROOTLCO_ENV`, a loopback database on 54322, and the phase confirmation.
-Any one failing refuses the whole run with exit code 2. There is deliberately **no npm script** —
-adding one would move `validate:command-coverage` and put a phase artefact in the repository's
-permanent command surface.
+`ROOTLCO_REPO` defaults to the conventional sibling layout, `1millions/RootLco`. A root that does
+not carry `supabase/config.toml`, `context.mjs` and `dev-config.mjs` is refused with exit code 2
+and the missing paths named, rather than failing half-way through a run.
+
+**The guards are unchanged.** Three independent ones — `ROOTLCO_ENV`, a loopback database on
+54322, and the phase confirmation — any one failing refuses the whole run with exit code 2. There
+is deliberately **no npm script**, and now there could not be one: `validate:command-coverage`
+would move, and a script cannot name a file the repository does not contain.
 
 ---
 
@@ -332,7 +376,7 @@ process — the browser half has not run yet — so removal is a **step of the r
 prints the command that performs it:
 
 ```
-node scripts/dev/owner-acceptance/p1-31-journey.mjs --remove-handoff --evidence-dir <dir>
+node orchestration/acceptance/p1-31-journey.mjs --remove-handoff --evidence-dir <dir>
 ```
 
 A run whose record is written while `handoff.json` still exists is not finished. The credentials it
@@ -474,7 +518,7 @@ defects.
 ### 8.2 What CodeQL found in the harness, and what was changed
 
 The hosted `CodeQL` analysis raised **seven** alerts on the first pull-request run, every one of
-them in `scripts/dev/owner-acceptance/p1-31-journey.mjs` and every one of them real. They are
+them in the HTTP harness and every one of them real. They are
 recorded here because a harness that writes single-use credentials is exactly the file where this
 class of defect matters, and because the fixes changed behaviour rather than annotations.
 

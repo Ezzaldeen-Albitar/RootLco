@@ -11,7 +11,7 @@ import {
 /**
  * P1-31 acceptance, browser half: the vehicle-handover screens.
  *
- * The HTTP harness (`scripts/dev/owner-acceptance/p1-31-journey.mjs`) has already walked a
+ * The HTTP harness (`orchestration/acceptance/p1-31-journey.mjs`, held outside the repository) has already walked a
  * fresh organisation from provisioning to a `delivered` handover. These cases open the
  * screens over THOSE records and assert what an operator sees — the queue's readiness
  * verdict, the handover's own facts, and the printable copy's contract.

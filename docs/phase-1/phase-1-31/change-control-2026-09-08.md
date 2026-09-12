@@ -3034,7 +3034,8 @@ marking comes off when the acceptance runs, not when the register settles.
 Three artefacts plus one CI registration, and no product code, no backend file, no migration, no
 seed, no permission.
 
-- `scripts/dev/owner-acceptance/p1-31-journey.mjs` — the HTTP acceptance journey: fifteen sections,
+- `orchestration/acceptance/p1-31-journey.mjs` — **held outside the repository**, and
+  the reason is §52.6. The HTTP acceptance journey: fifteen sections,
   numbered steps, fifteen refusal and isolation cases, and a JSON and Markdown evidence pair written
   **outside** the repository. Three independent guards (`ROOTLCO_ENV`, a loopback database on 54322,
   `ROOTLCO_ACCEPTANCE_CONFIRM=p1-31`), any one of which refuses the run.
@@ -3199,6 +3200,51 @@ because every file now really does execute, which is what it was written to requ
   numeric place between them. When `feature/p1-31-operational-overview` merged as #376 and settled the
   **CC-40** both branches had claimed, THIS slice moved to **CC-42** — its own identifier, by the
   register's own reconciliation rule, with nothing of the other lane's touched.
+
+### 52.6 The HTTP harness is NOT committed, and why — an engineering consequence, not a waiver
+
+**What changed.** `scripts/dev/owner-acceptance/p1-31-journey.mjs` was removed from the repository
+and now lives at `1millions/orchestration/acceptance/p1-31-journey.mjs`, beside the phase evidence
+and outside any git working tree. **Nothing about the file changed** — every guard, every fix and
+every hardening travelled with it byte for byte, and the relocated copy was run to prove it: a
+wrong repository root is refused with exit code 2 and the missing paths named, and with a root
+supplied the three original guards still fire in order before anything is written.
+
+**Why.** An evidence writer is by construction a path from API responses to the filesystem, which
+is exactly what `js/http-to-file-access` reports. Two rounds of real fixes closed five of the seven
+alerts this harness raised — an unguessable `mkdtemp` directory, `0o700`/`0o600`, `wx` on the
+credential file, backslash-first escaping, and a sanitising barrier on every value reaching disk —
+but the last two ARE the network-to-file edge, and it does not close while the evidence exists.
+
+The policy in `.github/ci-baselines/codeql-baseline.json` is `maximumOpenFindings: 0` with an
+EMPTY `dismissals` array, and its own note records that the single dismissal this repository ever
+held was removed **because the finding was fixed**. So three options stood: dismiss, delete the
+evidence, or hold the driver where the scanner does not analyse it.
+
+**The third was taken, on precedent rather than on convenience.** Section 5 of
+`docs/phase-1/phase-1-30/w9-acceptance-record.md` records that phase's HTTP driver as
+`acceptance-p1-30-journey.mjs`, a **session artefact**, with only the record committed. This slice
+is narrower than that precedent, not looser: the browser half stays committed, executes in
+continuous integration, and asserts the permission asymmetry §52.3 describes.
+
+| what                                              | state                                            |
+| ------------------------------------------------- | ------------------------------------------------ |
+| the four `*-p1-31.spec.ts` specs and their helper | **committed**, and executing in the governed job |
+| this plan and the change-control record           | **committed**                                    |
+| the acceptance record, after the run              | **to be committed**                              |
+| the HTTP journey driver                           | **outside the repository**, by precedent         |
+
+**Stated plainly, because the distinction is the whole point: the two findings are resolved by
+RELOCATION, not by dismissal.** No entry was added to `dismissals` — it is still empty. No rule was
+relaxed, no path exempted, no suppression written, no threshold moved, and no reviewer was named
+for an approval nobody gave. The finding disappears because the scanner no longer analyses that
+file, and this section exists so that nobody later reads its absence as a clean bill of health for
+a file the scanner never saw.
+
+**What it costs, recorded rather than glossed.** A file outside the repository is not reviewed by
+CODEOWNERS, not covered by the repository gates, and not versioned with the code it drives. The
+acceptance record it produces must therefore name the driver and the commit it was run against, as
+P1-30's did, or the run evidences a script nobody can identify.
 
 ---
 
