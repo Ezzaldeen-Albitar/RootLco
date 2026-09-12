@@ -96,8 +96,8 @@ export default async function Page({ params }) {
  * `N route page(s) examined across M owned segment(s)` — in the same change
  * that adds or removes the page or the segment.
  */
-const PINNED_PAGES = 9;
-const PINNED_OWNED_SEGMENTS = 7;
+const PINNED_PAGES = 11;
+const PINNED_OWNED_SEGMENTS = 8;
 
 describe('the derivation is P1-31’s own and is not empty', () => {
   it('derives the delivery and warranty resource roots from the register', () => {
@@ -131,6 +131,13 @@ describe('the derivation is P1-31’s own and is not empty', () => {
     expect(P1_31_OPERATION_IDS.length).toBeGreaterThan(5);
     expect(P1_31_OPERATION_IDS).toContain(id('sal', 'delivery-read'));
     expect(P1_31_OPERATION_IDS).toContain(id('wty', 'warranty-list'));
+    // FE-008 added the warranty record screen and the issue surface on the handover.
+    // Neither widens the segment set — the detail shares the list's resource root and
+    // the generation is addressed under the delivery's — so naming them here is the
+    // only thing that makes them owned. An allow-list that omits an operation its own
+    // phase's screens call is an allow-list that has quietly stopped owning them.
+    expect(P1_31_OPERATION_IDS).toContain(id('wty', 'warranty-detail'));
+    expect(P1_31_OPERATION_IDS).toContain(id('wty', 'warranty-generate'));
     // A stale entry is a VIOLATION rather than a silent shrink, so an honest
     // derivation over the real register reports no problems at all.
     expect(deriveSegments().problems).toEqual([]);
