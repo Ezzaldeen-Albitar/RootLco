@@ -1678,22 +1678,121 @@ total and its two restatements — with their five closing-value ledger entries,
 unit and web tiers, and the regenerated P1-27 evidence manifest. The baseline file classifies as
 `tooling`, a bucket the `p1-31-frontend` ownership profile allows.
 
-## 45. What P-11 changed — the report engine, dataset slice 2 (`technician_labor_time`) — PROVISIONAL
+---
+
+# FE-007 — the printable delivery handover document, of 2026-09-11
+
+## 44. What the FE-007 slice changed — the printable delivery handover document (PROVISIONAL)
+
+**Slice:** `feature/p1-31-delivery-document`, ownership profile `p1-31-frontend`.
+**Baseline:** protected `develop` **deb404c1901d2b270a71f5336978d09a04e16293**, merged in on
+2026-09-12 — the head that carries the readiness queue (#367) and the warranty record screens
+(#369). It supersedes the earlier integration of **c1b1a8cdd822e3e70667600a0309d36a7d6438c6** on
+2026-09-11; the slice was written against **01c32937c2d6f5f78f5757cb83c6fdf2995f1dad**.
+**Status:** implemented and **unmerged**, open as pull request **#368** against `develop`. This
+document records no hosted run and claims no acceptance.
+
+The full record is [`delivery-document.md`](./delivery-document.md). In short: the vehicle-handover
+screen gains a printable sheet, composed on the client from reads it already holds, publishing
+nothing and writing nothing.
+
+**The Owner's decision (D-7, 2026-09-10), in the Owner's words.** The delivery document is a
+**permission-checked printable operational view**. Stored immutable document versions **remain
+deferred** and arrive, if ever, through their own contract rather than as a side effect of a print
+view. The printable view is **never described as an immutable archive**, in the interface, the
+documentation or a commit message. It is **permission-checked**: a caller sees only what the reads
+they already hold publish. Recorded in
+[`owner-decisions-2026-09-10.md`](./owner-decisions-2026-09-10.md) §2.
+
+**Measured facts (not part of the decision).** The shared print frame, the print stylesheet and the
+invoice screen's print panel already exist and are the approach D-7 names. Six delivery reads are
+already consumed by this screen. The release checks declare the financial read code on top of the
+delivery one. The delivering employee, the vehicle, the visit and the final odometer reading are
+bare identifiers with no reader in the platform. A work-order summary read DOES exist and publishes
+a work-order number, a customer display name, a registration plate and a make and model under
+`wo.work_order.read`. The session carries no company or branch NAME.
+
+**Engineering consequence (not an Owner decision).** The sheet is a panel of the existing screen
+rather than a second route; its reads happen when it is opened; the release checks are reused from
+the screen's one eligibility answer rather than read again; the work-order read is used under its
+own code and is not made without it; each part prints the OUTCOME of its read rather than an empty
+section; one page of each list is printed and truncation is said; the signature image and the
+identity evidence stay references; no company, branch or organisation name and no figure is
+printed; the footer disclaimer is a translated string in both catalogues.
+
+### 44.1 What was published, and what was minted (PROVISIONAL)
+
+| published | minted  |
+| --------- | ------- |
+| nothing   | nothing |
+
+No operation, no route, no path, no permission, no audit action, no migration and no seed. The
+operation register and the permission catalogue are unchanged, and `npm run validate:p1-31-access`
+reports the same derivation over the same page count as it does on the base commit.
+
+### 44.2 Dispositions (PROVISIONAL)
+
+| id        | finding                                                                                                                                                                                    | measured                                                                                                                                                                                                                                                                                                                 | disposition                                                                                                                                                                                                                                                                                                                                                                                              | owner / slice | status |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------ |
+| **CC-32** | the printed sheet carries a **reference** for the delivering employee where a person's name belongs, so a customer-facing printout names nobody for the person who handed the vehicle over | `sal.delivery_records.delivering_employee_id` has no reader anywhere in the platform, and the display-name field arrives with the backend slice D-12 describes, which is not merged at this head. The reception acknowledgement solved the same problem with a stamped identity, and no equivalent exists for a handover | **accepted, and the remedy is NAMED rather than performed.** The sheet prints the identifier as the labelled reference it is and states that the system holds no name for it. Inventing a name on this tier — or resolving one from a live directory read — would print, and hand to a customer, either a fabrication or the account's name TODAY rather than at the handover. The fix is the D-12 slice | later slice   | open   |
+
+**Identifier note — the section number and the identifier are PROVISIONAL, allocated 2026-09-11.**
+At the base commit `c1b1a8cd` the register runs to **section 40** and **CC-01 … CC-28**: the
+report engine (P-11) settled **section 40** with **CC-27** and **CC-28** at this sync, and the
+sections and identifiers below 40 are settled with it. P1-31 lanes are still in flight and unmerged
+at that head, and each will take a heading — and, where it raises one, an identifier — before this
+slice can be integrated. Rather than claim a number another lane
+may already hold, this slice takes **section 44** and **CC-32** provisionally: far enough ahead to
+avoid a collision, and to be **re-seated against the then-current register at integration**, exactly
+as §38 and §39 were seated against the head they were integrated onto. Nothing downstream may treat
+either number as settled until that reseating happens.
+
+### 44.3 What this slice did NOT do (PROVISIONAL)
+
+- **No stored document version.** Nothing is created, uploaded, registered or linked. Stored
+  immutable versions remain deferred per D-7, and this printout is not one and does not claim to be.
+- **No backend print route and no new operation.** `apps/api` and `supabase` are not edited at all.
+- **No permission was minted.** `wo.work_order.read` is a pre-existing code the work-order screens
+  already consult; it is resolved on the delivery route page for the sheet's work-order read and
+  gates nothing else.
+- **Nothing is written from the sheet.** Neither new file imports a write adapter, and the test
+  suite asserts every write of this feature untouched while the sheet is composed and printed.
+- **No gate was weakened and no allow-list widened.** No suppression comment was added.
+- **No acceptance is claimed.** Pull request #368 is open and unmerged; this document records no
+  hosted run, no browser pass and no environment.
+
+### 44.4 Proof (PROVISIONAL)
+
+| id       | what was shown                                                                                                                              |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D7-1** | a caller the route refuses reaches no control and makes none of the reads the sheet needs                                                   |
+| **D7-2** | nothing is read for the sheet until it is opened                                                                                            |
+| **D7-3** | the opened sheet carries the frame the print stylesheet finds, with the rows the mocked reads published                                     |
+| **D7-4** | the customer, the plate and the work-order number come from the work-order read when its code is held, and that read is NOT made without it |
+| **D7-5** | the financial half is absent, unrequested and SAID to be absent without the financial read code                                             |
+| **D7-6** | a refused part prints as a refusal with the backend's reference, never as an empty section, and a truncated list says so                    |
+| **D7-7** | the disclaimer D-7 requires is on the sheet in English and in Arabic                                                                        |
+| **D7-8** | the print control appears only after the reads land and sits inside the toolbar the print stylesheet hides                                  |
+| **D7-9** | every write adapter of this feature is untouched throughout                                                                                 |
+
+## 45. What P-11 changed — the report engine, dataset slice 2 (`technician_labor_time`)
 
 **Slice:** `remediation/p1-31-backend-report-engine-datasets`, ownership profile `p1-31-backend`.
 **Baseline:** `remediation/p1-31-backend-report-engine-work-orders` at `c7fb9f9e` — PR #364's
 branch, which is itself UNMERGED. This slice is STACKED on it and inherits its unmerged state.
-**Restated at the `deb404c1` merge, 2026-09-12:** PR #364 has since merged, so the base of this
-slice is now protected `develop` `deb404c1` and the stacking above is history rather than current
-state. Sections 42 and 43 are allocated and settled on `develop`; section 41 is still unwritten and
-section 44 is still unallocated, so the heading numbers and **CC-33**, **CC-34** and **CC-35** stay
-PROVISIONAL.
+**Restated at the `8c4e6a9c` merge, 2026-09-12:** PR #364 has since merged, so the base of this
+slice is now protected `develop` `8c4e6a9c` and the stacking above is history rather than current
+state. Sections 42 and 43 are allocated and settled on `develop`, and section 44 has since been
+taken by the FE-007 printable delivery handover document, merged as #368 — so the heading numbers
+45, 46 and 47 are settled and no longer provisional. Section 41 remains unwritten and is not a
+number this lane holds. **CC-33**, **CC-34** and **CC-35** stay as allocated: section 44 raised
+**CC-32**, so nothing collides.
 
-**Identifier allocation — PROVISIONAL, checked 2026-09-11 against this branch's own base.** Section
+**Identifier allocation — re-checked 2026-09-12 against protected `develop` `8c4e6a9c`.** Section
 36.1 records the register's rule: identifiers are allocated when a finding is raised and are never
-renumbered to follow heading order. The rows below are what this lane can see from `c7fb9f9e`, which
-is behind protected `develop`; they were NOT read off the merged tree, and that is why both the
-heading and the identifier are provisional.
+renumbered to follow heading order. The rows below were first read from `c7fb9f9e`, which was behind
+protected `develop`; they have since been read off the merged tree at `8c4e6a9c`, which is why the
+heading number and the identifier are now settled rather than provisional.
 
 | id                   | lane                                                 | state as this branch can see it                           |
 | -------------------- | ---------------------------------------------------- | --------------------------------------------------------- |
@@ -1701,12 +1800,12 @@ heading and the identifier are provisional.
 | section 41           | the coordinator's standing allocation: P-17          | still not written at the `deb404c1` merge                 |
 | section 42           | the ready-for-delivery queue screen (FE-001)         | on protected `develop` — settled                          |
 | section 43           | the warranty record screens (FE-008, FE-009 partial) | on protected `develop` — settled                          |
-| section 44           | unallocated                                          | still free: FE-007 is unmerged, so nothing has claimed it |
-| **CC-29 … CC-32**    | not allocated by this lane                           | reserved for the lanes between section 40 and this one    |
-| **CC-33**            | this slice                                           | this branch, section 45 — **PROVISIONAL**                 |
+| section 44           | the printable delivery handover document (FE-007)    | on protected `develop` (#368) — settled, raised **CC-32** |
+| **CC-29 … CC-32**    | not allocated by this lane                           | **CC-32** is section 44’s; the rest sit between 40 and 45 |
+| **CC-33**            | this slice                                           | this branch, section 45 — settled, no collision           |
 
-**Both the section number and the identifier must be re-checked against protected `develop` before
-this branch merges, and renumbered if either collides.** A register whose identifiers collide is
+**The section number and the identifier were re-checked against protected `develop` `8c4e6a9c` at
+this merge and neither collides, so neither is renumbered.** A register whose identifiers collide is
 worse than one that renumbers. Nothing in this section depends on the number being right.
 
 ### 45.1 What was published, and what was minted
@@ -1861,23 +1960,25 @@ against the shared database and no merge.
 
 ---
 
-## 46. What P-11 changed — the report engine, dataset slice 3 (`inventory_movements`) — PROVISIONAL
+## 46. What P-11 changed — the report engine, dataset slice 3 (`inventory_movements`)
 
 **Slice:** `remediation/p1-31-backend-report-engine-datasets`, ownership profile `p1-31-backend`.
 **Baseline:** `remediation/p1-31-backend-report-engine-work-orders` at `c7fb9f9e` — PR #364's
 branch, which is itself UNMERGED. This slice is STACKED on it and inherits its unmerged state.
-**Restated at the `deb404c1` merge, 2026-09-12:** PR #364 has since merged, so the base of this
-slice is now protected `develop` `deb404c1` and the stacking above is history rather than current
-state. Sections 42 and 43 are allocated and settled on `develop`; section 41 is still unwritten and
-section 44 is still unallocated, so the heading numbers and **CC-33**, **CC-34** and **CC-35** stay
-PROVISIONAL.
+**Restated at the `8c4e6a9c` merge, 2026-09-12:** PR #364 has since merged, so the base of this
+slice is now protected `develop` `8c4e6a9c` and the stacking above is history rather than current
+state. Sections 42 and 43 are allocated and settled on `develop`, and section 44 has since been
+taken by the FE-007 printable delivery handover document, merged as #368 — so the heading numbers
+45, 46 and 47 are settled and no longer provisional. Section 41 remains unwritten and is not a
+number this lane holds. **CC-33**, **CC-34** and **CC-35** stay as allocated: section 44 raised
+**CC-32**, so nothing collides.
 
-**Identifier allocation — PROVISIONAL, checked 2026-09-11 against this branch's own base.** Section
+**Identifier allocation — re-checked 2026-09-12 against protected `develop` `8c4e6a9c`.** Section
 36.1 records the register's rule: identifiers are allocated when a finding is raised and are never
 renumbered to follow heading order. **CC-34** is this section's allocation, taken from the same base
-as **CC-33** and equally unverified against protected `develop`. **Both the section number and the
-identifier must be re-checked against `develop` before this branch merges, and renumbered if either
-collides.** Nothing in this section depends on the number being right.
+as **CC-33** and re-checked with it. **Neither the section number nor the identifier collides on
+`develop` `8c4e6a9c`, so neither is renumbered.** Nothing in this section depends on the number
+being right.
 
 ### 46.1 What was published, and what was minted
 
@@ -1980,23 +2081,25 @@ this branch's own turn after #364 merges.
 
 ---
 
-## 47. What P-11 changed — the report engine, dataset slice 4 (`invoice_payment_summary`) — PROVISIONAL
+## 47. What P-11 changed — the report engine, dataset slice 4 (`invoice_payment_summary`)
 
 **Slice:** `remediation/p1-31-backend-report-engine-datasets`, ownership profile `p1-31-backend`.
 **Baseline:** `remediation/p1-31-backend-report-engine-work-orders` at `c7fb9f9e` — PR #364's
 branch, which is itself UNMERGED. This slice is STACKED on it and inherits its unmerged state.
-**Restated at the `deb404c1` merge, 2026-09-12:** PR #364 has since merged, so the base of this
-slice is now protected `develop` `deb404c1` and the stacking above is history rather than current
-state. Sections 42 and 43 are allocated and settled on `develop`; section 41 is still unwritten and
-section 44 is still unallocated, so the heading numbers and **CC-33**, **CC-34** and **CC-35** stay
-PROVISIONAL.
+**Restated at the `8c4e6a9c` merge, 2026-09-12:** PR #364 has since merged, so the base of this
+slice is now protected `develop` `8c4e6a9c` and the stacking above is history rather than current
+state. Sections 42 and 43 are allocated and settled on `develop`, and section 44 has since been
+taken by the FE-007 printable delivery handover document, merged as #368 — so the heading numbers
+45, 46 and 47 are settled and no longer provisional. Section 41 remains unwritten and is not a
+number this lane holds. **CC-33**, **CC-34** and **CC-35** stay as allocated: section 44 raised
+**CC-32**, so nothing collides.
 
-**Identifier allocation — PROVISIONAL, checked 2026-09-11 against this branch's own base.** Section
+**Identifier allocation — re-checked 2026-09-12 against protected `develop` `8c4e6a9c`.** Section
 36.1 records the register's rule: identifiers are allocated when a finding is raised and are never
 renumbered to follow heading order. **CC-35** is this section's allocation, taken from the same base
-as **CC-33** and **CC-34** and equally unverified against protected `develop`. **Both the section
-number and the identifier must be re-checked against `develop` before this branch merges, and
-renumbered if either collides.** Nothing in this section depends on the number being right.
+as **CC-33** and **CC-34** and re-checked with them. **Neither the section number nor the identifier
+collides on `develop` `8c4e6a9c`, so neither is renumbered.** Nothing in this section depends on the
+number being right.
 
 ### 47.1 What was published, and what was minted
 
