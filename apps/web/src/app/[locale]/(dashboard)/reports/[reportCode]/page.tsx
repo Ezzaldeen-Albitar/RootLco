@@ -12,7 +12,7 @@ import { requireSession } from '@/features/authentication/api/session';
 import { holds } from '@/features/crm/permissions';
 import { ReportScreen } from '@/features/reports/components/ReportScreen';
 import { readReport, readReportScopes } from '@/features/reports/reports-api';
-import { REPORT_PERMISSIONS } from '@/features/reports/reports-contract';
+import { namedReportSelection, REPORT_PERMISSIONS } from '@/features/reports/reports-contract';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 import { pageMetadata } from '@/lib/page-metadata';
@@ -45,6 +45,15 @@ import { pageMetadata } from '@/lib/page-metadata';
  * approximates that check or guesses which codes a report needs — a guess would
  * either hide a report an operator may read or offer one they may not.
  *
+ * ## The address may fill the form in, and may not submit it
+ *
+ * A link from the operational overview carries the company, the branch and the
+ * two days the summary was read over. They are passed to the screen as the
+ * ADDRESS's own values and resolved there against the caller's authorized
+ * directory; nothing is run for the operator, and a branch the directory does not
+ * hold is dropped rather than shown. That is the whole of the prefill: no default
+ * period, no default branch, and no read issued from a parameter.
+ *
  * ## A code that is not published answers NOT FOUND, and says no more
  *
  * An unknown code, a draft, an archived definition and another workshop's report
@@ -54,8 +63,10 @@ import { pageMetadata } from '@/lib/page-metadata';
  */
 export default async function ReportPage({
   params,
+  searchParams,
 }: {
   readonly params: Promise<{ locale: string; reportCode: string }>;
+  readonly searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { locale, reportCode } = await params;
   if (!isLocale(locale)) notFound();
@@ -135,6 +146,7 @@ export default async function ReportPage({
   }
 
   const scopeOptions = await readReportScopes();
+  const query = await searchParams;
 
   return shell(
     <ReportScreen
@@ -142,6 +154,7 @@ export default async function ReportPage({
       messages={messages}
       definition={definition.data}
       scopeOptions={scopeOptions}
+      named={namedReportSelection(query)}
     />
   );
 }

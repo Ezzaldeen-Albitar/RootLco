@@ -67,7 +67,10 @@ vi.mock('next/navigation', () => ({
 const { ReportCatalogueScreen } =
   await import('@/features/reports/components/ReportCatalogueScreen');
 const { ReportScreen } = await import('@/features/reports/components/ReportScreen');
-type RoutePage = (args: { params: Promise<Record<string, string>> }) => Promise<React.ReactNode>;
+type RoutePage = (args: {
+  params: Promise<Record<string, string>>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) => Promise<React.ReactNode>;
 const CataloguePage = (await import('@/app/[locale]/(dashboard)/reports/page'))
   .default as unknown as RoutePage;
 const ReportRoutePage = (await import('@/app/[locale]/(dashboard)/reports/[reportCode]/page'))
@@ -201,12 +204,21 @@ beforeEach(() => {
 });
 
 async function renderCataloguePage() {
-  const ui = await CataloguePage({ params: Promise.resolve({ locale: 'en' }) });
+  const ui = await CataloguePage({
+    params: Promise.resolve({ locale: 'en' }),
+    searchParams: Promise.resolve({}),
+  });
   return renderLtr(ui as React.ReactElement);
 }
 
-async function renderReportPage(locale = 'en') {
-  const ui = await ReportRoutePage({ params: Promise.resolve({ locale, reportCode: CODE }) });
+async function renderReportPage(
+  locale = 'en',
+  search: Record<string, string | string[] | undefined> = {}
+) {
+  const ui = await ReportRoutePage({
+    params: Promise.resolve({ locale, reportCode: CODE }),
+    searchParams: Promise.resolve(search),
+  });
   return locale === 'ar'
     ? renderRtl(ui as React.ReactElement)
     : renderLtr(ui as React.ReactElement);
@@ -439,6 +451,50 @@ describe('the report screen requests nothing until it has a branch and a period'
     await renderReportPage();
     expect(screen.getByText(EN['state.notFound.title'] as string)).toBeVisible();
     expect(readReportScopes).not.toHaveBeenCalled();
+  });
+});
+
+describe('the address may fill the form in, and may not run it', () => {
+  it('fills the four controls from the address and still runs nothing', async () => {
+    // The operational overview links here carrying the branch and the period its
+    // summary was read over, so the rows are the rows behind the figure.
+    await renderReportPage('en', {
+      companyId: COMPANY_ID,
+      branchId: BRANCH_ID,
+      from: '2026-09-01',
+      to: '2026-09-08',
+    });
+    expect(
+      (screen.getByRole('combobox', { name: labelled('reports.run.company') }) as HTMLSelectElement)
+        .value
+    ).toBe(COMPANY_ID);
+    expect(
+      (screen.getByRole('combobox', { name: labelled('reports.run.branch') }) as HTMLSelectElement)
+        .value
+    ).toBe(BRANCH_ID);
+    expect(screen.getByLabelText(labelled('reports.run.from'))).toHaveValue('2026-09-01');
+    expect(screen.getByLabelText(labelled('reports.run.to'))).toHaveValue('2026-09-08');
+    // Filled in is not submitted. Nothing is read until the operator asks.
+    expect(runReport).not.toHaveBeenCalled();
+    expect(screen.getByText(EN['reports.run.idleTitle'] as string)).toBeVisible();
+  });
+
+  it('drops a branch the caller’s own directory does not hold, and guesses nothing', async () => {
+    await renderReportPage('en', { branchId: '99999999-9999-4999-8999-999999999999' });
+    const branch = screen.getByRole('combobox', {
+      name: labelled('reports.run.branch'),
+    }) as HTMLSelectElement;
+    // The caller has exactly one branch, which is what the form offers; the branch
+    // in the address is not shown, and is not substituted for either.
+    expect(branch.value).toBe(BRANCH_ID);
+    expect(screen.queryByText('99999999-9999-4999-8999-999999999999')).toBeNull();
+    expect(runReport).not.toHaveBeenCalled();
+  });
+
+  it('refuses a period in the address that is not a calendar day', async () => {
+    await renderReportPage('en', { from: 'yesterday', to: '2026-9-1' });
+    expect(screen.getByLabelText(labelled('reports.run.from'))).toHaveValue('');
+    expect(screen.getByLabelText(labelled('reports.run.to'))).toHaveValue('');
   });
 });
 

@@ -250,6 +250,107 @@ export interface ReportDefinition {
   readonly titleKey: string | null;
 }
 
+/**
+ * The four values a run is addressed by: the branch pair and the half-open period.
+ *
+ * One type for the form's draft, for what it submits and for what a screen sends,
+ * because they are one thing. It is not a filter: the pair is the operation's
+ * authorization TARGET, and the period is the selection every figure is computed
+ * over.
+ */
+export interface ReportScopeSelection {
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly from: string;
+  readonly to: string;
+}
+
+/**
+ * The selection an ADDRESS names, read out of a route's query parameters.
+ *
+ * One rule, in one place, for both report routes: the overview reads the branch
+ * the FE-016 link fixes, and the report screen reads the whole selection an
+ * overview section drilled through with. Nothing is validated or resolved here —
+ * `initialReportScope` does that against the caller's own authorized directory and
+ * drops whatever is not in it. A parameter that appears twice yields its FIRST
+ * value: an address that names two branches has named neither, and taking the
+ * last would be a guess dressed as a rule.
+ *
+ * It lives beside the contract rather than in the route files because the scope
+ * vocabulary is this feature's own. A route page that named a company or a branch
+ * in its own source would be a page holding scope words, which is the shape
+ * `no-client-asserted-scope` refuses — and correctly: the pair is a resource
+ * target the operation authorizes, and only the adapter and the contract may
+ * speak it.
+ */
+export function namedReportSelection(
+  query: Readonly<Record<string, string | readonly string[] | undefined>>
+): Partial<ReportScopeSelection> {
+  const one = (name: string): string | undefined => {
+    const raw = query[name];
+    const value = Array.isArray(raw) ? raw[0] : (raw as string | undefined);
+    return value !== undefined && value.length > 0 ? value : undefined;
+  };
+  const named: Record<string, string> = {};
+  for (const name of ['companyId', 'branchId', 'from', 'to']) {
+    const value = one(name);
+    if (value !== undefined) named[name] = value;
+  }
+  return named;
+}
+
+/**
+ * What a scope form starts with, given the caller's directory and an address.
+ *
+ * Three sources, in this order, and each is refused unless it is answerable:
+ *
+ *  1. **A company or branch named in the address** — a drill-through from the
+ *     overview, or the FE-016 link that fixes a branch. It is used only when the
+ *     caller's own directory holds it. A named branch outside that directory is
+ *     DROPPED rather than shown, because a selector holding a branch nobody may
+ *     report on is a control whose only outcome is a refusal, and guessing a
+ *     different branch would answer a question the operator did not ask.
+ *  2. **A company derived from a named branch**, when the address named a branch
+ *     and no company. The pair travels together or not at all.
+ *  3. **The only choice there is** — one company, or one branch of the chosen
+ *     company. This is the behaviour the report screen already had.
+ *
+ * There is NO default period: `from` and `to` are taken from the address only
+ * when they are calendar days, and are otherwise empty. "The last thirty days" is
+ * a business rule nobody has decided, and a period this side invented would be a
+ * selection every figure was computed over that the operator never chose.
+ */
+export function initialReportScope(
+  options: ReportScopeOptions,
+  named: Partial<ReportScopeSelection> = {}
+): ReportScopeSelection {
+  const namedBranch =
+    options.branches.find(
+      (branch) => named.branchId !== undefined && branch.id === named.branchId
+    ) ?? null;
+  const inDirectory = (companyId: string): boolean =>
+    options.companies.some((company) => company.id === companyId);
+
+  const fromAddress =
+    named.companyId !== undefined && inDirectory(named.companyId) ? named.companyId : '';
+  const fromBranch =
+    namedBranch !== null && inDirectory(namedBranch.companyId) ? namedBranch.companyId : '';
+  const onlyCompany = options.companies.length === 1 ? (options.companies[0]?.id ?? '') : '';
+  const companyId = fromAddress !== '' ? fromAddress : fromBranch !== '' ? fromBranch : onlyCompany;
+
+  const ofCompany = options.branches.filter((branch) => branch.companyId === companyId);
+  const onlyBranch = ofCompany.length === 1 ? (ofCompany[0]?.id ?? '') : '';
+  const branchId =
+    namedBranch !== null && namedBranch.companyId === companyId ? namedBranch.id : onlyBranch;
+
+  return {
+    companyId,
+    branchId,
+    from: named.from !== undefined && isReportDay(named.from) ? named.from : '',
+    to: named.to !== undefined && isReportDay(named.to) ? named.to : '',
+  };
+}
+
 /** The named company and branch choices a run is addressed to. */
 export interface ReportScopeOptions {
   readonly companies: readonly { readonly id: string; readonly legalName: string }[];

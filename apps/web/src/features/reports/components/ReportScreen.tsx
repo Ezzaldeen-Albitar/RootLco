@@ -2,7 +2,6 @@
 
 import { useCallback, useState } from 'react';
 import Link from 'next/link';
-import { SelectField, TextField } from '@/components/forms/Field';
 import { EmptyState } from '@/components/states/States';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
@@ -12,8 +11,7 @@ import { runReport } from '../reports-api';
 import { fieldHeading, reportTitle, runTitle } from '../report-labels';
 import {
   drillThroughHref,
-  isReportDay,
-  isReportPeriod,
+  initialReportScope,
   reportGroups,
   REPORT_PAGE_SIZE,
   type ReportCell,
@@ -23,17 +21,18 @@ import {
   type ReportRow,
   type ReportRun,
   type ReportScopeOptions,
+  type ReportScopeSelection,
 } from '../reports-contract';
 import {
   ContextFact,
   MachineName,
-  REPORT_PRIMARY_BUTTON,
   REPORT_SECONDARY_BUTTON,
   REPORT_TABLE_CELL,
   REPORT_TABLE_HEADER,
   ReportFailure,
   ReportLoading,
 } from './ReportShell';
+import { ReportScopeForm } from './ReportScopeForm';
 import { useCursorTrail } from './use-cursor-trail';
 
 /**
@@ -96,38 +95,44 @@ import { useCursorTrail } from './use-cursor-trail';
  * `executable` is the platform's own answer, and a form drawn over a definition
  * the engine does not implement is a control whose only possible outcome is a
  * refusal.
+ *
+ * ## The form is shared, and the address may fill it in
+ *
+ * The company, branch and period controls live in `ReportScopeForm`, which the
+ * operational overview asks the same question with (FE-010). The behaviour is the
+ * one this screen always had; only the file changed.
+ *
+ * A selection named in the ADDRESS fills the form in — that is how the overview's
+ * drill-through arrives here carrying the branch and the period the figure was
+ * read over, instead of asking the operator to type them again under a heading
+ * that claims to be about that branch. Nothing is submitted for them, and
+ * anything the caller's own directory does not hold is dropped rather than shown:
+ * see `initialReportScope`.
  */
-
-interface Submitted {
-  readonly companyId: string;
-  readonly branchId: string;
-  readonly from: string;
-  readonly to: string;
-}
 
 export function ReportScreen({
   locale,
   messages,
   definition,
   scopeOptions,
+  named = {},
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly definition: ReportDefinition;
   readonly scopeOptions: ReadState<ReportScopeOptions>;
+  /**
+   * The selection the ADDRESS named — the overview's drill-through, or a link
+   * somebody kept. Resolved against the caller's own directory by
+   * `initialReportScope`, which drops anything that is not there rather than
+   * approximating it, and nothing is submitted for the operator: the form is
+   * filled in, and they press the button.
+   */
+  readonly named?: Partial<ReportScopeSelection>;
 }) {
   const companies = scopeOptions.status === 'ok' ? scopeOptions.data.companies : [];
   const branches = scopeOptions.status === 'ok' ? scopeOptions.data.branches : [];
-  const onlyCompany = companies.length === 1 ? (companies[0]?.id ?? '') : '';
-  const onlyCompanyBranches = branches.filter((branch) => branch.companyId === onlyCompany);
-  const [draft, setDraft] = useState<Submitted>({
-    companyId: onlyCompany,
-    branchId: onlyCompanyBranches.length === 1 ? (onlyCompanyBranches[0]?.id ?? '') : '',
-    from: '',
-    to: '',
-  });
-  const [submitted, setSubmitted] = useState<Submitted | null>(null);
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const [submitted, setSubmitted] = useState<ReportScopeSelection | null>(null);
 
   const title = reportTitle(messages, definition);
 
@@ -167,36 +172,6 @@ export function ReportScreen({
     );
   }
 
-  const submit = () => {
-    const found: Record<string, string> = {};
-    if (!companies.some((company) => company.id === draft.companyId)) {
-      found['companyId'] = 'reports.run.chooseCompany';
-    }
-    if (
-      !branches.some(
-        (branch) => branch.id === draft.branchId && branch.companyId === draft.companyId
-      )
-    ) {
-      found['branchId'] = 'reports.run.chooseBranch';
-    }
-    if (!isReportDay(draft.from)) found['from'] = 'reports.run.needDay';
-    if (!isReportDay(draft.to)) found['to'] = 'reports.run.needDay';
-    if (isReportDay(draft.from) && isReportDay(draft.to) && !isReportPeriod(draft.from, draft.to)) {
-      // The half-open rule, said where it was broken. `to` is EXCLUDED, so an
-      // equal pair covers no day at all — and an operator who meant one day has
-      // to name the day after it.
-      found['to'] = 'reports.run.toAfterFrom';
-    }
-    setErrors(found);
-    if (Object.keys(found).length > 0) return;
-    setSubmitted({ ...draft });
-  };
-
-  const errorFor = (name: string): string | undefined => {
-    const key = errors[name];
-    return key === undefined ? undefined : translate(messages, key as keyof Messages);
-  };
-
   const chosenBranch = branches.find((branch) => branch.id === submitted?.branchId) ?? null;
   const chosenCompany = companies.find((company) => company.id === submitted?.companyId) ?? null;
 
@@ -204,69 +179,14 @@ export function ReportScreen({
     <div className="flex flex-col gap-4">
       <ReportHeading title={title} code={definition.reportCode} />
 
-      <form
-        noValidate
-        aria-label={translate(messages, 'reports.run.formLabel')}
-        className="rounded-lg border border-border bg-surface p-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          submit();
-        }}
-      >
-        <div className="grid gap-3 sm:grid-cols-2">
-          <SelectField
-            label={translate(messages, 'reports.run.company')}
-            options={companies.map((company) => ({ value: company.id, label: company.legalName }))}
-            placeholder={translate(messages, 'form.select.placeholder')}
-            required
-            value={draft.companyId}
-            onChange={(event) =>
-              setDraft((current) => ({ ...current, companyId: event.target.value, branchId: '' }))
-            }
-            error={errorFor('companyId')}
-          />
-          <SelectField
-            label={translate(messages, 'reports.run.branch')}
-            options={branches
-              .filter((branch) => branch.companyId === draft.companyId)
-              .map((branch) => ({ value: branch.id, label: branch.name }))}
-            placeholder={translate(messages, 'form.select.placeholder')}
-            required
-            disabled={!draft.companyId}
-            value={draft.branchId}
-            onChange={(event) =>
-              setDraft((current) => ({ ...current, branchId: event.target.value }))
-            }
-            error={errorFor('branchId')}
-          />
-          <TextField
-            type="date"
-            label={translate(messages, 'reports.run.from')}
-            description={translate(messages, 'reports.run.fromHint')}
-            required
-            value={draft.from}
-            onChange={(event) => setDraft((current) => ({ ...current, from: event.target.value }))}
-            error={errorFor('from')}
-          />
-          <TextField
-            type="date"
-            label={translate(messages, 'reports.run.to')}
-            description={translate(messages, 'reports.run.toHint')}
-            required
-            value={draft.to}
-            onChange={(event) => setDraft((current) => ({ ...current, to: event.target.value }))}
-            error={errorFor('to')}
-          />
-        </div>
-        <p className="mt-3 text-caption text-text-muted" lang={locale}>
-          {translate(messages, 'reports.run.periodRule')}
-        </p>
-        <div className="mt-4">
-          <button type="submit" className={REPORT_PRIMARY_BUTTON}>
-            {translate(messages, 'reports.run.show')}
-          </button>
-        </div>
-      </form>
+      <ReportScopeForm
+        locale={locale}
+        messages={messages}
+        options={scopeOptions.data}
+        initial={initialReportScope(scopeOptions.data, named)}
+        submitKey="reports.run.show"
+        onSubmit={setSubmitted}
+      />
 
       {submitted === null ? (
         <EmptyState
@@ -320,7 +240,7 @@ function ReportResults({
   readonly locale: Locale;
   readonly messages: Messages;
   readonly reportCode: string;
-  readonly submitted: Submitted;
+  readonly submitted: ReportScopeSelection;
   readonly companyName: string | null;
   readonly branchName: string | null;
 }) {
