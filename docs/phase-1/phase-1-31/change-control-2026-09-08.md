@@ -2888,3 +2888,78 @@ exists.
 - **No gate was weakened, no allow-list narrowed, no suppression added and no floor moved.** The one
   gate edit widens a rule's reach. The committed test-count baseline is untouched by this slice.
 - **No hosted run, no database tier, no browser acceptance and no end-to-end result is claimed.**
+
+## 51. Starting a handover with a validated delivering employee (FE-002) — PROVISIONAL
+
+Full record: [`delivery-start-selector.md`](./delivery-start-selector.md).
+
+### 51.1 Identifier allocation — PROVISIONAL, read on `develop` `811e9891`
+
+The register on this branch's base runs to **section 50** and to **CC-38**, both settled by the report
+screens slice merged with PR #371. So this slice takes **section 51** and **CC-39**.
+
+| identifier | slice                                           | state on this base                       |
+| ---------- | ----------------------------------------------- | ---------------------------------------- |
+| **CC-36**  | the warranty plan administration screens (#375) | merged, section 48                       |
+| **CC-37**  | a lane not on this head                         | claims **section 49**                    |
+| **CC-38**  | the report screens (#371)                       | merged, section 50                       |
+| **CC-39**  | this slice                                      | **PROVISIONAL**, this branch, section 51 |
+
+Both are marked PROVISIONAL for one reason and one only: **section 49 and CC-37 are a LOWER pair
+still held by a lane that has not merged**, named in § 50.1 as "a lane not on this head". Nothing
+above CC-39 is claimed here. If either number is found taken at merge time this slice's heading and
+identifier move, and § 48.1's rule stands — an identifier is a claim about the register at the moment
+it was raised and is never renumbered to follow heading order.
+
+### 51.2 What was delivered
+
+The **Start** control on a work order with no handover, withheld in PR #362 and withheld through four
+merges because the field it had to send named nobody. Prerequisite **P-17** merged with PR #370 and
+gave the delivering employee a real identity, so the control returns against that contract: a
+permission-gated picker over the employee register, and a create that sends the work order and the
+chosen person and nothing else.
+
+This is the Frontend half of the Owner's decision of 2026-09-10, quoted verbatim with its path in
+[`delivery-start-selector.md`](./delivery-start-selector.md) § 1, including the clarification that an
+employee's home branch must not restrict authorized work in other branches.
+
+Two docblocks were corrected in the same change because they asserted a rule the repository no longer
+matches: both `apps/web/src/lib/contracts/delivery-contract.ts` and
+`apps/web/src/features/delivery/delivery-contract.ts` stated that the delivering-employee reference
+had no foreign key anywhere in the platform. It has had one since P-17. The delivery record type
+gained the stamped display name the reads already publish, and the delivery screen and the printable
+sheet now show that name where they printed a bare reference.
+
+### 51.3 Dispositions
+
+| id           | what was found                                                                                       | measurement                                                                                                                                                                                                                                                                                                            | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | owner                  | state                |
+| ------------ | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | -------------------- |
+| **CC-39**    | **one catalogue code, `ERR-VAL-001`, carries two distinct causes on this surface**                   | An employee the caller cannot resolve answers rule `custom`; a retired one answers rule `inactive_employee`. The create service reports them as distinct rules deliberately, and the problem document's first violation is the only machine-readable discriminator — the service's own sentence never crosses the wire | **accepted, and discriminated by the RULE rather than by wording guessed from the code.** The write state carries the code and the first violation's rule, and the two are worded apart in plain language because they send an operator somewhere different: name somebody else, or have the person brought back. The same treatment **CC-36** gave the plan surface's three-cause code. No sentence is invented per code beyond the four the backend genuinely distinguishes | this slice             | closed, recorded     |
+| **CC-39(a)** | **the other branch a colleague may be named from is entered as a REFERENCE, not chosen from a list** | The register read requires a company and a branch, and the create applies no branch rule at all, so the picker must let a second branch be named. This feature consumes no branch directory read, and adding one would put a fourth authority on a form whose subject is the employee                                  | **accepted, and recorded because an operator will meet it.** A reference field is the design the inventory screens already ship where no directory list is available, and it cannot hide a colleague the server would accept. **Follow-up, not claimed as done:** offer the company's branches as a list gated on `org.branch.read`, with the reference field as the fallback. Nothing here creates it                                                                        | a later Frontend slice | open, recorded       |
+| **CC-39(b)** | **the register's single-employee read is published with no production consumer at this head**        | Both reads answer the same permission and the detail read is the pair of the list. The surface that needs it is a handover recorded before the register existed: those rows carry a reference and no stored name, and the screens show the reference                                                                   | **accepted, and said out loud in the adapter's own docblock** rather than left to be inferred from its test count — the treatment `lib/api/client.ts` already gives `fieldErrorsOf`. **Follow-up, not claimed as done:** resolve the person named on such a handover. No legacy row was repaired here, and the review list P-17 created is the Owner's                                                                                                                        | a later Frontend slice | open, recorded       |
+| **CC-39(c)** | **the access gate gained an owned segment no dashboard area is named for**                           | Claiming the two employee reads derives their resource root, `org`, taking the derivation from eight segments to nine. The dashboard holds no such area, so the page count did not move: the form lives on the work-order detail page the gate already examined                                                        | **engineering consequence, implemented.** Both pins in `tests/ci/p1-31-access-gate.test.ts` were re-based from the gate's own report line on this head, and the gate's own list records why the two administration commands on the same register are deliberately NOT claimed. Naming a segment before a screen exists under it is what made the warranty and report pages meet this rule already written                                                                     | this slice             | closed in this slice |
+
+### 51.4 What this slice did NOT do
+
+- **No backend file changed**, and no operation, permission, migration, seed, audit action or
+  generated register moved.
+- **No roster administration surface exists.** Nothing here adds, renames, retires or reinstates an
+  employee, and the two register commands that could are neither mirrored nor claimed.
+- **No login account, employment record, department, contact detail or role is read**, and the
+  employment reference is displayed as the opaque reference it is.
+- **No legacy handover was repaired**, and no unresolved reference was replaced by the authenticated
+  actor or by a guess — the Owner forbade both in the same clarification.
+- **No figure or arithmetic crosses this tier**, as with every other delivery surface.
+- **No gate was weakened, no allow-list narrowed, no suppression added and no floor moved.** The one
+  gate edit widens a rule's reach; the committed test-count baseline is untouched.
+- **No hosted run, no database tier, no browser acceptance and no end-to-end result is claimed.**
+
+### 51.5 Proof
+
+Every command, with its numbers, is in [`delivery-start-selector.md`](./delivery-start-selector.md)
+§ 7. It is not duplicated here: a hand-copied total beside a recorded one is exactly the disagreement
+the P1-27 closing-value gate exists to catch, and the recorded tiers live in
+`docs/phase-1/phase-1-27/evidence/local-run-ledger.json` with the commit each was taken at.
+
+**There was no hosted gate, no run against any database, no browser tier and no merge.** The slice is
+open as a pull request; no review verdict and no hosted result is recorded here.
