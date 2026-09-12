@@ -214,8 +214,9 @@ moment it was raised and is never renumbered to follow heading order.
 
 ## 7. Proof — every figure local, taken on this branch
 
-Commands were run from the repository root at `C:/Users/Ezzaldeen/wt-p9`. The web and root tiers were
-recorded through the P1-27 recorder against the committed head of this branch.
+Commands were run from the repository root at `C:/Users/Ezzaldeen/wt-p9`. Every figure below was
+re-taken after the review fixes and after `develop` `72782f48` was merged in; the web and root tiers
+were recorded through the P1-27 recorder against the committed head of this branch.
 
 | command                                                         | result                                                                                                                                                         |
 | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -225,25 +226,25 @@ recorded through the P1-27 recorder against the committed head of this branch.
 | `npm run lint:web`                                              | 0 errors; 12 pre-existing warnings, none in a touched file                                                                                                     |
 | `npm run format:check` and `npm run format:check:web`           | exit 0                                                                                                                                                         |
 | `npm run style:check`                                           | exit 0                                                                                                                                                         |
-| `npm run validate:p1-31-access`                                 | 15 route pages across 9 owned segments, 0 violations                                                                                                           |
+| `npm run validate:p1-31-access`                                 | 16 route pages across 9 owned segments, 0 violations                                                                                                           |
 | `npm run validate:p1-24-register`                               | register current and reconciled                                                                                                                                |
 | `npm run validate:module-boundaries`                            | 11 rules, 0 violations                                                                                                                                         |
-| `npm run validate:web-boundary`                                 | 372 files inspected, 0 violations                                                                                                                              |
+| `npm run validate:web-boundary`                                 | 378 files inspected, 0 violations                                                                                                                              |
 | `npm run validate:web-topology`                                 | 18 expectations, 0 failures                                                                                                                                    |
-| `npm run validate:web-theme`                                    | 372 files, 54 colours registered, 0 unresolvable                                                                                                               |
+| `npm run validate:web-theme`                                    | 378 files, 54 colours registered, 0 unresolvable                                                                                                               |
 | `npm run validate:web-tokens` · `validate:web-brand`            | 0 raw values · 0 violations                                                                                                                                    |
 | `npm run validate:notification-authority`                       | one authority, mounted once, 0 failures                                                                                                                        |
-| `npm run validate:use-server-exports`                           | 51 server modules, 0 violations                                                                                                                                |
+| `npm run validate:use-server-exports`                           | 52 server modules, 0 violations                                                                                                                                |
 | `npm run validate:plain-language`                               | 2 catalogues, 24 rules, 0 findings                                                                                                                             |
 | `npm run validate:command-coverage`                             | every required command reachable                                                                                                                               |
 | `npm run validate:generated-artifacts` · `validate:encoding`    | 0 failures · clean UTF-8, no byte-order mark                                                                                                                   |
 | `npm run security:all`                                          | five guards, 0 findings                                                                                                                                        |
-| focused web — the four delivery suites                          | 169/169 across 4 files                                                                                                                                         |
+| focused web — the four delivery suites                          | 174/174 across 4 files                                                                                                                                         |
 | root — `npx vitest run tests/ci tests/openapi-contract.test.ts` | 1991/1991 across 69 files                                                                                                                                      |
 | the web tier, through the P1-27 recorder                        | see § 7.1                                                                                                                                                      |
 | `npm run test:unit`, through the P1-27 recorder                 | see § 7.1                                                                                                                                                      |
 | `npm run verify:policies`                                       | exit 0                                                                                                                                                         |
-| `npm run validate:phase-ownership`, both forms                  | the context resolver answers CHECK and names the P1-31 Frontend profile from the branch; the gate under that profile reports 25 changed files and 0 violations |
+| `npm run validate:phase-ownership`, both forms                  | the context resolver answers CHECK and names the P1-31 Frontend profile from the branch; the gate under that profile reports 29 changed files and 0 violations |
 
 ### 7.1 The recorded tiers
 
@@ -257,7 +258,9 @@ change, and `npm run validate:p1-27-closing-values` is what proves the two agree
 Adding one web test file moved the tree's web test-file count by one, and re-running the tier moved
 its executed total. Between them that cascaded to six derived sites across two documents and the
 closing-value ledger, every one moved by measurement rather than by arithmetic on the previous
-figure. `npm run validate:p1-27-closing-values` then reports 58 classified values across two
+figure. Both tiers were re-recorded a second time after the review fixes and the `develop` merge, and
+the six sites were re-taken from the new ledger at that head — 141 web test files and 4009 executed,
+against `develop`'s 140 and its own total. `npm run validate:p1-27-closing-values` then reports 58 classified values across two
 documents and 0 problems, and `npm run validate:p1-27-doc-counts` 151 derived claims across 32
 documents and 0 disagreements.
 
