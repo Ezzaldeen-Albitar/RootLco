@@ -6,14 +6,14 @@ conflated in the first draft of this slice — which statements are **Owner deci
 pending Owner approval**, and which are **verified facts** measured by a suite. Plus the one
 operator act this slice creates and does not perform.
 
-|                              |                                                                                                                                                                    |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Phase**                    | P1-31 — Vehicle Delivery, Warranty, and Reporting Frontend                                                                                                         |
-| **Authority**                | Owner decision of **2026-09-10** and the Owner clarification of the same day, delivering employee. Prerequisite **P-17** of [`a0-preflight.md`](./a0-preflight.md) |
-| **Lane**                     | `remediation/p1-31-backend-delivering-employee-identity`, ownership profile `p1-31-backend`                                                                        |
-| **Baseline**                 | protected `develop` **07193258**; `main` untouched                                                                                                                 |
-| **Change control**           | [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) — **CC-29**, PROVISIONAL                                                                          |
-| **Closes no canonical task** | P-17 is an execution prerequisite. The 29 remain 29, each still owing its own evidence                                                                             |
+|                              |                                                                                                                                                                                                                                            |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Phase**                    | P1-31 — Vehicle Delivery, Warranty, and Reporting Frontend                                                                                                                                                                                 |
+| **Authority**                | Owner decision of **2026-09-10** ([`owner-decisions-2026-09-10.md` §1](./owner-decisions-2026-09-10.md)) and the Owner clarification of the same day, delivering employee. Prerequisite **P-17** of [`a0-preflight.md`](./a0-preflight.md) |
+| **Lane**                     | `remediation/p1-31-backend-delivering-employee-identity`, ownership profile `p1-31-backend`                                                                                                                                                |
+| **Baseline**                 | protected `develop` **ae0e0354**, merged in on 2026-09-12; written on **07193258**; `main` untouched                                                                                                                                       |
+| **Change control**           | [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) — **CC-29**, PROVISIONAL                                                                                                                                                  |
+| **Closes no canonical task** | P-17 is an execution prerequisite. The 29 remain 29, each still owing its own evidence                                                                                                                                                     |
 
 ---
 
@@ -42,7 +42,7 @@ entity is suitable — the finding the Owner's reuse clause in section 2 obliged
 establish before proposing anything — is a measurement in the suite rather than a sentence in this
 document.
 
-## 2. What the Owner decided, 2026-09-10
+## 2. What the Owner decided, 2026-09-10 — [`owner-decisions-2026-09-10.md` §1](./owner-decisions-2026-09-10.md)
 
 > A delivering employee is a **tenant-owned employee identity**, distinct from the login account,
 > from the authenticated actor, and from the authorized receiver. The reference and the
@@ -311,22 +311,29 @@ Unlike the observation, this environment carries legacy-shaped rows that the cas
 themselves, so both branches of the backfill are exercised.
 
 **Measured facts (not part of the decision) — the runs this section reports.** Every run below was
-executed on **2026-09-10** against the disposable clone `p131_employee_20260910`, rebuilt from the
-idle `p131_candidate` template at **139** migrations and replayed forward, served on
-`127.0.0.1:55432` by container `rootlco-p131-isolation-20260910`. There were **two** runs at **two
-different commits**, and each row names the commit its total was measured at, because a total
-measured at one head is not a total measured at another:
+executed against the disposable clone `p131_employee_20260910`, served on `127.0.0.1:55432` by
+container `rootlco-p131-isolation-20260910` and rebuilt from the idle `p131_candidate` template at
+**139** migrations before this slice's two were applied and registered, taking
+`supabase_migrations.schema_migrations` to **141**. The clone was rebuilt that way twice: on
+**2026-09-10** for the first two commits, and again on **2026-09-12** for the integration head.
+There are **three** runs at **three different commits**, and each row names the commit its total was
+measured at, because a total measured at one head is not a total measured at another:
 
-| commit       | what was run                                                                                                                                 | result    | exit code |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | --------- | --------- |
-| **244f868f** | `tests/db/org-employees.test.ts`                                                                                                             | 21 / 21   | 0         |
-| **244f868f** | `tests/db/foundation.test.ts`, `tests/db/org-security.test.ts`, `tests/db/sal-delivery.test.ts` and `tests/db/no-fake-data.test.ts`          | 58 / 58   | 0         |
-| **244f868f** | the 13 backend files over the delivery and organisation surface, of which `tests/backend/p1-31-delivering-employee-seam.test.ts` was 31 / 31 | 285 / 285 | 0         |
-| **750913e3** | `tests/db/org-employees.test.ts`                                                                                                             | 23 / 23   | 0         |
-| **750913e3** | `tests/db/org-security.test.ts` and `tests/db/no-fake-data.test.ts`                                                                          | 12 / 12   | 0         |
-| **750913e3** | `tests/backend/p1-31-delivering-employee-seam.test.ts`                                                                                       | 31 / 31   | 0         |
+| commit       | what was run                                                                                                                                 | result      | exit code |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | --------- |
+| **244f868f** | `tests/db/org-employees.test.ts`                                                                                                             | 21 / 21     | 0         |
+| **244f868f** | `tests/db/foundation.test.ts`, `tests/db/org-security.test.ts`, `tests/db/sal-delivery.test.ts` and `tests/db/no-fake-data.test.ts`          | 58 / 58     | 0         |
+| **244f868f** | the 13 backend files over the delivery and organisation surface, of which `tests/backend/p1-31-delivering-employee-seam.test.ts` was 31 / 31 | 285 / 285   | 0         |
+| **750913e3** | `tests/db/org-employees.test.ts`                                                                                                             | 23 / 23     | 0         |
+| **750913e3** | `tests/db/org-security.test.ts` and `tests/db/no-fake-data.test.ts`                                                                          | 12 / 12     | 0         |
+| **750913e3** | `tests/backend/p1-31-delivering-employee-seam.test.ts`                                                                                       | 31 / 31     | 0         |
+| **706ba810** | `tests/backend/p1-31-delivering-employee-seam.test.ts`                                                                                       | 31 / 31     | 0         |
+| **706ba810** | `tests/db/org-employees.test.ts`                                                                                                             | 23 / 23     | 0         |
+| **706ba810** | `tests/db/foundation.test.ts`, `tests/db/org-security.test.ts`, `tests/db/sal-delivery.test.ts` and `tests/db/no-fake-data.test.ts`          | 37 / 37     | 0         |
+| **706ba810** | the WHOLE backend tier, `npm run test:backend` over 137 files                                                                                | 2937 / 2937 | 0         |
+| **706ba810** | `node scripts/db/validate-seed-state.mjs` — 8 declared seed files applied twice, every business table empty                                  | OK          | 0         |
 
-The two runs differ because the tree moved between the two heads, and the difference is stated
+The three runs differ because the tree moved between the heads, and every difference is stated
 rather than averaged away:
 
 - `tests/db/org-employees.test.ts` went from **21** cases to **23** in commit **d25ca30a**, which
@@ -337,10 +344,29 @@ rather than averaged away:
 - The **285 / 285** over the 13 backend files **was not re-run after 244f868f**. What was re-run at
   750913e3 is the seam file alone, which reported the same **31 / 31**.
 - The two commits after 750913e3 — **ad6c4fbf** and **be58260d** — changed documentation only.
+- **706ba810** is the merge of protected `develop` **ae0e0354** into this slice. At that head the
+  WHOLE backend tier was run rather than the 13-file subset, so the **2937 / 2937** row supersedes
+  the earlier **285 / 285** as a statement about the current tree instead of repeating it.
+- That run found one real integration failure, and it was fixed rather than excluded: develop's own
+  `tests/backend/p1-31-delivery-readiness-seam.test.ts` opened its fixture deliveries with a login
+  account id, which this slice's foreign key and trigger refuse with `ERR-VAL-001`, so the file
+  failed in its hook and its **25** cases reported as skipped. The merge commit routes that fixture
+  through the shared helper this slice added, and the file reports **25 / 25**. The 2937 / 2937
+  above is the run AFTER that fix.
+- The commit after 706ba810 — **4d120670** — re-recorded the `unit` and `web` tiers and
+  regenerated the evidence manifest. It moved no executable path, so nothing in this table was
+  measured against a tree other than the one this head carries.
+- The baseline values were re-measured on the rebuilt clone at that head rather than carried
+  forward: **141** migrations, **121** permissions, `tables` **256**, `functions` **534**,
+  `policies` **699**, `triggers` **563**, `security_definer` **0**, and `schemaHash` **ce41a44c**.
+  The same queries against the idle 139-migration template answer 254 / 533 / 695 / 560 / 0, so the
+  delta is measured and not asserted. `structuralTotals` remains CI's figure to confirm for the
+  reason `schema-baseline.json` states; this is the local companion measurement and is not a hosted
+  result.
 
 **No run ledger entry exists for either the database or the backend tier.**
 `docs/phase-1/phase-1-27/evidence/local-run-ledger.json` records the `unit` and `web` tiers and
-nothing else, so the totals above are this document's own report of two local runs rather than a
+nothing else, so the totals above are this document's own report of three local runs rather than a
 recorded tier measurement. **No hosted result exists for any of it**: nothing in this section has
 been observed on CI.
 
