@@ -1561,3 +1561,119 @@ suppresses nothing.
 - **No hosted run, no database tier, no browser acceptance and no end-to-end result is claimed.**
   The evidence for this slice is the local frontend chain and the focused web run named in the
   record document. The branch is unmerged as this section is written.
+
+---
+
+## 43. The warranty record screens — **PROVISIONAL** (FE-008, FE-009 partial)
+
+**This whole section is PROVISIONAL, and so is its identifier.** It records work on
+`feature/p1-31-warranty-record-screens`, opened against `develop` `01c32937`, re-based by merge onto
+protected `develop` `c1b1a8cd` on 2026-09-11 and onto protected `develop` `ae0e0354` on 2026-09-12.
+The branch is **unmerged** and has **no hosted result**; it carries an open pull request. Nothing
+below claims otherwise.
+
+### 43.1 Identifier allocation — PROVISIONAL, dated 2026-09-11, re-checked at the `ae0e0354` sync
+
+At the base head this register ran to **section 39** and to **CC-26**. **At the merge base this
+section now sits on — protected `develop` `ae0e0354` — it runs to section 42 and to CC-30**: the
+report engine (P-11) landed section 40 with **CC-27** and **CC-28**, and the ready-for-delivery
+queue (FE-001) landed section 42 with **CC-30**; all three are **settled**, not in flight. Section
+41 is still held by the coordinator's standing allocation for a lane that has not merged, so this
+slice does **not** claim the next number in sequence. It keeps the heading and identifier it
+reserved deliberately ahead of the front, and the reservation **stays PROVISIONAL** precisely
+because 41 is unmerged: a collision must be a reconciliation and never a silent renumbering of
+somebody else's record.
+
+| id               | lane                                         | state at this base                             |
+| ---------------- | -------------------------------------------- | ---------------------------------------------- |
+| **CC-24**        | the readiness queue (D-3)                    | section 39, merged into this base              |
+| **CC-25**        | the delivery write paths                     | section 38, merged into this base              |
+| **CC-26**        | receiver identity-evidence document category | section 38, merged into this base              |
+| **CC-27, CC-28** | the report engine (P-11, engine half)        | **section 40, settled, merged into this base** |
+| **CC-29**        | reserved for the lane at section 41          | not allocated here; unmerged at this head      |
+| **CC-30**        | the ready-for-delivery queue (FE-001)        | **section 42, settled, merged into this base** |
+| **CC-31**        | this slice                                   | **PROVISIONAL**, this branch, section 43       |
+
+**Reconciliation rule.** If section 43 or **CC-31** is occupied when this branch integrates, this
+section moves to the next free heading and this identifier to the next free identifier, and the move
+is recorded here with its date. No existing identifier and no historical result is renumbered to
+accommodate it. Both syncs exercised exactly that rule in the other direction: section 40 with
+**CC-27/CC-28**, and then section 42 with **CC-30**, arrived while this branch was open, neither
+collided with 43 or **CC-31**, and nothing here was renumbered.
+
+### 43.2 What was delivered
+
+Two route pages — the branch warranty list at `/{locale}/warranty` and the warranty record at
+`/{locale}/warranty/{warrantyId}`, both gated on `wty.warranty.read` and both deciding before they
+read — a warranty feature (contract, adapters, shared pieces, two screens), an issue control drawn
+on the handover screen for a caller holding `wty.warranty.issue`, a `warranty` navigation entry at
+`available`, the English and Arabic wording for all of it, and two new web test files. The full
+record is [`warranty-record-screens.md`](./warranty-record-screens.md).
+
+`wty.warranty-detail`, `wty.warranty-generate` and the two policy reads were added to
+`P1_31_OPERATION_IDS` in `scripts/ci/check-p1-31-access.mjs`. That gate's scope is an allow-list of
+OPERATIONS, so an operation a P1-31 screen calls and the list omits is one the gate has quietly
+stopped owning. The detail and the generation share resource roots already derived and widen
+nothing; the two policy reads add one owned segment. Measured at this merge base, the gate reports
+**11 route pages across 8 owned segments**, against the 9 and 7 that `develop` `ae0e0354` pins, and
+the pins in `tests/ci/p1-31-access-gate.test.ts` were moved to 11 and 8 in this sync.
+
+### 43.3 Disposition
+
+| id        | what is accepted                                                                       | measured basis                                                                                                                                                                                                                                                                                                                                                              | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | owner               | state          |
+| --------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | -------------- |
+| **CC-31** | **FE-009 ships PARTIAL: a vehicle-filtered list, and no per-record transition ledger** | `wty.warranty_status_history` (the table’s real name; CC-10 above records it as `wty.warranty_record_status_history`, which no migration ever created) is written by the database and read by **no operation anywhere** in `apps/api/src` — **CC-10**, unchanged. The only history that can be read honestly is `wty.warranty-list` filtered by its one filter, `vehicleId` | **accepted, with the missing half NAMED and NOT simulated.** The record screen states in the operator's own language that the transition record cannot be read yet. No sequence is composed from the record's current state: an invented ledger would be believed, which is worse than an absent one. The backend prerequisite is named as **P-18 — warranty history reader**, a `wty.warranty.read` branch-scoped read over the existing table. It is a Backend seam and is not in this lane | a Backend seam lane | open, recorded |
+
+### 43.4 What this slice did NOT do
+
+- **No backend file was edited**, no migration was written, no seed changed and no permission was
+  minted. Both codes the screens consult already exist.
+- **No warranty policy or coverage administration screen.** P-10 published seven policy and coverage
+  operations and this slice consumes exactly one of them — `wty.warranty-policy-list`, which fills
+  the plan picker on the issue control, so a plan is CHOSEN by name rather than named by an
+  identifier an operator cannot discover. Creating, renaming, archiving or restoring a plan, and
+  everything to do with coverage windows, still has no screen.
+- **No history reader and no simulated history.** See CC-31.
+- **No gate was weakened, no allow-list narrowed and no suppression added.** The web test floor was
+  raised, which makes a gate stricter rather than weaker — see 43.5. The P1-31 access gate's
+  operation list was EXTENDED by four operations, which widens what the gate owns rather than what
+  it permits. The two policy reads add an eighth owned route segment, `warranty-policies`, which no
+  page occupies yet.
+- **No merge into any protected branch, no hosted run and no acceptance.** The branch carries an
+  open pull request, #369, and is pushed; neither is a result. Every figure quoted in this section
+  is from a LOCAL run.
+
+### 43.5 The web test floor was ratcheted, and what that costs
+
+**The measured fact.** `apps/web/tests` now DECLARES 3073 cases across 135 files, and the tier
+EXECUTES 3788 with 0 failed and 0 skipped at this merge base — a local `--record web` run of this
+branch, recorded in `docs/phase-1/phase-1-27/evidence/local-run-ledger.json` with the commit it was
+taken at. It executed 3749 at `467a2681`, before either sync; the 39 additional tests arrived with
+the `ae0e0354` merge, and the baseline's `measured` provenance field still records the 3749 run, so
+the committed floor's headroom now reads 88 rather than 49. Moving that field is a baseline decision
+and was not taken in this sync. No hosted run of this branch exists, and none is claimed.
+
+**Why the floor had to move.** `tests/ci/web-test-floor.test.ts` case `WTF-08` refuses a floor
+beneath cases that physically exist. The committed floor was 3050, the declared count crossed it,
+and the baseline's own `howToRaise` says to raise a floor in the commit that adds the tests. The
+three values move together so that all three describe ONE run: `minTests` 3050 -> 3700, `measured`
+3125 -> 3749, `measuredFiles` 117 -> 135. Upward only; nothing in the baseline was lowered, and the
+unit and backend entries were left alone because their `measured` is hosted run 19 provenance
+rather than a local figure.
+
+**The engineering consequence.** The floor was not chosen; it was forced into a window from three
+sides. `WTF-08` puts it at or above 3073. `WTF-09` refuses a headroom wider than the largest file
+in the tree (88 declared cases in `api-client.test.ts`, which executes 136), so it may not sit
+below 3661. `tests/ci/baseline-integrity.test.ts` refuses a headroom under one per cent of the
+measurement, so it may not sit above 3711. 3700 is the round number inside [3661, 3711]. The
+headroom therefore narrows from 75 executed tests to 49, and the guarantee sentence in the baseline
+states that bound rather than a slogan: any net loss of more than 49 executed tests is detected,
+which still covers the deletion of any single web test file. The cost is that the next slice to add
+web tests has less room before it must move the floor again, and a slice that DELETES web tests
+must state why rather than let the count drift down.
+
+**What travelled with it.** The two derived sites that read `web.minTests` and the three that read
+the recorded web total — the clean-room floor row and the sentence beside it, the current-tree
+total and its two restatements — with their five closing-value ledger entries, the re-recorded
+unit and web tiers, and the regenerated P1-27 evidence manifest. The baseline file classifies as
+`tooling`, a bucket the `p1-31-frontend` ownership profile allows.
