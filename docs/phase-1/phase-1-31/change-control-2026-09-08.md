@@ -1677,3 +1677,59 @@ the recorded web total — the clean-room floor row and the sentence beside it, 
 total and its two restatements — with their five closing-value ledger entries, the re-recorded
 unit and web tiers, and the regenerated P1-27 evidence manifest. The baseline file classifies as
 `tooling`, a bucket the `p1-31-frontend` ownership profile allows.
+
+## 52. The fresh-organisation acceptance harness — **PROVISIONAL** (QA-005)
+
+**Why 52 and not 44.** The register runs to section 43 on `develop` `8c4e6a9c`, and several lanes are
+open at once, each of which will claim the next free section and the next free identifier as it
+integrates. This slice therefore claims a section and an identifier **well ahead of the front**, so
+that it cannot collide with a lane that lands first. The register's own reconciliation rule applies
+unchanged: if section 52 or **CC-40** is occupied when this branch integrates, this slice renumbers
+and nothing else moves. The intervening numbers are unallocated and are not reserved by this slice.
+
+| identifier     | belongs to               | state                                     |
+| -------------- | ------------------------ | ----------------------------------------- |
+| sections 1–43  | the earlier P1-31 slices | settled, on `develop`                     |
+| sections 44–51 | unallocated              | free for the lanes still open             |
+| **section 52** | this slice               | **PROVISIONAL**, this branch              |
+| **CC-40**      | this slice               | **PROVISIONAL**, this branch, dated below |
+
+### 52.1 What this slice changed
+
+Three artefacts, no product code, no backend file, no migration, no seed, no permission.
+
+- `scripts/dev/owner-acceptance/p1-31-journey.mjs` — the HTTP acceptance journey: fifteen sections,
+  numbered steps, fifteen refusal and isolation cases, and a JSON and Markdown evidence pair written
+  **outside** the repository. Three independent guards (`ROOTLCO_ENV`, a loopback database on 54322,
+  `ROOTLCO_ACCEPTANCE_CONFIRM=p1-31`), any one of which refuses the run.
+- `apps/web/tests/e2e/authenticated/{delivery,warranty,reports,audit-log}-p1-31.spec.ts` and their
+  shared `p1-31-handoff.ts` — eleven cases per authenticated project, English and Arabic, reading the
+  world the HTTP half made through `ROOTLCO_P131_HANDOFF`.
+- `docs/phase-1/phase-1-31/acceptance-plan.md` — the preconditions, the step table, the browser
+  matrix, the case table, the evidence layout, and how a PASS is judged per Frontend task.
+
+**No npm script was added.** Adding one would move `validate:command-coverage` and put a phase
+artefact into the repository's permanent command surface; the plan states the invocation instead.
+
+**The harness has NOT been executed.** No organisation was provisioned, no report was run, no browser
+was opened. Everything measured on this branch is a static check on the source, and section 8 of the
+plan lists exactly which. The plan's own status line says the same thing in its first sentence,
+because a reader who stops after one paragraph must not come away believing an acceptance happened.
+
+### 52.2 Dispositions
+
+| id        | disposition                                                                                                     | why it is recorded rather than fixed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | owner                | state                       |
+| --------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- | --------------------------- |
+| **CC-40** | **the committed acceptance suite cannot run on `develop`, and skips rather than failing — recorded 2026-09-12** | Five of the eleven browser cases open screens that arrive with branches not yet merged: the warranty plans screen, and the report catalogue and the four report screens. A committed suite must stay green on a checkout that has never run an acceptance, so those cases ask the message catalogue whether the screen's own strings exist and skip with the reason written out. The alternative considered and rejected was asserting a 404: that also passes on a build which is merely broken, so it would convert a missing merge into a green tick. The other cases skip on an absent handoff for the same reason and with the same honesty. The residual is real and is named: **until the four merges in section 1.1 of the acceptance plan land, the committed suite proves that the specs compile and nothing at all about the screens** | the integration lane | open, recorded, PROVISIONAL |
+
+### 52.3 What this slice did NOT do
+
+- **No execution of any kind against a database, a server or a browser.** Not the harness, not
+  Playwright, not `test:db`, not `test:backend`, not a build.
+- **No merge, no push, no acceptance record.** Section 6 of the plan describes how a PASS would be
+  judged; no PASS is claimed, and rule 2 of `task-matrix.md` is unaffected.
+- **No gate was weakened, no allow-list widened and no suppression added.** One `eslint-disable`
+  written during authoring was removed rather than justified, because the rule it named reported
+  nothing.
+- **No test floor moved.** `apps/web/tests/e2e/**` is the Playwright tier and is not counted by
+  `web.minTests`, which measures the vitest projects under `apps/web/tests`.
