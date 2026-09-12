@@ -457,10 +457,22 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         key: 'reports',
         labelKey: 'nav.reports',
         icon: 'reports',
+        // `/reports`: the report catalogue, built by P1-31 FE-011 … FE-014 on the
+        // Owner's D-4 decision. Gated on `rpt.report.read`, the code all three
+        // report operations declare — the catalogue, the definition read and the
+        // run. The rows a given report returns need that report's own dataset
+        // codes as well, which are per-report and evaluated server-side on every
+        // run; naming one of them here would hide the whole module from an
+        // operator who may read the catalogue.
+        //
+        // `tenant`, not `company`: the catalogue operation is tenant-scoped, so
+        // the set of reports a caller may read is not a company's. The RUN is
+        // branch-scoped and the screen asks for a company and a branch, which is
+        // a question about the resource rather than about the caller.
         href: '/reports',
         permission: 'rpt.report.read',
-        status: 'planned',
-        scope: 'company',
+        status: 'available',
+        scope: 'tenant',
       },
     ],
   },
