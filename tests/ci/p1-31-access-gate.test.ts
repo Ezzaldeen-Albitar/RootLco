@@ -95,8 +95,14 @@ export default async function Page({ params }) {
  * `node scripts/ci/check-p1-31-access.mjs` and read
  * `N route page(s) examined across M owned segment(s)` — in the same change
  * that adds or removes the page or the segment.
+ *
+ * It moved from 9 to 11 with the FE-011 … FE-014 report screens: the catalogue
+ * page and the per-report page. The SEGMENT count did not move, and that is the
+ * measurement worth keeping rather than rounding — `reports` was already a named
+ * dashboard area, and the resource root the three new reporting operations derive
+ * is also `reports`, so the derived half and the named half agree on it.
  */
-const PINNED_PAGES = 9;
+const PINNED_PAGES = 11;
 const PINNED_OWNED_SEGMENTS = 7;
 
 describe('the derivation is P1-31’s own and is not empty', () => {
@@ -131,6 +137,12 @@ describe('the derivation is P1-31’s own and is not empty', () => {
     expect(P1_31_OPERATION_IDS.length).toBeGreaterThan(5);
     expect(P1_31_OPERATION_IDS).toContain(id('sal', 'delivery-read'));
     expect(P1_31_OPERATION_IDS).toContain(id('wty', 'warranty-list'));
+    // The three reporting operations the FE-011 … FE-014 screens consume. Named
+    // here in the change that first consumes them, which is what this gate's
+    // docblock requires of every operation it claims.
+    expect(P1_31_OPERATION_IDS).toContain(id('rpt', 'report-catalogue'));
+    expect(P1_31_OPERATION_IDS).toContain(id('rpt', 'report-read'));
+    expect(P1_31_OPERATION_IDS).toContain(id('rpt', 'report-run'));
     // A stale entry is a VIOLATION rather than a silent shrink, so an honest
     // derivation over the real register reports no problems at all.
     expect(deriveSegments().problems).toEqual([]);

@@ -98,6 +98,11 @@ describe('the navigation model', () => {
       // P1-28 Wave D: the Reception entry landed WITH its first screen, the
       // check-in wizard at `/receptions/check-in` (`P1-28-FE-007`).
       'receptions',
+      // P1-31 FE-011 … FE-014: the report catalogue at `/reports`, gated on
+      // `rpt.report.read` — the code all three report operations declare. The
+      // rows a given report returns need that report's own dataset codes as
+      // well; those are per-report and only the server can evaluate them.
+      'reports',
       'settings',
       'settings.currencies',
       'settings.languages',
@@ -142,7 +147,8 @@ describe('the navigation model', () => {
       'documents',
       // `inventory` left this list in P1-30 W4.
       'notifications',
-      'reports',
+      // `reports` left this list in P1-31 FE-011 … FE-014, when the catalogue and
+      // the report screen were built.
       // `technicians` left this list in P1-29 W4, when the workspace was built.
       // `work-orders` left this list in P1-29 W1, `work-orders.diagnostics` in
       // W7 and `work-orders.quality` in W8.
