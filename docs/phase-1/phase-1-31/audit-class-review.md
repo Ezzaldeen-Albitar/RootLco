@@ -13,10 +13,10 @@ way, § 4 says so and leaves it open rather than writing a justification over it
 
 ## 1. The surface, and how it was measured
 
-The surface is the phase's own route surface: **45 operations across 33 `route.ts` files** in the
+The surface is the phase's own route surface: **46 operations across 34 `route.ts` files** in the
 eight namespaces under `apps/api/src/app/api/v1/` that P1-31 owns — `deliveries` (9 files, 13
 operations), `delivery-checklist-templates` (5, 8), `delivery-readiness` (1, 1),
-`report-configurations` (5, 7), `reports` (3, 3), `warranties` (2, 2), `warranty-policies` (5, 7)
+`report-configurations` (5, 7), `reports` (3, 3), `warranties` (3, 3), `warranty-policies` (5, 7)
 and `org/employees` (3, 4).
 
 Every figure below was taken twice and the two agree:
@@ -28,13 +28,13 @@ Every figure below was taken twice and the two agree:
 
 | measured                                             | value                                                                                       |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| operations on the surface                            | 45                                                                                          |
+| operations on the surface                            | 46                                                                                          |
 | `auditClass: 'privileged'`                           | 24                                                                                          |
-| `auditClass: 'none'`                                 | 21                                                                                          |
-| writes (`POST`/`PATCH`/`PUT`/`DELETE`) · reads (GET) | 24 · 21                                                                                     |
+| `auditClass: 'none'`                                 | 22                                                                                          |
+| writes (`POST`/`PATCH`/`PUT`/`DELETE`) · reads (GET) | 24 · 22                                                                                     |
 | `'privileged'` declarations that are writes          | 24 of 24                                                                                    |
-| `'none'` declarations that are reads                 | 21 of 21                                                                                    |
-| `'none'` written EXPLICITLY rather than omitted      | 21 of 21                                                                                    |
+| `'none'` declarations that are reads                 | 22 of 22                                                                                    |
+| `'none'` written EXPLICITLY rather than omitted      | 22 of 22                                                                                    |
 | register and source parse disagreeing on any row     | 0                                                                                           |
 | audit classes used, of the six the vocabulary admits | 2 — `'none'` and `'privileged'`; no `'financial'`, `'export'`, `'approval'` or `'security'` |
 
@@ -46,6 +46,20 @@ all.
 
 The two figures carried into this task from outside were **21 `'none'` and 24 `'privileged'`**. Both
 are confirmed.
+
+_(This section read "**45 operations across 33 `route.ts` files**" with `warranties` (2, 2), and the
+table read 45 operations with 21 `auditClass: 'none'` and 24 · 21 writes and reads. All of it was
+true when written. **P-18** published `wty.warranty-status-history` on 2026-09-13 — change control
+[§ 65 / **CC-55 (c)**](./change-control-2026-09-08.md) — and the figures are re-derived here on
+**2026-09-14** from the same two sources, which still agree on every field: the surface is **46
+operations across 34 files** with `warranties` (3, 3), and the new operation is a GET declaring
+`auditClass: 'none'` as a literal with `auditAction: null`, so the class split is **22 `'none'` and
+24 `'privileged'`** and the carried-in pair above becomes 22 and 24. **Section 2 below still reviews
+the 21 that existed when it was written.** The twenty-second line —
+`wty.warranty-status-history`, `wty.warranty.read`,
+`apps/api/src/app/api/v1/warranties/[warrantyId]/status-history/route.ts` — is deliberately NOT
+written here: a review line is a judgement about why silence is correct, and this correction is a
+count. It is owed to the lane that re-derives this file.)_
 
 ## 2. The 21 `auditClass: 'none'` declarations, one line each
 

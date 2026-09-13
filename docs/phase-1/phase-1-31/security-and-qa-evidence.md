@@ -160,11 +160,11 @@ every one of them.
 
 ## The surface every section below measures
 
-**Measured fact.** The phase's own route surface is **45 operations across 33 `route.ts` files in
+**Measured fact.** The phase's own route surface is **46 operations across 34 `route.ts` files in
 eight namespaces** — `deliveries` (9 files, 13 operations), `delivery-checklist-templates` (5, 8),
-`delivery-readiness` (1, 1), `report-configurations` (5, 7), `reports` (3, 3), `warranties` (2, 2),
+`delivery-readiness` (1, 1), `report-configurations` (5, 7), `reports` (3, 3), `warranties` (3, 3),
 `warranty-policies` (5, 7) and `org/employees` (3, 4), all under `apps/api/src/app/api/v1/`. Of the
-45: **24 writes and 21 reads; 24 `auditClass: 'privileged'` and 21 `auditClass: 'none'`; 11
+45 measured at `fb65b049`: **24 writes and 21 reads; 24 `auditClass: 'privileged'` and 21 `auditClass: 'none'`; 11
 `versionGuarded: true`; 16 `idempotent: true`; 12 distinct permission codes** —
 `org.employee.manage`, `org.employee.read`, `rpt.report.configure`, `rpt.report.read`,
 `sal.delivery.complete`, `sal.delivery.manage`, `sal.delivery.view`, `sal.finance.view`,
@@ -177,6 +177,17 @@ which catalogue row each code resolves to, is § 1.1. _(A parse that counts `ver
 textually returns twelve on this tree; the twelfth is inside a docblock in
 `org/employees/[employeeId]/status/route.ts`, and **eleven** declarations is the figure. It is
 recorded here because the same over-count would recur for the next reader.)_
+
+_(The headline of this section read "**45 operations across 33 `route.ts` files**" with `warranties`
+(2, 2), and it was true when written. **P-18** published `wty.warranty-status-history` on
+2026-09-13 — change control [§ 65 / **CC-55 (c)**](./change-control-2026-09-08.md) — and the
+headline is corrected in place above on **2026-09-14**: the surface is **46 operations across 34
+files**, with `warranties` (3, 3). The breakdown that follows the headline keeps its `fb65b049`
+measurement and moves by exactly one read — **24 writes and 22 reads, 24 `auditClass: 'privileged'`
+and 22 `auditClass: 'none'`**. Nothing else in it moves: the new operation is a GET, is neither
+`versionGuarded` nor `idempotent`, and its permission `wty.warranty.read` was already one of the
+twelve. **No other figure in this record is touched by this correction**; the closing re-measure
+re-derives the whole index at one head, which is this file's rule 5.)_
 
 ## 1. SEC-001 — least privilege and resolved scope
 
