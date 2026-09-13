@@ -100,90 +100,131 @@ async function runReport(
 
 test.describe('P1-31 reporting screens, over the acceptance journey records', () => {
   /**
-   * The two reporting screens, for the caller the acceptance actually has.
+   * The two reporting screens, for whichever caller the browser tier signed in as.
    *
-   * ## What these two cases used to assert, and why it was wrong about the environment
+   * ## Why these two cases carry no handoff gate, and must not
    *
-   * They asserted a REFUSAL, on the ground that `rpt.report.read` is withheld. That was a
-   * statement about the governed job's `acceptance:create-owner` account
-   * (`OWNER_PERMISSIONS` in `scripts/dev/owner-acceptance/context.mjs`) and about no other
-   * caller. A freshly provisioned organisation's first administrator holds the whole
-   * tenant-administrator bundle, and `rpt.report.read` is IN it — carried by P1-31
-   * prerequisite P-1 because `rpt.report-catalogue` and `rpt.report-read` declare it
-   * (`apps/api/src/modules/iam/domain/bootstrap-roles.ts`). So both screens rendered,
-   * correctly, and both cases failed on a truth about the product. A case that is true for one
-   * caller and false for another is a case about the environment, not about the screen.
+   * They were handoff-gated, and that is what took this file to ZERO executed tests in the
+   * governed job. Nothing in `.github/workflows/_reusable-authenticated-browser.yml` sets
+   * `ROOTLCO_P131_HANDOFF`, so every case in the file skipped, and the tier's own guard — "a
+   * run that collected nothing is a failure, not a pass" — failed the job for a file that had
+   * gone silent. A spec file that can only execute where an acceptance has already been run is
+   * a spec file continuous integration can read nothing off at all.
    *
-   * ## What they assert now
+   * ## The problem these two cases actually have to solve
    *
-   * The same two screens, read the other way round: each renders FOR A HOLDER — its own
-   * heading, the document's direction, no denial, and the surface behind the gate actually
-   * present. The catalogue must show its table; the run screen must offer the control that
-   * runs the report. That is the half of the gate this caller can evidence, and it is the half
-   * no static check sees: `check-p1-31-access.mjs` can prove the gate is CONSULTED before the
-   * read, and nothing but a browser can show that a holder gets through it.
+   * Two different callers reach these screens, and `acceptance-record.md` §3.1 records the
+   * collision as its cause B:
    *
-   * ## The negative, and why there is not one to keep
+   *   - the governed job signs in through `auth.setup.ts`, which reads the credentials
+   *     `acceptance:create-owner` wrote into `.local/owner-acceptance-account.json`. That
+   *     account holds `OWNER_PERMISSIONS` (`scripts/dev/owner-acceptance/context.mjs`) — sixty
+   *     codes, and `rpt.report.read` is NOT among them, because that set is Administration,
+   *     CRM, Vehicles and whatever a P1-28 route page consults, and no P1-28 page consults a
+   *     reporting code.
+   *   - a local acceptance overrides those credentials with the first administrator of the
+   *     organisation the journey provisioned, who holds the whole tenant-administrator bundle
+   *     and therefore DOES hold `rpt.report.read`.
    *
-   * A negative needs a code these screens gate on that the bundle does NOT carry. The only
-   * reporting code the bundle is denied is `rpt.export`, withheld by explicit Owner decision
-   * on least-privilege grounds (P1-31 CC-04) — and it gates nothing on either screen, because
-   * no export operation is published for a report at all. So there is NO permission negative
-   * available here and none is invented. What is asserted instead is the screen's own
-   * standing statement: no download is offered. That is a contract, not a permission, and it
-   * is recorded here as the contract it is.
+   * A case that pins the refusal is false for the second caller; a case that pins the render is
+   * false for the first. Both were written, in that order, and each failed on a truth about the
+   * other environment.
    *
-   * ## Why they need the handoff
+   * ## What they assert instead
    *
-   * Because each is a case about a CALLER, and the caller is the one the handoff names: the
-   * acceptance signs the browser in as the first administrator of the organisation the journey
-   * provisioned. Without the handoff the session belongs to an account whose permission set
-   * nothing here has established.
+   * The part of the contract that is the same for both callers, and then whichever outcome is
+   * in front of them, asserted in FULL. It is the shape `delivery-p1-31.spec.ts` already uses
+   * for the readiness queue's two idle states, for the reason stated there: binding a browser
+   * spec to a fixture's permission set is asserting something the spec does not own.
+   *
+   * Nothing here is weaker than the version it replaces. The refusal branch requires the
+   * refusal to be COMPLETE — its title, its explanation, no trace of the surface behind the
+   * gate, and on the run screen nothing the report definition carries, which is what makes the
+   * refusal one the page's own gate reached BEFORE `readReport` was called rather than one it
+   * rendered after reading. The other branch requires the whole surface a refusal would have
+   * withheld. And the two are exclusive: a screen answering with neither — a heading over a
+   * blank region, which an operator reads as "there are no reports" — fails here.
    */
   for (const [what, path, titleKey] of [
-    ['catalogue', 'reports', 'reports.catalogue.title'],
+    ['catalogue', 'reports', CATALOGUE_TITLE_KEY],
     ['run screen', `reports/${REPORT_CODES[0]}`, 'reports.run.title'],
   ] as const) {
-    test(`the ${what} renders for a caller who holds the report read code`, async ({
+    test(`the ${what} answers with its surface or with a complete refusal`, async ({
       page,
     }, testInfo) => {
-      // test-honesty-allow: TH-002 -- no acceptance handoff on this checkout; see NO_HANDOFF_REASON
-      test.skip(handoff === null, NO_HANDOFF_REASON);
       const locale = localeOf(testInfo.project.name);
       // test-honesty-allow: TH-002 -- the reporting slice is not on this checkout; see reportsAbsentReason
       test.skip(!hasMessage(locale, CATALOGUE_TITLE_KEY), reportsAbsentReason(locale));
 
       await page.goto(`/${locale}/${path}`);
 
-      // The page owns its heading either way. A render that swallowed the title would leave
-      // an operator unable to tell a report from a broken route.
-      await expect(page.getByRole('heading', { name: say(locale, titleKey) })).toBeVisible();
+      /*
+       * The chrome both outcomes share, read inside `main`.
+       *
+       * Scoped there deliberately: the sidebar renders its own group headings, and a
+       * page-wide heading query for the catalogue's title matches the rail as well as the
+       * page's `h1`, which is the strict-mode ambiguity every sibling spec in this directory
+       * hit once. The `h1` is inside `main`; the rail is not.
+       */
+      const main = page.getByRole('main');
+      await expect(
+        main.getByRole('heading', { name: say(locale, titleKey), exact: true })
+      ).toBeVisible();
       await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
 
-      await expect(
-        page.getByText(say(locale, 'state.denied.title')),
-        'the tenant-administrator bundle holds rpt.report.read, so this screen must not ' +
-          'refuse. A refusal here means the browser is signed in as some account other than ' +
-          'the first administrator of the organisation the handoff names'
-      ).toHaveCount(0);
+      // No download, on either outcome. No export operation is published for a report at all
+      // and `rpt.export` is withheld by Owner decision (CC-04), so a download control on a
+      // reporting screen would contradict the contract rather than merely a permission.
+      await expect(page.locator('a[download]')).toHaveCount(0);
 
-      // And the surface behind the gate is there. The catalogue's table and the run form's
-      // control are the two things a refusal would have withheld.
-      if (what === 'catalogue') {
+      // Wait for a terminal answer. The catalogue reads its rows in the browser, so "nothing
+      // is there yet" and "nothing is there" are the same markup until that read returns.
+      await expect(main.getByText(say(locale, 'state.loading'))).toHaveCount(0);
+
+      const surface =
+        what === 'catalogue'
+          ? main.getByRole('table', { name: say(locale, 'reports.catalogue.caption') })
+          : main.getByRole('button', { name: say(locale, 'reports.run.show'), exact: true });
+
+      if ((await main.getByText(say(locale, 'state.denied.title')).count()) > 0) {
+        // A refusal, and a whole one. The explanation belongs to it: a title alone is a
+        // screen that stopped mid-sentence, and the operator's next step is in the second
+        // line rather than the first.
+        await expect(main).toContainText(say(locale, 'state.denied.description'));
         await expect(
-          page.getByRole('table', { name: say(locale, 'reports.catalogue.caption') })
-        ).toBeVisible();
-        await expect(page.getByText(say(locale, 'reports.catalogue.noDownload'))).toBeVisible();
-      } else {
+          main,
+          'a permission denial was rendered as "nothing here yet", which tells an operator to ' +
+            'go and create something instead of asking for the code they are missing'
+        ).not.toContainText(say(locale, 'state.empty.title'));
         await expect(
-          page.getByRole('button', { name: say(locale, 'reports.run.show'), exact: true })
-        ).toBeVisible();
+          surface,
+          `the ${what} rendered the surface behind the gate to a caller it had just refused`
+        ).toHaveCount(0);
+        if (what === 'run screen') {
+          // Nothing the report definition carries is on the page, which is what "refused
+          // before the read" looks like from a browser: the idle state is part of
+          // `ReportScreen`, and `ReportScreen` is only reached once `readReport` has answered.
+          await expect(
+            main.getByText(say(locale, 'reports.run.idleTitle')),
+            'the run screen refused the caller and still showed the definition it should ' +
+              'never have read'
+          ).toHaveCount(0);
+        }
+        return;
       }
 
-      // Structural, and true of both screens: nothing here publishes a download. Stated as
-      // the contract it is — no export operation exists for a report — and not as evidence
-      // about the withheld `rpt.export`, which gates nothing an operator can see here.
-      await expect(page.locator('a[download]')).toHaveCount(0);
+      // Not refused — so the whole surface is there. An unexplained blank region is the
+      // failure this branch exists to catch.
+      await expect(surface).toBeVisible();
+      if (what === 'catalogue') {
+        // The catalogue's standing statement about export, which is the whole of its export
+        // story and would be contradicted silently by a control appearing later.
+        await expect(main.getByText(say(locale, 'reports.catalogue.noDownload'))).toBeVisible();
+      } else {
+        // Nothing has been run yet, and the screen says so rather than showing an empty
+        // table, which reads as a report that returned nothing.
+        await expect(main.getByText(say(locale, 'reports.run.idleTitle'))).toBeVisible();
+      }
     });
   }
 

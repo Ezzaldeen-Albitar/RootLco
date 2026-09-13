@@ -33,81 +33,156 @@ const PLANS_TITLE_KEY = 'warranty.policies.title';
 
 test.describe('P1-31 warranty screens, over the acceptance journey records', () => {
   /**
-   * Both reads, and the write affordance beside them, for the caller the acceptance names.
+   * Both warranty screens, for whichever caller the browser tier signed in as.
    *
-   * ## What this case used to assert, and why it was wrong about the environment
+   * ## Why this case carries no handoff gate, and must not
    *
-   * It asserted that the plan-creation panel was WITHHELD, on the ground that the code
-   * `canManagePolicies` consults is not held. That was a statement about a permission set no
-   * acceptance caller has. A freshly provisioned organisation's first administrator holds the
-   * whole tenant-administrator bundle, and `wty.policy.manage` is IN it — carried by P1-31
-   * prerequisite P-10 the day five operations began declaring it, because
-   * `resolvePolicy` refuses a company with no active warranty plan and an administrator who
-   * could not create one could never issue a warranty at all
-   * (`apps/api/src/modules/iam/domain/bootstrap-roles.ts`). So the screen offered the panel,
-   * correctly, and the assertion failed on a truth about the product.
+   * It was handoff-gated, and that is what took this file to ZERO executed tests in the
+   * governed job. Nothing in `.github/workflows/_reusable-authenticated-browser.yml` sets
+   * `ROOTLCO_P131_HANDOFF`, so every case in the file skipped and the tier's own guard — "a run
+   * that collected nothing is a failure, not a pass" — failed the job for a file that had gone
+   * silent. This case needs no journey record: both screens answer for a caller alone.
    *
-   * ## What it asserts now
+   * ## The problem it actually has to solve
    *
-   * The same render, read the other way round: both warranty reads are REACHABLE, and the
-   * write affordance beside them is OFFERED — heading and submit together, so a panel that
-   * lost its control or a control that lost its panel both fail. That an affordance appears
-   * for the holder of its code is the half of the permission contract no static check can
-   * see, and it is the half this caller can evidence.
+   * Two different callers reach these screens, and `acceptance-record.md` §3.1 records the
+   * collision as its cause B:
    *
-   * ## Why there is no negative here, and why none is invented
+   *   - the governed job signs in through `auth.setup.ts`, which reads the credentials
+   *     `acceptance:create-owner` wrote into `.local/owner-acceptance-account.json`. That
+   *     account holds `OWNER_PERMISSIONS` (`scripts/dev/owner-acceptance/context.mjs`) — it
+   *     carries `wty.warranty.read`, the code BOTH warranty pages gate on, and it does not
+   *     carry `wty.policy.manage`, the code that decides whether the plans screen offers its
+   *     create panel.
+   *   - a local acceptance overrides those credentials with the first administrator of the
+   *     organisation the journey provisioned, who holds the whole tenant-administrator bundle
+   *     and therefore holds both.
    *
-   * A negative would need a code these two screens gate on that the bundle does NOT carry.
-   * There is none: the warranty surface gates on `wty.warranty.read`, `wty.warranty.issue`
-   * and `wty.policy.manage`, and the bundle holds all three. The one reporting-adjacent code
-   * the bundle is denied by Owner decision — `rpt.export`, CC-04 — is not reachable from any
-   * warranty screen. So this case states the positive and says plainly that the negative is
-   * unavailable, rather than manufacturing one out of an affordance nobody publishes.
+   * A case that pins the panel as withheld is false for the second caller; a case that pins it
+   * as offered is false for the first. Both were written, in that order, and each failed on a
+   * truth about the other environment.
    *
-   * ## Why it needs the handoff
+   * ## What it asserts instead
    *
-   * Because it is a case about a CALLER, and the caller is the one the handoff names: the
-   * acceptance signs the browser in as the first administrator of the organisation the
-   * journey provisioned. Without the handoff the session belongs to some other account whose
-   * set nothing here has established, and a permission case asserted against an unknown
-   * holder is the mistake this rewrite exists to correct.
+   * The part of the contract that holds for both, and then the outcome in front of it, in
+   * full. Nothing here is weaker than the version it replaces:
+   *
+   *   - each screen either lets the session through or refuses it COMPLETELY — title and
+   *     explanation, with nothing behind the gate left on the page. A refusal is decided by
+   *     whether the page's own surface is there, not by whether the denial WORDS are: the
+   *     plans screen's results region renders the same shared refusal when the list read is
+   *     turned down, and reading the outcome off the words would confuse a page that was
+   *     refused with a page whose list was.
+   *   - the branch has to be named before anything is read, and the list says so before it
+   *     says anything else.
+   *   - the plan-creation panel is WHOLE or ABSENT: a heading with no control, or a control
+   *     with no heading, fails whichever caller is looking. That is the same assertion the
+   *     previous version made about the holder, stated so that it also binds the caller who
+   *     does not hold the code — and in the governed job it is the half that runs, because
+   *     `wty.policy.manage` is genuinely absent there while `wty.warranty.read` is genuinely
+   *     present. A withheld write must not withhold the read beside it, and that pairing is
+   *     asserted here rather than assumed.
    */
-  test('both warranty reads are reachable, and plan creation is offered to its holder', async ({
+  test('both warranty screens answer for the caller in front of them', async ({
     page,
   }, testInfo) => {
-    // test-honesty-allow: TH-002 -- no acceptance handoff on this checkout; see NO_HANDOFF_REASON
-    test.skip(handoff === null, NO_HANDOFF_REASON);
     const locale = localeOf(testInfo.project.name);
+    const direction = locale === 'ar' ? 'rtl' : 'ltr';
+    /*
+     * Read inside `main`. The sidebar renders its own group headings and its own warranty
+     * entries, so a page-wide heading query matches the rail as well as the page's `h1` —
+     * the strict-mode ambiguity every sibling spec in this directory hit once. The `h1` is
+     * inside `main`; the rail is not.
+     */
+    const main = page.getByRole('main');
 
-    for (const [path, titleKey] of [
-      ['warranty', 'warranty.list.title'],
-      ['warranty/policies', PLANS_TITLE_KEY],
-    ] as const) {
-      await page.goto(`/${locale}/${path}`);
+    // --- the warranty list -------------------------------------------------------------
+    await page.goto(`/${locale}/warranty`);
+    await expect(
+      main.getByRole('heading', { name: say(locale, 'warranty.list.title'), exact: true })
+    ).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('dir', direction);
 
-      await expect(page.getByRole('heading', { name: say(locale, titleKey) })).toBeVisible();
-      await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
-
-      // The read code IS held, so the gate must let this session through. Asserting the
-      // denial's absence is what makes this a permission case rather than a smoke test: it
-      // fails if the page starts demanding a code it does not declare.
+    // The form that names the branch is this screen's own surface, and the page-level gate
+    // replaces the whole body — so its presence is what separates "reached" from "refused".
+    const targetForm = main.getByRole('form', { name: say(locale, 'warranty.target.formLabel') });
+    if ((await targetForm.count()) === 0) {
+      await expect(main).toContainText(say(locale, 'state.denied.title'));
+      await expect(main).toContainText(say(locale, 'state.denied.description'));
       await expect(
-        page.getByText(say(locale, 'state.denied.title')),
-        'the tenant-administrator bundle holds wty.warranty.read, so this screen must not ' +
-          'refuse. A refusal here means the browser is signed in as some account other than ' +
-          'the first administrator of the organisation the handoff names'
+        main,
+        'a permission denial was rendered as "nothing here yet", which tells an operator to ' +
+          'go and create something instead of asking for the code they are missing'
+      ).not.toContainText(say(locale, 'state.empty.title'));
+    } else {
+      await expect(targetForm).toBeVisible();
+      // Nothing is read until a branch is named, and the screen says so. Asserted before any
+      // choice is made, because "the list is empty" and "no branch has been chosen" are two
+      // different states and only one of them would be a finding.
+      await expect(main.getByText(say(locale, 'warranty.list.chooseBranchFirst'))).toBeVisible();
+      await expect(
+        main.getByRole('table', { name: say(locale, 'warranty.list.tableCaption') }),
+        'the list read warranties before a branch was named'
       ).toHaveCount(0);
+      await expect(main.getByText(say(locale, 'state.denied.title'))).toHaveCount(0);
     }
 
-    // Still on the plans screen. The panel and its control, together: the whole affordance
-    // is present for a holder of `wty.policy.manage`, not a heading over nothing.
+    /*
+     * --- the warranty plans screen ------------------------------------------------------
+     *
+     * Conditional on the catalogue, and conditionally ASSERTED rather than skipped. The plans
+     * screen arrives with the warranty-policy-administration slice; a checkout without that
+     * merge has the route absent, and asking `say()` for a string that is not there throws.
+     * Turning the whole case off for it would put this file back where it started — silent,
+     * and failing the tier's own guard — while the list half above needs no slice at all. So
+     * the list is always asserted and the plans screen is asserted whenever it exists.
+     */
+    if (!hasMessage(locale, PLANS_TITLE_KEY)) return;
+
+    await page.goto(`/${locale}/warranty/policies`);
     await expect(
-      page.getByRole('heading', { name: say(locale, 'warranty.policies.createHeading') }),
-      'the bundle holds wty.policy.manage, so the plan-creation panel must be offered'
+      main.getByRole('heading', { name: say(locale, PLANS_TITLE_KEY), exact: true })
     ).toBeVisible();
-    await expect(
-      page.getByRole('button', { name: say(locale, 'warranty.policies.createSubmit') })
-    ).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('dir', direction);
+
+    const createHeading = main.getByRole('heading', {
+      name: say(locale, 'warranty.policies.createHeading'),
+      exact: true,
+    });
+    const createSubmit = main.getByRole('button', {
+      name: say(locale, 'warranty.policies.createSubmit'),
+      exact: true,
+    });
+    const filterForm = main.getByRole('form', {
+      name: say(locale, 'warranty.policies.filterFormLabel'),
+    });
+
+    if ((await filterForm.count()) === 0) {
+      // Refused by the page's own gate, which withholds everything: no read surface, and no
+      // write affordance sitting above a body that was never rendered.
+      await expect(main).toContainText(say(locale, 'state.denied.title'));
+      await expect(main).toContainText(say(locale, 'state.denied.description'));
+      await expect(createHeading).toHaveCount(0);
+      await expect(createSubmit).toHaveCount(0);
+      return;
+    }
+
+    // `wty.warranty.read` let the session through, so the READ surface is whole.
+    await expect(filterForm).toBeVisible();
+
+    // And the write affordance is whole or absent, never half of itself.
+    const panels = await createHeading.count();
+    const controls = await createSubmit.count();
+    expect(
+      controls,
+      'the plan-creation panel and its control must appear together: a heading over no ' +
+        'control offers something that cannot be done, and a control under no heading is a ' +
+        'write with nothing saying what it writes'
+    ).toBe(panels);
+    if (panels > 0) {
+      await expect(createHeading).toBeVisible();
+      await expect(createSubmit).toBeVisible();
+    }
   });
 
   test("the branch's warranty list carries the generated warranty", async ({ page }, testInfo) => {

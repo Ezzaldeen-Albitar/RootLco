@@ -694,3 +694,116 @@ at 2026-09-13T01:58:28Z. Inside it: one harness run, two runs of the four P1-31 
 locales, one screenshot pass and one read-only HTTP probe of the four report datasets. The handoff
 was removed with `--remove-handoff` when the browser half was done, so no credential is left on disk.
 The two organisations this run provisioned were **not** deleted, on the same precedent §7 states.
+
+### 7.2 Amendment — the governed job refused the correction pass, and why it was right to
+
+**What this amendment is.** §7.1 ends with a paragraph headed "One consequence for the governed job",
+which states that three cases would begin to skip there and calls that a narrowing. It was not a
+narrowing. It was a failure, and the governed job said so at the first opportunity: the
+`authenticated-browser` check on this branch's head `65e27dbb` ended red at its last step, "A run that
+collected nothing is a failure, not a pass", with
+
+```
+These authenticated specs contributed no executed test: reports-p1-31.spec.ts, warranty-p1-31.spec.ts
+```
+
+over a table in which nine of the eleven authenticated spec files reported a count and those two
+reported `0`, for **368** executed cases in total. This section records what that step actually
+requires, why §7.1's rewrite could not meet it, and what was changed so that it does.
+
+**What the step requires, read from the workflow rather than inferred.** The guard in
+`.github/workflows/_reusable-authenticated-browser.yml` walks `apps/web/tests/e2e/authenticated`,
+counts per FILE the results in `playwright-report.json` whose status is not `skipped`, and fails when
+any file's count is zero — separately from, and in addition to, failing when the total is zero. The
+file comment says why in terms: a green run that ran nothing is the failure mode the job exists to
+catch. A committed spec file is therefore obliged to contribute at least one case that executes with
+what the job itself provides, and the job provides no acceptance handoff: nothing in the repository
+sets `ROOTLCO_P131_HANDOFF`.
+
+§7.1 gated on that variable the only two cases in `reports-p1-31.spec.ts` and the only case in
+`warranty-p1-31.spec.ts` that did not already depend on a journey record. Both files went silent.
+`delivery-p1-31.spec.ts` and `audit-log-p1-31.spec.ts` each kept one ungated case, each contributed
+two executed results — one per locale project — and neither was named by the guard.
+
+**The mistake underneath it, which is about the caller and not about the gate.** §7.1 rewrote the
+three permission cases around "the acceptance signs the browser in as the first administrator of the
+organisation the journey provisioned". That is true of the run §7.1 records and of no other run.
+`apps/web/tests/e2e/authenticated/auth.setup.ts` takes `ROOTLCO_E2E_EMAIL` / `ROOTLCO_E2E_PASSWORD`
+when they are set and otherwise reads `.local/owner-acceptance-account.json`, which
+`acceptance:create-owner` wrote. The governed job sets neither variable, so it signs in as that
+account, whose set is `OWNER_PERMISSIONS` in `scripts/dev/owner-acceptance/context.mjs`: **60** codes,
+derived from the Administration, CRM, Vehicle and P1-28 screen surfaces. Measured against it:
+
+| code                | held by the acceptance owner | held by a tenant administrator | what turns on it                               |
+| ------------------- | ---------------------------- | ------------------------------ | ---------------------------------------------- |
+| `wty.warranty.read` | yes                          | yes                            | both warranty pages' own gate                  |
+| `sal.delivery.view` | yes                          | yes                            | the readiness queue, with two further codes    |
+| `iam.audit.view`    | yes                          | yes                            | the audit log                                  |
+| `wty.policy.manage` | **no**                       | yes                            | whether the plans screen offers a create panel |
+| `rpt.report.read`   | **no**                       | yes                            | both reporting screens' own gate               |
+
+So two callers reach these screens and they disagree about two codes. The version before §7.1 pinned
+the refusal and was false for the acceptance run; §7.1 pinned the render and was false for the
+governed job. Each was a case about an environment wearing the clothes of a case about a screen.
+
+**What changed in this pass, and only this.** Two files, three cases, no handoff gate on any of them:
+
+- `reports-p1-31.spec.ts` — the two cases that were "renders for a caller who holds the report read
+  code" are now "the catalogue / the run screen answers with its surface or with a complete refusal".
+  Each asserts, for either caller: the page's own heading inside `main` — scoped there because the
+  sidebar renders group headings too — the document direction for its locale, and that no reporting
+  screen offers a download. Then, whichever outcome is in front of it, in full. A refusal must carry
+  its explanation as well as its title, must leave nothing of the surface behind the gate on the page,
+  must not be dressed as an emptiness, and on the run screen must show nothing the report definition
+  carries — which is what "the gate answered before `readReport` was called" looks like from a
+  browser. Anything that is not a refusal must be the whole surface: the catalogue's table and its
+  no-download sentence, or the run screen's run control and its "nothing has been run yet". A screen
+  that answers with neither — a heading over a blank region — fails.
+- `warranty-p1-31.spec.ts` — "both warranty reads are reachable, and plan creation is offered to its
+  holder" is now "both warranty screens answer for the caller in front of them". The list must state
+  that a branch has to be named before anything is read, and must not have read anything before one
+  was. The plans screen must let the holder of `wty.warranty.read` through to its filter form, and its
+  plan-creation panel must be WHOLE or ABSENT — a heading with no control offers something that
+  cannot be done, and a control with no heading is a write with nothing saying what it writes. That
+  assertion binds both callers, where §7.1's bound only one. Whether each screen was reached is read
+  off its own surface rather than off the denial words, because the plans screen's results region
+  renders the same shared refusal when the list read is turned down, and a page that was refused must
+  not be confused with a page whose list was.
+
+The plans half of the warranty case is conditional on the message catalogue, as §7.1's was, but with
+an `if` and not a skip: the list half needs no slice, so it is always asserted and the plans screen is
+asserted whenever it is on the checkout. The reporting cases keep the existing catalogue-key skip,
+which is the pre-existing guard for a checkout without the reporting slice; the keys are present on
+this branch, so both cases execute.
+
+**What this makes the governed job measure.** Four executed cases in `reports-p1-31.spec.ts` (two
+cases x two locale projects) and two in `warranty-p1-31.spec.ts`, against zero for each before, with
+`delivery-p1-31.spec.ts` and `audit-log-p1-31.spec.ts` unchanged at two apiece. Every one of the
+eleven committed authenticated spec files now carries at least one case that executes with what the
+job provides. **The guard was not relaxed, no `.skip` was added, nothing was registered in
+`.github/ci-baselines/unrun-test-tiers.json`, and no assertion was weakened**: each rewritten case
+asserts strictly more than the one it replaces, because it asserts the shared contract AND the whole
+of whichever branch it lands in, where its predecessor asserted one branch and was wrong about the
+other half of the time.
+
+**What is still true and still gated.** The journey-dependent cases are untouched and stay behind the
+handoff: the catalogue's four datasets, the four per-dataset row counts, the warranty list, record and
+plans rows. Class D of §7.1 — a figure the harness records mid-journey against a dataset declared
+live — is untouched and still open.
+
+**A finding this pass exposes and does not repair.** The handoff-gated reporting cases assert on
+screens that gate on `rpt.report.read`, which the acceptance owner does not hold. They can therefore
+pass only on a run whose credentials are overridden with a caller who does — which is how §7.1's run
+was driven, and which nothing in the repository states or arranges. That is recorded here as a
+property of the instrument, not repaired: arranging it would change how the tier signs in, which is
+outside this pass.
+
+**What was run for this pass, and what is not claimed.** Locally and without the stack:
+`npx vitest run tests/ci tests/openapi-contract.test.ts` (69 files, 1991 cases), `typecheck:web`,
+`lint:web` (0 errors), `format:check:web`, `validate:web-boundary`, `validate:web-topology`, the
+changed-file ownership gate in both its forms — the context resolver, which resolves this branch to
+the `p1-31-frontend` profile against `origin/develop`, and the check itself under that profile — and
+`verify:policies`. Both recorded tiers were re-run and re-recorded, because a committed spec is an
+executable path. **No hosted result is claimed by this section.** Whether the `authenticated-browser`
+job goes green at the head this pass produces is a fact only that job can establish, and it is not
+asserted here.

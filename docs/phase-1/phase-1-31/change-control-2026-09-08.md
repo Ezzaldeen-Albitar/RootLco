@@ -3576,3 +3576,48 @@ skip without one, because each is a statement about a caller and the handoff is 
 caller. They will skip with that reason stated, where before they asserted a refusal that was true
 only of that job's own account. That is a narrowing of what the governed job asserts, and it is
 recorded here rather than left to be noticed.
+
+### 54.7 The governed job refused §54.6, and what this pass changed (CC-44)
+
+§54.6 ends with a paragraph headed "One consequence for the governed job" which states that three
+cases would begin to skip there and calls that a narrowing. It was not a narrowing. The
+`authenticated-browser` check on this branch's head `65e27dbb` ended red at its last step, "A run
+that collected nothing is a failure, not a pass", naming `reports-p1-31.spec.ts` and
+`warranty-p1-31.spec.ts` as contributing no executed test. That step fails per FILE, not only on a
+zero total, and nothing in the repository sets `ROOTLCO_P131_HANDOFF` — so gating every case in those
+two files on it left them silent. `delivery-p1-31.spec.ts` and `audit-log-p1-31.spec.ts` each kept
+one ungated case and were not named.
+
+**What changed, and only this:**
+
+| file                                                      | change                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/tests/e2e/authenticated/reports-p1-31.spec.ts`  | the two permission cases un-gated and rewritten to assert the contract that holds for either caller — the page's heading inside `main`, the document direction, no download on any reporting screen — and then, in full, whichever outcome is in front of them: a refusal complete with its explanation and nothing of the gated surface left on the page, or the whole surface a refusal would have withheld                   |
+| `apps/web/tests/e2e/authenticated/warranty-p1-31.spec.ts` | the plan-creation case un-gated and rewritten the same way: the list must say a branch has to be named before anything is read and must not have read before one was; the plans screen must let the holder of `wty.warranty.read` reach its filter form, and its create panel must be whole or absent. The plans half is conditional on the message catalogue with an `if` rather than a skip, so the list half always executes |
+| `docs/phase-1/phase-1-31/acceptance-record.md`            | **§7.2** added — the quoted failure, what the guard requires read from the workflow, the two-caller measurement that §7.1 got wrong, what each rewritten case asserts, and what is still gated                                                                                                                                                                                                                                  |
+| `docs/phase-1/phase-1-31/change-control-2026-09-08.md`    | this subsection and the CC-44 disposition                                                                                                                                                                                                                                                                                                                                                                                       |
+
+**The measurement underneath it.** `auth.setup.ts` signs in with `ROOTLCO_E2E_EMAIL` /
+`ROOTLCO_E2E_PASSWORD` when they are set and otherwise with `.local/owner-acceptance-account.json`,
+which `acceptance:create-owner` wrote. The governed job sets neither, so it signs in as that account,
+whose set is `OWNER_PERMISSIONS` in `scripts/dev/owner-acceptance/context.mjs` — **60** codes,
+derived from the Administration, CRM, Vehicle and P1-28 screen surfaces. It holds `wty.warranty.read`,
+`sal.delivery.view` and `iam.audit.view`; it does **not** hold `rpt.report.read` or
+`wty.policy.manage`. §54.6 rewrote three cases around a caller who holds all five, which is the
+acceptance run's caller and not this job's.
+
+**No product code, route, permission, migration, gate, allow-list, fixture or message catalogue
+changed.** The guard was not relaxed, no `.skip` was added, nothing was registered in
+`.github/ci-baselines/unrun-test-tiers.json`, and no assertion was weakened: each rewritten case
+asserts the shared contract AND the whole of whichever branch it lands in, where its predecessor
+asserted one branch and was wrong about the other half of the time.
+
+**Because this pass edits an executable path, both tiers were re-recorded** — the web tier and the
+unit tier, in that order, with the evidence index regenerated around each — and the ownership,
+encoding, boundary, topology and `verify:policies` gates were re-run. **No hosted result is claimed**:
+whether the `authenticated-browser` job goes green at the head this pass produces is a fact only that
+job can establish.
+
+| id        | disposition                                                                                           | why it is recorded rather than fixed                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | owner             | state        |
+| --------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------- | ------------ |
+| **CC-44** | **the handoff-gated reporting cases can pass only on a run whose browser credentials are overridden** | They assert on screens that gate on `rpt.report.read`, and the account the tier signs in as by default does not hold it. §7.1's run drove them with the journey's own administrator through `ROOTLCO_E2E_EMAIL` / `ROOTLCO_E2E_PASSWORD`, which nothing in the repository states or arranges. Repairing it means changing how the tier signs in — a different decision, on a different lane — so it is measured and stated here rather than papered over by widening what the acceptance account is granted. | the Frontend lane | open, stated |
