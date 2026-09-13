@@ -92,6 +92,28 @@ export const P1_31_OPERATION_IDS = Object.freeze([
   'sal.delivery-status-history',
   'sal.work-order-delivery-read',
   'sal.delivery-readiness-list',
+  // The five delivery WRITES the handover screens send — opening the handover,
+  // verifying its receiver, recording a checklist outcome, binding a signature and
+  // completing the release. They were the largest omission this allow-list has
+  // carried: every one is addressed under the `deliveries` root the reads above
+  // already contribute, so none of them widened the segment set and nothing about
+  // the derived half changed when they landed — which is exactly how an allow-list
+  // stops owning an operation without any diff saying so. Naming them here is the
+  // only thing that makes them owned.
+  'sal.delivery-create',
+  'sal.delivery-receiver-verify',
+  'sal.delivery-checklist-record',
+  'sal.delivery-signature-attach',
+  'sal.delivery-complete',
+  // The two checklist-template READS the handover assembles its checklist from. No
+  // operation publishes "the checklist of this handover", so the delivery adapter
+  // walks the company's active templates and reads each one — two operations, one
+  // resource root, and that root is NEW: `delivery-checklist-templates` is derived
+  // by nothing else this list names. It is the segment half of this correction, and
+  // it means a future checklist-template configuration page meets the
+  // gate-before-read rule on the day it lands.
+  'sal.delivery-checklist-template-list',
+  'sal.delivery-checklist-template-read',
   'wty.warranty-list',
   // FE-008 added the warranty record screen and its issue surface. The detail read
   // shares the `warranties` resource root the list already contributes, and the
@@ -150,6 +172,11 @@ export const P1_31_OPERATION_IDS = Object.freeze([
   // the gate does not own. It shares the `org` root the register contributes, so it
   // widens nothing about the segments and everything about the claim.
   'org.branch-list',
+  // The company DIRECTORY the readiness queue and the report scope selector both
+  // consume to offer a company before a branch. Same root as the two entries above
+  // and the same rule: an operation a P1-31 screen calls that is absent from this
+  // list is one this gate does not own.
+  'org.company-list',
 ]);
 
 /**

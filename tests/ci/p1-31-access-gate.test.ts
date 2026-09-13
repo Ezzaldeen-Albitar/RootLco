@@ -123,9 +123,19 @@ export default async function Page({ params }) {
  * because both share that same root. Both numbers below are read off the gate's
  * own report line on THIS merged head, which carries the overview page and this
  * form together.
+ *
+ * The DO-001 completeness pass moved the SEGMENT count from 9 to 10 and left the
+ * page count at 16. It added the eight operations P1-31 screens consume that this
+ * list had never named: the five delivery writes and the company directory, all of
+ * which share a resource root the list already derived, and the two
+ * checklist-template reads, whose root `delivery-checklist-templates` nothing else
+ * derives. So one new segment and no new page — and, as with `warranty` and
+ * `reports` before it, a configuration page landing under that segment tomorrow
+ * meets this rule already written. Both numbers are read off the gate's own report
+ * line on this head.
  */
 const PINNED_PAGES = 16;
-const PINNED_OWNED_SEGMENTS = 9;
+const PINNED_OWNED_SEGMENTS = 10;
 
 describe('the derivation is P1-31’s own and is not empty', () => {
   it('derives the delivery and warranty resource roots from the register', () => {
@@ -134,7 +144,15 @@ describe('the derivation is P1-31’s own and is not empty', () => {
     // meaningless, and the gate itself refuses it.
     expect(segments.length).toBeGreaterThan(0);
     expect(segments.length, segments.join(', ')).toBe(PINNED_OWNED_SEGMENTS);
-    for (const expected of ['deliveries', 'warranties', 'work-orders', 'org']) {
+    for (const expected of [
+      'deliveries',
+      'warranties',
+      'work-orders',
+      'org',
+      // Derived only by the two checklist-template reads DO-001 added, and by
+      // nothing else — which is why the segment count moved with them.
+      ['delivery', 'checklist', 'templates'].join('-'),
+    ]) {
       expect(segments, `${expected} is a P1-31 resource root`).toContain(expected);
     }
   });
@@ -191,6 +209,28 @@ describe('the derivation is P1-31’s own and is not empty', () => {
     // directory the form picks a branch from.
     expect(P1_31_OPERATION_IDS).toContain(id('org', 'employee-list'));
     expect(P1_31_OPERATION_IDS).toContain(id('org', 'branch-list'));
+    // The company directory the readiness queue and the report scope selector
+    // consume. Same root as the two above, so it widens nothing about the segments
+    // and everything about the claim.
+    expect(P1_31_OPERATION_IDS).toContain(id('org', 'company-list'));
+    // The five delivery WRITES the handover screens send. Every one shares the
+    // `deliveries` root the reads already contribute, so no segment moved when they
+    // landed and nothing said they were unowned — which is the failure mode an
+    // allow-list has and a namespace does not.
+    for (const tail of [
+      'delivery-create',
+      'delivery-receiver-verify',
+      'delivery-checklist-record',
+      'delivery-signature-attach',
+      'delivery-complete',
+    ]) {
+      expect(P1_31_OPERATION_IDS, `${tail} is owned`).toContain(id('sal', tail));
+    }
+    // The two checklist-template reads the handover assembles its checklist from.
+    // Their root is derived by nothing else this list names, so these two are what
+    // moved the segment count.
+    expect(P1_31_OPERATION_IDS).toContain(id('sal', 'delivery-checklist-template-list'));
+    expect(P1_31_OPERATION_IDS).toContain(id('sal', 'delivery-checklist-template-read'));
     // Three operations on the same two subjects are deliberately NOT claimed. The
     // two administration commands: no screen of this phase administers a roster.
     // The single-employee read: it was claimed while an adapter with no consumer
