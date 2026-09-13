@@ -3462,3 +3462,71 @@ none of them has reported on this branch.
   figure moved: the pinned page count, because a page was added.
 - **No hosted run, no database tier, no browser acceptance and no end-to-end result is claimed**, and
   the slice is stacked on an unmerged pull request, so nothing here is reachable on `develop` yet.
+
+## 54. The fresh-organisation acceptance, run and recorded (QA-005)
+
+**Slice:** `feature/p1-31-acceptance-record`, ownership profile `p1-31-frontend`.
+**Baseline:** protected `develop` **`6005cfa4ca3db4dbf45a2cb6ea5edff1dc70f821`** (the merge of PR
+#378, which put the harness outside the repository). The branch was cut from that head and carries no
+merge of its own. It is **documentation only**: no executable path, no gate, no fixture and no
+configuration changed.
+
+**What it records:** the acceptance [`acceptance-plan.md`](./acceptance-plan.md) describes was
+**executed**, on 2026-09-12/13, against a production build of that head on the shared local stack.
+The record is [`acceptance-record.md`](./acceptance-record.md) and its verdict is **PARTIAL**: the
+HTTP journey answered **176 steps with 0 findings**, twenty-five of the thirty-four committed browser
+cases did not run to completion for the three causes §3.1 of the record names, and no Owner Pass has
+been given. Section 52's marking is therefore answered in part — the harness has now been run — and
+**CC-42 is closed by measurement**: the journey half no longer proves nothing, because it ran.
+
+### 54.1 Identifier allocation
+
+Read on `develop` `6005cfa4`, where the register runs to **section 53** and **CC-42**, and where
+every section and identifier below that is settled — section 49 having been taken by PR #379 and
+section 51 by PR #377. **This slice takes section 54 and CC-43**, the next free pair in both
+sequences, and touches no other lane's numbering.
+
+### 54.2 What this slice changed
+
+| file                                                   | change                                                                                                                                                                               |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `docs/phase-1/phase-1-31/acceptance-record.md`         | **new** — the record: verdict, the 176-step HTTP table with correlation ids, the browser matrix per locale, the refusal/concurrency/isolation cases, how it was driven, observations |
+| `docs/phase-1/phase-1-31/task-matrix.md`               | rule 2 restated against the record that now exists; six rows — FE-002 … FE-006 and FE-008 — moved to `end-to-end verified` citing it; the companion-records line names it            |
+| `docs/phase-1/phase-1-31/change-control-2026-09-08.md` | this section                                                                                                                                                                         |
+
+**No row moved on anything but evidence.** §6 of the record states, task by task, what the run could
+and could not establish; the ten FE tasks it could not answer for keep the state they had, and the
+reason is written beside each.
+
+### 54.3 What the run changed outside the repository
+
+The harness `orchestration/acceptance/p1-31-journey.mjs` is not in this tree, and it was **corrected
+six times** while the acceptance was in flight — each correction against the shipped contract it had
+misread. §7 of the record lists the six runs, their step and finding counts, and what each
+established. The two things worth carrying here:
+
+- **Nothing in this repository was changed to make a step pass.** No product code, test, gate,
+  allow-list, fixture or expectation moved. The step count rose from 86 to 176 because the journey
+  grew the hops the product actually requires — the work-order and job state graphs, an accepted
+  quotation as the invoice's only commercial source, a technician availability window, a real
+  decodable image for the signature, and the document link the signature's provenance check reads.
+- **Twelve organisations are left in the shared local database**, `p31_journey_{a,b}_<stamp>` for the
+  six stamps, taking `org.tenants` from 25 rows to 37. None was deleted, on the P1-30 precedent, and
+  none of the codes matches a backend-suite prefix.
+
+### 54.4 Dispositions
+
+| id        | disposition                                                                                       | why it is recorded rather than fixed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | owner             | state          |
+| --------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | -------------- |
+| **CC-43** | **twenty-five of the thirty-four committed P1-31 browser cases do not pass against a real world** | Seventeen are strict-mode locator ambiguities in the specs themselves, six assert a permission withheld that a fresh tenant administrator holds, and two assert a translated report title over a label the tenant supplied; §3.1 of the record names every one with its file, line and cause. They are recorded rather than fixed here because this slice is documentation only, and because editing a committed spec is a change to an executable path that would oblige a re-record of the web tier and belongs to the lane that owns those files. They are invisible on the governed job today, where every journey-dependent case skips for want of a handoff, and will all surface at once the first time one exists. | the Frontend lane | open, recorded |
+
+### 54.5 What this slice did NOT do
+
+- **It did not close the phase.** The record's verdict is PARTIAL and the Owner Pass §6.3 of the plan
+  requires has not been given.
+- **It changed no executable path**, so no tier was re-recorded: the static and documentation checks
+  §5 of the record names are the whole of what was run on this branch.
+- **It deleted no tenant, ran no migration, applied no seed and reset nothing.** The database is as
+  the acceptance left it, and the four environment figures were confirmed read-only before the window
+  opened.
+- **It claims no hosted result.** Everything in the record is loopback, and the record says so.
