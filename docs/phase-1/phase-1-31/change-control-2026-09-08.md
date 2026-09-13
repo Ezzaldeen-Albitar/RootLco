@@ -5074,3 +5074,211 @@ shape, and it is raised as **CC-52 (a)** rather than fixed by editing four other
 - **It asserts nothing about promotion.** `main` is `1262de74`, this slice does not move it, and
   [`closure-record.md`](./closure-record.md) § 6 states in terms that the phase is **not eligible**
   for promotion and why.
+
+## 63. The per-file web coverage artefact and the ledger-aware provenance gate (CC-53)
+
+**Task ids:** P1-31-QA-001-010 (the artefact) and P1-31-QA-005-038 (the gate).
+
+**Register pair:** section 63 and CC-53, the lowest free pair. Section 62 recorded the register as
+running to "sections 1 … 62 with CC-01 … CC-52"; that was true of the head section 62 left, and this
+section is the one identifier added since. The § 62.7 disposition partition
+(**26 open + 4 stating no usable disposition + 47 closed or settled = 77**) was exact over the
+identifiers that existed when it was computed. CC-53 is raised after it and sits outside it, so the
+count with this section included is **78**. The earlier figure is left exactly as written, in the
+annotate-rather-than-rewrite discipline § 48.1 states.
+
+**Baseline:** protected `develop` `72f3a71e`.
+
+### 63.1 What CC-53 addresses, and what it does not close
+
+Two defects already recorded by other lanes, each repaired where it lives:
+
+- **CC-50 (a)** — "the per-file web coverage summary reaches no reader, so H-2 and H-3 can be filled
+  from no hosted artefact". The web-quality job MEASURES per-file coverage and then throws the
+  measurement away.
+- **CC-52 (b)** — "a gate accepts a provenance word without reading the ledger behind it".
+
+Neither is closed by this section. The artefact half closes when a hosted run of this pull request
+has produced the file and H-2 and H-3 are filled from it, which is the fill plan in § 63.6. The gate
+half is repaired here in code, and **CC-52 (b) is for the § 62 lane to move**, not for this lane to
+close on its behalf.
+
+### 63.2 (A) The web-quality job keeps the coverage output it already writes
+
+The "Web coverage ratchet" step at
+[`.github/workflows/_reusable-node-quality.yml`](../../../.github/workflows/_reusable-node-quality.yml)
+lines 705–711 runs `scripts/ci/coverage-gate.mjs` with
+`--summary apps/web/coverage/web/coverage-summary.json` and
+`--json coverage-gate-web.json --markdown coverage-web.md`. Both JSON files exist on the runner for
+the rest of the job. Only the rendered markdown survived it: the upload list carried `*.md` and no
+per-file web summary, so the two machine-readable halves were destroyed with the runner.
+
+Two lines are added to the `evidence-${{ inputs.task }}` upload list, now at lines 882–905:
+
+| added path                                    | why                                                                                                                     |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/coverage/web/coverage-summary.json` | the per-file measurement itself — instrumented files per tree (H-2) and the dashboard route tier's own figure (H-3)     |
+| `coverage-gate-web.json`                      | the ratchet's verdict over that summary, the web counterpart of `coverage-gate.json`, which the list has always carried |
+
+The list is otherwise unchanged: 22 entries before, 24 after, nothing removed and nothing reordered.
+The explanatory prose sits **above** `path:` as a YAML comment rather than inside the block scalar,
+because `path: |` is a literal block and a `#` line inside it is a search path and not a comment.
+
+**Nothing about what is measured changes.** No coverage flag, no `coverage.include` list, no baseline
+value and no floor is touched. This decides only whether the run keeps two files it already produces.
+
+`protected-develop-verification.yml` and `pr-ci.yml` both call this same reusable workflow, so there
+is no second upload list to edit and both inherit the change.
+
+### 63.3 The baseline's `establishedBy`: an inconsistency recorded, not edited
+
+[`coverage-record.md`](./coverage-record.md) § 5 observes that
+`.github/ci-baselines/coverage-baseline.web.json:5` (`establishedBy`) cites
+`apps/web/coverage/web/coverage-summary.json` inside artefact `evidence-web-quality` as the source of
+its 131-instrumented-file figure — a file that artefact did not carry.
+
+Correcting the field here was considered and **deliberately refused**, because it is machine-read and
+not free-text provenance: `scripts/ci/coverage-gate.mjs:92` reads its truthiness to tell an
+unestablished baseline from a silenced ratchet, `scripts/ci/coverage-gate.mjs:350` writes it, and
+`tests/ci/baseline-integrity.test.ts:80-81` holds a sibling baseline to naming a run id in it.
+Editing a machine-read field so that a citation reads true would be repairing the record rather than
+the fact.
+
+The fact is repaired instead: from the first hosted run after § 63.2 merges the artefact **does**
+carry that file, and the citation becomes openable. The figure itself belongs to the coverage-policy
+lane, and no value in `.github/ci-baselines/` is edited by this section.
+
+### 63.4 (B) The provenance gate reads the ledger instead of accepting a word
+
+`tests/ci/p1-27-doc-counts.test.ts:613` pinned the restated executed total with
+`/\*\*The (\d+) is (?:local|HOSTED)/`. The alternation was deliberate and its reasoning is recorded in
+the file: the case is about the page not stating two different totals, and pinning one word would
+break at the local-to-hosted transition the sentence exists to describe. Both halves of that are
+true, and the result still read nothing about provenance — either word passed whatever the ledger
+held, so a local measurement relabelled HOSTED was invisible to every gate in the repository.
+
+**The rule as implemented.** The word is now decided by parsing two committed ledgers:
+
+1. Every `**The <n> is <word>…**` restatement on the page is collected. A page carrying none is
+   REFUSED rather than passed, on the anti-vacuity rule the ownership gate applies to an empty diff.
+2. The restatement is mapped to a tier by `evidence/closing-value-ledger.json`: the closing value
+   whose `locator` is a prefix of the restatement and whose `binding.kind` is `run` names the `tier`
+   and the `field`. A restatement no ledger row binds is REFUSED — nothing decides what it describes.
+3. The tier's record in `evidence/local-run-ledger.json` decides the state. **No `provenance` block
+   is LOCAL** — that is the repository's own marker, and `clean-room-evidence.md` says so in the
+   sentence under test. A complete block is **HOSTED**. A block that is present and incomplete is
+   **neither**, and is refused: `source` must be exactly `hosted`, `runId` and `job` must be all
+   digits, `headSha` must be forty hexadecimal characters, and `source`, `runId`, `job`, `headSha`,
+   `artifact`, `artifactDigest` and `field` must every one be a non-empty string.
+4. The wording must match the state. LOCAL obliges "local, and it is pending attestation by this pull
+   request's hosted run."; HOSTED obliges "HOSTED, and it is the binding measurement".
+5. The number is still compared against the record's own `field`, which is what the old case did and
+   is kept.
+
+The first six required fields are `HOSTED_PROVENANCE_FIELDS` in
+`scripts/ci/check-p1-27-closing-values.mjs`. **`artifactDigest` is required as a seventh, here.** The
+writer emits it, and it is the only field tying the counts to bytes GitHub published rather than to a
+run id somebody typed, so a block without it is a hosted claim with the checkable part removed.
+
+**No checker carries the same pin.** A search of `scripts/` for the alternation and for the phrase
+"binding measurement" returns nothing, so there is no second copy to bring into step; the test file
+was the only place the wording was read.
+
+### 63.5 The negative cases, and what each would have caught
+
+Eight cases, all in `tests/ci/p1-27-doc-counts.test.ts`. Six run against FIXTURE ledgers and pages
+built inside the test rather than against the live files, so a refusal is exercised without writing a
+false statement into a record.
+
+| case                                             | ledger fixture                      | page fixture    | outcome  |
+| ------------------------------------------------ | ----------------------------------- | --------------- | -------- |
+| the live record and the live page                | committed files, unmodified         | committed page  | **PASS** |
+| a local record described as local                | no `provenance` block               | "local …"       | **PASS** |
+| a hosted record described as binding             | complete `provenance`               | "HOSTED …"      | **PASS** |
+| a hosted record still described as local         | complete `provenance`               | "local …"       | **FAIL** |
+| a local record described as HOSTED               | no `provenance` block               | "HOSTED …"      | **FAIL** |
+| a block with no `artifactDigest`, either wording | `provenance` minus `artifactDigest` | both, in turn   | **FAIL** |
+| a restatement bound to no tier                   | complete `provenance`               | orphan sentence | **FAIL** |
+| a page that restates nothing                     | no `provenance` block               | no restatement  | **FAIL** |
+
+Each refusal asserts the TEXT of the refusal and not merely that one occurred, so a case cannot pass
+on the wrong complaint. The two live tiers carry no provenance block at `72f3a71e`, the page reads
+"local", and the live case passes on that agreement — it fails the moment a hosted run is recorded
+and the sentence is not corrected, which is the behaviour that was missing.
+
+**No ledger, record or evidence file is edited by this section.** No allow-list is widened, no
+suppression is added, and no wording is relaxed to make anything pass.
+
+### 63.6 The fill plan for H-2 and H-3 — phase two, and its rule
+
+The two figures [`coverage-record.md`](./coverage-record.md) § 4 holds open stay open here. **This
+pull request records no coverage figure of its own.**
+
+They are filled by a SECOND slice, after this one merges and a hosted run of the changed workflow has
+produced the artefact. The filling slice must state, beside every figure it writes:
+
+- the **run id** and the **head sha** the run checked out;
+- the **artefact id** of the `evidence-web-quality` artefact it read, and the **digest** GitHub
+  publishes for those bytes;
+- which file inside it each figure came from — `apps/web/coverage/web/coverage-summary.json` for the
+  per-tree instrumented-file counts (H-2) and for the dashboard route tier's own figure (H-3), and
+  `coverage-gate-web.json` for the ratchet's verdict over them.
+
+**Never from an older run.** Runs `34759286884` and `34321869051` are both cited elsewhere in this
+phase and neither carries the file, so a figure sourced from either would be a figure with no
+artefact behind it — the exact defect CC-50 (a) names. A run that predates § 63.2 cannot satisfy this
+plan whatever its numbers say.
+
+### 63.7 Verification
+
+Static and database-free, run at `72f3a71e` plus this change. Each command is named with what it
+decided. No tier needing a database, no production build, no browser tier and no deployment was run,
+and none is claimed.
+
+| command                                                    | result                                                                         |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `npx vitest run tests/ci/p1-27-doc-counts.test.ts`         | pass, 49 cases, including the eight of § 63.5                                  |
+| `npm run typecheck`                                        | pass                                                                           |
+| `npm run lint`                                             | pass                                                                           |
+| `npm run format:check`                                     | pass                                                                           |
+| `npm run test:unit`                                        | pass                                                                           |
+| `npm run security:all`                                     | pass                                                                           |
+| `node scripts/ci/check-p1-27-doc-counts.mjs`               | pass                                                                           |
+| `node scripts/ci/check-p1-27-closing-values.mjs`           | pass — unchanged by this slice, and re-run to establish that                   |
+| `npm run validate:plain-language`                          | pass                                                                           |
+| `npm run validate:encoding`                                | pass                                                                           |
+| `npm run verify:policies`                                  | pass                                                                           |
+| `node scripts/ci/check-phase-ownership.mjs p1-31-frontend` | pass, 0 violations                                                             |
+| the workflow YAML parsed with `js-yaml`                    | parses; the upload list resolves to 24 entries with no comment line among them |
+
+**Ownership.** The branch is `feature/p1-31-…`, which
+`.github/ci-baselines/phase-ownership-profiles.json` maps to `p1-31-frontend`. That profile permits
+`docs`, `tooling` — which is what classifies `.github/**` and `scripts/**` — `tests`, `web` and
+`rootConfig`. The three trees this slice touches, the workflow and `tests/ci` and
+`docs/phase-1/phase-1-31`, fall in `tooling`, `tests` and `docs`, so **one branch covers all three
+and no split into two pull requests is needed**. No API source, no migration, no seed and no web
+source is changed.
+
+### 63.8 Dispositions
+
+| id        | finding                                                                                                                                                 | disposition                                                                                                                                                                                                                                                                            | owner     | state                          |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ------------------------------ |
+| **CC-53** | the web tier measured per-file coverage into an artefact nobody kept, and the provenance gate beside it accepted either word without reading the ledger | **both repaired in code.** The upload list keeps `apps/web/coverage/web/coverage-summary.json` and `coverage-gate-web.json`; the wording pin is replaced by a rule that parses the closing-value ledger and the run ledger, with six fixture-driven refusals proving it can still fail | this lane | **open, pending the artefact** |
+
+CC-53 stays **open** on purpose. The code change is complete and verified; the measure it exists to
+produce does not exist until a hosted run of this pull request has uploaded the file, and CC-53
+closes when H-2 and H-3 are filled from that artefact under the § 63.6 rule.
+
+**Related identifiers, and who moves them.** **CC-50 (a)** (§ 60.5) is unblocked by § 63.2 and moves
+when the fill lands. **CC-52 (b)** (§ 62.7) describes the gate this section repairs and is the § 62
+lane's to move.
+
+### 63.9 What this slice did NOT do
+
+- **It claims no hosted result.** No run of the changed workflow exists as this is written, and no
+  figure in this section comes from one.
+- **It moved no task-matrix row, and touched no task matrix.**
+- **It changed no ledger, no evidence record and no CI baseline value.**
+- **It changed nothing about what coverage measures** — no threshold, no `include` list, no floor.
+- **It did not close CC-50 (a), CC-52 (b) or CC-53**, and it closed no finding by re-wording it.
+- **It added, renamed and removed no npm script**, so the command-coverage register is untouched.

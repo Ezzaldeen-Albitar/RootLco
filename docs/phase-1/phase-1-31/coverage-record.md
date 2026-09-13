@@ -259,6 +259,12 @@ the coverage-policy lane and a figure in it moves by that lane's measurement, so
 as an observation under no identifier of its own and **nothing in `.github/ci-baselines/` is
 edited**.
 
+_The upload list is repaired by `change-control-2026-09-08.md` § 63.2, and § 63.3 records why
+`establishedBy` is still not edited: the field is machine-read — `scripts/ci/coverage-gate.mjs:92`
+reads its truthiness and `:350` writes it — so the citation is made true by making the artefact carry
+the file, not by rewording the field. The range quoted above, `864-886`, is the range on `develop`
+`72f3a71e`; § 63.2 moves the same list to `882-905`._
+
 ## 6. Summary
 
 | statement                                                                   | verdict                                 |
@@ -274,3 +280,13 @@ record exists" item and closes nothing else. Its hosted figures are now filled f
 `34759286884`; **two figures stay open** — the per-tree instrumented-file counts (H-2) and the
 dashboard route tier's own measurement (H-3) — and they stay open until the `evidence-web-quality`
 upload list carries the per-file web coverage summary.
+
+**The remedy is in flight, and it is not a figure.**
+[`change-control-2026-09-08.md`](./change-control-2026-09-08.md) **§ 63 (CC-53)** adds
+`apps/web/coverage/web/coverage-summary.json` and `coverage-gate-web.json` to that upload list, so a
+hosted run of the web-quality job keeps the per-file measurement it already takes. **No number in
+this record moves on that change**, and H-2 and H-3 stay open here. They are filled by a second
+slice, from the artefact a hosted run of § 63 produces, under the rule § 63.6 states: the run id,
+the head sha, the artefact id and the published digest are named beside every figure, and **never an
+older run** — neither `34759286884` nor `34321869051` carries the file, so neither can fill these two
+however good its numbers look.
