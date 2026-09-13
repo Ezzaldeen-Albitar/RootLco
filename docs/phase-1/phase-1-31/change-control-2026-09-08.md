@@ -3971,16 +3971,25 @@ gate at all", and that the audit declarations are counted while "a count is not 
 
 ### 58.1 Identifier allocation — PROVISIONAL, dated 2026-09-13 at `develop` `d517a5fc`
 
-The register in this file, at the head this branch carries, runs to **section 55** and **CC-45** —
-section 54 is the acceptance run (#380) and section 55 the closure record (#381), both merged.
-Sections **56** and **57** and the identifiers **CC-46** and **CC-47** are not present at this head
-and are assumed held by P1-31 lanes on unmerged branches, in the same way section 53.1 records for
-the range below it. So this slice takes **section 58** and **CC-48**, allocated to it alone, the
-first heading and the first identifier above every number a lane could be holding; both stay
+The register in this file, at the head this branch now carries — the merge of `develop`
+`ea3b7fc0` — runs to **section 57** and **CC-47**: section 54 is the acceptance run (#380),
+section 55 the closure record (#381), section 56 the assurance-index re-measurement (#382) and
+section 57 the operator runbook (#383), all four merged. Sections **56** and **57** and the
+identifiers **CC-46** and **CC-47** were held by sibling P1-31 lanes on unmerged branches when this
+allocation was raised, in the same way section 53.1 records for the range below it, and both have
+since merged. So this slice keeps **section 58** and **CC-48**, allocated to it alone and untouched
+by the merge, which restored the order to 55, 56, 57, 58 and renumbered nothing; both stay
 **PROVISIONAL** until the branch merges. Section 48.1's rule governs a collision: an identifier is allocated when its finding
 is raised and is **never renumbered** to follow heading order, so a collision moves THIS section and
 this identifier and leaves every existing one alone. A textual conflict with a sibling lane at merge
 time is expected and is resolved by the coordinator.
+
+_(True when written, at `develop` `d517a5fc`: the register then ran to **section 55** and
+**CC-45**, and sections 56 and 57 with CC-46 and CC-47 were "not present at this head" and were
+"assumed held by P1-31 lanes on unmerged branches". The expected thing then happened. Both merged —
+section 56 / CC-46 as **#382**, section 57 / CC-47 as **#383** — and the merge of `ea3b7fc0` into
+this branch placed section 58 above both. All four allocations stand as raised; none was
+renumbered.)_
 
 ### 58.2 What changed, and what was minted
 
@@ -3991,7 +4000,7 @@ time is expected and is resolved by the coordinator.
 | `scripts/ci/check-command-coverage.mjs` — one register entry, tier `required`; `package.json` — the script, and one edge in `verify:policies` | nothing      |
 | `apps/web/src/features/warranty/warranty-contract.ts` — the exported `WarrantyGenerateBody`; `warranty-api.ts` — the adapter takes it         | nothing      |
 | `docs/phase-1/phase-1-31/audit-class-review.md` — the review of all 45 audit declarations                                                     | nothing      |
-| the SEC-004 row of the task matrix, `not started` → `implemented/unmerged`; this section                                                      | nothing      |
+| the SEC-004 row of the task matrix, `not started` → `in open PR (#384)`; this section                                                         | nothing      |
 
 **No Backend source changed** — no route, no service, no repository, no migration, no seed, no
 permission, no audit action. **No operation was added, renamed or withdrawn**, and the P1-24 register
