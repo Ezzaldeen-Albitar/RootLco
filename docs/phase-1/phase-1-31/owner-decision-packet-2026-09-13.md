@@ -70,7 +70,7 @@ Definition-of-Done bullet (`canonical-plan.md:454-462`) it touches.
 **(a) Decision wording.** "For P1-31 at `develop` `fb65b049`, I record the phase decision as **Pass /
 Conditional Pass / Fail / Deferred**, with these conditions: ______."
 
-**(b) Why existing authorisation does not resolve it.** closure-record.md:331-333 leaves the verdict
+**(b) Why existing authorisation does not resolve it.** closure-record.md:332-334 leaves the verdict
 field deliberately empty and states that only the approval owner named in Field 35 may fill it — "No
 engineering session, no agent, no pull request and no record may supply it, infer it, or treat its
 absence as any of the four values." None of the three recorded Owner decision files carries a phase
@@ -85,10 +85,10 @@ are **Conditional Pass** (with the conditions being items A-2, A-3, A-4 and F-2 
 **(d) Practical impact.** Until a value is recorded, the chapter's own `Status` for all twenty-nine
 tasks remains `Planned` (`canonical-plan.md:471-472`), no dependent work may be authorised, and no
 promotion of `develop` to `main` may be justified by phase closure —
-closure-record.md:477 states in terms that the phase is **not eligible**.
+closure-record.md:478 states in terms that the phase is **not eligible**.
 
 **(e) Blocks this phase: YES.** Gate condition **4** (`canonical-plan.md:466-469`;
-closure-record.md:321) and DoD bullet **4** (`canonical-plan.md:462`).
+closure-record.md:322) and DoD bullet **4** (`canonical-plan.md:462`).
 
 ---
 
@@ -105,7 +105,7 @@ security-and-qa-evidence.md:3), the acceptance record
 `acceptance-record.md`, the phase coverage record `coverage-record.md`, the audit-class review
 `audit-class-review.md`, the operator runbook `operator-runbook.md` and the matrix `task-matrix.md`.
 **What does not exist is the certificate and the certifier**:
-closure-record.md:319 states "**no certification, and no certifier.** The index is marked OPEN and
+closure-record.md:320 states "**no certification, and no certifier.** The index is marked OPEN and
 **no QA lead is named in this repository**." Appointing a role holder is not an engineering act, and
 a record is not a certificate of itself.
 
@@ -132,7 +132,7 @@ reconciliation; SEC-002's export posture closed by disposition and a committed r
 negative behind a mocked adapter; SEC-003's set-wide privilege-escalation and cross-tenant probes
 (`tests/backend/p1-31-privilege-escalation.test.ts`, merged #386 at `e2908f06`); and SEC-004's
 sibling write-shape gate plus `audit-class-review.md`. **What does not exist is the clearance, and
-there is no reviewer to give it**: closure-record.md:320 states "**no clearance, and no
+there is no reviewer to give it**: closure-record.md:321 states "**no clearance, and no
 reviewer.**"
 
 **Four residues a clearance would have to address, named so they are not discovered afterwards.**
@@ -152,7 +152,7 @@ reviewer.**"
    integration assertions, and no acceptance record exercises them.
 
 **(c) Recommendation.** Appoint. All four SEC rows sit at `phase-level incomplete` on the matrix's own
-vocabulary (task-matrix.md:70-81), and a clearance given over that shape should be given by a
+vocabulary (task-matrix.md:74-81), and a clearance given over that shape should be given by a
 named person, in writing.
 
 **(d) Practical impact.** Same as A-2 — condition 3 has no executor.
@@ -292,7 +292,7 @@ that does not exist; Field 30 permits an explicit not-applicable decision as a d
 "**Still open.** **D-19** of 2026-09-12 requires FE-010 to make its freshness and timezone VISIBLE, which is
 a display requirement and not a refresh mechanism". So the newest Owner decision explicitly does not settle
 it, and the assurance index records it unchanged at this head
-(security-and-qa-evidence.md:1161).
+(security-and-qa-evidence.md:1164).
 **(c)** Record it not-applicable for P1-31 under Field 30, and raise the push surface as a platform item.
 **(d)** Without the decision, DO-002 cannot state what the phase owes over the platform's existing logging,
 and it is one of the two things standing between DO-002 and a definition — the other being that the
@@ -333,7 +333,7 @@ pre-release item, which is exactly what P1-25's gate record already says.
 **(b)** `a0-preflight.md:428-434`: all five ids return zero files and the testing-plan document Field 9 names
 does not exist here, so **no task can satisfy its own Test reference** — this is why the evidence index
 transposes its definitions from another phase and why CC-37 exists. The convention half is still
-unresolved at this head (security-and-qa-evidence.md:1030), and #378 and #380 have now instantiated the
+unresolved at this head (security-and-qa-evidence.md:1033), and #378 and #380 have now instantiated the
 repository's convention twice without reconciling it.
 **(c)** Retire the five ids and ratify the repository convention. Inventing files to match dead ids would be
 the worse outcome.
@@ -450,7 +450,7 @@ seed.
 observation **O-5** records that a tenant configuration left in `draft` **suppresses** the baseline in
 `listPublished`, so `rpt.report-run` answers `404 ERR-RES-001` for a report the tenant previously had, and
 the consequence "is stated nowhere a screen could show it"
-(closure-record.md:410). Confirming the rule should be paired with directing that
+(closure-record.md:411). Confirming the rule should be paired with directing that
 consequence be surfaced.
 
 **(e) Blocks this phase: NO.** Touches DoD bullet **2** and DoD bullet **3**.
@@ -503,7 +503,7 @@ slice" and its state reads "open, recorded", and the disposition says in terms t
 whoever owns the writer". The measurement: the family is "**referenced in `apps/web` only by the generated
 `apps/web/src/lib/api/idempotent-operations.ts` manifest; no screen and no adapter calls them**", which is "the
 declared-but-never-wired shape this task exists to catch, and P1-31 ships it knowingly"
-(security-and-qa-evidence.md:590). Nothing in the three decision files authorises shipping seven published
+(security-and-qa-evidence.md:593). Nothing in the three decision files authorises shipping seven published
 operations with no consumer.
 
 **A figure corrected while asking this.** The family is **seven operations, of which five are writes and two
@@ -613,7 +613,7 @@ administrator roles at 78 codes only where the backfill has been run, and a `NOT
 CC-16 and CC-20, both open (change-control-2026-09-08.md:4975).
 
 **(e) Blocks this phase: YES.** DoD bullet **3** names runbooks explicitly (`canonical-plan.md:460-461`), and
-the bullet is not evidenced while the acts stay unperformed (closure-record.md:283).
+the bullet is not evidenced while the acts stay unperformed (closure-record.md:284).
 
 ### F-5. QA-004 — a sibling version-sourcing gate, or a recorded waiver
 
@@ -626,7 +626,7 @@ one."
 deliberately absent, 7 this application must reach, 30 adapters, 31 guarded call sites" — and the assurance
 index states plainly that whether P1-31 owes a sibling gate "is a decision this record does not take", with
 "**No P1-31 version-sourcing gate exists**" as an open item
-(security-and-qa-evidence.md:903). The escalation lane merged the concurrency cases that were owed
+(security-and-qa-evidence.md:906). The escalation lane merged the concurrency cases that were owed
 (**CC-49**) and recorded the decision as "unchanged and undecided: … This slice does not decide it"
 (change-control-2026-09-08.md:4560).
 
@@ -650,7 +650,7 @@ move it further.
 operation's success response is emitted with `schema: { type: 'object' }` from a single literal at
 `apps/api/src/server/openapi/document.ts:224`. Re-counted against the generated document at this head,
 **411 of 411 operations** publish exactly `{"type":"object"}` as their success schema, and all 45 P1-31
-operations are among them (security-and-qa-evidence.md:767). The chapter asks only that every public operation be
+operations are among them (security-and-qa-evidence.md:770). The chapter asks only that every public operation be
 "represented in OpenAPI" (`canonical-plan.md:370-372`) — it does not require typed response bodies — **no gate
 reads response properties**, and A0 classified the shortfall as **chapter-level rather than a P1-31 defect**
 (`a0-preflight.md:81`). What is missing is the Owner's explicit confirmation of that classification.
@@ -676,7 +676,7 @@ contrast is the point — the one code that _is_ deliberately withheld carries a
 `apps/api/src/modules/iam/domain/bootstrap-roles.ts:378-390` explains that `rpt.export` "remains deliberately
 EXCLUDED … on least-privilege grounds by Owner decision … (P1-31 CC-04)". There is no equivalent sentence for
 this code, so its absence reads as an omission rather than a decision. The acceptance observed the consequence
-and recorded that it blocked nothing (closure-record.md:404).
+and recorded that it blocked nothing (closure-record.md:405).
 
 **(c) Recommendation.** **INCLUDE.** The bundle's own stated rule is "carry a code only when a shipped operation
 declares it", and two shipped operations declare this one.
@@ -698,7 +698,7 @@ only on an explicit choice of the first option; no answer, or the second option,
 **(b) Why existing authorisation does not resolve it.** No decision file authorises deleting tenant data.
 Existing practice is the P1-30 precedent of **not** deleting: their codes match no backend-suite prefix, so no
 routine run will remove them and none of them will remove anything else
-(closure-record.md:450).
+(closure-record.md:451).
 
 **The count, measured on 2026-09-13 by a read-only query and labelled as one.** `org.tenants` holds **41**
 rows; **16** are `p31_journey_*` and **18** are `p30_journey_*`. Two of the sixteen are the pair the corrected

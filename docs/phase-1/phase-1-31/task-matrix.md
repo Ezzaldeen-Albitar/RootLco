@@ -101,7 +101,7 @@ outstanding, not a reduction of it — **no canonical row; the prerequisite P-12
 _(These totals read `end-to-end verified` **15** with no `merged (write path)` row. **The
 re-measure LOWERED three rows**: FE-004, FE-005 and FE-006 held `end-to-end verified` on their HTTP
 steps alone, and no committed browser case exercises the checklist, final-odometer or signature
-surfaces in either locale. `merged (write path)` is the state the vocabulary at lines 59-68 gives
+surfaces in either locale. `merged (write path)` is the state the vocabulary at lines 74-81 gives
 for work that is on `develop` including the commands the task implies, which is exactly what the
 HTTP journey exercised and all it exercised. The three owed cases are **CC-52 (c)**.)_
 

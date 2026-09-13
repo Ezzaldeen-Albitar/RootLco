@@ -101,12 +101,15 @@ section below states both and measures both.
    matrix's rule is satisfied. The second half is not: `task-matrix.md` rule 2 admits that state only
    for a task the record itself establishes against a running environment, and **documentary evidence
    alone never earns it**. The record has moved **fifteen** rows, all of them Frontend (`FE-*`), in
-   three passes: its § 6, § 7.1 and § 8 name every one. **It moves no row in this file**, because
-   nothing it did was a phase-level review of a security or QA task. The state vocabulary used below
-   is the matrix's own (`task-matrix.md:61-68`). _(This rule read "The record moved twelve rows … § 6
-   and § 7.1 name every one", and cited the vocabulary at `task-matrix.md:26-37`: both true when
-   written; the corrected re-run of § 8 moved three more and the matrix has been rewritten around
-   them.)_
+   three passes: its § 6, § 7.1 and § 8 name every one — **of which twelve hold `end-to-end verified`
+   at this head; FE-004, FE-005 and FE-006 were lowered to `merged (write path)` by the closure
+   re-measure, because no committed browser case exercises the checklist, final-odometer or signature
+   surfaces in either locale (CC-52 (c))**. **It moves no row in this file**, because nothing it did
+   was a phase-level review of a security or QA task. The state vocabulary used below is the matrix's
+   own (`task-matrix.md:74-81`). _(This rule read "The record moved twelve rows … § 6 and § 7.1 name
+   every one", and cited the vocabulary at `task-matrix.md:26-37` and then at `:61-68`: all were true
+   when written; the corrected re-run of § 8 moved three more, three were then lowered, and the matrix
+   has been rewritten around both.)_
 3. **Every non-Owner statement is labelled.** **Measured fact** means read off this tree with the
    path given; **engineering assessment** means a judgement by this record's author, binding on
    nobody. No Owner decision is quoted beyond the ones named with their file and line.

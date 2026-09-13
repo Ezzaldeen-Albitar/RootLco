@@ -263,10 +263,11 @@ written. The verdict — **not evidenced** — is unchanged.)_
 
 **Bullet 2 — not evidenced. The exact residue: no formal acceptance by the authorized owner exists
 for any open disposition, and the open set is 26 identifiers at this head — the derived index at
-change control § 62.6, quoted in § 5.1.** _(This read "**28 identifiers**", which was § 57.4's
-figure at `821ed668` plus #383 and is superseded: § 62.6 re-derives the partition at this head as
-**26 open, 4 stating no usable disposition, 47 closed or settled** of 77, the twenty-sixth being
-CC-52 (c).)_ The isolation
+change control § 62.6, quoted in § 5.1.** _(The lineage of that figure, so no reader has to
+reconstruct it: **28** was § 57.4's, derived at `821ed668` plus #383 and now superseded; **25** was
+§ 62.6 as first derived at this head, `25 + 4 + 47 = 76`; **26** is § 62.6 as it stands, `76 +
+CC-52 (c) = 77`, the twenty-sixth open row being the three owed browser cases. Each was true of its
+own basis.)_ The isolation
 half is now strong on the engineering side: every refusal, concurrency and isolation case the
 acceptance plan names answered as it should (`acceptance-record.md` § 4), and #386 added a
 set-wide privilege-escalation and cross-tenant probe suite against a disposable database (register
