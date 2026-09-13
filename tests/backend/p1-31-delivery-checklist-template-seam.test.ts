@@ -663,6 +663,43 @@ describe('sal.delivery-checklist-template-create', () => {
       1
     );
   });
+
+  it('refuses the same idempotency key offered with a DIFFERENT body', async () => {
+    /*
+     * The other half of the replay contract, and the half a replay case cannot
+     * assert. `withIdempotency` matches a stored reservation on a fingerprint over
+     * the principal, the method, the path template, the resolved parameters and the
+     * canonicalised body. Without this case a route that stored the KEY alone would
+     * pass the replay case above and hand a second, different request the first
+     * one's document — reporting a template created that never was.
+     */
+    authAs(SAL_FULL);
+    const key = randomUUID();
+    const first = await createTemplate(
+      { companyId: COMPANY_A1, templateCode: nextCode('fp'), name: 'First body' },
+      key
+    );
+    expect(first.status).toBe(201);
+    const created = await bodyOf<DetailBody>(first);
+
+    authAs(SAL_FULL);
+    const conflicting = await createTemplate(
+      { companyId: COMPANY_A1, templateCode: nextCode('fp'), name: 'Second body' },
+      key
+    );
+    expect(conflicting.status).toBe(409);
+    expect(await codeOf(conflicting)).toBe('ERR-INT-001');
+
+    // And the second body wrote nothing: one template for this key, still the first.
+    const written = await admin.query<{ name: string }>(
+      `SELECT name FROM sal.delivery_checklist_templates WHERE id = $1`,
+      [created.template.id]
+    );
+    expect(written.rows[0]?.name).toBe('First body');
+    expect(await auditCount('sal.delivery_checklist_template.created', created.template.id)).toBe(
+      1
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -916,6 +953,79 @@ describe('rename and status are version-guarded', () => {
     expect(response.status).toBe(422);
     expect(await codeOf(response)).toBe('ERR-VAL-001');
   });
+
+  it('refuses a rename body the boundary schema does not admit', async () => {
+    // `RenameBody` is `{ name }` and `.strict()`, so a blank name and an attempt to
+    // rewrite the CODE under cover of a rename are both refusals. The template code is
+    // deliberately immutable: every recorded outcome points at the row by id, but the
+    // code is what a second company's import would collide with.
+    const template = await authorTemplate({ name: 'Rename body probe' });
+
+    for (const body of [{ name: '' }, { name: '   ' }, { templateCode: nextCode('sneak') }, {}]) {
+      authAs(SAL_FULL);
+      const refused = await RENAME_TEMPLATE(
+        new Request(`${BASE}/${template.id}`, {
+          method: 'PATCH',
+          headers: jsonHeaders({ version: template.recordVersion }),
+          body: JSON.stringify(body),
+        }),
+        { params: Promise.resolve({ templateId: template.id }) }
+      );
+      expect({ body, status: refused.status }).toEqual({ body, status: 422 });
+      expect(await codeOf(refused)).toBe('ERR-VAL-001');
+    }
+
+    expect((await templateRow(template.id))?.name).toBe('Rename body probe');
+  });
+
+  it('refuses a status flip with NO If-Match, and one carrying a stale version', async () => {
+    /*
+     * The status command is version-guarded in its own right, and until this case it
+     * was covered only through the RENAME above. The two are different declarations
+     * on different routes: a `versionGuarded` flag dropped from the status route
+     * would have left every assertion in this file green.
+     */
+    const template = await authorTemplate({ name: 'Guarded flip' });
+
+    authAs(SAL_FULL);
+    const missing = await setTemplateStatus(template.id, 'inactive', null);
+    expect(missing.status).toBe(428);
+    expect(await codeOf(missing)).toBe('ERR-CON-002');
+
+    authAs(SAL_FULL);
+    const stale = await setTemplateStatus(template.id, 'inactive', 99);
+    expect(stale.status).toBe(409);
+    expect(await codeOf(stale)).toBe('ERR-CON-001');
+
+    // Neither refusal moved the row, and neither burned the version.
+    const row = await templateRow(template.id);
+    expect({ status: row?.status, recordVersion: row?.record_version }).toEqual({
+      status: 'active',
+      recordVersion: template.recordVersion,
+    });
+  });
+
+  it('refuses the same status key offered with a DIFFERENT body', async () => {
+    // The fingerprint half of the replay contract for this command. The flip above
+    // replays an identical retry; this one requires a changed body to be refused
+    // rather than answered with the stored document.
+    const template = await authorTemplate({ name: 'Flip fingerprint' });
+    const key = randomUUID();
+
+    authAs(SAL_FULL);
+    const first = await setTemplateStatus(template.id, 'inactive', template.recordVersion, key);
+    expect(first.status).toBe(200);
+    const flipped = await bodyOf<TemplateBody>(first);
+
+    authAs(SAL_FULL);
+    const conflicting = await setTemplateStatus(template.id, 'active', flipped.recordVersion, key);
+    expect(conflicting.status).toBe(409);
+    expect(await codeOf(conflicting)).toBe('ERR-INT-001');
+
+    // The refused second body did not restore the template.
+    expect((await templateRow(template.id))?.status).toBe('inactive');
+    expect(await auditCount('sal.delivery_checklist_template.status_changed', template.id)).toBe(1);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1044,6 +1154,106 @@ describe('the item commands', () => {
     });
     expect(response.status).toBe(409);
     expect(await codeOf(response)).toBe('ERR-CON-001');
+  });
+
+  it('refuses an item body the boundary schema does not admit', async () => {
+    // `ItemCreateBody` constrains the code to the same shape the database does, bounds
+    // the sort order, and is `.strict()`. A body accepted here and refused by the
+    // database would be a 500 rather than a 422.
+    const template = await authorTemplate({ name: 'Item body probe' });
+
+    for (const body of [
+      { itemCode: 'Not A Valid Code', label: 'Bad code' },
+      { itemCode: nextCode('blank'), label: '   ' },
+      // The bound is the INTEGER column's own range, and a fraction is not one.
+      { itemCode: nextCode('order'), label: 'Out of range', sortOrder: 2147483648 },
+      { itemCode: nextCode('fraction'), label: 'Not an integer', sortOrder: 1.5 },
+      { itemCode: nextCode('extra'), label: 'Unknown field', isDeleted: true },
+      { label: 'No code at all' },
+    ]) {
+      authAs(SAL_FULL);
+      const refused = await createItem(template.id, body);
+      expect({ body, status: refused.status }).toEqual({ body, status: 422 });
+      expect(await codeOf(refused)).toBe('ERR-VAL-001');
+    }
+
+    const rows = await admin.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM sal.delivery_checklist_template_items
+        WHERE template_id = $1`,
+      [template.id]
+    );
+    expect(Number(rows.rows[0]?.n)).toBe(0);
+  });
+
+  it('refuses an item edit with NO If-Match, leaving the item untouched', async () => {
+    /*
+     * `sal.delivery-checklist-template-item-update` declares `versionGuarded: true`
+     * and the ITEM's own counter is what it guards on. The stale case is asserted in
+     * the lifecycle test above; the MISSING-header case was not asserted anywhere, so
+     * the route's own `expectedVersion === null` branch was unexercised.
+     */
+    const template = await authorTemplate({
+      name: 'Item guard',
+      items: [{ itemCode: 'fx_p131_p9_guarded', label: 'Guarded item' }],
+    });
+    const item = template.items[0];
+    if (item === undefined) throw new Error('the fixture template carries no item');
+
+    authAs(SAL_FULL);
+    const missing = await updateItem(template.id, item.id, { label: 'No version supplied' }, null);
+    expect(missing.status).toBe(428);
+    expect(await codeOf(missing)).toBe('ERR-CON-002');
+
+    const row = await admin.query<{ label: string; record_version: number }>(
+      `SELECT label, record_version FROM sal.delivery_checklist_template_items WHERE id = $1`,
+      [item.id]
+    );
+    expect({ label: row.rows[0]?.label, recordVersion: row.rows[0]?.record_version }).toEqual({
+      label: 'Guarded item',
+      recordVersion: item.recordVersion,
+    });
+  });
+
+  it('replays one item key into one item, and refuses that key with a DIFFERENT body', async () => {
+    /*
+     * `sal.delivery-checklist-template-item-create` declares `idempotent: true` and
+     * carried neither half of the contract: no identical retry, and no fingerprint
+     * refusal. A retry that created a SECOND item would have been invisible, and a
+     * second, different request answered with the first item's document would have
+     * reported an item added under a code that was never written.
+     */
+    const template = await authorTemplate({ name: 'Item idempotency' });
+    const key = randomUUID();
+    const body = { itemCode: nextCode('idem'), label: 'Retried item' };
+
+    authAs(SAL_FULL);
+    const first = await createItem(template.id, body, key);
+    expect(first.status).toBe(201);
+    const created = await bodyOf<ItemBody>(first);
+
+    authAs(SAL_FULL);
+    const replay = await createItem(template.id, body, key);
+    // 200 rather than 201: the declared `successStatus` applies to the execution, and
+    // a replay is a stored document rather than a second execution.
+    expect(replay.status).toBe(200);
+    expect(await bodyOf<ItemBody>(replay)).toEqual(created);
+
+    authAs(SAL_FULL);
+    const conflicting = await createItem(
+      template.id,
+      { itemCode: nextCode('idem'), label: 'A different item' },
+      key
+    );
+    expect(conflicting.status).toBe(409);
+    expect(await codeOf(conflicting)).toBe('ERR-INT-001');
+
+    const rows = await admin.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM sal.delivery_checklist_template_items
+        WHERE template_id = $1 AND deleted_at IS NULL`,
+      [template.id]
+    );
+    expect(Number(rows.rows[0]?.n)).toBe(1);
+    expect(await auditCount('sal.delivery_checklist_template.item_added', created.id)).toBe(1);
   });
 });
 

@@ -956,6 +956,90 @@ describe('P-10 the version guard', () => {
     expect(await codeOf(refused)).toBe('ERR-CON-002');
   });
 
+  it('P10-C7 the three remaining write bodies are bounded by the boundary schema', async () => {
+    /*
+     * The 422 half of the contract for the writes that had none: the rename, the
+     * policy status and the coverage status. Each schema is `.strict()` and each
+     * status is an enum over `WARRANTY_LIFECYCLE_STATUSES`, so a value the database
+     * would refuse with a CHECK violation is refused at the boundary instead — which
+     * is the difference between a 422 naming the field and a 500.
+     */
+    const policy = await authorPolicy({
+      name: 'Body probe',
+      coverage: [{ coveredScope: 'all', durationMonths: 12, effectiveFrom: '2024-01-01' }],
+    });
+    const window = policy.coverage[0];
+    expect(window).toBeDefined();
+    if (window === undefined) return;
+
+    for (const body of [{ name: '' }, { name: '   ' }, { policyCode: nextCode('sneak') }, {}]) {
+      authAs(SAL_FULL);
+      const refused = await RENAME_POLICY(
+        new Request(`${BASE}/${policy.id}`, {
+          method: 'PATCH',
+          headers: jsonHeaders({ version: policy.recordVersion }),
+          body: JSON.stringify(body),
+        }),
+        { params: Promise.resolve({ policyId: policy.id }) }
+      );
+      expect({ body, status: refused.status }).toEqual({ body, status: 422 });
+      expect(await codeOf(refused)).toBe('ERR-VAL-001');
+    }
+
+    for (const status of ['retired', 'draft', '']) {
+      authAs(SAL_FULL);
+      const refusedPolicy = await setPolicyStatus(policy.id, status, policy.recordVersion);
+      expect({ status, code: refusedPolicy.status }).toEqual({ status, code: 422 });
+      expect(await codeOf(refusedPolicy)).toBe('ERR-VAL-001');
+
+      authAs(SAL_FULL);
+      const refusedCoverage = await setCoverageStatus(
+        policy.id,
+        window.id,
+        status,
+        window.recordVersion
+      );
+      expect({ status, code: refusedCoverage.status }).toEqual({ status, code: 422 });
+      expect(await codeOf(refusedCoverage)).toBe('ERR-VAL-001');
+    }
+
+    // Nothing moved: not the name, not the status, not either version counter.
+    expect(await policyRow(policy.id)).toEqual({
+      name: 'Body probe',
+      status: 'active',
+      record_version: policy.recordVersion,
+    });
+    expect(await coverageStatuses(policy.id)).toEqual(['active']);
+  });
+
+  it('P10-C6 a policy status without If-Match is refused, and a stale one conflicts', async () => {
+    /*
+     * `wty.warranty-policy-status-set` declares `versionGuarded: true` on its own
+     * route, and until this case the guard was asserted only through the RENAME
+     * (P10-C1, P10-C2) and the COVERAGE status (P10-C4). Three declarations, three
+     * routes: dropping the flag from this one would have left the file green while
+     * a concurrent archive silently overwrote a restore.
+     */
+    const policy = await authorPolicy({ name: 'Status guard probe' });
+
+    authAs(SAL_FULL);
+    const missing = await setPolicyStatus(policy.id, 'archived', null);
+    expect(missing.status).toBe(428);
+    expect(await codeOf(missing)).toBe('ERR-CON-002');
+
+    authAs(SAL_FULL);
+    const stale = await setPolicyStatus(policy.id, 'archived', policy.recordVersion + 5);
+    expect(stale.status).toBe(409);
+    expect(await codeOf(stale)).toBe('ERR-CON-001');
+
+    // Neither refusal moved the row, and neither burned the version.
+    expect(await policyRow(policy.id)).toEqual({
+      name: 'Status guard probe',
+      status: 'active',
+      record_version: policy.recordVersion,
+    });
+  });
+
   it('P10-C5 a policy is archived and restored, and its coverage is NOT cascaded', async () => {
     const policy = await authorPolicy({
       name: 'Status probe',
@@ -1227,6 +1311,88 @@ describe('P-10 idempotency', () => {
     ]);
     expect(rows.rowCount).toBe(1);
     expect(await auditCount('wty.warranty_policy.coverage_added', created.id)).toBe(1);
+  });
+
+  it('P10-I3 the create refuses its key offered with a DIFFERENT body', async () => {
+    /*
+     * The half of the contract P10-I1 cannot assert. `withIdempotency` matches a
+     * stored reservation on a fingerprint over the principal, the method, the path
+     * template, the resolved parameters and the canonicalised body. A route that
+     * stored the KEY alone would answer this second, different request with the first
+     * policy's document, reporting a policy code registered that was never written.
+     */
+    const key = randomUUID();
+    const secondCode = nextCode('fp_second');
+    const before = await policyCount(COMPANY_A1);
+
+    authAs(SAL_FULL);
+    const first = await createPolicy(
+      { companyId: COMPANY_A1, policyCode: nextCode('fp_first'), name: 'First policy' },
+      key
+    );
+    expect(first.status).toBe(201);
+
+    authAs(SAL_FULL);
+    const conflicting = await createPolicy(
+      { companyId: COMPANY_A1, policyCode: secondCode, name: 'Second policy' },
+      key
+    );
+    expect(conflicting.status).toBe(409);
+    expect(await codeOf(conflicting)).toBe('ERR-INT-001');
+
+    // One policy for the key, and the second code was never written.
+    expect(await policyCount(COMPANY_A1)).toBe(before + 1);
+    const rows = await admin.query(
+      `SELECT 1 FROM wty.warranty_policies WHERE tenant_id = $1 AND policy_code = $2`,
+      [TENANT_A, secondCode]
+    );
+    expect(rows.rowCount).toBe(0);
+  });
+
+  it('P10-I4 the coverage add refuses its key offered with DIFFERENT terms', async () => {
+    const policy = await authorPolicy({ name: 'Coverage fingerprint probe' });
+    const key = randomUUID();
+
+    authAs(SAL_FULL);
+    const first = await createCoverage(
+      policy.id,
+      { coveredScope: 'all', durationMonths: 18, effectiveFrom: '2024-01-01' },
+      key
+    );
+    expect(first.status).toBe(201);
+
+    authAs(SAL_FULL);
+    const conflicting = await createCoverage(
+      policy.id,
+      { coveredScope: 'part', durationMonths: 6, effectiveFrom: '2021-01-01' },
+      key
+    );
+    expect(conflicting.status).toBe(409);
+    expect(await codeOf(conflicting)).toBe('ERR-INT-001');
+
+    const rows = await admin.query(`SELECT 1 FROM wty.warranty_coverage WHERE policy_id = $1`, [
+      policy.id,
+    ]);
+    expect(rows.rowCount).toBe(1);
+  });
+
+  it('P10-I5 the status flip refuses its key offered with a DIFFERENT status', async () => {
+    const policy = await authorPolicy({ name: 'Status fingerprint probe' });
+    const key = randomUUID();
+
+    authAs(SAL_FULL);
+    const first = await setPolicyStatus(policy.id, 'archived', policy.recordVersion, key);
+    expect(first.status).toBe(200);
+    const archived = await bodyOf<PolicyBody>(first);
+
+    authAs(SAL_FULL);
+    const conflicting = await setPolicyStatus(policy.id, 'active', archived.recordVersion, key);
+    expect(conflicting.status).toBe(409);
+    expect(await codeOf(conflicting)).toBe('ERR-INT-001');
+
+    // The refused second body did not restore the policy.
+    expect((await policyRow(policy.id))?.status).toBe('archived');
+    expect(await auditCount('wty.warranty_policy.status_changed', policy.id)).toBe(1);
   });
 });
 
