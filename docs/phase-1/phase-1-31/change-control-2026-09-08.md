@@ -4371,6 +4371,13 @@ no other identifier (§ 48.1: identifiers are never renumbered). It changes **no
 route, no permission, no migration, no seed, no gate, no allow-list and no message catalogue**. It
 adds two backend suites and moves two rows of the task matrix.
 
+**Slice:** `feature/p1-31-escalation-and-concurrency-tests`, opened as pull request
+[#386](https://github.com/Ezzaldeen-Albitar/RootLco/pull/386). **Baseline:** protected `develop`
+**`81b3bce804626353a1a7b9f4ba52f1306c8f8b6e`** (the merge of PR #380) for the branch's own two
+commits, then merged with protected `develop`
+**`474d89ef8ad938b09be5a3f81f22546caaf887c0`** (the merge of PR #385) before the pull request was
+opened. `main` `1262de74`, untouched.
+
 **The standing rule this slice runs under, restated because it is the rule that is easiest to
 break by accident.** A backend suite is never pointed at the shared acceptance stack. The tier
 selects its database only through `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD`
