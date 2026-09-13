@@ -28,9 +28,12 @@ import { join } from 'node:path';
 import {
   P1_31_AREAS,
   P1_31_OPERATION_IDS,
+  deferredSegments,
   deriveSegments,
   ownedSegments,
+  p1_31PagesUnder,
 } from '../../scripts/ci/check-p1-31-access.mjs';
+import { p1_29PagesUnder } from '../../scripts/ci/check-p1-29-access.mjs';
 
 const ROOT = process.cwd();
 const GATE = join(ROOT, 'scripts', 'ci', 'check-p1-31-access.mjs');
@@ -142,9 +145,19 @@ export default async function Page({ params }) {
  * `audit-log` area is named beside them, because the page lives under
  * `(dashboard)/administration/audit-log` and no derived root matches it. Two new
  * segments, one new page. Both numbers are read off the gate's own report line.
+ *
+ * Review then found what those numbers were hiding: SEVEN of the seventeen judged
+ * pages were `(dashboard)/work-orders/**`, admitted by the resource root of
+ * `sal.work-order-delivery-read` — a SUB-resource at `/work-orders/{id}/delivery`
+ * — and six of them consume no P1-31 operation at all. They are now DEFERRED to
+ * the P1-29 gate, which owns that area and judges them with `judgePage`, the same
+ * function this gate imports. So the judged count is 10 and the deferred count 7;
+ * the SEGMENT count does not move, because owning the operation root is a separate
+ * claim from judging the pages under it.
  */
-const PINNED_PAGES = 17;
+const PINNED_PAGES = 10;
 const PINNED_OWNED_SEGMENTS = 12;
+const PINNED_DEFERRED_PAGES = 7;
 
 describe('the derivation is P1-31’s own and is not empty', () => {
   it('derives the delivery and warranty resource roots from the register', () => {
@@ -407,8 +420,37 @@ describe('the repository’s own run is not vacuous', () => {
     // See PINNED_PAGES / PINNED_OWNED_SEGMENTS above: both move whenever a
     // P1-31 page or owned segment is added or removed.
     const owned = /across (\d+) owned segment\(s\)/.exec(out)?.[1] ?? '0';
+    const handedOver = /(\d+) deferred to the P1-29 gate/.exec(out)?.[1] ?? '0';
     expect(Number(examined), out).toBe(PINNED_PAGES);
     expect(Number(owned), out).toBe(PINNED_OWNED_SEGMENTS);
+    expect(Number(handedOver), out).toBe(PINNED_DEFERRED_PAGES);
+  });
+
+  it('defers only pages the P1-29 gate really judges, and says how many', () => {
+    /*
+     * The deferral is the one thing here that could silently remove coverage, so
+     * it is proved from both ends rather than asserted. Every page this gate
+     * hands over is in the sibling's own page set — computed by the sibling, not
+     * restated — and the gate itself carries the same check and reports a page
+     * handed over and not taken as a violation.
+     */
+    const appRoot = join(ROOT, 'apps', 'web', 'src', 'app');
+    const judged = p1_31PagesUnder(appRoot) as string[] & { deferred?: string[] };
+    const handedOver = judged.deferred ?? [];
+    expect(handedOver.length).toBe(PINNED_DEFERRED_PAGES);
+    const sibling = new Set(
+      (p1_29PagesUnder(appRoot) as string[]).map((p) => p.replace(/\\/g, '/'))
+    );
+    for (const page of handedOver) {
+      expect(sibling, `${page} is judged by the P1-29 gate`).toContain(page.replace(/\\/g, '/'));
+    }
+    // …and the deferral is DERIVED from that gate, so it cannot outlive it. Only
+    // the work-orders area is in the intersection today, and the P1-30 gate is
+    // deliberately not deferred to — doing so would recreate the singular-area
+    // hole this file exists to close.
+    expect(deferredSegments().has('work-orders')).toBe(true);
+    expect(deferredSegments().has('delivery')).toBe(false);
+    expect(deferredSegments().has(['warranty', 'policies'].join('-'))).toBe(false);
   });
 
   it('refuses an application root under the floor, instead of reporting health', () => {
