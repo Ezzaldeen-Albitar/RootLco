@@ -5,7 +5,7 @@
 per-suite index this record is the cross-screen artefact for), [`task-matrix.md`](./task-matrix.md)
 (the task states), [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) — the
 disposition for this record is § 60 / CC-50, pre-allocated by the closure plan and appended to the
-register at this lane's merge-queue turn
+register at this lane's merge-queue turn, in pull request #385
 
 **Measured at:** branch `feature/p1-31-refused-download-and-coverage`, at its merge of protected
 `develop` **`af924cab`**, on 2026-09-13 — the head carrying pull request #384. Every figure in this
