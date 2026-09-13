@@ -5391,7 +5391,8 @@ reason.
 
 ## 65. The warranty transition ledger published — P-18, the backend half of FE-009 (CC-55)
 
-**Slice:** `remediation/p1-31-backend-warranty-history`, ownership profile `p1-31-backend`.
+**Slice:** `remediation/p1-31-backend-warranty-history`, ownership profile `p1-31-backend`, opened as
+pull request [#390](https://github.com/Ezzaldeen-Albitar/RootLco/pull/390).
 **Baseline:** protected `develop` **`72f3a71ee4a8204c494913e40e6c2a43cd683e36`**, then merged up to
 **`591763df`** — the merge of pull request #389, the per-file web coverage artefact and the
 ledger-aware provenance gate — before this branch was proposed. `main` `1262de74`, untouched and far
