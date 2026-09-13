@@ -7,6 +7,26 @@
 [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) (dispositions),
 [`canonical-plan.md`](./canonical-plan.md) (the chapter's own task tables)
 
+**Measured at an ancestor of `develop`, deliberately, and here is the difference.** This version was
+measured at `81b3bce8` and is integrated onto `develop` `d517a5fc`, which is `81b3bce8` plus
+**#381** — the pull request that added [`closure-record.md`](./closure-record.md) and took the change
+register's **section 55 and CC-45**. This file is **not** re-derived at `d517a5fc`: every figure
+below names the head it was read on, and **rule 5** below is that a figure is re-measured or
+corrected in place, never silently re-based onto a head nobody counted it at. Two of them move at
+the newer head and are named here so that no reader has to find them, and the passages that carry
+them are left standing as measured, exactly as § 14 leaves its own superseded allocation standing.
+**The directory count.** `docs/phase-1/phase-1-31/` holds **32** files at `d517a5fc` rather than the
+**31** counted in § 9 and § 12, the one addition being `closure-record.md`; § 12's breakdown becomes
+**20 per-slice records and 12 phase-level ones**, `closure-record.md` being the twelfth beside the
+preflight, the canonical plan, the change register, the task matrix, this file, the acceptance plan
+and record, the three Owner-decision records and `d4-report-definitions.md`. § 9's other figure is
+unchanged: `closure-record.md` does not carry "acceptance" in its name, so **two** files still do.
+**The register.** Its highest pair at `d517a5fc` is **section 55 with CC-45** rather than the **54
+with CC-44** counted in § 13 — which is why § 15 takes section 56 and CC-46, and why that allocation
+is unaffected. Nothing else here is touched by #381: it moves no state, adds no test, publishes no
+operation and changes no gate. The next version re-measures the whole file at whatever head it is
+written on.
+
 The second version was measured at `develop` `9b109f63` (PR #377 merge) and **two pull requests have
 merged since, both of which this file was factually wrong about**: **#378** at `6005cfa4`, which put
 the acceptance harness outside this repository and committed the four browser specs, and **#380** at
@@ -59,7 +79,7 @@ what each id means, onto P1-31's surface — and says so rather than presenting 
 the chapter's own words. Where the P1-31 chapter's task NAME diverges from the P1-28 definition, the
 section below states both and measures both.
 
-## Four rules this record obeys
+## Five rules this record obeys
 
 1. **`task-matrix.md` owns the state.** This file adds the proving artefact; it does not move a
    state. Where a measurement here would support a different state than the matrix carries, that is
@@ -83,6 +103,13 @@ section below states both and measures both.
    [`acceptance-record.md`](./acceptance-record.md) with the section it is stated in**, is that
    record's measurement and not this one's, and is never restated as though this file had observed
    it. **No hosted run is claimed anywhere in this file.**
+5. **A figure is re-measured or corrected in place, never re-based.** This record states the head it
+   was measured at, and every figure below names the head it was read on. When `develop` moves past
+   that head, no figure is silently re-attributed to the newer one. Only two answers are open: the
+   whole file is re-measured at the newer head and says so, or the measurement head is left standing
+   and every figure that moves is named explicitly, with what it becomes and why. The header does
+   the second for `d517a5fc`; the second version's own supersession (§ 9, § 12, § 14) is the
+   precedent for both.
 
 ## Index
 
@@ -426,7 +453,9 @@ own vocabulary — verified slices exist, the cross-cutting coverage does not �
 `not started` to `phase-level incomplete` in [`task-matrix.md`](./task-matrix.md), citing this
 section. It moves no further: rule 2 forbids it, and the missing part is a real one.
 
-**State.** `phase-level incomplete` — **moved by this record** from `not started`, on § 3.1.
+**State.** `phase-level incomplete` — this record **supports the move recorded in**
+[`task-matrix.md`](./task-matrix.md) (`not started` → `phase-level incomplete`), on § 3.1. Rule 1
+holds: the matrix owns the state, and this section is the artefact it cites.
 
 **Open items.**
 
@@ -1102,6 +1131,12 @@ commit. **This record takes section 56 and CC-46**, the next pair above that cla
 is taken, nothing is renumbered, and § 48.1's rule holds: an identifier is a claim about the register
 at the moment it was raised. A textual conflict with a sibling lane at merge time is expected and is
 resolved by whoever integrates, never by renumbering an identifier.
+
+_(True when written, and the expected thing then happened. Section 55 and CC-45 merged as **#381** at
+`develop` `d517a5fc`, recording the phase closure record, so the sibling lane is no longer unmerged
+and both allocations now sit side by side in the register. This record's own allocation is unchanged
+— § 48.1's rule is that an identifier is never renumbered, and section 56 with CC-46 stays where it
+was raised.)_
 
 | id           | finding                                                                                   | disposition                                                                                                                                                                                                                                                                                             | owner / slice | state            |
 | ------------ | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ---------------- |

@@ -3704,6 +3704,10 @@ a claim about the register at the moment it was raised, and is never renumbered 
 order. A textual conflict with a sibling lane at merge time is expected and is resolved by whoever
 integrates.
 
+_(True when written, and the expected thing then happened. The sibling lane merged as **#381** at
+`develop` `d517a5fc`, and its section 55 and CC-45 are the pair immediately above this one in this
+file. Both allocations stand as raised; neither was renumbered.)_
+
 ### 56.2 What this slice changed
 
 | file                                                   | change                                                                                                                                                                                                                                       |
