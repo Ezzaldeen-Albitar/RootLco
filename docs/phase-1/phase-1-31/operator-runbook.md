@@ -85,12 +85,13 @@ and reports zeros.
 ### 2.1 How these sections map onto the four acts the phase index names
 
 The phase index counts four owed operator acts —
-[`security-and-qa-evidence.md`](./security-and-qa-evidence.md) § 11 (lines 678–683) and
-`closure-record.md` lines 308–310, which is on `develop` and not on this branch. **This runbook
-also numbers four acts, and they are not the same four.** The two differences are stated here
-rather than left for a reader to notice: this document splits the migrations by tool rather than by
-task, so it carries all three in one section, and it promotes the catalogue seed to a numbered
-section because an operator who skips it hits an exit-5 refusal. Nothing is added to the index's
+[`security-and-qa-evidence.md`](./security-and-qa-evidence.md) § 11, the owed-act table at
+lines 952–957, and [`closure-record.md`](./closure-record.md) lines 341–346, a file this pull
+request also corrects. **This runbook also numbers four acts, and they are not the same four.**
+The two differences are stated here rather than left for a reader to notice: this document splits
+the migrations by tool rather than by task, so it carries all three in one section, and it
+promotes the catalogue seed to a numbered section because an operator who skips it hits an exit-5
+refusal. Nothing is added to the index's
 list and nothing is dropped from it.
 
 | this runbook                                                               | the act as the index states it                                                                                                                                                  | where the index records it                                     |

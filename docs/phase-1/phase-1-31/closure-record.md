@@ -1,7 +1,10 @@
 # P1-31 — closure record (inputs to gate P1-G31)
 
 **Measured at protected `develop` `81b3bce804626353a1a7b9f4ba52f1306c8f8b6e`** (the merge of PR
-#380, the acceptance record); `main` `1262de74`, untouched by this phase.
+#380, the acceptance record); `main` `1262de74`, untouched by this phase. _(The § 2 row states are
+no longer measured on that head. They are re-counted at `develop` `821ed668` plus this branch, and
+the note under § 2's totals — lines 93–102 — says which rows moved, why, and which two the
+register itself records as older than the head they were measured on.)_
 
 This record is an **input to gate P1-G31, not the gate's decision.** Field 33 of
 [`canonical-plan.md`](./canonical-plan.md) makes the gate four conjunctive conditions, and the
@@ -91,8 +94,12 @@ _(Four rows and these totals were true when written; corrected by this pull requ
 to `phase-level incomplete` on `develop` in #382, and DO-002, DOC-001 and DOC-002 move out of
 `not started` here, to `in open PR #383`; the totals read `in open PR` **2**,
 `phase-level incomplete` **6** and `not started` **6**, and are re-counted off all twenty-nine rows
-of `task-matrix.md` at the merged head. Every other row is untouched, and nothing moved to `end-to-end verified` —
-documentary evidence never earns that state.)_
+of `task-matrix.md` at the merged head. Every other row is untouched, and nothing moved to
+`end-to-end verified` — documentary evidence never earns that state. Two of the five `in open PR`
+rows are not this pull request's: **FE-010** and **FE-016** cite **#376**, which merged at
+`72782f48`. That is **CC-45**'s own finding (change control § 55.3), and moving those two rows
+belongs to the lane that next re-measures the acceptance surface, not to this one — so they are
+counted here as the matrix states them, not as the merge would.)_
 
 ### 2.1 The four Frontend rows that are not `end-to-end verified`, each checked
 
@@ -209,8 +216,8 @@ document should be read as suggesting otherwise.
 The register carries an index of its open items at change control § 57.4, raised as **CC-47**, and
 every disposition in it is filed as recorded rather than fixed. _(This sentence read "The register
 carries no index of open items": true when written; corrected by this pull request, which adds that
-index. Its partition of the register's seventy identifiers — 27 open, 39 closed or settled, 4
-stating nothing — is derived from each disposition's own state cell and counts on a different basis
+index. Its partition of the register's seventy identifiers — 28 open, 38 closed or settled, 4
+stating no usable disposition — is derived from each disposition's own state cell and counts on a different basis
 from the six explicit closures named next; neither figure is re-adjudicated here.)_ **Six closures are stated in the register and nothing else is closed:** **CC-01** (§ 29,
 by P-10), **CC-02** (§ 34, by the P-11 writer), **CC-14** (§ 35, by the P-9b migration), **CC-29a**
 and **CC-29b** (§ 41, in the slice) and **CC-42** (§ 54, by measurement — the journey half ran).
