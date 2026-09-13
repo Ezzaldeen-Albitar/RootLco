@@ -9,7 +9,7 @@ import { readSignedInAccount, sameAddress } from './account-manifest';
  * `orchestration/acceptance/p1-31-journey.mjs` — held OUTSIDE this repository, for the
  * reason §1.7 of the acceptance plan gives — walks the whole delivery, warranty and
  * reporting chain over HTTP and then writes one JSON document naming the records it made.
- * The four `*-p1-31.spec.ts` files read it and walk the SCREENS over those same records.
+ * The six `*-p1-31.spec.ts` files read it and walk the SCREENS over those same records.
  *
  * ## Why the specs read a file instead of building their own world
  *
@@ -220,7 +220,7 @@ export interface P131Handoff {
 export const HANDOFF_ENV = 'ROOTLCO_P131_HANDOFF';
 
 /**
- * The reason a skip states, written once so all four specs say the same thing.
+ * The reason a skip states, written once so all six specs say the same thing.
  *
  * A skip whose message does not say what is missing is indistinguishable from a test
  * nobody finished writing, which is the failure mode the test-honesty rule exists for.
