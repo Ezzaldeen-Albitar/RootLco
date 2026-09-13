@@ -4790,7 +4790,8 @@ Nothing here dismisses an alert, widens an allow-list or adds a suppression:
 
 ## 62. The closure re-measure — the records reconciled at one head, and the Owner packet routed (CC-52)
 
-**Slice:** `feature/p1-31-closure-remeasure`, ownership profile `p1-31-frontend`. **Baseline:**
+**Slice:** `feature/p1-31-closure-remeasure`, ownership profile `p1-31-frontend`, opened as pull
+request [#388](https://github.com/Ezzaldeen-Albitar/RootLco/pull/388). **Baseline:**
 protected `develop` **`fb65b0493d6ef2f8e65c00c39a2d51a42a98ff1f`** — the merge of pull request #387, the corrected acceptance
 re-run. `main` `1262de74`, untouched and far behind. **This slice is documentation only**: no
 application source, no route, no operation, no permission code, no migration, no seed, no gate, no

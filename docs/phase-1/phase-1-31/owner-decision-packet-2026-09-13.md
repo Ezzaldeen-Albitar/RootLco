@@ -171,7 +171,7 @@ requires findings to be "closed **or formally accepted by the authorized owner**
 closure-record.md:235 states that neither limb is satisfied. The register files each
 disposition as _recorded_, which is an engineering act, not an acceptance.
 
-**The open set is now a derived index rather than a reading.** change-control-2026-09-08.md:4945 re-derives
+**The open set is now a derived index rather than a reading.** change-control-2026-09-08.md:4946 re-derives
 every identifier's state at this head — **25 open, 4 stating no usable disposition, 47 closed or
 settled**, out of 76 before this section — and it supersedes the earlier index at § 57.4 rather than
 adjusting it. The twenty-five, each read off the row that carries its own state:
@@ -603,7 +603,7 @@ constraint the exit-5 refusal exposed is already the runbook's first act; keep i
 
 **(d) Practical impact.** Without the authorisation, any environment brought up from the merged tree gets
 administrator roles at 78 codes only where the backfill has been run, and a `NOT VALID` foreign key — which is
-CC-16 and CC-20, both open (change-control-2026-09-08.md:4967).
+CC-16 and CC-20, both open (change-control-2026-09-08.md:4968).
 
 **(e) Blocks this phase: YES.** DoD bullet **3** names runbooks explicitly (`canonical-plan.md:460-461`), and
 the bullet is not evidenced while the acts stay unperformed (closure-record.md:250).
@@ -721,7 +721,7 @@ Two items were explicitly re-tested and are **not** Owner items.
   repair were to widen what the acceptance account is granted — and the disposition already rules that route
   out. **What has since happened is measured rather than assumed**: the credential-kind design of #387 pins one
   outcome per credential kind, and the hosted run of that pull request shows the handoff-gated cases skipping
-  and every legacy case executing (change-control-2026-09-08.md:4875). No grant was widened.
+  and every legacy case executing (change-control-2026-09-08.md:4876). No grant was widened.
 - **CC-10 — no reader for the warranty status ledger.** Owner "a later `wty` read slice, with FE-009", state
   "open". Building a read operation is an engineering act. **Excluded as a separate item** — the Owner-only part
   of it, authorising P-18 into scope, is already asked as **F-3**, and asking twice would inflate the packet.
@@ -779,7 +779,7 @@ A-4 and F-4 — are unconditional. Two items (CC-44, CC-10) were tested and excl
 
 These are engineering corrections, not Owner items. They are listed so the Owner can see that they were found,
 what they were, and that none of them was left for the Owner to absorb. The full before → after table is
-change-control-2026-09-08.md:4847.
+change-control-2026-09-08.md:4848.
 
 1. **The closure record listed CC-17, CC-18, CC-36 and CC-39 with (a), (b) and (c) as open.** The register
    records all seven closed.

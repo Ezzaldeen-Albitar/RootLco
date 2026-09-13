@@ -550,6 +550,9 @@ of the four values.
 
 This re-measure takes **section 62 and CC-52** of
 [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) — the next free pair at this head,
-where the register runs to section 61 and CC-51 and no unmerged P1-31 branch claims either.
+where the register runs to section 61 and CC-51 and no unmerged P1-31 branch claims either. The
+slice that carries this revision is pull request
+[#388](https://github.com/Ezzaldeen-Albitar/RootLco/pull/388), opened against `develop` on
+2026-09-13; no result of its own checks is claimed here.
 _(This section previously recorded section 55 and CC-45, taken at `81b3bce8`; that allocation stands
 where it was raised and is never renumbered, under the register's § 48.1 rule.)_
