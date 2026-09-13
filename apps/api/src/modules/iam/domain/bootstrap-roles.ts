@@ -291,6 +291,17 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     'org.branch.read',
     'org.department.read',
     'org.department.manage',
+    // P1-31 prerequisite P-17. Both codes are MINTED by that slice and both are
+    // carried, on the P-1 rule this bundle is built from: a code is held when a
+    // SHIPPED operation declares it and the administrator needs it to exercise
+    // or delegate the journey. Four operations declare them — the register's
+    // list, detail, create and status command — and withholding either would
+    // leave a freshly provisioned organisation unable to create ANY delivery at
+    // all, because `sal.delivery-create` now refuses an employee that does not
+    // exist and nothing else in the product can create one. That is the same
+    // consequence `wty.policy.manage` was carried to avoid.
+    'org.employee.read',
+    'org.employee.manage',
     'tech.technician.manage',
     // The W1–W8 journey: held to be exercised and to be delegated to the personas.
     'wo.work_order.read',

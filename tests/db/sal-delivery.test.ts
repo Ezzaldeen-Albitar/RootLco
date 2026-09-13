@@ -22,6 +22,7 @@ import {
   seedP111Base,
   ctxA,
   expectFail,
+  deliveringEmployee,
   makeWorkOrder,
   buildReadyDelivery,
   seedCompletedDelivery,
@@ -132,12 +133,17 @@ describe('p1-11 sal delivery / custody closure', () => {
     await withRolledBackTx(runtime, ctxA, async (c) => {
       const { wo, visit } = await makeWorkOrder(c, 'coh');
       const otherVehicle = await seedVehicle(c, 'cohX');
+      // A REAL employee, so the refusal below is M-dlv-1 and nothing else. Passing
+      // a login-account id here would still fail, but by the P1-31 P-17 eligibility
+      // trigger if the two BEFORE INSERT triggers were ever reordered — a green
+      // that would have stopped meaning what the case name says.
+      const employee = await deliveringEmployee(c, 'coh');
       await expectFail(
         c,
         '23514',
         `INSERT INTO sal.delivery_records (tenant_id, company_id, branch_id, work_order_id, reception_visit_id, vehicle_id, delivering_employee_id, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$7)`,
-        [TENANT_A, COMPANY_A1, BRANCH_A1, wo, visit, otherVehicle, USER_A]
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [TENANT_A, COMPANY_A1, BRANCH_A1, wo, visit, otherVehicle, employee, USER_A]
       );
     });
   });

@@ -924,6 +924,17 @@ two lanes that allocated between this one and the merged register, one has lande
 | **CC-25** | the delivery write paths (PR #362)                     | open, on a stacked base                                           |
 | **CC-26** | receiver identity-evidence document category (PR #362) | not allocated at that head; minted 2026-09-10 by #362, section 38 |
 
+**Continuation, 2026-09-10** — allocated after this section was written, at protected `develop`
+**07193258**. The row is dated rather than folded into the table above, because that table states
+what was true at **0204f2d1** and rewriting it would destroy the record.
+
+| id        | lane                                                | state at 07193258, 2026-09-10 |
+| --------- | --------------------------------------------------- | ----------------------------- |
+| **CC-26** | the identity-evidence category (PR #362)            | open                          |
+| **CC-27** | the report engine slice                             | in preparation                |
+| **CC-28** | the report engine slice, second identifier          | in preparation                |
+| **CC-29** | the delivering-employee identity (P-17), section 41 | this branch, PROVISIONAL      |
+
 So this slice takes **section 36 provisionally** and **CC-22 firmly**. P-9b has not merged, so that
 one lane landing out of order moves this heading rather than this identifier. **The section number
 must be re-checked against `develop` before this branch merges**, and renumbered if P-9b lands with a
@@ -1463,6 +1474,195 @@ terms.
 | **P11-7** | the shared vocabulary from both ends: `tests/unit/p1-31-report-configuration-controls.test.ts` pins `readReportParameterVocabulary` directly, including that a verdict of `unrecognised` and a denied run are the same answer on the same documents, and that no refusal quotes the submitted schema; `tests/backend/p1-31-report-configuration-seam.test.ts` proves the route accepts the whole four-filter allowlist and `{}`, refuses six documents the engine would refuse, refuses `{ filters: {} }` under its own rule, and writes no version in any refused case |
 | **P11-6** | `executable` in both limbs: true for the registered baseline, false for a PUBLISHED tenant row whose code the engine does not implement                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | **P11-8** | the P1-23 mutation re-target of **CC-27(c)**, measured rather than assumed: each new `from` string counted exactly once in its file, then each mutation applied BY HAND and `tests/backend/p1-23-reporting.test.ts` run alone — 13/13 green unmutated, the M7b mutant failing `never applies a configuration the tenant has not published` and the M8 mutant failing `claims executability only for a registered code`, both with an `AssertionError` and neither with a crash signature. The matrix script itself was not executed                                     |
+
+## 41. What P-17 changed — the delivering employee becomes a real identity
+
+**Slice:** `remediation/p1-31-backend-delivering-employee-identity`, ownership profile
+`p1-31-backend`. **Baseline:** protected `develop` **ae0e0354**, merged into this branch on
+2026-09-12; the slice was written on **07193258**. `main` untouched.
+**Section 41 and CC-29 are CONFIRMED, no longer PROVISIONAL.** They were provisional under the
+section 36.1 rule while sections 38, 39 and 40 were claimed by lanes that had not landed. At
+`develop` **ae0e0354** all three are merged, and section 42 with **CC-30** is allocated to the
+readiness-queue screen, whose own allocation table records section 41 and **CC-29** as still
+claimed by this unmerged lane. Section 41 is unoccupied, **CC-29** is allocated to nothing else,
+and **CC-29a** and **CC-29b** appear nowhere on `develop`.
+
+### 41.1 What was published, and why the table had to be new
+
+`sal.delivery_records.delivering_employee_id` landed in P1-11 as `NOT NULL` **with no foreign key of
+any kind**, so any uuid at all was a legal handover officer and the column recorded a claim rather
+than an identity. Every fixture in this repository demonstrated it, by passing a LOGIN ACCOUNT id or
+`randomUUID()` and being accepted without complaint.
+
+The Owner decision of **2026-09-10** answers **D-12** in six clauses: the delivering employee is a
+**tenant-owned employee identity**, distinct from the login account, from the authenticated actor
+and from the authorized receiver, with a server-validated reference and organisational assignment,
+historical attribution preserved, no HR module, and **an existing suitable personnel entity reused
+before a minimal new schema slice is created**.
+
+**Measured facts (not part of the decision).** That sixth clause is what obliged the reuse question
+to be **measured before anything was proposed**, and the measurement lives in the
+suite rather than in this paragraph: `tech.technician_profiles.user_id` and
+`iam.user_employee_links.user_id` are both `NOT NULL` foreign keys into `iam.user_accounts`, so
+neither can hold a person who has no reason to sign in — which is the person a workshop most often
+sends out to hand a vehicle over.
+
+**Two migrations, both revised in place on the Owner clarification of 2026-09-10** (they are
+unmerged, so the correction is an amendment rather than a third file).
+`20260910090000_org_employees.sql` adds `org.employees`, RLS enabled and forced, three policies —
+a **tenant-wide** `SELECT` to `app_runtime` and `app_readonly` and scope-restricted `INSERT` and
+`UPDATE` to `app_runtime` — and **no `DELETE` grant to anyone**.
+`20260910091000_sal_delivery_delivering_employee_identity.sql` mints one employee per distinct
+RESOLVABLE legacy value, adds the foreign key on **`(tenant_id, delivering_employee_id)`** `NOT
+VALID` and validates it in the same migration only when nothing is unresolved, adds the NULLABLE
+`delivering_employee_display_name` snapshot and the `BEFORE INSERT` trigger that stamps it, adds
+`sal.delivery_legacy_identity_review` for the legacy values that resolve to nobody, and recreates
+the immutable guard so the snapshot and the id it came from are frozen.
+
+**Four operations** under `/api/v1/org/employees`: the list and the detail declare
+`org.employee.read`, the create and the status command declare `org.employee.manage`. **Both codes
+are MINTED** — the register did not exist, so no catalogue code named it — and **both are carried by
+the provisioning bundle (76 to 78)**.
+
+**`sal.delivery-create` now refuses two ways**, per rule on `body.deliveringEmployeeId`: `custom`
+for not visible and `inactive_employee` for retired. There is **no branch rule** — the Owner
+clarification of 2026-09-10 settled that a home branch must not restrict authorized work in another
+branch, so the `employee_branch_mismatch` refusal the first draft shipped was removed together with
+the rule it enforced, and the case that asserted it now asserts the acceptance instead. The request
+BODY is unchanged, so the `sal.delivery-create` payload mirror is untouched; `org` is outside the
+P1-30 payload-parity domains, so the four new operations owe no mirror.
+
+**`deliveringEmployeeDisplayName` is `string | null` in the delivery service view types** —
+`apps/api/src/modules/delivery/application` — and that is the only place any nullability for it is
+stated. `docs/api/openapi.v1.json` publishes `{ "type": "object" }` for every `sal.delivery-*`
+success response and therefore carries no field-level delivery response schema at all, which is a
+pre-existing convention this slice neither introduced nor changed; the web read type does not carry
+the field yet either (section 41.3). `NULL` means one thing and
+only one: this handover was recorded before P-17 and its delivering identity resolved to nobody. No
+delivery created after the migration can carry it, because the trigger stamps a name or refuses the
+insert.
+
+### 41.2 Dispositions
+
+| id         | finding                                                                                     | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | owner / slice                         | state                              |
+| ---------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | ---------------------------------- |
+| **CC-29**  | two of the working assumptions are now Owner DECISIONS; FOUR recommendations remain pending | The Owner clarification of 2026-09-10 settled A-1 (identity independent of a login, approved) and A-2 (the home branch is informational and transferable and must never restrict authorized work in another branch). It did not settle the lifecycle of a backfilled legacy row (A-3), whether `employment_ref` is optional and tenant-unique (A-4), whether administering an employee stays branch-scoped while reading is tenant-wide (A-5), or how an unresolved legacy identity is ever resolved (A-6). The DDL commits to one answer for each of A-3, A-4 and A-5, and to nothing at all for A-6, which ships no command | **Relabelled rather than re-argued.** [`delivering-employee-identity-seam.md`](./delivering-employee-identity-seam.md) section 3 now carries **three** explicit register labels — OWNER DECISION, ENGINEERING CHOICE, RECOMMENDATION PENDING OWNER APPROVAL — and two further labels used outside the register and nowhere in it: **VERIFIED FACT**, at section 9.4 only, and **Engineering consequence (not an Owner decision)**, applied in sections 2, 2a, 4, 5, 6, 7, 8 and 10 to the design elements this lane chose rather than the Owner. A-3, A-4, A-5 and A-6 are each marked **recommendation pending Owner approval** with one concise recommendation sentence, so **four** recommendations are pending and not three. They are: keep `inactive` for backfilled rows; keep `employment_ref` optional and tenant-unique; keep the read/write scope split; and resolve a listed legacy identity through one Owner-approved operator command, never inside a migration. The MINT half of that shape now exists and is not the resolution: `scripts/platform/backfill-delivering-employee-identity.mjs` mints the identities that resolve, lists the ones that do not, and re-runs `VALIDATE CONSTRAINT` only when nothing anywhere is left unresolved — it never decides who an unresolved value names, which is what A-6 still asks the Owner. The migration headers carry the same labels. **No rename and no transfer command ships**: a rename must first say what happens to the snapshots already taken, and a transfer what happens to deliveries recorded in the branch being left                                                                                                                           | Owner, before the next employee slice | open, four recommendations pending |
+| **CC-29a** | the branch rule shipped in the first draft and was WRONG                                    | `DeliveryService.createDelivery` refused an employee whose home branch differed from the work order's, `sal.stamp_delivering_employee_identity` refused the same insert, and the foreign key named all four scope columns — three layers enforcing a restriction the Owner had not asked for                                                                                                                                                                                                                                                                                                                                  | **Removed at all three layers, and the removal is asserted rather than described.** The key names `(tenant_id, id)`, the trigger reads only `display_name` and `status`, and the service has no branch comparison. Case **P17-D4** was inverted from a refusal to a **201 with the snapshot stamped**, and the database obligation that asserted a `22023` for another branch now asserts acceptance plus a new `22023` for another TENANT. `sel_employees_tenant` reads tenant-wide because a branch predicate on the read would have kept the rule alive in the policy after it was removed from the constraint                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | this slice                            | **closed in this slice**           |
+| **CC-29b** | a dangling legacy identity would have FAILED the deployment                                 | The first draft RAISED on any `delivering_employee_id` matching no same-tenant account, and RAISED again on any value used in two branches. On a database with unresolved history the migration simply could not be applied                                                                                                                                                                                                                                                                                                                                                                                                   | **Replaced by report-and-continue, per the Owner clarification.** Unresolvable values are left untouched, recorded in `sal.delivery_legacy_identity_review` (tenant RLS, SELECT to `app_runtime`/`app_readonly`, no write grant to anybody, and an INSERT policy whose `WITH CHECK` is `false` so the refusal is declared rather than inferred from an absence), and the foreign key is added `NOT VALID`. **The mint and the review write moved OUT of the migration on 2026-09-12**, after the hosted run of PR #370: `scripts/ci/migration-replay-checks.mjs` refuses a top-level `INSERT` into a module schema, and it is right to, so the row-level half is now the operator command `scripts/platform/backfill-delivering-employee-identity.mjs` and the migration keeps structure only. **A fresh database validates in the migration** — the `DO` block runs `VALIDATE CONSTRAINT` when `sal.delivery_records` holds zero rows, which is DDL over no rows and passes the scanner. **A populated database validates through the operator command**, after the mint and only when nothing anywhere is left unresolved; until then the key keeps `NOT VALID` and the migration emits a `RAISE NOTICE` naming the command. The shared database held **0** delivery rows when it was read on 2026-09-10, so the command is expected to mint nothing there — still an operator step, not a skipped one. `delivering_employee_display_name` is NULLABLE so history could be preserved rather than completed with a person nobody confirmed. The observation, the controlled proof and the constraint-validation status are separated under their own labels in **41.6**, and must be read there rather than as one sentence | this slice                            | **closed in this slice**           |
+
+### 41.3 What this slice did NOT do
+
+- **No HR module.** Seven columns and a lifecycle. No contract, salary, contact detail, document,
+  department, grade or reporting line, and no second identity model beside `iam.user_accounts`.
+- **No rename, no transfer, and no delete at any level.** `org.employees` grants `DELETE` to no
+  application role and `fk_delivery_records_delivering_employee` is `ON DELETE RESTRICT`.
+- **No screen, and no web CONTRACT change either.** `apps/web` changes only in the generated
+  idempotency manifest, which every published operation moves. The delivery contract mirror in
+  `apps/web/src/features/delivery/delivery-contract.ts` still lacks `deliveringEmployeeDisplayName`,
+  and its docblock still states that `deliveringEmployeeId` has no foreign key anywhere in the
+  platform — which this slice makes false. **That is left deliberately**, because the
+  `p1-31-backend` ownership profile forbids the `web` bucket outright and the correction is a
+  frontend-lane change; widening the profile to slip it through would be exactly the
+  work-around the gate exists to prevent. It is the same class of stale docblock P-14 corrected and
+  is owed to the frontend lane, which is where CC-29 leaves it.
+- **No index for the list ordering**, on the CC-23 precedent: a branch register is small, and no
+  measurement has demonstrated a cost a schema change would buy.
+- **No claim about the hosted replay.** `.github/ci-baselines/schema-baseline.json` moves
+  `migrationCount` 139 to 141, `permissionCount` 119 to 121, `schemaHash` to `075a8c5a…`, and four
+  of the five structural totals — tables 254 to 256, functions 533 to 534, policies 695 to 700,
+  triggers 560 to 563, `security_definer` unchanged at 0. Those figures were **re-measured after
+  the Owner clarification revised both migrations**; the values recorded before it described a shape
+  no longer in the tree and were replaced, not amended. The structural totals and the permission
+  count were measured on a disposable clone replayed from the idle
+  139-migration template inside the coordinator's isolated container, and that same clone reproduced
+  the recorded 139-migration values digit for digit before either migration was applied. The hosted
+  `database-migration-replay` job settled the digest, and against that clone it settled it the other
+  way: it measured `075a8c5a…` where the clone had said `a25718d7…` and refused the baseline. The
+  clone was the defective instrument, not the migrations. It had been created by template from
+  another database and so lacked the database-level `search_path` migration 0001 sets, which makes
+  `pg_get_constraintdef` and `pg_indexes.indexdef` render three extension-dependent definitions in
+  their schema-qualified form; the digest moved while the schema did not. The committed value was
+  re-measured on a database created EMPTY and replayed through all 141 migrations, where the four
+  structural totals and `permissionCount` 121 all reproduced, and applying the missing setting to
+  the defective clone made it hash `075a8c5a…` too. `schemaHashNote` in the baseline carries the
+  diagnosis.
+- **No fake data.** `org.employees` is business data: it is absent from the structural-reference
+  allow-lists in both `scripts/db/validate-seed-state.mjs` and `tests/db/no-fake-data.test.ts`, so it
+  is required to be empty on a provisioned tenant, and the backfill mints only from rows that already
+  exist. `sal.delivery_legacy_identity_review` is business data on the same terms and is written
+  only from rows that already exist. The report-and-continue path is what keeps this true: minting a
+  placeholder person for an unresolvable legacy identity would have been fabricated business data
+  inserted by a migration, which is the precise thing the guard forbids.
+
+### 41.4 The one operator act this slice creates and does not perform
+
+Every organisation already provisioned holds the 76-code bundle and therefore **neither** new code.
+They need **one** run of `scripts/platform/backfill-tenant-administrator-bundle.mjs` after this
+merges — separate from the run P-10 and P-11 already oblige, because it covers two codes those runs
+could not know about.
+
+Until that run happens, an existing organisation's administrator cannot create an employee, and
+because `sal.delivery-create` now refuses an employee that does not exist, **cannot record a
+handover at all**. That is the sharpest consequence of any P1-31 bundle widening, and it is written
+here so it is scheduled rather than discovered. **This slice does not run it, and makes no claim that
+it has been run.**
+
+### 41.5 Record-integrity note (for the Owner)
+
+`tests/ci/p1-27-doc-counts.test.ts:784` requires `docs/phase-1/phase-1-27/closure-record.md` to
+quote the schema hash and migration count that the CURRENT committed baseline carries, so adding the
+two migrations of this slice obliged it to rewrite a row of a record sealed on 2026-08-12 — **139**
+and `8302f675…` became **141** and `075a8c5a…` — which is a repository convention that makes a
+historical record track the live baseline rather than the state it recorded, and one the Owner may
+wish to change.
+
+### 41.6 The observation, the controlled proof, and the constraint-validation status
+
+Three statements that the first draft of this slice allowed to stand as one, separated here under
+their own labels because each is answerable in a different way.
+
+**OBSERVATION — shared database, read-only, 2026-09-10.** `sal.delivery_records` held **0** rows,
+and therefore **0** distinct legacy `(tenant_id, delivering_employee_id)` pairs, of which **0**
+matched a same-tenant account and **0** did not. That is one environment on one day. It proves
+nothing about how the migration behaves on data — an empty table exercises neither branch of the
+backfill — and it is recorded so the number is not later mistaken for evidence.
+
+**CONTROLLED PROOF — disposable clone `p131_employee_20260910` (`127.0.0.1:55432`), rebuilt from
+`p131_candidate` at 139 migrations.** The database cases write legacy-shaped rows themselves, so
+both branches are exercised. Five obligations are each cited by the exact title of the case that
+asserts them in
+[`delivering-employee-identity-seam.md`](./delivering-employee-identity-seam.md) section 9.2: the
+resolvable mint, the untouched unresolvable value and its review row, the validated key on a fully
+resolved database, the trigger's four answers, and the review table's isolation and write refusal.
+Section 9.2 also carries a **Gaps** label, so an obligation no case asserts, or cited against a
+title with no executed run, is named rather than implied. There were **two runs at two different
+commits**, both on **2026-09-10** in container `rootlco-p131-isolation-20260910`, and section 9.2
+records each suite with its result, its exit code **and the commit it was measured at**: the
+database file stood at 21 cases at **244f868f** and at 23 at **750913e3**, because the two
+review-table cases were added between them, and the 285-case backend sweep was measured at
+**244f868f** and not re-run afterwards, the seam file alone being re-run at 750913e3. **No run
+ledger entry exists for the database or the backend tier** — the ledger records the unit and web
+tiers only — and **no hosted result exists** for any of it.
+
+**CONSTRAINT-VALIDATION STATUS.** `fk_delivery_records_delivering_employee` is added **`NOT
+VALID`**; the migration validates it in the same run **only when
+`sal.delivery_legacy_identity_review` is empty**; on any database carrying unresolved legacy
+identities it **remains `NOT VALID`** — binding every future row, proving no past one — until the
+Owner resolves those rows. The resolution path is **not yet decided** and is A-6 in the seam
+register, a **Recommendation pending Owner approval**: resolve a listed row through one
+Owner-approved operator command that names a real employee for it and then re-runs `VALIDATE
+CONSTRAINT`, never inside a migration. The hosted migration replay is **defined** to start from an
+empty database — `.github/workflows/_reusable-database-assurance.yml` asserts that the database
+holds zero application tables at line 235 and applies every migration from zero at line 242 — so it
+is **expected** to end validated. That is an expectation read from the workflow definition and **not
+yet an observed result**; either way it would be a property of that environment and not evidence
+about a populated one.
+
+**Four recommendations are pending — A-3, A-4, A-5 and A-6.** They are stated once each in the
+CC-29 disposition of section 41.2 above and in the seam register (section 3), and are deliberately
+not restated here. **A-1 and A-2 are APPROVED, not pending.**
+
+---
 
 ## 42. The ready-for-delivery queue screen — PROVISIONAL
 
@@ -2489,3 +2689,935 @@ The committed floor in `.github/ci-baselines/test-count-baseline.json` was **not
 executed clears the 3700 floor, `tests/ci/web-test-floor.test.ts` and
 `tests/ci/baseline-integrity.test.ts` both pass against it unchanged, and no rule forced a ratchet,
 so the baseline keeps the figures its own run established.
+
+## 49. The assurance evidence index for the thirteen non-Frontend tasks
+
+Full record: [`security-and-qa-evidence.md`](./security-and-qa-evidence.md), which carries the same
+allocation table in its own § 14. Slice: `feature/p1-31-assurance-evidence-v2`, ownership profile
+`p1-31-frontend` (docs bucket), docs-only. **Baseline:** protected `develop`
+**9b109f639348db424940b00b022cfb36e2160e2c** (PR #377 merge). `main` untouched.
+
+### 49.1 Identifier allocation — SETTLED, not provisional
+
+Read on `develop` `9b109f63`, where this file holds sections **1 … 48, 50, 51 and 53** and
+identifiers **CC-01 … CC-41**. **Section 49 and CC-37 are the lowest free pair.** Sections 50.1 and
+51.1 both record that pair as claimed by "a lane not on `develop`" — that lane is the **abandoned
+first version of this very record**, written at `develop` `01c32937`, never merged and never opened
+as a pull request. This record supersedes it and therefore takes the pair it reserved, rather than
+leaving a permanent hole in the numbering.
+
+| identifier | slice                                                                | state, read at `develop` `9b109f63`     |
+| ---------- | -------------------------------------------------------------------- | --------------------------------------- |
+| **CC-36**  | the warranty plan administration screens (#375)                      | merged, section 48                      |
+| **CC-37**  | **this record** (superseding the abandoned first version of it)      | **SETTLED**, this branch, section 49    |
+| **CC-38**  | the report screens (#371)                                            | merged, section 50                      |
+| **CC-39**  | the Start selector (#377)                                            | merged, section 51                      |
+| **CC-40**  | the fresh-organisation acceptance harness (QA-005), **open PR #378** | not on `develop`, claims **section 52** |
+| **CC-41**  | the operational overview (#376)                                      | merged, section 53                      |
+
+**Why this pair is not PROVISIONAL.** § 48.1's rule is that an identifier is a claim about the
+register at the moment it was raised, and § 51.1 marked its own pair provisional only because a
+LOWER pair was held by an unmerged lane. **No lower pair is held here.** The one unmerged claim on
+this register is **PR #378** (`feature/p1-31-acceptance-harness`, open at head `0a1bba2a`), which
+holds **section 52 and CC-40** — both ABOVE this pair. So nothing here is taken from #378 and
+nothing here is renumbered to follow it.
+
+### 49.2 What was delivered
+
+One document, [`security-and-qa-evidence.md`](./security-and-qa-evidence.md), plus pointers to its
+sections in the thirteen non-Frontend rows of [`task-matrix.md`](./task-matrix.md). **No State value
+in the matrix was changed**, because this record adds a proving artefact and does not move a state.
+
+The chapter names SEC-001 … SEC-004, QA-001 … QA-005, DO-001, DO-002, DOC-001 and DOC-002 and
+**defines none of them**: each of the four chains repeats one boilerplate sentence across every row,
+and every row cites a test id that returns zero files (A0's **D-16**). The operational definitions
+are therefore **transposed from `docs/phase-1/phase-1-28/canonical-plan.md:172-212`**, the only
+in-repository precedent that states what each id means, exactly as
+[`../phase-1-30/w8-security-and-qa-evidence.md`](../phase-1-30/w8-security-and-qa-evidence.md) did —
+and the file says so rather than presenting the transposition as the chapter's words.
+
+Every figure in it is a static read of this head or the reported output of a static checker named
+beside it. **No test tier, build, database operation or deployment was run to produce it, and no
+acceptance result is claimed** — none exists, which is § 9's own finding.
+
+### 49.3 Dispositions
+
+| id           | finding                                                                                     | measured                                                                                                                                                                                                                                                                  | disposition                                                                                                                                                                                                                                               | owner / slice         | state            |
+| ------------ | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ---------------- |
+| **CC-37**    | the thirteen non-Frontend canonical tasks have no definition in the P1-31 chapter           | Each chain carries one repeated boilerplate sentence; all three cited test ids (`TC-WTY-001`, `TC-RPT-001`, `TC-QMS-001`) return zero files, filed by A0 as **D-16**                                                                                                      | **transposed from P1-28 and declared as a transposition.** Closing a row against its own cited Test reference is impossible, so the alternative was to close nothing or to invent a definition and present it as the chapter's                            | this record           | closed, recorded |
+| **CC-37(a)** | eleven `wty.`/`rpt.` writes on this surface are held to no payload-mirror gate              | `P1_30_DOMAINS` in `scripts/ci/check-p1-30-payload-parity.mjs` is `['svc','quo','inv','sal']` and its mirror allow-list names seven files under `apps/web/src/lib/contracts/`; the warranty and report mirrors live in their feature trees instead                        | **recorded, not worked around.** Widening another phase's gate is not a docs slice's to do, and a gate widened without its red-proof moving is worse than a recorded gap                                                                                  | a later slice         | open, recorded   |
+| **CC-37(b)** | the seven `rpt.report-configuration-*` writes have no consumer outside a generated manifest | `apps/web` references them only in `src/lib/api/idempotent-operations.ts`, which is generated from the Backend register; no screen and no adapter calls them                                                                                                              | **recorded as the declared-but-never-wired shape this repository has shipped before (P1-27 INT-113).** No screen is invented here to justify them and no operation is withdrawn — both belong to whoever owns the writer                                  | Owner / a later slice | open, recorded   |
+| **CC-37(c)** | the tenant-administrator bundle backfill has a prerequisite no repository record named      | The operator artefact of 2026-09-12 (outside this repository) records the backfill refusing **exit 5**, fail-closed, because the target database's permission catalogue lacked the two codes P-17 minted; it completed only after the declared catalogue seed was applied | **recorded as a fact about the act, not as a defect in the script** — the guard is correct and the refusal is the useful part. The remedy is the operator runbook that **DO-001 and DO-002 both owe** and that does not exist; the ordering must be in it | a later slice         | open, recorded   |
+
+### 49.4 What this slice did NOT do
+
+- **Moved no State value** in `task-matrix.md`, and moved no chapter status.
+- **Ran no test tier, no build, no migration and no database operation.** The gates it ran are
+  static checkers, named in the pull request.
+- **Claimed no acceptance result, no hosted run and no approval.** The record has been routed to
+  nobody.
+- **Changed no source file, no gate and no allow-list.** Docs only.
+- **Did not re-quote a figure a generated register owns**, which is the stale-count defect
+  `scripts/ci/check-p1-27-doc-counts.mjs` exists to refuse.
+
+## 50. The report screens
+
+**Why 50 and not the next unused number.** Sections 44 to 47 were still open when this slice was
+first written, so its number was taken high and marked provisional. They are settled on `develop`
+now, and section 48 merged with PR #375 and is present in this file at the head this branch carries.
+Section 49 sits on a branch that is not merged, so the number stays 50 rather than moving down onto
+a heading another branch is already using.
+
+**Slice:** `feature/p1-31-report-screens`, ownership profile `p1-31-frontend`.
+**Baseline:** protected `develop` **ae0e035480596243c739beec1a40d2ae5c105e7a** (the ready-for-delivery
+queue, #367), branched on 2026-09-12. Nothing was merged into this branch and no sync was taken, so
+the head this section is written against is this branch's own.
+
+The full record is [`report-screens.md`](./report-screens.md).
+
+**The Owner's decisions, in the Owner's words.** **D-4** (2026-09-09 § 3) approves four baseline
+reports and their columns — `work_orders_by_status`, `technician_labor_time`, `inventory_movements`
+and `invoice_payment_summary` — and requires each to specify its period and date semantics, its
+timezone, its authorization, its source, its freshness and its drill-through, with **all calculation
+done on the server**. **D-17** (2026-09-10 § 4) makes every report period **half-open**, `[from, to)`,
+in the **selected branch's timezone**, with the **timezone and the filter context displayed and
+preserved** wherever the result is shown, and no inclusive `to` and no double counting. **D-19**
+(2026-09-12 § 1) defines FE-010 as an operational overview of the four approved domains, binds FE-016
+to the same overview for the selected branch with **no hard-coded pilot**, and forbids inventing
+profit, performance scores or trends. **D-20** (2026-09-12 § 2) completes the invoice and payment
+report: separate authoritative credit-note and unallocated amounts, the permitted party name beside
+its identifier **labelled by its actual role**, drill-through **resolved by document kind and
+authorized target route**, and no invented amounts, no financial calculation in the browser and no
+silently omitted contract. This slice consumes those four and extends none of them.
+
+**Measured facts (not part of the decision).**
+
+- All three reporting operations are on `develop`: `rpt.report-catalogue`, `rpt.report-read` and
+  `rpt.report-run`, each declaring `rpt.report.read`, with the run additionally evaluating the
+  dataset's own read code in the service at its own branch scope.
+- The dataset registry holds **one** entry at this head, `work_orders_by_status`. The other three
+  approved codes live on `remediation/p1-31-backend-report-engine-datasets`, which is unmerged.
+- Two run-envelope shapes therefore exist: the one `develop` publishes, with `countsByState` and no
+  `groups`, `filters` or `branch`; and the one the dataset branch adds, with all three, three further
+  column kinds (`duration`, `quantity`, `money`) and a per-kind drill-through.
+- `schemas.limit` on all three routes refuses a page size above **100** rather than clamping it, and
+  the platform's default for a request that sends none is **50**.
+- `apps/web/src/lib` holds **no** decimal-string display formatter. `formatMoney` needs a currency
+  beside the amount and a canonical four-place scale and converts to a number to reach `Intl`;
+  `trimTrailingZeros` throws on a value that is not canonical; every `lib/format.ts` helper takes a
+  number or constructs a date.
+- Of the three drill-through templates the four datasets publish, **this application serves one** —
+  `/work-orders/{id}`. There is no per-technician page, no invoice detail page and no receipt detail
+  page, and a credit note has no read operation at all.
+- The P1-31 access gate examines **11** route pages across **7** owned segments with the three
+  reporting operations named; it examined **9** across the same **7** before this slice.
+- `validate:p1-27-frontend` reports **151 files across 5 trees, 0 failures**; it reported 149 before.
+- There is no export operation. P-12 is not built and `rpt.export` stays excluded on **CC-04**'s
+  grounds, so a platform baseline publishes no export authority.
+
+**Engineering consequence (not an Owner decision).** The points below are this slice's own choices.
+The Owner named none of them.
+
+- **ONE screen serves every report code.** The catalogue decides which reports exist and whether each
+  can be run; the run envelope decides what one renders. Nothing in the feature branches on a report
+  code, so FE-011 … FE-014 are one screen and the three unregistered codes owe no further frontend
+  work.
+- **Nothing is computed in the browser.** No total is summed, no duration divided, no quantity
+  re-scaled, no amount reformatted. A measure is rendered as the characters the server sent, because
+  no safe formatter exists for a cell that carries no currency and no fixed scale. This is recorded
+  as **CC-38** rather than approximated.
+- **A date and an instant are shown as published.** `Intl` would render them in the browser's
+  timezone while D-17 fixes the period in the branch's, and the disagreement would be invisible.
+- **The period is stated where it is typed** and an empty or reversed one is refused at the form,
+  lexicographically, with no date object constructed. There is **no default period**.
+- **One response at a time.** Previous and Next walk a trail of cursors already visited and every page
+  carries its own period, zone, freshness, filter context and groups, so a page of rows is never shown
+  under another read's generation instant. There are **no page numbers**: the operation publishes no
+  total.
+- **A reference links only to a route this application serves**, and the three drill-through answers
+  D-20 distinguishes — one target, a per-kind target, and a published absence — are kept apart.
+- **The page gate is `rpt.report.read` alone.** The dataset codes are per-report and are left to the
+  service that can evaluate them.
+- **The navigation entry moves to `available` at `tenant` scope**, because the catalogue operation is
+  tenant-scoped. The run's company and branch are a question about the resource and travel through
+  `branchTargetQuery`.
+
+### 50.1 Identifier allocation — allocated 2026-09-12, SETTLED 2026-09-12 at `develop` `6c99e805`
+
+The number was first taken on 2026-09-12 against `develop` `ae0e0354`, where the register ran to
+section **42** and to **CC-30**, and it was marked PROVISIONAL because seven headings between that
+head and this one were claimed by lanes still in flight and none of those branches was readable
+here.
+
+**Settled by this merge.** This branch now carries `develop`
+`6c99e805225b8ba59f6402188d9967c697d1eb13`, whose register is present in this file and runs to
+section **48** and to **CC-36**. Every number this slice was waiting on is now a read fact rather
+than a claim, so the PROVISIONAL marking is withdrawn from both the heading and the identifier.
+
+| id                | lane                                            | state at `6c99e805`, read from this file |
+| ----------------- | ----------------------------------------------- | ---------------------------------------- |
+| **CC-30**         | the ready-for-delivery queue screen (#367)      | merged, section 42                       |
+| **CC-31**         | the warranty record screens (#369)              | merged, section 43                       |
+| **CC-32**         | the printable delivery handover document (#368) | merged, section 44                       |
+| **CC-33 … CC-35** | the report engine dataset slices 2 to 4 (#374)  | merged, sections 45 to 47                |
+| **CC-36**         | the warranty plan administration screens (#375) | merged, section 48                       |
+| **CC-37**         | a lane not on this head                         | claims section 49                        |
+| **CC-38**         | this slice                                      | settled, this branch, section 50         |
+
+So this slice takes **section 50** and **CC-38**, both settled. Section 49 and **CC-37** belong to a
+lane that is not visible here, which is why this heading stays at 50 rather than moving down.
+
+**Reconciliation rule.** Section 36.1 records it: an identifier is allocated when its finding is
+raised and is never renumbered to follow heading order. If section 50 or **CC-38** were found
+occupied at a later integration, this section would move to the next free heading and the move
+would be recorded here with its date. No existing identifier is renumbered to accommodate it.
+
+### 50.2 What changed, and what was minted
+
+| changed                                                                                                                                                                                                                      | minted  |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| 2 route pages, 2 screens, 1 shared presentation module, 1 paging hook, 1 contract, 1 adapter module, 1 label resolver; 1 navigation entry flipped to available and re-scoped                                                 | nothing |
+| 104 English and 104 Arabic messages — the four approved report titles, the catalogue and run copy, and the field names of all four D-4 datasets; 2 new web test files; 2 web suites re-based                                 | nothing |
+| 3 operations added to the P1-31 access gate's allow-list and its pinned page count moved 13 → 15 on the merged head; the committed test-count baseline is NOT touched by this slice                                          | nothing |
+| the FE-011 … FE-014 rows of the task matrix and the A0 preflight; 5 P1-27 records re-based from their own derivations                                                                                                        | nothing |
+| 1 contract repair — an unusable page size now falls back to the platform default of 50 rather than to the route ceiling of 100 — and 1 dead exported refusal map removed, the live mapping being the one in the read adapter | nothing |
+
+**No backend file changed.** No route, no service, no repository, no migration, no seed, no
+permission, no audit action and no operation. The operation register is untouched.
+
+The CI allow-list entry is the three `rpt` operations in `scripts/ci/check-p1-31-access.mjs`, which
+that gate's own docblock requires in the change that first consumes each. It **WIDENS** what the gate
+judges and suppresses nothing: the page count it examines rises from 13 to 15 — both figures read
+off the gate report line on the merged head, not carried forward — and its owned segment
+count is unchanged because the resource root those operations derive is the dashboard area the gate
+already named.
+
+**The web floor does not move, and that is a measurement rather than a preference.** An earlier
+version of this section raised it, against a head where `WTF-08` refused the floor then committed.
+The floor this branch now carries arrived from `develop` at 3700, and on this head the tree DECLARES
+3226 cases across 139 files, so the rule is satisfied with no edit at all. The tier EXECUTES 3940,
+and the largest single file declares 88 cases, which keeps `WTF-09` satisfied at the committed
+headroom of 49. The baseline file is therefore byte-identical to `develop`'s and no figure in it is
+restated here. The executed total is **LOCAL** — no hosted run of this branch exists.
+
+### 50.3 Dispositions
+
+| id           | finding                                                                                                                                                                                | measured                                                                                                                                                                                                                                                                                                                                                                                      | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | owner / slice          | status         |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | -------------- |
+| **CC-38**    | **an amount, a quantity and a duration are displayed as the server's raw exact strings**, so an operator reads `1234.5600` rather than a grouped figure and `5400` rather than an hour | `apps/web/src/lib` holds no decimal-string display formatter: `formatMoney` needs a currency beside the amount and a canonical four-place scale and converts to a number to reach `Intl`, `trimTrailingZeros` throws on anything else, and every `lib/format.ts` helper takes a number. A report cell carries no currency — the currency is a separate column on the one dataset that has one | **accepted, and recorded because an operator will meet it.** D-4 puts every calculation on the server and D-20 forbids financial calculation in the browser; a formatter that guessed the scale or the currency would be changing money on the way to the screen, which is worse than an unformatted figure. The remedy is a decimal-string display helper plus a decision about where a cell's currency comes from, named as a frontend prerequisite in the record rather than improvised here | a later Frontend slice | open, recorded |
+| **CC-38(a)** | **two of the three drill-through targets D-20 names have no screen in this application**, so those references render with no link                                                      | the engine publishes `/work-orders/{id}`, `/technicians/{id}` and, per document kind, `/invoices/{id}` and `/payments/{id}` with an explicit absence for a credit note. `(dashboard)` holds a work-order detail page and no per-technician, invoice-detail or receipt-detail page                                                                                                             | **accepted.** D-20 asks for the **authorized target route**, and a route that answers as missing is not one. A link to a page that does not exist is the defect the navigation model refuses, so the reference is rendered as a reference and the absence is recorded rather than papered over with a link. The screens are named as prerequisites; nothing here creates them                                                                                                                   | a later Frontend slice | open, recorded |
+
+### 50.4 Proof
+
+**Measured facts (not part of the decision) — what was actually run, and where.** Every run below was
+local, on this branch, with no database, no browser and no hosted runner.
+
+| run                                                                             | result                                                                |
+| ------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `npm run typecheck` · `npm run typecheck:web`                                   | pass                                                                  |
+| `npm run lint`                                                                  | pass                                                                  |
+| `npm run lint:web`                                                              | 0 errors; 12 pre-existing warnings, none on a file this slice touched |
+| `npm run format:check` · `npm run format:check:web` · `npm run style:check:web` | pass                                                                  |
+| `npm run security:all`                                                          | pass over 2756 tracked files                                          |
+| `npm run validate:encoding`                                                     | every tracked text file clean UTF-8, no BOM                           |
+| `npm run validate:generated-artifacts`                                          | 2756 tracked files, 7/7 ignore rules, 0 failures                      |
+| `npm run validate:web-boundary`                                                 | 370 files, 0 violations                                               |
+| `npm run validate:use-server-exports`                                           | 50 server modules across 980 source files, 0 violations               |
+| `npm run validate:web-topology`                                                 | 18 expectations, 336 matched files, 0 failures                        |
+| `npm run validate:web-tokens` · `validate:web-theme` · `validate:web-brand`     | 0 violations; 54 colours registered, 0 unresolvable                   |
+| `npm run validate:notification-authority`                                       | 370 files scanned, one authority, mounted once                        |
+| `npm run validate:module-boundaries`                                            | pass, unchanged                                                       |
+| `npm run validate:api-backend-only`                                             | 317 route handlers, 610 source files, 0 failures                      |
+| `npm run validate:plain-language`                                               | 2 catalogues, 24 rules, 0 findings                                    |
+| `npm run validate:p1-31-access`                                                 | 15 route pages across 8 owned segments, 0 violations                  |
+| `npm run validate:p1-26-frontend`                                               | 370 files, 50 server modules, 0 failures                              |
+| `npm run validate:p1-27-frontend`                                               | 155 files across 5 trees, 9 rules, 0 failures                         |
+| focused web — the reports, delivery, warranty and navigation suites             | 318/318 across 8 files                                                |
+| root — `npx vitest run tests/ci tests/openapi-contract.test.ts`                 | 1991/1991 across 69 files                                             |
+| the web tier, through the P1-27 recorder                                        | 3940/3940 across 139 files, 0 failed                                  |
+| `npm run test:unit`, through the P1-27 recorder                                 | 3301/3301 across 122 files, 0 failed                                  |
+| `npm run verify:policies`                                                       | exit 0                                                                |
+| `npm run validate:phase-ownership`, both forms                                  | profile `p1-31-frontend`, 22 changed files, 0 violations              |
+
+**There was no hosted gate, no run against any database, no browser tier and no merge.** Every figure
+above was taken locally on this branch, at the head that carries the merge of `develop` `6c99e805`.
+The slice is open as pull request **#371**; no review verdict and no hosted result is recorded here.
+The four tasks are `implemented/unmerged`; none is `end-to-end verified`, and rule 2 of
+[`task-matrix.md`](./task-matrix.md) keeps that state unreachable until a P1-31 acceptance record
+exists.
+
+### 50.5 What this slice did NOT do, and what is not claimed
+
+- **No backend file changed**, and no operation, permission, migration, seed or audit action moved.
+- **No report definition was authored, published, archived or exported**, and no export path of any
+  kind was added — not an operation call, and not a file assembled in the browser.
+- **No figure was computed, derived, rounded, re-scaled or reformatted anywhere in this tier.**
+- **FE-010 and FE-016 were not built.** D-19 defines them and they are the next slice; a catalogue and
+  a per-report run are not the overview that decision describes, and D-19 says in terms that four raw
+  tables alone do not establish it.
+- **No gate was weakened, no allow-list narrowed, no suppression added and no floor moved.** The one
+  gate edit widens a rule's reach. The committed test-count baseline is untouched by this slice.
+- **No hosted run, no database tier, no browser acceptance and no end-to-end result is claimed.**
+
+## 51. Starting a handover with a validated delivering employee (FE-002) — PROVISIONAL
+
+Full record: [`delivery-start-selector.md`](./delivery-start-selector.md).
+
+### 51.1 Identifier allocation — PROVISIONAL, re-read at `develop` `72782f48`
+
+Raised against `develop` `811e9891`, where the register ran to **section 50** and **CC-38**, both
+settled by the report screens slice merged with PR #371. So this slice took **section 51** and
+**CC-39**.
+
+**Re-read after merging `develop` `72782f48`**, which carries the operational overview (PR #376) and
+with it **section 53** and **CC-41**. That pair sits ABOVE this slice's, so it takes nothing from it
+and nothing here is renumbered to follow it: § 48.1's rule is that an identifier is a claim about the
+register at the moment it was raised. Section 51 and CC-39 are unheld by any other record in this
+file at this head.
+
+| identifier | slice                                           | state, re-read at `develop` `72782f48`   |
+| ---------- | ----------------------------------------------- | ---------------------------------------- |
+| **CC-36**  | the warranty plan administration screens (#375) | merged, section 48                       |
+| **CC-37**  | a lane not on `develop`                         | claims **section 49**                    |
+| **CC-38**  | the report screens (#371)                       | merged, section 50                       |
+| **CC-39**  | this slice                                      | **PROVISIONAL**, this branch, section 51 |
+| **CC-40**  | the acceptance harness lane, not on `develop`   | claims **section 52**                    |
+| **CC-41**  | the operational overview (#376)                 | **merged**, section 53                   |
+
+CC-39 stays PROVISIONAL for one reason and one only: **section 49 and CC-37 are a LOWER pair still
+held by a lane that has not merged**, named in § 50.1 as "a lane not on this head". Nothing above
+CC-39 is claimed here. If either number is found taken at merge time this slice's heading and
+identifier move.
+
+### 51.2 What was delivered
+
+The **Start** control on a work order with no handover, withheld in PR #362 and withheld through four
+merges because the field it had to send named nobody. Prerequisite **P-17** merged with PR #370 and
+gave the delivering employee a real identity, so the control returns against that contract: a
+permission-gated picker over the employee register, and a create that sends the work order and the
+chosen person and nothing else.
+
+This is the Frontend half of the Owner's decision of 2026-09-10, quoted verbatim with its path in
+[`delivery-start-selector.md`](./delivery-start-selector.md) § 1, including the clarification that an
+employee's home branch must not restrict authorized work in other branches.
+
+Two docblocks were corrected in the same change because they asserted a rule the repository no longer
+matches: both `apps/web/src/lib/contracts/delivery-contract.ts` and
+`apps/web/src/features/delivery/delivery-contract.ts` stated that the delivering-employee reference
+had no foreign key anywhere in the platform. It has had one since P-17. The delivery record type
+gained the stamped display name the reads already publish, and the delivery screen and the printable
+sheet now show that name where they printed a bare reference.
+
+**Three findings raised against this branch were fixed on it**, and the dispositions below record
+each as a correction rather than folding it in silently. The branch whose people are listed is now
+CHOSEN from the published directory instead of typed as an identifier (**CC-39(a)**); the disposition
+that justified typing it was factually wrong and is corrected in place (**CC-39(a)**); and the
+register's single-employee adapter, which no production surface called, was withdrawn rather than
+annotated (**CC-39(b)**).
+
+### 51.3 Dispositions
+
+| id           | what was found                                                                                                                 | measurement                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | owner      | state                |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------- | -------------------- |
+| **CC-39**    | **one catalogue code, `ERR-VAL-001`, carries two distinct causes on this surface**                                             | An employee the caller cannot resolve answers rule `custom`; a retired one answers rule `inactive_employee`. The create service reports them as distinct rules deliberately, and the problem document's first violation is the only machine-readable discriminator — the service's own sentence never crosses the wire                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | **accepted, and discriminated by the RULE rather than by wording guessed from the code.** The write state carries the code and the first violation's rule, and the two are worded apart in plain language because they send an operator somewhere different: name somebody else, or have the person brought back. The same treatment **CC-36** gave the plan surface's three-cause code. No sentence is invented per code beyond the four the backend genuinely distinguishes                                                                                                                                                                          | this slice | closed, recorded     |
+| **CC-39(a)** | **the other branch a colleague may be named from was TYPED as an identifier, and the disposition that justified it was FALSE** | The form carried a text field an operator typed a branch identifier into. The standing Owner requirement is that tenancy comes from the login and no company or branch identifier is typed, so the cross-branch handover the Owner's clarification of 2026-09-10 protects was unreachable for anybody who did not know an identifier by heart. The earlier disposition claimed a reference field is what the inventory screens ship where no directory list is available; that is untrue and takes one read to measure — `org.branch-list` is consumed at `apps/web/src/features/inventory/api.ts` and rendered through `useBranches` in `apps/web/src/features/inventory/components/shared.tsx`, where the identifier fields are the FALLBACK for a caller who may not read the directory, never the design. The same operation is consumed by the payments, pricing, services, warranty and report screens, and by this feature's own readiness queue | **CORRECTED in this slice, and the earlier disposition is retracted rather than rewritten.** The branch is chosen from `org.branch-list`, narrowed to the work order's company, defaulted to the work order's own branch and gated on `org.branch.read`. Where the directory is not offered, answers with nothing, is refused or does not answer, the reason is stated and the work order's own branch is read — which is the branch the register would have been read for anyway. **No typed input remains on the form**, and a test asserts that. The operation is named in `scripts/ci/check-p1-31-access.mjs` in the change that first consumes it | this slice | closed, corrected    |
+| **CC-39(b)** | **the register's single-employee read was published with no production consumer**                                              | `readEmployee` was called by nothing but its own two tests. Saying so in the adapter's docblock was the earlier disposition, and it is not a disposition: this repository treats _declared but never wired_ as a defect it has shipped repeatedly (P1-27 INT-113), and `apps/web/src/features/delivery/api.ts` states that rule against itself two files away                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | **WITHDRAWN in this slice, superseding the earlier disposition.** The adapter, its contract row, its two tests and the `org.employee-detail` entry in `scripts/ci/check-p1-31-access.mjs` were removed together. Neither gate pin moved, because the register's list read contributes the same resource root. It returns on the day a surface calls it — resolving the person named on a handover recorded before the register existed. No legacy row was repaired here, and the review list P-17 created is the Owner's                                                                                                                               | this slice | closed, withdrawn    |
+| **CC-39(c)** | **the access gate gained an owned segment no dashboard area is named for**                                                     | Claiming the organisation reads this form consumes — the employee register and the branch directory — derives their shared resource root, `org`, taking the derivation from eight segments to nine. The dashboard holds no such area, so the page count did not move: the form lives on the work-order detail page the gate already examined. Withdrawing the single-employee read and claiming the branch directory moved NEITHER number, for the same reason                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | **engineering consequence, implemented.** Both pins in `tests/ci/p1-31-access-gate.test.ts` were re-based from the gate's own report line on this head, and the gate's own list records why the two administration commands on the same register, and the single-employee read withdrawn under CC-39(b), are deliberately NOT claimed. Naming a segment before a screen exists under it is what made the warranty and report pages meet this rule already written                                                                                                                                                                                      | this slice | closed in this slice |
+
+### 51.4 What this slice did NOT do
+
+- **No backend file changed**, and no operation, permission, migration, seed, audit action or
+  generated register moved.
+- **No roster administration surface exists.** Nothing here adds, renames, retires or reinstates an
+  employee, and the two register commands that could are neither mirrored nor claimed.
+- **No login account, employment record, department, contact detail or role is read**, and the
+  employment reference is displayed as the opaque reference it is.
+- **No legacy handover was repaired**, and no unresolved reference was replaced by the authenticated
+  actor or by a guess — the Owner forbade both in the same clarification.
+- **No figure or arithmetic crosses this tier**, as with every other delivery surface.
+- **No gate was weakened, no suppression added and no floor moved.** The committed test-count
+  baseline is untouched. The allow-list in `scripts/ci/check-p1-31-access.mjs` moved in BOTH
+  directions and each move is recorded above: `org.branch-list` was claimed because a screen of this
+  phase now calls it, and `org.employee-detail` was released with the adapter that called nothing.
+  A narrowing that drops a claim this phase cannot support is not a narrowing that hides a
+  violation — no page stopped being examined and no segment stopped being owned.
+- **No hosted run, no database tier, no browser acceptance and no end-to-end result is claimed.**
+
+### 51.5 Proof
+
+Every command, with its numbers, is in [`delivery-start-selector.md`](./delivery-start-selector.md)
+§ 7. It is not duplicated here: a hand-copied total beside a recorded one is exactly the disagreement
+the P1-27 closing-value gate exists to catch, and the recorded tiers live in
+`docs/phase-1/phase-1-27/evidence/local-run-ledger.json` with the commit each was taken at.
+
+**There was no hosted gate, no run against any database, no browser tier and no merge.** The slice is
+open as a pull request; no review verdict and no hosted result is recorded here.
+
+---
+
+# QA-005 — the fresh-organisation acceptance harness, of 2026-09-12
+
+## 52. The fresh-organisation acceptance harness — **PROVISIONAL** (QA-005)
+
+**Slice:** `feature/p1-31-acceptance-harness`, ownership profile `p1-31-frontend`.
+**Baseline:** protected `develop` **9b109f639348db424940b00b022cfb36e2160e2c**, merged into this
+branch on 2026-09-13. The branch was authored against `deb404c1` and carries THREE merges of
+`develop`: `811e9891`, then `72782f48` when PR #376 landed the operational overview, then
+`9b109f63` when PR #377 landed the delivery start selector — each of the last two while this
+branch was in flight. Each is recorded by its own commit, and every figure below that refers to
+`develop` refers to `9b109f63`.
+
+### 52.1 Identifier allocation — the collision RESOLVED, and this slice is the one that renumbered
+
+The heading and the identifier were taken high on 2026-09-12 against `develop` `8c4e6a9c`, where the
+register ran to section 43, precisely so that a lane landing first would never be renumbered by this
+one. At `811e9891` this section recorded a live collision: `feature/p1-31-operational-overview`
+allocated **CC-39, CC-40 and CC-41** under its own section 53, this slice had allocated **CC-40**,
+and neither branch was merged. It stated the rule that would settle it — whichever integrates second
+renumbers **its own** identifier, and nothing else moves — and declined to move pre-emptively.
+
+**That branch integrated first**, as PR **#376**, and `develop` `72782f48` now carries section 53
+and **CC-39, CC-40 and CC-41**. So the rule applies to this slice, and it has been applied: the
+disposition below is **CC-42**, the next free identifier. The section number is unaffected — 52 was
+free at `811e9891` and is still free at `72782f48` — and no section or identifier belonging to any
+other lane was touched.
+
+| identifier                                  | belongs to                                       | state                                      |
+| ------------------------------------------- | ------------------------------------------------ | ------------------------------------------ |
+| sections 1–48 and 50, **CC-01 … CC-38**     | the earlier P1-31 slices                         | settled, on `develop` `72782f48`           |
+| section 49                                  | `feature/p1-31-assurance-evidence`               | unmerged, deliberately held                |
+| section 51                                  | `feature/p1-31-delivery-start-selector` (FE-002) | **settled, on `develop`** — merged as #377 |
+| **section 52**                              | this slice                                       | free at `72782f48`; claimed here           |
+| section 53, **CC-39**, **CC-40**, **CC-41** | `feature/p1-31-operational-overview`             | **settled, on `develop`** — merged as #376 |
+| **CC-42**                                   | this slice                                       | the next free identifier; claimed here     |
+
+**Why the marking is still PROVISIONAL after all that.** Not because of the numbering, which is now
+settled in both directions: section 51 has since been taken by #377, and the one number below 52
+still free — 49, held by an unmerged branch — is lower than it and cannot grow onto it. CC-42 is
+unoccupied on `develop`, the collision that threatened it already resolved. It
+is provisional because the slice's own subject is: this branch is unmerged, the harness has never
+been executed, and **CC-42** below records a residual that no amount of renumbering touches. The
+marking comes off when the acceptance runs, not when the register settles.
+
+### 52.2 What this slice changed
+
+Three artefacts plus one CI registration, and no product code, no backend file, no migration, no
+seed, no permission.
+
+- `orchestration/acceptance/p1-31-journey.mjs` — **held outside the repository**, and
+  the reason is §52.6. The HTTP acceptance journey: fifteen sections,
+  numbered steps, fifteen refusal and isolation cases, and a JSON and Markdown evidence pair written
+  **outside** the repository. Three independent guards (`ROOTLCO_ENV`, a loopback database on 54322,
+  `ROOTLCO_ACCEPTANCE_CONFIRM=p1-31`), any one of which refuses the run.
+- `apps/web/tests/e2e/authenticated/{delivery,warranty,reports,audit-log}-p1-31.spec.ts` and their
+  shared `p1-31-handoff.ts` — eleven cases per authenticated project, English and Arabic, reading the
+  world the HTTP half made through `ROOTLCO_P131_HANDOFF`.
+- `docs/phase-1/phase-1-31/acceptance-plan.md` — the preconditions, the step table, the browser
+  matrix, the case table, the evidence layout, and how a PASS is judged per Frontend task.
+
+- `.github/ci-baselines/unrun-test-tiers.json` — the four spec paths added to `governed.specs`, with
+  the reading that decided the list recorded beside them. This is the registration every
+  authenticated spec owes; the finding below sets out why it is that list and not `unrun`, and what
+  it does and does not buy.
+
+**No npm script was added.** Adding one would move `validate:command-coverage` and put a phase
+artefact into the repository's permanent command surface; the plan states the invocation instead.
+
+**The harness has NOT been executed.** No organisation was provisioned, no report was run, no browser
+was opened. Everything measured on this branch is a static check on the source, and section 8 of the
+plan lists exactly which. The plan's own status line says the same thing in its first sentence,
+because a reader who stops after one paragraph must not come away believing an acceptance happened.
+
+### 52.3 What the merge of `develop` `811e9891` settled, and what it left
+
+The acceptance plan's §1.1 named four branches the journey needs and measured them as unmerged. All
+four are on `develop` `811e9891`: P-17's employee register and the `deliveringEmployeeId` on
+`sal.delivery-create` (§41), the report engine and all four datasets (§40, §45 to §47), the warranty
+plan administration screens (§48) and the report screens (§50). §1.1 is rewritten in the following
+commit to say so, and the bundle figure the harness asserts — **78** — is now the count
+`bootstrap-roles.ts` declares on `develop` rather than a figure conditional on a merge.
+
+The shared local database was brought to the same head by the P-17 operator run of 2026-09-12, whose
+evidence is outside the repository at `orchestration/evidence/p1-31/p17-operator-20260912/`: the
+migration ledger is at **141** rows equal to the 141 files in the tree, the permission catalogue at
+**121** codes, and the tenant administrator bundle widened from 76 to 78 across every organisation
+that held it. The plan's §1.2 operator steps are therefore DONE and are recorded as done rather than
+described as pending.
+
+**What the merge did not settle is the run.** The world the specs read still does not exist on any
+checkout, and no acceptance result is claimed anywhere in this slice.
+
+**The re-read against the merged contracts found six defects in the harness, and they are fixed
+here.** Every one of the 124 call sites was compared against the `defineOperation` declaration on
+`811e9891` — method, path, whether the operation requires an `Idempotency-Key`, whether it requires
+an `If-Match`. Four classes came out of it:
+
+| what was wrong                                                                                                                                                                            | how it would have presented                     | fix                                                            |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | -------------------------------------------------------------- |
+| an operation id that does not exist: `qms.qc-record-read` at two sites, where the route at `GET /quality-controls/{recordId}` declares `qms.qc-record-detail`                             | correct request, wrong name in the evidence     | the declared id                                                |
+| fifteen call sites to twelve operations declaring `idempotent: true` sent no `Idempotency-Key`; the platform makes the header mandatory for those (`requireIdempotencyKey`), not optional | `ERR-INT-002` on each                           | a fresh key per call, as the other sites already send          |
+| five call sites to five operations declaring `versionGuarded: true` sent no `If-Match`; `parseIfMatch` refuses when the operation declares the guard                                      | `ERR-CON-002` on each                           | the counter its own row answered, and a re-read where none had |
+| one call site sent an `Idempotency-Key` to `tech.labor-session-stop`, which declares the version guard and **not** idempotency                                                            | silently ignored; a false claim in the evidence | the header removed and the `If-Match` it actually needs added  |
+
+Two of those are worth naming individually because the correction was a judgement and not a
+substitution. `svc.price-list-version-create` is guarded against the price **list**, not the version
+it creates — the same trap the P1-30 W2 record names for the publish — and neither write bumps
+`svc.price_lists.record_version`, so both send the figure the list create answered. And
+`wo.work-order-transition` had no counter available anywhere on the journey, so a read of
+`wo.work-order-detail` was added immediately before it, which is the idiom the closure step three
+sections later already uses and states its reason for.
+
+None of the six was caused by the merge. They were in the first three commits, and a static check
+cannot see them: a string in an object literal is not type-checked against a route in another
+workspace, and the harness is never executed by any tier. **That is itself the finding** — the
+harness's call shapes were only verified by reading the declarations one by one, and a reader should
+not take the fix as evidence that no seventh defect remains.
+
+**A seventh finding was found, and it is REGISTERED rather than fixed or waived.**
+`tests/ci/e2e-tier-coverage.test.ts` requires that every spec under
+`apps/web/tests/e2e/authenticated/` be named in `.github/ci-baselines/unrun-test-tiers.json` — under
+`governed.specs` when a gate-governed job executes it, in `unrun` when none does. The list held seven
+paths and named none of this slice's four, so **the root unit tier was RED on this branch** and had
+been since the specs were committed at `ed657ed8`, before any merge. The branch never ran `tests/ci`,
+which is why the failure travelled three commits unseen.
+
+**Which list they belong on was decided by reading, not by preference.** The evidence, quoted:
+
+- `apps/web/playwright.config.ts:204` and `:215` — the `authenticated-en` and `authenticated-ar`
+  projects both carry `testMatch: /authenticated[\\/].*\.spec\.ts/`. That is a directory-wide glob
+  and it matches these four the moment the files exist. `authenticated-tablet` at `:255` carries
+  `testMatch: /authenticated[\\/](administration|appointments-and-receptions)\.spec\.ts/` and does
+  not match them.
+- `.github/workflows/_reusable-authenticated-browser.yml:416` — the step `The authenticated browser
+tier` sets `ROOTLCO_E2E_AUTH: '1'` and runs `npm run test:web-e2e-authenticated`. That job is
+  called by `pr-ci.yml` and `protected-develop-verification.yml` and sits in the `needs` of both
+  `ci-gate` and `protected-gate`.
+
+The governed job therefore **does** execute them, so `governed.specs` is the truthful list. `unrun`
+was not available in any case, and two independent rules say so: the declaration file's own `policy`
+field fails an entry whose spec **is** executed by the pull-request gate — "a declaration must not
+be able to hide a runnable tier" — and the last case of the coverage test fails any `/authenticated/`
+path in `unrun` while the tier is governed, because "a debt must not outlive its repayment". The four
+paths were added to `governed.specs` with the reason recorded beside them in the file. No rule was
+relaxed, no directory exempted, no suppression added, and no threshold moved.
+
+**Registration alone would have left the hosted check RED, and the specs were changed rather than
+the guard.** The step immediately after the tier in the same workflow — `A run that collected
+nothing is a failure, not a pass` — reads the spec **directory** with `readdirSync`, counts only
+results whose status is not `skipped`, and exits 1 naming every file that contributed none. It is
+**per file**, not per run. As first written, all eleven cases in each of these four specs skipped
+while `ROOTLCO_P131_HANDOFF` was unset — which it is on every runner — so all four would have been
+named and `authenticated-browser` would have failed.
+
+Weakening that step was never available, and neither was shipping the files as they stood: four
+committed specs that execute nothing are the **declared-but-never-wired** defect class this phase
+exists to clean up, and the one `P1-27-INT-113` is named for. What the environment actually offers
+was read out of the workflow instead:
+
+- `npm run supabase:reset` applies every migration and seed, then `npm run acceptance:create-owner`
+  creates Tenant A, Tenant B and the acceptance owner with the roles and grants, and the API runs
+  as a login holding neither SUPERUSER nor BYPASSRLS. Both applications are built and served, and
+  `auth.setup.ts` signs in through the product's own login form. **There is a real authenticated
+  session for these routes.**
+- The owner's permission set is `OWNER_PERMISSIONS` in `scripts/dev/owner-acceptance/context.mjs`,
+  composed of `ADMIN_PERMISSIONS`, `CRM_VEHICLE_PERMISSIONS`, `P1_28_SCREEN_PERMISSIONS` and
+  `CATALOGUE_ADMIN_PERMISSIONS` — 60 codes. It holds `sal.delivery.view`, `wo.work_order.read`,
+  `sal.finance.view`, `wty.warranty.read` and `iam.audit.view`. It does **not** hold
+  `rpt.report.read` or `wty.warranty.manage`. That derivation is P1-28-shaped and was never widened
+  for this phase, so the asymmetry is a fact about the environment rather than a choice made here.
+
+**Each of the four files now carries at least one case that executes on that environment**, and the
+permission asymmetry is what they assert rather than something they work around:
+
+| spec                      | case added or ungated                                                  | what it proves                                                                                                                                                           |
+| ------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `delivery-p1-31.spec.ts`  | the readiness queue is reachable, and idles with its reason stated     | the three-code conjunction passes, and the screen states one of its two idle reasons rather than rendering a blank region                                                |
+| `warranty-p1-31.spec.ts`  | both warranty reads are reachable, and plan creation is withheld       | `wty.warranty.read` admits both pages while `wty.warranty.manage` withholds the create panel in the same render — the over-grant by omission that code was minted to end |
+| `reports-p1-31.spec.ts`   | the catalogue and the run screen refuse a caller without the read code | both pages render their own title and the shared denial and leak no part of the catalogue or the run form: the only browser proof that the gate runs BEFORE the read     |
+| `audit-log-p1-31.spec.ts` | the log offers no export, and says why                                 | the export absence is a property of the screen and never needed journey data; gating it on the handoff was a mistake and the skip is removed                             |
+
+Only assertions that genuinely need a record the journey made — a specific delivery id, a generated
+warranty, a report's row count — remain behind the handoff, each stating its own reason in the run
+output. Nothing was relaxed, exempted or suppressed to reach that state: the guard is satisfied
+because every file now really does execute, which is what it was written to require.
+
+### 52.4 Dispositions
+
+| id        | disposition                                                                                                             | why it is recorded rather than fixed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | owner                | state                       |
+| --------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- | --------------------------- |
+| **CC-42** | **the journey half of the committed acceptance suite proves nothing until the harness is run — re-measured 2026-09-12** | The suite no longer skips wholesale, and the part that still does is named exactly. Each of the four spec files carries at least one case that executes on the governed job's own environment and asserts what that environment provides — permission gating in both directions, reachability, the honest idle and denied states, and text direction; §52.3 sets out which case and what it proves. **What remains skipped is every case that asserts on a record the journey made** — a specific delivery id, a generated warranty, a report's row count — because `ROOTLCO_P131_HANDOFF` is unset on every checkout and every runner, and the harness has never been executed. Each of those skips states its own reason in the run output rather than deferring to a shared one. A skip was chosen over a failure because a committed suite must stay green on a checkout that has never run an acceptance; the alternative considered and rejected was asserting a 404, which also passes on a build that is merely broken and would convert a missing world into a green tick. The residual is therefore precise rather than total: **the screens are proved reachable and correctly gated, and nothing is proved about how they render a delivery, a warranty or a report that exists.** | the integration lane | open, recorded, PROVISIONAL |
+
+### 52.5 What this slice did NOT do
+
+- **No execution of any kind against a database, a server or a browser.** Not the harness, not
+  Playwright, not `test:db`, not `test:backend`, not a build. The migration, catalogue and bundle
+  figures in §52.3 are read from the P-17 operator run's committed-out evidence and from the source
+  on this tree; this slice ran nothing against the database itself.
+- **No merge, no acceptance record.** Section 6 of the plan describes how a PASS would be judged; no
+  PASS is claimed, and rule 2 of `task-matrix.md` is unaffected.
+- **No gate was weakened, no exemption granted and no suppression added.** One `eslint-disable`
+  written during authoring was removed rather than justified, because the rule it named reported
+  nothing. The one CI file this slice touches is named rather than glossed: four paths were ADDED to
+  `governed.specs` in `.github/ci-baselines/unrun-test-tiers.json`. That list is not an allow-list
+  and adding to it removes no check — it is the assertion that a gate-governed job executes those
+  files, which `tests/ci/e2e-tier-coverage.test.ts` then holds against the real directory in both
+  directions. Nothing was added to `unrun`, which is the list that would have excused them, and the
+  hosted consequence of the registration is stated above rather than left for a reader to discover.
+- **No test floor moved.** `apps/web/tests/e2e/**` is the Playwright tier and is not counted by
+  `web.minTests`, which measures the vitest projects under `apps/web/tests`.
+- **No section or identifier belonging to another lane was renumbered.** The union in this file is
+  `develop`'s sections 44 to 48, 50, 51 and 53 in their own order, with this slice's 52 in its
+  numeric place between them. When `feature/p1-31-operational-overview` merged as #376 and settled the
+  **CC-40** both branches had claimed, THIS slice moved to **CC-42** — its own identifier, by the
+  register's own reconciliation rule, with nothing of the other lane's touched.
+
+### 52.6 The HTTP harness is NOT committed, and why — an engineering consequence, not a waiver
+
+**What changed.** `scripts/dev/owner-acceptance/p1-31-journey.mjs` was removed from the repository
+and now lives at `1millions/orchestration/acceptance/p1-31-journey.mjs`, beside the phase evidence
+and outside any git working tree. **Nothing about the file changed** — every guard, every fix and
+every hardening travelled with it byte for byte, and the relocated copy was run to prove it: a
+wrong repository root is refused with exit code 2 and the missing paths named, and with a root
+supplied the three original guards still fire in order before anything is written.
+
+**Why.** An evidence writer is by construction a path from API responses to the filesystem, which
+is exactly what `js/http-to-file-access` reports. Two rounds of real fixes closed five of the seven
+alerts this harness raised — an unguessable `mkdtemp` directory, `0o700`/`0o600`, `wx` on the
+credential file, backslash-first escaping, and a sanitising barrier on every value reaching disk —
+but the last two ARE the network-to-file edge, and it does not close while the evidence exists.
+
+The policy in `.github/ci-baselines/codeql-baseline.json` is `maximumOpenFindings: 0` with an
+EMPTY `dismissals` array, and its own note records that the single dismissal this repository ever
+held was removed **because the finding was fixed**. So three options stood: dismiss, delete the
+evidence, or hold the driver where the scanner does not analyse it.
+
+**The third was taken, on precedent rather than on convenience.** Section 5 of
+`docs/phase-1/phase-1-30/w9-acceptance-record.md` records that phase's HTTP driver as
+`acceptance-p1-30-journey.mjs`, a **session artefact**, with only the record committed. This slice
+is narrower than that precedent, not looser: the browser half stays committed, executes in
+continuous integration, and asserts the permission asymmetry §52.3 describes.
+
+| what                                              | state                                            |
+| ------------------------------------------------- | ------------------------------------------------ |
+| the four `*-p1-31.spec.ts` specs and their helper | **committed**, and executing in the governed job |
+| this plan and the change-control record           | **committed**                                    |
+| the acceptance record, after the run              | **to be committed**                              |
+| the HTTP journey driver                           | **outside the repository**, by precedent         |
+
+**Stated plainly, because the distinction is the whole point: the two findings are resolved by
+RELOCATION, not by dismissal.** No entry was added to `dismissals` — it is still empty. No rule was
+relaxed, no path exempted, no suppression written, no threshold moved, and no reviewer was named
+for an approval nobody gave. The finding disappears because the scanner no longer analyses that
+file, and this section exists so that nobody later reads its absence as a clean bill of health for
+a file the scanner never saw.
+
+**What it costs, recorded rather than glossed.** A file outside the repository is not reviewed by
+CODEOWNERS, not covered by the repository gates, and not versioned with the code it drives. The
+acceptance record it produces must therefore name the driver and the commit it was run against, as
+P1-30's did, or the run evidences a script nobody can identify.
+
+---
+
+## 53. The operational overview — **PROVISIONAL** (FE-010, FE-016)
+
+**Slice:** `feature/p1-31-operational-overview`, ownership profile `p1-31-frontend`, open as pull
+request **#376**. It was written **STACKED** on `feature/p1-31-report-screens` (section 50, pull
+request **#371**) and carries its head `e3b73277` by merge; **#371 has since merged**, so this branch
+carries protected `develop` directly and the stack is gone. It has since been synced a second time
+onto `develop` `811e9891353b466b7788e7ca8a7bddee8496de72`, which carries pull request **#370**, the
+P-17 delivering-employee Backend slice: two migrations, a schema baseline, the `org.employee-*`
+operations, change control section 41, and regenerated registers. That merge DID change files, so
+every figure in section 53.4 was re-taken at it. This branch is **unmerged**, has **no hosted
+result**, and nothing below claims otherwise. The full record is [`operational-overview.md`](./operational-overview.md).
+
+**Authority:** Owner decision **D-19** of 2026-09-12
+([`owner-decisions-2026-09-12.md`](./owner-decisions-2026-09-12.md) § 1) — FE-010 is an operational
+overview of the four approved report domains, built from their authoritative server results, with
+branch and period filters, visible freshness and timezone, and drill-through; using **only supported,
+approved calculations**; **inventing no profit, performance score or trend**; **naming and
+implementing the smallest approved backend prerequisite** if a needed summary contract is absent;
+with **four raw tables alone not establishing the intended overview**; and **FE-016 reusing this
+overview for the selected branch, with no hard-coded pilot**. **D-5** of 2026-09-09 § 4 and **D-17**
+of 2026-09-10 § 4 are carried unchanged.
+
+### 53.1 Identifier allocation — PROVISIONAL, dated 2026-09-12, re-checked at `develop` `811e9891`
+
+The register in this file, at the head this branch carries, runs to **section 48** and **CC-36** and
+additionally holds **section 50** and **CC-38**. Both are now on protected `develop`: section 48 with
+PR #375 and section 50 with PR #371, which merged after this section was first written. `develop`
+`811e9891` adds **section 41** and **CC-29** with PR #370, which sits below that ceiling and so moves
+neither the highest section nor the highest identifier. Section **49** is claimed by a lane that is
+not on `develop`, and section 48.1 records that sections **49 to 52** and the identifiers above
+**CC-36** are held by P1-31 lanes on unmerged branches.
+
+So this slice takes **section 53** and **CC-41**, and both stay **PROVISIONAL**. Section 53 is the
+first heading above every number those lanes are recorded as holding, and CC-41 is chosen on the same
+basis — **that part is coordination rather than a measurement**, because no unmerged lane's identifier
+is decided until it merges. A heading taken above the claimed range is a gap in the register; a
+heading taken inside it is somebody else's record renumbered, which is worse.
+
+| id        | lane                                               | state, re-read at `develop` `811e9891`          |
+| --------- | -------------------------------------------------- | ----------------------------------------------- |
+| **CC-29** | the delivering-employee identity (#370)            | **merged**, section 41                          |
+| **CC-36** | the warranty plan administration screens (#375)    | merged, section 48                              |
+| **CC-37** | a lane not on `develop`                            | claims section 49                               |
+| **CC-38** | the report screens (#371)                          | **merged**, section 50                          |
+| —         | a lane not readable from any head reachable here   | claims section 51                               |
+| **CC-40** | the fresh-organisation acceptance harness (QA-005) | **PROVISIONAL** and unmerged, claims section 52 |
+| **CC-41** | this slice                                         | **PROVISIONAL**, this branch, section 53        |
+
+**Why CC-41 keeps its PROVISIONAL marking even though three of the numbers above are now settled on
+`develop`.** Section 50 and **CC-38** stopped being a claim about a branch when #371 merged, and
+section 41 and **CC-29** are on `develop` `811e9891`, so those rows are facts. Two are not: the
+acceptance-harness lane's own record still carries **section 52** and **CC-40** marked PROVISIONAL on
+a branch that is not merged and is not published to `origin`, and the lane claiming section 51 is not
+readable from any head reachable here, so its identifier cannot be read at all. Until both merge,
+CC-39 and CC-40 may land, move or never land, and an identifier chosen above a range that can still
+shift is not measured. **The section number and the identifier are re-checked against `develop`
+again before this branch merges.** Section 36.1's rule governs a collision: an identifier is allocated
+when its finding is raised and is never renumbered to follow heading order, so a collision moves THIS
+section and this identifier and leaves every existing one alone.
+
+### 53.2 What changed, and what was minted
+
+| changed                                                                                                                                                                        | minted  |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
+| 1 route page, 1 overview screen, 1 shared scope form extracted from the report screen, 1 overview contract; 1 navigation entry                                                 | nothing |
+| 23 English and 23 Arabic messages — the section titles, the measure labels and the filter and freshness copy; 1 new web test file; 2 web suites re-based on the shared form    | nothing |
+| the P1-31 access gate's pinned page count moved 15 → 16, read off the gate's own report line; NO operation joined its allow-list and its owned-segment count is unchanged at 8 | nothing |
+| the FE-010 and FE-016 rows of the task matrix and of the A0 preflight; the P1-27 records re-taken at this head                                                                 | nothing |
+
+**No backend file changed.** No route, no service, no repository, no migration, no seed, no
+permission, no audit action and no operation. **The operation register gains exactly one line and no
+operation:** regenerating it lists `tests/ci/p1-31-access-gate.test.ts` as a coverage site for the
+existing `rpt.report-run`, because this branch's gate test names that operation, and the earlier
+statement that the register was untouched understated that. Its totals are `develop`'s unchanged —
+411 operations over 319 OpenAPI paths, 121 permission codes, 234 audit actions, all Covered. The
+committed test-count baseline is untouched: the tree DECLARES 3257 cases across 140 files against a
+floor of 3700, so `WTF-08` demands no raise.
+
+### 53.3 Dispositions
+
+| id           | finding                                                                                                                                                                                                | measured                                                                                                                                                                                                                                                                                                                   | disposition                                                                                                                                                                                                                                                                                                                                                                                             | remedy owner            | state            |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- | ---------------- |
+| **CC-41**    | **the overview is four separate report runs, not one summary read**, so four reads are issued where the decision describes one screen                                                                  | every figure D-19 asks for is already published by the four datasets as a group over the WHOLE selection, and the run service's own docblock says so. A fifth operation returning the same four group sets would be a new contract for an answer that already exists, and D-19 asks for the SMALLEST approved prerequisite | **accepted, and recorded because a reviewer will ask.** Each read asks for `limit=1`, the smallest page the route admits, because the rows are not wanted — only the groups. A `summaryOnly` flag was considered and rejected: it changes a published operation's request shape for a saving the `limit` already delivers. If a summary contract is ever added, this screen is the caller that names it | a later Backend slice   | open, recorded   |
+| **CC-41(a)** | **a section whose dataset the catalogue answers as not executable renders as not runnable rather than as a figure**, so an operator can meet an overview in which one of four sections shows no number | the catalogue publishes `executable` per report code, and a draft, an archived configuration or a published configuration with no live version all answer the same way. All four approved codes are registered at this head; the state is reachable whenever a configuration is not live                                   | **accepted.** The alternative is a zero, and a zero is a claim about the business that the server did not make. The section states that it cannot be run and why, in the same words the report screen uses, so the two surfaces cannot disagree                                                                                                                                                         | none — this is intended | closed by design |
+
+Both CC-04 (no export operation) and CC-38(a) (two of three drill-through targets have no screen
+here) remain **open and are not closed by this slice**, and nothing in it creates either screen.
+
+### 53.4 Proof
+
+**Measured facts (not part of the decision) — what was actually run, and where.** Every run below was
+local, on this branch, with no database, no browser and no hosted runner. **The table was re-taken at
+the sync merge of `develop` `811e9891`**, so no figure below is carried forward from either pre-sync
+head.
+
+| run                                                                                         | result                                                                                                       |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `npm run typecheck` · `npm run typecheck:web`                                               | pass                                                                                                         |
+| `npm run lint`                                                                              | pass                                                                                                         |
+| `npm run lint:web`                                                                          | 0 errors; 12 pre-existing warnings, none on a file this slice touched                                        |
+| `npm run format:check` · `format:check:web` · `style:check:web`                             | pass                                                                                                         |
+| `npm run security:all`                                                                      | pass over 2774 tracked files                                                                                 |
+| `npm run validate:encoding`                                                                 | every tracked text file clean UTF-8, no BOM                                                                  |
+| `npm run validate:generated-artifacts`                                                      | 2774 tracked files, 7/7 ignore rules, 0 failures                                                             |
+| `npm run validate:p1-24-register`                                                           | register current and reconciled — 411 operations, 319 OpenAPI paths, all Covered                             |
+| `npm run validate:command-coverage`                                                         | 95/95 reachable locally, 96/96 invoked by hosted CI                                                          |
+| `npm run validate:web-boundary`                                                             | 374 files, 0 violations                                                                                      |
+| `npm run validate:use-server-exports`                                                       | 50 server modules across 989 source files, 0 violations                                                      |
+| `npm run validate:web-topology`                                                             | 18 expectations, 338 matched files, 0 failures                                                               |
+| `npm run validate:web-tokens` · `validate:web-theme` · `validate:web-brand`                 | 0 violations; 54 colours registered, 0 unresolvable                                                          |
+| `npm run validate:notification-authority`                                                   | 374 files scanned, one authority, mounted once                                                               |
+| `npm run validate:module-boundaries`                                                        | 615 files scanned in `apps/api/src`, 11 rules, 0 violations                                                  |
+| `npm run validate:api-backend-only`                                                         | 320 route handlers, 615 source files, 0 failures                                                             |
+| `npm run validate:plain-language`                                                           | 2 catalogues, 24 rules, 0 findings                                                                           |
+| `npm run validate:p1-31-access`                                                             | 16 route pages across 8 owned segments, 0 violations                                                         |
+| `npm run validate:p1-26-frontend`                                                           | 374 files, 50 server modules, 0 failures                                                                     |
+| `npm run validate:p1-27-frontend`                                                           | 156 files across 5 trees, 9 rules, 0 failures                                                                |
+| focused web — the overview suite plus the reports, delivery, warranty and navigation suites | 393/393 across 10 files                                                                                      |
+| root — `npx vitest run tests/ci tests/openapi-contract.test.ts`                             | 1991/1991 across 69 files                                                                                    |
+| the web tier, through the P1-27 recorder                                                    | 3977/3977 across 140 files, 0 failed, recorded at `4797dbbe`                                                 |
+| `npm run test:unit`, through the P1-27 recorder                                             | 3301/3301 across 122 files, 0 failed, recorded at `4797dbbe`                                                 |
+| `npm run verify:policies`                                                                   | exit 0                                                                                                       |
+| `npm run validate:phase-ownership`, both forms                                              | profile `p1-31-frontend`, 27 changed files (web 13, docs 13, tests 1) against `origin/develop`, 0 violations |
+
+The local `verify:workspaces` aggregate is not run, under the standing 2026-09-09 targeted-local plus
+required-hosted policy. Hosted builds, browser checks and the required gates remain mandatory and
+none of them has reported on this branch.
+
+### 53.5 What this slice did NOT do, and what is not claimed
+
+- **No backend file changed**, and no operation, permission, migration, seed or audit action moved.
+- **No summary contract was added, and none was found missing.** D-19 requires an absent summary to
+  be named and implemented as the smallest approved prerequisite; measured against the four datasets'
+  published groups, no figure the overview shows is absent, so there was nothing to name.
+- **No figure was computed, derived, rounded, re-scaled or reformatted anywhere in this tier**, and
+  no profit, performance score or trend exists on the screen or in its contract.
+- **No export path of any kind was added** — not an operation call, and not a file assembled in the
+  browser.
+- **No tenant is named anywhere.** FE-016 is the same screen with the branch fixed by the address, so
+  there is no second screen and no pilot in code.
+- **No gate was weakened, no allow-list narrowed, no suppression added and no floor moved.** One gate
+  figure moved: the pinned page count, because a page was added.
+- **No hosted run, no database tier, no browser acceptance and no end-to-end result is claimed**, and
+  the slice is stacked on an unmerged pull request, so nothing here is reachable on `develop` yet.
+
+## 54. The fresh-organisation acceptance, run and recorded (QA-005)
+
+**Slice:** `feature/p1-31-acceptance-record`, ownership profile `p1-31-frontend`.
+**Baseline:** protected `develop` **`6005cfa4ca3db4dbf45a2cb6ea5edff1dc70f821`** (the merge of PR
+#378, which put the harness outside the repository). The branch was cut from that head and carries no
+merge of its own. It was **documentation only** when it was first recorded; **§54.6 changed that**:
+the correction pass of 2026-09-13 edits the four committed `*-p1-31.spec.ts` files, which are an
+executable path, and the two tiers were re-recorded accordingly. No gate, no fixture, no
+configuration and no product path changed in either pass.
+
+**What it records:** the acceptance [`acceptance-plan.md`](./acceptance-plan.md) describes was
+**executed**, on 2026-09-12/13, against a production build of that head on the shared local stack.
+The record is [`acceptance-record.md`](./acceptance-record.md) and its verdict is **PARTIAL**: the
+HTTP journey answered **176 steps with 0 findings**, twenty-five of the thirty-four committed browser
+cases did not run to completion for the three causes §3.1 of the record names, and no Owner Pass has
+been given. Section 52's marking is therefore answered in part — the harness has now been run — and
+**CC-42 is closed by measurement**: the journey half no longer proves nothing, because it ran.
+
+### 54.1 Identifier allocation
+
+Read on `develop` `6005cfa4`, where the register runs to **section 53** and **CC-42**, and where
+every section and identifier below that is settled — section 49 having been taken by PR #379 and
+section 51 by PR #377. **This slice takes section 54 and CC-43**, the next free pair in both
+sequences, and touches no other lane's numbering.
+
+### 54.2 What this slice changed
+
+| file                                                   | change                                                                                                                                                                               |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `docs/phase-1/phase-1-31/acceptance-record.md`         | **new** — the record: verdict, the 176-step HTTP table with correlation ids, the browser matrix per locale, the refusal/concurrency/isolation cases, how it was driven, observations |
+| `docs/phase-1/phase-1-31/task-matrix.md`               | rule 2 restated against the record that now exists; six rows — FE-002 … FE-006 and FE-008 — moved to `end-to-end verified` citing it; the companion-records line names it            |
+| `docs/phase-1/phase-1-31/change-control-2026-09-08.md` | this section                                                                                                                                                                         |
+
+**No row moved on anything but evidence.** §6 of the record states, task by task, what the run could
+and could not establish; the ten FE tasks it could not answer for keep the state they had, and the
+reason is written beside each. The table above is the FIRST pass; [§54.6](#546-the-browser-correction-pass-of-2026-09-13-cc-43-closed-in-part)
+lists what the correction pass changed, including the four committed specs.
+
+### 54.3 What the run changed outside the repository
+
+The harness `orchestration/acceptance/p1-31-journey.mjs` is not in this tree, and it was **corrected
+six times** while the acceptance was in flight — each correction against the shipped contract it had
+misread. §7 of the record lists the six runs, their step and finding counts, and what each
+established. The two things worth carrying here:
+
+- **Nothing in this repository was changed to make a step pass.** No product code, test, gate,
+  allow-list, fixture or expectation moved. The step count rose from 86 to 176 because the journey
+  grew the hops the product actually requires — the work-order and job state graphs, an accepted
+  quotation as the invoice's only commercial source, a technician availability window, a real
+  decodable image for the signature, and the document link the signature's provenance check reads.
+- **Twelve organisations are left in the shared local database**, `p31_journey_{a,b}_<stamp>` for the
+  six stamps, taking `org.tenants` from 25 rows to 37. None was deleted, on the P1-30 precedent, and
+  none of the codes matches a backend-suite prefix.
+
+### 54.4 Dispositions
+
+| id        | disposition                                                                                       | why it is recorded rather than fixed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | owner             | state                                  |
+| --------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | -------------------------------------- |
+| **CC-43** | **twenty-five of the thirty-four committed P1-31 browser cases do not pass against a real world** | Seventeen are strict-mode locator ambiguities in the specs themselves, six assert a permission withheld that a fresh tenant administrator holds, and two assert a translated report title over a label the tenant supplied; §3.1 of the record names every one with its file, line and cause. They are recorded rather than fixed here because this slice is documentation only, and because editing a committed spec is a change to an executable path that would oblige a re-record of the web tier and belongs to the lane that owns those files. They are invisible on the governed job today, where every journey-dependent case skips for want of a handoff, and will all surface at once the first time one exists. **Corrected on 2026-09-13 by the pass §54.6 records, and closed in part.** All three classes were fixed in the four specs and the browser half was re-run against a second fresh organisation: thirty-two of the thirty-four cases now pass. The two that remain are one case in two locales, and they are a fourth cause the first three were hiding — a figure the harness records mid-journey compared against a dataset that is declared live and goes on changing. That one is measured rather than fixed: the screen renders exactly what the server answers, and the repair belongs to the harness, which is held outside this repository. | the Frontend lane | closed in part; one cause open, stated |
+
+### 54.5 What this slice did NOT do
+
+- **It did not close the phase.** The record's verdict is PARTIAL and the Owner Pass §6.3 of the plan
+  requires has not been given.
+- **The first pass changed no executable path**, so no tier was re-recorded for it: the static and
+  documentation checks §5 of the record names are the whole of what was run for that pass. **§54.6
+  supersedes this for the correction pass**, which edits four committed specs and re-records both
+  tiers.
+- **It deleted no tenant, ran no migration, applied no seed and reset nothing.** The database is as
+  the acceptance left it, and the four environment figures were confirmed read-only before the window
+  opened.
+- **It claims no hosted result.** Everything in the record is loopback, and the record says so.
+
+### 54.6 The browser correction pass of 2026-09-13 (CC-43, closed in part)
+
+The same slice, continued. CC-43 recorded twenty-five browser failures and said they belonged to the
+lane that owns those files; this is that lane doing it, under the section and identifier already
+open rather than a new pair.
+
+**What changed, and only this:**
+
+| file                                                       | change                                                                                                                                                                                                                                                                                               |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/tests/e2e/authenticated/delivery-p1-31.spec.ts`  | the readiness form's two controls and the Print control addressed by role with whole names; column headers matched whole; the row-verdict check asserted with Playwright's own waiting instead of one non-retrying read                                                                              |
+| `apps/web/tests/e2e/authenticated/warranty-p1-31.spec.ts`  | the branch control addressed as a `combobox`, which also removes a race against the branch directory; both tables' headers matched whole; the plan-creation case rewritten to assert the affordance IS offered to the holder of `wty.policy.manage`, gated on the handoff                            |
+| `apps/web/tests/e2e/authenticated/reports-p1-31.spec.ts`   | the two permission cases rewritten to assert each screen renders for a holder of `rpt.report.read`, gated on the handoff; the catalogue and run cases addressed by link target and named from the catalogue rather than by a typed title; the period facts asserted inside the list that states them |
+| `apps/web/tests/e2e/authenticated/audit-log-p1-31.spec.ts` | the range, scope, action and apply controls addressed by role with whole names; column headers matched whole                                                                                                                                                                                         |
+| `docs/phase-1/phase-1-31/acceptance-record.md`             | §1's verdict restated on the evidence that now exists; **§7.1** added — the correction pass, its run identifier, the before and after counts per spec and locale, the three classes fixed and the fourth measured                                                                                    |
+| `docs/phase-1/phase-1-31/task-matrix.md`                   | rule 2 restated; six further rows — FE-001, FE-007, FE-012, FE-013, FE-014, FE-015 — moved to `end-to-end verified` citing §7.1; FE-011 annotated with why it did not move                                                                                                                           |
+| `docs/phase-1/phase-1-31/change-control-2026-09-08.md`     | this subsection, the CC-43 disposition, and the two statements in §54 that the first pass made and this pass supersedes                                                                                                                                                                              |
+
+**No product code, route, permission, migration, gate, allow-list, fixture or message catalogue
+changed.** Every fix is a locator, an assertion's subject, or a case's scope. Strict mode was not
+relaxed, no `.first()` was added over a duplicate, no assertion was weakened and no skip was added
+that does not state what is missing.
+
+**The evidence.** A fresh pair of organisations, `p31_journey_{a,b}_mtz5ppq8`, provisioned by the
+same harness against a production build; the HTTP journey answered **176 steps with 0 findings** for
+the second time; the browser half went from **9 of 34 passing to 32 of 34**. The two failures that
+remain are the fourth cause described in the CC-43 row above and in §7.1 of the record. `org.tenants`
+went from 37 rows to 39; nothing was deleted, migrated, reset or seeded.
+
+**Because this pass edits an executable path, both tiers were re-recorded** — the web tier and the
+unit tier, in that order, with the evidence index regenerated between them — and the ownership,
+encoding, scope-exclusion, fabricated-data and documentation-count gates were re-run. The specs are
+Playwright cases and run in no recorded tier themselves; what the re-record proves is that changing
+them left the recorded tiers where they were.
+
+**One consequence for the governed job.** Three cases that used to run there without a handoff now
+skip without one, because each is a statement about a caller and the handoff is what names the
+caller. They will skip with that reason stated, where before they asserted a refusal that was true
+only of that job's own account. That is a narrowing of what the governed job asserts, and it is
+recorded here rather than left to be noticed.
+
+### 54.7 The governed job refused §54.6, and what this pass changed (CC-44)
+
+§54.6 ends with a paragraph headed "One consequence for the governed job" which states that three
+cases would begin to skip there and calls that a narrowing. It was not a narrowing. The
+`authenticated-browser` check on this branch's head `65e27dbb` ended red at its last step, "A run
+that collected nothing is a failure, not a pass", naming `reports-p1-31.spec.ts` and
+`warranty-p1-31.spec.ts` as contributing no executed test. That step fails per FILE, not only on a
+zero total, and nothing in the repository sets `ROOTLCO_P131_HANDOFF` — so gating every case in those
+two files on it left them silent. `delivery-p1-31.spec.ts` and `audit-log-p1-31.spec.ts` each kept
+one ungated case and were not named.
+
+**What changed, and only this:**
+
+| file                                                      | change                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/tests/e2e/authenticated/reports-p1-31.spec.ts`  | the two permission cases un-gated and rewritten to assert the contract that holds for either caller — the page's heading inside `main`, the document direction, no download on any reporting screen — and then, in full, whichever outcome is in front of them: a refusal complete with its explanation and nothing of the gated surface left on the page, or the whole surface a refusal would have withheld                   |
+| `apps/web/tests/e2e/authenticated/warranty-p1-31.spec.ts` | the plan-creation case un-gated and rewritten the same way: the list must say a branch has to be named before anything is read and must not have read before one was; the plans screen must let the holder of `wty.warranty.read` reach its filter form, and its create panel must be whole or absent. The plans half is conditional on the message catalogue with an `if` rather than a skip, so the list half always executes |
+| `docs/phase-1/phase-1-31/acceptance-record.md`            | **§7.2** added — the quoted failure, what the guard requires read from the workflow, the two-caller measurement that §7.1 got wrong, what each rewritten case asserts, and what is still gated                                                                                                                                                                                                                                  |
+| `docs/phase-1/phase-1-31/change-control-2026-09-08.md`    | this subsection and the CC-44 disposition                                                                                                                                                                                                                                                                                                                                                                                       |
+
+**The measurement underneath it.** `auth.setup.ts` signs in with `ROOTLCO_E2E_EMAIL` /
+`ROOTLCO_E2E_PASSWORD` when they are set and otherwise with `.local/owner-acceptance-account.json`,
+which `acceptance:create-owner` wrote. The governed job sets neither, so it signs in as that account,
+whose set is `OWNER_PERMISSIONS` in `scripts/dev/owner-acceptance/context.mjs` — **60** codes,
+derived from the Administration, CRM, Vehicle and P1-28 screen surfaces. It holds `wty.warranty.read`,
+`sal.delivery.view` and `iam.audit.view`; it does **not** hold `rpt.report.read` or
+`wty.policy.manage`. §54.6 rewrote three cases around a caller who holds all five, which is the
+acceptance run's caller and not this job's.
+
+**No product code, route, permission, migration, gate, allow-list, fixture or message catalogue
+changed.** The guard was not relaxed, no `.skip` was added, nothing was registered in
+`.github/ci-baselines/unrun-test-tiers.json`, and no assertion was weakened: each rewritten case
+asserts the shared contract AND the whole of whichever branch it lands in, where its predecessor
+asserted one branch and was wrong about the other half of the time.
+
+**Because this pass edits an executable path, both tiers were re-recorded** — the web tier and the
+unit tier, in that order, with the evidence index regenerated around each — and the ownership,
+encoding, boundary, topology and `verify:policies` gates were re-run. **No hosted result is claimed**:
+whether the `authenticated-browser` job goes green at the head this pass produces is a fact only that
+job can establish.
+
+| id        | disposition                                                                                           | why it is recorded rather than fixed                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | owner             | state        |
+| --------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------- | ------------ |
+| **CC-44** | **the handoff-gated reporting cases can pass only on a run whose browser credentials are overridden** | They assert on screens that gate on `rpt.report.read`, and the account the tier signs in as by default does not hold it. §7.1's run drove them with the journey's own administrator through `ROOTLCO_E2E_EMAIL` / `ROOTLCO_E2E_PASSWORD`, which nothing in the repository states or arranges. Repairing it means changing how the tier signs in — a different decision, on a different lane — so it is measured and stated here rather than papered over by widening what the acceptance account is granted. | the Frontend lane | open, stated |

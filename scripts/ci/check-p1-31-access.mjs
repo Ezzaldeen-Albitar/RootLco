@@ -104,7 +104,7 @@ export const P1_31_OPERATION_IDS = Object.freeze([
   // surface — its own route docblock names that picker as the reason it exists — and
   // the single-policy read is named beside it because they share one resource root:
   // owning `warranty-policies` is what makes a future policy screen meet this rule on
-  // the day it lands, exactly as `reports` is named below before it has a page.
+  // the day it lands, exactly as `reports` below was named before it had a page.
   // These two DO widen the segment set, unlike the two above.
   'wty.warranty-policy-list',
   'wty.warranty-policy-read',
@@ -120,6 +120,36 @@ export const P1_31_OPERATION_IDS = Object.freeze([
   'wty.warranty-policy-status-set',
   'wty.warranty-coverage-create',
   'wty.warranty-coverage-status-set',
+  // The three reporting operations the FE-011 … FE-014 screens consume. Their
+  // resource root is `reports`, which `P1_31_AREAS` already names — so these
+  // entries widen nothing about the segments and everything about the CLAIM:
+  // this gate's docblock requires an operation to be listed in the same change
+  // that first consumes it, and an id that stops existing must be a violation
+  // rather than a quiet shrink.
+  'rpt.report-catalogue',
+  'rpt.report-read',
+  'rpt.report-run',
+  // The employee register READ the FE-002 handover form consumes. P-17 published
+  // four operations on that register; this is the one this phase's screens call.
+  // The single-employee read was claimed here too and has been WITHDRAWN with the
+  // adapter that had no consumer (CC-39(b)); the two administration commands were
+  // never claimed, because nothing in P1-31 administers a roster. An allow-list
+  // that names an operation no screen of its phase reaches is owning a surface it
+  // does not have.
+  //
+  // It DOES widen the segment set, and by a root no P1-31 page lives under today:
+  // the register is addressed under `org`, and `(dashboard)` has no such area. That
+  // is the point of naming an operation in the change that first consumes it — the
+  // day an organisation screen lands under that segment it meets this rule already
+  // written, exactly as `warranty` and `reports` did.
+  'org.employee-list',
+  // The branch DIRECTORY the same form consumes. It is not an operation P1-31
+  // published — it has been serving every other picker in the product since
+  // PRE-P1-29 Wave C — and it is claimed here on the rule this gate states for
+  // itself: an operation a P1-31 screen calls that is absent from this list is one
+  // the gate does not own. It shares the `org` root the register contributes, so it
+  // widens nothing about the segments and everything about the claim.
+  'org.branch-list',
 ]);
 
 /**
@@ -128,8 +158,11 @@ export const P1_31_OPERATION_IDS = Object.freeze([
  * `delivery` is singular and deliberately so — it is the href already committed
  * in navigation. `warranty` was named before its screens existed and now carries
  * them, which is the point of naming an area early: FE-008's two pages met a rule
- * that predated them. `reports` still has no page and stays named for the same
- * reason.
+ * that predated them. `reports` was named on the same grounds and now HAS pages
+ * too: the FE-011 … FE-014 catalogue and report screens. Its resource root is also
+ * `reports`, so the derived and the named halves agree on that segment — which is
+ * why adding the three reporting operations moved the page count and not the
+ * segment count.
  */
 export const P1_31_AREAS = Object.freeze(['delivery', 'warranty', 'reports']);
 

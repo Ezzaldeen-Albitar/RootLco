@@ -60,12 +60,26 @@
  * problem — not to chase the customer. The two are rendered differently on
  * purpose; collapsing them turns a fail-closed default into a silent outage.
  *
- * ## Identifiers are identifiers
+ * ## Identifiers are identifiers, with ONE exception the server publishes
  *
- * No delivery read resolves a name. `deliveringEmployeeId` has no foreign key
- * anywhere in the platform and nothing turns it into a person; the receiver is a
- * partner identifier; the vehicle is an identifier. The screen renders them as
- * labelled references and invents no lookup that the backend does not publish.
+ * The receiver is a partner identifier; the vehicle is an identifier. The screen
+ * renders them as labelled references and invents no lookup the backend does not
+ * publish.
+ *
+ * `deliveringEmployeeId` is no longer one of them. **This section used to say it
+ * had no foreign key anywhere in the platform, and that stopped being true with
+ * P1-31 prerequisite P-17**: the column is bound to `org.employees` by
+ * `fk_delivery_records_delivering_employee` on the organisation and its
+ * identifier, and `sal.stamp_delivering_employee_identity` stamps an immutable
+ * display-name snapshot beside it at insert time. So every delivery read
+ * publishes `deliveringEmployeeDisplayName`, and the screens show the name.
+ *
+ * The name is still not RESOLVED here. It is the snapshot the server stamped
+ * when the handover was opened, which is what keeps a completed handover
+ * readable after a later rename or transfer — the historical attribution the
+ * Owner's decision of 2026-09-10 required. It is absent only on a handover
+ * recorded before that slice whose reference resolved to nobody, and the screens
+ * show the bare reference in that one case rather than inventing a person.
  *
  * ## Two references are sensitive, and stay references
  *
@@ -217,8 +231,17 @@ export interface DeliveryRecord {
   readonly workOrderId: string;
   readonly receptionVisitId: string;
   readonly vehicleId: string;
-  /** The bare identifier the column holds. Nothing in the platform names it. */
+  /** An `org.employees` identifier, bound to that register by a foreign key since P-17. */
   readonly deliveringEmployeeId: string;
+  /**
+   * The employee's display name as it stood when the handover was opened.
+   *
+   * Stamped by the database, never by a caller: input is not authoritative for
+   * historical identity text. Absent only on a handover recorded before P1-31
+   * prerequisite P-17 whose reference resolved to nobody — every handover opened
+   * since carries a name, because the trigger stamps one or refuses the row.
+   */
+  readonly deliveringEmployeeDisplayName: string | null;
   readonly status: string;
   readonly deliveredAt: string | null;
   /** A vehicle odometer-reading identifier. NOT a reading value. */

@@ -452,7 +452,13 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
     // fresh administrator with an empty report catalogue it could never fill,
     // because both published report reads filter on `status = 'published'` and no
     // other code can set that value. It too was already a catalogue row.
-    expect(expected).toHaveLength(76);
+    // 78 with the two codes P1-31 prerequisite P-17 MINTS for the employee
+    // register. Both are carried on the same P-1 rule the eight above are: four
+    // shipped operations declare them, and withholding either would leave a
+    // fresh administrator unable to record ANY handover, because
+    // `sal.delivery-create` refuses an employee that does not exist and nothing
+    // else in the product can create one.
+    expect(expected).toHaveLength(78);
     expect(expected.some((c) => c.includes('*'))).toBe(false);
     expect(expected.some((c) => c.startsWith('platform.'))).toBe(false);
     expect(new Set(expected).size).toBe(expected.length);

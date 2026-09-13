@@ -425,15 +425,48 @@ export async function seedReversal(
 // Delivery (granular so failure paths can be crafted)
 // ---------------------------------------------------------------------------
 
+/**
+ * The `org.employees` row a delivery names (P1-31 P-17).
+ *
+ * `delivering_employee_id` carried no foreign key until that slice, which is why
+ * every fixture here used to pass `USER_A` — a LOGIN ACCOUNT id. It now points at
+ * `org.employees` on `(tenant_id, id)` and
+ * `sal.stamp_delivering_employee_identity` additionally requires the employee to
+ * be live and active. The employee's home branch is informational and is not
+ * compared with the delivery's (Owner clarification of 2026-09-10).
+ *
+ * Created INSIDE the caller's transaction, so it leaves with the rollback, and
+ * with NO `user_account_id`: `uq_employees_user_account_live` admits one employee
+ * per account per tenant, and an accountless employee is the case the table
+ * exists for.
+ */
+export async function deliveringEmployee(c: Q, tag = 'p111'): Promise<string> {
+  return (
+    await c.query(
+      `INSERT INTO org.employees
+         (tenant_id, company_id, branch_id, display_name, employment_ref, created_by)
+       VALUES ($1,$2,$3,'Fixture handover officer',$4,$5) RETURNING id`,
+      [
+        T,
+        CO,
+        BR,
+        `fx_p111_emp_${tag}_${String(Date.now())}_${String(Math.random()).slice(2, 8)}`,
+        U,
+      ]
+    )
+  ).rows[0].id;
+}
+
 export async function insertDeliveryRecord(
   c: Q,
-  opts: { wo: string; vehicle: string; visit: string }
+  opts: { wo: string; vehicle: string; visit: string; deliveringEmployee?: string }
 ): Promise<string> {
+  const employee = opts.deliveringEmployee ?? (await deliveringEmployee(c, 'dlv'));
   return (
     await c.query(
       `INSERT INTO sal.delivery_records (tenant_id, company_id, branch_id, work_order_id, reception_visit_id, vehicle_id, delivering_employee_id, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$7) RETURNING id`,
-      [T, CO, BR, opts.wo, opts.visit, opts.vehicle, U]
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+      [T, CO, BR, opts.wo, opts.visit, opts.vehicle, employee, U]
     )
   ).rows[0].id;
 }

@@ -2928,6 +2928,36 @@ export const MANIFEST = {
     required: ['denial', 'audit'],
     note: 'G-6: rename, retire and reinstate; no archive verb, because archiving frees the code via uq_departments_branch_code_live and no shipped operation has precedent for the un-archive collision',
   },
+  // ---- P1-31 prerequisite P-17 - the employee register (Owner decision 2026-09-10) ----
+  //
+  // The platform had no employee. It had LOGIN ACCOUNTS, and every attempt to name a
+  // person resolved to one: tech.technician_profiles.user_id and
+  // iam.user_employee_links.user_id are both NOT NULL foreign keys into
+  // iam.user_accounts, so neither can hold someone with no reason to sign in. That was
+  // measured before a new table was proposed and it is the whole justification for one.
+  // The same slice gives sal.delivery_records.delivering_employee_id the foreign key it
+  // never had, so these four operations are a PREREQUISITE of the delivery surface
+  // rather than an addition beside it.
+  'org.employee-list': {
+    files: ['tests/backend/p1-31-delivering-employee-seam.test.ts'],
+    required: ['denial'],
+    note: 'P1-31 prerequisite P-17. Keyset-paged on org.employees:created_at_desc, branch-scoped, and the company/branch pair is REQUIRED in the query rather than optional: scope branch is inert without a target because requiresScopedEvaluation returns false on an empty one whatever the declaration says, and app.branch_ids is the permission-blind union of every active grant, so RLS cannot compensate. ONE filter is offered, status, and it is optional because the unfiltered list must show retired employees or the reinstate command would be unreachable from the register it acts on. The permission is the READ code org.employee.read and not the administration code, and denial is declared because a caller holding only org.employee.manage is refused with ERR-IAM-001 naming org.employee.read - the same split org.department carries, proved rather than asserted so that collapsing the two codes goes red',
+  },
+  'org.employee-detail': {
+    files: ['tests/backend/p1-31-delivering-employee-seam.test.ts'],
+    required: ['denial'],
+    note: 'P1-31 prerequisite P-17. Resolves the row FIRST and re-authorizes against the row own company and branch, so a caller cannot reach another branch by naming an id from it. Absent, soft-deleted, out of reach and in another tenant are ONE ERR-RES-001 decided before any scope decision, which is what stops the register becoming a way to enumerate another organisation people. recordVersion is published in the body AND as the ETag because the status command is version-guarded and parseIfMatch accepts only an exact positive integer',
+  },
+  'org.employee-create': {
+    files: ['tests/backend/p1-31-delivering-employee-seam.test.ts'],
+    required: ['denial', 'audit', 'idempotency'],
+    note: 'P1-31 prerequisite P-17, and the FIRST insert into org.employees in the product. userAccountId is OPTIONAL and that single fact is why the table exists: an employee with no login cannot be represented by tech.technician_profiles or iam.user_employee_links, both of which require an account. status is absent from the body so an employee cannot be born retired. The company/branch pair is a CLAIM authorized before the insert and re-checked against what the session can SEE, because an actor holding org.employee.manage unrestricted satisfies the permission for any pair they name and a cross-tenant pair would otherwise reach the INSERT and be refused there as a 500. Both codes are MINTED by this slice and both are carried in the provisioning bundle, because a delivery cannot be created without an employee to name',
+  },
+  'org.employee-status-set': {
+    files: ['tests/backend/p1-31-delivering-employee-seam.test.ts'],
+    required: ['denial', 'audit'],
+    note: 'P1-31 prerequisite P-17. Bidirectional because status is the ONLY retirement this register has - org.employees grants DELETE to no application role and fk_delivery_records_delivering_employee is ON DELETE RESTRICT - so a one-way command would make a mistaken retirement permanent. Retiring stops the employee being named on a NEW handover immediately, at the database, because sal.stamp_delivering_employee_identity refuses a non-active employee on INSERT; it changes nothing about handovers already recorded, each of which carries its own stamped display-name snapshot. Version-guarded and deliberately NOT idempotent, on the wty.warranty-coverage-status-set precedent: a stored replay would hide a conflict raised by a change written since, and the version guard already makes a duplicate submission safe. A missing If-Match is ERR-CON-002 and a stale one ERR-CON-001, asserted as different failures',
+  },
   'platform.organization-read': {
     files: ['tests/backend/pre-p1-29-platform-control-plane.test.ts'],
     required: ['denial'],
