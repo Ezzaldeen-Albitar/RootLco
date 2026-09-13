@@ -611,8 +611,14 @@ export class WarrantyRepository extends Repository {
    * A duplicate `policy_code` raises `23505` on `uq_warranty_policies_code`, and a
    * company outside the caller's own tenant raises `23503` on
    * `fk_warranty_policies_company`, whose tenant half comes from the session
-   * context rather than from the request — so the tenant boundary here is the
-   * foreign key, not a predicate this file writes.
+   * context rather than from the request.
+   *
+   * That foreign key is DEFENCE IN DEPTH and is no longer the tenant boundary this
+   * write relies on (CC-56). `WarrantyPolicyService.createPolicy` resolves the
+   * claimed company against `org.legal_companies` under the caller's own row-level
+   * security before calling this, and refuses an invisible one with 403
+   * `ERR-IAM-001`, so a `23503` here means the company went away between the probe
+   * and the insert rather than that the caller named a foreign one.
    */
   public async insertPolicy(
     db: DbHandle,
