@@ -20,9 +20,20 @@ id `10318272841`, 477000 bytes, zip sha256
 `616a4318a957ea5ee4d47d3a968cc8bdf3b17203b3cb29824fd820359e92055e`, the digest the artefacts API
 publishes for it — files `coverage-web.md`, `test-totals-web.json` and `apps/web/vitest-web.json`.
 No local measurement is quoted anywhere in this record, and **no baseline is re-recorded from the
-hosted run**: `.github/ci-baselines/` is untouched. Two figures stay **OPEN** because no hosted job
-uploads what they would need — they are stated as open in § 4 (H-2, H-3) and are quoted from
-nowhere.
+hosted run**: `.github/ci-baselines/` is untouched.
+
+_The two figures this record first stated as OPEN are now filled from a SECOND hosted run._ Run
+**`34778434228`**, job `103781039915` at head **`03ceac0f`**, artefact **`evidence-web-quality`** —
+artefact id `10323344410`, 409408 bytes, zip sha256
+`2704a25f8a15a347660d0164c196992b8af23b056e42355a013e120417da3b50`, the digest the artefacts API
+publishes for it and the digest of the bytes this record was written from — files
+`apps/web/coverage/web/coverage-summary.json` (141 per-file entries) and `coverage-gate-web.json`.
+That run is the first to carry them, because
+[`change-control-2026-09-08.md`](./change-control-2026-09-08.md) § 63.2 added both to the upload
+list. **Every commit on this branch after `03ceac0f` changes only files under `docs/`**, so the
+executable tree run `34778434228` measured is the executable tree the merge head carries, and no
+figure below describes a tree that will not be merged. The figures are in § 4 under H-2 and H-3, and
+they fill a measurement — **neither hole is closed by them**.
 
 QA-001 stood at `phase-level incomplete` for one stated reason: **no phase-level coverage record
 existed.** § 5 of the assurance index counted the suites; nothing said, across the whole phase,
@@ -49,7 +60,7 @@ which surface is covered, which is not, and why. This file is that statement.
 | what the instrument covers                                                   | `COVERAGE_INCLUDE` in `apps/web/vitest.config.ts` and the floors in `.github/ci-baselines/coverage-baseline.web.json`, both committed and both read on this tree                                                                                        |
 | test files in the tier                                                       | counted on this tree                                                                                                                                                                                                                                    |
 | executed tier totals and coverage percentages                                | read out of the hosted artefact named above — `coverage-web.md` for the four percentages, their deltas and the gate verdict; `test-totals-web.json`, cross-checked against `apps/web/vitest-web.json`, for the executed counts and the file count (§ 5) |
-| per-tree instrumented-file counts, and the dashboard route tier's own figure | **OPEN — no hosted artefact carries what they need** (§ 4, H-2 and H-3)                                                                                                                                                                                 |
+| per-tree instrumented-file counts, and the dashboard route tier's own figure | **FILLED** from `coverage-summary.json` in hosted run `34778434228` (§ 4, H-2 and H-3)                                                                                                                                                                  |
 
 ## 3. Surfaces WITH component coverage
 
@@ -121,7 +132,31 @@ statement, and no coverage claim may be made for it.
 `src/lib/**`. No P1-31 feature tree is on that list, and the config is the whole of the
 instrument's input, so **no file under `apps/web/src/features/delivery`, `features/warranty` or
 `features/reports` can be instrumented at all.** That follows from the committed config alone and
-needs no run to establish it. The instrumented-file counts per tree are **OPEN — no hosted job uploads the per-file web coverage summary (`apps/web/coverage/web/coverage-summary.json`) or `coverage-gate-web.json`; remedy: add both to the `evidence-web-quality` upload list at `_reusable-node-quality.yml:864-886` (CI-automation lane); until then this figure is measurable only locally and is not cited**.
+needs no run to establish it. The instrumented-file counts per tree are **FILLED**, from hosted run `34778434228` at head `03ceac0f`, artefact `evidence-web-quality` id `10323344410` sha256 `2704a25f…`, file `coverage-summary.json`:
+
+| tree (a `COVERAGE_INCLUDE` root)           | instrumented files | lines covered / total | lines      |
+| ------------------------------------------ | ------------------ | --------------------- | ---------- |
+| `apps/web/src/features/crm/**`             | 20                 | 398 / 422             | 94.31%     |
+| `apps/web/src/features/vehicles/**`        | 23                 | 675 / 695             | 97.12%     |
+| `apps/web/src/app/[locale]/(dashboard)/**` | 64                 | 506 / 819             | 61.78%     |
+| `apps/web/src/lib/**`                      | 34                 | 449 / 460             | 97.61%     |
+| **all four**                               | **141**            | **2028 / 2396**       | **84.64%** |
+
+**The counting rule, stated so the figures can be recomputed.** One instrumented file is one key of
+`coverage-summary.json` other than `total`. Each key is an absolute runner path
+(`/home/runner/work/RootLco/RootLco/apps/web/src/…`); it is assigned to the first of the four roots
+above whose path fragment the key contains. **No key fell outside the four roots** — the four counts
+sum to 141, which is the entry count — so nothing in this measurement is unclassified and no file had
+to be judged. The per-tree line percentages are recomputed from the summed `covered`/`total` of the
+files in each tree, not averaged over files; the "all four" row reproduces the summary's own `total`
+block exactly (2028/2396 = 84.64%), which is the cross-check that the partition lost nothing.
+
+**This fills a figure; it does not close the hole.** The three P1-31 feature trees are still absent
+from `COVERAGE_INCLUDE`, and the table above is the evidence of it: `features/crm` and
+`features/vehicles` are counted because they are instrumented, and `features/delivery`,
+`features/warranty` and `features/reports` appear nowhere because they cannot. **H-2 stays open**,
+and what closes it is unchanged — the include list, the re-measurement and the baseline movement
+below.
 
 So **no line, branch or function coverage figure exists for any P1-31 feature code**, and no
 critical-module floor governs any of it: the eight rules in `coverage-baseline.web.json` name CRM,
@@ -140,7 +175,41 @@ re-measurement and the baseline movement that must accompany them, in a commit t
 ### H-3 — the route tier the P1-31 pages sit in is under its own floor, and exempt from it
 
 The line coverage of the ten P1-31 route pages (two delivery, four warranty, three reports, one
-audit log), and of the dashboard route tier as a whole, is **OPEN — no hosted job uploads the per-file web coverage summary (`apps/web/coverage/web/coverage-summary.json`) or `coverage-gate-web.json`; remedy: add both to the `evidence-web-quality` upload list at `_reusable-node-quality.yml:864-886` (CI-automation lane); until then this figure is measurable only locally and is not cited**. The structural point does not wait on it, and is the point of this hole.
+audit log), and of the dashboard route tier as a whole, is **FILLED**, from hosted run `34778434228` at head `03ceac0f`, artefact `evidence-web-quality` id `10323344410` sha256 `2704a25f…`, file `coverage-summary.json`:
+
+| route page (under `src/app/[locale]/(dashboard)/`) | lines covered / total | lines      | branches   |
+| -------------------------------------------------- | --------------------- | ---------- | ---------- |
+| `delivery/page.tsx`                                | 10 / 10               | 100.00%    | 85.71%     |
+| `delivery/[deliveryId]/page.tsx`                   | 21 / 23               | 91.30%     | 81.25%     |
+| `warranty/page.tsx`                                | 14 / 14               | 100.00%    | 80.00%     |
+| `warranty/[warrantyId]/page.tsx`                   | 23 / 23               | 100.00%    | 93.75%     |
+| `warranty/policies/page.tsx`                       | 9 / 9                 | 100.00%    | 75.00%     |
+| `warranty/policies/[policyId]/page.tsx`            | 19 / 24               | 79.17%     | 56.25%     |
+| `reports/page.tsx`                                 | 9 / 9                 | 100.00%    | 75.00%     |
+| `reports/overview/page.tsx`                        | 12 / 12               | 100.00%    | 83.33%     |
+| `reports/[reportCode]/page.tsx`                    | 22 / 25               | 88.00%     | 75.00%     |
+| `administration/audit-log/page.tsx`                | 13 / 13               | 100.00%    | 75.00%     |
+| **the ten together**                               | **152 / 162**         | **93.83%** | **77.78%** |
+
+**The dashboard route tier as a whole: 64 instrumented files, 506 / 819 lines = 61.78%**, with
+statements 58.58%, functions 49.04% and branches 55.59%. The same tier **excluding these ten pages**
+is 54 files and 354 / 657 lines = **53.88%** — so the P1-31 pages are the better-covered part of the
+tier they sit in, and the tier's figure is not held up by them.
+
+**The counting rule.** The ten pages are matched by LITERAL path, listed above, and not by a keyword:
+each is the single `coverage-summary.json` key whose path after `(dashboard)/` equals the row. All
+ten resolved; none is missing from the summary. The aggregate rows sum `covered` and `total` across
+the matched files rather than averaging percentages.
+
+**This fills a figure; it does not close the hole**, and the figure does not soften it. The hole is
+below: `apps/web/src/app/` is exempt from the touched-file floor, so **none of the ten percentages
+above is enforced by anything**, and every one of them could fall to zero without a gate saying so.
+**H-3 stays open.**
+
+_Not reconciled: the baseline's own `knownGaps` records this tier at 52.91% across 55 files from
+hosted run `34321869051`. That is a different head with nine fewer instrumented files, and run
+`34778434228` does not supersede it here — the baseline belongs to the coverage-policy lane and
+nothing in `.github/ci-baselines/` is edited by this record._ The structural point does not wait on it, and is the point of this hole.
 
 The hole is that `apps/web/src/app/` is on `touchedFileExemptPrefixes` in the web coverage
 baseline, so the 60% touched-file floor does **not** apply to any of these pages. A P1-31 page
@@ -259,6 +328,12 @@ the coverage-policy lane and a figure in it moves by that lane's measurement, so
 as an observation under no identifier of its own and **nothing in `.github/ci-baselines/` is
 edited**.
 
+_The upload list is repaired by `change-control-2026-09-08.md` § 63.2, and § 63.3 records why
+`establishedBy` is still not edited: the field is machine-read — `scripts/ci/coverage-gate.mjs:92`
+reads its truthiness and `:350` writes it — so the citation is made true by making the artefact carry
+the file, not by rewording the field. The range quoted above, `864-886`, is the range on `develop`
+`72f3a71e`; § 63.2 moves the same list to `882-905`._
+
 ## 6. Summary
 
 | statement                                                                   | verdict                                 |
@@ -270,7 +345,23 @@ edited**.
 | the component suites prove the screens work end to end                      | **no** — the adapter is mocked (§ 1)    |
 
 QA-001 therefore stays `phase-level incomplete`. This record closes the "no phase-level coverage
-record exists" item and closes nothing else. Its hosted figures are now filled from run
-`34759286884`; **two figures stay open** — the per-tree instrumented-file counts (H-2) and the
-dashboard route tier's own measurement (H-3) — and they stay open until the `evidence-web-quality`
-upload list carries the per-file web coverage summary.
+record exists" item and closes nothing else. Its first hosted figures came from run `34759286884`;
+the two that stayed open then — the per-tree instrumented-file counts (H-2) and the dashboard route
+tier's own measurement (H-3) — **are now filled from run `34778434228`**, the first run whose
+`evidence-web-quality` artefact carries `apps/web/coverage/web/coverage-summary.json`. **Every
+figure in this record is now hosted, and none is derived locally.**
+
+**Filling them changed no verdict in the table above.** H-2 and H-3 were never holes about missing
+numbers; they are holes about what is instrumented and what is enforced, and the numbers make both
+sharper rather than smaller. 141 files are instrumented and not one of them is under
+`features/delivery`, `features/warranty` or `features/reports`. The ten P1-31 route pages average
+93.83% line coverage and **no floor governs any of it**, because `apps/web/src/app/` is exempt from
+the touched-file rule. **H-2 and H-3 both stay OPEN**, on the terms each states.
+
+**The remedy landed, and the fill is above.**
+[`change-control-2026-09-08.md`](./change-control-2026-09-08.md) **§ 63 (CC-53)**, pull request
+**#389**, added `apps/web/coverage/web/coverage-summary.json` and `coverage-gate-web.json` to the
+`evidence-web-quality` upload list, and hosted run `34778434228` of that pull request is the first
+run to carry them. H-2 and H-3 are filled from that artefact and **from no earlier run**: neither
+`34759286884` nor `34321869051` carries the file, whatever their numbers look like. **CC-50 (a) and
+CC-53 are closed by this fill**, and the register records both closures in place.
