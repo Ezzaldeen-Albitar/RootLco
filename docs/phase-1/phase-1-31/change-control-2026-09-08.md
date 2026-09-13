@@ -3621,3 +3621,54 @@ job can establish.
 | id        | disposition                                                                                           | why it is recorded rather than fixed                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | owner             | state        |
 | --------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------- | ------------ |
 | **CC-44** | **the handoff-gated reporting cases can pass only on a run whose browser credentials are overridden** | They assert on screens that gate on `rpt.report.read`, and the account the tier signs in as by default does not hold it. §7.1's run drove them with the journey's own administrator through `ROOTLCO_E2E_EMAIL` / `ROOTLCO_E2E_PASSWORD`, which nothing in the repository states or arranges. Repairing it means changing how the tier signs in — a different decision, on a different lane — so it is measured and stated here rather than papered over by widening what the acceptance account is granted. | the Frontend lane | open, stated |
+
+## 55. The phase closure record and the gate P1-G31 inputs (CC-45)
+
+**Slice:** `feature/p1-31-closure-record`, ownership profile `p1-31-frontend` (docs bucket),
+documentation only. **Baseline:** protected `develop`
+**`81b3bce804626353a1a7b9f4ba52f1306c8f8b6e`** (the merge of PR #380, the acceptance record).
+`main` `1262de74`, untouched.
+
+### 55.1 Identifier allocation
+
+Read on `develop` `81b3bce8`, where this register holds sections 1 … 54 and identifiers
+CC-01 … CC-44. **Section 55 and CC-45 are the lowest free pair**, and no lower pair is held by an
+unmerged lane: the only open pull request on this repository that touches `docs/phase-1` is #372,
+which touches `docs/phase-1/phase-1-27` and claims no P1-31 section or identifier. Nothing here is
+taken from another lane and nothing is renumbered.
+
+One identifier below this pair has no disposition row anywhere: **CC-40**. It was claimed by two
+lanes; the operational overview settled the range as #376 and the acceptance-harness lane moved to
+**CC-42** by this register's own reconciliation rule, so the sequence carries a hole at 40 rather
+than a finding. It is stated so that a reader does not go looking for a row that was never written.
+
+### 55.2 What was delivered
+
+| file                                                   | change                                                                                                                                                     |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/phase-1/phase-1-31/closure-record.md`            | **new** — scope and boundary, the 29 canonical tasks reconciled to evidence, the Definition of Done bullet by bullet, the four gate inputs, the open items |
+| `docs/phase-1/phase-1-31/change-control-2026-09-08.md` | this section                                                                                                                                               |
+
+The closure record is an **input to gate P1-G31, not the gate's decision**. Its § 4 carries the
+approval owner's verdict field and leaves it **empty**, with the statement that only the approval
+owner named in Field 35 may fill it. No verdict is recorded, inferred or implied, and the chapter's
+status for all twenty-nine tasks remains `Planned`.
+
+### 55.3 Dispositions
+
+| id        | finding                                                                                                               | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| --------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CC-45** | **four statements in `task-matrix.md` were measured before their pull requests merged, and are older than this head** | Read off the first-parent history of `develop` `81b3bce8`. (a) FE-010 and FE-016 carry the State `in open PR` for #376, which **merged at `72782f48`**. (b) The QA-005 row states that "the acceptance record does not exist and the harness is in OPEN PR #378" — #378 **merged at `6005cfa4`** and the record **merged at `81b3bce8`**. (c) The prerequisite table records P-11's engine as "in open PR #364" — #364 **merged at `c1b1a8cd`**, with the three further datasets at `6b3c6c45`. (d) The same table records P-17 as "implemented, not merged" — #370 **merged at `811e9891`**, which `a0-preflight.md` already states. The FE-002 row's note that the Start slice "is open as pull request #377" is stale in the same way: #377 merged at `9b109f63`. | **recorded, not corrected.** A State is the matrix's own to move, and it moves on evidence rather than on a merge — rule 1 of that file is that a merge closes no canonical task. The closure record is authorised to add a proving artefact; it quotes the matrix's values as they stand and names this row beside them. Moving FE-010 and FE-016 out of `in open PR` would be a state change this documentation-only slice has no evidence to make and no authority to assert. The lane that next measures the matrix owns it. |
+
+### 55.4 What this slice did NOT do
+
+- **It did not close the phase, and it recorded no verdict.** The gate's fourth condition is the
+  approval owner's and is left empty.
+- **It moved no State in `task-matrix.md`** and changed no chapter status. The matrix was not edited
+  at all: no row's proving artefact needed to point at the closure record, because the record proves
+  no task — it summarises what each task's own artefact already proves.
+- **It ran no test tier, no build, no migration and no database operation**, and claims no hosted
+  result. The gates it ran are static checkers, named in the pull request.
+- **It changed no source file, no gate, no allow-list and no fixture.** Documentation only.
+- **It did not re-quote a figure a generated register owns.** Every count in the closure record is
+  either read on this head or quoted with the phase record it comes from.
