@@ -79,19 +79,19 @@ DO-002, DOC-001 and DOC-002 — are in the matrix on this branch and not yet on 
 | QA-004  | concurrency and idempotency       | nothing closes it; declarations counted                              | `security-and-qa-evidence.md` § 8; **CC-17**                              | not started                |
 | QA-005  | regression, evidence packaging    | harness #378 (`6005cfa4`), record #380 (`81b3bce8`)                  | `acceptance-record.md`; register §§ 52, 54; **CC-42**, **CC-43**          | phase-level incomplete     |
 | DO-001  | CI quality gate                   | P-16 #357 (`fc58f1c2`), `validate:p1-31-access`                      | `security-and-qa-evidence.md` § 10                                        | merged (read-only/partial) |
-| DO-002  | logging, monitoring, alerting     | the operator half only: `operator-runbook.md`; monitoring untouched  | `security-and-qa-evidence.md` § 11                                        | implemented/unmerged       |
-| DOC-001 | contract and traceability sync    | corrections merged (#354); correction #3 retracted in place here     | `security-and-qa-evidence.md` § 12                                        | implemented/unmerged       |
-| DOC-002 | guidance and the change record    | the register itself, and `operator-runbook.md` as the guidance       | `security-and-qa-evidence.md` § 13                                        | implemented/unmerged       |
+| DO-002  | logging, monitoring, alerting     | the operator half only: `operator-runbook.md`; monitoring untouched  | `security-and-qa-evidence.md` § 11                                        | in open PR #383            |
+| DOC-001 | contract and traceability sync    | corrections merged (#354); correction #3 retracted in place here     | `security-and-qa-evidence.md` § 12                                        | in open PR #383            |
+| DOC-002 | guidance and the change record    | the register itself, and `operator-runbook.md` as the guidance       | `security-and-qa-evidence.md` § 13                                        | in open PR #383            |
 
 **Totals by state, counted off the column above:** `end-to-end verified` **12**;
-`merged (read-only/partial)` **3**; `in open PR` **2**; `phase-level incomplete` **7**;
-`implemented/unmerged` **3**; `not started` **2**. Twenty-nine.
+`merged (read-only/partial)` **3**; `in open PR` **5**; `phase-level incomplete` **7**;
+`not started` **2**. Twenty-nine.
 
 _(Four rows and these totals were true when written; corrected by this pull request. SEC-003 moved
 to `phase-level incomplete` on `develop` in #382, and DO-002, DOC-001 and DOC-002 move out of
-`not started` here; the totals read `phase-level incomplete` **6** and `not started` **6** with no
-`implemented/unmerged` class, and are re-counted off all twenty-nine rows of `task-matrix.md` at
-the merged head. Every other row is untouched, and nothing moved to `end-to-end verified` —
+`not started` here, to `in open PR #383`; the totals read `in open PR` **2**,
+`phase-level incomplete` **6** and `not started` **6**, and are re-counted off all twenty-nine rows
+of `task-matrix.md` at the merged head. Every other row is untouched, and nothing moved to `end-to-end verified` —
 documentary evidence never earns that state.)_
 
 ### 2.1 The four Frontend rows that are not `end-to-end verified`, each checked
@@ -133,7 +133,7 @@ The four bullets, quoted from [`canonical-plan.md:454-462`](./canonical-plan.md)
 >   evidence.
 
 **Bullet 1 — not evidenced.** Twelve of twenty-nine tasks are `end-to-end verified`; seventeen are
-not, of which two are `not started` and three are implemented but unmerged (§ 2). Every merged slice carries its own record and its own
+not, of which two are `not started` and three are in open pull request #383 (§ 2). Every merged slice carries its own record and its own
 suites, and each pull request was judged by the repository's required checks, which the matrix's
 integration reconciliation reports as nineteen post-merge checks per merge — that is the matrix's
 report, re-stated here and not re-run. The phase-specific gate **`validate:p1-31-access`** exists and

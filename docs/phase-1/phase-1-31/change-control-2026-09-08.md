@@ -3773,7 +3773,8 @@ renumbers itself and nothing else, on the § 52.1 precedent.
 `821ed6689d3d481ff2270e44c6e66bb9651a9b97` — the merge of PR #372 — on 2026-09-13. Both siblings
 had landed by then: **section 55 with CC-45** (#381) and **section 56 with CC-46** (#382). Neither
 took section 57, so nothing renumbered in either direction. The textual conflict in this file was
-resolved by order alone — 55, then 56, then 57 — with every line of all three sides kept.
+resolved by order alone — 55, then 56, then 57 — with every line of all three sides kept. The
+slice this section records is **pull request #383**, opened on 2026-09-13 from that synced head.
 
 ### 57.2 What changed, and what was minted
 
@@ -3782,7 +3783,7 @@ resolved by order alone — 55, then 56, then 57 — with every line of all thre
 | 1 new document, [`operator-runbook.md`](./operator-runbook.md) — the four merge-time operator acts in the order that is load-bearing, each with preconditions, the exact command, a verification query, a rollback criterion and a statement of what done looks like                                                       | nothing |
 | 1 table cell in `docs/product/owner-workflow-requirements.md` and 1 in `docs/phase-1/phase-1-27/finding-phase-disposition.md` — the P1-27-INT-084 overstatement retracted IN PLACE, both edited within their existing lines so neither file's pinned line count in `docs/phase-1/phase-1-27/deliverable-manifest.md` moves | nothing |
 | this section: the register's first index of open dispositions, the CC-40 note, and the routing record                                                                                                                                                                                                                      | nothing |
-| 3 rows of [`task-matrix.md`](./task-matrix.md) — DO-002, DOC-002 and DOC-001                                                                                                                                                                                                                                               | nothing |
+| 3 rows of [`task-matrix.md`](./task-matrix.md) — DO-002, DOC-002 and DOC-001, each moved to `in open PR #383`                                                                                                                                                                                                              | nothing |
 
 **No product code, route, permission, operation, migration, seed, audit action, gate, allow-list,
 fixture or message catalogue changed.** This slice is documentation only.
