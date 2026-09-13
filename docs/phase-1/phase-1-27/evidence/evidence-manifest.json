@@ -36,8 +36,8 @@
       "bytes": 15409
     },
     "docs/phase-1/phase-1-27/clean-room-evidence.md": {
-      "sha256": "ae51907f63c51da05609d85e256ddc1e511af0ff4989ca1b722a6b0fec01a254",
-      "bytes": 23806
+      "sha256": "b41d09a3a345a8c7dc2f74dfd12fca0d137136d2f1354ce1693993690786803d",
+      "bytes": 23808
     },
     "docs/phase-1/phase-1-27/closure-record.md": {
       "sha256": "187b074bbfa430a2e683726125588edeb9ee76266bf12da997c6f78fc4f68625",
@@ -52,7 +52,7 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "27b74342053ae79283aceda1c2d6a1e897985712b849c84ad7fd2cb1cc45e996",
+      "sha256": "44505cb311204021d1816309617909a03bb6696f9c0a596fce3f16be053ca856",
       "bytes": 149608
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
@@ -64,19 +64,19 @@
       "bytes": 81669
     },
     "docs/phase-1/phase-1-27/evidence/closing-value-ledger.json": {
-      "sha256": "55528d210d667fcfd1b4653efaf36cc9d436d07c29023da929818630ba713282",
-      "bytes": 50367
+      "sha256": "7dc7995eba06b7c15acfe8138c5156c1ff5e634e982b8b51bf6f1146c87c123b",
+      "bytes": 50365
     },
     "docs/phase-1/phase-1-27/evidence/lifecycle-ledger.json": {
       "sha256": "c2bc3e5bd353ee54ccaefd8286573a5be5c09f91bbb01ea9af7fa5fe72aebf1e",
       "bytes": 9208
     },
     "docs/phase-1/phase-1-27/evidence/local-run-ledger.json": {
-      "sha256": "691aa0384a95f41f85ab1f8a91087e343f8849e23fefc4484c85a1edeb3f9835",
-      "bytes": 1420
+      "sha256": "82c15e76e71de50dd91ba7a2cb7012fdc505dbbc03827c425ede770f14a893d3",
+      "bytes": 2581
     },
     "docs/phase-1/phase-1-27/evidence/task-traceability.md": {
-      "sha256": "74f12c386ef55f7fac85645ee2c3839c16553bce0579d2ed9029e13c6f5cf24e",
+      "sha256": "438ed2af7b815d2a13d212a477fa5567f164eff34cbe49bf84075c2e688b0167",
       "bytes": 114007
     },
     "docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json": {
@@ -100,8 +100,8 @@
       "bytes": 76545
     },
     "docs/phase-1/phase-1-27/finding-phase-disposition.md": {
-      "sha256": "756d1b0e96e07691831060bc094bae66a801b428d77172cd740c74d5794ab06d",
-      "bytes": 160653
+      "sha256": "e0b907faf7b0c6dab4aa548fc89bd2b126620d6775811bea266406be2aec45e6",
+      "bytes": 167366
     },
     "docs/phase-1/phase-1-27/finding-task-map.json": {
       "sha256": "bc3336d8650e4e9142bd8f845c0b1970317225e05e275b7d52303d2c9ab5e14a",
