@@ -5087,7 +5087,8 @@ identifiers that existed when it was computed. CC-53 is raised after it and sits
 count with this section included is **78**. The earlier figure is left exactly as written, in the
 annotate-rather-than-rewrite discipline § 48.1 states.
 
-**Baseline:** protected `develop` `72f3a71e`.
+**Baseline:** protected `develop` `72f3a71e`. **Pull request #389**, head
+`0582d196`, opened against `develop`.
 
 ### 63.1 What CC-53 addresses, and what it does not close
 
@@ -5098,7 +5099,7 @@ Two defects already recorded by other lanes, each repaired where it lives:
   measurement away.
 - **CC-52 (b)** — "a gate accepts a provenance word without reading the ledger behind it".
 
-Neither is closed by this section. The artefact half closes when a hosted run of this pull request
+Neither is closed by this section. The artefact half closes when a hosted run of **#389**
 has produced the file and H-2 and H-3 are filled from it, which is the fill plan in § 63.6. The gate
 half is repaired here in code, and **CC-52 (b) is for the § 62 lane to move**, not for this lane to
 close on its behalf.
@@ -5214,7 +5215,7 @@ suppression is added, and no wording is relaxed to make anything pass.
 The two figures [`coverage-record.md`](./coverage-record.md) § 4 holds open stay open here. **This
 pull request records no coverage figure of its own.**
 
-They are filled by a SECOND slice, after this one merges and a hosted run of the changed workflow has
+They are filled by a SECOND slice, after **#389** merges and a hosted run of the changed workflow has
 produced the artefact. The filling slice must state, beside every figure it writes:
 
 - the **run id** and the **head sha** the run checked out;
@@ -5275,8 +5276,9 @@ lane's to move.
 
 ### 63.9 What this slice did NOT do
 
-- **It claims no hosted result.** No run of the changed workflow exists as this is written, and no
-  figure in this section comes from one.
+- **It claims no hosted result.** No completed run of the changed workflow existed when #389 was
+  opened, no verdict of #389's own checks is asserted here, and no figure in this section comes
+  from a hosted run.
 - **It moved no task-matrix row, and touched no task matrix.**
 - **It changed no ledger, no evidence record and no CI baseline value.**
 - **It changed nothing about what coverage measures** — no threshold, no `include` list, no floor.

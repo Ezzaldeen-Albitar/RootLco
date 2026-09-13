@@ -282,7 +282,8 @@ dashboard route tier's own measurement (H-3) — and they stay open until the `e
 upload list carries the per-file web coverage summary.
 
 **The remedy is in flight, and it is not a figure.**
-[`change-control-2026-09-08.md`](./change-control-2026-09-08.md) **§ 63 (CC-53)** adds
+[`change-control-2026-09-08.md`](./change-control-2026-09-08.md) **§ 63 (CC-53)**, pull request
+**#389**, adds
 `apps/web/coverage/web/coverage-summary.json` and `coverage-gate-web.json` to that upload list, so a
 hosted run of the web-quality job keeps the per-file measurement it already takes. **No number in
 this record moves on that change**, and H-2 and H-3 stay open here. They are filled by a second
