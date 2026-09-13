@@ -33,6 +33,7 @@ import {
   run,
 } from '../../scripts/ci/check-p1-31-version-sourcing.mjs';
 import { REGISTER } from '../../scripts/ci/check-command-coverage.mjs';
+import { P1_31_OPERATION_IDS } from '../../scripts/ci/check-p1-31-access.mjs';
 
 const ROOT = process.cwd();
 const GATE = join(ROOT, 'scripts', 'ci', 'check-p1-31-version-sourcing.mjs');
@@ -124,14 +125,26 @@ describe('the scope is P1-31’s own, and the contract is what checks it', () =>
     expect(compared).toContain(id('wty', 'warranty-coverage-status-set'));
   });
 
-  it('is NOT scoped by the access gate’s allow-list, which carries three of the eleven', () => {
-    // Stated as a relationship rather than a number: scoping a version gate by
-    // "the operations a screen consumes" would have excluded the eight writes no
-    // screen reaches yet, which are the ones most likely to be got wrong.
-    const consumed = P1_31_GUARDED_OPERATIONS.filter(
-      (operation) => !Object.hasOwn(PENDING_CONSUMERS, operation)
+  it('is NOT scoped by the access gate’s allow-list, and the overlap is PINNED', () => {
+    // The two lists answer different questions, so the interesting fact is the
+    // SIZE of their overlap, and it is pinned rather than narrated: the access
+    // list carried three of the eleven when this gate was written and four after
+    // the DO-001 pass claimed `sal.delivery-complete`. Scoping a version gate by
+    // it would exclude the other seven — the writes no screen reaches yet, which
+    // are the ones most likely to be got wrong. A change to either list that moves
+    // this intersection has to come back and say so here.
+    const overlap = P1_31_GUARDED_OPERATIONS.filter((operation) =>
+      (P1_31_OPERATION_IDS as readonly string[]).includes(operation)
     );
-    expect(consumed.length).toBeLessThan(P1_31_GUARDED_OPERATIONS.length);
+    expect([...overlap].sort()).toEqual(
+      [
+        id('sal', 'delivery-complete'),
+        id('wty', 'warranty-coverage-status-set'),
+        id('wty', 'warranty-policy-rename'),
+        id('wty', 'warranty-policy-status-set'),
+      ].sort()
+    );
+    expect(P1_31_GUARDED_OPERATIONS.length - overlap.length).toBe(7);
   });
 });
 
@@ -297,6 +310,58 @@ export async function probeRelease(input: ProbeReleaseInput) {
 `,
     ]);
     expect(violations.join('\n')).toMatch(/never hands the outcome onward/);
+  });
+
+  it('two adapters of one name that disagree about the version position', () => {
+    /*
+     * The homonym collapse, proved rather than assumed away.
+     *
+     * Both files export `probeRelease`. One takes the version as its third
+     * argument, the other as a field of its first. A map keyed by the bare name
+     * keeps whichever was walked first, so the other adapter's callers would be
+     * judged against a signature they do not call — and its own "no consumer"
+     * check would be answered by the first adapter's callers. Keyed by file and
+     * name, both survive, the disagreement is visible, and no caller of either is
+     * attributed.
+     */
+    const { violations } = withFixtures(
+      [
+        'apps/web/src/features/probe/homonym-one-api.ts',
+        `'use server';
+export async function probeRelease(deliveryId: string, body: unknown, ifMatch: number) {
+  const client = await authorizedClient();
+  return client.send(
+    'POST',
+    \`/api/v1/deliveries/\${encodeURIComponent(deliveryId)}/completion\`,
+    body,
+    { ifMatch }
+  );
+}
+`,
+      ],
+      [
+        'apps/web/src/features/probe/homonym-two-api.ts',
+        `'use server';
+export interface ProbeTwoInput {
+  readonly deliveryId: string;
+  readonly ifMatch: number;
+}
+export async function probeRelease(input: ProbeTwoInput) {
+  const client = await authorizedClient();
+  return client.send(
+    'POST',
+    \`/api/v1/deliveries/\${encodeURIComponent(input.deliveryId)}/completion\`,
+    {},
+    { ifMatch: input.ifMatch }
+  );
+}
+`,
+      ]
+    );
+    const text = violations.join('\n');
+    expect(text).toMatch(/both export a guarded adapter named probeRelease/);
+    expect(text).toMatch(/homonym-one-api\.ts/);
+    expect(text).toMatch(/homonym-two-api\.ts/);
   });
 
   it('a PENDING entry goes stale the moment a consumer sends the write', () => {

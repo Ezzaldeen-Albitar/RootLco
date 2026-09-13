@@ -34,7 +34,7 @@
  * ## The scope is eleven operations, frozen AND checked
  *
  * A namespace regular expression cannot express it: P1-30 already owns the whole
- * of `sal.` and `wty.`, and three of the eleven are `org.` and `rpt.`. So the
+ * of `sal.` and `wty.`, and four of the eleven are `org.` and `rpt.`. So the
  * eleven are named — and then ASSERTED against the published contract. Every one
  * must carry `#/components/parameters/IfMatch` in `docs/api/openapi.v1.json`, and
  * the intersection must be the whole list. An id that stops being guarded, or
@@ -43,8 +43,11 @@
  *
  * Deliberately NOT scoped by `P1_31_OPERATION_IDS` from the access gate. That
  * list answers a different question — which operations a P1-31 SCREEN consumes —
- * and it carries three of these eleven. Scoping a version gate by it would have
- * silently excluded eight guarded writes.
+ * and it carried three of these eleven when this gate was written (`f6f0015b`)
+ * and four after the DO-001 completeness pass added `sal.delivery-complete`.
+ * Scoping a version gate by it would therefore have excluded eight guarded writes,
+ * and would still exclude seven. The intersection is PINNED in the suite rather
+ * than described here, so the two lists cannot drift apart in silence.
  *
  * ## A send is bound to an operation by its RESOLVED PATH, not by a docblock
  *
@@ -82,6 +85,23 @@
  *     initialiser is the version.
  *   - anything else the classifier accepts — `reread.data.recordVersion` — is
  *     INTERNAL. The adapter sourced it itself and owes no caller anything.
+ *
+ * Adapters are held by FILE and name, never by name alone: two trees may export
+ * the same adapter name, and a bare-name map would judge one's callers against the
+ * other's signature while answering the second's "no consumer" check with the
+ * first's callers. Where one name really does have two adapters behind it and they
+ * take their version in different places, no caller of either can be attributed —
+ * this gate does not resolve imports — and that is reported rather than guessed.
+ *
+ * ## The one caller shape this gate does NOT own
+ *
+ * A POSITIONAL adapter called with fewer arguments than its version position is
+ * skipped. That covers a re-export and a partial application, and the remaining
+ * case — the version argument omitted altogether — is a missing REQUIRED parameter
+ * that `npm run typecheck:web` refuses before this gate runs. It is stated here
+ * because a silent skip and a delegated check look identical from the outside. A
+ * STRUCTURAL adapter handed an object with no `ifMatch` property is NOT delegated
+ * and is a violation here, because a property is the half a widened type can lose.
  *
  * ## The retry rule
  *
@@ -690,16 +710,53 @@ export function run(injected = {}) {
     });
 
     if (entry.kind !== 'internal' && verdict.ok) {
-      const existing = adapters.get(described.name);
-      if (existing === undefined) {
-        adapters.set(described.name, { name: described.name, file: send.file, entry, callers: 0 });
+      /*
+       * Keyed by FILE and name, not by name.
+       *
+       * Two feature trees may export a `completeDelivery` apiece — the tree is
+       * organised by feature and nothing forbids the repetition — and a map keyed
+       * by the bare name silently keeps whichever was walked first. The second
+       * adapter then vanishes from this gate: its callers are judged against the
+       * OTHER adapter's version position, which is a verdict about a function they
+       * do not call, and its own "an adapter with no consumer" check is answered
+       * by somebody else's callers. Both directions are wrong quietly.
+       */
+      const key = `${send.file}::${described.name}`;
+      if (!adapters.has(key)) {
+        adapters.set(key, { key, name: described.name, file: send.file, entry, callers: 0 });
       }
     }
   }
 
   /* --- the call sites --------------------------------------------------- */
 
-  const names = new Set(adapters.keys());
+  /*
+   * Grouped back by NAME for the search, because a call site names a function and
+   * this gate does not resolve imports. Where one name has two adapters behind it,
+   * see the disagreement rule below: agreement is judged, disagreement is refused.
+   */
+  const byName = new Map();
+  for (const adapter of adapters.values()) {
+    const group = byName.get(adapter.name) ?? [];
+    group.push(adapter);
+    byName.set(adapter.name, group);
+  }
+  const sameShape = (a, b) =>
+    a.entry.kind === b.entry.kind &&
+    a.entry.index === b.entry.index &&
+    a.entry.field === b.entry.field;
+  for (const [name, group] of byName) {
+    if (group.length > 1 && !group.every((one) => sameShape(one, group[0]))) {
+      violations.push(
+        `${group.map((one) => one.file).join(' and ')}: both export a guarded adapter named ` +
+          `${name}, and they take their version in different places. A call site names a function ` +
+          'and this gate does not resolve imports, so no caller of either can be attributed. ' +
+          'Judging one against the other would be a verdict about a function it does not call.'
+      );
+    }
+  }
+
+  const names = new Set(byName.keys());
   for (const [path, content] of sources) {
     if (names.size === 0) continue;
     const text = stripComments(content);
@@ -717,13 +774,27 @@ export function run(injected = {}) {
     const context = contextOf(content);
 
     for (const name of names) {
-      const adapter = adapters.get(name);
+      const group = byName.get(name);
+      // A name whose adapters disagree about where the version sits is reported
+      // above and judged here for nobody: an attribution this gate cannot make is
+      // refused rather than guessed.
+      if (group.length > 1 && !group.every((one) => sameShape(one, group[0]))) continue;
+      const adapter = group[0];
       for (const call of callsToNode(sourceFile, name)) {
-        // The adapter's own module holds its declaration, not a call to it, so a
-        // hit here is a real caller. A re-export or a partial application with
-        // too few arguments is not a command and is left alone.
+        /*
+         * The adapter's own module holds its declaration, not a call to it, so a
+         * hit here is a real caller. A call with fewer arguments than the version
+         * position is NOT judged, and that is a stated limit rather than an
+         * oversight: it is a re-export or a partial application, and the one
+         * remaining shape — a positional adapter called with the version argument
+         * omitted altogether — is a missing REQUIRED parameter, which
+         * `npm run typecheck:web` refuses before this gate is reached. A structural
+         * adapter handed an object without the field is a different case and IS
+         * judged, immediately below, because a missing optional-looking property is
+         * the shape a type can be widened into.
+         */
         if (call.arguments.length <= adapter.entry.index) continue;
-        adapter.callers += 1;
+        for (const one of group) one.callers += 1;
 
         const supplied = callSiteVersion(call, adapter.entry);
         if (supplied === null) {

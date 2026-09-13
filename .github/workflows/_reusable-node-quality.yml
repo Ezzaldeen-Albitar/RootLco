@@ -683,6 +683,18 @@ jobs:
           # command response, never from arithmetic or a cached guess
           # (P1-28-QA-004).
           npm run validate:p1-28-version-sourcing
+          # The P1-31 sibling of the line above (P1-31-QA-004), named here for
+          # the same reason and on the same evidence. It reaches hosted CI
+          # through `verify:policies` inside the clean-room aggregate, which is
+          # the slowest job in the pull request — so a version-sourcing defect in
+          # the delivery, warranty or reporting screens would be reported forty
+          # minutes after its apt/rec twin, on the same tree, by a different job.
+          # A gate a developer meets after the next commit is a gate they meet
+          # too late. Its two P1-31 siblings, `validate:p1-31-access` and
+          # `validate:p1-31-write-shape`, are still aggregate-only and are
+          # deliberately left so by this change rather than moved without their
+          # own reason.
+          npm run validate:p1-31-version-sourcing
 
       - name: Web component tier
         if: inputs.task == 'web-quality'

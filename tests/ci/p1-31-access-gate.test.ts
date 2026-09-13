@@ -133,9 +133,18 @@ export default async function Page({ params }) {
  * `reports` before it, a configuration page landing under that segment tomorrow
  * meets this rule already written. Both numbers are read off the gate's own report
  * line on this head.
+ *
+ * The same pass then moved BOTH numbers, 10 to 12 and 16 to 17, when the audit
+ * screen was measured against the rule the list follows: every operation a P1-31
+ * screen consumes is named, whether or not P1-31 published it. That screen is one
+ * this phase modified and it carries its own committed browser specification, so
+ * its two operations are claimed — a new derived root, `audit-events` — and the
+ * `audit-log` area is named beside them, because the page lives under
+ * `(dashboard)/administration/audit-log` and no derived root matches it. Two new
+ * segments, one new page. Both numbers are read off the gate's own report line.
  */
-const PINNED_PAGES = 16;
-const PINNED_OWNED_SEGMENTS = 10;
+const PINNED_PAGES = 17;
+const PINNED_OWNED_SEGMENTS = 12;
 
 describe('the derivation is P1-31’s own and is not empty', () => {
   it('derives the delivery and warranty resource roots from the register', () => {
@@ -152,6 +161,8 @@ describe('the derivation is P1-31’s own and is not empty', () => {
       // Derived only by the two checklist-template reads DO-001 added, and by
       // nothing else — which is why the segment count moved with them.
       ['delivery', 'checklist', 'templates'].join('-'),
+      // Derived only by the two audit-event reads the same pass added.
+      ['audit', 'events'].join('-'),
     ]) {
       expect(segments, `${expected} is a P1-31 resource root`).toContain(expected);
     }
@@ -231,6 +242,16 @@ describe('the derivation is P1-31’s own and is not empty', () => {
     // moved the segment count.
     expect(P1_31_OPERATION_IDS).toContain(id('sal', 'delivery-checklist-template-list'));
     expect(P1_31_OPERATION_IDS).toContain(id('sal', 'delivery-checklist-template-read'));
+    // The two audit-event reads the audit screen consumes. P1-31 did not publish
+    // them and that is not the test: the rule this list follows is EVERY operation
+    // a P1-31 screen consumes, which is why the branch and company directories are
+    // here too. The area that makes their page judged is named beside them.
+    expect(P1_31_OPERATION_IDS).toContain(id('iam', 'audit-event-list'));
+    expect(P1_31_OPERATION_IDS).toContain(id('iam', 'audit-event-detail'));
+    expect(P1_31_AREAS).toContain(['audit', 'log'].join('-'));
+    // …and the PARENT is deliberately not an area: naming it would pull every
+    // administration screen in the product into this gate's subject.
+    expect(P1_31_AREAS).not.toContain('administration');
     // Three operations on the same two subjects are deliberately NOT claimed. The
     // two administration commands: no screen of this phase administers a roster.
     // The single-employee read: it was claimed while an adapter with no consumer

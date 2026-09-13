@@ -177,6 +177,17 @@ export const P1_31_OPERATION_IDS = Object.freeze([
   // and the same rule: an operation a P1-31 screen calls that is absent from this
   // list is one this gate does not own.
   'org.company-list',
+  // The audit-event register READ and the single-event read the audit-log screen
+  // consumes. P1-31 modified that screen and it carries its own committed browser
+  // specification, so it is a P1-31 screen under the rule this list follows —
+  // EVERY operation a P1-31 screen consumes is named here, whether or not P1-31
+  // published it, because an operation absent from this list is one the gate does
+  // not own. Their root is `audit-events`, which nothing else here derives, and the
+  // screen itself lives under the `audit-log` area named below: the pair is added
+  // together on purpose, since claiming the operations without the area would name
+  // a surface whose page no rule then judges.
+  'iam.audit-event-list',
+  'iam.audit-event-detail',
 ]);
 
 /**
@@ -190,8 +201,18 @@ export const P1_31_OPERATION_IDS = Object.freeze([
  * `reports`, so the derived and the named halves agree on that segment — which is
  * why adding the three reporting operations moved the page count and not the
  * segment count.
+ *
+ * `audit-log` is the fourth, and it is the leaf rather than `administration` on
+ * purpose. The audit screen this phase modified lives at
+ * `(dashboard)/administration/audit-log`, and its two operations are addressed
+ * under `audit-events` — so, exactly as with `delivery`, no derived root matches
+ * the page and a purely derived rule would never judge it. Naming the PARENT
+ * would instead pull every administration screen in the product into this gate's
+ * subject: roles, users, taxes, currencies and eight more that P1-31 neither owns
+ * nor modified. A gate that reaches outside its lane produces violations nobody in
+ * that lane can act on, which is the reason this file exists at all.
  */
-export const P1_31_AREAS = Object.freeze(['delivery', 'warranty', 'reports']);
+export const P1_31_AREAS = Object.freeze(['delivery', 'warranty', 'reports', 'audit-log']);
 
 /** The route segments P1-31 owns: the derived resource roots plus the named areas. */
 export function ownedSegments(registerPath = REGISTER) {
