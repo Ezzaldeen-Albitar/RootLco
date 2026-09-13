@@ -47,43 +47,52 @@ only on the acceptance record's evidence, by its rule 2.
 **No gate derives this table.** P1-28's register was machine-compared against a generated
 `task-matrix.json`; P1-31 has a hand-written matrix, no generated one and no `validate:p1-31-matrix`,
 so the count of twenty-nine and every row below are held by reading alone. A reader who needs the
-authoritative state must read the matrix, not this summary of it.
+authoritative state must read the matrix, not this summary of it. _(The state column read `state on
+`develop` (matrix)`: true when written; corrected by this pull request, whose own three rows —
+DO-002, DOC-001 and DOC-002 — are in the matrix on this branch and not yet on `develop`.)_
 
-| task    | item                              | delivered by (slice + pull request)                                  | record-proof pointer                                                      | state on `develop` (matrix) |
-| ------- | --------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------- | --------------------------- |
-| FE-001  | Ready-for-delivery list           | readiness queue #367 (`ae0e0354`), on the #366 (`01c32937`) contract | `acceptance-record.md` § 7.1 (`mtz5ppq8`), HTTP step 118; register § 42   | end-to-end verified         |
-| FE-002  | delivery eligibility              | #357 (`fc58f1c2`) read, #362 (`78d34fbc`), Start #377 (`9b109f63`)   | `acceptance-record.md` steps 106, 115, 116; register § 51                 | end-to-end verified         |
-| FE-003  | authorized receiver               | #357 (`fc58f1c2`) read, #362 (`78d34fbc`) verification               | `acceptance-record.md` steps 107 and 157                                  | end-to-end verified         |
-| FE-004  | delivery checklist                | P-9 #355, P-9b #363 (`07193258`), #362 (`78d34fbc`)                  | `acceptance-record.md` steps 113, 114, 156                                | end-to-end verified         |
-| FE-005  | final odometer                    | #362 (`78d34fbc`)                                                    | `acceptance-record.md` steps 117 and 118                                  | end-to-end verified         |
-| FE-006  | delivery signatures               | #357 (`fc58f1c2`) read, #362 (`78d34fbc`) upload and link            | `acceptance-record.md` steps 108 to 112                                   | end-to-end verified         |
-| FE-007  | delivery document                 | #368 (`8c4e6a9c`)                                                    | `acceptance-record.md` § 7.1 (print counter, both locales); register § 44 | end-to-end verified         |
-| FE-008  | warranty record                   | #369 (`deb404c1`) and #375 (`6c99e805`)                              | `acceptance-record.md` steps 120 to 122; `warranty-p1-31.spec.ts`         | end-to-end verified         |
-| FE-009  | warranty history                  | #375 (`6c99e805`) — the vehicle-filtered list only                   | `task-matrix.md` FE-009; **CC-10**, **CC-31**                             | merged (read-only/partial)  |
-| FE-010  | operational dashboard             | #376 (`72782f48`) — `/{locale}/reports/overview`                     | `operational-overview.md`; register § 53; `acceptance-record.md` § 6      | in open PR                  |
-| FE-011  | work-order reports                | #371 (`46be4bb2`), dataset #374 (`6b3c6c45`)                         | `report-screens.md`; `acceptance-record.md` § 7.1 class D                 | merged (read-only/partial)  |
-| FE-012  | technician reports                | #371 (`46be4bb2`), dataset #374 (`6b3c6c45`)                         | `acceptance-record.md` § 7.1; register § 45                               | end-to-end verified         |
-| FE-013  | inventory reports                 | #371 (`46be4bb2`), dataset #374 (`6b3c6c45`)                         | `acceptance-record.md` § 7.1; register § 46                               | end-to-end verified         |
-| FE-014  | invoice/payment reports           | #371 (`46be4bb2`), dataset #374 (`6b3c6c45`)                         | `acceptance-record.md` § 7.1; register § 47                               | end-to-end verified         |
-| FE-015  | audit report                      | #360 (`f8958e77`)                                                    | `acceptance-record.md` § 7.1, HTTP steps 134-135; register § 36           | end-to-end verified         |
-| FE-016  | branch pilot summary              | #376 (`72782f48`) — the same screen, branch fixed by the address     | `operational-overview.md`; register § 53; `acceptance-record.md` § 6      | in open PR                  |
-| SEC-001 | permission and resolved scope     | #379 (`329b19ab`) indexes the slice proofs (#360, #358, #363)        | `security-and-qa-evidence.md` § 1                                         | phase-level incomplete      |
-| SEC-002 | sensitive data, export, files     | #379 (`329b19ab`); D-6 settles the export posture                    | `security-and-qa-evidence.md` § 2                                         | phase-level incomplete      |
-| SEC-003 | abuse cases, privilege escalation | nothing closes it; per-seam artefacts only                           | `security-and-qa-evidence.md` § 3                                         | not started                 |
-| SEC-004 | security audit-event coverage     | nothing closes it; declarations counted, not reviewed                | `security-and-qa-evidence.md` § 4                                         | not started                 |
-| QA-001  | unit and component coverage       | #379 (`329b19ab`) indexes the web suites; slices carry their own     | `security-and-qa-evidence.md` § 5                                         | phase-level incomplete      |
-| QA-002  | contract and error-path coverage  | #379 (`329b19ab`) indexes the seam and adapter suites                | `security-and-qa-evidence.md` § 6                                         | phase-level incomplete      |
-| QA-003  | tenant/company/branch isolation   | #379 (`329b19ab`); acceptance isolation cases                        | `security-and-qa-evidence.md` § 7; `acceptance-record.md` § 4             | phase-level incomplete      |
-| QA-004  | concurrency and idempotency       | nothing closes it; declarations counted                              | `security-and-qa-evidence.md` § 8; **CC-17**                              | not started                 |
-| QA-005  | regression, evidence packaging    | harness #378 (`6005cfa4`), record #380 (`81b3bce8`)                  | `acceptance-record.md`; register §§ 52, 54; **CC-42**, **CC-43**          | phase-level incomplete      |
-| DO-001  | CI quality gate                   | P-16 #357 (`fc58f1c2`), `validate:p1-31-access`                      | `security-and-qa-evidence.md` § 10                                        | merged (read-only/partial)  |
-| DO-002  | logging, monitoring, alerting     | nothing closes it; no runbook exists                                 | `security-and-qa-evidence.md` § 11                                        | not started                 |
-| DOC-001 | contract and traceability sync    | corrections merged (#354); `documentation/` does not exist           | `security-and-qa-evidence.md` § 12                                        | not started                 |
-| DOC-002 | guidance and the change record    | the register itself; no runbook exists                               | `security-and-qa-evidence.md` § 13                                        | not started                 |
+| task    | item                              | delivered by (slice + pull request)                                  | record-proof pointer                                                      | state in the matrix        |
+| ------- | --------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------- | -------------------------- |
+| FE-001  | Ready-for-delivery list           | readiness queue #367 (`ae0e0354`), on the #366 (`01c32937`) contract | `acceptance-record.md` § 7.1 (`mtz5ppq8`), HTTP step 118; register § 42   | end-to-end verified        |
+| FE-002  | delivery eligibility              | #357 (`fc58f1c2`) read, #362 (`78d34fbc`), Start #377 (`9b109f63`)   | `acceptance-record.md` steps 106, 115, 116; register § 51                 | end-to-end verified        |
+| FE-003  | authorized receiver               | #357 (`fc58f1c2`) read, #362 (`78d34fbc`) verification               | `acceptance-record.md` steps 107 and 157                                  | end-to-end verified        |
+| FE-004  | delivery checklist                | P-9 #355, P-9b #363 (`07193258`), #362 (`78d34fbc`)                  | `acceptance-record.md` steps 113, 114, 156                                | end-to-end verified        |
+| FE-005  | final odometer                    | #362 (`78d34fbc`)                                                    | `acceptance-record.md` steps 117 and 118                                  | end-to-end verified        |
+| FE-006  | delivery signatures               | #357 (`fc58f1c2`) read, #362 (`78d34fbc`) upload and link            | `acceptance-record.md` steps 108 to 112                                   | end-to-end verified        |
+| FE-007  | delivery document                 | #368 (`8c4e6a9c`)                                                    | `acceptance-record.md` § 7.1 (print counter, both locales); register § 44 | end-to-end verified        |
+| FE-008  | warranty record                   | #369 (`deb404c1`) and #375 (`6c99e805`)                              | `acceptance-record.md` steps 120 to 122; `warranty-p1-31.spec.ts`         | end-to-end verified        |
+| FE-009  | warranty history                  | #375 (`6c99e805`) — the vehicle-filtered list only                   | `task-matrix.md` FE-009; **CC-10**, **CC-31**                             | merged (read-only/partial) |
+| FE-010  | operational dashboard             | #376 (`72782f48`) — `/{locale}/reports/overview`                     | `operational-overview.md`; register § 53; `acceptance-record.md` § 6      | in open PR                 |
+| FE-011  | work-order reports                | #371 (`46be4bb2`), dataset #374 (`6b3c6c45`)                         | `report-screens.md`; `acceptance-record.md` § 7.1 class D                 | merged (read-only/partial) |
+| FE-012  | technician reports                | #371 (`46be4bb2`), dataset #374 (`6b3c6c45`)                         | `acceptance-record.md` § 7.1; register § 45                               | end-to-end verified        |
+| FE-013  | inventory reports                 | #371 (`46be4bb2`), dataset #374 (`6b3c6c45`)                         | `acceptance-record.md` § 7.1; register § 46                               | end-to-end verified        |
+| FE-014  | invoice/payment reports           | #371 (`46be4bb2`), dataset #374 (`6b3c6c45`)                         | `acceptance-record.md` § 7.1; register § 47                               | end-to-end verified        |
+| FE-015  | audit report                      | #360 (`f8958e77`)                                                    | `acceptance-record.md` § 7.1, HTTP steps 134-135; register § 36           | end-to-end verified        |
+| FE-016  | branch pilot summary              | #376 (`72782f48`) — the same screen, branch fixed by the address     | `operational-overview.md`; register § 53; `acceptance-record.md` § 6      | in open PR                 |
+| SEC-001 | permission and resolved scope     | #379 (`329b19ab`) indexes the slice proofs (#360, #358, #363)        | `security-and-qa-evidence.md` § 1                                         | phase-level incomplete     |
+| SEC-002 | sensitive data, export, files     | #379 (`329b19ab`); D-6 settles the export posture                    | `security-and-qa-evidence.md` § 2                                         | phase-level incomplete     |
+| SEC-003 | abuse cases, privilege escalation | § 3.1's four-part breakdown, one part uncovered and routed           | `security-and-qa-evidence.md` § 3                                         | phase-level incomplete     |
+| SEC-004 | security audit-event coverage     | nothing closes it; declarations counted, not reviewed                | `security-and-qa-evidence.md` § 4                                         | not started                |
+| QA-001  | unit and component coverage       | #379 (`329b19ab`) indexes the web suites; slices carry their own     | `security-and-qa-evidence.md` § 5                                         | phase-level incomplete     |
+| QA-002  | contract and error-path coverage  | #379 (`329b19ab`) indexes the seam and adapter suites                | `security-and-qa-evidence.md` § 6                                         | phase-level incomplete     |
+| QA-003  | tenant/company/branch isolation   | #379 (`329b19ab`); acceptance isolation cases                        | `security-and-qa-evidence.md` § 7; `acceptance-record.md` § 4             | phase-level incomplete     |
+| QA-004  | concurrency and idempotency       | nothing closes it; declarations counted                              | `security-and-qa-evidence.md` § 8; **CC-17**                              | not started                |
+| QA-005  | regression, evidence packaging    | harness #378 (`6005cfa4`), record #380 (`81b3bce8`)                  | `acceptance-record.md`; register §§ 52, 54; **CC-42**, **CC-43**          | phase-level incomplete     |
+| DO-001  | CI quality gate                   | P-16 #357 (`fc58f1c2`), `validate:p1-31-access`                      | `security-and-qa-evidence.md` § 10                                        | merged (read-only/partial) |
+| DO-002  | logging, monitoring, alerting     | the operator half only: `operator-runbook.md`; monitoring untouched  | `security-and-qa-evidence.md` § 11                                        | implemented/unmerged       |
+| DOC-001 | contract and traceability sync    | corrections merged (#354); correction #3 retracted in place here     | `security-and-qa-evidence.md` § 12                                        | implemented/unmerged       |
+| DOC-002 | guidance and the change record    | the register itself, and `operator-runbook.md` as the guidance       | `security-and-qa-evidence.md` § 13                                        | implemented/unmerged       |
 
 **Totals by state, counted off the column above:** `end-to-end verified` **12**;
-`merged (read-only/partial)` **3**; `in open PR` **2**; `phase-level incomplete` **6**;
-`not started` **6**. Twenty-nine.
+`merged (read-only/partial)` **3**; `in open PR` **2**; `phase-level incomplete` **7**;
+`implemented/unmerged` **3**; `not started` **2**. Twenty-nine.
+
+_(Four rows and these totals were true when written; corrected by this pull request. SEC-003 moved
+to `phase-level incomplete` on `develop` in #382, and DO-002, DOC-001 and DOC-002 move out of
+`not started` here; the totals read `phase-level incomplete` **6** and `not started` **6** with no
+`implemented/unmerged` class, and are re-counted off all twenty-nine rows of `task-matrix.md` at
+the merged head. Every other row is untouched, and nothing moved to `end-to-end verified` —
+documentary evidence never earns that state.)_
 
 ### 2.1 The four Frontend rows that are not `end-to-end verified`, each checked
 
@@ -124,28 +133,41 @@ The four bullets, quoted from [`canonical-plan.md:454-462`](./canonical-plan.md)
 >   evidence.
 
 **Bullet 1 — not evidenced.** Twelve of twenty-nine tasks are `end-to-end verified`; seventeen are
-not, of which six are `not started` (§ 2). Every merged slice carries its own record and its own
+not, of which two are `not started` and three are implemented but unmerged (§ 2). Every merged slice carries its own record and its own
 suites, and each pull request was judged by the repository's required checks, which the matrix's
 integration reconciliation reports as nineteen post-merge checks per merge — that is the matrix's
 report, re-stated here and not re-run. The phase-specific gate **`validate:p1-31-access`** exists and
 is run by `verify:policies` (§ 10 of the evidence index). What is missing is not a gate result but
-coverage: SEC-003, SEC-004, QA-004, DO-002, DOC-001 and DOC-002 have no artefact that closes them,
-and no task can satisfy its own Test reference because all three cited test ids resolve to nothing
-(**D-16**, **CC-37**).
+coverage: SEC-004 and QA-004 have no artefact at all, SEC-003, DO-002, DOC-001 and DOC-002 have one
+that closes a named part and not the task, and no task can satisfy its own Test reference because
+all three cited test ids resolve to nothing (**D-16**, **CC-37**).
+
+_(This bullet read "six are `not started`" and listed all six tasks as having no artefact that
+closes them: true when written; corrected by this pull request, which supplies the operator half of
+DO-002 and the in-repository half of DOC-001 and DOC-002, and by #382, which moved SEC-003. The
+bullet's verdict — **not evidenced** — is unchanged, and none of the four is closed.)_
 
 **Bullet 2 — not evidenced.** The isolation half is strong: every refusal, concurrency and isolation
 case the acceptance plan names answered as it should (`acceptance-record.md` § 4, fifteen cases,
 including both cross-organisation reads and the three permission refusals). The findings half is
-not: SEC-003 and SEC-004 are `not started`, the register carries open dispositions listed in § 5,
+not: SEC-004 is `not started` and SEC-003 is `phase-level incomplete` with one part uncovered
+(true when written as "SEC-003 and SEC-004 are `not started`"; SEC-003 moved in #382), the register
+carries open dispositions listed in § 5,
 and **no formal acceptance by the authorized owner is recorded for any of them**. "Closed or
 formally accepted" is satisfied by neither limb today.
 
 **Bullet 3 — not evidenced.** Inside the phase the synchronisation holds: the register runs sections
-1 … 55 with CC-01 … CC-45, every slice carries a seam or screen document, the matrix carries a row
-per task, and the Owner decisions are in three dated files. Outside it, three things the bullet names
-do not exist here — `documentation/` (the Field 34 set) is absent from the repository, `_acceptance/`
-is absent, and **no runbook exists** for the four operator acts this phase owes after merge
-(`security-and-qa-evidence.md` §§ 11 and 13, **CC-16**, **CC-20**, **CC-37(c)**).
+1 … 57 with CC-01 … CC-47, every slice carries a seam or screen document, the matrix carries a row
+per task, and the Owner decisions are in three dated files. Outside it, two things the bullet names
+do not exist here — `documentation/` (the Field 34 set) is absent from the repository and
+`_acceptance/` is absent — and the runbook `operator-runbook.md` carries the four operator acts this
+phase owes after merge, which **remain owed on every environment other than the shared acceptance
+database** (`security-and-qa-evidence.md` §§ 11 and 13, **CC-16**, **CC-20**, **CC-37(c)**).
+
+_(This bullet read "sections 1 … 55 with CC-01 … CC-45" and "**no runbook exists**": true when
+written; corrected by this pull request, which adds § 57 and CC-47 and the runbook, and by #382,
+which added § 56 and CC-46. The bullet's verdict — **not evidenced** — is unchanged: a runbook is
+not a run, and CC-16, CC-20 and the Field 34 `documentation/` set all stay open.)_
 
 **Bullet 4 — not evidenced, and not this session's to evidence.** No Owner decision on the phase is
 recorded anywhere in the repository. The acceptance record's own verdict is **PARTIAL** and its § 1
@@ -184,8 +206,12 @@ document should be read as suggesting otherwise.
 
 ### 5.1 Change-control dispositions still open
 
-The register carries no index of open items, and every disposition in it is filed as recorded rather
-than fixed. **Six closures are stated in the register and nothing else is closed:** **CC-01** (§ 29,
+The register carries an index of its open items at change control § 57.4, raised as **CC-47**, and
+every disposition in it is filed as recorded rather than fixed. _(This sentence read "The register
+carries no index of open items": true when written; corrected by this pull request, which adds that
+index. Its partition of the register's seventy identifiers — 27 open, 39 closed or settled, 4
+stating nothing — is derived from each disposition's own state cell and counts on a different basis
+from the six explicit closures named next; neither figure is re-adjudicated here.)_ **Six closures are stated in the register and nothing else is closed:** **CC-01** (§ 29,
 by P-10), **CC-02** (§ 34, by the P-11 writer), **CC-14** (§ 35, by the P-9b migration), **CC-29a**
 and **CC-29b** (§ 41, in the slice) and **CC-42** (§ 54, by measurement — the journey half ran).
 **CC-43** is closed in part (§ 54.6): twenty-three of its twenty-five cases were repaired, two
@@ -307,7 +333,10 @@ this head, and changing an Owner document is the Owner's act.
   the act has a prerequisite no repository record names.
 - **Four operator acts remain owed on every environment that is not that one database**: the P-9b
   migration, the two P-17 migrations, the delivering-employee backfill and the tenant-administrator
-  bundle backfill (`security-and-qa-evidence.md` § 11). No runbook carries them.
+  bundle backfill (`security-and-qa-evidence.md` § 11). The runbook `operator-runbook.md` carries
+  the four acts; the acts remain owed on every environment other than the shared acceptance
+  database. _(This bullet read "No runbook carries them": true when written; corrected by this pull
+  request. What is owed is unchanged — a runbook is not a run.)_
 
 ## 6. What this record does not claim
 

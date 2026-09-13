@@ -3769,6 +3769,12 @@ that an identifier is a claim about the register at the moment it was raised.
 coordinator, not by this section moving. If a sibling lands section 57 first, THIS section
 renumbers itself and nothing else, on the § 52.1 precedent.
 
+**Resolved at the sync.** This branch merged `develop`
+`821ed6689d3d481ff2270e44c6e66bb9651a9b97` — the merge of PR #372 — on 2026-09-13. Both siblings
+had landed by then: **section 55 with CC-45** (#381) and **section 56 with CC-46** (#382). Neither
+took section 57, so nothing renumbered in either direction. The textual conflict in this file was
+resolved by order alone — 55, then 56, then 57 — with every line of all three sides kept.
+
 ### 57.2 What changed, and what was minted
 
 | changed                                                                                                                                                                                                                                                                                                                    | minted  |
@@ -3783,30 +3789,31 @@ fixture or message catalogue changed.** This slice is documentation only.
 
 ### 57.3 Dispositions
 
-| id           | finding                                                                                                                           | measured                                                                                                                                                                                                                                                                                          | disposition                                                                                                                                                                                                                                                                                      | owner / slice | state              |
-| ------------ | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------- | ------------------ |
-| **CC-47**    | **this register carried no index of its own open dispositions, and every disposition is filed as "recorded" rather than "fixed"** | 64 distinct identifiers exist in this file, spread across the slice records' own disposition tables and, in two cases, across prose bullets with no state cell at all. Counted at this head: **25 open, 35 closed or settled, and 4 that state no disposition anywhere** — § 57.4 names every one | **recorded and indexed, not re-adjudicated.** § 57.4 is a derived index and changes no state. "Recorded" is the honest verb for most of these: a disposition that names a remedy a later slice owes is not a fix, and an index that called it one would be the overstatement it exists to expose | this slice    | open, indexed      |
-| **CC-37(c)** | the tenant-administrator bundle backfill has a prerequisite no repository record named (§ 49.3, line 2750)                        | § 49.3's own remedy sentence: "the operator runbook that DO-001 and DO-002 both owe and that does not exist; **the ordering must be in it**"                                                                                                                                                      | **closed by this slice.** [`operator-runbook.md`](./operator-runbook.md) § 2 states the ordering and § 3 states the prerequisite, its exit code 5, the script line that raises it and its verbatim refusal text. § 49.3's row is left as written — this is a closure, not a rewrite              | this slice    | **closed in § 57** |
-| **CC-16**    | organisations provisioned before the P-10 widening cannot administer warranty policies (§ 29.2, line 634)                         | The register named an operator act after merge that no runbook carried. A runbook now carries it                                                                                                                                                                                                  | **still open, and deliberately.** A runbook is not a run. CC-16 closes when the act has been performed on the environments it is about, and the runbook's § 1 says how few of those there are                                                                                                    | a later act   | open, unchanged    |
-| **CC-20**    | organisations provisioned before the P-10 and P-11 widenings hold neither new code (§ 34.2, line 815)                             | The same act, the same runbook, the same distinction                                                                                                                                                                                                                                              | **still open**, for CC-16's reason exactly                                                                                                                                                                                                                                                       | a later act   | open, unchanged    |
+| id           | finding                                                                                                                           | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | disposition                                                                                                                                                                                                                                                                                      | owner / slice | state              |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------- | ------------------ |
+| **CC-47**    | **this register carried no index of its own open dispositions, and every disposition is filed as "recorded" rather than "fixed"** | **70** distinct identifiers exist in this file at the head this branch synced onto, spread across the slice records' own disposition tables and, in two cases, across prose bullets with no state cell at all. Counted there: **27 open, 39 closed or settled, and 4 that state no disposition anywhere** — § 57.4 names every one. _(This cell was written against `81b3bce8` as 64 = 25 + 35 + 4; true when written, re-derived by this pull request once CC-45 and CC-46 with its (a)–(d) sub-entries came onto `develop`.)_ | **recorded and indexed, not re-adjudicated.** § 57.4 is a derived index and changes no state. "Recorded" is the honest verb for most of these: a disposition that names a remedy a later slice owes is not a fix, and an index that called it one would be the overstatement it exists to expose | this slice    | open, indexed      |
+| **CC-37(c)** | the tenant-administrator bundle backfill has a prerequisite no repository record named (§ 49.3, line 2750)                        | § 49.3's own remedy sentence: "the operator runbook that DO-001 and DO-002 both owe and that does not exist; **the ordering must be in it**"                                                                                                                                                                                                                                                                                                                                                                                    | **closed by this slice.** [`operator-runbook.md`](./operator-runbook.md) § 2 states the ordering and § 3 states the prerequisite, its exit code 5, the script line that raises it and its verbatim refusal text. § 49.3's row is left as written — this is a closure, not a rewrite              | this slice    | **closed in § 57** |
+| **CC-16**    | organisations provisioned before the P-10 widening cannot administer warranty policies (§ 29.2, line 634)                         | The register named an operator act after merge that no runbook carried. A runbook now carries it                                                                                                                                                                                                                                                                                                                                                                                                                                | **still open, and deliberately.** A runbook is not a run. CC-16 closes when the act has been performed on the environments it is about, and the runbook's § 1 says how few of those there are                                                                                                    | a later act   | open, unchanged    |
+| **CC-20**    | organisations provisioned before the P-10 and P-11 widenings hold neither new code (§ 34.2, line 815)                             | The same act, the same runbook, the same distinction                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | **still open**, for CC-16's reason exactly                                                                                                                                                                                                                                                       | a later act   | open, unchanged    |
 
-### 57.4 Index of open dispositions — derived at `81b3bce8`, not transcribed
+### 57.4 Index of open dispositions — re-derived at the sync, not transcribed
 
-Every row below was read out of this file at this head. **This index changes no state**; where a
-row's own state cell is ambiguous, the ambiguity is reported rather than resolved.
+Every row below was read out of this file as this pull request leaves it: `develop`
+`821ed6689d3d481ff2270e44c6e66bb9651a9b97` (the merge of PR #372) merged into this branch, where
+the register holds **sections 1 … 56 and CC-01 … CC-46** from `develop` and this section adds
+**57** and **CC-47**. **This index changes no state**; where a row's own state cell is ambiguous,
+the ambiguity is reported rather than resolved.
 
-**Two dispositions raised after this head are outside the index below, and are named so that no
-reader mistakes the omission for a claim that they do not exist.** Section 55 (**CC-45**, the
-matrix statements measured before their pull requests merged) and section 56 (**CC-46** with its
-(a)–(d) sub-entries, the assurance index re-measured at the acceptance head, pull request #382
-merged at `develop` `63f19764`) both exist and are on `develop`; neither section is present on the
-branch that carries this section, so neither is edited here and no identifier is renumbered. **This
-index is re-derived at this lane's sync**, at whatever `develop` head the sync merges onto — at the
-time of writing that head is `63f19764` — and CC-45 and CC-46 with its sub-entries are folded in
-there. Until that re-derivation lands, the counts and the arithmetic below are true of `81b3bce8`
-and of nothing later.
+**The re-derivation this section promised has been performed.** The first version of this index was
+derived at `81b3bce8` and partitioned 64 identifiers as 25 open, 35 closed or settled and 4 stating
+nothing; that was true of `81b3bce8` and of nothing later, and it is superseded here rather than
+carried forward. The two siblings it named as outstanding have both landed and are folded in below:
+**section 55 / CC-45** (#381 — four `task-matrix.md` statements measured before their pull requests
+merged) and **section 56 / CC-46 with its (a)–(d) sub-entries** (#382 — the assurance index
+re-measured at the acceptance head). Neither section is edited by this slice and no identifier is
+renumbered; only their own state cells are read.
 
-**Open — 25**
+**Open — 27 carried in, and CC-47 raised by this section: 28 rows below**
 
 | id           | where             | one line                                                                                  |
 | ------------ | ----------------- | ----------------------------------------------------------------------------------------- |
@@ -3835,6 +3842,8 @@ and of nothing later.
 | **CC-42**    | § 52.4, line 3248 | open, recorded, **PROVISIONAL** — the harness lane is unmerged                            |
 | **CC-43**    | § 54.4, line 3524 | **closed in part; one cause open, stated** — the browser correction pass of § 54.6        |
 | **CC-44**    | § 54.7, line 3623 | the handoff-gated reporting cases pass only with overridden browser credentials           |
+| **CC-45**    | § 55.3, line 3661 | four `task-matrix.md` statements were measured before their pull requests merged          |
+| **CC-46(c)** | § 56.4, line 3744 | the OpenAPI bare-object success-schema shortfall is chapter-wide, not `sal.delivery-*`    |
 | **CC-47**    | § 57.3            | this register carried no index of its open dispositions                                   |
 
 **States no disposition at all — 4.** These are not open and not closed; they are unstated, and
@@ -3847,17 +3856,20 @@ that is the finding.
 | **CC-26** | § 38.3, line 1220 | a prose bullet for the same reason. Its text records a new backend prerequisite, which reads as open                                   |
 | **CC-40** | nowhere           | **allocated and never used.** See § 57.5                                                                                               |
 
-**Closed or settled — 35.** CC-03, CC-05, CC-07, CC-08, CC-09, CC-11, CC-13, CC-14, CC-15, CC-17,
+**Closed or settled — 39.** CC-03, CC-05, CC-07, CC-08, CC-09, CC-11, CC-13, CC-14, CC-15, CC-17,
 CC-18, CC-19, CC-21, CC-27(c), CC-28, CC-29a, CC-29b, CC-33, CC-33(a), CC-33(b), CC-34(a),
 CC-34(b), CC-34(c), CC-35, CC-35(a), CC-35(b), CC-35(c), CC-36, CC-37, **CC-37(c)** (closed by
-§ 57.3 above), CC-39, CC-39(a), CC-39(b), CC-39(c), CC-41(a).
+§ 57.3 above), CC-39, CC-39(a), CC-39(b), CC-39(c), CC-41(a), CC-46, CC-46(a), CC-46(b), CC-46(d).
 
-**Arithmetic, so a reader can check it rather than trust it.** This file carried **64** distinct
-identifiers before this section. **25 open + 4 stating nothing + 35 closed or settled = 64.** The
-partition is exact and no identifier is counted twice: CC-27, CC-27(b) and CC-27(c) are three
-separate entries and are filed separately, which is why CC-27 appears under open on the strength
-of its (b) half while CC-27(c) appears under closed. **CC-47**, raised by § 57.3, is the
-sixty-fifth and is not inside that arithmetic.
+**Arithmetic, so a reader can check it rather than trust it.** At the head this index is derived
+on, this file carried **70** distinct identifiers before this section. **27 open + 4 stating
+nothing + 39 closed or settled = 70.** The partition is exact and no identifier is counted twice:
+CC-27, CC-27(b) and CC-27(c) are three separate entries and are filed separately, which is why
+CC-27 appears under open on the strength of its (b) half while CC-27(c) appears under closed, and
+CC-46 with (a), (b), (c) and (d) is five entries by the same rule, of which (c) alone is open.
+**CC-47**, raised by § 57.3, is the seventy-first and is not inside that arithmetic. _(This
+paragraph first read 64 = 25 + 4 + 35 with CC-47 the sixty-fifth: true of `81b3bce8` when written,
+re-derived by this pull request after #381 and #382 landed.)_
 
 ### 57.5 CC-40 — allocated, never used, and a permanent hole
 

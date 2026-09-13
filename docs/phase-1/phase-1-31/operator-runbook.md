@@ -161,8 +161,9 @@ git rev-parse --short HEAD
 
 At `a547fc9b` that command printed **121** — one `INSERT`, 121 single-line value rows, so a fully
 seeded catalogue holds **121 rows** and `catalogue_rows` below should equal it once every row is
-present. If your tree prints a different number, **your tree is right and this paragraph is
-stale**: the count is a fact about the file at one commit, not a constant.
+present. It printed **121** again at `786c5900`, this branch's merge of `develop` `821ed668`, so no seed row landed between the two heads. If your
+tree prints a different number, **your tree is right and this paragraph is stale**: the count is a
+fact about the file at one commit, not a constant.
 
 ### Verification query — proves the step took effect
 
@@ -268,9 +269,10 @@ git rev-parse --short HEAD
 ```
 
 At `a547fc9b` that command printed **141**, so the ledger count above should read **141** once the
-three files of this act are applied and the ledger is repaired. If your tree prints a different
-number, **your tree is right and this paragraph is stale**: the count is a fact about the tree at
-one commit, and it moves with every migration any later phase adds.
+three files of this act are applied and the ledger is repaired. It printed **141** again at
+`786c5900`, this branch's merge of `develop` `821ed668`, so no migration landed between the two heads. If your tree prints a different number,
+**your tree is right and this paragraph is stale**: the count is a fact about the tree at one
+commit, and it moves with every migration any later phase adds.
 
 **`convalidated` is expected to be `false` on a database that held delivery rows** — the key is
 added `NOT VALID` on purpose, and the migration emits a `RAISE NOTICE` naming the operator command
@@ -431,7 +433,8 @@ Then the same line **without** `--dry-run`.
 
 ### Expected effect
 
-The bundle declared at this head is **78 codes** — re-derive it, never transcribe it:
+The bundle declared at this head is **78 codes**, re-derived as 78 at `786c5900`, this branch's merge of `develop` `821ed668` — re-derive it
+yourself, never transcribe it:
 
 ```bash
 node -e "import('./scripts/platform/backfill-tenant-administrator-bundle.mjs').then(m => console.log(m.readTenantAdministratorBundle().length))"
