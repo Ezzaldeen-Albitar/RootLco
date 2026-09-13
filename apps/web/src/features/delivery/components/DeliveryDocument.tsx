@@ -8,6 +8,7 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 import { formatDateTime } from '@/lib/format';
+import { odometerDisplay, type OdometerReadingEntry } from '@/features/vehicles/history-contract';
 import type { WorkOrderDetail } from '@/features/work-orders/work-orders-contract';
 
 import type {
@@ -112,6 +113,7 @@ export function DeliveryDocument({
   checklist,
   signatures,
   history,
+  finalOdometerReading = null,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -126,6 +128,14 @@ export function DeliveryDocument({
   readonly checklist: DocumentSection<ChecklistResult>;
   readonly signatures: DocumentSection<DeliverySignature>;
   readonly history: DocumentSection<DeliveryStatusTransition>;
+  /**
+   * The reading `finalOdometerReadingId` points at, resolved by the route.
+   *
+   * Printed as the value when it is there and as the reference when it is not,
+   * for the reason the record gives: the sheet may not print a number nobody
+   * resolved, and it may not hide the identifier it does hold.
+   */
+  readonly finalOdometerReading?: OdometerReadingEntry | null;
 }) {
   return (
     <PrintDocument
@@ -177,9 +187,15 @@ export function DeliveryDocument({
               delivery.deliveringEmployeeDisplayName
             )}
           </Fact>
-          <Fact label={translate(messages, 'delivery.summary.finalOdometerReading')}>
-            <Identifier value={delivery.finalOdometerReadingId} />
-          </Fact>
+          {finalOdometerReading === null ? (
+            <Fact label={translate(messages, 'delivery.summary.finalOdometerReading')}>
+              <Identifier value={delivery.finalOdometerReadingId} />
+            </Fact>
+          ) : (
+            <Fact label={translate(messages, 'delivery.summary.finalOdometer')}>
+              <span dir="ltr">{odometerDisplay(finalOdometerReading).primary}</span>
+            </Fact>
+          )}
         </dl>
         <p className="mt-2 text-supporting text-text-muted" lang={locale}>
           {translate(messages, 'delivery.summary.identifiersExplain')}
