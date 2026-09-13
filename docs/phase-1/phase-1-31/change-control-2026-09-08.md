@@ -3622,6 +3622,748 @@ job can establish.
 | --------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------- | ------------ |
 | **CC-44** | **the handoff-gated reporting cases can pass only on a run whose browser credentials are overridden** | They assert on screens that gate on `rpt.report.read`, and the account the tier signs in as by default does not hold it. §7.1's run drove them with the journey's own administrator through `ROOTLCO_E2E_EMAIL` / `ROOTLCO_E2E_PASSWORD`, which nothing in the repository states or arranges. Repairing it means changing how the tier signs in — a different decision, on a different lane — so it is measured and stated here rather than papered over by widening what the acceptance account is granted. | the Frontend lane | open, stated |
 
+## 55. The phase closure record and the gate P1-G31 inputs (CC-45)
+
+**Slice:** `feature/p1-31-closure-record`, ownership profile `p1-31-frontend` (docs bucket),
+documentation only. **Baseline:** protected `develop`
+**`81b3bce804626353a1a7b9f4ba52f1306c8f8b6e`** (the merge of PR #380, the acceptance record).
+`main` `1262de74`, untouched.
+
+### 55.1 Identifier allocation
+
+Read on `develop` `81b3bce8`, where this register holds sections 1 … 54 and identifiers
+CC-01 … CC-44. **Section 55 and CC-45 are the lowest free pair**, and no lower pair is held by an
+unmerged lane: the only open pull request on this repository that touches `docs/phase-1` is #372,
+which touches `docs/phase-1/phase-1-27` and claims no P1-31 section or identifier. Nothing here is
+taken from another lane and nothing is renumbered.
+
+One identifier below this pair has no disposition row anywhere: **CC-40**. It was claimed by two
+lanes; the operational overview settled the range as #376 and the acceptance-harness lane moved to
+**CC-42** by this register's own reconciliation rule, so the sequence carries a hole at 40 rather
+than a finding. It is stated so that a reader does not go looking for a row that was never written.
+
+### 55.2 What was delivered
+
+| file                                                   | change                                                                                                                                                     |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/phase-1/phase-1-31/closure-record.md`            | **new** — scope and boundary, the 29 canonical tasks reconciled to evidence, the Definition of Done bullet by bullet, the four gate inputs, the open items |
+| `docs/phase-1/phase-1-31/change-control-2026-09-08.md` | this section                                                                                                                                               |
+
+The closure record is an **input to gate P1-G31, not the gate's decision**. Its § 4 carries the
+approval owner's verdict field and leaves it **empty**, with the statement that only the approval
+owner named in Field 35 may fill it. No verdict is recorded, inferred or implied, and the chapter's
+status for all twenty-nine tasks remains `Planned`.
+
+### 55.3 Dispositions
+
+| id        | finding                                                                                                               | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| --------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CC-45** | **four statements in `task-matrix.md` were measured before their pull requests merged, and are older than this head** | Read off the first-parent history of `develop` `81b3bce8`. (a) FE-010 and FE-016 carry the State `in open PR` for #376, which **merged at `72782f48`**. (b) The QA-005 row states that "the acceptance record does not exist and the harness is in OPEN PR #378" — #378 **merged at `6005cfa4`** and the record **merged at `81b3bce8`**. (c) The prerequisite table records P-11's engine as "in open PR #364" — #364 **merged at `c1b1a8cd`**, with the three further datasets at `6b3c6c45`. (d) The same table records P-17 as "implemented, not merged" — #370 **merged at `811e9891`**, which `a0-preflight.md` already states. The FE-002 row's note that the Start slice "is open as pull request #377" is stale in the same way: #377 merged at `9b109f63`. | **recorded, not corrected.** A State is the matrix's own to move, and it moves on evidence rather than on a merge — rule 1 of that file is that a merge closes no canonical task. The closure record is authorised to add a proving artefact; it quotes the matrix's values as they stand and names this row beside them. Moving FE-010 and FE-016 out of `in open PR` would be a state change this documentation-only slice has no evidence to make and no authority to assert. The lane that next measures the matrix owns it. |
+
+### 55.4 What this slice did NOT do
+
+- **It did not close the phase, and it recorded no verdict.** The gate's fourth condition is the
+  approval owner's and is left empty.
+- **It moved no State in `task-matrix.md`** and changed no chapter status. The matrix was not edited
+  at all: no row's proving artefact needed to point at the closure record, because the record proves
+  no task — it summarises what each task's own artefact already proves.
+- **It ran no test tier, no build, no migration and no database operation**, and claims no hosted
+  result. The gates it ran are static checkers, named in the pull request.
+- **It changed no source file, no gate, no allow-list and no fixture.** Documentation only.
+- **It did not re-quote a figure a generated register owns.** Every count in the closure record is
+  either read on this head or quoted with the phase record it comes from.
+
+---
+
+## 56. Re-measuring the assurance evidence index at the acceptance head (SEC-001 … DOC-002)
+
+**Slice:** `feature/p1-31-assurance-index-remeasure`, ownership profile `p1-31-frontend` (resolved
+through `decideOwnershipRun` in `scripts/ci/check-phase-ownership.mjs` before the branch was cut; the
+profile allows `docs`, and this slice changes nothing else).
+**Baseline:** protected `develop` **`81b3bce804626353a1a7b9f4ba52f1306c8f8b6e`** (the merge of PR
+#380, the acceptance record). **Documentation only** — no source, no test, no gate, no fixture, no
+migration and no configuration file is touched, so no tier is recordable from it and none is claimed.
+
+**Why it exists.** [`security-and-qa-evidence.md`](./security-and-qa-evidence.md) is the phase's
+assurance index for the thirteen non-Frontend tasks, and it declared itself **measured at
+`9b109f63`** — before #378 and #380 merged. Its § 9 stated in terms that "no P1-31 acceptance record
+exists, and no P1-31 acceptance run has happened". Both halves of that are now false: the run
+happened on 2026-09-12/13 and [`acceptance-record.md`](./acceptance-record.md) is on `develop`. An
+index that reports evidence as missing when it exists makes tasks look unevidenced, which is the
+same defect class this register exists to catch, so the index was re-measured at the new head rather
+than patched at the one sentence.
+
+### 56.1 Identifier allocation
+
+Read on `develop` `81b3bce8`, where the register runs to **section 54** and **CC-44**, with no gap
+in either sequence. The next free pair is section 55 with CC-45, and **this slice does not take it**:
+section 55 / CC-45 is claimed by a sibling lane not on `develop`, recording that the task matrix's
+header declared a stale measurement commit. **This slice takes section 56 and CC-46**, the next pair
+above that claim, and touches no other lane's numbering. § 48.1 applies unchanged — an identifier is
+a claim about the register at the moment it was raised, and is never renumbered to follow heading
+order. A textual conflict with a sibling lane at merge time is expected and is resolved by whoever
+integrates.
+
+_(True when written, and the expected thing then happened. The sibling lane merged as **#381** at
+`develop` `d517a5fc`, and its section 55 and CC-45 are the pair immediately above this one in this
+file. Both allocations stand as raised; neither was renumbered.)_
+
+### 56.2 What this slice changed
+
+| file                                                   | change                                                                                                                                                                                                                                       |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/phase-1/phase-1-31/security-and-qa-evidence.md`  | re-measured at `81b3bce8`; § 9 rewritten against the merged acceptance record; § 1.1 added (the code x operation x catalogue reconciliation); §§ 2, 3, 6, 7 and 8 restated; two figures corrected in place; § 15 added for this allocation   |
+| `docs/phase-1/phase-1-31/task-matrix.md`               | the header's measurement commit, and five rows — SEC-001, SEC-003, QA-002, QA-003, QA-005 — each with an artefact citation. SEC-003 moves `not started` → `phase-level incomplete`; the other four keep their state. No other row is touched |
+| `docs/phase-1/phase-1-31/change-control-2026-09-08.md` | this section                                                                                                                                                                                                                                 |
+
+### 56.3 What moved, and the rule that stopped it moving further
+
+**Rule 2 of the matrix's state vocabulary binds this slice as it binds every other:** nothing reaches
+`end-to-end verified` without an acceptance record, **and documentary evidence alone never earns that
+state**. One row moves here — **SEC-003, `not started` → `phase-level incomplete`** — and it moves on
+the revision the index's own previous version invited in writing once the delivery, warranty and
+report-configuration write paths had merged. It moves one step, not two: the index is a document, and
+a document cannot promote a row past the state its artefacts support. The other four rows keep the
+state they had and gain a citation that is true.
+
+**What SEC-003 rests on, named so nothing is double-counted:** client-asserted scope is covered by
+`validate:p1-31-access` (16 route pages across 9 owned segments, 0 violations) and by **CC-39(a)**'s
+pinning test; cross-tenant is covered by the `tests/db/*` suites for delivery, warranty, reporting,
+provisioning and employees, and by acceptance steps 157, 158, 159 and 161; permission refusal is
+covered by acceptance steps 174, 175 and 176. **Privilege WIDENING across the phase as a set is
+covered by nothing**, and is owed to a separate pull request — a new
+`tests/backend/p1-31-privilege-escalation.test.ts` that is not on this head and is not written here.
+
+### 56.4 Dispositions
+
+| id           | finding                                                                                   | disposition                                                                                                                                                                                                                                                                                                                                                                                 | owner / slice | state            |
+| ------------ | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ---------------- |
+| **CC-46**    | the assurance index asserted that no P1-31 acceptance record exists, after one had merged | **re-measured at `81b3bce8` and corrected in place**, with every figure re-derived rather than carried forward. The record's own verdict, **PARTIAL**, is quoted and not upgraded, and the index moves no row on documentary evidence alone                                                                                                                                                 | this slice    | closed, recorded |
+| **CC-46(a)** | SEC-003 sat at `not started` after the evidence its state depended on had merged          | **moved to `phase-level incomplete`** on § 3.1's four-part breakdown; the one uncovered part is named and routed to a separate pull request rather than absorbed                                                                                                                                                                                                                            | this slice    | closed, recorded |
+| **CC-46(b)** | the twelve P1-31 permission codes had no phase-level reconciliation against the catalogue | **§ 1.1 of the index publishes it** — 12 codes, 45 operations, 52 references, each code resolving to exactly one row of the 121-code catalogue — derived from the parsed `defineOperation` output of `check-permission-parity.mjs`. The gate proves no code is fictitious and publishes no per-phase breakdown. The reconciliation is a mapping and explicitly not a least-privilege review | this slice    | closed, recorded |
+| **CC-46(c)** | the OpenAPI shortfall was recorded for `sal.delivery-*` and is wider than that            | **re-measured: all 45 P1-31 operations publish a bare-object success schema** in `docs/api/openapi.v1.json`. A0 classified the shortfall as chapter-level and it stays there; the extent is recorded so the next reader does not measure a subset. The generated file was **not** edited                                                                                                    | a later slice | open, recorded   |
+| **CC-46(d)** | two figures in the index's second version did not reproduce at the new head               | **corrected in place, with what they replace named**: the three web feature trees hold 24, 8 and 10 TypeScript files rather than fifteen, six and six, and no slice touched those trees between the two heads; and the phase's own document counts now add up to the directory. A figure that does not reproduce is corrected, never restated                                               | this slice    | closed, recorded |
+
+**What was verified, and what is not claimed.** Locally and without the stack: the changed-file
+ownership gate in both its forms, the documentation count and citation-anchor gates, root Prettier
+over `docs/`, and the static checkers whose report lines the index quotes —
+`validate:p1-31-access`, `check-permission-parity.mjs`, `validate:exact-money`,
+`check-p1-30-payload-parity.mjs` and `check-p1-28-version-sourcing.mjs` — each re-run on this head so
+that no figure is transcribed. **No database tier was run, no `test:db` or `test:backend`, and no
+hosted result is claimed.**
+
+---
+
+## 57. The operator runbook, the INT-084 retraction, and register hygiene (DO-002 operator half, DOC-002, DOC-001 in-repo half)
+
+### 57.1 Identifier allocation
+
+Read on `develop` `81b3bce804626353a1a7b9f4ba52f1306c8f8b6e`, where this file runs to **section 54**
+and **CC-44**, and where every section and identifier below that is settled. **This slice takes
+section 57 and CC-47** — not the next free pair, but the pair the coordinating session allocated to
+it, leaving sections 55 and 56 and identifiers CC-45 and CC-46 free for the two sibling lanes open
+at the same time. Nothing of any other lane is renumbered, in either direction: § 48.1's rule is
+that an identifier is a claim about the register at the moment it was raised.
+
+**A textual conflict with a sibling pull request at merge time is expected** and is resolved by the
+coordinator, not by this section moving. If a sibling lands section 57 first, THIS section
+renumbers itself and nothing else, on the § 52.1 precedent.
+
+**Resolved at the sync.** This branch merged `develop`
+`821ed6689d3d481ff2270e44c6e66bb9651a9b97` — the merge of PR #372 — on 2026-09-13. Both siblings
+had landed by then: **section 55 with CC-45** (#381) and **section 56 with CC-46** (#382). Neither
+took section 57, so nothing renumbered in either direction. The textual conflict in this file was
+resolved by order alone — 55, then 56, then 57 — with every line of all three sides kept. The
+slice this section records is **pull request #383**, opened on 2026-09-13 from that synced head.
+
+### 57.2 What changed, and what was minted
+
+| changed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | minted  |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| 1 new document, [`operator-runbook.md`](./operator-runbook.md) — the four merge-time operator acts in the order that is load-bearing, each with preconditions, the exact command, a verification query, a rollback criterion and a statement of what done looks like                                                                                                                                                                                                                                                                                                                                                 | nothing |
+| 1 table cell in `docs/product/owner-workflow-requirements.md` and 1 in `docs/phase-1/phase-1-27/finding-phase-disposition.md` — the P1-27-INT-084 overstatement retracted IN PLACE, both edited within their existing lines so neither file's pinned line count in `docs/phase-1/phase-1-27/deliverable-manifest.md` moves                                                                                                                                                                                                                                                                                           | nothing |
+| this section: the register's first index of open dispositions, the CC-40 note, and the routing record                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | nothing |
+| 3 rows of [`task-matrix.md`](./task-matrix.md) — DO-002, DOC-002 and DOC-001, each moved to `in open PR #383`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | nothing |
+| [`closure-record.md`](./closure-record.md), which arrived on `develop` in #381 — its state column, four of its rows, its totals and the five statements this slice or #382 falsifies, each corrected in place with the note that keeps the original claim visible. No verdict moves and no row moves to `end-to-end verified`                                                                                                                                                                                                                                                                                        | nothing |
+| `docs/phase-1/phase-1-27/evidence/evidence-manifest.json` — regenerated by `evidence:p1-27` after the sealed `finding-phase-disposition.md` edit. Digests only: no evidence document is added, removed or renamed, and `validate:p1-27-evidence` reports 41 documents in sync                                                                                                                                                                                                                                                                                                                                        | nothing |
+| **A drift this slice causes and does not fix:** `operator-runbook.md` is the **33rd** file in `docs/phase-1/phase-1-31/` — the directory held 31 at `81b3bce8` and 32 at `821ed668` (#381's closure record) — while the assurance index still states **31** at `security-and-qa-evidence.md` lines 803 and 1032. That is what re-opens **CC-46(d)**, and § 57.4 files it open rather than counting it closed. This slice does not correct the index's figure: a document count is settled by the phase's final re-measure, and correcting it here would put a second stale number in a file this branch does not own | nothing |     | nothing |
+
+**No product code, route, permission, operation, migration, seed, audit action, gate, allow-list,
+fixture or message catalogue changed.** This slice is documentation only.
+
+### 57.3 Dispositions
+
+| id           | finding                                                                                                                           | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | disposition                                                                                                                                                                                                                                                                                      | owner / slice | state              |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------- | ------------------ |
+| **CC-47**    | **this register carried no index of its own open dispositions, and every disposition is filed as "recorded" rather than "fixed"** | **70** distinct identifiers exist in this file at the head this branch synced onto, spread across the slice records' own disposition tables and, in two cases, across prose bullets with no state cell at all. **At `821ed668`, reading each disposition's own state cell: 28 open, 38 closed or settled, 4 stating no usable disposition.** **As this pull request leaves the file the three figures are the same and the membership is not: 28 / 38 / 4** — § 57.3 closes **CC-37(c)**, whose own state cell at line 2750 still reads `open, recorded`, and this slice's 33rd document in the phase directory re-opens **CC-46(d)**. § 57.4 names every one. _(This cell first read 64 = 25 + 35 + 4 against `81b3bce8`, then 27 / 39 / 4: the first was true of `81b3bce8`; the second credited § 57.3's own closure of CC-37(c) to the synced head, where it is not yet made, and did not carry CC-46(d)'s re-opening. Both are corrected here.)_ | **recorded and indexed, not re-adjudicated.** § 57.4 is a derived index and changes no state. "Recorded" is the honest verb for most of these: a disposition that names a remedy a later slice owes is not a fix, and an index that called it one would be the overstatement it exists to expose | this slice    | open, indexed      |
+| **CC-37(c)** | the tenant-administrator bundle backfill has a prerequisite no repository record named (§ 49.3, line 2750)                        | § 49.3's own remedy sentence: "the operator runbook that DO-001 and DO-002 both owe and that does not exist; **the ordering must be in it**"                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | **closed by this slice.** [`operator-runbook.md`](./operator-runbook.md) § 2 states the ordering and § 3 states the prerequisite, its exit code 5, the script line that raises it and its verbatim refusal text. § 49.3's row is left as written — this is a closure, not a rewrite              | this slice    | **closed in § 57** |
+| **CC-16**    | organisations provisioned before the P-10 widening cannot administer warranty policies (§ 29.2, line 634)                         | The register named an operator act after merge that no runbook carried. A runbook now carries it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | **still open, and deliberately.** A runbook is not a run. CC-16 closes when the act has been performed on the environments it is about, and the runbook's § 1 says how few of those there are                                                                                                    | a later act   | open, unchanged    |
+| **CC-20**    | organisations provisioned before the P-10 and P-11 widenings hold neither new code (§ 34.2, line 815)                             | The same act, the same runbook, the same distinction                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | **still open**, for CC-16's reason exactly                                                                                                                                                                                                                                                       | a later act   | open, unchanged    |
+
+### 57.4 Index of open dispositions — re-derived at the sync, not transcribed
+
+Every row below was read out of this file as this pull request leaves it: `develop`
+`821ed6689d3d481ff2270e44c6e66bb9651a9b97` (the merge of PR #372) merged into this branch, where
+the register holds **sections 1 … 56 and CC-01 … CC-46** from `develop` and this section adds
+**57** and **CC-47**. **This index moves no state of its own**; where a row's own state cell is
+ambiguous, the ambiguity is reported rather than resolved. Two states do move in this pull request,
+and neither is moved by the index: § 57.3 closes **CC-37(c)**, and this slice’s own new document
+re-opens **CC-46(d)** — § 57.2 records that drift.
+
+**The re-derivation this section promised has been performed.** The first version of this index was
+derived at `81b3bce8` and partitioned 64 identifiers as 25 open, 35 closed or settled and 4 stating
+nothing; that was true of `81b3bce8` and of nothing later, and it is superseded here rather than
+carried forward. The two siblings it named as outstanding have both landed and are folded in below:
+**section 55 / CC-45** (#381 — four `task-matrix.md` statements measured before their pull requests
+merged) and **section 56 / CC-46 with its (a)–(d) sub-entries** (#382 — the assurance index
+re-measured at the acceptance head). Neither section is edited by this slice and no identifier is
+renumbered; only their own state cells are read.
+
+**Open — 28 as this pull request leaves the file, and CC-47 raised by this section: 29 rows below**
+
+**Two bases, because they differ by exactly two identifiers.** At `821ed668` the open set holds
+**CC-37(c)** and not **CC-46(d)**. As this pull request leaves the file it holds CC-46(d) and not
+CC-37(c): § 57.3 closes CC-37(c), and this slice's 33rd file in the phase directory re-opens
+CC-46(d). The table below is the second reading — the file as it will be merged — and both members
+say which basis they are on.
+
+| id           | where             | one line                                                                                                                                            |
+| ------------ | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CC-01**    | § 3, line 66      | `wty.policy.manage` excluded from the tenant administrator bundle                                                                                   |
+| **CC-02**    | § 3, line 67      | `rpt.report.configure` excluded from the tenant administrator bundle                                                                                |
+| **CC-04**    | § 3, line 69      | `rpt.export` excluded from the bundle although shipped operations declare it                                                                        |
+| **CC-06**    | § 8, line 145     | the checklist-results read does not close P1-27-INT-088                                                                                             |
+| **CC-10**    | § 13, line 230    | the warranty list does not close the status-history table                                                                                           |
+| **CC-12**    | § 22, line 420    | two Backend docblocks still say navigation names `sal.delivery.read`                                                                                |
+| **CC-16**    | § 29.2, line 634  | organisations provisioned before P-10 cannot administer warranty policies                                                                           |
+| **CC-20**    | § 34.2, line 815  | organisations provisioned before the P-10/P-11 widenings hold neither new code                                                                      |
+| **CC-23**    | § 37.2, line 1076 | no index was added for the list ordering, and no migration was written                                                                              |
+| **CC-24**    | § 39.2, line 1297 | no batch variant of the four fact sources, so a page of N costs about 5N round trips                                                                |
+| **CC-27**    | § 40.2, line 1402 | compound: (a) approved 2026-09-10 apart from the source column, **(b) open**                                                                        |
+| **CC-27(b)** | § 40.2, line 1402 | the open half of CC-27, carried in CC-27's own state cell rather than in a row of its own                                                           |
+| **CC-29**    | § 41.2, line 1549 | four recommendations remain pending                                                                                                                 |
+| **CC-30**    | § 42.3, line 1750 | an operator without `sal.finance.view` is refused the whole queue                                                                                   |
+| **CC-31**    | § 43.3, line 1825 | FE-009 ships partial — a vehicle-filtered list, no per-record transition ledger                                                                     |
+| **CC-32**    | § 44.2, line 1939 | the printed sheet carries a reference where a person's name belongs                                                                                 |
+| **CC-34**    | § 46.2, line 2223 | D-4 names a transfer the ledger cannot express. **State cell ambiguous** — `recorded — no action here`; filed open, not resolved                    |
+| **CC-37(a)** | § 49.3, line 2748 | eleven `wty.`/`rpt.` writes are held to no payload-mirror gate                                                                                      |
+| **CC-37(b)** | § 49.3, line 2749 | the seven report-configuration writes have no consumer outside a generated manifest                                                                 |
+| **CC-38**    | § 50.3, line 2907 | amounts, quantities and durations display as the server's raw exact strings                                                                         |
+| **CC-38(a)** | § 50.3, line 2908 | two of three drill-through targets have no screen in this application                                                                               |
+| **CC-41**    | § 53.3, line 3403 | the overview is four report runs, not one summary read                                                                                              |
+| **CC-42**    | § 52.4, line 3248 | open, recorded, **PROVISIONAL** — the harness lane is unmerged                                                                                      |
+| **CC-43**    | § 54.4, line 3524 | **closed in part; one cause open, stated** — the browser correction pass of § 54.6                                                                  |
+| **CC-44**    | § 54.7, line 3623 | the handoff-gated reporting cases pass only with overridden browser credentials                                                                     |
+| **CC-45**    | § 55.3, line 3661 | four `task-matrix.md` statements older than the head they were measured on. **§ 55.3 has no state column**; filed open on `recorded, not corrected` |
+| **CC-46(c)** | § 56.4, line 3744 | the OpenAPI bare-object success-schema shortfall is chapter-wide, not `sal.delivery-*`                                                              |
+| **CC-46(d)** | § 56.4, line 3745 | **re-opened by this slice's 33rd phase file**, against the index's stated 31 (lines 803, 1032); `closed, recorded` at `821ed668`                    |
+| **CC-47**    | § 57.3            | this register carried no index of its open dispositions                                                                                             |
+
+**States no usable disposition — 4.** These are not open and not closed; two have no state cell at
+all and two have one a reader cannot act on, and that is the finding.
+
+| id        | where             | why it states nothing                                                                                                                  |
+| --------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **CC-22** | § 36.3, line 988  | its state cell reads `implemented, pending merge`. **That wording is stale**: § 36.1 records the slice merged as PR #360 at section 36 |
+| **CC-25** | § 38.3, line 1219 | a prose bullet, not a table row, so it has no state cell. Its text withholds the Start control pending a contract, which reads as open |
+| **CC-26** | § 38.3, line 1220 | a prose bullet for the same reason. Its text records a new backend prerequisite, which reads as open                                   |
+| **CC-40** | nowhere           | **allocated and never used.** See § 57.5                                                                                               |
+
+**Closed or settled — 38** as this pull request leaves the file. CC-03, CC-05, CC-07, CC-08, CC-09,
+CC-11, CC-13, CC-14, CC-15, CC-17, CC-18, CC-19, CC-21, CC-27(c), CC-28, CC-29a, CC-29b, CC-33,
+CC-33(a), CC-33(b), CC-34(a), CC-34(b), CC-34(c), CC-35, CC-35(a), CC-35(b), CC-35(c), CC-36,
+CC-37, **CC-37(c)** (closed by § 57.3 above, and `open, recorded` at `821ed668`), CC-39, CC-39(a),
+CC-39(b), CC-39(c), CC-41(a), CC-46, CC-46(a), CC-46(b). **At `821ed668` the same bucket holds 38
+too**, with CC-46(d) in it and CC-37(c) out.
+
+**Arithmetic, so a reader can check it rather than trust it.** This file carried **70** distinct
+identifiers before this section, on both bases. **28 open + 4 stating no usable disposition + 38
+closed or settled = 70**, as this pull request leaves the file, and **28 + 4 + 38 = 70** at
+`821ed668` as well — the totals coincide and the membership does not, because § 57.3 closes
+CC-37(c) and this slice re-opens CC-46(d) in the same pull request. The partition is exact and no
+identifier is counted twice: CC-27, CC-27(b) and CC-27(c) are three separate entries and are filed
+separately, which is why CC-27 appears under open on the strength of its (b) half while CC-27(c)
+appears under closed, and CC-46 with (a), (b), (c) and (d) is five entries by the same rule, of
+which (c) and (d) are open. **CC-47**, raised by § 57.3, is the seventy-first and is not inside
+that arithmetic. _(This paragraph first read 64 = 25 + 4 + 35 with CC-47 the sixty-fifth, then
+27 + 4 + 39: the first was true of `81b3bce8` when written; the second counted CC-37(c) closed at a
+head where it is not and missed CC-46(d)'s re-opening. Both are corrected here.)_
+
+### 57.5 CC-40 — allocated, never used, and a permanent hole
+
+**Verified at this head before being written.**
+
+- **It was allocated.** § 52.1 (line 3091) records `section 53, CC-39, CC-40, CC-41` as belonging
+  to `feature/p1-31-operational-overview`, settled on `develop` as PR #376. § 53.1 (line 3366)
+  records it instead as the acceptance-harness lane's, claiming section 52. **Both lanes claimed
+  it**, and § 52.1 says so in as many words.
+- **The collision was resolved by the harness lane moving.** § 52.5 (line 3271): "When
+  `feature/p1-31-operational-overview` merged as #376 and settled the **CC-40** both branches had
+  claimed, THIS slice moved to **CC-42** — its own identifier."
+- **The lane that kept it never used it.** § 53.3's disposition table carries exactly two rows,
+  **CC-41** and **CC-41(a)** (lines 3403 and 3404). There is no CC-40 row in § 53 or anywhere else
+  in this file — a search for `CC-40` returns only allocation-table rows and sentences about the
+  collision, and not one finding.
+
+**So CC-40 names no finding and never will.** Under § 48.1 an identifier is a claim about the
+register at the moment it was raised and is never renumbered, which means the hole is permanent by
+the same rule that protects every other number here. **No finding is invented to fill it**, and a
+later slice that reaches for the next free identifier must skip it.
+
+**One further disagreement, recorded and not resolved.** § 52.1's line 3091 also attributes
+**CC-39** to the overview lane, while § 51.1 (lines 2968–2970) records the delivery-start-selector
+lane taking section 51 and CC-39, and § 51.3 disposes of CC-39, CC-39(a), CC-39(b) and CC-39(c).
+CC-39 is therefore used, and used by section 51. The line-3091 attribution is a snapshot taken
+mid-collision and is left standing as written; **nothing here renumbers it.**
+
+### 57.6 Routing record
+
+The chapter requires the controlled record to be routed to a named approval owner.
+
+| question                                        | answer                                                                                                                                                                                                       |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Where has this register been sent for approval? | **Routed to nobody as of 2026-09-13.**                                                                                                                                                                       |
+| By whom, and when?                              | No routing event exists. No recipient is named, because naming one would be inventing one                                                                                                                    |
+| Has any approval been granted on it?            | **No.** Nothing in this file is approved, and no section claims to be                                                                                                                                        |
+| What has been decided by the Owner?             | Individual decisions, recorded in their own dated files — `owner-decisions-2026-09-09.md`, `-09-10.md` and `-09-12.md`. **A decision on a question this register raised is not an approval of the register** |
+
+[`security-and-qa-evidence.md`](./security-and-qa-evidence.md) § 13 states the same thing about
+itself: "This version has been routed to nobody and claims no approval." **This row is that fact
+recorded in the register it is about**, so a reader of the register does not have to find it
+somewhere else.
+
+### 57.7 What this slice did NOT do, and what is not claimed
+
+- **It performed none of the acts it documents.** No migration was applied, no seed was applied,
+  no backfill was run, and no database was connected to from this branch. The runbook is a
+  description, and § 1 of it says exactly what the one recorded performance does and does not prove.
+- **It closed neither CC-16 nor CC-20.** Both close on a run, not on a document.
+- **It did not touch the Owner's document.** The fourth A0-named DOC-001 correction —
+  `OWR-2026-09-06-G-10`'s evidence line naming `sal.deliveries.delivering_employee_id` where the
+  table is `sal.delivery_records` — is in `docs/product/owner-requirements-2026-09-06.md` at line
+  1501, in a requirement whose status is **Undecided**. **Changing an Owner requirement is the
+  Owner's act**, and it is recorded as owed rather than performed.
+- **It re-adjudicated nothing.** § 57.4 reports each disposition's state as that disposition
+  states it; where a state cell is stale or missing, that is reported, not corrected.
+- **It moved no other lane's row.** Only DO-002, DOC-002 and DOC-001 moved in the task matrix, and
+  none of the three moved to `end-to-end verified` — rule 2 forbids it, and documentary evidence
+  never earns that state.
+- **No hosted run, no database tier, no browser result and no acceptance result is claimed.**
+
+---
+
+## 58. The write-shape gate and the audit-class review — **PROVISIONAL** (SEC-004)
+
+**Slice:** `feature/p1-31-write-shape-gate`, branched from protected `develop`
+`d517a5fc70b8d851edbd81c374c4ce05e92d7418` — the head carrying pull request **#381**, the phase
+closure record. The work is committed **on the unmerged branch `feature/p1-31-write-shape-gate`**
+and was not on `develop` when this section was written; **the pull request was opened at this lane's
+merge-queue turn, when the unit and web runs were re-recorded** — it is **#384**, opened against
+`develop` `ea3b7fc0`. It has **no hosted result yet**: that pull request's own run is what produces one. Its intended ownership profile is `p1-31-frontend`; section 58.6 records what
+resolves locally instead. Its application-source footprint is **two files in `apps/web`**, both in
+the warranty feature — the request-body type the generation adapter takes, extracted so the gate can
+compare it. Everything else is tooling, tests and phase records.
+
+**Authority:** the SEC-004 row of [`task-matrix.md`](./task-matrix.md), and
+[`security-and-qa-evidence.md`](./security-and-qa-evidence.md) § 4, which records in its own words
+the two gaps this slice closes — that the eleven `wty`/`rpt` writes "are therefore held to no mirror
+gate at all", and that the audit declarations are counted while "a count is not a review".
+
+### 58.1 Identifier allocation — PROVISIONAL, dated 2026-09-13 at `develop` `d517a5fc`
+
+The register in this file, at the head this branch now carries — the merge of `develop`
+`ea3b7fc0` — runs to **section 57** and **CC-47**: section 54 is the acceptance run (#380),
+section 55 the closure record (#381), section 56 the assurance-index re-measurement (#382) and
+section 57 the operator runbook (#383), all four merged. Sections **56** and **57** and the
+identifiers **CC-46** and **CC-47** were held by sibling P1-31 lanes on unmerged branches when this
+allocation was raised, in the same way section 53.1 records for the range below it, and both have
+since merged. So this slice keeps **section 58** and **CC-48**, allocated to it alone and untouched
+by the merge, which restored the order to 55, 56, 57, 58 and renumbered nothing; both stay
+**PROVISIONAL** until the branch merges. Section 48.1's rule governs a collision: an identifier is allocated when its finding
+is raised and is **never renumbered** to follow heading order, so a collision moves THIS section and
+this identifier and leaves every existing one alone. A textual conflict with a sibling lane at merge
+time is expected and is resolved by the coordinator.
+
+_(True when written, at `develop` `d517a5fc`: the register then ran to **section 55** and
+**CC-45**, and sections 56 and 57 with CC-46 and CC-47 were "not present at this head" and were
+"assumed held by P1-31 lanes on unmerged branches". The expected thing then happened. Both merged —
+section 56 / CC-46 as **#382**, section 57 / CC-47 as **#383** — and the merge of `ea3b7fc0` into
+this branch placed section 58 above both. All four allocations stand as raised; none was
+renumbered.)_
+
+### 58.2 What changed, and what was minted
+
+| changed                                                                                                                                       | minted       |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| `scripts/ci/check-p1-31-write-shape.mjs` — a new gate over the `wty` and `rpt` writes                                                         | 1 npm script |
+| `tests/ci/p1-31-write-shape.test.ts` (18 cases) and `tests/ci/p1-31-write-shape-extraction.test.ts` (1 case)                                  | nothing      |
+| `scripts/ci/check-command-coverage.mjs` — one register entry, tier `required`; `package.json` — the script, and one edge in `verify:policies` | nothing      |
+| `apps/web/src/features/warranty/warranty-contract.ts` — the exported `WarrantyGenerateBody`; `warranty-api.ts` — the adapter takes it         | nothing      |
+| `docs/phase-1/phase-1-31/audit-class-review.md` — the review of all 45 audit declarations                                                     | nothing      |
+| the SEC-004 row of the task matrix, `not started` → `in open PR (#384)`; this section                                                         | nothing      |
+
+**No Backend source changed** — no route, no service, no repository, no migration, no seed, no
+permission, no audit action. **No operation was added, renamed or withdrawn**, and the P1-24 register
+is untouched. On the web side the change is type-level only: the inline request-body type of
+`generateWarranty` was moved into the warranty contract as the exported `WarrantyGenerateBody` and
+the adapter now takes it. **No screen, no request, no field and no message catalogue changed**, and
+the body the adapter sends is byte-for-byte what it sent before.
+
+### 58.3 The gate, and why it is a sibling rather than a widening
+
+`check-p1-30-payload-parity.mjs` freezes `P1_30_DOMAINS = ['svc', 'quo', 'inv', 'sal']`, its scope is
+pinned by name in its own suite, and P1-30's closure rests on it. **CC-37(a)** refuses widening
+another phase's gate, so the new file is a sibling and that one is **byte-identical** on this branch.
+
+It borrows the P1-29 gate's comparison, schema locator, naming rule and interface reader rather than
+copying them — a second reader is how the brace-counting scanners drifted — and it **parses**: the
+operation surface comes from the P1-24 register, the schema each handler parses is located in the
+handler's own AST, the zod objects are converted to JSON Schema by a vitest extraction rather than
+reconstructed by hand, and the mirror is read with the TypeScript parser. Nothing in it matches
+source text.
+
+Three things are its own:
+
+1. **The mirror lives in the feature trees.** The P1-28 contract allow-list names files under
+   `apps/web/src/lib/contracts/` and a P1-31 operation has no row in it, so the gate reads
+   `features/warranty/warranty-contract.ts` and `features/reports/reports-contract.ts`, hand-frozen
+   by name. The generated `lib/api/idempotent-operations.ts` manifest is never a mirror.
+2. **Type aliases are resolved.** Those two mirrors spell a closed vocabulary as an exported alias
+   over an exported `as const` array, because the same array is what a screen iterates to draw the
+   control. The borrowed interface reader knows nothing about aliases, so every closed vocabulary on
+   this surface read as an unresolved reference and the first run reported **4 problems that were
+   not drift**. The gate now resolves exactly two alias forms before comparing and leaves every
+   interface the borrowed reader returns untouched. An alias it cannot resolve **still fails** —
+   proved by a case that widens one to `string`.
+3. **An extra anti-vacuity clause.** Five of the eleven in-scope writes are declared away, so a
+   scope that had drifted entirely into `PENDING_MIRRORS` would otherwise pass while comparing
+   nothing.
+   The gate reports how many operations it actually compared and is red at zero.
+
+### 58.4 What the gate measured, and the three declarations it carries
+
+Its own report line on this branch: **20 operations in scope `[wty, rpt]`, 11 writes, 10 with a
+body, 1 declared bodyless, 4 pending a consumer, 6 compared against 30 mirror interfaces and 5
+resolved aliases, 0 problems.**
+
+- **`BODYLESS` (1).** `rpt.report-configuration-version-publish` parses path parameters only.
+- **`SHARED_MIRRORS` (2).** The warranty mirror shares one `WarrantyStatusSetBody` between the plan
+  and coverage status commands. The share is declared rather than silently accepted as a missing
+  interface, and the gate fails the moment the mirror declares either operation's own name.
+- **`PENDING_MIRRORS` (4), and no mirror was invented to avoid them.** All four are the
+  `rpt.report-configuration-*` writes that carry a body: **nothing under `apps/web` calls them
+  except the generated manifest**, so writing an interface for them would have manufactured the
+  declared-but-never-wired shape this task exists to catch — **CC-37(b)**. Every entry is stale the
+  moment its mirror is written, and the gate fails until the entry is deleted.
+- **The fifth pending entry was closed rather than disclosed.** `wty.warranty-generate` was declared
+  pending on a first pass because it HAS a consumer — the handover screen's issue control sends it —
+  but the adapter took a structural parameter, so no exported interface carried the shape. A hole
+  the gate discloses is still a hole, so the type was extracted to `WarrantyGenerateBody` in the
+  warranty mirror, the adapter takes it, the entry was deleted, and the operation is now compared
+  like any other. That is the difference between the report line above and the first one this slice
+  produced: **6 compared rather than 5, 4 pending rather than 5.**
+
+**A correction to a figure carried into this task.** The task brief described **seven**
+`rpt.report-configuration-*` **writes**. Re-derived from the register: there are seven
+`rpt.report-configuration-*` **operations** — **five writes and two reads** — and
+[`security-and-qa-evidence.md`](./security-and-qa-evidence.md) § 4 says "operations", not "writes".
+The count of eleven `wty`/`rpt` writes is confirmed exactly (6 `wty`, 5 `rpt`).
+
+### 58.5 The audit-class review
+
+[`audit-class-review.md`](./audit-class-review.md) covers the same 45-operation surface § 4 of the
+evidence index measures, taken twice and agreeing: from the P1-24 register filtered to the eight
+namespaces, and from a TypeScript parse of the `defineOperation` literal in each of the 33 route
+modules.
+
+- **21 `auditClass: 'none'` and 24 `'privileged'`** — both figures confirmed. All 21 are GETs, all 24
+  are writes, and **all 21 are written EXPLICITLY** rather than falling to the registry's `'none'`
+  default, which is what makes them reviewable at all.
+- **All 24 `'privileged'` declarations carry an `auditAction`**, every code exists in
+  `apps/api/src/server/auth/audit-actions.ts`, and every one is declared there with a matching
+  `class: 'privileged'`. **None is missing.**
+- **Three open items are recorded rather than justified away**: the two reads that hold
+  `sal.finance.view` and are silent, `rpt.report-run`, and the two employee-register reads. Fixing
+  any of them is an API-source change on the Backend lane and is out of this slice's scope. **No
+  Owner decision was sought on any of them and none is claimed.**
+
+### 58.6 Verification run locally on this branch
+
+Every command below **exited 0 at this head**. They were run locally, on this machine; no hosted
+result is claimed for any of them, and the two commands that do not yet exit 0 are named underneath
+rather than left out.
+
+| command                                                                   | scope                                                                     |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `node scripts/ci/check-p1-31-write-shape.mjs`                             | the new gate, whose report line is quoted in section 58.4                 |
+| `npx vitest run tests/ci/p1-31-write-shape.test.ts` and its extraction    | the two new test files, 19 cases, run directly rather than through a tier |
+| `npm run validate:command-coverage`                                       | the register entry and the `verify:policies` edge                         |
+| `npm run test:unit`                                                       | the root unit tier, 124 files                                             |
+| `npm run lint` · `npm run typecheck` · `npm run format:check`             | the root workspace; root `typecheck` does not cover `apps/web`            |
+| `npm run typecheck:web` · `npm run lint:web` · `npm run format:check:web` | the web workspace, for the two warranty files                             |
+| `npm run test:web`                                                        | the web tier, which owns the adapter the extracted type serves            |
+| `npm run validate:plain-language` · `npm run validate:encoding`           | the catalogues, and the new files as UTF-8 without a BOM                  |
+| `npm run validate:generated-artifacts`                                    | the regenerated P1-27 evidence manifest                                   |
+
+**Two commands were NOT green at the head above, and both are green at the merge-queue head.**
+
+- `npm run validate:p1-27-closing-values` **exited 1** there: the recorded `unit` and `web` runs were
+  taken at `e5c52efd`, and this branch changes executable paths under them, so both read
+  `RUN_RECORD_STALE` and the unit record's file count (122) disagreed with the tree (124). Nothing was
+  wrong with the runs; they were stale by construction and were **re-recorded at this lane's
+  merge-queue turn**, on the merge with `develop` `ea3b7fc0`, where the command reports 0 problems.
+- `npm run verify:policies` **could not pass** at the earlier head, because that command is one of its
+  edges; it was not run to a result there and no result was quoted. On the merge-queue head, with the
+  record fresh, the aggregate exits 0.
+
+**What the re-record COST, stated plainly.** `develop` `ea3b7fc0` carried a **hosted-attested**
+record for both tiers — hosted run **34748952540** at head `b217b8a1`, bound by the QA-001 lane.
+Re-recording at the merge head **SUPERSEDED that binding for both tiers with LOCAL records**, and
+`evidence/local-run-ledger.json` shrank from **64 lines to 38** as the provenance blocks went with
+it. That was not avoidable and it is not a regression: this branch changes executable paths under
+both tiers — `scripts/ci/check-p1-31-write-shape.mjs`, `tests/ci/p1-31-write-shape.test.ts`,
+`tests/ci/p1-31-write-shape-extraction.test.ts`, `package.json`,
+`scripts/ci/check-command-coverage.mjs`, and the two warranty files under `apps/web` — so a run
+taken at `b217b8a1` cannot describe this tree, and the rule that a record must describe the head it
+is read against is what retires it. **Hosted attestation is re-established by this pull request's own
+hosted run.** The binding is re-taken before merge only if the queue owner asks; otherwise the record
+stays local-pending, as every other lane's does between its re-record and its attestation.
+
+`npm run validate:phase-ownership` resolves this branch to profile **`p1-26-frontend`** locally — the
+known local false-profile trap, where the profile is resolved from a ref the local checkout does not
+carry in the shape the hosted run does. The intended profile is **`p1-31-frontend`**, and that
+resolution is **verified only by the hosted run**; no local result stands for it.
+
+### 58.7 What this slice did NOT do, and what is not claimed
+
+- **No database was touched.** `test:db` and `test:backend` were not run; the shared instance is held
+  by another lane. The unit tier's own count moves by **+19 cases in 2 files**, and that delta is
+  **UNRECORDED** — tier baselines are recorded from the hosted run, never from a local one.
+- **No hosted run, no browser check and no acceptance result is claimed**, and SEC-004 therefore does
+  **not** move to `end-to-end verified`: rule 2 of the state vocabulary refuses that state without an
+  acceptance record, and documentary evidence never earns it.
+- **No gate was weakened, no allow-list widened, no suppression added and no floor moved.** No
+  existing gate file changed except the command register, which gained one entry. **One gate
+  weakness was OBSERVED and is NOT fixed here: the doc-counts pin accepts either provenance word
+  without reading the ledger — recorded for the final re-measure.**
+- **No mirror, screen, adapter or consumer was invented** to make a pending operation pass. The one
+  mirror this slice adds, `WarrantyGenerateBody`, is the type an EXISTING adapter with an EXISTING
+  consumer already had inline; nothing was written for an operation no screen calls.
+- **No other task-matrix row was touched**, and no other change-control identifier was used.
+
+## 60. The refused-download negative and the phase coverage record — **PROVISIONAL** (SEC-002 file-access half, QA-001)
+
+**Slice:** `feature/p1-31-refused-download-and-coverage`, intended ownership profile
+`p1-31-frontend`. **Baseline:** protected `develop` **`af924cab60a9b51187257b2a345e2ff49de73e87`**,
+the head carrying pull request #384 (section 58, the write-shape gate). The branch was written on
+`d517a5fc` — the head carrying #381 — and merged that baseline at its merge-queue turn,
+where it was opened as pull request **#385**; every figure
+in both artefacts was re-derived on the merged tree rather than carried over. `main` `1262de74`,
+untouched. Two commits of content, one merge, one test file and one new record: **no application
+source, no gate, no allow-list, no baseline and no migration changed.**
+
+**Authority:** the SEC-002 and QA-001 rows of [`task-matrix.md`](./task-matrix.md), and
+[`security-and-qa-evidence.md`](./security-and-qa-evidence.md) § 2 and § 5 — § 2 leaves the
+file-access half of SEC-002 with no negative behind it, and § 5 records in its own words that "no
+phase-level coverage record exists".
+
+### 60.1 Identifier allocation — PROVISIONAL, dated 2026-09-13 at `develop` `af924cab`
+
+Read on the merged tree. This register holds sections 1 … 58 and identifiers CC-01 … CC-48; section
+58 and CC-48 arrived with #384 in the merge above. **Section 59 and CC-49 are NOT free and are not
+taken here**: the closure plan pre-allocated them to the escalation lane, which is unmerged, and
+section 48.1's rule is that an identifier is allocated when its finding is raised and is **never
+renumbered** to follow heading order. So this slice keeps the pair the closure plan allocated to it,
+**section 60 and CC-50**, and renumbers nothing.
+
+**This section therefore lands out of heading order, before section 59, and that is the intended
+outcome rather than a defect.** A reader arriving at a register that runs 55, 56, 57, 58, 60 should
+expect section 59 and CC-49 to arrive later from the escalation lane, not conclude that a number was
+skipped. This file already carries one genuine hole, CC-40, recorded at section 55.1; the gap at 59
+is a different thing and is stated here so the two are not confused.
+
+### 60.2 What was delivered
+
+| file                                                         | change                                                                                                                                                                                                |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/tests/delivery-signature-refusal.dom.test.tsx`     | **new** — the refused-download negative for the handover signature ledger and the printable sheet, **11 declared cases**                                                                              |
+| `docs/phase-1/phase-1-31/coverage-record.md`                 | **new** — the phase-level component and unit coverage record for QA-001                                                                                                                               |
+| `docs/phase-1/phase-1-27/clean-room-evidence.md`             | six sentences re-pinned to this tree — 141 → **142** web test files and 4009 → **4020** executed cases, in the prose and in the measures table; hosted run `34759286884` reports the same two figures |
+| `docs/phase-1/phase-1-27/evidence/closing-value-ledger.json` | the six CR-A locators for those sentences re-pinned to the new wording and values                                                                                                                     |
+| `docs/phase-1/phase-1-27/deliverable-manifest.md`            | the derived file-count markers and their visible cells re-derived on the merged tree; the local-run-ledger line counts re-derived after the re-record                                                 |
+| `docs/phase-1/phase-1-27/evidence/local-run-ledger.json`     | the unit and web tiers re-recorded at this head, by `check-p1-27-closing-values.mjs --record`                                                                                                         |
+| `docs/phase-1/phase-1-27/evidence/evidence-manifest.json`    | regenerated from the merged tree                                                                                                                                                                      |
+| `docs/phase-1/phase-1-31/task-matrix.md`                     | the SEC-002 and QA-001 rows moved, on the evidence below and no further                                                                                                                               |
+| `docs/phase-1/phase-1-31/change-control-2026-09-08.md`       | this section                                                                                                                                                                                          |
+
+#### The negative — what it actually proves
+
+The suite renders `DeliveryDetailScreen` and the printable handover sheet with the signature-ledger
+read **refused**, and asserts what the screen does with a refusal it cannot recover from:
+
+- the shared permissions message is rendered **with the reference the backend logged**, so an
+  operator can quote it, and the refusal is never drawn as an empty ledger or swallowed into a blank
+  surface;
+- **no further page is requested** once the first read was refused;
+- the rest of the handover stays readable, and a write control the caller's own permission codes
+  grant is still offered — a refused read does not silently disable an unrelated command;
+- **nothing on the screen would dereference a stored signature document**: zero links in the region,
+  and neither the signature document version id nor the receiver's identity-evidence document
+  version id appears in the rendered text. `shared.attachment-download-authorize` is a
+  security-class command, and a speculative affordance would write an audit record for a download
+  nobody performed;
+- the same statement is asserted in **Arabic**;
+- the printable sheet says the part could not be read, with its reference, and still composes and
+  offers the rest of the sheet.
+
+**The eleventh case is the control, and it is the reason the negatives mean anything.** Ten of the
+cases assert `not.toContain` over a document reference; on a screen that had simply rendered nothing
+those assertions pass for the wrong reason. So one case drives the ledger read to **succeed**,
+proves the signature is on the screen as an event and the receiver's evidence as prose, and then
+asserts that **both** document version ids are still withheld and no link exists — with the
+adapter's answer demonstrably carrying them. Without that case the suite would be a false negative
+of exactly the shape this project has shipped before.
+
+**What it does not prove.** The adapter is mocked, as every DOM suite in this repository mocks it.
+The suite proves the screen's behaviour given a refusal; it does not prove the API refused, that the
+transport carried the refusal, or that the stored document is unreachable by any other route. No
+end-to-end claim is made and none is implied.
+
+#### The coverage record — what it contains
+
+`coverage-record.md` is the cross-screen artefact QA-001 was missing. It states the method for every
+figure before the figures, and holds:
+
+- **a per-suite table of the twelve suites on this surface, 407 declared cases**, re-derived on the
+  merged tree with the same declaration regex `tests/ci/web-test-floor.test.ts` uses. Because that
+  regex counts an `it.each` table as one declaration, and six of the twelve use one, **407 is a
+  floor and not the executed total** — the record says so where the number appears;
+- **the reconciliation against § 5 of the assurance index**: the index publishes 396 across eleven
+  files at `81b3bce8`, and the two agree exactly — the eleven are these twelve less the new suite,
+  and `396 + 11 = 407`, file by file;
+- **five holes, stated as holes**: the checklist-template administration screen that does not exist
+  (FE-004's remaining half); that **no P1-31 feature code is inside the coverage instrument at
+  all**, so no coverage percentage exists for any of it; that the dashboard route tier the P1-31
+  pages sit in is under its own floor and exempt from it; the mount point of the start-a-handover
+  panel that no suite renders; and what the suites deliberately do not assert;
+- **the limits**, in § 1 and again in § 6: component and unit only, every adapter mocked, no
+  end-to-end claim, and the record measures the phase's own surfaces rather than the web tier.
+
+Its § 6 summary answers five statements and answers **four of them "no"**. The record therefore
+closes the "no phase-level coverage record exists" item and closes nothing else.
+
+### 60.3 What was PENDING, what is now FILLED, and from where
+
+**Seven figures in the coverage record were written as `pending the web tier run at this lane's
+queue turn`. Five are now filled from this pull request's own hosted run. Two are not filled: they
+are restated as OPEN, with the reason and the remedy, rather than left as a pending marker.**
+
+**The single source, and the only one.** Hosted run **`34759286884`** — workflow `PR CI`
+(`.github/workflows/pr-ci.yml`), job `Web quality / web-quality` — at head
+**`1a167c19bc2a30f42c2c81b72462b901e415a4e7`**, artefact **`evidence-web-quality`**, artefact id
+`10318272841`, **477000 bytes**, zip sha256
+`616a4318a957ea5ee4d47d3a968cc8bdf3b17203b3cb29824fd820359e92055e`, which is the digest the
+artefacts API publishes for that artefact and the digest of the zip as downloaded.
+
+**From `coverage-web.md`** — the four `measured` cells beside the committed floors, each with the
+baseline and the delta that file prints: lines **84.64%** (baseline 82.48%, +2.16 pp), statements
+**82.88%** (81%, +1.88 pp), functions **87.21%** (85%, +2.21 pp), branches **79%** (77.37%,
++1.63 pp); the ratchet's terms, tolerance **0.5 pp** and touched-file floor **60%**; the eight
+critical-module rows, all above their floors; and **the gate verdict, `Coverage gate: pass`**.
+
+**From `test-totals-web.json`, cross-checked against `apps/web/vitest-web.json`** — the executed
+case total and its pass/skip/todo counts: **4020 collected, 4020 executed, 4020 passed, 0 failed, 0
+skipped, 0 todo**, across **142 files** and 952 `describe` blocks. The file count agrees with the
+walk of the tree the record already carried, and the two P1-27 figures re-pinned by this slice
+(142 files, 4020 executed) are the same two numbers, so their local derivation is attested by this
+run rather than merely repeated.
+
+**Two figures stay OPEN, and the cause is the upload list, not a missing run.** The per-tree
+instrumented-file counts (coverage record § 4, H-2) and the dashboard route tier's own measurement
+(§ 4, H-3) both need the per-file coverage summary. **No hosted job uploads
+`apps/web/coverage/web/coverage-summary.json` or `coverage-gate-web.json`.** The web coverage
+ratchet writes both at `.github/workflows/_reusable-node-quality.yml:707-711`; the upload list at
+`:864-886` carries neither — it names `coverage/unit/coverage-summary.json`, `apps/web/vitest-web.json`,
+`test-totals-web.json` and the markdown files. Web coverage therefore reaches a reader only as the
+aggregate `coverage-web.md`, which carries the four percentages and the verdict and no per-file
+figure at all. Read directly on this run's artefact: fourteen files, and neither of those two among
+them. **Remedy:** add both to the `evidence-web-quality` upload list at
+`_reusable-node-quality.yml:864-886`, on the CI-automation lane that owns that workflow. Until then
+the two figures are measurable only locally and are **not cited** anywhere.
+
+**No baseline was re-recorded from this run.** `.github/ci-baselines/` is untouched by this slice.
+The hosted percentages are recorded as a measurement of this head, never as a floor; a floor moves
+on the coverage-policy lane's own act. The local coverage run taken at this queue turn, which
+existed only to see the gate execute, remains uncitable and appears in no committed file.
+
+**One pre-existing inconsistency is OBSERVED, under no identifier, and not corrected.**
+`.github/ci-baselines/coverage-baseline.web.json:5` (`establishedBy`) records the re-establishment
+as coming from "hosted run id 34321869051 … artifact `evidence-web-quality`, file
+`apps/web/coverage/web/coverage-summary.json`". That artefact does not carry that file and, on the
+upload list above, never did — so the 131-instrumented-file figure in that same field has no
+published artefact behind it. The baseline is the coverage-policy lane's artefact; a figure in it
+moves by that lane's measurement, and raising an identifier for it here would be claiming a finding
+this slice has no authority to close. Stated for the next reader; nothing in `.github/ci-baselines/`
+is edited.
+
+**This commit is docs-only, and it is made AFTER the run it cites.** It changes no test, no
+application source, no configuration and no workflow, so the tier run `34759286884` measured is
+byte-for-byte the tier that merges: the figures above remain valid for the head this pull request
+merges, which is this commit sitting on top of `1a167c19`. Anything that would move them — a test
+file, a source file under an instrumented root, a change to the coverage include list — would also
+invalidate the citation, and this slice does none of it.
+
+### 60.4 What this closes for SEC-002, and what it does not
+
+SEC-002 has two halves, and they are now in different states.
+
+- **The export half was already decided and is not touched here.** D-6 settles it: `rpt.export` is
+  **withheld** and no audit export is provided. An approved withholding is a decided posture, not an
+  open one, and this slice neither revisits nor re-states it as a gap.
+- **The file-access half now has a negative behind it.** § 2 of the assurance index recorded the
+  posture in prose; nothing executed asserted it. The suite above is that assertion, at the
+  component layer, in both text directions, with a control that stops it passing vacuously.
+
+**That is not the whole of the file-access half.** The negative proves the screen publishes no
+reference and offers no affordance; it does not prove the server refuses a download to an actor
+lacking the code, which is a backend assertion against a running environment and is not made here.
+So SEC-002 moves on evidence and stops short of the state that would need an acceptance record.
+
+### 60.5 Dispositions
+
+| id            | finding                                                                                                               | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CC-50**     | **the phase coverage record exists, and seven of its figures are unfilled because only a hosted run may supply them** | The record holds a per-suite table of twelve suites and 407 declared cases, re-derived on `develop` `af924cab`, and five named holes. Seven figures carry `pending the web tier run at this lane's queue turn`: the per-tree instrumented-file counts (H-2), the dashboard route tier measurement (H-3), the executed case total with the gate verdict (§ 5), and the four `measured` cells beside the floors (§ 5). A local coverage run was taken at this queue turn to see the gate execute; its figures are uncitable and were written nowhere. **Resolved at this lane's follow-up:** five of the seven cells are filled from the hosted run named opposite; the remaining two are re-stated as open under CC-50 (a). | **CLOSED — filled from hosted run `34759286884`** at head `1a167c19`, artefact `evidence-web-quality` (id `10318272841`, 477000 bytes, zip sha256 `616a4318a957ea5ee4d47d3a968cc8bdf3b17203b3cb29824fd820359e92055e`), and from no other source. `coverage-web.md` supplies the four `measured` percentages with their deltas and the gate's own verdict; `test-totals-web.json`, cross-checked against `apps/web/vitest-web.json`, supplies the executed case total with its pass/skip/todo counts. Nothing local was written into the record and no baseline moved. **Sub-item (a) below stays OPEN**, so QA-001 stays `phase-level incomplete`. |
+| **CC-50 (a)** | **the per-file web coverage summary reaches no reader, so H-2 and H-3 can be filled from no hosted artefact today**   | `.github/workflows/_reusable-node-quality.yml:707-711` writes `apps/web/coverage/web/coverage-summary.json` and `coverage-gate-web.json` in the web coverage ratchet step; the upload list at `:864-886` carries neither, so `evidence-web-quality` publishes web coverage only as the aggregate `coverage-web.md`. Confirmed by reading run `34759286884`'s own artefact: fourteen files, and neither of those two among them.                                                                                                                                                                                                                                                                                            | **OPEN.** Remedy: add both files to the `evidence-web-quality` upload list at `_reusable-node-quality.yml:864-886`, on the CI-automation lane that owns that workflow; the per-tree instrumented-file counts (H-2) and the dashboard route tier measurement (H-3) are then filled from the first run that carries them. Until then both figures are measurable only locally and are cited in no record.                                                                                                                                                                                                                                            |
+
+### 60.6 What this slice did NOT do, and what is not claimed
+
+- **It ran no database work.** `test:db` and `test:backend` were not run and no migration, seed or
+  schema object was touched. No browser check and no acceptance result is claimed. The one hosted
+  result cited anywhere in this section is the `web-quality` job of run `34759286884`, quoted from
+  that run's own artefact.
+- **It moved no baseline and no floor.** `.github/ci-baselines/` is untouched, and no local
+  measurement was written into a record, a baseline or this section.
+- **It claims no gate passed on a local run.** The coverage gate verdict now written into the
+  coverage record is the HOSTED gate's own verdict, transcribed from run `34759286884`'s
+  `coverage-web.md`. The local checks this slice ran are named in the pull request, and the local
+  coverage run's figures are recorded in no document.
+- **It changed no application source, no gate, no allow-list, no suppression and no npm script.**
+  The only executable file it adds is a test.
+- **It did not move SEC-002 or QA-001 to `end-to-end verified`.** Rule 2 of the state vocabulary
+  refuses that state without an acceptance record, and both artefacts here are a component suite and
+  a document.
+- **It corrected no other slice's figure**, and it used **no change-control identifier other than
+  CC-50**. One disagreement was OBSERVED in another slice's record and is deliberately left there:
+  § 5 of `security-and-qa-evidence.md` says "seven files use `it.each`" while § 5's own table beside
+  it shows **six**, and six is what the regex returns over those same eleven files on this tree
+  (`delivery.dom` 3, `delivery-api` 4, `reports.dom` 2, `reports-api` 3, `reports-overview` 1,
+  `audit-log` 1). The number is a floor qualifier, so **neither reading moves the 396** and no count
+  in this slice's own record depends on it. `security-and-qa-evidence.md` is section 56's artefact
+  and a figure in it moves by that slice's measurement; raising an identifier for it here would be
+  claiming a finding this slice has no authority to close. Stated so the next reader does not
+  rediscover it as a defect.
+
 ## 59. Closing the SEC-003 residue and QA-004 — what was measured, and what was owed
 
 This section is the change-control record of one slice, allocated § 59 and **CC-49** and holding
@@ -3643,6 +4385,13 @@ platform-scope row that happens to carry the prefix. Both suites in this section
 against a disposable container; § 59.5 records the target.
 
 ### 59.1 The measurement came first, and it contradicted the brief
+
+**Why § 59 sits below § 60 on the page.** § 59 was allocated to this slice before either
+neighbour merged, and § 48.1 forbids renumbering an identifier once allocated. The merge queue
+then ordered the slices differently from the numbers: § 60 reached `develop` first, so this
+section is appended after it. The page is therefore in queue order below § 58, not in numeric
+order, and that is deliberate — the number identifies the slice, the position records when it
+landed.
 
 The slice was scoped as ten owed stale-`If-Match` cases, sixteen owed replay cases and four owed
 privilege-widening cases. Every one of those was measured against the repository before anything
