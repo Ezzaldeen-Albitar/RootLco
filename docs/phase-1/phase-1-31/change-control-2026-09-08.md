@@ -3665,6 +3665,17 @@ fixture or message catalogue changed.** This slice is documentation only.
 Every row below was read out of this file at this head. **This index changes no state**; where a
 row's own state cell is ambiguous, the ambiguity is reported rather than resolved.
 
+**Two dispositions raised after this head are outside the index below, and are named so that no
+reader mistakes the omission for a claim that they do not exist.** Section 55 (**CC-45**, the
+matrix statements measured before their pull requests merged) and section 56 (**CC-46** with its
+(a)–(d) sub-entries, the assurance index re-measured at the acceptance head, pull request #382
+merged at `develop` `63f19764`) both exist and are on `develop`; neither section is present on the
+branch that carries this section, so neither is edited here and no identifier is renumbered. **This
+index is re-derived at this lane's sync**, at whatever `develop` head the sync merges onto — at the
+time of writing that head is `63f19764` — and CC-45 and CC-46 with its sub-entries are folded in
+there. Until that re-derivation lands, the counts and the arithmetic below are true of `81b3bce8`
+and of nothing later.
+
 **Open — 25**
 
 | id           | where             | one line                                                                                  |

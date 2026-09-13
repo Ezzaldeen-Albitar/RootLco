@@ -1,8 +1,10 @@
 # P1-31 — operator runbook
 
-**Status:** OPEN · **Covers:** the four operator acts P1-31 introduces — one seed, three
-migrations and two platform commands · **Authority for every command below:** the script and
-migration files themselves, read at `develop` `81b3bce804626353a1a7b9f4ba52f1306c8f8b6e` ·
+**Status:** OPEN · **Covers:** the acts P1-31 owes an operator — one prerequisite seed, three
+migrations and two platform commands. **These are not the same four acts the phase index names,
+and the difference is deliberate; § 2.1 maps this document's sections onto the index's rows one by
+one.** · **Authority for every command below:** the script and migration files themselves, read at
+`develop` `81b3bce804626353a1a7b9f4ba52f1306c8f8b6e` ·
 **Companion records:** [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) § 57,
 [`tenant-administrator-bundle-backfill.md`](./tenant-administrator-bundle-backfill.md),
 [`delivering-employee-identity-seam.md`](./delivering-employee-identity-seam.md),
@@ -80,6 +82,30 @@ Acts 1 and 2 are independent of each other and may be done in either order. **Ac
 act 4, and act 2 must precede act 3.** Every act is idempotent; re-running a completed act is safe
 and reports zeros.
 
+### 2.1 How these sections map onto the four acts the phase index names
+
+The phase index counts four owed operator acts —
+[`security-and-qa-evidence.md`](./security-and-qa-evidence.md) § 11 (lines 678–683) and
+`closure-record.md` lines 308–310, which is on `develop` and not on this branch. **This runbook
+also numbers four acts, and they are not the same four.** The two differences are stated here
+rather than left for a reader to notice: this document splits the migrations by tool rather than by
+task, so it carries all three in one section, and it promotes the catalogue seed to a numbered
+section because an operator who skips it hits an exit-5 refusal. Nothing is added to the index's
+list and nothing is dropped from it.
+
+| this runbook                                                               | the act as the index states it                                                                                                                                                  | where the index records it                                     |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| § 3, act 1 — apply `supabase/seeds/04_iam_permission_catalog.sql`          | **not one of the four.** It is the prerequisite the index names in its own right: the refusal recorded as **CC-37(c)**, "the act has a prerequisite no repository record names" | `closure-record.md` line 306; register § 57.3                  |
+| § 4, act 2 — apply the three migrations, first file `20260909090000`       | act 1 of four: apply the P-9b migration `20260909090000_sal_complete_delivery_active_template_gate.sql`                                                                         | register § 35 (P-9b, #363); `security-and-qa-evidence.md` § 11 |
+| § 4, act 2 — the same section, files `20260910090000` and `20260910091000` | act 2 of four: apply the two P-17 migrations `org_employees.sql` and `sal_delivery_delivering_employee_identity.sql`                                                            | register § 41; `security-and-qa-evidence.md` § 11              |
+| § 5, act 3 — `backfill-delivering-employee-identity.mjs`                   | act 3 of four: run it so legacy handovers gain an identity                                                                                                                      | register § 41 (**CC-29b**)                                     |
+| § 6, act 4 — `backfill-tenant-administrator-bundle.mjs`                    | act 4 of four: run it so existing organisations gain the new codes, ONE run for all codes                                                                                       | **CC-16** § 29.2, **CC-20** § 34.2                             |
+
+**Stated plainly, because the count is the thing that misleads:** the permission-catalogue seed is
+**the prerequisite CC-37(c) names, not one of the four acts**. A reader reconciling this document
+against the index should expect four index rows covered by three of this document's sections, with
+§ 3 sitting outside the four.
+
 ---
 
 ## 3. Act 1 — the permission-catalogue seed prerequisite
@@ -124,6 +150,19 @@ docker exec <container> psql -U "$DB_USER" -d "$DB_NAME" \
 Against a database reached over the network, the same file through `psql -f` with
 `ON_ERROR_STOP=1`. **Do not transcribe the two rows by hand**: a second, drifting definition of
 the catalogue is exactly the defect the single-authority rule exists to prevent.
+
+**Derive the target, and here is what it was when this was written.** The file is the authority,
+so count it on the tree you are holding:
+
+```bash
+grep -c "^  ('" supabase/seeds/04_iam_permission_catalog.sql
+git rev-parse --short HEAD
+```
+
+At `a547fc9b` that command printed **121** — one `INSERT`, 121 single-line value rows, so a fully
+seeded catalogue holds **121 rows** and `catalogue_rows` below should equal it once every row is
+present. If your tree prints a different number, **your tree is right and this paragraph is
+stale**: the count is a fact about the file at one commit, not a constant.
 
 ### Verification query — proves the step took effect
 
@@ -219,6 +258,19 @@ SELECT conname, convalidated
 -- the ledger agrees with the tree
 SELECT count(*) FROM supabase_migrations.schema_migrations;
 ```
+
+**Derive the target, and here is what it was when this was written.** The tree is the authority,
+so count it on the checkout you are applying from:
+
+```bash
+ls supabase/migrations/*.sql | wc -l
+git rev-parse --short HEAD
+```
+
+At `a547fc9b` that command printed **141**, so the ledger count above should read **141** once the
+three files of this act are applied and the ledger is repaired. If your tree prints a different
+number, **your tree is right and this paragraph is stale**: the count is a fact about the tree at
+one commit, and it moves with every migration any later phase adds.
 
 **`convalidated` is expected to be `false` on a database that held delivery rows** — the key is
 added `NOT VALID` on purpose, and the migration emits a `RAISE NOTICE` naming the operator command
