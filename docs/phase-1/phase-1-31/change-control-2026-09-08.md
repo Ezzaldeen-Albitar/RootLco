@@ -3468,8 +3468,10 @@ none of them has reported on this branch.
 **Slice:** `feature/p1-31-acceptance-record`, ownership profile `p1-31-frontend`.
 **Baseline:** protected `develop` **`6005cfa4ca3db4dbf45a2cb6ea5edff1dc70f821`** (the merge of PR
 #378, which put the harness outside the repository). The branch was cut from that head and carries no
-merge of its own. It is **documentation only**: no executable path, no gate, no fixture and no
-configuration changed.
+merge of its own. It was **documentation only** when it was first recorded; **§54.6 changed that**:
+the correction pass of 2026-09-13 edits the four committed `*-p1-31.spec.ts` files, which are an
+executable path, and the two tiers were re-recorded accordingly. No gate, no fixture, no
+configuration and no product path changed in either pass.
 
 **What it records:** the acceptance [`acceptance-plan.md`](./acceptance-plan.md) describes was
 **executed**, on 2026-09-12/13, against a production build of that head on the shared local stack.
@@ -3496,7 +3498,8 @@ sequences, and touches no other lane's numbering.
 
 **No row moved on anything but evidence.** §6 of the record states, task by task, what the run could
 and could not establish; the ten FE tasks it could not answer for keep the state they had, and the
-reason is written beside each.
+reason is written beside each. The table above is the FIRST pass; [§54.6](#546-the-browser-correction-pass-of-2026-09-13-cc-43-closed-in-part)
+lists what the correction pass changed, including the four committed specs.
 
 ### 54.3 What the run changed outside the repository
 
@@ -3516,17 +3519,60 @@ established. The two things worth carrying here:
 
 ### 54.4 Dispositions
 
-| id        | disposition                                                                                       | why it is recorded rather than fixed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | owner             | state          |
-| --------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | -------------- |
-| **CC-43** | **twenty-five of the thirty-four committed P1-31 browser cases do not pass against a real world** | Seventeen are strict-mode locator ambiguities in the specs themselves, six assert a permission withheld that a fresh tenant administrator holds, and two assert a translated report title over a label the tenant supplied; §3.1 of the record names every one with its file, line and cause. They are recorded rather than fixed here because this slice is documentation only, and because editing a committed spec is a change to an executable path that would oblige a re-record of the web tier and belongs to the lane that owns those files. They are invisible on the governed job today, where every journey-dependent case skips for want of a handoff, and will all surface at once the first time one exists. | the Frontend lane | open, recorded |
+| id        | disposition                                                                                       | why it is recorded rather than fixed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | owner             | state                                  |
+| --------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | -------------------------------------- |
+| **CC-43** | **twenty-five of the thirty-four committed P1-31 browser cases do not pass against a real world** | Seventeen are strict-mode locator ambiguities in the specs themselves, six assert a permission withheld that a fresh tenant administrator holds, and two assert a translated report title over a label the tenant supplied; §3.1 of the record names every one with its file, line and cause. They are recorded rather than fixed here because this slice is documentation only, and because editing a committed spec is a change to an executable path that would oblige a re-record of the web tier and belongs to the lane that owns those files. They are invisible on the governed job today, where every journey-dependent case skips for want of a handoff, and will all surface at once the first time one exists. **Corrected on 2026-09-13 by the pass §54.6 records, and closed in part.** All three classes were fixed in the four specs and the browser half was re-run against a second fresh organisation: thirty-two of the thirty-four cases now pass. The two that remain are one case in two locales, and they are a fourth cause the first three were hiding — a figure the harness records mid-journey compared against a dataset that is declared live and goes on changing. That one is measured rather than fixed: the screen renders exactly what the server answers, and the repair belongs to the harness, which is held outside this repository. | the Frontend lane | closed in part; one cause open, stated |
 
 ### 54.5 What this slice did NOT do
 
 - **It did not close the phase.** The record's verdict is PARTIAL and the Owner Pass §6.3 of the plan
   requires has not been given.
-- **It changed no executable path**, so no tier was re-recorded: the static and documentation checks
-  §5 of the record names are the whole of what was run on this branch.
+- **The first pass changed no executable path**, so no tier was re-recorded for it: the static and
+  documentation checks §5 of the record names are the whole of what was run for that pass. **§54.6
+  supersedes this for the correction pass**, which edits four committed specs and re-records both
+  tiers.
 - **It deleted no tenant, ran no migration, applied no seed and reset nothing.** The database is as
   the acceptance left it, and the four environment figures were confirmed read-only before the window
   opened.
 - **It claims no hosted result.** Everything in the record is loopback, and the record says so.
+
+### 54.6 The browser correction pass of 2026-09-13 (CC-43, closed in part)
+
+The same slice, continued. CC-43 recorded twenty-five browser failures and said they belonged to the
+lane that owns those files; this is that lane doing it, under the section and identifier already
+open rather than a new pair.
+
+**What changed, and only this:**
+
+| file                                                       | change                                                                                                                                                                                                                                                                                               |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/tests/e2e/authenticated/delivery-p1-31.spec.ts`  | the readiness form's two controls and the Print control addressed by role with whole names; column headers matched whole; the row-verdict check asserted with Playwright's own waiting instead of one non-retrying read                                                                              |
+| `apps/web/tests/e2e/authenticated/warranty-p1-31.spec.ts`  | the branch control addressed as a `combobox`, which also removes a race against the branch directory; both tables' headers matched whole; the plan-creation case rewritten to assert the affordance IS offered to the holder of `wty.policy.manage`, gated on the handoff                            |
+| `apps/web/tests/e2e/authenticated/reports-p1-31.spec.ts`   | the two permission cases rewritten to assert each screen renders for a holder of `rpt.report.read`, gated on the handoff; the catalogue and run cases addressed by link target and named from the catalogue rather than by a typed title; the period facts asserted inside the list that states them |
+| `apps/web/tests/e2e/authenticated/audit-log-p1-31.spec.ts` | the range, scope, action and apply controls addressed by role with whole names; column headers matched whole                                                                                                                                                                                         |
+| `docs/phase-1/phase-1-31/acceptance-record.md`             | §1's verdict restated on the evidence that now exists; **§7.1** added — the correction pass, its run identifier, the before and after counts per spec and locale, the three classes fixed and the fourth measured                                                                                    |
+| `docs/phase-1/phase-1-31/task-matrix.md`                   | rule 2 restated; six further rows — FE-001, FE-007, FE-012, FE-013, FE-014, FE-015 — moved to `end-to-end verified` citing §7.1; FE-011 annotated with why it did not move                                                                                                                           |
+| `docs/phase-1/phase-1-31/change-control-2026-09-08.md`     | this subsection, the CC-43 disposition, and the two statements in §54 that the first pass made and this pass supersedes                                                                                                                                                                              |
+
+**No product code, route, permission, migration, gate, allow-list, fixture or message catalogue
+changed.** Every fix is a locator, an assertion's subject, or a case's scope. Strict mode was not
+relaxed, no `.first()` was added over a duplicate, no assertion was weakened and no skip was added
+that does not state what is missing.
+
+**The evidence.** A fresh pair of organisations, `p31_journey_{a,b}_mtz5ppq8`, provisioned by the
+same harness against a production build; the HTTP journey answered **176 steps with 0 findings** for
+the second time; the browser half went from **9 of 34 passing to 32 of 34**. The two failures that
+remain are the fourth cause described in the CC-43 row above and in §7.1 of the record. `org.tenants`
+went from 37 rows to 39; nothing was deleted, migrated, reset or seeded.
+
+**Because this pass edits an executable path, both tiers were re-recorded** — the web tier and the
+unit tier, in that order, with the evidence index regenerated between them — and the ownership,
+encoding, scope-exclusion, fabricated-data and documentation-count gates were re-run. The specs are
+Playwright cases and run in no recorded tier themselves; what the re-record proves is that changing
+them left the recorded tiers where they were.
+
+**One consequence for the governed job.** Three cases that used to run there without a handoff now
+skip without one, because each is a statement about a caller and the handoff is what names the
+caller. They will skip with that reason stated, where before they asserted a refusal that was true
+only of that job's own account. That is a narrowing of what the governed job asserts, and it is
+recorded here rather than left to be noticed.

@@ -35,11 +35,19 @@ reset, pushed or seeded by this run.
   odometer captured as a decimal string, a warranty generated and read, all four reports run, and
   the audit log carrying both declared actions. Every refusal, concurrency and isolation case in §4
   answered what the plan said it should.
-- **The browser half did NOT pass: 9 of the 34 committed P1-31 cases passed, 25 failed.** Not one
-  of the 25 is an assertion about the product that the product failed. Seventeen are **strict-mode
-  locator ambiguities in the committed specs**, six assert a permission **withheld** that a fresh
-  tenant administrator legitimately **holds**, and two assert a translated report title over a label
-  the tenant itself supplied. Each is named with its file, line and cause in §3.1.
+- **The browser half did not pass on run `mtz2geo1`: 9 of the 34 committed P1-31 cases passed, 25
+  failed.** Not one of the 25 is an assertion about the product that the product failed. Seventeen
+  are **strict-mode locator ambiguities in the committed specs**, six assert a permission
+  **withheld** that a fresh tenant administrator legitimately **holds**, and two assert a translated
+  report title over a label the tenant itself supplied. Each is named with its file, line and cause
+  in §3.1.
+- **Those three classes were corrected and the browser half was re-run: 32 of the 34 cases now
+  pass, 2 fail.** The correction pass is run **`mtz5ppq8`** and is recorded in §7.1 — a second fresh
+  pair of organisations, the same 176-step HTTP journey with zero findings, and the four
+  `*-p1-31.spec.ts` files repaired. The two that still fail are one case in two locales, and its
+  cause was measured rather than assumed: the screen renders **exactly** what the server answers,
+  and the figure the case compares against was recorded by the harness before the journey's own
+  later writes. That is a fourth defect of the instrument, stated in §7.1 and not repaired here.
 - **Every screen was nevertheless reached and rendered.** Nine screens × two locales were opened as
   the signed-in first administrator, all answered `200` with the correct document direction, and the
   five that idle until a target is submitted were captured again with the server's answer beside
@@ -49,10 +57,12 @@ reset, pushed or seeded by this run.
   for it.
 
 Plan §6 admits a PASS only on the conjunction of zero HTTP findings, every browser case passing with
-no unexplained skip, and an Owner verdict. The first holds; the second does not; the third has not
-happened. So the answer is **PARTIAL**, and the six tasks whose evidence this run genuinely produced
-are moved in [`task-matrix.md`](./task-matrix.md) while the rest keep their state — §6 says which and
-why.
+no unexplained skip, and an Owner verdict. The first holds twice over; the second now holds for 32 of
+34 cases and not for the remaining two; the third has not happened. So the answer is still
+**PARTIAL** — but on a much smaller residue than it was, and the residue is named. Twelve tasks are
+now moved in [`task-matrix.md`](./task-matrix.md): the six this run's HTTP half established (§6) and
+the six the correction pass's browser half established (§7.1). The rest keep their state, and §6 and
+§7.1 say which and why.
 
 ## 2. The journey, step by step (HTTP, production build)
 
@@ -438,7 +448,10 @@ reading reachable from the record), **FE-006** (a document authorized, stored, r
 bound, with the provenance check passing) and **FE-008** (a warranty generated from a delivered
 handover, its terms on screen in both languages).
 
-**Not moved, and why.**
+**Not moved, and why.** This list is what THIS run could establish and it is left as it stood; six of
+the rows below — FE-001, FE-007, FE-012, FE-013, FE-014 and FE-015 — moved afterwards on the
+correction pass recorded in [§7.1](#71-amendment--the-correction-pass-of-2026-09-13-run-mtz5ppq8),
+which is where the evidence for each of them is.
 
 - **FE-001, ready-for-delivery list.** The queue was captured answering with one row and a verdict in
   both locales (§3.2) and the HTTP step established all four facts — but its own committed case did
@@ -528,3 +541,156 @@ the P1-30 precedent: the codes match no backend-suite prefix, so no routine test
 and none of them will remove anything else. The handoff each run wrote was removed — the recorded
 run's with the harness's own `--remove-handoff`, the other five by hand — so no credential is left on
 disk.
+
+### 7.1 Amendment — the correction pass of 2026-09-13, run `mtz5ppq8`
+
+**What this amendment is.** §3.1 recorded twenty-five browser failures and said in terms that none of
+them was an assertion about the product that the product failed: seventeen were locator ambiguities
+in the committed specs, six asserted a permission withheld that the caller holds, and two asserted a
+translated report title over a label the tenant supplied. Those three classes have now been corrected
+in the four `*-p1-31.spec.ts` files and the browser half has been run again, against a **second**
+fresh pair of organisations. Nothing above this line is rewritten except §1's verdict: §2 to §6
+remain the record of run `mtz2geo1` as it happened, and this section records what changed, what the
+change measured, and what it did not repair.
+
+**The run.** Stamp **`mtz5ppq8`**, organisations `p31_journey_a_mtz5ppq8` and
+`p31_journey_b_mtz5ppq8`, against a production build (`npm run acceptance:serve`) of
+`feature/p1-31-acceptance-record` `cfc8574b`, which is `develop` `6005cfa4` plus this record. The
+handoff from `mtz2geo1` had already been removed with `--remove-handoff` as §5 records, so it could
+not be reused and a fresh one was minted. **The HTTP journey answered 176 steps with 0 findings
+again** — started 2026-09-13T01:50:11.840Z, finished 2026-09-13T01:50:24.186Z — on an organisation
+provisioned minutes earlier. That is the second independent pass of the same chain, on a second
+organisation, nine minutes after the build landed.
+
+**Environment, measured before and after.** `supabase_migrations.schema_migrations` **141** rows
+against **141** migration files; `iam.permissions` **121** codes; every `tenant_administrator` role
+holding exactly **78** codes, **38** such roles now; `org.tenants` **37** rows before this pass and
+**39** after, the two this run provisioned. Nothing was migrated, reset, pushed or seeded, no tenant
+was deleted, and no `test:db`, `test:backend` or mutation-matrix run took place inside the window.
+
+**Before and after, by spec and by locale.** All thirty-four committed P1-31 cases executed in both
+`authenticated-en` and `authenticated-ar`; none skipped for want of a world.
+
+| spec                      | cases x locales | before (`mtz2geo1`) | after (`mtz5ppq8`)  |
+| ------------------------- | --------------- | ------------------- | ------------------- |
+| `delivery-p1-31.spec.ts`  | 4 x 2 = 8       | 4 pass, 4 FAIL      | **8 pass**          |
+| `warranty-p1-31.spec.ts`  | 4 x 2 = 8       | 2 pass, 6 FAIL      | **8 pass**          |
+| `reports-p1-31.spec.ts`   | 7 x 2 = 14      | 1 pass, 13 FAIL     | **12 pass, 2 FAIL** |
+| `audit-log-p1-31.spec.ts` | 2 x 2 = 4       | 2 pass, 2 FAIL      | **4 pass**          |
+| **total**                 | **34**          | **9 pass, 25 FAIL** | **32 pass, 2 FAIL** |
+
+The two remaining failures are one case — `work_orders_by_status renders exactly the rows the server
+answered` — in each locale. They are a fourth defect of the instrument, measured below and left
+standing.
+
+**Class A — the seventeen locator ambiguities. Fixed.** Each was a query that matched more than one
+node, and in every case both nodes were the product's own and neither was a duplicate the screen
+should not have had. They are fixed the way the seven pre-existing authenticated specs fix the same
+trap: by naming the ROLE and matching the WHOLE accessible name, or by narrowing to the region the
+text is stated in. Nothing was relaxed, no `.first()` was introduced, and strict mode is untouched.
+
+- `delivery-p1-31.spec.ts` — the readiness form's company and branch are addressed as `combobox`
+  controls inside the form that names them, so the form's own `aria-label` ("Choose a branch to
+  review delivery readiness") is no longer a second match; the Print control is matched whole, so
+  "Hide the printable document" is no longer a second match; every column header is matched whole.
+- `warranty-p1-31.spec.ts` — the branch control is addressed as a `combobox`, which removes three
+  matches at once (the section, the form and the control) and also removes a race the ambiguity was
+  hiding: this screen renders identifier fields until the branch directory answers, so the loose
+  query had resolved against a textbox that was never going to be a `select`. Both tables' headers
+  are matched whole, which closes a further latent ambiguity the run never reached — "Cover ends" is
+  inside "Odometer reading at which cover ends".
+- `reports-p1-31.spec.ts` — the three period facts are asserted inside the definition list that
+  states them, matching the whole label, so the sentence printed beneath the list is no longer a
+  second match.
+- `audit-log-p1-31.spec.ts` — the date range, the company, the branch, the action filter and the
+  apply control are addressed by role with whole names, which closes the Arabic collision between the
+  "from" field and the actor field; the column headers are matched whole, which closes "Action"
+  against the row-actions column.
+
+One further defect of the same family surfaced once the ambiguities were gone, and is fixed in the
+same pass: the readiness case read each row's text with a single non-retrying `innerText()`, which
+raced the table's own loading rows and reported a blank verdict the screen goes on to fill. The
+predicate is unchanged; it is now asserted with Playwright's own waiting.
+
+**Class B — the six permission cases. Rewritten, and the negative was looked for and is not there.**
+Verified against `apps/api/src/modules/iam/domain/bootstrap-roles.ts`: the tenant-administrator
+bundle holds `rpt.report.read` (prerequisite P-1), `wty.policy.manage` (P-10) and `wty.warranty.read`
+(P-7). The withheld assertions were therefore about the governed job's `acceptance:create-owner`
+account and about no caller an acceptance has. The three cases now assert what is true of the caller
+they are about — both reporting screens render for a holder, and the warranty plans screen offers its
+create panel to the holder of the code that gates it — and each is now gated on the handoff, because
+a permission case must know which caller it has.
+
+The only reporting code the bundle is denied is `rpt.export`, excluded by explicit Owner decision on
+least-privilege grounds (CC-04). It gates nothing an operator can see on any of these screens,
+because no export operation for a report or for an audit record is published at all. So **no
+permission negative is asserted here and none was invented.** What the cases keep instead is the
+screens' own standing statement that no download is offered, recorded as the contract it is rather
+than as evidence about a withheld code.
+
+**Class C — the two Arabic report-title cases. Rewritten.** A published tenant report configuration
+carries no translation key, so `reportTitle` shows the operator's own label as written, in both
+languages. That is §6's observation **O-4** and it is correct behaviour. The catalogue case now finds
+each dataset by its row's link TARGET — the report's identity, the same string in both locales — and
+then requires the right KIND of name for whoever provides the row: the platform's own translated
+title where the row says the system provides it, the workshop's own label where the row says the
+workshop does. The four run cases read the name off the catalogue and require the run screen to be
+headed with the same one, which is a stronger assertion than the typed title was: it fails if the two
+screens disagree about what a report is called. Both Arabic cases now pass, around Arabic chrome —
+`dir="rtl"`, the Arabic catalogue title, the Arabic period labels and the Arabic row caption.
+
+**Class D — newly exposed, and NOT repaired: a recorded figure compared against a live read.** With
+the ambiguities gone, the `work_orders_by_status` case reached its row count for the first time and
+failed in both locales — the handoff records **1** row and the screen renders **2**. The cause was
+measured, not inferred: the same read was issued over HTTP with the same credentials, the same branch
+and the same half-open period immediately after the browser run, and **the server answered 2 rows**,
+which is exactly what the screen showed. The handoff's **1** was recorded when the harness ran the
+report, which is before the journey creates the second work order its second-handover case needs. The
+dataset publishes its freshness as `live`, so a figure recorded at one moment does not describe it at
+another. The assertion is right and was left exactly as it is: relaxing an equality that is the whole
+value of the case would be the opposite of what this pass is for. The repair belongs to the harness —
+record the four datasets after the journey has finished writing — and the harness is held outside
+this repository (§5).
+
+**What was captured.** The per-spec, per-locale results above, and the screens themselves: nine
+screens x two locales, photographed again for this run by the companion script §5 names, into the
+run's own evidence directory beside `steps.json`, `steps.md` and `summary.json`. All eighteen
+answered `200` with the right document direction, and the five that idle until a target is submitted
+were captured a second time with the server's answer. One correction to §3.2 while the images are in
+hand: the "11 rows" recorded there for `work_orders_by_status` is the count of every `tbody` row on
+the page, which is the report's rows plus the group totals beneath them — the report's own table
+carried two.
+
+**What this pass moves in [`task-matrix.md`](./task-matrix.md).** Six further rows, each with a
+browser case that passed in both locales over this run's records: **FE-001** (the queue answered for
+every row it showed, with a verdict in each), **FE-007** (the printable copy was produced inside the
+production bundle, carried its disclaimer, and its Print control called `window.print` exactly once),
+**FE-012**, **FE-013** and **FE-014** (each dataset rendered exactly the rows the server answered,
+over the branch and the half-open period the HTTP half used), and **FE-015** (the log carried both
+declared actions, each filtered for on its own, and offered no export). Twelve rows are now
+`end-to-end verified`.
+
+**What it does not move, and why.** **FE-011** stays where it is: its own dataset's case is the one
+that still fails (class D), and a case that did not run to completion is not evidence, however well
+the screen behaved. **FE-009**, **FE-010** and **FE-016** are unchanged for the reasons §6 gives;
+nothing about them changed here.
+
+**What this pass did NOT change.** No product code, no route, no permission, no migration, no gate,
+no allow-list and no fixture. Four test files, this record, the task matrix and the change-control
+register. §6's observations stand exactly as written, including **O-1**: the
+`wo.work_order.line.manage` gap outside the tenant-administrator bundle is a finding about the
+product and is untouched by anything here. **O-2** and **O-3** describe the suite defects this pass
+closes, and they stay in place as the record of how they were found.
+
+**One consequence for the governed job, stated rather than left to be discovered.** Three cases that
+used to run without a handoff now skip without one — the two reporting permission cases and the
+warranty one — because each is a statement about a caller, and the handoff is what names the caller.
+On the governed job they will skip with that reason stated, where before they asserted a refusal that
+was true only of that job's own account.
+
+**The exclusivity window** for this pass is bounded by two measured moments: the production build of
+the web tier landed at 2026-09-13T01:40:39Z, and `npm run dev:stop` reported ports 3000 and 3100 free
+at 2026-09-13T01:58:28Z. Inside it: one harness run, two runs of the four P1-31 specs in both
+locales, one screenshot pass and one read-only HTTP probe of the four report datasets. The handoff
+was removed with `--remove-handoff` when the browser half was done, so no credential is left on disk.
+The two organisations this run provisioned were **not** deleted, on the same precedent §7 states.
