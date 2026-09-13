@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 411,
-    "openapiPaths": 319,
-    "openapiOperations": 411,
+    "operations": 412,
+    "openapiPaths": 320,
+    "openapiOperations": 412,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -14,7 +14,7 @@
     "auditActions": 234
   },
   "counts": {
-    "Covered": 411
+    "Covered": 412
   },
   "operations": [
     {
@@ -16662,6 +16662,46 @@
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/warranty-policies/[policyId]/status/route.ts"
+    },
+    {
+      "id": "wty.warranty-status-history",
+      "domain": "warranty",
+      "method": "GET",
+      "route": "/api/v1/warranties/{warrantyId}/status-history",
+      "permissions": ["wty.warranty.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/warranties/{warrantyId}/status-history",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial",
+        "pagination"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-31-warranty-read-seam.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/warranties/[warrantyId]/status-history/route.ts"
     }
   ]
 }

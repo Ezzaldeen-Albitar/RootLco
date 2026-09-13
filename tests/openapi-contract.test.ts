@@ -399,6 +399,7 @@ import '@/app/api/v1/delivery-readiness/route';
 // route is simply ABSENT from the generated document rather than reported missing.
 import '@/app/api/v1/warranties/route';
 import '@/app/api/v1/warranties/[warrantyId]/route';
+import '@/app/api/v1/warranties/[warrantyId]/status-history/route';
 
 // P1-31 prerequisite P-11, the report CONFIGURATION seam. Imported for the same
 // reason: an unimported route is simply ABSENT from the generated document rather

@@ -59,7 +59,9 @@ describe('every operation publishes the success status it returns', () => {
     // the original defect, so the scanner reports rather than assumes — and this
     // asserts it had nothing to report.
     expect(unresolved).toEqual([]);
-    expect(actual.size).toBe(411);
+    // 412 with the P1-31 warranty status-history read (P-18), one further route
+    // module whose single literal status the scanner resolves from the handler.
+    expect(actual.size).toBe(412);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -127,7 +129,11 @@ describe('every operation publishes the success status it returns', () => {
     // 292 -> 295 with P-17's three 200s. The 201 count moving by exactly one is
     // the assertion carrying weight: a command that had silently shipped as a read,
     // or a read as a create, would show up in this pair and nowhere else.
-    expect(counts[200]).toBe(295);
+    // 295 -> 296 with the P1-31 warranty status-history read (P-18), one further
+    // GET returning 200 with the 201 and 202 counts unchanged. That pair not
+    // moving is the assertion carrying weight: a ledger read that had shipped an
+    // append beside it would show up here and nowhere else in this file.
+    expect(counts[200]).toBe(296);
   });
 
   it('reads the handler, not the declaration', () => {
