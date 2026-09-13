@@ -1,18 +1,46 @@
 # P1-31 — security, QA, DevOps and documentation evidence (SEC-001 … SEC-004, QA-001 … QA-005, DO-001, DO-002, DOC-001, DOC-002)
 
-**Status:** OPEN, second version · **Measured at:** protected `develop`
-`9b109f639348db424940b00b022cfb36e2160e2c` (PR #377 merge) · **Companion records:**
+**Status:** OPEN, third version · **Measured at:** protected `develop`
+`81b3bce804626353a1a7b9f4ba52f1306c8f8b6e` (PR #380 merge) · **Companion records:**
 [`task-matrix.md`](./task-matrix.md) (state per task), [`a0-preflight.md`](./a0-preflight.md)
-(readiness), [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) (dispositions),
+(readiness), [`acceptance-record.md`](./acceptance-record.md) (the fresh-organisation acceptance),
+[`change-control-2026-09-08.md`](./change-control-2026-09-08.md) (dispositions),
 [`canonical-plan.md`](./canonical-plan.md) (the chapter's own task tables)
 
-This version replaces a first version written at `develop` `01c32937` on an abandoned local branch
-that was never merged and never opened as a pull request. Everything still true was carried over and
-**every figure was re-measured on this head**, because eleven further slices have merged since: the
-readiness queue screen, the delivery execution write paths, the printable handover document, the
-warranty record and plan screens, the four report datasets, the report screens, the operational
-overview, the delivering-employee identity and the Start selector. Nothing in this file is quoted
-from the earlier draft without re-measurement.
+**Measured at an ancestor of `develop`, deliberately, and here is the difference.** This version was
+measured at `81b3bce8` and is integrated onto `develop` `d517a5fc`, which is `81b3bce8` plus
+**#381** — the pull request that added [`closure-record.md`](./closure-record.md) and took the change
+register's **section 55 and CC-45**. This file is **not** re-derived at `d517a5fc`: every figure
+below names the head it was read on, and **rule 5** below is that a figure is re-measured or
+corrected in place, never silently re-based onto a head nobody counted it at. Two of them move at
+the newer head and are named here so that no reader has to find them, and the passages that carry
+them are left standing as measured, exactly as § 14 leaves its own superseded allocation standing.
+**The directory count.** `docs/phase-1/phase-1-31/` holds **32** files at `d517a5fc` rather than the
+**31** counted in § 9 and § 12, the one addition being `closure-record.md`; § 12's breakdown becomes
+**20 per-slice records and 12 phase-level ones**, `closure-record.md` being the twelfth beside the
+preflight, the canonical plan, the change register, the task matrix, this file, the acceptance plan
+and record, the three Owner-decision records and `d4-report-definitions.md`. § 9's other figure is
+unchanged: `closure-record.md` does not carry "acceptance" in its name, so **two** files still do.
+**The register.** Its highest pair at `d517a5fc` is **section 55 with CC-45** rather than the **54
+with CC-44** counted in § 13 — which is why § 15 takes section 56 and CC-46, and why that allocation
+is unaffected. Nothing else here is touched by #381: it moves no state, adds no test, publishes no
+operation and changes no gate. The next version re-measures the whole file at whatever head it is
+written on.
+
+The second version was measured at `develop` `9b109f63` (PR #377 merge) and **two pull requests have
+merged since, both of which this file was factually wrong about**: **#378** at `6005cfa4`, which put
+the acceptance harness outside this repository and committed the four browser specs, and **#380** at
+`81b3bce8`, which committed [`acceptance-record.md`](./acceptance-record.md). The second version's
+§ 9 stated that no P1-31 acceptance record exists and that no P1-31 acceptance run had
+happened; one exists and two passes of the journey have run. **This version
+re-measures the whole file at `81b3bce8`** and every figure below was re-derived on that tree, by
+running the named checker or by parsing the named file — with two classes of exception, both stated
+where they appear: the figures § 11 quotes from the **external** operator artefact, which is not in
+this repository and cannot be re-derived here, and the run results quoted from
+[`acceptance-record.md`](./acceptance-record.md), which are that record’s measurement and are cited
+by line rather than re-taken. Nothing is carried forward from the second
+version without re-measurement, and where a figure did not reproduce it is corrected in place rather
+than restated (§ 5).
 
 ## Why this record transposes its definitions
 
@@ -51,29 +79,45 @@ what each id means, onto P1-31's surface — and says so rather than presenting 
 the chapter's own words. Where the P1-31 chapter's task NAME diverges from the P1-28 definition, the
 section below states both and measures both.
 
-## Four rules this record obeys
+## Five rules this record obeys
 
 1. **`task-matrix.md` owns the state.** This file adds the proving artefact; it does not move a
    state. Where a measurement here would support a different state than the matrix carries, that is
    written as an engineering assessment and the matrix row is left alone.
-2. **Nothing here reaches `end-to-end verified`.** `task-matrix.md:20-24` binds it: no task reaches
-   that state until a P1-31 acceptance record exists, and **none exists on this head** — see § 9.
-   The state vocabulary used below is the matrix's own (`task-matrix.md:26-37`).
+2. **Nothing here reaches `end-to-end verified`, and the reason has changed.** An acceptance record
+   now exists — [`acceptance-record.md`](./acceptance-record.md), § 9 — so the first half of the
+   matrix's rule is satisfied. The second half is not: `task-matrix.md` rule 2 admits that state only
+   for a task the record itself establishes against a running environment, and **documentary evidence
+   alone never earns it**. The record moved twelve rows, all of them Frontend (`FE-*`), and its § 6
+   and § 7.1 name every one. **It moves no row in this file**, because nothing it did was a
+   phase-level review of a security or QA task. The state vocabulary used below is the matrix's own
+   (`task-matrix.md:26-37`).
 3. **Every non-Owner statement is labelled.** **Measured fact** means read off this tree with the
    path given; **engineering assessment** means a judgement by this record's author, binding on
    nobody. No Owner decision is quoted beyond the ones named with their file and line.
-4. **No tier was run for this record.** Test case counts are `it(` / `test(` call sites **counted
-   statically** in the named file. Where a file uses `it.each`, the static count is a **floor**, not
-   the executed total, and the section says so. No pass figure, no hosted run and no acceptance
-   result is claimed anywhere in this file.
+4. **No tier was run for this record, and no run is claimed as its own.** Test case counts are `it(`
+   / `test(` call sites **counted statically** in the named file. Where a file uses `it.each`, the
+   static count is a **floor**, not the executed total, and the section says so. The static checkers
+   named below were executed on this head and their report lines are quoted as they printed. Every
+   run result — every step, case and refusal — is **quoted from
+   [`acceptance-record.md`](./acceptance-record.md) with the section it is stated in**, is that
+   record's measurement and not this one's, and is never restated as though this file had observed
+   it. **No hosted run is claimed anywhere in this file.**
+5. **A figure is re-measured or corrected in place, never re-based.** This record states the head it
+   was measured at, and every figure below names the head it was read on. When `develop` moves past
+   that head, no figure is silently re-attributed to the newer one. Only two answers are open: the
+   whole file is re-measured at the newer head and says so, or the measurement head is left standing
+   and every figure that moves is named explicitly, with what it becomes and why. The header does
+   the second for `d517a5fc`; the second version's own supersession (§ 9, § 12, § 14) is the
+   precedent for both.
 
 ## Index
 
-| item    | transposed definition (P1-28, onto P1-31)                                                 | section | state at `9b109f63`        |
+| item    | transposed definition (P1-28, onto P1-31)                                                 | section | state at `81b3bce8`        |
 | ------- | ----------------------------------------------------------------------------------------- | ------- | -------------------------- |
 | SEC-001 | least-privilege permission and resolved-scope enforcement on every P1-31 read and write   | § 1     | phase-level incomplete     |
 | SEC-002 | the sensitive splits, the export posture and file access                                  | § 2     | phase-level incomplete     |
-| SEC-003 | scope hygiene and abuse cases: no client-asserted scope, cross-tenant, privilege widening | § 3     | not started (matrix)       |
+| SEC-003 | scope hygiene and abuse cases: no client-asserted scope, cross-tenant, privilege widening | § 3     | phase-level incomplete     |
 | SEC-004 | the write-shape gate, and the audit-event coverage the chapter's name asks for            | § 4     | not started (matrix)       |
 | QA-001  | contract-mirror unit and component coverage                                               | § 5     | phase-level incomplete     |
 | QA-002  | API contract, error-path and replay-shape coverage                                        | § 6     | phase-level incomplete     |
@@ -97,7 +141,9 @@ eight namespaces** — `deliveries` (9 files, 13 operations), `delivery-checklis
 `sal.delivery.complete`, `sal.delivery.manage`, `sal.delivery.view`, `sal.finance.view`,
 `wo.work_order.read`, `wty.policy.manage`, `wty.warranty.issue`, `wty.warranty.read`. Every
 derivation below is the gate's or the file's own; these totals are a static parse of the
-`defineOperation` literals and are restated nowhere else.
+`defineOperation` literals and are restated nowhere else. **All of them were re-derived at
+`81b3bce8`** and every one reproduced; which code gates which operation, and which catalogue row each
+code resolves to, is § 1.1.
 
 ## 1. SEC-001 — least privilege and resolved scope
 
@@ -112,7 +158,7 @@ permission code — and gated on two decisions: which codes gate the new reads (
 provisioning bundle is widened (D-2). The scope mechanism itself exists and is documented as the one
 the P1-31 read seams inherit."
 
-**Evidence on develop at `9b109f63`.**
+**Evidence on develop at `81b3bce8`.**
 
 - **Measured fact.** `npm run validate:p1-31-access` (`scripts/ci/check-p1-31-access.mjs`), run on
   this tree: **16 route pages examined across 9 owned segments** — `deliveries`, `delivery`,
@@ -169,14 +215,70 @@ the P1-31 read seams inherit."
   gate the four `org/employees` operations two apiece; both are declared in
   `supabase/seeds/04_iam_permission_catalog.sql` and both are in the 78-code bundle.
 
+### 1.1 The phase-level reconciliation: code x operation x catalogue row
+
+The second version's first open item was that **"no single record reconciles the twelve codes against
+the catalogue as a phase-level statement"**. This subsection is that statement.
+
+**How it was derived, so it can be re-derived.** `scripts/ci/check-permission-parity.mjs` exports
+`declaredPermissions(sourceFile)`, which reads the `permissions` array of a **parsed**
+`defineOperation` object literal and nothing else (`check-permission-parity.mjs:350-397`), and
+`catalogueCodes(sql)`, which reads the first string literal of every top-level tuple of the
+`INSERT INTO iam.permissions` statement in `supabase/seeds/04_iam_permission_catalog.sql`
+(`check-permission-parity.mjs:233-299`). Both were applied on this head to the 33 `route.ts` files in
+the eight owned namespaces. The gate itself asserts input FLOORS — that every executable reference
+resolves to a catalogue row or to its open-debt register — which proves **no P1-31 code is
+fictitious**; it publishes no per-phase breakdown, which is why this table exists rather than being
+quoted from the gate's output.
+
+**Measured fact.** 33 `route.ts` files, **45 `defineOperation` sites carrying 45 distinct operation
+ids**, **52 permission references over 12 distinct codes**, and **every one of the 12 resolves to
+exactly one row of the 121-code catalogue**. Every operation declares at least one code; none
+declares a code the catalogue does not carry; none is `public: true`.
+
+| permission code         | ops | the operations that require it                                                                                                                                                                                                                                                               | catalogue row                       | in the 78-code bundle |
+| ----------------------- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | --------------------- |
+| `org.employee.manage`   | 2   | `org.employee-create`, `org.employee-status-set`                                                                                                                                                                                                                                             | `04_iam_permission_catalog.sql:39`  | yes                   |
+| `org.employee.read`     | 2   | `org.employee-detail`, `org.employee-list`                                                                                                                                                                                                                                                   | `04_iam_permission_catalog.sql:38`  | yes                   |
+| `rpt.report.configure`  | 7   | `rpt.report-configuration-create`, `-list`, `-read`, `-status-set`, `-update`, `-version-create`, `-version-publish`                                                                                                                                                                         | `04_iam_permission_catalog.sql:114` | yes                   |
+| `rpt.report.read`       | 3   | `rpt.report-catalogue`, `rpt.report-read`, `rpt.report-run`                                                                                                                                                                                                                                  | `04_iam_permission_catalog.sql:338` | yes                   |
+| `sal.delivery.complete` | 1   | `sal.delivery-complete`                                                                                                                                                                                                                                                                      | `04_iam_permission_catalog.sql:87`  | yes                   |
+| `sal.delivery.manage`   | 10  | `sal.delivery-create`, `-receiver-verify`, `-signature-attach`, `-checklist-record`, `sal.delivery-checklist-template-create`, `-item-create`, `-item-remove`, `-item-update`, `-rename`, `-status-set`                                                                                      | `04_iam_permission_catalog.sql:86`  | yes                   |
+| `sal.delivery.view`     | 13  | `sal.delivery-read`, `-list`, `-readiness-list`, `-eligibility-read`, `-status-history`, `-receiver-read`, `-receiver-verify`, `-signature-attach`, `-signature-list`, `-checklist-result-list`, `-complete`, `sal.delivery-checklist-template-list`, `sal.delivery-checklist-template-read` | `04_iam_permission_catalog.sql:88`  | yes                   |
+| `sal.finance.view`      | 3   | `sal.delivery-readiness-list`, `sal.delivery-eligibility-read`, `sal.delivery-complete`                                                                                                                                                                                                      | `04_iam_permission_catalog.sql:84`  | yes                   |
+| `wo.work_order.read`    | 1   | `sal.delivery-readiness-list`                                                                                                                                                                                                                                                                | `04_iam_permission_catalog.sql:237` | yes                   |
+| `wty.policy.manage`     | 5   | `wty.warranty-policy-create`, `-rename`, `-status-set`, `wty.warranty-coverage-create`, `wty.warranty-coverage-status-set`                                                                                                                                                                   | `04_iam_permission_catalog.sql:90`  | yes                   |
+| `wty.warranty.issue`    | 1   | `wty.warranty-generate`                                                                                                                                                                                                                                                                      | `04_iam_permission_catalog.sql:91`  | yes                   |
+| `wty.warranty.read`     | 4   | `wty.warranty-detail`, `wty.warranty-list`, `wty.warranty-policy-list`, `wty.warranty-policy-read`                                                                                                                                                                                           | `04_iam_permission_catalog.sql:112` | yes                   |
+
+**What the rightmost column is, and what it is not.** It is a static read of
+`TENANT_ADMINISTRATOR_ROLE.permissionCodes` in `bootstrap-roles.ts` — **78 codes, all twelve of the
+above among them, and `rpt.export` deliberately not** (§ 2). It says a freshly provisioned
+organisation's first administrator is granted the code; it says nothing about any other role, and
+nothing about whether the grant was ever exercised. Only two sources of that kind exist and both are
+named rather than assumed: the acceptance record's steps 15–16, where a first administrator's session
+answered **78** permissions (`acceptance-record.md:104-105`), and the same record's steps 174–176,
+where a person holding `sal.delivery.view`, `wo.work_order.read` and `rpt.report.read` but **not**
+`sal.finance.view` was refused the readiness queue and the invoice-and-payment report and served the
+work-order report (`acceptance-record.md:263-265`).
+
+**What this reconciliation does NOT establish.** That the twelve are the RIGHT twelve. It is a
+mapping, not a review: no artefact on this tree argues that `sal.delivery.view` should gate thirteen
+operations rather than some other number, or that the three-code readiness declaration is minimal.
+The one seam where that argument was made and recorded is the readiness queue (register § 39,
+**D3-5**), and it covers one operation of forty-five.
+
 **State.** `phase-level incomplete` — the matrix's value, unchanged. **Engineering assessment:** the
-proofs above are per-seam and per-operation; no artefact on this tree measures the property across
-all 45 operations as a set, and rule 2 forbids any higher state regardless.
+proofs above are per-seam and per-operation; § 1.1 now reconciles the codes as a set, but a
+reconciliation is a mapping and not the least-privilege review the transposed definition asks for,
+and no artefact on this tree measures enforcement across all 45 operations as a set. Rule 2 forbids
+any higher state regardless.
 
 **Open items.**
 
-- **D-9** (which codes gate the new reads) is answered per seam by the merged slices; no single
-  record reconciles the twelve codes against the catalogue as a phase-level statement.
+- **D-9** (which codes gate the new reads) is answered per seam by the merged slices, and § 1.1
+  states the answer as a phase-level mapping. What is still owed is the JUDGEMENT — that each of the
+  twelve is the least code that would do — which § 1.1 explicitly does not make.
 - The permission-parity REPORT's seven unreferenced catalogue codes are outside this phase and are
   neither closed nor re-filed here.
 
@@ -192,7 +294,7 @@ measurable today (attachment acceptance is image-only; downloads are gated on ac
 export half has no contract at all: the export resource registry admits no P1-31 resource and the
 authorization operation produces no file."
 
-**Evidence on develop at `9b109f63`.**
+**Evidence on develop at `81b3bce8`.**
 
 - **Measured fact — the money split.** `sal.finance.view` is declared by three operations on this
   surface and by no other: `sal.delivery-readiness-list`, `sal.delivery-eligibility-read` and
@@ -234,16 +336,49 @@ authorization operation produces no file."
   `apps/web/tests/delivery-document.dom.test.tsx` carries **14 cases, counted statically**. No
   document version is created by it, so the stored-file half of SEC-002 still has no P1-31 producer.
 
-**State.** `phase-level incomplete` — the matrix's value, unchanged.
+### 2.1 The export half is CLOSED BY DISPOSITION; the file-access half is not
+
+**The export half: closed by disposition, and the disposition is named.** Two records settle it
+together, and neither is this record's judgement:
+
+- **D-6** (`owner-decisions-2026-09-09.md:89-100`) — the Audit Log screen is reused for FE-015 and
+  the reuse "does not authorize adding an export capability to the audit route", "does not authorize
+  granting export to every administrator", and holds any scope in which audit data may be exported
+  **explicit**. P-12's export contract is approved to be completed separately, with explicit
+  authorization and explicit auditability.
+- **CC-04** (`change-control-2026-09-08.md:45-59`) — `rpt.export` **qualifies** on the carry rule and
+  is **withheld from the phase anyway**, on least-privilege grounds. The withholding holds on this
+  head as a measured fact: `bootstrap-roles.ts` carries 78 codes and `rpt.export` is not one of them
+  (§ 1.1), while the export resource registry admits no P1-31 resource at all.
+
+So SEC-002's export half is **not an open question**: the phase exports nothing, the code that would
+permit it is deliberately not granted, and both facts are decided rather than accidental. **What is
+closed is the POSTURE, not an implementation** — P-12 has not started, and nothing here claims it has
+or should be counted as done. The acceptance record found the same posture from the other side:
+`rpt.export` "gates nothing an operator can see on any of these screens, because no export operation
+for a report or for an audit record is published at all", and its browser cases therefore assert the
+screens' own standing statement that no download is offered rather than a withheld-code negative
+(`acceptance-record.md:624-629`).
+
+**The file-access half: NOT closed here, and owed to a separate pull request.** The obligation is one
+negative — a signature-document download **refused** from a P1-31 screen, proving that the
+`ERR-DOC-001` refusal above is what a P1-31 operator actually meets rather than what the service
+would answer if asked. Nothing on this tree exercises it: the signature panel consumes the contract
+and reads no document back, and the printable sheet stores none. That negative belongs to the lane
+that owns the delivery screens; it is **not written by this record, not claimed by it, and not
+closed**.
+
+**State.** `phase-level incomplete` — the matrix's value, unchanged. **Engineering assessment:** one
+of the two halves the P1-31 chapter name adds is settled by disposition and the other has no
+artefact, so the row cannot move on either count.
 
 **Open items.**
 
 - **P-12 has not started.** No export route exists for any P1-31 resource and no entry for one
-  exists in the resource registry, so the export half has an approved posture and no
-  implementation. An approved withholding is a decided posture, not an undecided one.
-- The file-access half now has a consumer that reads documents (signatures) and one that writes
-  none (the printable sheet). **Engineering assessment:** nothing on this tree exercises a refused
-  download from a P1-31 screen; that negative is the first thing this half owes.
+  exists in the resource registry. The posture is decided (§ 2.1); the implementation D-6 approved
+  is not begun, and an approved withholding is a decided posture, not a delivered contract.
+- **The refused-download negative is owed to a separate pull request** and is the whole of what the
+  file-access half still needs.
 
 ## 3. SEC-003 — scope hygiene and abuse cases
 
@@ -255,7 +390,7 @@ P1-30 to cover cross-tenant refusal and replay.
 held-only in both the application and RLS, and the eligibility override is a single blocker
 requiring a named permission."
 
-**Evidence on develop at `9b109f63`.**
+**Evidence on develop at `81b3bce8`.**
 
 - **Measured fact — no client-asserted scope.** The access gate examines 16 route pages across 9
   owned segments and reports 0 violations (§ 1). Its allow-list is of OPERATIONS rather than a
@@ -286,11 +421,41 @@ requiring a named permission."
   mechanism at **CC-16** and **CC-20**: `ins_role_permissions_delegable` admits a mapping only when
   the acting administrator already holds the code, which is why a widening obliges an operator act
   rather than taking effect retroactively (§ 11).
+- **Quoted from the acceptance record — the abuse cases that were actually driven.** § 4 of
+  [`acceptance-record.md`](./acceptance-record.md) (`acceptance-record.md:378-403`) tables **fifteen
+  failure, concurrency and isolation cases, every one of which answered as the plan said it should,
+  with none recorded as a finding**. Counted on this head by their rows: **four concurrency and
+  replay cases** (the batch approval replayed under the same key, step 47; the same delivery-create
+  body under the same `Idempotency-Key`, step 103; a second key for a work order that already has a
+  live delivery, step 105; a stale `If-Match` on completion, step 116), **four cross-tenant isolation
+  probes** (steps 157, 158, 159 and 161), **six refusals** (steps 36, 42, 147, 156, 174 and 175) and
+  **one positive control** (step 176, the same restricted person running the report whose code they
+  do hold). The two probes that answered 403 rather than an empty 200 are recorded there as the shape
+  P1-30's **CC-14** predicted, and the record states the standard plainly: "What is never acceptable
+  is a row, and no probe returned one."
 
-**State.** `not started` — the matrix's value, unchanged (measured at `f8958e77`, before the write
-paths merged). **Engineering assessment:** at this head the delivery, warranty and report-
-configuration write paths have all merged and the artefacts above exist, so a later matrix revision
-has grounds to move this row to `phase-level incomplete`. This record does not move it.
+### 3.1 The revision this record makes, and the one part it cannot cover
+
+The second version left this row at `not started` and said in terms that "a later matrix revision has
+grounds to move this row to `phase-level incomplete`". **This is that revision**, and the parts it
+rests on are named individually so that nothing is counted twice:
+
+| part of the transposed definition | what covers it on this head                                                                                                                                                                                                               |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **client-asserted scope**         | `validate:p1-31-access` — 16 route pages across 9 owned segments, 0 violations — and **CC-39(a)**'s pinning test, which asserts that no typed scope identifier remains on the Start form                                                  |
+| **cross-tenant**                  | the `tests/db/*` suites for delivery, warranty, reporting, provisioning and employees (57 cases across 5 files, counted statically), and acceptance steps **157**, **158**, **159** and **161**                                           |
+| **permission refusal**            | acceptance steps **174**, **175** and **176** — a person holding three of the four codes refused the readiness queue and the invoice-and-payment report, and served the report whose code they hold                                       |
+| **privilege WIDENING as a set**   | **nothing.** The mechanism is recorded (CC-16, CC-20: `ins_role_permissions_delegable` admits a mapping only when the acting administrator already holds the code) and every proof of it is scoped to one seam or to the mechanism itself |
+
+**Engineering assessment.** Three of the four parts have artefacts that exist on this head and were
+re-measured here; the fourth has none. That is what `phase-level incomplete` means in this matrix's
+own vocabulary — verified slices exist, the cross-cutting coverage does not — so the row moves from
+`not started` to `phase-level incomplete` in [`task-matrix.md`](./task-matrix.md), citing this
+section. It moves no further: rule 2 forbids it, and the missing part is a real one.
+
+**State.** `phase-level incomplete` — this record **supports the move recorded in**
+[`task-matrix.md`](./task-matrix.md) (`not started` → `phase-level incomplete`), on § 3.1. Rule 1
+holds: the matrix owns the state, and this section is the artefact it cites.
 
 **Open items.**
 
@@ -299,8 +464,11 @@ has grounds to move this row to `phase-level incomplete`. This record does not m
   that does not exist. **CC-31** names the missing reader as prerequisite P-18.
 - **CC-16** is unchanged as a property, and its operator act has now been performed once on one
   local environment — see § 11, which states exactly where and what that does and does not prove.
-- No artefact on this tree exercises privilege escalation across the phase as a set; every proof is
-  scoped to its own seam.
+- **Privilege widening across the phase as a set is the one uncovered part**, and it is **owed to a
+  separate pull request**: a new `tests/backend/p1-31-privilege-escalation.test.ts`, which does not
+  exist on this head and is not written by this record. Until it lands, every escalation proof this
+  phase has is scoped to its own seam, and no artefact asks whether holding one P1-31 code lets a
+  caller reach an operation gated on another.
 
 ## 4. SEC-004 — the write-shape gate and audit-event coverage
 
@@ -314,7 +482,7 @@ declarations the chapter's own name asks for.
 all fourteen operations. Field 26 additionally requires that exports and privileged reads be
 themselves audited."
 
-**Evidence on develop at `9b109f63`.**
+**Evidence on develop at `81b3bce8`.**
 
 - **Measured fact — the write-shape gate.** `scripts/ci/check-p1-30-payload-parity.mjs`, run on this
   tree: **88 operations in scope `[svc, quo, inv, sal]`, 47 writes, 43 with a body, 4 declared
@@ -377,7 +545,7 @@ behind a mocked session, in both text directions.
 warranty or reporting. Audit has coverage through the administration e2e spec and the navigation
 test."
 
-**Evidence on develop at `9b109f63`.** A0's "greenfield" no longer holds for any of the three.
+**Evidence on develop at `81b3bce8`.** A0's "greenfield" no longer holds for any of the three.
 
 - **Measured fact.** Eleven web suites address this surface — **396 cases counted statically**, of
   which seven files use `it.each`, so 396 is a floor rather than the executed total:
@@ -396,11 +564,15 @@ test."
   | `reports-api.test.ts`            | 26    | 3                |
   | `audit-log.dom.test.tsx`         | 20    | 1                |
 
-- **Measured fact — three feature trees now exist.** `apps/web/src/features/delivery` (fifteen
-  files, including four contract mirrors: `delivery-contract.ts`, `readiness-contract.ts`,
-  `employee-contract.ts`, `branch-contract.ts`), `apps/web/src/features/warranty` (six files) and
-  `apps/web/src/features/reports` (six files, with `reports-contract.ts` and
-  `overview-contract.ts`). Nine dashboard pages sit on the surface: `delivery` and
+- **Measured fact — three feature trees now exist, re-counted and CORRECTED.**
+  `apps/web/src/features/delivery` holds **24** TypeScript files, including four contract mirrors
+  (`delivery-contract.ts`, `readiness-contract.ts`, `employee-contract.ts`, `branch-contract.ts`);
+  `apps/web/src/features/warranty` holds **8**; `apps/web/src/features/reports` holds **10**,
+  including `reports-contract.ts` and `overview-contract.ts`. The second version recorded fifteen,
+  six and six for the same three trees. **That did not reproduce at this head and no slice between
+  the two heads touched these trees**, so the earlier figures counted something narrower than a
+  recursive file count and are corrected here rather than restated — which is rule 4's discipline
+  applied to this record's own predecessor. Nine dashboard pages sit on the surface: `delivery` and
   `delivery/[deliveryId]`, `reports`, `reports/[reportCode]` and `reports/overview`, `warranty` and
   `warranty/[warrantyId]`, `warranty/policies` and `warranty/policies/[policyId]`.
 - **Measured fact — the report screens are one parameterised screen, not four.**
@@ -418,8 +590,12 @@ record and no tier total is claimed.
   are what QA-001 has; the cross-screen artefact the task names does not exist.
 - The checklist-template administration surface (FE-004's remaining half) has no screen and
   therefore no component coverage — the same five PENDING mirrors § 4 names.
-- Two open pull requests touch these files and neither is counted above: **#372** (QA-006/QA-007,
-  delivery DOM test races) and **#378** (§ 9).
+- **#378 has merged** and is no longer an open pull request; the second version listed it as one.
+  What it added under `apps/web/tests` is the four `*-p1-31.spec.ts` Playwright specs and their
+  `p1-31-handoff.ts` helper, which are the **e2e** tier and are not counted in the vitest table
+  above — so the table's 396 is unchanged by it (§ 9). **#372** (QA-006/QA-007, delivery DOM test
+  races) was open at the second version's head and is not counted above; this record did not
+  re-check its state and does not claim one.
 
 ## 6. QA-002 — API contract, error paths and replay shapes
 
@@ -431,7 +607,7 @@ APIs have no contract to test, and the OpenAPI response schemas for all fourteen
 surface are bare objects — which Field 23's closing bullet makes a chapter-level shortfall rather
 than a P1-31 defect."
 
-**Evidence on develop at `9b109f63`.** All three of A0's missing APIs now have contracts.
+**Evidence on develop at `81b3bce8`.** All three of A0's missing APIs now have contracts.
 
 - **Measured fact.** The fifteen `tests/backend/p1-31-*` suites (§ 1, **350 cases counted
   statically**) are the error-path proofs for the delivery read, delivery list, readiness,
@@ -457,15 +633,35 @@ than a P1-31 defect."
   `work_orders_by_status`, `technician_labor_time`, `inventory_movements`,
   `invoice_payment_summary` — with `isReportDatasetCode` as the only membership test.
 
+- **Quoted from the acceptance record — the error paths that were driven against a running system.**
+  Its § 4 (`acceptance-record.md:378-403`) tables fifteen failure, concurrency and isolation cases
+  with zero findings (§ 3), and the four of them that are error-SHAPE assertions on this phase's own
+  operations answered with the declared code rather than with a generic failure: `ERR-RES-002` on a
+  second delivery for one work order (step 105), `ERR-CON-001` on a stale `If-Match` (step 116),
+  `ERR-VAL-001` with the rule `inactive_employee` on a retired delivering employee (step 147), and
+  `ERR-TRN-001` on a completion with mandatory checklist items unanswered (step 156). That is one
+  traversal of four branches, on one pair of organisations — **not** the per-operation 428/409/422/403
+  matrix the transposed definition asks for.
+
 **State.** `phase-level incomplete` — the matrix's value, unchanged.
 
-**Open items.**
+**What remains, stated explicitly.** Two things, and neither is closed by the acceptance record:
 
-- The report export operation (P-12) has no contract, so its error paths cannot be written.
-- A0's OpenAPI observation is **not** re-measured here. `change-control-2026-09-08.md` § 41 records
-  that `docs/api/openapi.v1.json` publishes `{ "type": "object" }` for every `sal.delivery-*`
-  success response, which is the same shortfall A0 classified as chapter-level. It is not this
-  record's to close.
+1. **P-12's export contract does not exist.** No export route is published for any P1-31 resource and
+   no entry for one sits in the export resource registry (§ 2), so the operation's error paths cannot
+   be written, let alone proved. D-6 approved the contract; nothing has implemented it. **The
+   acceptance record does not close this** — it could not drive an operation that is not published,
+   and its § 6 makes no claim about one.
+2. **The OpenAPI shortfall, re-measured here rather than carried forward.** The second version
+   declined to re-measure it and cited register § 41 for `sal.delivery-*`. Measured on this head
+   against `docs/api/openapi.v1.json`: **all 45 P1-31 operations publish a success response schema of
+   exactly `{ "type": "object" }`** — not the 21 `sal.delivery-*` ones alone, but those plus the 10
+   `wty.*`, the 10 `rpt.*` and the 4 `org.employee-*`: 45 of 45.
+   So a consumer reading the published contract learns the status code and nothing about the body.
+   **The acceptance record does not close this either**: it asserts what the running server answered,
+   which is evidence about the server and not about the document. A0 classified the shortfall as
+   chapter-level and it remains so; this record measures its true extent and closes none of it. The
+   generated file is regenerated and diffed by its own gate and was **not** edited here.
 
 ## 7. QA-003 — tenant / company / branch isolation
 
@@ -475,7 +671,7 @@ the database layer hides the parent, the application layer refuses the widening 
 **Starting state (A0, `a0-preflight.md:82`).** "**Buildable.** Backend precedent exists in the P1-22
 isolation suite; the scope-target mechanism is the thing under test."
 
-**Evidence on develop at `9b109f63`.**
+**Evidence on develop at `81b3bce8`.**
 
 - **Measured fact — database layer.** The five suites and 57 statically counted cases in § 3, plus
   the RLS posture of the two P-17 migrations recorded there. The general isolation suites
@@ -497,12 +693,31 @@ isolation suite; the scope-target mechanism is the thing under test."
   — key, trigger and service — with the database obligation inverted to assert acceptance for
   another branch and a refusal for another tenant.
 
+- **Quoted from the acceptance record — isolation driven between two real organisations.** Its § 4
+  (`acceptance-record.md:378-403`) carries **four cross-tenant probes** out of its fifteen cases, all
+  of them recorded as answering correctly and none as a finding: organisation B reading organisation
+  A's delivery (step 157, `404 ERR-RES-001`) and warranty (step 158, `404 ERR-RES-001`), and
+  organisation B naming organisation A's branch on the readiness queue (step 159) and on a report run
+  (step 161), both `403` with no row. The record states the acceptance standard the probes were
+  judged against — "What is never acceptable is a row, and no probe returned one" — and records that
+  the two `403`s are the shape P1-30's **CC-14** predicted, the application scope check refusing a
+  foreign company/branch pair before RLS is reached. Both organisations were provisioned through
+  `platform.organization-provision` in the same run (`acceptance-record.md:94-95`).
+
 **State.** `phase-level incomplete` — the matrix's value, unchanged. No database or backend tier was
 run for this record, so no pass figure is claimed from any file above.
 
+**What remains, stated explicitly.** Isolation on this phase is proved **per seam**: each of the
+fifteen `tests/backend/p1-31-*` suites carries its own scope negatives, each of the five `tests/db/*`
+suites carries its own table's, and the acceptance record drove four probes over four operations.
+**No artefact measures isolation across the 45 operations as a set.** Four of forty-five is four of
+forty-five; the record itself claims nothing wider, and the coverage the transposed definition asks
+for — both layers held, on every operation the phase publishes — has no artefact on this head. Per
+seam is not per phase, and per-slice proof is not phase acceptance.
+
 **Open items.**
 
-- Isolation is proved per seam. No artefact measures it across the 45 operations as a set.
+- No artefact measures isolation across the 45 operations as a set (above).
 - Per-slice proof is not phase acceptance; rule 2 applies.
 
 ## 8. QA-004 — concurrency, idempotency and record-version sourcing
@@ -515,7 +730,7 @@ carries its transport key.
 version-guarded operation on this surface (If-Match mandatory, ERR-CON-002 when absent); the other
 five commands are idempotent by body key."
 
-**Evidence on develop at `9b109f63`.** The surface has grown far past A0's measurement.
+**Evidence on develop at `81b3bce8`.** The surface has grown far past A0's measurement.
 
 - **Measured fact.** Of the 45 operations, **11 declare `versionGuarded: true`** — one under
   `deliveries` (`sal.delivery-complete`, so A0's statement still holds for the delivery record
@@ -537,12 +752,26 @@ five commands are idempotent by body key."
 - **Measured fact.** `apps/web/src/lib/contracts/delivery-contract.ts` records that
   `sal.delivery-complete` declares `versionGuarded: true` and what the handler does with it — the
   mirror carries the guard, not just the body.
+- **Quoted from the acceptance record — four concurrency cases, driven once each.** Of the fifteen
+  cases its § 4 tables (`acceptance-record.md:378-403`), **four** are this section's subject and all
+  four answered as designed with no finding: an approval replayed under the same key was not a second
+  approval (step 47); the same `sal.delivery-create` body under the **same** `Idempotency-Key`
+  answered the **same delivery id** rather than a second row (steps 103–104); a **second** key for a
+  work order that already has a live delivery was refused `409 ERR-RES-002` (step 105); and a
+  **stale** `If-Match` on `sal.delivery-complete` was refused `409 ERR-CON-001` (step 116). The
+  version that succeeded was read from the operation that publishes it — the eligibility read at step
+  115 — which is the sourcing discipline the transposed definition names, observed once.
+  **Engineering assessment:** four cases over two of the eleven version-guarded operations and one of
+  the sixteen idempotent ones. It is a traversal, not a matrix, and the record claims nothing more.
 
-**State.** `not started` — the matrix's value, unchanged. **Engineering assessment:** the
-declarations are countable, CC-17 is a closed disposition, and the matrix's stated dependency — the
-write paths reaching screens — is now satisfied for delivery and warranty and unsatisfied for the
-checklist templates and the report configuration writer. No artefact on this tree exercises
-concurrency across the phase.
+**State.** `not started` — the matrix's value, unchanged. **This record does not move it**, and the
+row is outside this revision's allocation in any case. **Engineering assessment:** the declarations
+are countable, CC-17 is a closed disposition, the matrix's stated dependency — the write paths
+reaching screens — is now satisfied for delivery and warranty and unsatisfied for the checklist
+templates and the report configuration writer, and the acceptance record adds the first concurrency
+evidence this phase has from a running system. No artefact on this tree exercises concurrency across
+the phase as a set, and nine of the eleven version-guarded operations were never sent a stale guard
+by anything.
 
 **Open items.**
 
@@ -561,25 +790,59 @@ chapter names is the directory `_acceptance/`, which does not exist in this repo
 evidence here lives as `docs/phase-1/phase-1-NN/*acceptance*.md`. That mismatch is a decision, not a
 defect (D-16)."
 
-**Evidence on develop at `9b109f63`.**
+**Evidence on develop at `81b3bce8`.**
 
 - **Measured fact — the precedent.**
   [`../phase-1-30/w9-acceptance-record.md`](../phase-1-30/w9-acceptance-record.md) exists on this
   tree and is the shape a P1-31 acceptance record would take: a fresh-organisation session recorded
   step by step, with the API's own correlation reference carried on every recorded step.
-- **Measured fact — the gap, re-read.** `docs/phase-1/phase-1-31/` holds **28 files at this head and
-  no file whose name contains "acceptance"**. **No P1-31 acceptance record exists, and no P1-31
-  acceptance run has happened.**
-- **Measured fact — the harness is in an OPEN pull request and is NOT on develop.** **PR #378**,
-  "P1-31 QA-005: fresh-organisation acceptance harness and browser specs", head
-  `feature/p1-31-acceptance-harness` at `0a1bba2a`, state OPEN. It carries
-  `scripts/dev/owner-acceptance/p1-31-journey.mjs`, four browser specs
-  (`apps/web/tests/e2e/authenticated/{delivery,warranty,reports,audit-log}-p1-31.spec.ts`), the
-  shared helper `p1-31-handoff.ts`, `docs/phase-1/phase-1-31/acceptance-plan.md`,
-  `.github/ci-baselines/unrun-test-tiers.json`, and edits to this phase's task matrix and change
-  register. **Each of those seven new paths was checked individually on this tree and is absent.**
-  So: the harness is written, it is not merged, and **the run has not happened**. No result from it
-  is claimed here, because there is none.
+- **Measured fact — the gap the second version recorded is CLOSED, and this is the correction.** That
+  version stated, at this point in this section, that `docs/phase-1/phase-1-31/` held 28 files and
+  **no file whose name contains "acceptance"**, and concluded that "no P1-31 acceptance record exists,
+  and no P1-31 acceptance run has happened". **Both statements are now false.** Measured on this head:
+  the directory holds **31 files**, and **two** of them carry "acceptance" in their name —
+  [`acceptance-plan.md`](./acceptance-plan.md), merged by **#378** at `6005cfa4`, and
+  [`acceptance-record.md`](./acceptance-record.md), merged by **#380** at `81b3bce8`.
+- **Quoted from the acceptance record — the run, and its own verdict.** Its § 1 verdict is
+  **PARTIAL** (`acceptance-record.md:27`), and this record does not upgrade it. What it records:
+  - **The HTTP journey passed — 176 steps, 0 findings** (`acceptance-record.md:29`, `:70`), against a
+    production build (`next build` + `next start`) of `develop` `6005cfa4`, driven entirely through
+    published operations on organisations created in the run itself: **two fresh organisations per
+    pass**, `p31_journey_a_*` and `p31_journey_b_*`, each provisioned through
+    `platform.organization-provision` (`acceptance-record.md:94-95`), with every credential
+    established through the product's own reset or invitation route and the link read out of the
+    local mailbox.
+  - **The same 176 steps answered 0 findings a second time**, on a **second** fresh pair, in the
+    correction pass of § 7.1, run `mtz5ppq8` (`acceptance-record.md:560-563`). Two independent passes of
+    the same chain, on two different pairs of organisations.
+  - **The browser matrix did not pass.** Thirty-four committed cases — seventeen per locale project,
+    executed in both `authenticated-en` and `authenticated-ar` with none skipped — answered **9 pass
+    / 25 fail** on the recorded run and **32 pass / 2 fail** after the correction pass
+    (`acceptance-record.md:574-580`). The record's own account of the twenty-five is that not one was
+    an assertion about the product that the product failed; and its § 7.2 then records that the
+    governed `authenticated-browser` job **refused** the correction pass, because two spec files
+    contributed zero executed cases, and what was changed so that every one of the eleven committed
+    authenticated spec files contributes at least one.
+  - **No Owner verdict has been given** (`acceptance-record.md:55-57`). The plan admits a PASS only
+    on the conjunction of zero HTTP findings, every browser case passing, and an Owner verdict; the
+    first holds twice, the second does not, the third has not happened.
+- **Measured fact — the harness is NOT in this repository, and where it is.** The HTTP driver lives
+  **outside this repository** at `orchestration/acceptance/p1-31-journey.mjs`, beside the phase
+  evidence and outside any git working tree; the screenshot companion `p1-31-screens.mjs` is held in
+  the same place (`acceptance-record.md:405-423`). It was put there by **#378**, and the disposition
+  is register § 52.6 (`change-control-2026-09-08.md:3274-3318`): an evidence writer is by construction
+  a path from API responses to the filesystem, which is what **`js/http-to-file-access`** reports;
+  five of the seven alerts the harness raised were closed by real fixes, and **the last two ARE the
+  network-to-file edge**, which does not close while the evidence exists. **The two were resolved by
+  RELOCATION, not by dismissal**, and both halves of that claim were verified on this head:
+  `.github/ci-baselines/codeql-baseline.json` carries `maximumOpenFindings: 0` with an **empty**
+  `dismissals` array, and the file is **byte-identical across #378** — `git diff 329b19ab 6005cfa4 --
+.github/ci-baselines/codeql-baseline.json` is empty. What the relocation costs is recorded there
+  rather than glossed: a file outside the repository is not reviewed by CODEOWNERS, not covered by
+  the repository gates, and not versioned with the code it drives. **Wherever this file cites the
+  harness, that is the file it means.** What #378 did commit is the four
+  `apps/web/tests/e2e/authenticated/*-p1-31.spec.ts` specs and their `p1-31-handoff.ts` helper, which
+  are on this tree and execute in the governed job.
 - **Measured fact — the regression artefacts that do exist per slice** are recorded in
   `task-matrix.md` and in the register sections named there. This record does not restate those
   figures, because it did not run the tiers that produced them and a re-quoted number is the
@@ -589,15 +852,26 @@ defect (D-16)."
   are the standing expectation. The local `verify:workspaces` aggregate is **not** a per-commit
   prerequisite." That is the policy under which the slice proofs above were taken.
 
-**State.** `phase-level incomplete` — the matrix's value, unchanged, and the ceiling rule 2 sets.
+**State.** `phase-level incomplete` — the matrix's value, unchanged, and **still the ceiling rule 2
+sets**. The acceptance record satisfies the EXISTENCE condition and not the task: its own verdict is
+PARTIAL, two browser cases still fail, no Owner Pass has been given, and the immutable-evidence half
+of the transposed definition is unmet — the run's `summary.json`, `steps.json`, `steps.md`,
+`screens.json` and images are all held outside this repository
+(`acceptance-record.md:424-428`), so nothing of the run is digest-checked into a committed ledger.
+What the record moved is twelve **Frontend** rows; it moved no row in this file and claims none.
 
 **Open items.**
 
-- **The phase acceptance record does not exist.** Until it does, no row in this file can reach
-  `end-to-end verified`, by construction rather than by judgement.
-- **D-16's convention half is unresolved in the chapter's own terms:** the chapter requires
+- **The phase acceptance record now exists, and the phase acceptance has not been given.** The
+  distinction is the whole of what QA-005 still owes: a recorded run is not a recorded verdict.
+- **Two browser cases still fail**, on what the record's § 7.1 calls a fourth defect of the
+  instrument — a figure the harness recorded mid-journey compared against a dataset the engine
+  publishes as `live`. The repair belongs to the harness, which is outside this repository.
+- **The evidence packaging half is unmet.** Nothing of the run is committed except the record itself.
+- **D-16's convention half is still unresolved in the chapter's own terms:** the chapter requires
   `_acceptance/`, this repository uses `docs/phase-1/phase-1-NN/*acceptance*.md`, and no record
-  reconciles the two. PR #378 proposes `acceptance-plan.md` in the repository's convention.
+  reconciles the two. #378 and #380 have now instantiated the repository's convention twice —
+  `acceptance-plan.md` and `acceptance-record.md` — without reconciling it with the chapter's.
 
 ## 10. DO-001 — continuous-integration quality gate and gate-metadata co-maintenance
 
@@ -612,7 +886,7 @@ blocker could be reached. This preflight adds the rules and profiles (P-15). Sep
 gate-before-read check owns the plural `deliveries`/`warranties` segments but not the singular
 `/delivery` href already in navigation, nor `/reports` (P-16)."
 
-**Evidence on develop at `9b109f63`.**
+**Evidence on develop at `81b3bce8`.**
 
 - **Measured fact — the gate exists, is registered and is reachable.**
   `scripts/ci/check-p1-31-access.mjs` is invoked by `validate:p1-31-access`, which is a member of
@@ -663,7 +937,7 @@ pipeline that refuses what it cannot place.
 record how a screen refreshes, given that Field 24's event-consumption requirement has no mechanism
 in either tier (D-10)."
 
-**Evidence on develop at `9b109f63`.**
+**Evidence on develop at `81b3bce8`.**
 
 - **Measured fact — the correlation surface.** `correlationId` is referenced by **13 files under
   `apps/web/src/features/delivery`, 6 under `apps/web/src/features/warranty` and 5 under
@@ -735,7 +1009,7 @@ real corrections are in scope regardless: the four stale delivery permission row
 operation inventory, the stale P1-22-L-04 docblock, the register overstatement of P1-27-INT-084, and
 the wrong table name in OWR-2026-09-06-G-10."
 
-**Evidence on develop at `9b109f63`.**
+**Evidence on develop at `81b3bce8`.**
 
 - **Measured fact — `documentation/` still does not exist.** Checked on this head: there is no such
   path in this repository. A0's reading holds unchanged.
@@ -754,9 +1028,15 @@ the wrong table name in OWR-2026-09-06-G-10."
 idempotent-operations.ts` is generated from the Backend register and is one of the buckets
   `p1-31-frontend` is forbidden to touch, precisely so the two cannot desynchronise. This record
   derives no count that a generated register owns and regenerates nothing.
-- **Measured fact — this phase's contract documents.** Fifteen slice records exist under
-  `docs/phase-1/phase-1-31/` beside the four governance records; the `d4-report-definitions.md`
-  mapping is the reporting contract the four datasets were built against.
+- **Measured fact — this phase's contract documents, re-counted on this head.**
+  `docs/phase-1/phase-1-31/` holds **31 files: 20 per-slice records and 11 phase-level ones** — the
+  preflight, the canonical plan, the change register, the task matrix, this file, the acceptance plan
+  and record, the three Owner-decision records, and `d4-report-definitions.md`, which is the
+  reporting contract the four datasets were built against. The second version recorded "fifteen slice
+  records beside the four governance records" over a directory it measured at 28 files. Exactly three
+  files have been added between the two heads — `acceptance-plan.md`, `acceptance-record.md` and
+  **this file**, which was itself unmerged when the second version was written — and the categories
+  are restated here so that the two numbers add up to the directory, which the earlier pair did not.
 
 **State.** `not started` — the matrix's value, unchanged. **Engineering assessment:** two of A0's
 four named corrections have merged and two more of the same class landed since, but the canonical
@@ -780,22 +1060,21 @@ update, routed to a named approval owner.
 **Starting state (A0, `a0-preflight.md:98`).** "**Buildable.** `documentation/_registry/change-log.md`
 does not exist either; the repository's equivalent is the per-phase change-control register."
 
-**Evidence on develop at `9b109f63`.**
+**Evidence on develop at `81b3bce8`.**
 
-- **Measured fact — the controlled record and exactly what it now holds.**
+- **Measured fact — the controlled record and exactly what it now holds, re-measured.**
   [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) is P1-31's change record. On this
-  head it carries **numbered sections 1 … 48, 50, 51 and 53 — 51 sections, with 49 and 52 absent —
-  and identifiers CC-01 … CC-41.** Its **highest section is 53** ("The operational overview",
-  FE-010/FE-016, PR #376) and its **highest identifier is CC-41**, allocated to the same slice. The
-  two gaps are not errors: § 51.1 records that **section 49 with CC-37** is claimed by a lane not on
-  `develop`, and **section 52 with CC-40** by the acceptance-harness lane, also not on `develop`.
-  § 48.1's rule is that an identifier is a claim about the register at the moment it was raised and
-  is never renumbered to follow heading order.
-- **Measured fact — the two claims on the gaps, resolved.** Section 49 / **CC-37** was claimed by
-  the abandoned first version of _this_ record, which was never merged and is superseded by this
-  file; § 14 below therefore takes that pair rather than leaving a permanent hole. Section 52 /
-  **CC-40** is claimed by **PR #378**, which is open (§ 9) and holds a HIGHER pair, so it takes
-  nothing from this one.
+  head it carries **numbered sections 1 … 54 with no gap, and identifiers CC-01 … CC-44 with no
+  gap.** Its **highest section is 54** ("The fresh-organisation acceptance, run and recorded",
+  QA-005, PR #380) and its **highest identifier is CC-44**. The second version measured sections
+  1 … 48, 50, 51, 53 with 49 and 52 absent, and CC-01 … CC-41; **both holes have since been filled by
+  the lanes that claimed them** — section 49 with **CC-37** by this record's own second version
+  (#379), and section 52 by the acceptance-harness lane (#378), whose identifier settled as **CC-42**
+  rather than the CC-40 it had provisionally claimed, because #376 merged first and took that number.
+  That is § 48.1's rule working as designed: an identifier is a claim about the register at the
+  moment it was raised, it is reconciled upward when another lane lands first, and it is never
+  renumbered to follow heading order. Sections 53 and 54 and identifiers CC-40 … CC-44 are the
+  operational-overview and acceptance lanes' own, and nothing of theirs is touched here.
 - **Measured fact — operator guidance.** **No runbook file exists** for the four merge-time operator
   acts tabled in § 11. The guidance that exists in this repository is the register sections
   themselves, each naming its remedy. The one artefact that records the acts being performed is
@@ -815,10 +1094,12 @@ one of DOC-002's artefacts, and one artefact is not the task; the runbook § 11 
 - The chapter requires the controlled record to be "routed to the named approval owner". **This
   version has been routed to nobody and claims no approval.**
 
-## 14. Change control for this record — section 49, CC-37
+## 14. Change control for the second version — section 49, CC-37
 
 Recorded in the phase register as its own section; repeated here so this file states its own
-allocation.
+allocation. **This section is historical and is left exactly as it was written**: it records the
+allocation the second version took, and § 48.1's rule is that an identifier is never renumbered.
+The re-measurement's own allocation is § 15.
 
 **Allocation, read on `develop` `9b109f63`.** The register holds sections 1 … 48, 50, 51, 53 and
 identifiers CC-01 … CC-41. **Section 49 and CC-37 are the lowest free pair**, and § 51.1 records
@@ -827,6 +1108,8 @@ record, superseded here. **This record takes section 49 and CC-37, and neither i
 because no lower number is held by any unmerged branch: the only unmerged claim on the register is
 **PR #378** (`feature/p1-31-acceptance-harness`, open), which holds **section 52 and CC-40** — both
 ABOVE this pair, so nothing here is taken from it and nothing here is renumbered to follow it.
+_(Both statements were true when written. #379 merged that allocation; #378 merged as section 52 and
+its identifier reconciled to CC-42 — § 13.)_
 
 | id           | finding                                                                                     | disposition                                                                                                                                                                                                                                                                                 | owner / slice         | state            |
 | ------------ | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ---------------- |
@@ -835,10 +1118,41 @@ ABOVE this pair, so nothing here is taken from it and nothing here is renumbered
 | **CC-37(b)** | the seven `rpt.report-configuration-*` writes have no consumer outside a generated manifest | **recorded as the declared-but-never-wired shape**, measured rather than inferred: `apps/web` references them only in `src/lib/api/idempotent-operations.ts`. No screen is invented here to justify them, and no operation is withdrawn — the decision belongs to whoever owns the writer   | Owner / a later slice | open, recorded   |
 | **CC-37(c)** | the bundle backfill has an unrecorded prerequisite                                          | **recorded from the external operator artefact (§ 11):** the backfill refuses, fail-closed, until the permission-catalogue seed has been applied to the target database. No repository record named that ordering before it was met. The remedy is the runbook DO-002 and DO-001 both owe   | a later slice         | open, recorded   |
 
+## 15. Change control for this re-measurement — section 56, CC-46
+
+Recorded in the phase register as its own section; repeated here so this file states its own
+allocation.
+
+**Allocation, read on `develop` `81b3bce8`.** The register holds sections **1 … 54 with no gap** and
+identifiers **CC-01 … CC-44 with no gap** (§ 13). The lowest free pair is therefore section 55 with
+CC-45, and **this re-measurement does not take it**: section 55 and CC-45 are claimed by a sibling
+lane not on `develop`, which is recording that the task matrix's header declared a stale measurement
+commit. **This record takes section 56 and CC-46**, the next pair above that claim. Nothing below it
+is taken, nothing is renumbered, and § 48.1's rule holds: an identifier is a claim about the register
+at the moment it was raised. A textual conflict with a sibling lane at merge time is expected and is
+resolved by whoever integrates, never by renumbering an identifier.
+
+_(True when written, and the expected thing then happened. Section 55 and CC-45 merged as **#381** at
+`develop` `d517a5fc`, recording the phase closure record, so the sibling lane is no longer unmerged
+and both allocations now sit side by side in the register. This record's own allocation is unchanged
+— § 48.1's rule is that an identifier is never renumbered, and section 56 with CC-46 stays where it
+was raised.)_
+
+| id           | finding                                                                                   | disposition                                                                                                                                                                                                                                                                                             | owner / slice | state            |
+| ------------ | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ---------------- |
+| **CC-46**    | this index was measured at `9b109f63` and asserted that no P1-31 acceptance record exists | **re-measured at `81b3bce8` and corrected in place.** #378 and #380 merged after the measurement, and § 9's central statement became false rather than merely old. The whole file is re-derived on the new head; every corrected figure names what it replaces                                          | this record   | closed, recorded |
+| **CC-46(a)** | SEC-003 sat at `not started` after the evidence its own state depended on had merged      | **moved to `phase-level incomplete`**, on the revision the second version invited and on § 3.1's four-part breakdown. Three parts have artefacts; **privilege widening across the phase as a set has none**, and that part is owed to a separate pull request rather than absorbed into this one        | this record   | closed, recorded |
+| **CC-46(b)** | the twelve P1-31 permission codes had no phase-level reconciliation against the catalogue | **§ 1.1 publishes it**, derived from the parsed `defineOperation` output of `check-permission-parity.mjs`. The gate proves no code is fictitious and publishes no per-phase breakdown; this subsection is that breakdown and is explicitly **not** the least-privilege JUDGEMENT the task still owes    | this record   | closed, recorded |
+| **CC-46(c)** | the OpenAPI shortfall was recorded for `sal.delivery-*` and is wider than that            | **re-measured, not re-quoted: all 45 P1-31 operations publish a success schema of exactly `{ "type": "object" }`.** A0 classified the shortfall as chapter-level and it stays there; the extent is recorded so the next reader does not measure a subset again. The generated file was not edited       | a later slice | open, recorded   |
+| **CC-46(d)** | two figures in the second version did not reproduce on this head                          | **corrected in place with what they replace named** (§ 5, the three feature trees at 24/8/10 files rather than 15/6/6; § 12, the phase's own document counts). No slice touched those trees between the two heads, so the earlier figures counted something narrower than a recursive count of the tree | this record   | closed, recorded |
+
 ## Status
 
-**Second version, unmerged at the time of writing, on a `feature/` branch.** It is to be updated as
-the remaining work lands; the acceptance record does not exist and until it does no row above can
-rise past `phase-level incomplete`. **No test tier, build, database operation or deployment was run
-to produce it.** Every figure is a static read of the tree at `9b109f63` or the reported output of a
-static checker named beside it, and that derivation — not this prose — is the authority.
+**Third version, unmerged at the time of writing, on a `feature/` branch.** It is to be updated as
+the remaining work lands. An acceptance record now exists and its verdict is **PARTIAL**; it moved
+twelve Frontend rows and no row above, so nothing in this file rises past `phase-level incomplete`
+(rule 2, § 9). **No test tier, build, database operation or deployment was run to produce this
+version.** Every figure is a static read of the tree at `81b3bce8`, the reported output of a static
+checker named beside it, or a result quoted from
+[`acceptance-record.md`](./acceptance-record.md) with the line it is stated at — and that derivation,
+not this prose, is the authority.
