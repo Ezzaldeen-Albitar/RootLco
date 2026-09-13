@@ -458,6 +458,26 @@ reading reachable from the record), **FE-006** (a document authorized, stored, r
 bound, with the provenance check passing) and **FE-008** (a warranty generated from a delivered
 handover, its terms on screen in both languages).
 
+_**Correction, made by the closure re-measure of 2026-09-13 (change control § 62, CC-52 (c)); the
+paragraph above is left exactly as written.** "Six tasks, each with both an HTTP chain that ran and a
+browser case that passed in both locales" does not hold for **three** of the six.
+**FE-004, FE-005 and FE-006 have no committed browser case for their own surfaces.** The delivery
+case that runs against the handed-over record — "the handover record shows its own facts" in
+`apps/web/tests/e2e/authenticated/delivery-p1-31.spec.ts` — asserts the summary panel (status,
+handover time, vehicle, delivering employee, and the absence of the not-handed-over statement), the
+eligibility panel and the receiver panel. It asserts **nothing** about a recorded checklist item, the
+final odometer reading, or the signature evidence, and a search of the five `*-p1-31.spec.ts` files
+for those three subjects returns only the warranty screen's odometer-limit column. What those three
+tasks have is their HTTP half — steps 113, 114 and 156 for FE-004, 117 and 118 for FE-005, and 108 to
+112 for FE-006 — which is the same evidence this section's own "Not moved, and why" list holds to be
+insufficient one paragraph below: "A screenshot is not the assertion the matrix's rightmost state is
+about", and neither is an HTTP step alone. **FE-003 and FE-002 are unaffected** — the receiver and
+eligibility panels are asserted by name — **and FE-008 is unaffected**, its record screen being
+asserted in both locales by `warranty-p1-31.spec.ts`. The three rows are lowered to
+`merged (write path)` in [`task-matrix.md`](./task-matrix.md) and the three owed browser cases are
+recorded as **CC-52 (c)**. **This note moves no figure of the run itself**: every step, case and
+count in this record stands as measured._
+
 **Not moved, and why.** This list is what THIS run could establish and it is left as it stood; six of
 the rows below — FE-001, FE-007, FE-012, FE-013, FE-014 and FE-015 — moved afterwards on the
 correction pass recorded in [§7.1](#71-amendment--the-correction-pass-of-2026-09-13-run-mtz5ppq8),
