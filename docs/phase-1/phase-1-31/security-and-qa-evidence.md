@@ -523,9 +523,15 @@ it cites.
 
 **Open items.**
 
-- **CC-10** is unchanged and was re-measured: `wty.warranty_record_status_history` has **no reader
-  anywhere in `apps/api/src`**, so the warranty status ledger cannot be exercised by an abuse case
-  that does not exist. **CC-31** names the missing reader as prerequisite P-18.
+- **CC-10** was unchanged at this head and was re-measured: `wty.warranty_status_history` had **no
+  reader anywhere in `apps/api/src`**, so the warranty status ledger could not be exercised by an
+  abuse case that did not exist. **CC-31** names the missing reader as prerequisite P-18.
+  _(This bullet named the table `wty.warranty_record_status_history`, which no migration ever
+  created — corrected in place on **2026-09-13** by change control § 65 / **CC-55 (b)**. **CC-10
+  closed** that day: `wty.warranty-status-history` publishes the ledger under `wty.warranty.read`,
+  branch-scoped, and `tests/backend/p1-31-warranty-read-seam.test.ts` now carries its cross-tenant,
+  cross-branch and permission refusals — so the abuse case this bullet says does not exist now does.
+  The re-measurement of this record is its owning lane's; nothing else here is re-based.)_
 - **CC-16** is unchanged as a property, and its operator act has now been performed once on one
   local environment — see § 11, which states exactly where and what that does and does not prove.
 - **Privilege widening across the phase as a set is covered, and the tier it is covered on is the

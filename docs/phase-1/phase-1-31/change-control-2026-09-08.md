@@ -647,8 +647,12 @@ The full record is [`warranty-policy-seam.md`](./warranty-policy-seam.md). In sh
   already-issued warranties that this prerequisite does not sanction.
 - **No removal of any kind.** `deleted_at` exists on both tables and this surface never sets it;
   retirement is `status = 'archived'`, the column the issue path already reads.
-- **No warranty record was written, read or changed.** `wty.warranty_record_status_history` still
-  has no reader (**CC-10**, unchanged), and no claim surface exists (**P1-22-L-01**, unchanged).
+- **No warranty record was written, read or changed.** `wty.warranty_status_history` still
+  has no reader (**CC-10**, unchanged by this slice), and no claim surface exists
+  (**P1-22-L-01**, unchanged). _(This bullet named the table `wty.warranty_record_status_history`,
+  which no migration ever created — corrected in place on **2026-09-13** by § 65 / **CC-55 (b)**,
+  which also records that **CC-10 closed** that day with prerequisite **P-18**. The statement was
+  true of the real table when it was written, and of this slice. P1-22-L-01 still holds.)_
 - **The backfill was not run**, and no claim is made that any environment carries the new code.
 - **`apps/web/src` was not edited** except through `lib/api/idempotent-operations.ts`, which a
   repository script regenerates and which every published operation moves.
@@ -5075,13 +5079,323 @@ shape, and it is raised as **CC-52 (a)** rather than fixed by editing four other
   [`closure-record.md`](./closure-record.md) § 6 states in terms that the phase is **not eligible**
   for promotion and why.
 
+## 63. The per-file web coverage artefact and the ledger-aware provenance gate (CC-53)
+
+**Task ids:** P1-31-QA-001-010 (the artefact) and P1-31-QA-005-038 (the gate).
+
+**Register pair:** section 63 and CC-53, the lowest free pair. Section 62 recorded the register as
+running to "sections 1 … 62 with CC-01 … CC-52"; that was true of the head section 62 left, and this
+section is the one identifier added since. The § 62.7 disposition partition
+(**26 open + 4 stating no usable disposition + 47 closed or settled = 77**) was exact over the
+identifiers that existed when it was computed. CC-53 is raised after it and sits outside it, so the
+count with this section included is **78**. The earlier figure is left exactly as written, in the
+annotate-rather-than-rewrite discipline § 48.1 states.
+
+**Baseline:** protected `develop` `72f3a71e`. **Pull request #389**, head
+`0582d196`, opened against `develop`.
+
+### 63.1 What CC-53 addresses, and what it does not close
+
+Two defects already recorded by other lanes, each repaired where it lives:
+
+- **CC-50 (a)** — "the per-file web coverage summary reaches no reader, so H-2 and H-3 can be filled
+  from no hosted artefact". The web-quality job MEASURES per-file coverage and then throws the
+  measurement away.
+- **CC-52 (b)** — "a gate accepts a provenance word without reading the ledger behind it".
+
+Neither is closed by this section. The artefact half closes when a hosted run of **#389**
+has produced the file and H-2 and H-3 are filled from it, which is the fill plan in § 63.6. The gate
+half is repaired here in code, and **CC-52 (b) is for the § 62 lane to move**, not for this lane to
+close on its behalf.
+
+### 63.2 (A) The web-quality job keeps the coverage output it already writes
+
+The "Web coverage ratchet" step at
+[`.github/workflows/_reusable-node-quality.yml`](../../../.github/workflows/_reusable-node-quality.yml)
+lines 705–711 runs `scripts/ci/coverage-gate.mjs` with
+`--summary apps/web/coverage/web/coverage-summary.json` and
+`--json coverage-gate-web.json --markdown coverage-web.md`. Both JSON files exist on the runner for
+the rest of the job. Only the rendered markdown survived it: the upload list carried `*.md` and no
+per-file web summary, so the two machine-readable halves were destroyed with the runner.
+
+Two lines are added to the `evidence-${{ inputs.task }}` upload list, now at lines 882–905:
+
+| added path                                    | why                                                                                                                     |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/coverage/web/coverage-summary.json` | the per-file measurement itself — instrumented files per tree (H-2) and the dashboard route tier's own figure (H-3)     |
+| `coverage-gate-web.json`                      | the ratchet's verdict over that summary, the web counterpart of `coverage-gate.json`, which the list has always carried |
+
+The list is otherwise unchanged: 22 entries before, 24 after, nothing removed and nothing reordered.
+The explanatory prose sits **above** `path:` as a YAML comment rather than inside the block scalar,
+because `path: |` is a literal block and a `#` line inside it is a search path and not a comment.
+
+**Nothing about what is measured changes.** No coverage flag, no `coverage.include` list, no baseline
+value and no floor is touched. This decides only whether the run keeps two files it already produces.
+
+`protected-develop-verification.yml` and `pr-ci.yml` both call this same reusable workflow, so there
+is no second upload list to edit and both inherit the change.
+
+### 63.3 The baseline's `establishedBy`: an inconsistency recorded, not edited
+
+[`coverage-record.md`](./coverage-record.md) § 5 observes that
+`.github/ci-baselines/coverage-baseline.web.json:5` (`establishedBy`) cites
+`apps/web/coverage/web/coverage-summary.json` inside artefact `evidence-web-quality` as the source of
+its 131-instrumented-file figure — a file that artefact did not carry.
+
+Correcting the field here was considered and **deliberately refused**, because it is machine-read and
+not free-text provenance: `scripts/ci/coverage-gate.mjs:92` reads its truthiness to tell an
+unestablished baseline from a silenced ratchet, `scripts/ci/coverage-gate.mjs:350` writes it, and
+`tests/ci/baseline-integrity.test.ts:80-81` holds a sibling baseline to naming a run id in it.
+Editing a machine-read field so that a citation reads true would be repairing the record rather than
+the fact.
+
+The fact is repaired instead: from the first hosted run after § 63.2 merges the artefact **does**
+carry that file, and the citation becomes openable. The figure itself belongs to the coverage-policy
+lane, and no value in `.github/ci-baselines/` is edited by this section.
+
+### 63.4 (B) The provenance gate reads the ledger instead of accepting a word
+
+`tests/ci/p1-27-doc-counts.test.ts:613` pinned the restated executed total with
+`/\*\*The (\d+) is (?:local|HOSTED)/`. The alternation was deliberate and its reasoning is recorded in
+the file: the case is about the page not stating two different totals, and pinning one word would
+break at the local-to-hosted transition the sentence exists to describe. Both halves of that are
+true, and the result still read nothing about provenance — either word passed whatever the ledger
+held, so a local measurement relabelled HOSTED was invisible to every gate in the repository.
+
+**The rule as implemented.** The word is now decided by parsing two committed ledgers:
+
+1. Every `**The <n> is <word>…**` restatement on the page is collected. A page carrying none is
+   REFUSED rather than passed, on the anti-vacuity rule the ownership gate applies to an empty diff.
+2. The restatement is mapped to a tier by `evidence/closing-value-ledger.json`: the closing value
+   whose `locator` is a prefix of the restatement and whose `binding.kind` is `run` names the `tier`
+   and the `field`. A restatement no ledger row binds is REFUSED — nothing decides what it describes.
+3. The tier's record in `evidence/local-run-ledger.json` decides the state. **No `provenance` block
+   is LOCAL** — that is the repository's own marker, and `clean-room-evidence.md` says so in the
+   sentence under test. A complete block is **HOSTED**. A block that is present and incomplete is
+   **neither**, and is refused: `source` must be exactly `hosted`, `runId` and `job` must be all
+   digits, `headSha` must be forty hexadecimal characters, and `source`, `runId`, `job`, `headSha`,
+   `artifact`, `artifactDigest` and `field` must every one be a non-empty string.
+4. The wording must match the state. LOCAL obliges "local, and it is pending attestation by this pull
+   request's hosted run."; HOSTED obliges "HOSTED, and it is the binding measurement".
+5. The number is still compared against the record's own `field`, which is what the old case did and
+   is kept.
+
+The first six required fields are `HOSTED_PROVENANCE_FIELDS` in
+`scripts/ci/check-p1-27-closing-values.mjs`. **`artifactDigest` is required as a seventh, here.** The
+writer emits it, and it is the only field tying the counts to bytes GitHub published rather than to a
+run id somebody typed, so a block without it is a hosted claim with the checkable part removed.
+
+**No checker carries the same pin.** A search of `scripts/` for the alternation and for the phrase
+"binding measurement" returns nothing, so there is no second copy to bring into step; the test file
+was the only place the wording was read.
+
+### 63.5 The negative cases, and what each would have caught
+
+Eight cases, all in `tests/ci/p1-27-doc-counts.test.ts`. **Seven** run against FIXTURE ledgers and
+pages built inside the test rather than against the live files, so a refusal is exercised without
+writing a false statement into a record; the eighth is the live pair. _(This sentence read "Six" when
+it was written and in the commit message and pull-request description that carry it. The table below
+was always right: one live case and seven fixture cases. Corrected here rather than re-counted
+silently.)_
+
+| case                                             | ledger fixture                      | page fixture    | outcome  |
+| ------------------------------------------------ | ----------------------------------- | --------------- | -------- |
+| the live record and the live page                | committed files, unmodified         | committed page  | **PASS** |
+| a local record described as local                | no `provenance` block               | "local …"       | **PASS** |
+| a hosted record described as binding             | complete `provenance`               | "HOSTED …"      | **PASS** |
+| a hosted record still described as local         | complete `provenance`               | "local …"       | **FAIL** |
+| a local record described as HOSTED               | no `provenance` block               | "HOSTED …"      | **FAIL** |
+| a block with no `artifactDigest`, either wording | `provenance` minus `artifactDigest` | both, in turn   | **FAIL** |
+| a restatement bound to no tier                   | complete `provenance`               | orphan sentence | **FAIL** |
+| a page that restates nothing                     | no `provenance` block               | no restatement  | **FAIL** |
+
+Each refusal asserts the TEXT of the refusal and not merely that one occurred, so a case cannot pass
+on the wrong complaint. The two live tiers carry no provenance block at `72f3a71e`, the page reads
+"local", and the live case passes on that agreement — it fails the moment a hosted run is recorded
+and the sentence is not corrected, which is the behaviour that was missing.
+
+**No ledger, record or evidence file is edited by this section.** No allow-list is widened, no
+suppression is added, and no wording is relaxed to make anything pass.
+
+### 63.6 The fill plan for H-2 and H-3 — phase two, and its rule
+
+The two figures [`coverage-record.md`](./coverage-record.md) § 4 holds open stay open here. **This
+pull request records no coverage figure of its own.**
+
+They are filled by a SECOND slice, after **#389** merges and a hosted run of the changed workflow has
+produced the artefact. The filling slice must state, beside every figure it writes:
+
+- the **run id** and the **head sha** the run checked out;
+- the **artefact id** of the `evidence-web-quality` artefact it read, and the **digest** GitHub
+  publishes for those bytes;
+- which file inside it each figure came from — `apps/web/coverage/web/coverage-summary.json` for the
+  per-tree instrumented-file counts (H-2) and for the dashboard route tier's own figure (H-3), and
+  `coverage-gate-web.json` for the ratchet's verdict over them.
+
+**Never from an older run.** Runs `34759286884` and `34321869051` are both cited elsewhere in this
+phase and neither carries the file, so a figure sourced from either would be a figure with no
+artefact behind it — the exact defect CC-50 (a) names. A run that predates § 63.2 cannot satisfy this
+plan whatever its numbers say.
+
+### 63.7 Verification
+
+Static and database-free. No tier needing a database, no production build, no browser tier and no
+deployment was run, and none is claimed.
+
+**Two rows below were WRONG when this section was first written, and they are corrected here rather
+than quietly re-run.** The first table was produced with the change in the WORKING TREE, before the
+commits existed. `check-p1-27-closing-values.mjs` refuses a run record once an executable path has
+changed since the record was taken, and it computes that from committed history — so with nothing
+committed there was nothing for it to see, and it reported 0 problems. At the real head `03ceac0f`
+it exits **1**:
+
+```
+RUN_RECORD_STALE: the `unit` run was taken at 7c307653 and 2 executable path(s) have changed
+since — .github/workflows/_reusable-node-quality.yml, tests/ci/p1-27-doc-counts.test.ts
+RUN_RECORD_STALE: the `web` run was taken at 7c307653 and 2 executable path(s) have changed
+since — .github/workflows/_reusable-node-quality.yml, tests/ci/p1-27-doc-counts.test.ts
+```
+
+`verify:policies` runs that same checker, so it was red for the same reason and at the same head.
+The gate was right and the record was wrong: a slice that changes an executable path owes a
+re-recorded run, and this slice owed two. **The lesson is general and is the reason this is written
+out rather than deleted: a pre-commit run of a history-reading gate is not evidence about the
+commit.** Both tiers are re-recorded below and both commands are green afterwards.
+
+Each command is named with what it decided.
+
+| command                                                                                              | result                                                                                                                                      |
+| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npx vitest run tests/ci/p1-27-doc-counts.test.ts`                                                   | pass, 49 cases, including the eight of § 63.5                                                                                               |
+| `npm run typecheck`                                                                                  | pass                                                                                                                                        |
+| `npm run lint`                                                                                       | pass                                                                                                                                        |
+| `npm run format:check`                                                                               | pass                                                                                                                                        |
+| `npm run test:unit`                                                                                  | pass                                                                                                                                        |
+| `npm run security:all`                                                                               | pass                                                                                                                                        |
+| `node scripts/ci/check-p1-27-doc-counts.mjs`                                                         | pass                                                                                                                                        |
+| `node scripts/ci/check-p1-27-closing-values.mjs`                                                     | **FAILED at `03ceac0f`, exit 1** — RUN_RECORD_STALE on both tiers, as above                                                                 |
+| the re-record: `evidence:p1-27`, `--record unit`, `evidence:p1-27`, `--record web`, `evidence:p1-27` | unit **3324 → 3332** tests, 125 files unchanged; web 4020 tests and 142 files both unchanged; both re-taken at `03ceac0f`, both still LOCAL |
+| `node scripts/ci/check-p1-27-closing-values.mjs` after it                                            | pass — 58 classified, 0 problems, no RUN_RECORD_STALE                                                                                       |
+| `npm run verify:policies` after it                                                                   | pass                                                                                                                                        |
+| `npm run validate:plain-language`                                                                    | pass                                                                                                                                        |
+| `npm run validate:encoding`                                                                          | pass                                                                                                                                        |
+| `npm run verify:policies`                                                                            | **FAILED at `03ceac0f`** for the same reason — see the rows below                                                                           |
+| `node scripts/ci/check-phase-ownership.mjs p1-31-frontend`                                           | pass, 0 violations                                                                                                                          |
+| the workflow YAML parsed with `js-yaml`                                                              | parses; the upload list resolves to 24 entries with no comment line among them                                                              |
+
+**Ownership.** The branch is `feature/p1-31-…`, which
+`.github/ci-baselines/phase-ownership-profiles.json` maps to `p1-31-frontend`. That profile permits
+`docs`, `tooling` — which is what classifies `.github/**` and `scripts/**` — `tests`, `web` and
+`rootConfig`. The three trees this slice touches, the workflow and `tests/ci` and
+`docs/phase-1/phase-1-31`, fall in `tooling`, `tests` and `docs`, so **one branch covers all three
+and no split into two pull requests is needed**. No API source, no migration, no seed and no web
+source is changed.
+
+### 63.8 Dispositions
+
+| id        | finding                                                                                                                                                 | disposition                                                                                                                                                                                                                                                                            | owner     | state                          |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ------------------------------ |
+| **CC-53** | the web tier measured per-file coverage into an artefact nobody kept, and the provenance gate beside it accepted either word without reading the ledger | **both repaired in code.** The upload list keeps `apps/web/coverage/web/coverage-summary.json` and `coverage-gate-web.json`; the wording pin is replaced by a rule that parses the closing-value ledger and the run ledger, with six fixture-driven refusals proving it can still fail | this lane | **open, pending the artefact** |
+
+_**CC-53 is CLOSED.** The paragraph below is left exactly as written, because it states the
+condition that closed it. Hosted run `34778434228` of #389, at head `03ceac0f`, uploaded both files;
+H-2 and H-3 are filled from that artefact under the § 63.6 rule; § 63.10 records the fill. The state
+cell above reads `open, pending the artefact` because that was true when the section was written and
+this register annotates rather than rewrites — **read it with this note: closed, artefact received**._
+
+CC-53 stays **open** on purpose. The code change is complete and verified; the measure it exists to
+produce does not exist until a hosted run of this pull request has uploaded the file, and CC-53
+closes when H-2 and H-3 are filled from that artefact under the § 63.6 rule.
+
+**Related identifiers, and who moves them.** **CC-50 (a)** (§ 60.5) is unblocked by § 63.2 and moves
+when the fill lands. **CC-52 (b)** (§ 62.7) describes the gate this section repairs and is the § 62
+lane's to move.
+
+_**CC-50 (a) is CLOSED**, by the same artefact and in the same fill: its whole content is that the
+per-file web coverage summary reached no reader, so H-2 and H-3 could be filled from no hosted
+artefact. Run `34778434228` carries it and both figures are filled. Its row in § 60.5 is not
+rewritten and its section is not renumbered; this is the note that carries the state. **CC-52 (b)
+remains OPEN** and is untouched here — the gate it names is repaired by § 63.4, but moving that
+identifier is the § 62 lane's act, not this one's._
+
+### 63.9 What this slice did NOT do
+
+- **It claims no hosted result.** _Superseded by § 63.10, and left visible: no completed run of the
+  changed workflow existed when #389 was opened, and that was the whole of the claim. Run
+  `34778434228` has since completed and its artefact IS cited, in § 63.10 and in the coverage
+  record. **No verdict of #389's own required checks is asserted anywhere**, then or now — the
+  artefact is read for its files, not for a green tick._
+- **It moved no task-matrix row, and touched no task matrix.**
+- **It changed no ledger, no evidence record and no CI baseline value.**
+- **It changed nothing about what coverage measures** — no threshold, no `include` list, no floor.
+- **It did not close CC-50 (a), CC-52 (b) or CC-53**, and it closed no finding by re-wording it.
+- **It added, renamed and removed no npm script**, so the command-coverage register is untouched.
+
+**Two observations on the new rule, recorded rather than changed.** Both were found in review of
+§ 63.4 and neither is a defect today; changing either would move a file outside `docs/` and make the
+merge head a different tree from the one the hosted run measured, which is the whole basis of the
+fill in § 63.10.
+
+- **The tier lookup takes the FIRST matching ledger row** (`Array.prototype.find` over a
+  locator-prefix test). One row matches each restatement on the live page today. If two closing
+  values ever shared a locator prefix and bound to different tiers, the rule would silently use the
+  earlier one rather than refusing the ambiguity. The fail-closed spelling is to collect all matches
+  and refuse when there is more than one.
+- **`RESTATED_PROVENANCE` captures the provenance word in group 2 and nothing reads it.** The wording
+  is judged from the collapsed sentence body instead, which is strictly stronger — it checks the
+  whole clause and not just the adjective — so the capture is dead rather than wrong. It is left in
+  place here and should be removed by the next slice that touches the file.
+
+### 63.10 The fill — H-2 and H-3, from run `34778434228` and no other
+
+The phase-two fill § 63.6 planned is done, and it is recorded in
+[`coverage-record.md`](./coverage-record.md) § 4 rather than restated here. What this section owes is
+the provenance and the tree identity.
+
+**Provenance.** Hosted run **`34778434228`**, job `103781039915`, at head **`03ceac0f`**, artefact
+**`evidence-web-quality`** — artefact id `10323344410`, 409408 bytes, zip sha256
+`2704a25f8a15a347660d0164c196992b8af23b056e42355a013e120417da3b50`. The archive was downloaded and
+its bytes hashed before anything was read out of it; the digest above is the digest of the bytes the
+figures came from and the digest the artefacts API publishes. Sixteen files, among them
+`apps/web/coverage/web/coverage-summary.json` — **141 per-file entries**, total lines 2028/2396 =
+84.64% — and `coverage-gate-web.json`, which carries the four metrics with their baselines and
+deltas and `ok: true`. **This is the first run to carry either file**, which is § 63.2 doing the only
+thing it was added to do.
+
+**Tree identity.** The run measured `03ceac0f`. **Every commit on this branch after `03ceac0f`
+changes only files under `docs/`** — this section, § 63.5, § 63.7, § 63.8, the coverage record, and
+the P1-27 run ledger and the two records that quote it. So the executable tree run `34778434228`
+measured is the executable tree the merge head carries, and the figures do not describe a tree that
+will not be merged. That is why the re-record in § 63.7 and the corrections in this section are one
+commit: a second executable change here would have invalidated the artefact this fill stands on.
+
+**What was filled, and what the counting rule was.** H-2 is the instrumented-file count per
+`COVERAGE_INCLUDE` root: 20 CRM, 23 vehicles, 64 dashboard, 34 `src/lib`, **141 together**, with
+**no key outside the four roots**, which is the cross-check that the partition lost nothing. H-3 is
+the dashboard route tier — **64 files, 506/819 lines = 61.78%** — and the ten P1-31 route pages
+individually, **152/162 = 93.83%** together, matched by literal path rather than by keyword, all ten
+resolved. Both rules are stated in the coverage record beside the figures.
+
+**Neither hole is closed by its figure, and the record says so.** H-2 is that no P1-31 feature tree
+is inside the instrument, and the 141-file table is now the evidence for it rather than an assertion
+about it. H-3 is that `apps/web/src/app/` is exempt from the touched-file floor, so not one of those
+ten percentages is enforced by anything. **H-2 and H-3 stay OPEN. CC-50 (a) and CC-53 close.**
+QA-001 stays `phase-level incomplete`.
+
+**No baseline is moved.** `.github/ci-baselines/coverage-baseline.web.json` records this tier at
+52.91% across 55 files from run `34321869051`; run `34778434228` measures 61.78% across 64 at a later
+head. The two are not reconciled here and the baseline is not edited — that is the coverage-policy
+lane's, and § 63.3 already declined to edit a machine-read field in the same file for the same
+reason.
 ---
 
 ## 65. The warranty transition ledger published — P-18, the backend half of FE-009 (CC-55)
 
 **Slice:** `remediation/p1-31-backend-warranty-history`, ownership profile `p1-31-backend`.
-**Baseline:** protected `develop` **`72f3a71ee4a8204c494913e40e6c2a43cd683e36`**. `main`
-`1262de74`, untouched and far behind. **The full seam record is
+**Baseline:** protected `develop` **`72f3a71ee4a8204c494913e40e6c2a43cd683e36`**, then merged up to
+**`591763df`** — the merge of pull request #389, the per-file web coverage artefact and the
+ledger-aware provenance gate — before this branch was proposed. `main` `1262de74`, untouched and far
+behind. **The full seam record is
 [`warranty-history-seam.md`](./warranty-history-seam.md)**; this section records the change control.
 
 **Why it exists.** **CC-10** has been open since § 13 and has been restated, unchanged, by five
@@ -5100,8 +5414,15 @@ appropriate backend slice. That condition is met here by measurement rather than
 
 **Section 65 and CC-55 are the pair reserved for this slice**, and neither is renumbered to follow
 heading order — § 48.1's rule holds: an identifier is a claim about the register at the moment it
-was raised. Sections 63 and 64 and identifiers CC-53 and CC-54 are allocated to other lanes and are
-not this slice's to fill; the gap is deliberate and is not a hole in the sequence this section owns.
+was raised.
+
+**Section 64 is missing from this file on purpose, and it is not a hole this section may fill.**
+Sections 63 and 64 and identifiers CC-53 and CC-54 were reserved for two other lanes when this pair
+was allocated. § 63 / **CC-53** has since landed — the per-file web coverage artefact and the
+ledger-aware provenance gate, merged as #389 — and it sits immediately above this section, in
+number order, because the merge that brought it in put it there rather than because anything moved.
+**§ 64 / CC-54 is the Frontend proofs lane and lands later.** When it does it belongs above this
+section; renumbering either one to close the gap in the meantime is exactly what § 48.1 forbids.
 
 ### 65.2 What P-18 had to decide, measured before it was written
 
@@ -5131,6 +5452,19 @@ read how it reached its status, under the same code, in the same scope.
 — where a row is `{ id, fromStatus, toStatus, reason, actorId, occurredAt }`, field for field as
 `DeliveryStatusHistoryEntryView` spells it. No monetary field, because `wty` has no monetary column,
 and no `correlationId`, because that is platform diagnostics rather than a fact about the warranty.
+
+**The published OpenAPI 200 schema is `{"type":"object"}` and that is NOT specific to this
+operation.** The generator emits a bare object body for **all 296** operations in the document that
+publish a 200 — measured on this tree, 296 of 296 — and the new GET's entry in
+`docs/api/openapi.v1.json` is identical key for key to `sal.delivery-status-history`'s, the read it
+mirrors. So the contract a consumer must build against
+is the exported TypeScript envelope, `WarrantyStatusHistoryEnvelope` and
+`WarrantyStatusHistoryEntryView` from `@/modules/warranty`, which
+`scripts/ci/check-named-wire-shapes.mjs` requires to be named for exactly this reason. **The web
+slice takes the field names, their types and their nullability from those two interfaces, never from
+the published schema.** Enriching the generator's body schemas is a platform-wide change to every
+one of those 296 and is not this slice's to make; it is noted here so a reader does not mistake a
+generator default for a contract this operation chose.
 
 ### 65.4 The one thing a reader must not misread
 
@@ -5163,11 +5497,11 @@ that the tie was really crossed, so a millisecond-truncated cursor (`P1-27-INT-0
 
 ### 65.5 Dispositions
 
-| id            | finding                                                                                        | measured                                                                                                                                                                                                                                                                                                                   | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | owner / slice       | state            |
-| ------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | ---------------- |
-| **CC-55**     | **the warranty transition ledger had no reader, and the screen that needs it shipped partial** | **CC-10** open since § 13 and restated unchanged by five slices; **CC-31** naming P-18 as the missing prerequisite. Everything the read needs already ships — table, RLS, policy, grant, index, stamp trigger and permission code, each cited in § 65.2 — so the gap was a route and a query, not a schema or an authority | **closed. The read is published**, mirroring `sal.delivery-status-history` field for field. The query and the row mapper are both new, as P-5's were, and that is recorded rather than presented as a publication. **CC-10 is closed in place** with its original disposition quoted; **CC-31's backend half is closed** and its frontend half is left open in the same cell                                                                                                                    | this slice          | closed, recorded |
-| **CC-55 (a)** | **the ledger this read publishes has one row on every record the product can create**          | No operation advances a warranty status. `wty.issue_warranty` is the only writer of the table anywhere, and `assertWritableStatus` refuses every writable status structurally                                                                                                                                              | **recorded, and NOT worked around.** The read is paged rather than shaped to the single row it can return today, and the fact is stated in four places in the source and twice in the suite. Whether a status writer should exist — expiry recorded rather than derived, and voiding as an authority — is a product decision nobody has been asked for, and inventing one to make the ledger look fuller would be the defect the screen's own refusal to simulate a ledger already avoided      | a later `wty` slice | open, recorded   |
-| **CC-55 (b)** | **the misnamed table propagated into five records before anyone read the migration**           | `wty.warranty_record_status_history` — a name no migration ever created — is written as the current table name in CC-10, in A0 items 9 and FE-009, in `warranty-read-seam.md:181` and in `warranty-policy-seam.md`. § 43 and `warranty-record-screens.md` already flagged the discrepancy without correcting the sources   | **corrected in place, in the four sources this slice touches, with the original wording quoted in an italic note beside each.** Nothing is renumbered and no passage is deleted. Two further statements of the wrong name — `security-and-qa-evidence.md:526` and the historical A0 "Was:" quotation — are left as they stand: the first belongs to a record this slice does not own, and the second is a quotation of what was written at the time, which § 48.1's discipline says to preserve | this slice, partly  | open, recorded   |
+| id            | finding                                                                                                  | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | owner / slice       | state            |
+| ------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | ---------------- |
+| **CC-55**     | **the warranty transition ledger had no reader, and the screen that needs it shipped partial**           | **CC-10** open since § 13 and restated unchanged by five slices; **CC-31** naming P-18 as the missing prerequisite. Everything the read needs already ships — table, RLS, policy, grant, index, stamp trigger and permission code, each cited in § 65.2 — so the gap was a route and a query, not a schema or an authority                                                                                                                                                                                                                                                                                                                                                                        | **closed. The read is published**, mirroring `sal.delivery-status-history` field for field. The query and the row mapper are both new, as P-5's were, and that is recorded rather than presented as a publication. **CC-10 is closed in place** with its original disposition quoted; **CC-31's backend half is closed** and its frontend half is left open in the same cell                                                                                                                                                                                                | this slice          | closed, recorded |
+| **CC-55 (a)** | **the ledger this read publishes has one row on every record the product can create**                    | No operation advances a warranty status. `wty.issue_warranty` is the only writer of the table anywhere, and `assertWritableStatus` refuses every writable status structurally                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | **recorded, and NOT worked around.** The read is paged rather than shaped to the single row it can return today, and the fact is stated in four places in the source and twice in the suite. Whether a status writer should exist — expiry recorded rather than derived, and voiding as an authority — is a product decision nobody has been asked for, and inventing one to make the ledger look fuller would be the defect the screen's own refusal to simulate a ledger already avoided                                                                                  | a later `wty` slice | open, recorded   |
+| **CC-55 (b)** | **the misnamed table propagated into six passages across four records before anyone read the migration** | `wty.warranty_record_status_history` — a name no migration ever created — is written as the CURRENT table name in **six** places: CC-10 (§ 13), this register's § 22 bullet at line 650, A0 item 9, the A0 FE-009 row, `warranty-read-seam.md:181` and `warranty-policy-seam.md:290`, plus a seventh in `security-and-qa-evidence.md:526`. § 43 and `warranty-record-screens.md` already flagged the discrepancy without correcting any source. _(This cell read "propagated into five records" and listed four; the register's own § 22 bullet and the security record were missed on the first pass and are corrected in the same slice, on review. The count is the passages, not the files.)_ | **all seven corrected in place, with the original wording quoted in a dated italic note beside each**, and each note also carrying the fact that CC-10 closed on 2026-09-13. Nothing is renumbered and no passage is deleted. **One statement is deliberately left as it stands**: the historical "Was:" quotation in the A0 FE-009 row, which is a quotation of what was written at the time and which § 48.1's discipline says to preserve. `security-and-qa-evidence.md` is annotated and NOT re-measured — the re-measurement of that record belongs to its owning lane | this slice          | closed, recorded |
 
 ### 65.6 What this slice did NOT do
 

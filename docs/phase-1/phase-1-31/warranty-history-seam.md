@@ -79,6 +79,15 @@ standing in for one.
 **No money, by measurement.** `wty` has 80 columns and not one is an amount, a currency or a cap in
 any unit of account.
 
+**What a web slice must build against, and what it must not.** The published OpenAPI 200 schema for
+this GET is `{"type":"object"}` — a generator default, not a choice this operation made. All 296
+operations in `docs/api/openapi.v1.json` that publish a 200 carry exactly that body, and this GET's
+entry is identical key for key to `sal.delivery-status-history`'s. The wire contract is therefore the
+exported TypeScript pair, `WarrantyStatusHistoryEnvelope` and `WarrantyStatusHistoryEntryView` from
+`@/modules/warranty`, which `check-named-wire-shapes.mjs` requires to be NAMED for precisely this
+reason: field names, types and nullability come from those two interfaces. Enriching the generator's
+body schemas would be a platform-wide change to all 296 and is not this slice's to make.
+
 ---
 
 ## 4. The four decisions the read still had to make
@@ -211,8 +220,10 @@ section 9.
 
 ## 8. Pins moved
 
-Five, and each is the count a single new operation on a single new route module legitimately moves.
-Nothing was widened and nothing else in the tier moved.
+Six, and each is the count a single new operation on a single new route module legitimately moves.
+Nothing was widened and nothing else in the tier moved. _(This sentence read "Five" while the table
+below it listed six rows — the resolved-operation count in `openapi-success-status.test.ts` was
+moved and proved but not counted in the prose. Corrected in place; no figure changes.)_
 
 | file                                      | pin                 | before → after |
 | ----------------------------------------- | ------------------- | -------------- |
