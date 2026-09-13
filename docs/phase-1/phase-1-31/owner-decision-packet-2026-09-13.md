@@ -70,7 +70,7 @@ Definition-of-Done bullet (`canonical-plan.md:454-462`) it touches.
 **(a) Decision wording.** "For P1-31 at `develop` `fb65b049`, I record the phase decision as **Pass /
 Conditional Pass / Fail / Deferred**, with these conditions: ______."
 
-**(b) Why existing authorisation does not resolve it.** closure-record.md:298-300 leaves the verdict
+**(b) Why existing authorisation does not resolve it.** closure-record.md:331-333 leaves the verdict
 field deliberately empty and states that only the approval owner named in Field 35 may fill it — "No
 engineering session, no agent, no pull request and no record may supply it, infer it, or treat its
 absence as any of the four values." None of the three recorded Owner decision files carries a phase
@@ -85,10 +85,10 @@ are **Conditional Pass** (with the conditions being items A-2, A-3, A-4 and F-2 
 **(d) Practical impact.** Until a value is recorded, the chapter's own `Status` for all twenty-nine
 tasks remains `Planned` (`canonical-plan.md:471-472`), no dependent work may be authorised, and no
 promotion of `develop` to `main` may be justified by phase closure —
-closure-record.md:438 states in terms that the phase is **not eligible**.
+closure-record.md:477 states in terms that the phase is **not eligible**.
 
 **(e) Blocks this phase: YES.** Gate condition **4** (`canonical-plan.md:466-469`;
-closure-record.md:288) and DoD bullet **4** (`canonical-plan.md:462`).
+closure-record.md:321) and DoD bullet **4** (`canonical-plan.md:462`).
 
 ---
 
@@ -105,7 +105,7 @@ security-and-qa-evidence.md:3), the acceptance record
 `acceptance-record.md`, the phase coverage record `coverage-record.md`, the audit-class review
 `audit-class-review.md`, the operator runbook `operator-runbook.md` and the matrix `task-matrix.md`.
 **What does not exist is the certificate and the certifier**:
-closure-record.md:286 states "**no certification, and no certifier.** The index is marked OPEN and
+closure-record.md:319 states "**no certification, and no certifier.** The index is marked OPEN and
 **no QA lead is named in this repository**." Appointing a role holder is not an engineering act, and
 a record is not a certificate of itself.
 
@@ -132,7 +132,7 @@ reconciliation; SEC-002's export posture closed by disposition and a committed r
 negative behind a mocked adapter; SEC-003's set-wide privilege-escalation and cross-tenant probes
 (`tests/backend/p1-31-privilege-escalation.test.ts`, merged #386 at `e2908f06`); and SEC-004's
 sibling write-shape gate plus `audit-class-review.md`. **What does not exist is the clearance, and
-there is no reviewer to give it**: closure-record.md:287 states "**no clearance, and no
+there is no reviewer to give it**: closure-record.md:320 states "**no clearance, and no
 reviewer.**"
 
 **Four residues a clearance would have to address, named so they are not discovered afterwards.**
@@ -152,7 +152,7 @@ reviewer.**"
    integration assertions, and no acceptance record exercises them.
 
 **(c) Recommendation.** Appoint. All four SEC rows sit at `phase-level incomplete` on the matrix's own
-vocabulary (task-matrix.md:57-68), and a clearance given over that shape should be given by a
+vocabulary (task-matrix.md:70-81), and a clearance given over that shape should be given by a
 named person, in writing.
 
 **(d) Practical impact.** Same as A-2 — condition 3 has no executor.
@@ -168,41 +168,42 @@ the phase — or I name the ones that must be closed before P1-31 closes."
 
 **(b) Why existing authorisation does not resolve it.** DoD bullet 2 (`canonical-plan.md:458-459`)
 requires findings to be "closed **or formally accepted by the authorized owner**".
-closure-record.md:235 states that neither limb is satisfied. The register files each
+closure-record.md:264 states that neither limb is satisfied. The register files each
 disposition as _recorded_, which is an engineering act, not an acceptance.
 
-**The open set is now a derived index rather than a reading.** change-control-2026-09-08.md:4946 re-derives
-every identifier's state at this head — **25 open, 4 stating no usable disposition, 47 closed or
-settled**, out of 76 before this section — and it supersedes the earlier index at § 57.4 rather than
-adjusting it. The twenty-five, each read off the row that carries its own state:
+**The open set is now a derived index rather than a reading.** change-control-2026-09-08.md:4953 re-derives
+every identifier's state at this head — **26 open, 4 stating no usable disposition, 47 closed or
+settled**, out of 77 — and it supersedes the earlier index at § 57.4 rather than adjusting it. The
+twenty-six, each read off the row that carries its own state:
 
-| id        | subject                                                                                                                                                                   | state as written                                     |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| CC-04     | `rpt.export` withheld from the provisioning bundle                                                                                                                        | open                                                 |
-| CC-06     | the checklist-results read does not close P1-27-INT-088                                                                                                                   | open                                                 |
-| CC-10     | no reader anywhere for the warranty status ledger                                                                                                                         | open                                                 |
-| CC-12     | two Backend docblocks name a code navigation no longer uses                                                                                                               | open                                                 |
-| CC-16     | organisations provisioned before the widening cannot administer                                                                                                           | open                                                 |
-| CC-20     | organisations provisioned before the widening cannot delegate                                                                                                             | open                                                 |
-| CC-23     | no index for the list ordering                                                                                                                                            | open, recorded                                       |
-| CC-24     | no batch variant — about 5N round trips per page                                                                                                                          | open                                                 |
-| CC-27     | the catalogue merge rule, carried in CC-27's own cell (see item **D-1**)                                                                                                  | (b) open                                             |
-| CC-27(b)  | the same open half, filed separately so it is not lost                                                                                                                    | open                                                 |
-| CC-29     | delivering-employee identity, four recommendations pending (see **C-1 … C-4**)                                                                                            | open, four recommendations pending                   |
-| CC-30     | no reduced readiness view without `sal.finance.view`                                                                                                                      | open, recorded                                       |
-| CC-31     | FE-009 ships partial (see item **F-3**)                                                                                                                                   | open, recorded                                       |
-| CC-32     | the printed sheet names nobody for the delivering employee                                                                                                                | open                                                 |
-| CC-34     | D-4 names a TRANSFER the ledger cannot express                                                                                                                            | recorded — no action here; **ambiguous**, filed open |
-| CC-37(a)  | eleven `wty.`/`rpt.` writes held to no payload-mirror gate — **superseded by CC-48**, which builds the gate; the row stays open until its own section is re-dispositioned | open, recorded                                       |
-| CC-37(b)  | the report-configuration operation family has no consumer (see item **F-1**)                                                                                              | open, recorded                                       |
-| CC-38     | amounts, quantities and durations shown as raw exact strings                                                                                                              | open, recorded                                       |
-| CC-38(a)  | two drill-through targets have no screen                                                                                                                                  | open, recorded                                       |
-| CC-41     | the overview is four report runs, not one summary read                                                                                                                    | open, recorded                                       |
-| CC-43     | two browser cases were failing; **repaired by the corrected re-run**, and the row's own cell is left to the lane that owns it                                             | closed in part; one cause open                       |
-| CC-44     | the handoff-gated reporting cases need overridden browser credentials                                                                                                     | open, stated                                         |
-| CC-46(c)  | the OpenAPI bare-object shortfall (see item **F-6**)                                                                                                                      | open, recorded                                       |
-| CC-47     | the register's index of its own open dispositions                                                                                                                         | open, indexed                                        |
-| CC-50 (a) | the per-file web coverage summary reaches no reader, so two coverage figures can be filled from no hosted artefact                                                        | open                                                 |
+| id        | subject                                                                                                                                                                                   | state as written                                     |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| CC-04     | `rpt.export` withheld from the provisioning bundle                                                                                                                                        | open                                                 |
+| CC-06     | the checklist-results read does not close P1-27-INT-088                                                                                                                                   | open                                                 |
+| CC-10     | no reader anywhere for the warranty status ledger                                                                                                                                         | open                                                 |
+| CC-12     | two Backend docblocks name a code navigation no longer uses                                                                                                                               | open                                                 |
+| CC-16     | organisations provisioned before the widening cannot administer                                                                                                                           | open                                                 |
+| CC-20     | organisations provisioned before the widening cannot delegate                                                                                                                             | open                                                 |
+| CC-23     | no index for the list ordering                                                                                                                                                            | open, recorded                                       |
+| CC-24     | no batch variant — about 5N round trips per page                                                                                                                                          | open                                                 |
+| CC-27     | the catalogue merge rule, carried in CC-27's own cell (see item **D-1**)                                                                                                                  | (b) open                                             |
+| CC-27(b)  | the same open half, filed separately so it is not lost                                                                                                                                    | open                                                 |
+| CC-29     | delivering-employee identity, four recommendations pending (see **C-1 … C-4**)                                                                                                            | open, four recommendations pending                   |
+| CC-30     | no reduced readiness view without `sal.finance.view`                                                                                                                                      | open, recorded                                       |
+| CC-31     | FE-009 ships partial (see item **F-3**)                                                                                                                                                   | open, recorded                                       |
+| CC-32     | the printed sheet names nobody for the delivering employee                                                                                                                                | open                                                 |
+| CC-34     | D-4 names a TRANSFER the ledger cannot express                                                                                                                                            | recorded — no action here; **ambiguous**, filed open |
+| CC-37(a)  | eleven `wty.`/`rpt.` writes held to no payload-mirror gate — **superseded by CC-48**, which builds the gate; the row stays open until its own section is re-dispositioned                 | open, recorded                                       |
+| CC-37(b)  | the report-configuration operation family has no consumer (see item **F-1**)                                                                                                              | open, recorded                                       |
+| CC-38     | amounts, quantities and durations shown as raw exact strings                                                                                                                              | open, recorded                                       |
+| CC-38(a)  | two drill-through targets have no screen                                                                                                                                                  | open, recorded                                       |
+| CC-41     | the overview is four report runs, not one summary read                                                                                                                                    | open, recorded                                       |
+| CC-43     | two browser cases were failing; **repaired by the corrected re-run**, and the row's own cell is left to the lane that owns it                                                             | closed in part; one cause open                       |
+| CC-44     | the handoff-gated reporting cases need overridden browser credentials                                                                                                                     | open, stated                                         |
+| CC-46(c)  | the OpenAPI bare-object shortfall (see item **F-6**)                                                                                                                                      | open, recorded                                       |
+| CC-47     | the register's index of its own open dispositions                                                                                                                                         | open, indexed                                        |
+| CC-50 (a) | the per-file web coverage summary reaches no reader, so two coverage figures can be filled from no hosted artefact                                                                        | open                                                 |
+| CC-52 (c) | three committed browser cases are owed — the delivery checklist, the final odometer and the signature evidence — and FE-004, FE-005 and FE-006 stay `merged (write path)` until they land | open, recorded                                       |
 
 **Four identifiers state no usable disposition and are therefore NOT in the table above**: CC-25 and
 CC-26 are prose bullets with no state cell, CC-40 is allocated and never used, and **CC-48 has no
@@ -291,7 +292,7 @@ that does not exist; Field 30 permits an explicit not-applicable decision as a d
 "**Still open.** **D-19** of 2026-09-12 requires FE-010 to make its freshness and timezone VISIBLE, which is
 a display requirement and not a refresh mechanism". So the newest Owner decision explicitly does not settle
 it, and the assurance index records it unchanged at this head
-(security-and-qa-evidence.md:1158).
+(security-and-qa-evidence.md:1161).
 **(c)** Record it not-applicable for P1-31 under Field 30, and raise the push surface as a platform item.
 **(d)** Without the decision, DO-002 cannot state what the phase owes over the platform's existing logging,
 and it is one of the two things standing between DO-002 and a definition — the other being that the
@@ -305,8 +306,8 @@ or name the items that belong to the other phase."
 **(b)** `a0-preflight.md:409-412`: WFP-15 records the owning Frontend phase as "P1-30 / P1-31 — the split is
 not established", corroborated in three further places, and the same question governs DTA-18. No Owner
 decision file names a phase split.
-**(c)** Confirm as executed. Sixteen Frontend rows were built to the P1-31 reading and **fifteen** are
-end-to-end verified on it (task-matrix.md:79).
+**(c)** Confirm as executed. Sixteen Frontend rows were built to the P1-31 reading and **twelve** are
+end-to-end verified on it, with three more on `merged (write path)` (task-matrix.md:93).
 **(d)** Low now that the work has merged; the risk A0 named — building a screen in the wrong phase — has
 already been taken.
 **(e) Blocks this phase: NO.** Touches DoD bullet **3**.
@@ -332,7 +333,7 @@ pre-release item, which is exactly what P1-25's gate record already says.
 **(b)** `a0-preflight.md:428-434`: all five ids return zero files and the testing-plan document Field 9 names
 does not exist here, so **no task can satisfy its own Test reference** — this is why the evidence index
 transposes its definitions from another phase and why CC-37 exists. The convention half is still
-unresolved at this head (security-and-qa-evidence.md:1027), and #378 and #380 have now instantiated the
+unresolved at this head (security-and-qa-evidence.md:1030), and #378 and #380 have now instantiated the
 repository's convention twice without reconciling it.
 **(c)** Retire the five ids and ratify the repository convention. Inventing files to match dead ids would be
 the worse outcome.
@@ -341,7 +342,7 @@ their own Test reference column (`canonical-plan.md:230-245`, `canonical-plan.md
 `canonical-plan.md:276-280`, `canonical-plan.md:293-294`, `canonical-plan.md:312-313`).
 **(e) Blocks this phase: YES, in one limb.** DoD bullet **1** requires each task "linked to immutable
 evidence"; while every task's cited test id resolves to nothing, that link cannot be made
-(closure-record.md:220).
+(closure-record.md:247).
 
 ---
 
@@ -449,7 +450,7 @@ seed.
 observation **O-5** records that a tenant configuration left in `draft` **suppresses** the baseline in
 `listPublished`, so `rpt.report-run` answers `404 ERR-RES-001` for a report the tenant previously had, and
 the consequence "is stated nowhere a screen could show it"
-(closure-record.md:371). Confirming the rule should be paired with directing that
+(closure-record.md:410). Confirming the rule should be paired with directing that
 consequence be surfaced.
 
 **(e) Blocks this phase: NO.** Touches DoD bullet **2** and DoD bullet **3**.
@@ -522,27 +523,32 @@ O-5 consequence — a `draft` row withdrawing a working report — is reachable 
 
 ### F-2. What P1-31 closes at, and what is carried
 
-**(a) Decision wording.** "P1-31 closes at **N of 29**, with the residues listed below formally carried to a
-named later phase — or P1-31 stays open until they are discharged. Choose, and if carrying, name the phase."
+**(a) Decision wording.** "P1-31 closes at **12 of 29** end-to-end verified, with the residues listed below
+formally carried to a named later phase — or P1-31 stays open until they are discharged. Choose, and if
+carrying, name the phase."
 
 **(b) Why existing authorisation does not resolve it, and how the question has changed.** **No task is
 `not started` at this head, and no task is in an open pull request.** Every lane the closure plan named has
-merged, so the counts are **15 `end-to-end verified`, 5 `merged (read-only/partial)`, 9 `phase-level
-incomplete`** (task-matrix.md:70). _(The closure record previously asked this question over **six**
-tasks it counted `not started`, and then five. Both were true when written; the shape of the question has
-changed and the question has not gone away.)_
+merged, so the counts are **12 `end-to-end verified`, 3 `merged (write path)`, 5
+`merged (read-only/partial)`, 9 `phase-level incomplete`** (task-matrix.md:83).
+_(The closure record previously asked this question over **six** tasks it counted `not started`, then five,
+and this packet first put the end-to-end count at **fifteen**. All were true when written. **Three rows were
+lowered** — FE-004, FE-005 and FE-006 held `end-to-end verified` on their HTTP chains alone and no committed
+browser case exercises the checklist, final-odometer or signature surfaces in either locale, which is
+**CC-52 (c)**.)_
 
-**Fourteen of the twenty-nine are not finished, and what each one lacks is tabled per row in
+**Seventeen of the twenty-nine are not finished, and what each one lacks is tabled per row in
 closure-record.md:60.** Grouped by kind: **four** rows lack implementation
 (FE-009's history reader, QA-002's export contract, DO-002's monitoring half, DOC-001's Field 34 tree),
-**nine** lack proof — which is the honest headline, because proof rather than implementation is what this
+**twelve** lack proof — which is the honest headline, because proof rather than implementation is what this
 phase is short of — and **seven** lack a decision, most of them decisions in this packet.
 
 Nothing authorises scoping a canonical task out. `owner-decisions-2026-09-09.md:102-121` covers documentation,
 governance and verification policy; no decision file reduces the twenty-nine.
 
-**(c) Recommendation.** Do not close at 15 of 29 on the current record, and do not carry the nine
-`phase-level incomplete` rows out silently. Three of them — SEC-001, SEC-004 and, through the index, every
+**(c) Recommendation.** Do not close at 12 of 29 on the current record, and do not carry the nine
+`phase-level incomplete` rows or the three `merged (write path)` rows out silently — the second group needs
+one acceptance pass, not a phase. Three of them — SEC-001, SEC-004 and, through the index, every
 other — turn on appointments the Owner has not made (**A-2**, **A-3**), so answer those first and re-ask this
 one afterwards.
 
@@ -573,8 +579,9 @@ above records it as `wty.warranty_record_status_history`, which no migration eve
 tells the truth today; a rushed reader would not be exercised by any P1-31 acceptance case.
 
 **(d) Practical impact.** Accepting holds FE-009 at `merged (read-only/partial)` and therefore holds the
-end-to-end count at fifteen. **FE-009 is the only Frontend row that is not `end-to-end verified`**
-(closure-record.md:191).
+end-to-end count at twelve. **Four Frontend rows are not `end-to-end verified`** — FE-009, and FE-004,
+FE-005 and FE-006, which want a committed browser case rather than a capability
+(closure-record.md:203).
 
 **(e) Blocks this phase: YES if the Owner requires 16/16 Frontend.** Touches DoD bullet **1**.
 
@@ -603,10 +610,10 @@ constraint the exit-5 refusal exposed is already the runbook's first act; keep i
 
 **(d) Practical impact.** Without the authorisation, any environment brought up from the merged tree gets
 administrator roles at 78 codes only where the backfill has been run, and a `NOT VALID` foreign key — which is
-CC-16 and CC-20, both open (change-control-2026-09-08.md:4968).
+CC-16 and CC-20, both open (change-control-2026-09-08.md:4975).
 
 **(e) Blocks this phase: YES.** DoD bullet **3** names runbooks explicitly (`canonical-plan.md:460-461`), and
-the bullet is not evidenced while the acts stay unperformed (closure-record.md:250).
+the bullet is not evidenced while the acts stay unperformed (closure-record.md:283).
 
 ### F-5. QA-004 — a sibling version-sourcing gate, or a recorded waiver
 
@@ -669,7 +676,7 @@ contrast is the point — the one code that _is_ deliberately withheld carries a
 `apps/api/src/modules/iam/domain/bootstrap-roles.ts:378-390` explains that `rpt.export` "remains deliberately
 EXCLUDED … on least-privilege grounds by Owner decision … (P1-31 CC-04)". There is no equivalent sentence for
 this code, so its absence reads as an omission rather than a decision. The acceptance observed the consequence
-and recorded that it blocked nothing (closure-record.md:365).
+and recorded that it blocked nothing (closure-record.md:404).
 
 **(c) Recommendation.** **INCLUDE.** The bundle's own stated rule is "carry a code only when a shipped operation
 declares it", and two shipped operations declare this one.
@@ -691,7 +698,7 @@ only on an explicit choice of the first option; no answer, or the second option,
 **(b) Why existing authorisation does not resolve it.** No decision file authorises deleting tenant data.
 Existing practice is the P1-30 precedent of **not** deleting: their codes match no backend-suite prefix, so no
 routine run will remove them and none of them will remove anything else
-(closure-record.md:411).
+(closure-record.md:450).
 
 **The count, measured on 2026-09-13 by a read-only query and labelled as one.** `org.tenants` holds **41**
 rows; **16** are `p31_journey_*` and **18** are `p30_journey_*`. Two of the sixteen are the pair the corrected
@@ -721,7 +728,7 @@ Two items were explicitly re-tested and are **not** Owner items.
   repair were to widen what the acceptance account is granted — and the disposition already rules that route
   out. **What has since happened is measured rather than assumed**: the credential-kind design of #387 pins one
   outcome per credential kind, and the hosted run of that pull request shows the handoff-gated cases skipping
-  and every legacy case executing (change-control-2026-09-08.md:4876). No grant was widened.
+  and every legacy case executing (change-control-2026-09-08.md:4877). No grant was widened.
 - **CC-10 — no reader for the warranty status ledger.** Owner "a later `wty` read slice, with FE-009", state
   "open". Building a read operation is an engineering act. **Excluded as a separate item** — the Owner-only part
   of it, authorising P-18 into scope, is already asked as **F-3**, and asking twice would inflate the packet.
@@ -805,6 +812,13 @@ change-control-2026-09-08.md:4848.
 11. **A derivation in the register's § 61.4 did not reconcile** — "eleven `test(...)` declarations, two of
     which stand inside a four-code loop" gives 17, not the 14 stated beside it. Exactly one declaration stands
     inside that loop: 10 + 4 = 14. Corrected in place and confirmed against a hosted run.
+
+12. **FE-004, FE-005 and FE-006 held `end-to-end verified` on their HTTP chains alone.** The acceptance
+    record's own standard is "both an HTTP chain that ran **and** a browser case that passed in both
+    locales", and no committed browser case exercises the delivery checklist, the final odometer or the
+    signature evidence in either locale. The three rows are lowered to `merged (write path)`, the
+    acceptance record is annotated beside the paragraph, and the owed cases are **CC-52 (c)**. This one
+    is a correction **against** the phase, and it is listed here for the same reason as the others.
 
 **Two gate weaknesses were also observed, recorded and deliberately not worked around**: the doc-counts pin
 accepts a provenance word without reading the run ledger (**CC-52 (b)**), and

@@ -1008,8 +1008,11 @@ and once on the corrected re-run. **That is not the task.** The record's own § 
 **PARTIAL**; **no Owner Pass has been given and none is inferred from a green run**; and the
 immutable-evidence half is unmet — the run's `summary.json`, `steps.json`, `steps.md`,
 `screens.json` and images are all held outside this repository, so nothing of the run is
-digest-checked into a committed ledger. What the record has moved is **fifteen Frontend rows**; it
-moved no row in this file and claims none. _(This paragraph read "its own verdict is PARTIAL, **two
+digest-checked into a committed ledger. What the record has moved is **fifteen Frontend rows, of
+which twelve hold `end-to-end verified` at this head**: FE-004, FE-005 and FE-006 are lowered to
+`merged (write path)` by the closure re-measure, because no committed browser case exercises the
+checklist, final-odometer or signature surfaces in either locale (**CC-52 (c)**). It moved no row in
+this file and claims none. _(This paragraph read "its own verdict is PARTIAL, **two
 browser cases still fail** … What the record moved is twelve **Frontend** rows": true at
 `81b3bce8`.)_
 
@@ -1370,7 +1373,9 @@ claim about the register at the moment it was raised and is never renumbered.
 
 **Fourth version, unmerged at the time of writing, on a `feature/` branch.** It is to be updated as
 the remaining work lands. **Nothing in this file rises past `phase-level incomplete`** (rule 2, § 9):
-the acceptance record has moved fifteen Frontend rows and no row above, and its own § 1 verdict is
+the acceptance record has moved fifteen Frontend rows and no row above — twelve of the fifteen still
+hold that state, three having been lowered to `merged (write path)` for want of a committed browser
+case (**CC-52 (c)**) — and its own § 1 verdict is
 **PARTIAL** with no Owner Pass given. **No test tier, build, database operation or deployment was run
 to produce this version.** Every figure is a static read of the tree at `fb65b049`, the reported
 output of a static checker named beside it, or a result quoted from
