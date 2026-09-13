@@ -48,7 +48,14 @@ import { format, resolveConfig } from 'prettier';
 import { declaredPermissions } from '../../scripts/ci/check-permission-parity.mjs';
 import { parseModule } from '../../scripts/lib/typescript-source.mjs';
 import { REPOSITORY_ROOT } from '../../scripts/lib/repository-paths.mjs';
-import { REPORT_DATASETS, REPORT_DATASET_CODES } from '@api/modules/reporting';
+// The domain LEAF rather than the module barrel. The barrel re-exports the
+// application services, which reach `server/db/pool.ts`, and this file runs in the
+// DB-free unit tier: importing it here would pull the whole module graph into a tier
+// that must not open a connection. `report-datasets.ts` imports nothing at all.
+import {
+  REPORT_DATASETS,
+  REPORT_DATASET_CODES,
+} from '@api/modules/reporting/domain/report-datasets';
 
 const ROOT = REPOSITORY_ROOT as string;
 const API_V1 = join(ROOT, 'apps', 'api', 'src', 'app', 'api', 'v1');

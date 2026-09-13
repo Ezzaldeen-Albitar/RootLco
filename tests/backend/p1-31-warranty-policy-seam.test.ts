@@ -989,7 +989,7 @@ describe('P-10 the version guard', () => {
     for (const status of ['retired', 'draft', '']) {
       authAs(SAL_FULL);
       const refusedPolicy = await setPolicyStatus(policy.id, status, policy.recordVersion);
-      expect({ status, code: refusedPolicy.status }).toEqual({ status, code: 422 });
+      expect({ sent: status, status: refusedPolicy.status }).toEqual({ sent: status, status: 422 });
       expect(await codeOf(refusedPolicy)).toBe('ERR-VAL-001');
 
       authAs(SAL_FULL);
@@ -999,7 +999,10 @@ describe('P-10 the version guard', () => {
         status,
         window.recordVersion
       );
-      expect({ status, code: refusedCoverage.status }).toEqual({ status, code: 422 });
+      expect({ sent: status, status: refusedCoverage.status }).toEqual({
+        sent: status,
+        status: 422,
+      });
       expect(await codeOf(refusedCoverage)).toBe('ERR-VAL-001');
     }
 
