@@ -169,8 +169,25 @@ test.describe('P1-31 warranty screens, over the acceptance journey records', () 
      * Turning the whole case off for it would put this file back where it started — silent,
      * and failing the tier's own guard — while the list half above needs no slice at all. So
      * the list is always asserted and the plans screen is asserted whenever it exists.
+     *
+     * ## The path that does NOT assert it says so in the run
+     *
+     * A bare `return` here left a passing case that had examined one screen and a passing
+     * case that had examined two looking identical in every report. That is the difference
+     * between "the plan panel was checked" and "the plan panel was not there to check", and a
+     * reader of a green tier has to be able to tell them apart. Both outcomes are annotated,
+     * so the answer is in the run's own output rather than inferred from the merge list.
      */
-    if (!hasMessage(locale, PLANS_TITLE_KEY)) return;
+    const plansPresent = hasMessage(locale, PLANS_TITLE_KEY);
+    testInfo.annotations.push({
+      type: plansPresent ? 'p1-31-plans-asserted' : 'p1-31-plans-absent',
+      description: plansPresent
+        ? `the warranty plans screen exists on this checkout and was asserted, including ` +
+          `whether ${POLICY_MANAGE} offers its create panel`
+        : `${locale}.json has no "${PLANS_TITLE_KEY}", so the warranty plans screen is not on ` +
+          'this checkout and NOTHING was asserted about it. The warranty list above was.',
+    });
+    if (!plansPresent) return;
 
     await page.goto(`/${locale}/warranty/policies`);
     await expect(

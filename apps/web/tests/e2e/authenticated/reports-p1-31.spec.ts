@@ -272,6 +272,7 @@ test.describe('P1-31 reporting screens, over the acceptance journey records', ()
     test.skip(handoff === null, NO_HANDOFF_REASON);
     // test-honesty-allow: TH-002 -- signed in as somebody other than the journey's own administrator; see WRONG_ACCOUNT_REASON
     test.skip(!signedInAsJourneyAdministrator(), WRONG_ACCOUNT_REASON);
+    const h = handoff as P131Handoff;
     const locale = localeOf(testInfo.project.name);
     // test-honesty-allow: TH-002 -- the reporting slice is not on this checkout; see reportsAbsentReason
     test.skip(!hasMessage(locale, CATALOGUE_TITLE_KEY), reportsAbsentReason(locale));
@@ -302,15 +303,31 @@ test.describe('P1-31 reporting screens, over the acceptance journey records', ()
      * catalogue string, which is a coincidence and not evidence.
      *
      * So a row is addressed by its link TARGET — the report's identity, the same in both
-     * locales — and its name is then required to be the right KIND of name for whoever
-     * provides the row: the platform's translated title where the platform provides it, the
-     * operator's own label where the workshop does. Either way the row must NAME the report.
-     * This screen wraps a name in `bdi` and renders a report it can only identify as a machine
-     * name, so a catalogue that had lost its names and listed four codes still fails here,
-     * which is what this loop was always for.
+     * locales — and its name is then required to be the exact name the CATALOGUE published
+     * for whoever provides it.
+     *
+     * ## Why the provider is read from the handoff and not from the row
+     *
+     * This branch used to be taken by counting the origin cell on the page. That is the
+     * screen answering a question about itself: a catalogue that had lost a workshop's row
+     * and reported it as the platform's would simply have taken the other branch and passed,
+     * and the weaker half of the branch only required the label to be non-empty and not equal
+     * to the code — which a single character satisfies. The harness now records what the
+     * `rpt.report-catalogue` operation itself said about each dataset, and both halves assert
+     * the exact string: the platform's own translated title under the recorded key, or the
+     * operator's own label as written. The origin cell is then asserted to AGREE with the
+     * recorded provider, which is the assertion the old branch quietly replaced.
      */
     const byThePlatform = say(locale, 'reports.catalogue.origin.platform');
     const byTheWorkshop = say(locale, 'reports.catalogue.origin.workshop');
+    const provenance = h.reportProvenance;
+    expect(
+      provenance,
+      'the handoff carries no report provenance; re-run the acceptance harness, which ' +
+        'records it from the catalogue operation itself'
+    ).not.toBeNull();
+    if (provenance === null) return;
+
     for (const code of REPORT_CODES) {
       const row = table
         .locator('tbody tr')
@@ -323,18 +340,32 @@ test.describe('P1-31 reporting screens, over the acceptance journey records', ()
       await expect(name, `the ${code} row must name the report`).toHaveCount(1);
       await expect(row.getByText(code, { exact: true })).toBeVisible();
 
-      if ((await row.getByText(byThePlatform, { exact: true }).count()) > 0) {
-        // The platform provides this row, so the platform's own translated title is its name.
-        await expect(name).toHaveText(say(locale, `reports.${code}.title`));
-      } else {
-        // The workshop provides it: its own label, shown as written and never translated.
+      const offered = provenance[code];
+      expect(offered, `the harness recorded no catalogue entry for ${code}`).toBeDefined();
+      if (offered === undefined) continue;
+
+      if (offered.source === 'platform') {
+        // A code-registered baseline: shown under the platform's own title, in the reader's
+        // language, by the key the operation published for it.
+        const titleKey = offered.titleKey;
+        expect(titleKey, `the platform's ${code} must be titled by a key`).not.toBeNull();
+        if (titleKey === null) continue;
+        await expect(row.getByText(byThePlatform, { exact: true })).toBeVisible();
+        await expect(name).toHaveText(say(locale, titleKey));
+      } else if (offered.source === 'tenant') {
+        // A configuration this workshop published: its own label, shown as written and
+        // never translated — so the SAME string is required in both locale projects.
+        const own = offered.name;
+        expect(own, `the workshop's ${code} must carry its own label`).not.toBeNull();
+        if (own === null) continue;
         await expect(row.getByText(byTheWorkshop, { exact: true })).toBeVisible();
-        const own = (await name.innerText()).trim();
-        expect(own.length, `the workshop's own label for ${code} must be shown`).toBeGreaterThan(0);
-        expect(
-          own,
-          `the workshop's label for ${code} must be a name, not the identifier dressed as one`
-        ).not.toBe(code);
+        await expect(name).toHaveText(own);
+      } else {
+        throw new Error(
+          `the catalogue offered ${code} with an unknown provider ${String(offered.source)}; ` +
+            'this case knows how a platform row and a workshop row must be named and refuses ' +
+            'to guess at a third'
+        );
       }
     }
   });

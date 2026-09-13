@@ -39,6 +39,28 @@ export interface P131ReportFigures {
   readonly timezone: string | null;
 }
 
+/**
+ * Who provides one report, and what the catalogue calls it.
+ *
+ * `source` is the operation's own word: `platform` for a code-registered baseline,
+ * `tenant` for a configuration a workshop published. A baseline is titled by
+ * `titleKey` and shown in the reader's language; a workshop's row carries the
+ * operator's own `name` and is shown as written, in both locales, because
+ * translating somebody's own label is inventing one.
+ *
+ * It is published by the harness so a browser case can pin the exact string the
+ * catalogue must render. Reading the provenance off the page instead — counting the
+ * origin cell and branching on what it said — let the screen answer a question about
+ * itself: a catalogue that reported every row as the platform's would simply have
+ * taken the other branch.
+ */
+export interface P131ReportProvenance {
+  readonly source: string | null;
+  readonly titleKey: string | null;
+  readonly name: string | null;
+  readonly executable: boolean;
+}
+
 /** One overview section's figures — the same run, at the overview's own page size. */
 export interface P131OverviewFigures {
   readonly rows: number;
@@ -101,6 +123,8 @@ export interface P131Handoff {
    * figure asserts a world that no longer exists.
    */
   readonly reportRuns: Readonly<Record<string, P131ReportFigures>> | null;
+  /** The catalogue's own answer for each dataset, at the same observation point. */
+  readonly reportProvenance: Readonly<Record<string, P131ReportProvenance>> | null;
   /** FE-010 and FE-016, read at the same observation point. */
   readonly overview: P131Overview | null;
 }
