@@ -714,7 +714,7 @@ export function classifyVersionExpression(expression, context, depth = 0) {
  * parser describes it from inside. `end` is now the end of the function’s own
  * body, so the renewal search cannot leave it.
  */
-function enclosingFunctionAt(sourceFile, declarations, node) {
+export function enclosingFunctionAt(sourceFile, declarations, node) {
   /*
    * The nearest NAMED function-like ancestor, not simply the nearest one.
    *
