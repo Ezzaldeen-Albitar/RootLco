@@ -149,13 +149,13 @@ comparing a live baseline against a record of a head the branch had left behind.
 The superseded figures are left exactly as they were, because they are a true
 account of that head; what moved is which number the check consults.
 
-**The 4009 is HOSTED, and it is the binding measurement.** It is the output of
-`node scripts/ci/check-p1-27-closing-values.mjs --record web --hosted-run`, read
-from this pull request's own hosted run of this head and recorded in
-`evidence/local-run-ledger.json` with the commit it was taken at and with the
-provenance block — the run, the job, the artefact and that artefact's published
-digest — which is what marks it hosted. The run describes this head, so the
-figure and the tree it describes are the same one.
+**The 4009 is local, and it is pending attestation by this pull request's hosted
+run.** It is the output of
+`node scripts/ci/check-p1-27-closing-values.mjs --record web` against this tree,
+recorded in `evidence/local-run-ledger.json` with the commit it was taken at and
+with no provenance block, which is what marks it local. The required hosted run can attest this local measurement without changing its
+source. A valid hosted-attested local record is retained; it is not converted
+merely for cosmetic consistency.
 
 ### `DERIVABLE_LOCAL` — a command in this repository answers it
 

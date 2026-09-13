@@ -4116,6 +4116,19 @@ rather than left out.
   edges; it was not run to a result there and no result was quoted. On the merge-queue head, with the
   record fresh, the aggregate exits 0.
 
+**What the re-record COST, stated plainly.** `develop` `ea3b7fc0` carried a **hosted-attested**
+record for both tiers — hosted run **34748952540** at head `b217b8a1`, bound by the QA-001 lane.
+Re-recording at the merge head **SUPERSEDED that binding for both tiers with LOCAL records**, and
+`evidence/local-run-ledger.json` shrank from **64 lines to 38** as the provenance blocks went with
+it. That was not avoidable and it is not a regression: this branch changes executable paths under
+both tiers — `scripts/ci/check-p1-31-write-shape.mjs`, `tests/ci/p1-31-write-shape.test.ts`,
+`tests/ci/p1-31-write-shape-extraction.test.ts`, `package.json`,
+`scripts/ci/check-command-coverage.mjs`, and the two warranty files under `apps/web` — so a run
+taken at `b217b8a1` cannot describe this tree, and the rule that a record must describe the head it
+is read against is what retires it. **Hosted attestation is re-established by this pull request's own
+hosted run.** The binding is re-taken before merge only if the queue owner asks; otherwise the record
+stays local-pending, as every other lane's does between its re-record and its attestation.
+
 `npm run validate:phase-ownership` resolves this branch to profile **`p1-26-frontend`** locally — the
 known local false-profile trap, where the profile is resolved from a ref the local checkout does not
 carry in the shape the hosted run does. The intended profile is **`p1-31-frontend`**, and that
@@ -4130,7 +4143,9 @@ resolution is **verified only by the hosted run**; no local result stands for it
   **not** move to `end-to-end verified`: rule 2 of the state vocabulary refuses that state without an
   acceptance record, and documentary evidence never earns it.
 - **No gate was weakened, no allow-list widened, no suppression added and no floor moved.** No
-  existing gate file changed except the command register, which gained one entry.
+  existing gate file changed except the command register, which gained one entry. **One gate
+  weakness was OBSERVED and is NOT fixed here: the doc-counts pin accepts either provenance word
+  without reading the ledger — recorded for the final re-measure.**
 - **No mirror, screen, adapter or consumer was invented** to make a pending operation pass. The one
   mirror this slice adds, `WarrantyGenerateBody`, is the type an EXISTING adapter with an EXISTING
   consumer already had inline; nothing was written for an operation no screen calls.
