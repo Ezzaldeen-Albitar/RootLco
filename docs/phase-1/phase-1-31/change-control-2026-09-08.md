@@ -3422,34 +3422,34 @@ local, on this branch, with no database, no browser and no hosted runner. **The 
 the sync merge of `develop` `811e9891`**, so no figure below is carried forward from either pre-sync
 head.
 
-| run                                                                                         | result                                                                                                       |
-| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `npm run typecheck` · `npm run typecheck:web`                                               | pass                                                                                                         |
-| `npm run lint`                                                                              | pass                                                                                                         |
-| `npm run lint:web`                                                                          | 0 errors; 12 pre-existing warnings, none on a file this slice touched                                        |
-| `npm run format:check` · `format:check:web` · `style:check:web`                             | pass                                                                                                         |
-| `npm run security:all`                                                                      | pass over 2774 tracked files                                                                                 |
-| `npm run validate:encoding`                                                                 | every tracked text file clean UTF-8, no BOM                                                                  |
-| `npm run validate:generated-artifacts`                                                      | 2774 tracked files, 7/7 ignore rules, 0 failures                                                             |
-| `npm run validate:p1-24-register`                                                           | register current and reconciled — 411 operations, 319 OpenAPI paths, all Covered                             |
-| `npm run validate:command-coverage`                                                         | 95/95 reachable locally, 96/96 invoked by hosted CI                                                          |
-| `npm run validate:web-boundary`                                                             | 374 files, 0 violations                                                                                      |
-| `npm run validate:use-server-exports`                                                       | 50 server modules across 989 source files, 0 violations                                                      |
-| `npm run validate:web-topology`                                                             | 18 expectations, 338 matched files, 0 failures                                                               |
-| `npm run validate:web-tokens` · `validate:web-theme` · `validate:web-brand`                 | 0 violations; 54 colours registered, 0 unresolvable                                                          |
-| `npm run validate:notification-authority`                                                   | 374 files scanned, one authority, mounted once                                                               |
-| `npm run validate:module-boundaries`                                                        | 615 files scanned in `apps/api/src`, 11 rules, 0 violations                                                  |
-| `npm run validate:api-backend-only`                                                         | 320 route handlers, 615 source files, 0 failures                                                             |
-| `npm run validate:plain-language`                                                           | 2 catalogues, 24 rules, 0 findings                                                                           |
-| `npm run validate:p1-31-access`                                                             | 16 route pages across 8 owned segments, 0 violations                                                         |
-| `npm run validate:p1-26-frontend`                                                           | 374 files, 50 server modules, 0 failures                                                                     |
-| `npm run validate:p1-27-frontend`                                                           | 156 files across 5 trees, 9 rules, 0 failures                                                                |
-| focused web — the overview suite plus the reports, delivery, warranty and navigation suites | 393/393 across 10 files                                                                                      |
-| root — `npx vitest run tests/ci tests/openapi-contract.test.ts`                             | 1991/1991 across 69 files                                                                                    |
-| the web tier, through the P1-27 recorder                                                    | 3977/3977 across 140 files, 0 failed, recorded at `4797dbbe`                                                 |
-| `npm run test:unit`, through the P1-27 recorder                                             | 3301/3301 across 122 files, 0 failed, recorded at `4797dbbe`                                                 |
-| `npm run verify:policies`                                                                   | exit 0                                                                                                       |
-| `npm run validate:phase-ownership`, both forms                                              | profile `p1-31-frontend`, 27 changed files (web 13, docs 13, tests 1) against `origin/develop`, 0 violations |
+| run                                                                                         | result                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run typecheck` · `npm run typecheck:web`                                               | pass                                                                                                                                                                                                                                                        |
+| `npm run lint`                                                                              | pass                                                                                                                                                                                                                                                        |
+| `npm run lint:web`                                                                          | 0 errors; 12 pre-existing warnings, none on a file this slice touched                                                                                                                                                                                       |
+| `npm run format:check` · `format:check:web` · `style:check:web`                             | pass                                                                                                                                                                                                                                                        |
+| `npm run security:all`                                                                      | pass over 2774 tracked files                                                                                                                                                                                                                                |
+| `npm run validate:encoding`                                                                 | every tracked text file clean UTF-8, no BOM                                                                                                                                                                                                                 |
+| `npm run validate:generated-artifacts`                                                      | 2774 tracked files, 7/7 ignore rules, 0 failures                                                                                                                                                                                                            |
+| `npm run validate:p1-24-register`                                                           | register current and reconciled — 411 operations, 319 OpenAPI paths, all Covered                                                                                                                                                                            |
+| `npm run validate:command-coverage`                                                         | 95/95 reachable locally, 96/96 invoked by hosted CI                                                                                                                                                                                                         |
+| `npm run validate:web-boundary`                                                             | 374 files, 0 violations                                                                                                                                                                                                                                     |
+| `npm run validate:use-server-exports`                                                       | 50 server modules across 989 source files, 0 violations                                                                                                                                                                                                     |
+| `npm run validate:web-topology`                                                             | 18 expectations, 338 matched files, 0 failures                                                                                                                                                                                                              |
+| `npm run validate:web-tokens` · `validate:web-theme` · `validate:web-brand`                 | 0 violations; 54 colours registered, 0 unresolvable                                                                                                                                                                                                         |
+| `npm run validate:notification-authority`                                                   | 374 files scanned, one authority, mounted once                                                                                                                                                                                                              |
+| `npm run validate:module-boundaries`                                                        | 615 files scanned in `apps/api/src`, 11 rules, 0 violations                                                                                                                                                                                                 |
+| `npm run validate:api-backend-only`                                                         | 320 route handlers, 615 source files, 0 failures                                                                                                                                                                                                            |
+| `npm run validate:plain-language`                                                           | 2 catalogues, 24 rules, 0 findings                                                                                                                                                                                                                          |
+| `npm run validate:p1-31-access`                                                             | 16 route pages across 8 owned segments, 0 violations _(true on this slice's head; `develop` later moved the segment count to 9 with the FE-002 handover form's `org` root, and § 67.3 moves it to 10 — the figure is left as measured and corrected there)_ |
+| `npm run validate:p1-26-frontend`                                                           | 374 files, 50 server modules, 0 failures                                                                                                                                                                                                                    |
+| `npm run validate:p1-27-frontend`                                                           | 156 files across 5 trees, 9 rules, 0 failures                                                                                                                                                                                                               |
+| focused web — the overview suite plus the reports, delivery, warranty and navigation suites | 393/393 across 10 files                                                                                                                                                                                                                                     |
+| root — `npx vitest run tests/ci tests/openapi-contract.test.ts`                             | 1991/1991 across 69 files                                                                                                                                                                                                                                   |
+| the web tier, through the P1-27 recorder                                                    | 3977/3977 across 140 files, 0 failed, recorded at `4797dbbe`                                                                                                                                                                                                |
+| `npm run test:unit`, through the P1-27 recorder                                             | 3301/3301 across 122 files, 0 failed, recorded at `4797dbbe`                                                                                                                                                                                                |
+| `npm run verify:policies`                                                                   | exit 0                                                                                                                                                                                                                                                      |
+| `npm run validate:phase-ownership`, both forms                                              | profile `p1-31-frontend`, 27 changed files (web 13, docs 13, tests 1) against `origin/develop`, 0 violations                                                                                                                                                |
 
 The local `verify:workspaces` aggregate is not run, under the standing 2026-09-09 targeted-local plus
 required-hosted policy. Hosted builds, browser checks and the required gates remain mandatory and
@@ -5074,3 +5074,248 @@ shape, and it is raised as **CC-52 (a)** rather than fixed by editing four other
 - **It asserts nothing about promotion.** `main` is `1262de74`, this slice does not move it, and
   [`closure-record.md`](./closure-record.md) § 6 states in terms that the phase is **not eligible**
   for promotion and why.
+
+## 67. The version-sourcing gate and the access allow-list completed (CC-57)
+
+**Slice:** `feature/p1-31-version-sourcing-and-access-gate`, ownership profile `p1-31-frontend`.
+**Baseline:** protected `develop` **`72f3a71ee4a8204c494913e40e6c2a43cd683e36`**. `main` `1262de74`,
+untouched and far behind. **Two deliverables, both engineering against this phase's own recorded
+criteria**: **QA-004**, the mechanical half of P1-31's record-version discipline, and **DO-001**, the
+completeness of the access gate's operation allow-list. No application source, no route, no
+operation, no permission code, no migration, no seed and no workflow change; one new gate, one new
+suite, one allow-list, two pins and the register.
+
+### 67.1 Identifier allocation
+
+**Section 67 and CC-57 were allocated to this lane by the coordinating session before the branch
+opened**, and are used as allocated. Sections **63 … 66** and identifiers **CC-53 … CC-56** are held
+for sibling lanes in flight and are **not claimed here**; nothing in this section describes what they
+contain. Section 48.1's rule holds unchanged — an identifier is a claim about the register at the
+moment it was raised, and is never renumbered to follow heading order. The one permanent hole at
+**CC-40** that § 57.5 records is untouched.
+
+**This section carries a `state` column in its disposition table**, which is what **CC-52 (a)** found
+four earlier sections missing. It is not the register-hygiene slice that disposition asks for — the
+four sections it names are not this lane's to rewrite — it simply does not add a fifth.
+
+### 67.2 QA-004 — what the sentence had behind it, and what it has now
+
+The discipline is one sentence, and P1-28 already has a gate behind it for `apt.*` / `rec.*`:
+_every version-guarded write sources its `recordVersion` from a READ or from the immediately prior
+command response, never a cached guess across user-visible staleness._ **P1-31 publishes eleven
+version-guarded operations of its own and had nothing behind that sentence for any of them.** A
+screen sending `version + 1` satisfies every adapter test in the suite, because the adapter forwards
+whatever number it is handed.
+
+`scripts/ci/check-p1-31-version-sourcing.mjs` is a **sibling** of the P1-28 gate rather than a
+widening of it, for the reason § 58.3 gives for the write-shape gate: `guardedOperations` there
+hard-filters `^(apt|rec)\.`, and P1-28's closure rests on the adapter-count equality built on it.
+The judgement is **imported, not re-implemented** — the comment-stripper, the declaration,
+cached-name and parameter-name readers, `classifyVersionExpression`, the scope reader
+`enclosingFunctionAt` and the renewal rule `renewsAfter` are all the P1-28 file's own exports, and the
+P1-28 suite pins their behaviour. **One token changed in that file: `enclosingFunctionAt` gained an
+`export` keyword.** Nothing about its behaviour moved, and the alternative was a second copy of the
+scope reader — which is precisely how the brace-counting scanners drifted.
+
+**Three things are this gate's own**, and none of them exists in the sibling:
+
+| what                         | why the sibling cannot do it                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **send → operation binding** | The scope is eleven named operations, so a send has to be attributed to one. The path expression is resolved through the module's own path helpers — both shapes this tree writes, a `function` declaration and an arrow constant — and matched to the published contract by `METHOD /route` with parameters collapsed. A docblock naming an id proves nothing, and a scan that cannot follow `deliveryPath(id, '/completion')` manufactures the debt it exists to police |
+| **the structural guard**     | `completeDelivery(input: CompleteDeliveryInput)` carries its version as an interface **field**, not as a parameter named `ifMatch`. The P1-28 adapter walk reads the parameter list, so the adapter that releases a vehicle — and every caller handing it a number — is invisible to it. Here the adapter is derived from the send: the enclosing function IS the adapter, and how the version reaches it is read off the expression sent                                 |
+| **the retry rule**           | The completion sends twice, because a conflict after a checklist result or a signature is ordinary. Within one adapter, every send after the first to the same operation must classify as `response` — a re-read or a command response. Quoting the version the first attempt was refused for is a second 409 by construction                                                                                                                                             |
+
+**The scope is frozen AND checked.** No namespace expresses it: P1-30 owns the whole of `sal.` and
+`wty.`, and three of the eleven are `rpt.` and `org.`. So the eleven are named, and then asserted
+against `docs/api/openapi.v1.json`: every one must carry `#/components/parameters/IfMatch`, of the
+**75 operations the contract guards in total**. An id that stops being guarded, or stops existing, is
+a violation rather than a quiet shrink. It is deliberately **not** scoped by the access gate's
+`P1_31_OPERATION_IDS`, which answers a different question and carried three of the eleven — scoping a
+version gate by it would have excluded eight guarded writes silently.
+
+#### The eleven, and the four with a consumer
+
+| operation                                     | state at this head                                                                                                                 |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `sal.delivery-complete`                       | **compared** — `features/delivery/api.ts:440` and `:456`, structural + re-read                                                     |
+| `wty.warranty-policy-rename`                  | **compared** — `features/warranty/warranty-api.ts:337`, positional                                                                 |
+| `wty.warranty-policy-status-set`              | **compared** — `features/warranty/warranty-api.ts:367`, positional                                                                 |
+| `wty.warranty-coverage-status-set`            | **compared** — `features/warranty/warranty-api.ts:434`, positional                                                                 |
+| `sal.delivery-checklist-template-rename`      | **PENDING** — no checklist-template configuration surface exists                                                                   |
+| `sal.delivery-checklist-template-status-set`  | **PENDING** — the same                                                                                                             |
+| `sal.delivery-checklist-template-item-update` | **PENDING** — the same                                                                                                             |
+| `rpt.report-configuration-update`             | **PENDING** — no report-configuration screen exists; CC-37(b) declares the same absence for its request mirror                     |
+| `rpt.report-configuration-status-set`         | **PENDING** — the same                                                                                                             |
+| `rpt.report-configuration-version-publish`    | **PENDING** — the same                                                                                                             |
+| `org.employee-status-set`                     | **PENDING** — nothing in P1-31 administers the employee roster, which is why the access gate deliberately does not claim it either |
+
+**PENDING is a state, not an allow-list.** Writing an adapter for the seven would manufacture the
+declared-but-never-wired shape this repository has shipped repeatedly. Each is declared with its
+reason, and the lifecycle binds in both directions: an entry naming an operation that is not in scope
+is stale, an in-scope operation with neither a consumer nor an entry is a violation, and **an entry
+whose operation acquires a consumer turns the gate RED until it is deleted in that same change.** The
+suite proves that last clause by planting a consumer for `rpt.report-configuration-update` and
+requiring the STALE report.
+
+#### The report line, verbatim, at this branch head
+
+```
+P1-31 version sourcing: 11 guarded operation(s) in scope of 75 the contract guards, 4 with a consumer, 7 pending one, 5 in-scope send(s), 4 adapter call site(s), 23 versioned send(s) outside the subject.
+OK: every version-guarded P1-31 command sources its If-Match from a read or a command response, and renews it after a conflict.
+```
+
+#### The teeth, proved rather than asserted
+
+`tests/ci/p1-31-version-sourcing.test.ts` **appends** synthetic modules to the real web corpus rather
+than replacing it, so a fixture adds exactly one reason to fail and an assertion cannot be satisfied
+by the collapse of everything else. Seventeen cases; the negatives are: a version **literal** at a
+call site; a **stale** value the component holds in `useState` and reuses; a **retry** quoting the
+version the first attempt was refused for; a **structural** adapter whose caller computes
+`recordVersion + 1`; a component that commands and **never hands the outcome onward**; a **PENDING**
+entry whose operation gained a consumer; and an in-scope operation **neither consumed nor declared**.
+Two cases prove the fail-closed direction is aimed correctly — an unattributable versioned send under
+an in-scope resource root is refused, and one under a root no operation in scope is addressed under
+is left alone, which is a proof rather than an allow-list and so cannot go stale. One positive case
+asserts an exactly-empty violation list over a correct planted adapter and caller, so the negatives
+are not noise.
+
+#### The idempotency half of QA-004 — cited, not rebuilt
+
+QA-004 also asks whether P1-31's idempotent commands carry a key. **No new gate was built, because
+three mechanisms already answer it and a fourth would only be a second authority to keep in step.**
+
+- `apps/web/src/lib/api/client.ts:367` — the transport attaches an `Idempotency-Key` to every send
+  the contract registers idempotent, reading `requiresIdempotencyKey` rather than guessing from the
+  HTTP method, and a caller-supplied key always wins and is never regenerated.
+- `apps/web/src/lib/api/operation-contract.ts:139` — `requiresIdempotencyKey` resolves the concrete
+  path to its published operation and answers from the contract; an unknown mutation path errs toward
+  sending, so drift is noisy and never broken.
+- `npm run validate:idempotent-operations` reconciles the generated table against the published
+  contract, and `scripts/ci/check-idempotency-evidence.mjs` refuses an operation that declares
+  idempotency without replay evidence — **174 with evidence, 0 without, 0 waived** on this tree.
+
+**Measured for this section:** of the operations a P1-31 screen actually sends, **nine are registered
+idempotent** — `sal.delivery-create`, `sal.delivery-receiver-verify`,
+`sal.delivery-checklist-record`, `sal.delivery-signature-attach`, `sal.delivery-complete`,
+`wty.warranty-policy-create`, `wty.warranty-policy-status-set`, `wty.warranty-coverage-create` and
+`wty.warranty-generate` — and **every one is covered**: not one P1-31 adapter mints or passes a key of
+its own, so all nine are keyed by the transport from the table the contract generates.
+`wty.warranty-policy-rename`, `wty.warranty-coverage-status-set` and `rpt.report-run` are **not**
+registered idempotent and correctly receive no key; the coverage-status refusal is deliberate and
+`warranty-api.ts` records why. Six further idempotent operations in the same subject —
+the three checklist-template writes, the two report-configuration writes and
+`rpt.report-configuration-version-create` — have **no P1-31 consumer**, and are the same absence the
+PENDING table above records. **No P1-31 idempotent send is uncovered.**
+
+### 67.3 DO-001 — the allow-list was incomplete, and by how much
+
+`check-p1-31-access.mjs` owns an **allow-list of operation ids** rather than a namespace, and its own
+docblock states the consequence: _an operation a P1-31 screen calls that is absent here is one this
+gate does not own._ Measured on this tree by parsing every adapter under
+`apps/web/src/features/{delivery,warranty,reports}` and resolving each request path to its register
+row, **eight operations P1-31 screens consume were absent from the list of 23.**
+
+| added                                                                                                                                            | resource root                      | moved a segment?  |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------- | ----------------- |
+| `sal.delivery-create`, `sal.delivery-receiver-verify`, `sal.delivery-checklist-record`, `sal.delivery-signature-attach`, `sal.delivery-complete` | `deliveries`                       | no                |
+| `sal.delivery-checklist-template-list`, `sal.delivery-checklist-template-read`                                                                   | **`delivery-checklist-templates`** | **yes — one new** |
+| `org.company-list`                                                                                                                               | `org`                              | no                |
+
+That six of the eight widen nothing is the point rather than a footnote: **an allow-list loses an
+operation without any diff saying so**, which is the failure mode this shape trades a namespace for.
+The five delivery writes are the whole execution slice of the handover — opening it, verifying its
+receiver, recording a checklist outcome, binding a signature and releasing the vehicle — and the gate
+did not own one of them. The two checklist-template reads are what the delivery adapter assembles the
+active checklist from, and their root is derived by nothing else the list names, so a
+checklist-template configuration page landing under that segment tomorrow meets the gate-before-read
+rule already written, exactly as `warranty` and `reports` did.
+
+**Nothing was added that no screen reaches.** `org.employee-status-set` and the two employee
+administration commands stay unclaimed, and the suite still asserts their absence: an allow-list
+naming an operation nothing reaches is owning a surface it does not have (CC-39(b)).
+
+#### The report line, verbatim, at this branch head
+
+```
+P1-31 gate-before-read: 16 route page(s) examined across 10 owned segment(s) (deliveries, delivery, delivery-checklist-templates, delivery-readiness, org, reports, warranties, warranty, warranty-policies, work-orders).
+  0 violation(s).
+```
+
+Every page under the ten owned segments is judged by `judgePage` — the P1-29 gate's judgement, reused
+so the four false negatives an adversarial review found there cannot regress here — and the register
+lookup resolves all thirty-one ids, which is what `deriveSegments().problems` being empty means and
+what the suite asserts.
+
+#### Pins moved
+
+| pin                                                            | before | after  | why                                                                                                                                       |
+| -------------------------------------------------------------- | ------ | ------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `PINNED_OWNED_SEGMENTS`, `tests/ci/p1-31-access-gate.test.ts`  | **9**  | **10** | `delivery-checklist-templates` is derived by the two template reads and by nothing else                                                   |
+| `PINNED_PAGES`, the same file                                  | **16** | **16** | verified, not assumed: no page path lies under the new segment, so the page count did not move                                            |
+| `files scripts/ci`, P1-27 derived marker and its visible cell  | **65** | **66** | one new gate                                                                                                                              |
+| `files tests/ci`, P1-27 derived marker                         | **71** | **72** | one new suite                                                                                                                             |
+| `commands registered`, P1-27 derived marker                    | 177    | 178    | one new npm script                                                                                                                        |
+| `commands required` · `reachable` · `hosted-ci`, P1-27 markers | 96     | 97     | registered `required`; reachable from `verify:workspaces` and invoked by hosted CI **through `verify:policies`**, which is where it rides |
+
+`npm run evidence:p1-27` was re-run in the same change, as that gate requires — **41 evidence
+documents, every one reachable.**
+
+_The row for `validate:p1-31-access` in § 55's verification table reads **"16 route pages across 8
+owned segments"**. That was true when it was written and is now stale twice over: `develop` moved it
+to 9 with the FE-002 handover form's `org` root, and this slice moves it to 10. The figure is left
+visible and corrected here rather than edited there, under the rule § 14 states._
+
+### 67.4 Where the gate rides, and the workflow edit that was not made
+
+`.github/**` **is** inside the `tooling` bucket that the `p1-31-frontend` profile allows, so an
+ownership rule would have permitted a workflow edit. **None was made, and none is needed.** The gate
+is registered `required` in `scripts/ci/check-command-coverage.mjs` and added to `verify:policies`,
+which is itself reachable from `verify:workspaces` and invoked by hosted CI — so both halves of the
+coverage rule are satisfied transitively, and `validate:command-coverage` confirms it: **178
+registered, 97 required, 97/97 reachable, 98/98 invoked by hosted CI.** A workflow file is
+CODEOWNERS-protected and self-certifying, and editing one to obtain a reachability that already holds
+would be a change with no proposition behind it.
+
+### 67.5 Verification run locally on this branch
+
+| command                                                                                     | result                                                        |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `node scripts/ci/check-p1-31-version-sourcing.mjs`                                          | the report line above, 0 violations, exit 0                   |
+| `npm run validate:p1-31-version-sourcing`                                                   | exit 0                                                        |
+| `node scripts/ci/check-p1-31-access.mjs`                                                    | the report line above, 0 violations, exit 0                   |
+| `npx vitest run tests/ci/p1-31-version-sourcing.test.ts tests/ci/p1-31-access-gate.test.ts` | 31/31 across 2 files                                          |
+| `npm run validate:command-coverage`                                                         | 178 registered, 97 required, 97/97 reachable, 98/98 hosted CI |
+| `npm run validate:p1-27-doc-counts`                                                         | 151 derived claims across 32 documents, 0 disagreements       |
+| `npm run validate:p1-27-evidence`                                                           | in sync — 41 documents, every one reachable                   |
+
+The full list, with exit codes, is the pull request's own record; every figure above was read off the
+command's own output on this branch and none is carried forward from another head.
+
+### 67.6 Dispositions
+
+| id            | finding                                                                                                                    | measured                                                                                                                                                                                                                                                                                                                                                                                              | disposition                                                                                                                                                                                                                                                                                                                                                                                                   | owner / slice                     | state            |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- | ---------------- |
+| **CC-57**     | **QA-004's sourcing rule had no mechanical enforcement for any P1-31 operation, and the access allow-list had lost eight** | Eleven operations carry `If-Match` in the published contract and belong to P1-31; four have a web consumer and none of the four was gated, because the P1-28 gate's scope is the appointment and reception namespaces and the delivery completion's version is an interface field its adapter walk cannot see. Separately, eight operations P1-31 screens send were absent from `P1_31_OPERATION_IDS` | **both closed by construction.** A sibling gate, registered `required` and mutation-proved by seventeen cases, now refuses a computed, cached, untraceable or un-renewed version on any of the eleven, and declares the seven with no consumer under a lifecycle that goes stale the moment one appears. The allow-list names all thirty-one operations its screens consume, and the segment pin moved 9 → 10 | this slice                        | closed, recorded |
+| **CC-57 (a)** | **the seven PENDING operations remain unreachable, and this gate discloses that rather than closing it**                   | No screen or adapter in `apps/web` sends the three checklist-template writes, the three report-configuration writes or the employee-register transition. Six of the seven are the same absence CC-37(b) already records for their request mirrors                                                                                                                                                     | **recorded, not fixed, and deliberately not manufactured.** Writing adapters for them would create the declared-but-never-wired shape the phase has shipped before. The phase that builds each surface owes the adapter, the mirror and the version discipline in one change, and this gate refuses the PENDING entry the moment the adapter appears                                                          | the lane that builds each surface | open, recorded   |
+| **CC-57 (b)** | **the sourcing gate judges the SEND, not the screen state behind it**                                                      | The rule traced is where the number in the request came from. That a component re-reads after a conflict is enforced by the renewal clause; that the number it re-read is the one the operator actually saw is not statically decidable                                                                                                                                                               | **stated rather than claimed.** No figure here asserts a runtime property. The browser evidence for the delivery surfaces is what CC-52 (c) already holds open, and this gate neither substitutes for it nor is quoted as if it did                                                                                                                                                                           | the acceptance re-run lane        | open, recorded   |
+
+### 67.7 What this slice did NOT do, and what is not claimed
+
+- **It changed no application source.** No route, no operation, no permission code, no audit action,
+  no migration, no seed, no contract mirror and nothing under `apps/api`. The one non-gate file it
+  touched is `scripts/ci/check-p1-28-version-sourcing.mjs`, which gained an `export` keyword on an
+  existing function and nothing else.
+- **It ran no tier that needs a database, no build, no deployment and no hosted job**, and it claims
+  no hosted result. The report lines quoted above are local runs on this branch and are labelled as
+  such.
+- **It moved no task state, no verdict and no closure figure.** [`task-matrix.md`](./task-matrix.md),
+  [`closure-record.md`](./closure-record.md) and
+  [`security-and-qa-evidence.md`](./security-and-qa-evidence.md) are untouched by design: the closing
+  head and the hosted run id for both gates belong to the final integration, and recording them here
+  would be a second authority on the same fact.
+- **It did not widen, relax or suppress anything to make a gate pass.** No allow-list entry excuses a
+  finding, no `eslint-disable`, `ts-expect-error` or `stylelint-disable` was added, and the one
+  unattributable versioned send in the tree is left alone by a proof about its resource root rather
+  than by naming it.
+- **It records no certification, clearance, approval or role holder**, and it asserts nothing about
+  promotion. `main` is `1262de74` and this slice does not move it.
