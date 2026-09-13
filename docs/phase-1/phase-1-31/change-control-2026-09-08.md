@@ -4625,7 +4625,8 @@ made, and § 48.1 forbids renumbering an identifier once allocated.
 
 ## 61. The corrected acceptance re-run, the credential-kind design, and the harness re-measured (CC-51)
 
-**Slice:** `feature/p1-31-acceptance-rerun`, ownership profile `p1-31-frontend`. **Baseline:**
+**Slice:** `feature/p1-31-acceptance-rerun`, ownership profile `p1-31-frontend`, opened as pull
+request [#387](https://github.com/Ezzaldeen-Albitar/RootLco/pull/387). **Baseline:**
 protected `develop` **`e2908f06d283516624959713e9f3f8bfb96f379d`**. `main` `1262de74`, untouched. This slice ran an acceptance,
 recorded it, rewrote the browser half it exercised, and amends one earlier disposition. It changes
 no application source: everything it touches is a test, a manifest the tests read, an evidence
@@ -4715,7 +4716,7 @@ it exists. This slice replaces that shape everywhere with **one pinned outcome p
   wrong world.
 
 **Where this is verified.** Statically in this pull request: the manifest test, the type and lint
-gates, and the collected case list. Dynamically only by **this pull request's own hosted
+gates, and the collected case list. Dynamically only by **pull request #387's own hosted
 `authenticated-browser` job**, which sets only `ROOTLCO_E2E_AUTH` and signs in the owner-acceptance
 account, so every legacy case must still execute there. No run in the acceptance record establishes
 that, and none is claimed to.
