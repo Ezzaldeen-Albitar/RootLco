@@ -4184,15 +4184,17 @@ is a different thing and is stated here so the two are not confused.
 
 ### 60.2 What was delivered
 
-| file                                                      | change                                                                                                                                                |
-| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/web/tests/delivery-signature-refusal.dom.test.tsx`  | **new** — the refused-download negative for the handover signature ledger and the printable sheet, **11 declared cases**                              |
-| `docs/phase-1/phase-1-31/coverage-record.md`              | **new** — the phase-level component and unit coverage record for QA-001                                                                               |
-| `docs/phase-1/phase-1-27/deliverable-manifest.md`         | the derived file-count markers and their visible cells re-derived on the merged tree; the local-run-ledger line counts re-derived after the re-record |
-| `docs/phase-1/phase-1-27/evidence/local-run-ledger.json`  | the unit and web tiers re-recorded at this head, by `check-p1-27-closing-values.mjs --record`                                                         |
-| `docs/phase-1/phase-1-27/evidence/evidence-manifest.json` | regenerated from the merged tree                                                                                                                      |
-| `docs/phase-1/phase-1-31/task-matrix.md`                  | the SEC-002 and QA-001 rows moved, on the evidence below and no further                                                                               |
-| `docs/phase-1/phase-1-31/change-control-2026-09-08.md`    | this section                                                                                                                                          |
+| file                                                         | change                                                                                                                                                                                                |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/tests/delivery-signature-refusal.dom.test.tsx`     | **new** — the refused-download negative for the handover signature ledger and the printable sheet, **11 declared cases**                                                                              |
+| `docs/phase-1/phase-1-31/coverage-record.md`                 | **new** — the phase-level component and unit coverage record for QA-001                                                                                                                               |
+| `docs/phase-1/phase-1-27/clean-room-evidence.md`             | six sentences re-pinned to this tree — 141 → **142** web test files and 4009 → **4020** executed cases, in the prose and in the measures table; hosted run `34759286884` reports the same two figures |
+| `docs/phase-1/phase-1-27/evidence/closing-value-ledger.json` | the six CR-A locators for those sentences re-pinned to the new wording and values                                                                                                                     |
+| `docs/phase-1/phase-1-27/deliverable-manifest.md`            | the derived file-count markers and their visible cells re-derived on the merged tree; the local-run-ledger line counts re-derived after the re-record                                                 |
+| `docs/phase-1/phase-1-27/evidence/local-run-ledger.json`     | the unit and web tiers re-recorded at this head, by `check-p1-27-closing-values.mjs --record`                                                                                                         |
+| `docs/phase-1/phase-1-27/evidence/evidence-manifest.json`    | regenerated from the merged tree                                                                                                                                                                      |
+| `docs/phase-1/phase-1-31/task-matrix.md`                     | the SEC-002 and QA-001 rows moved, on the evidence below and no further                                                                                                                               |
+| `docs/phase-1/phase-1-31/change-control-2026-09-08.md`       | this section                                                                                                                                                                                          |
 
 #### The negative — what it actually proves
 
@@ -4250,28 +4252,66 @@ figure before the figures, and holds:
 Its § 6 summary answers five statements and answers **four of them "no"**. The record therefore
 closes the "no phase-level coverage record exists" item and closes nothing else.
 
-### 60.3 What is PENDING, and where the numbers come from
+### 60.3 What was PENDING, what is now FILLED, and from where
 
-**Seven figures in the coverage record are written as `pending the web tier run at this lane's queue
-turn` and are deliberately left unfilled by this commit.** They are: the instrumented-file counts
-per feature tree (§ 4, H-2), the dashboard route tier's own measurement (§ 4, H-3), the executed
-case total with its pass/skip/todo counts and the gate verdict (§ 5), and the four `measured`
-cells — lines, statements, functions, branches — beside the committed floors in § 5's table. Two
-further occurrences of the same phrase in the front matter and the method table are the statement
-that they are pending, not figures themselves.
+**Seven figures in the coverage record were written as `pending the web tier run at this lane's
+queue turn`. Five are now filled from this pull request's own hosted run. Two are not filled: they
+are restated as OPEN, with the reason and the remedy, rather than left as a pending marker.**
 
-**They are filled from pull request #385's own hosted `evidence-web-quality` artefact — this
-section's own pull request — after that run completes, and from nothing else.** The reason is recorded in the baseline and repeated here: a
-local coverage measurement is weaker than a hosted one and may not be written into a record or a
-baseline as though it were the same thing. A local run was taken at this queue turn to establish
-that the gate executes and to see its verdict before the pull request was opened; **its figures are
-uncitable and appear in no committed file** — not in the coverage record, not in this section, and
-not in `.github/ci-baselines/`, none of which this slice edited.
+**The single source, and the only one.** Hosted run **`34759286884`** — workflow `PR CI`
+(`.github/workflows/pr-ci.yml`), job `Web quality / web-quality` — at head
+**`1a167c19bc2a30f42c2c81b72462b901e415a4e7`**, artefact **`evidence-web-quality`**, artefact id
+`10318272841`, **477000 bytes**, zip sha256
+`616a4318a957ea5ee4d47d3a968cc8bdf3b17203b3cb29824fd820359e92055e`, which is the digest the
+artefacts API publishes for that artefact and the digest of the zip as downloaded.
 
-**Consequently this section does not claim the coverage gate passed**, and the coverage record makes
-no assertion about any percentage. The record's own § 5 states the standing tooling fact behind
-that: `scripts/ci/coverage-gate.mjs` is named by no npm script, so a green local aggregate is not
-evidence the declared floors hold, and none is cited as though it were.
+**From `coverage-web.md`** — the four `measured` cells beside the committed floors, each with the
+baseline and the delta that file prints: lines **84.64%** (baseline 82.48%, +2.16 pp), statements
+**82.88%** (81%, +1.88 pp), functions **87.21%** (85%, +2.21 pp), branches **79%** (77.37%,
++1.63 pp); the ratchet's terms, tolerance **0.5 pp** and touched-file floor **60%**; the eight
+critical-module rows, all above their floors; and **the gate verdict, `Coverage gate: pass`**.
+
+**From `test-totals-web.json`, cross-checked against `apps/web/vitest-web.json`** — the executed
+case total and its pass/skip/todo counts: **4020 collected, 4020 executed, 4020 passed, 0 failed, 0
+skipped, 0 todo**, across **142 files** and 952 `describe` blocks. The file count agrees with the
+walk of the tree the record already carried, and the two P1-27 figures re-pinned by this slice
+(142 files, 4020 executed) are the same two numbers, so their local derivation is attested by this
+run rather than merely repeated.
+
+**Two figures stay OPEN, and the cause is the upload list, not a missing run.** The per-tree
+instrumented-file counts (coverage record § 4, H-2) and the dashboard route tier's own measurement
+(§ 4, H-3) both need the per-file coverage summary. **No hosted job uploads
+`apps/web/coverage/web/coverage-summary.json` or `coverage-gate-web.json`.** The web coverage
+ratchet writes both at `.github/workflows/_reusable-node-quality.yml:707-711`; the upload list at
+`:864-886` carries neither — it names `coverage/unit/coverage-summary.json`, `apps/web/vitest-web.json`,
+`test-totals-web.json` and the markdown files. Web coverage therefore reaches a reader only as the
+aggregate `coverage-web.md`, which carries the four percentages and the verdict and no per-file
+figure at all. Read directly on this run's artefact: fourteen files, and neither of those two among
+them. **Remedy:** add both to the `evidence-web-quality` upload list at
+`_reusable-node-quality.yml:864-886`, on the CI-automation lane that owns that workflow. Until then
+the two figures are measurable only locally and are **not cited** anywhere.
+
+**No baseline was re-recorded from this run.** `.github/ci-baselines/` is untouched by this slice.
+The hosted percentages are recorded as a measurement of this head, never as a floor; a floor moves
+on the coverage-policy lane's own act. The local coverage run taken at this queue turn, which
+existed only to see the gate execute, remains uncitable and appears in no committed file.
+
+**One pre-existing inconsistency is OBSERVED, under no identifier, and not corrected.**
+`.github/ci-baselines/coverage-baseline.web.json:5` (`establishedBy`) records the re-establishment
+as coming from "hosted run id 34321869051 … artifact `evidence-web-quality`, file
+`apps/web/coverage/web/coverage-summary.json`". That artefact does not carry that file and, on the
+upload list above, never did — so the 131-instrumented-file figure in that same field has no
+published artefact behind it. The baseline is the coverage-policy lane's artefact; a figure in it
+moves by that lane's measurement, and raising an identifier for it here would be claiming a finding
+this slice has no authority to close. Stated for the next reader; nothing in `.github/ci-baselines/`
+is edited.
+
+**This commit is docs-only, and it is made AFTER the run it cites.** It changes no test, no
+application source, no configuration and no workflow, so the tier run `34759286884` measured is
+byte-for-byte the tier that merges: the figures above remain valid for the head this pull request
+merges, which is this commit sitting on top of `1a167c19`. Anything that would move them — a test
+file, a source file under an instrumented root, a change to the coverage include list — would also
+invalidate the citation, and this slice does none of it.
 
 ### 60.4 What this closes for SEC-002, and what it does not
 
@@ -4291,18 +4331,23 @@ So SEC-002 moves on evidence and stops short of the state that would need an acc
 
 ### 60.5 Dispositions
 
-| id        | finding                                                                                                               | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| --------- | --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **CC-50** | **the phase coverage record exists, and seven of its figures are unfilled because only a hosted run may supply them** | The record holds a per-suite table of twelve suites and 407 declared cases, re-derived on `develop` `af924cab`, and five named holes. Seven figures carry `pending the web tier run at this lane's queue turn`: the per-tree instrumented-file counts (H-2), the dashboard route tier measurement (H-3), the executed case total with the gate verdict (§ 5), and the four `measured` cells beside the floors (§ 5). A local coverage run was taken at this queue turn to see the gate execute; its figures are uncitable and were written nowhere. | **OPEN, pending the hosted coverage figures.** Pull request **#385**, which carries this section, produces an `evidence-web-quality` artefact; the seven cells are filled from that artefact and from no other source, in a follow-up on this lane. Closing this row before those figures land would be recording a hosted claim from a local run, which is the failure mode the baseline's own notes describe. QA-001 stays `phase-level incomplete` until then, and this row stays open. |
+| id            | finding                                                                                                               | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CC-50**     | **the phase coverage record exists, and seven of its figures are unfilled because only a hosted run may supply them** | The record holds a per-suite table of twelve suites and 407 declared cases, re-derived on `develop` `af924cab`, and five named holes. Seven figures carry `pending the web tier run at this lane's queue turn`: the per-tree instrumented-file counts (H-2), the dashboard route tier measurement (H-3), the executed case total with the gate verdict (§ 5), and the four `measured` cells beside the floors (§ 5). A local coverage run was taken at this queue turn to see the gate execute; its figures are uncitable and were written nowhere. **Resolved at this lane's follow-up:** five of the seven cells are filled from the hosted run named opposite; the remaining two are re-stated as open under CC-50 (a). | **CLOSED — filled from hosted run `34759286884`** at head `1a167c19`, artefact `evidence-web-quality` (id `10318272841`, 477000 bytes, zip sha256 `616a4318a957ea5ee4d47d3a968cc8bdf3b17203b3cb29824fd820359e92055e`), and from no other source. `coverage-web.md` supplies the four `measured` percentages with their deltas and the gate's own verdict; `test-totals-web.json`, cross-checked against `apps/web/vitest-web.json`, supplies the executed case total with its pass/skip/todo counts. Nothing local was written into the record and no baseline moved. **Sub-item (a) below stays OPEN**, so QA-001 stays `phase-level incomplete`. |
+| **CC-50 (a)** | **the per-file web coverage summary reaches no reader, so H-2 and H-3 can be filled from no hosted artefact today**   | `.github/workflows/_reusable-node-quality.yml:707-711` writes `apps/web/coverage/web/coverage-summary.json` and `coverage-gate-web.json` in the web coverage ratchet step; the upload list at `:864-886` carries neither, so `evidence-web-quality` publishes web coverage only as the aggregate `coverage-web.md`. Confirmed by reading run `34759286884`'s own artefact: fourteen files, and neither of those two among them.                                                                                                                                                                                                                                                                                            | **OPEN.** Remedy: add both files to the `evidence-web-quality` upload list at `_reusable-node-quality.yml:864-886`, on the CI-automation lane that owns that workflow; the per-tree instrumented-file counts (H-2) and the dashboard route tier measurement (H-3) are then filled from the first run that carries them. Until then both figures are measurable only locally and are cited in no record.                                                                                                                                                                                                                                            |
 
 ### 60.6 What this slice did NOT do, and what is not claimed
 
 - **It ran no database work.** `test:db` and `test:backend` were not run and no migration, seed or
-  schema object was touched. No hosted result, no browser check and no acceptance result is claimed.
+  schema object was touched. No browser check and no acceptance result is claimed. The one hosted
+  result cited anywhere in this section is the `web-quality` job of run `34759286884`, quoted from
+  that run's own artefact.
 - **It moved no baseline and no floor.** `.github/ci-baselines/` is untouched, and no local
   measurement was written into a record, a baseline or this section.
-- **It did not claim a gate passed.** The local checks it ran are named in the pull request; the
-  coverage gate's verdict is reported there as a local observation and is recorded in no document.
+- **It claims no gate passed on a local run.** The coverage gate verdict now written into the
+  coverage record is the HOSTED gate's own verdict, transcribed from run `34759286884`'s
+  `coverage-web.md`. The local checks this slice ran are named in the pull request, and the local
+  coverage run's figures are recorded in no document.
 - **It changed no application source, no gate, no allow-list, no suppression and no npm script.**
   The only executable file it adds is a test.
 - **It did not move SEC-002 or QA-001 to `end-to-end verified`.** Rule 2 of the state vocabulary

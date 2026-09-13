@@ -5,7 +5,7 @@
 per-suite index this record is the cross-screen artefact for), [`task-matrix.md`](./task-matrix.md)
 (the task states), [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) — the
 disposition for this record is § 60 / CC-50, pre-allocated by the closure plan and appended to the
-register at this lane's merge-queue turn, in pull request #385
+register at this lane's merge-queue turn, in pull request #385 (CC-50 closed at the fill; CC-50 (a) open for H-2 and H-3)
 
 **Measured at:** branch `feature/p1-31-refused-download-and-coverage`, at its merge of protected
 `develop` **`af924cab`**, on 2026-09-13 — the head carrying pull request #384. Every figure in this
@@ -13,9 +13,16 @@ record was RE-DERIVED on that merged tree at this lane's queue turn, not carried
 draft's earlier base `d517a5fc`; every one of the twelve per-suite counts in § 3 held, and the
 declaration total held at 407. Every figure below was read on that tree out of a committed artefact —
 the test files themselves, `apps/web/vitest.config.ts`, the API route sources, or
-`.github/ci-baselines/coverage-baseline.web.json`. Anything that would require a coverage or tier
-run is marked **pending the web tier run at this lane's queue turn** rather than quoted. Nothing
-here is quoted from a hosted run, and no baseline is re-recorded from it.
+`.github/ci-baselines/coverage-baseline.web.json`. Everything that needed a coverage or tier run is
+now quoted from ONE hosted run and from nothing else: **run `34759286884`** (workflow `PR CI`, job
+`Web quality / web-quality`) at head **`1a167c19`**, artefact **`evidence-web-quality`** — artefact
+id `10318272841`, 477000 bytes, zip sha256
+`616a4318a957ea5ee4d47d3a968cc8bdf3b17203b3cb29824fd820359e92055e`, the digest the artefacts API
+publishes for it — files `coverage-web.md`, `test-totals-web.json` and `apps/web/vitest-web.json`.
+No local measurement is quoted anywhere in this record, and **no baseline is re-recorded from the
+hosted run**: `.github/ci-baselines/` is untouched. Two figures stay **OPEN** because no hosted job
+uploads what they would need — they are stated as open in § 4 (H-2, H-3) and are quoted from
+nowhere.
 
 QA-001 stood at `phase-level incomplete` for one stated reason: **no phase-level coverage record
 existed.** § 5 of the assurance index counted the suites; nothing said, across the whole phase,
@@ -35,13 +42,14 @@ which surface is covered, which is not, and why. This file is that statement.
 
 ## 2. How each figure was taken
 
-| figure                                        | method                                                                                                                                                                                                          |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| declared cases per suite                      | the same `it`/`test` declaration regex `tests/ci/web-test-floor.test.ts` uses, applied to the real files. It counts `it.each` as ONE declaration, so every count below is a **lower bound** on what is executed |
-| which screen a suite covers                   | the `await import(...)` specifiers at the head of each suite, read on this tree — so a suite is credited with the screen it actually renders and not with the one its filename suggests                         |
-| what the instrument covers                    | `COVERAGE_INCLUDE` in `apps/web/vitest.config.ts` and the floors in `.github/ci-baselines/coverage-baseline.web.json`, both committed and both read on this tree                                                |
-| test files in the tier                        | counted on this tree                                                                                                                                                                                            |
-| executed tier totals and coverage percentages | **not taken here** — pending the web tier run at this lane's queue turn (§ 5)                                                                                                                                   |
+| figure                                                                       | method                                                                                                                                                                                                                                                  |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| declared cases per suite                                                     | the same `it`/`test` declaration regex `tests/ci/web-test-floor.test.ts` uses, applied to the real files. It counts `it.each` as ONE declaration, so every count below is a **lower bound** on what is executed                                         |
+| which screen a suite covers                                                  | the `await import(...)` specifiers at the head of each suite, read on this tree — so a suite is credited with the screen it actually renders and not with the one its filename suggests                                                                 |
+| what the instrument covers                                                   | `COVERAGE_INCLUDE` in `apps/web/vitest.config.ts` and the floors in `.github/ci-baselines/coverage-baseline.web.json`, both committed and both read on this tree                                                                                        |
+| test files in the tier                                                       | counted on this tree                                                                                                                                                                                                                                    |
+| executed tier totals and coverage percentages                                | read out of the hosted artefact named above — `coverage-web.md` for the four percentages, their deltas and the gate verdict; `test-totals-web.json`, cross-checked against `apps/web/vitest-web.json`, for the executed counts and the file count (§ 5) |
+| per-tree instrumented-file counts, and the dashboard route tier's own figure | **OPEN — no hosted artefact carries what they need** (§ 4, H-2 and H-3)                                                                                                                                                                                 |
 
 ## 3. Surfaces WITH component coverage
 
@@ -113,8 +121,7 @@ statement, and no coverage claim may be made for it.
 `src/lib/**`. No P1-31 feature tree is on that list, and the config is the whole of the
 instrument's input, so **no file under `apps/web/src/features/delivery`, `features/warranty` or
 `features/reports` can be instrumented at all.** That follows from the committed config alone and
-needs no run to establish it. The instrumented-file counts per tree are pending the web tier run at
-this lane's queue turn.
+needs no run to establish it. The instrumented-file counts per tree are **OPEN — no hosted job uploads the per-file web coverage summary (`apps/web/coverage/web/coverage-summary.json`) or `coverage-gate-web.json`; remedy: add both to the `evidence-web-quality` upload list at `_reusable-node-quality.yml:864-886` (CI-automation lane); until then this figure is measurable only locally and is not cited**.
 
 So **no line, branch or function coverage figure exists for any P1-31 feature code**, and no
 critical-module floor governs any of it: the eight rules in `coverage-baseline.web.json` name CRM,
@@ -133,8 +140,7 @@ re-measurement and the baseline movement that must accompany them, in a commit t
 ### H-3 — the route tier the P1-31 pages sit in is under its own floor, and exempt from it
 
 The line coverage of the ten P1-31 route pages (two delivery, four warranty, three reports, one
-audit log), and of the dashboard route tier as a whole, is pending the web tier run at this lane's
-queue turn. The structural point does not wait on it, and is the point of this hole.
+audit log), and of the dashboard route tier as a whole, is **OPEN — no hosted job uploads the per-file web coverage summary (`apps/web/coverage/web/coverage-summary.json`) or `coverage-gate-web.json`; remedy: add both to the `evidence-web-quality` upload list at `_reusable-node-quality.yml:864-886` (CI-automation lane); until then this figure is measurable only locally and is not cited**. The structural point does not wait on it, and is the point of this hole.
 
 The hole is that `apps/web/src/app/` is on `touchedFileExemptPrefixes` in the web coverage
 baseline, so the 60% touched-file floor does **not** apply to any of these pages. A P1-31 page
@@ -170,7 +176,7 @@ mounted, or moving that decision into a covered module.
   control case, so its "the reference is not in the DOM" assertions are made where the reference
   was in the adapter's answer.
 
-## 5. The coverage gate, its wiring, and the measurement that is pending
+## 5. The coverage gate, its wiring, and the hosted measurement
 
 **Both of the tooling warnings below were checked on this tree, and both hold.**
 
@@ -192,34 +198,66 @@ The workspace-direct spelling is deliberate: the baseline's `ciWiringTrap` recor
 `vitest run` that emits no report while exiting 0.
 
 **Tier size:** 142 test files under `apps/web/tests`, counted on this tree — the same figure the
-P1-27 deliverable manifest carries for this branch. **The executed case total, the pass/skip/todo
-counts and the gate verdict are pending the web tier run at this lane's queue turn**, and this
-record makes no claim about any of them. No coverage run is cited here, and no assertion is made
-that the gate passed.
+P1-27 deliverable manifest carries for this branch, and the same figure the hosted run reports
+(`files: 142` in `test-totals-web.json`, 142 file entries in `apps/web/vitest-web.json`).
 
-Only the declared floors are quotable today, because they are committed
-(`.github/ci-baselines/coverage-baseline.web.json`):
+**The executed tier, from the hosted run.** `test-totals-web.json`: **4020 cases collected, 4020
+executed, 4020 passed, 0 failed, 0 skipped, 0 todo**, across **142 files** and **952 `describe`
+blocks**. `apps/web/vitest-web.json` reports the same figures independently, so the summary is not
+the only witness to them.
 
-| metric     | baseline | measured                                           |
-| ---------- | -------- | -------------------------------------------------- |
-| lines      | 82.48%   | pending the web tier run at this lane's queue turn |
-| statements | 81%      | pending the web tier run at this lane's queue turn |
-| functions  | 85%      | pending the web tier run at this lane's queue turn |
-| branches   | 77.37%   | pending the web tier run at this lane's queue turn |
+**Gate verdict: `coverage-web.md` records `Coverage gate: pass`.** That is the hosted gate's own
+verdict on that run, transcribed — not a local observation, and not this record's inference. All
+eight critical-module rows in that file stand above their floors, on line coverage:
+`crm-customer-surface` 94.31% over 92% (20 files), `vehicle-surface` 97.12% over 91% (23),
+`api-client` 98.51% over 92% (6), `client-permissions` 100% over 95% (1),
+`content-security-policy` 100% over 95% (1), `form-results-and-field-errors` 95.24% over 90% (2),
+`duplicate-scoring` 95.65% over 90% (2), `customer-directory` 96.55% over 90% (4). The same file
+states the ratchet's terms: **tolerance 0.5 pp, touched-file floor 60%**.
 
-Nothing in `.github/ci-baselines/` was edited by the branch that carries this record. A local
-measurement, when it is taken, is weaker than a hosted one and may not be recorded as a baseline.
+The floors are committed (`.github/ci-baselines/coverage-baseline.web.json`); the measured column
+and the delta are `coverage-web.md`'s own four rows from hosted run `34759286884`, transcribed and
+not recomputed here:
 
-**One property to check when that run is taken.** If `lines` and `statements` report the same
-covered-over-total pair, the report came from the vitest-3 v8 range mapping; vitest 4's AST-aware
-remapping counts executable units and re-bases every metric, so the two differ. `coverage.all` no
+| metric     | baseline | measured (hosted run `34759286884`) | Δ        |
+| ---------- | -------- | ----------------------------------- | -------- |
+| lines      | 82.48%   | 84.64%                              | +2.16 pp |
+| statements | 81%      | 82.88%                              | +1.88 pp |
+| functions  | 85%      | 87.21%                              | +2.21 pp |
+| branches   | 77.37%   | 79%                                 | +1.63 pp |
+
+Nothing in `.github/ci-baselines/` was edited by the branch that carries this record. **These four
+figures are a measurement of this head and are NOT a new baseline**; a baseline moves on the
+coverage-policy lane's own act. The local run taken at this lane's queue turn, which existed only
+to see the gate execute, is quoted nowhere in this file.
+
+**The property this record said to check when the run was taken — checked.** `lines` and
+`statements` do NOT report the same figure: 84.64% against 82.88%. So the report came from vitest
+4's AST-aware remapping and not from the vitest-3 v8 range mapping, whose signature across every
+tier in this repository was a byte-identical `lines === statements`. `coverage.all` no
 longer exists in vitest 4 — the guarantee moved to `coverage.include`, which is why H-2 is a
 coverage hole rather than a reporting detail: a tree outside that list is not added at zero, it is
 not counted at all.
 
 For reference, the baseline's own `knownGaps` records the dashboard route tier at 52.91% across 55
 files from hosted run 34321869051. That hosted figure remains the authority, and this record
-reconciles nothing against it.
+reconciles nothing against it — H-3 could not be re-measured at this head, for the reason H-3 now
+states.
+
+**An inconsistency in that baseline is OBSERVED here and deliberately NOT corrected.**
+`.github/ci-baselines/coverage-baseline.web.json:5` (`establishedBy`) cites "hosted run id
+34321869051, job `Web quality / web-quality`, artifact `evidence-web-quality`, file
+`apps/web/coverage/web/coverage-summary.json`" — but the `evidence-web-quality` artefact does not
+carry that file, and the upload list at
+`.github/workflows/_reusable-node-quality.yml:864-886` shows it never did: that list names
+`coverage/unit/coverage-summary.json`, `apps/web/vitest-web.json`, `test-totals-web.json` and the
+markdown files, and no per-file web summary. Read directly on run `34759286884`'s artefact:
+fourteen files, and neither the web summary nor `coverage-gate-web.json` among them. The
+131-instrumented-file figure in that same field therefore has no published artefact behind it that
+this record could re-read, which is the same gap H-2 and H-3 are open on. The baseline belongs to
+the coverage-policy lane and a figure in it moves by that lane's measurement, so this is recorded
+as an observation under no identifier of its own and **nothing in `.github/ci-baselines/` is
+edited**.
 
 ## 6. Summary
 
@@ -232,4 +270,7 @@ reconciles nothing against it.
 | the component suites prove the screens work end to end                      | **no** — the adapter is mocked (§ 1)    |
 
 QA-001 therefore stays `phase-level incomplete`. This record closes the "no phase-level coverage
-record exists" item and closes nothing else.
+record exists" item and closes nothing else. Its hosted figures are now filled from run
+`34759286884`; **two figures stay open** — the per-tree instrumented-file counts (H-2) and the
+dashboard route tier's own measurement (H-3) — and they stay open until the `evidence-web-quality`
+upload list carries the per-file web coverage summary.
