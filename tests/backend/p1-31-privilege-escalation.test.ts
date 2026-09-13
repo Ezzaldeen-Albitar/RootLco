@@ -8,7 +8,7 @@
  * `declaredPermissions` from `scripts/ci/check-permission-parity.mjs` — the same parser
  * the permission-parity gate uses — is run over every `route.ts` under the eight
  * namespaces `docs/phase-1/phase-1-31/security-and-qa-evidence.md` names, and SE-0 pins
- * the totals it yields: **45 operations across 33 route files, 12 distinct permission
+ * the totals it yields: **46 operations across 34 route files, 12 distinct permission
  * codes**. An operation added to or removed from any of those namespaces changes the
  * parse, and the probe table below then no longer covers it exactly, so this file fails.
  * That is the property a hand list cannot have.
@@ -26,7 +26,7 @@
  * probe (GET only), the entitlement check, the idempotency reservation, and only then
  * the handler callback. Every P1-31 route parses its path parameters and its body
  * INSIDE that callback — see `warranty-policies/[policyId]/status/route.ts:79-100`,
- * which is the shape all 33 share.
+ * which is the shape all 34 share.
  *
  * So: **the permission gate precedes both validation and every lookup.** SE-5 therefore
  * addresses each operation with random UUIDs and a minimally shaped body, which is
@@ -46,13 +46,13 @@
  *  - **SE-1..SE-4** — self-delegation. An administrator holding `iam.role.manage` and
  *    none of the phase's codes cannot map one onto a role, at the service and at the
  *    database independently. This is the widening CC-16 and CC-20 rest on.
- *  - **SE-5** — least privilege, all 45. A tenant-A caller holding every P1-31 code
+ *  - **SE-5** — least privilege, all 46. A tenant-A caller holding every P1-31 code
  *    EXCEPT the ones the operation declares is refused `ERR-IAM-001`, and the refusal
  *    names exactly the declared codes. **SE-5P** takes the five operations that declare
  *    more than one code and withholds them ONE AT A TIME, twelve cases in all: an
  *    all-or-nothing probe cannot tell a gate that requires every declared code from one
  *    that requires any of them.
- *  - **SE-6** — cross-tenant, the 40 operations that address a tenant-owned row. A
+ *  - **SE-6** — cross-tenant, the 41 operations that address a tenant-owned row. A
  *    tenant-B caller holding all twelve codes addresses tenant A's REAL rows. The
  *    pinned refusal is the one the platform already standardises, and which is: an
  *    operation addressed by a resource id answers 404 `ERR-RES-001`, the answer
@@ -136,7 +136,7 @@ import { DelegationPolicy } from '@/modules/iam/domain/delegation-policy';
 import { CredentialPolicy } from '@/modules/iam/domain/credential-policy';
 import { IdentityPolicy } from '@/modules/iam/domain/identity-policy';
 
-// --- the 33 route modules, imported so every probe drives the DEPLOYED handler -------
+// --- the 34 route modules, imported so every probe drives the DEPLOYED handler -------
 
 import {
   DELIVERY_CREATE_OPERATION,
@@ -262,6 +262,10 @@ import {
   GET as WARRANTY_DETAIL,
 } from '@/app/api/v1/warranties/[warrantyId]/route';
 import {
+  WARRANTY_STATUS_HISTORY_OPERATION,
+  GET as WARRANTY_STATUS_HISTORY,
+} from '@/app/api/v1/warranties/[warrantyId]/status-history/route';
+import {
   WARRANTY_POLICY_LIST_OPERATION,
   WARRANTY_POLICY_CREATE_OPERATION,
   GET as POLICY_LIST,
@@ -312,8 +316,8 @@ const P1_31_NAMESPACES = Object.freeze([
 ] as const);
 
 /** Measured totals. Restated from `security-and-qa-evidence.md:88-94`, not derived from it. */
-const EXPECTED_OPERATIONS = 45;
-const EXPECTED_ROUTE_FILES = 33;
+const EXPECTED_OPERATIONS = 46;
+const EXPECTED_ROUTE_FILES = 34;
 
 interface ParsedOperation {
   readonly id: string;
@@ -417,8 +421,8 @@ const FULL_B = actorAt(2, TENANT_B, P1_31_PERMISSION_CODES);
 /**
  * One least-privileged actor per DISTINCT declared-code set, derived from the parse.
  *
- * Thirteen sets across forty-five operations, so thirteen accounts rather than
- * forty-five. Each holds every P1-31 code EXCEPT the ones its operations declare, which
+ * Thirteen sets across forty-six operations, so thirteen accounts rather than
+ * forty-six. Each holds every P1-31 code EXCEPT the ones its operations declare, which
  * is what makes its refusal about the withheld authority and not about being a stranger
  * to the phase.
  */
@@ -1012,6 +1016,17 @@ const PROBES: readonly Probe[] = [
     addressing: 'resource-id',
     asserts: NO_SCOPE_FIELD,
   },
+  {
+    id: 'wty.warranty-status-history',
+    operation: WARRANTY_STATUS_HISTORY_OPERATION,
+    url: (t) => `${V1}/warranties/${t.warrantyId}/status-history`,
+    call: (request, t) =>
+      WARRANTY_STATUS_HISTORY(request, {
+        params: Promise.resolve({ warrantyId: t.warrantyId }),
+      }),
+    addressing: 'resource-id',
+    asserts: NO_SCOPE_FIELD,
+  },
   // --- warranty policies ----------------------------------------------------------
   {
     id: 'wty.warranty-policy-list',
@@ -1586,7 +1601,7 @@ afterAll(async () => {
 // ---------------------------------------------------------------------------
 
 describe('P1-31-SEC-003 SE-0 — the phase operation set, parsed', () => {
-  it('is 45 operations over 33 route files, and every one is readable', () => {
+  it('is 46 operations over 34 route files, and every one is readable', () => {
     expect({
       operations: SURFACE.operations.length,
       declarations: SURFACE.declarations,
@@ -1657,7 +1672,7 @@ describe('P1-31-SEC-003 SE-0 — the phase operation set, parsed', () => {
       'sal.delivery-checklist-template-list',
       'wty.warranty-policy-list',
     ]);
-    expect(CROSS_TENANT_PROBES).toHaveLength(40);
+    expect(CROSS_TENANT_PROBES).toHaveLength(41);
     expect(SCOPE_PROBES).toHaveLength(8);
     expect(scopeSkips).toHaveLength(EXPECTED_OPERATIONS - 8);
     // Two variants each, so the uniformity CC-14 claims is asserted rather than assumed.
@@ -1819,7 +1834,7 @@ describe('P1-31-SEC-003 SE-5 — least privilege, on every operation of the phas
     'SE-5C $id answers a caller holding all twelve with neither ERR-IAM-001 nor a 5xx',
     async (probe) => {
       /*
-       * The falsifier for all forty-five above. The identifiers are freshly generated,
+       * The falsifier for all forty-six above. The identifiers are freshly generated,
        * so this is the same request SHAPE rather than the same request, and the claim
        * is deliberately narrow: NOT that the call succeeds — with invented identifiers
        * it cannot — but that whatever it answers is not the authority refusal and is

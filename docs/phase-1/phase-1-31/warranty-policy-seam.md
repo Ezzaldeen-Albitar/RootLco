@@ -294,9 +294,12 @@ configured through the product" is the claim under test.
   holds and invents nothing.
 - **The post-merge backfill**, section 8. Existing organisations gain nothing until an operator runs
   `scripts/platform/backfill-tenant-administrator-bundle.mjs`. It was not run here.
-- **`wty.warranty_record_status_history` still has no reader** (CC-10, unchanged), and no claim
-  surface exists or is created (P1-22-L-01, unchanged). This slice writes no `wty.warranty_records`
-  row of any kind.
+- **`wty.warranty_status_history` still had no reader** when this slice landed (CC-10, unchanged by
+  it), and no claim surface exists or is created (P1-22-L-01, unchanged). This slice writes no
+  `wty.warranty_records` row of any kind. _(This bullet named the table
+  `wty.warranty_record_status_history`, which no migration ever created — corrected in place by
+  change control § 65 / CC-55 (b). **CC-10 closed on 2026-09-13** with prerequisite **P-18**; the
+  claim half is untouched and P1-22-L-01 still holds.)_
 - **FE-008 and FE-009 themselves.** `apps/web` is unchanged except through the generated idempotency
   manifest, which every published operation moves. The screens are a later slice on the
   `p1-31-frontend` lane, and it is that lane which owes any request-payload mirror. Note that
