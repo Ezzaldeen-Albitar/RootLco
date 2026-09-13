@@ -445,6 +445,133 @@ export async function probeForeign(visitId: string, tail: string, ifMatch: numbe
     const { violations } = withFixtures(POSITIONAL_ADAPTER, GOOD_CALLER);
     expect(violations).toEqual([]);
   });
+
+  it('refuses a version option outside the transport’s options argument', () => {
+    // The index-three read is a fact about `lib/api/client.ts`, and these two
+    // refusals are what make it safe rather than merely conventional. A version
+    // in the BODY is the dangerous direction: the request looks guarded, carries
+    // no header, and would be invisible to a gate that only looked at argument 4.
+    const { violations } = withFixtures([
+      'apps/web/src/features/probe/misplaced-api.ts',
+      `'use server';
+export async function probeMisplaced(deliveryId: string, ifMatch: number) {
+  const client = await authorizedClient();
+  return client.send(
+    'POST',
+    \`/api/v1/deliveries/\${encodeURIComponent(deliveryId)}/completion\`,
+    { ifMatch }
+  );
+}
+`,
+    ]);
+    expect(violations.join('\n')).toMatch(/carries an `ifMatch` at argument 3/);
+    expect(violations.join('\n')).toMatch(/unguarded on the wire/);
+  });
+
+  it('refuses a send with more arguments than the transport takes', () => {
+    const { violations } = withFixtures([
+      'apps/web/src/features/probe/arity-api.ts',
+      `'use server';
+export async function probeArity(deliveryId: string, ifMatch: number) {
+  const client = await authorizedClient();
+  return client.send(
+    'POST',
+    \`/api/v1/deliveries/\${encodeURIComponent(deliveryId)}/completion\`,
+    {},
+    {},
+    { ifMatch }
+  );
+}
+`,
+    ]);
+    expect(violations.join('\n')).toMatch(/is called with 5 arguments/);
+  });
+
+  it('refuses two functions of one name in one module', () => {
+    // The sending adapter is resolved by NAME within its file, so a shadowing
+    // helper makes "which parameter list" unanswerable — and the answer decides
+    // where the version enters and which caller argument is judged.
+    const { violations } = withFixtures([
+      'apps/web/src/features/probe/shadowed-api.ts',
+      `'use server';
+export async function probeShadowed(deliveryId: string, ifMatch: number) {
+  const client = await authorizedClient();
+  return client.send(
+    'POST',
+    \`/api/v1/deliveries/\${encodeURIComponent(deliveryId)}/completion\`,
+    {},
+    { ifMatch }
+  );
+}
+function outer() {
+  const probeShadowed = (input: { readonly ifMatch: number }) => input.ifMatch;
+  return probeShadowed;
+}
+`,
+    ]);
+    expect(violations.join('\n')).toMatch(/functions in this module are named probeShadowed/);
+  });
+});
+
+describe('the anti-vacuity guards are proved, one negative case each', () => {
+  /*
+   * A checker that examines nothing passes everything, so the gate carries five
+   * clauses that refuse an empty sweep. Each is a claim about a state this
+   * repository is not in, which is exactly the kind of claim that rots unproved:
+   * the guards were written, the tree was green, and nothing established that any
+   * of them would ever fire. One synthetic input per guard, each asserting the
+   * guard's own words.
+   */
+  const only = (...sources: Source[]) => run({ sources }) as { violations: string[] };
+
+  it('no files were scanned', () => {
+    expect(only().violations.join('\n')).toMatch(/no files were scanned/);
+  });
+
+  it('the send walk examined nothing', () => {
+    const { violations } = only([
+      'apps/web/src/features/probe/quiet.ts',
+      'export const NOTHING = 1;\n',
+    ]);
+    expect(violations.join('\n')).toMatch(
+      /no version-carrying request was found anywhere in apps\/web\/src/
+    );
+  });
+
+  it('a module the parser refuses is reported, not skipped', () => {
+    const { violations } = only([
+      'apps/web/src/features/probe/broken.ts',
+      'export async function broken( {\n  return client.send(\n',
+    ]);
+    expect(violations.join('\n')).toMatch(/this gate could not parse the module/);
+  });
+
+  it('no in-scope send, and nothing compared, are two clauses one input reaches', () => {
+    /*
+     * Both are asserted from one fixture because they are co-reachable BY
+     * CONSTRUCTION: `consumed` gains an entry for every in-scope send, so it can
+     * only be empty when the in-scope set is. Splitting them into two cases would
+     * imply an independence the code does not have, and saying so here is cheaper
+     * than a reader rediscovering it.
+     */
+    const { violations } = only([
+      'apps/web/src/features/probe/elsewhere-api.ts',
+      `'use server';
+export async function probeElsewhere(visitId: string, ifMatch: number) {
+  const client = await authorizedClient();
+  return client.send('POST', \`/api/v1/receptions/\${visitId}/approve\`, {}, { ifMatch });
+}
+`,
+    ]);
+    expect(violations.join('\n')).toMatch(/no in-scope version-guarded send was found/);
+    expect(violations.join('\n')).toMatch(/every operation in scope is declared pending/);
+  });
+
+  it('an adapter that demands a version from its callers and has none', () => {
+    const { violations } = withFixtures(POSITIONAL_ADAPTER);
+    expect(violations.join('\n')).toMatch(/demands a version from its callers and has none/);
+    expect(violations.join('\n')).toMatch(/positional-api\.ts/);
+  });
 });
 
 describe('the gate is registered where a gate has to be', () => {

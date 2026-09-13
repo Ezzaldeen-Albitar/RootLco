@@ -5088,9 +5088,16 @@ two pins, one line added to a hosted workflow, and the register.
 ### 67.1 Identifier allocation
 
 **Section 67 and CC-57 were allocated to this lane by the coordinating session before the branch
-opened**, and are used as allocated. Sections **63 … 66** and identifiers **CC-53 … CC-56** are held
-for sibling lanes in flight and are **not claimed here**; nothing in this section describes what they
-contain. Section 48.1's rule holds unchanged — an identifier is a claim about the register at the
+opened**, and are used as allocated. Of the four identifiers between this one and the last on this
+branch's baseline: **§ 63 / CC-53 has LANDED on `develop`** at `591763df` (pull request #389), **§ 65 /
+CC-55 lands with pull request #390**, and **§ 64 and § 66 are in flight on lanes this branch cannot
+see**. None of the four is claimed here and nothing in this section describes what any of them
+contains. This branch's baseline is `72f3a71e`, which predates all of them, so the sync turn re-states
+this paragraph against the merged register rather than carrying it forward.
+
+_This paragraph first read "Sections 63 … 66 and identifiers CC-53 … CC-56 are held for sibling lanes
+in flight". That was the allocation as it stood when the branch opened and was already false when
+written: #389 had merged._ Section 48.1's rule holds unchanged — an identifier is a claim about the register at the
 moment it was raised, and is never renumbered to follow heading order. The one permanent hole at
 **CC-40** that § 57.5 records is untouched.
 
@@ -5187,13 +5194,25 @@ OK: every version-guarded P1-31 command sources its If-Match from a read or a co
 
 `tests/ci/p1-31-version-sourcing.test.ts` **appends** synthetic modules to the real web corpus rather
 than replacing it, so a fixture adds exactly one reason to fail and an assertion cannot be satisfied
-by the collapse of everything else. Eighteen cases; the negatives are: a version **literal** at a
+by the collapse of everything else. **Twenty-six cases**, of which fourteen are negatives; they are: a version **literal** at a
 call site; a **stale** value the component holds in `useState` and reuses; a **retry** quoting the
 version the first attempt was refused for; a **structural** adapter whose caller computes
 `recordVersion + 1`; a component that commands and **never hands the outcome onward**; a **PENDING**
 entry whose operation gained a consumer; an in-scope operation **neither consumed nor declared**; and
 two modules exporting one adapter name that disagree about where the version sits, which is the
 homonym collapse the file-and-name keying exists to make visible.
+
+Review added eight more, and every one of them proved a claim that had nothing behind it. Three cover
+the transport's shape: **a version option outside the options argument** (a version in the BODY — a
+request guarded in appearance and unguarded on the wire), **a send with more arguments than the
+transport takes**, and **two functions of one name in one module**, where resolving the sending
+adapter by name cannot say which parameter list to read. The other five are one per anti-vacuity
+clause — **no files scanned**, **the send walk examined nothing**, **a module the parser refuses**, **no
+in-scope send**, and **an adapter that demands a version from its callers and has none** — because a
+guard that has never fired is a guard nobody has established works. The fourth and fifth of those are
+reached by ONE input and the suite says why: `consumed` gains an entry per in-scope send, so it can
+only be empty when the in-scope set is, and two cases would imply an independence the code does not
+have.
 Two cases prove the fail-closed direction is aimed correctly — an unattributable versioned send under
 an in-scope resource root is refused, and one under a root no operation in scope is addressed under
 is left alone, which is a proof rather than an allow-list and so cannot go stale. One positive case
@@ -5275,21 +5294,55 @@ naming an operation nothing reaches is owning a surface it does not have (CC-39(
 #### The report line, verbatim, at this branch head
 
 ```
-P1-31 gate-before-read: 17 route page(s) examined across 12 owned segment(s) (audit-events, audit-log, deliveries, delivery, delivery-checklist-templates, delivery-readiness, org, reports, warranties, warranty, warranty-policies, work-orders).
+P1-31 gate-before-read: 10 route page(s) examined across 12 owned segment(s) (audit-events, audit-log, deliveries, delivery, delivery-checklist-templates, delivery-readiness, org, reports, warranties, warranty, warranty-policies, work-orders); 7 deferred to the P1-29 gate, which judges them with the same rule.
   0 violation(s).
 ```
 
-Every page under the twelve owned segments is judged by `judgePage` — the P1-29 gate's judgement,
-reused so the four false negatives an adversarial review found there cannot regress here — and the
-register lookup resolves all thirty-three ids, which is what `deriveSegments().problems` being empty
-means and what the suite asserts.
+The register lookup resolves all thirty-three ids, which is what `deriveSegments().problems` being
+empty means and what the suite asserts.
+
+#### What the gate judges on a page — and the seven pages it now declines to judge
+
+`judgePage` — the P1-29 gate's judgement, reused so the four false negatives an adversarial review
+found there cannot regress here — reads a page's **SHAPE**: does it deny and RETURN on a permission
+before it awaits anything that costs a request. It reads **nothing** about which operations that page
+consumes. So owning an operation is a claim about the register and the segments; it is not the thing
+checked on a page. A page is examined because it lives under an owned segment, and is then held to the
+shape rule in full.
+
+Review measured what that was costing. **Seven of the seventeen pages judged before this correction
+were `(dashboard)/work-orders/**`** — admitted because `sal.work-order-delivery-read` is addressed at
+`/work-orders/{id}/delivery`, a SUB-resource, so taking its resource root claimed a whole area — and
+**six of the seven consume no P1-31 operation at all**. The gate reported 0 violations, so nothing was
+wrong; what was wrong was the arrangement. A regression on a P1-29 diagnostics or quality screen would
+have turned THIS gate red, and a P1-31 lane would have been holding a finding it cannot act on — the
+exact shape this gate's own docblock refuses in the paragraph that explains why it takes a resource
+root rather than every segment.
+
+**So those pages are DEFERRED, and the deferral costs no coverage.** `judgePage` is imported from the
+P1-29 gate; that gate owns the whole `work-orders` area and already judges those pages with the same
+function, so judging them here was the same opinion computed twice. `deferredSegments()` derives the
+hand-over from that gate's own `ownedSegments()` rather than naming a segment by hand, so it cannot
+outlive its reason, and **every deferred page is checked to be in the sibling's page set** — a page
+handed over and not taken is reported as a violation, because that would be a page no gate-before-read
+rule examines at all. The suite asserts the same thing from the other end.
+
+The deferral is **not** extended to the P1-30 gate, and the asymmetry is the reason this file exists.
+That gate owns `deliveries` and `warranties` as roots and matches none of the singular dashboard areas
+the screens actually live under; deferring to it would recreate the hole § 55 records this gate being
+written to close. Only `work-orders` is in the intersection today, and that is derived, not asserted.
+
+A page admitted by BOTH a deferred segment and a P1-31 segment stays this gate's business — a delivery
+panel routed beneath a work order would be judged here — which is why the rule is "at least one
+admitting segment is not deferred" rather than "no admitting segment is deferred".
 
 #### Pins moved
 
 | pin                                                            | before | after  | why                                                                                                                                       |
 | -------------------------------------------------------------- | ------ | ------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | `PINNED_OWNED_SEGMENTS`, `tests/ci/p1-31-access-gate.test.ts`  | **9**  | **12** | `delivery-checklist-templates` from the two template reads, then `audit-events` from the audit pair and the named `audit-log` area        |
-| `PINNED_PAGES`, the same file                                  | **16** | **17** | verified in both directions: no page lies under `delivery-checklist-templates`, and the audit-log page enters the judged set and passes   |
+| `PINNED_PAGES`, the same file                                  | **16** | **10** | the audit-log page entered the judged set (16 → 17) and the seven `work-orders` pages left it, deferred to the gate that owns that area   |
+| `PINNED_DEFERRED_PAGES`, the same file                         | —      | **7**  | new pin: the hand-over is a number the gate reports, so a page silently ceasing to be deferred moves it                                   |
 | `files scripts/ci`, P1-27 derived marker and its visible cell  | **65** | **66** | one new gate                                                                                                                              |
 | `files tests/ci`, P1-27 derived marker                         | **71** | **72** | one new suite                                                                                                                             |
 | `commands registered`, P1-27 derived marker                    | 177    | 178    | one new npm script                                                                                                                        |
@@ -5300,8 +5353,9 @@ documents, every one reachable.**
 
 _The row for `validate:p1-31-access` in § 55's verification table reads **"16 route pages across 8
 owned segments"**. That was true when it was written and is now stale twice over: `develop` moved it
-to 9 with the FE-002 handover form's `org` root, and this slice moves it to 12. The figure is left
-visible and corrected here rather than edited there, under the rule § 14 states._
+to 9 with the FE-002 handover form's `org` root, and this slice moves it to 12 owned segments, of
+which one is deferred, over 10 judged pages. The figure is left visible and corrected here rather than
+edited there, under the rule § 14 states._
 
 ### 67.4 Where the gate rides — reachable is not the same as TIMELY
 
@@ -5336,7 +5390,9 @@ required set by the `validate:p1-28-` prefix, so it neither demanded this line n
 | `node scripts/ci/check-p1-31-version-sourcing.mjs`                                                              | the report line above, 0 violations, exit 0                   |
 | `npm run validate:p1-31-version-sourcing`                                                                       | exit 0                                                        |
 | `node scripts/ci/check-p1-31-access.mjs`                                                                        | the report line above, 0 violations, exit 0                   |
-| `npx vitest run tests/ci/p1-31-version-sourcing.test.ts tests/ci/p1-31-access-gate.test.ts`                     | 32/32 across 2 files                                          |
+| `npx vitest run tests/ci/p1-31-version-sourcing.test.ts`                                                        | 26/26                                                         |
+| `npx vitest run tests/ci/p1-31-access-gate.test.ts`                                                             | 15/15                                                         |
+| `node scripts/ci/check-test-honesty.mjs`                                                                        | exit 0                                                        |
 | `npm run validate:run-block-syntax` · `check-workflow-security.mjs`                                             | 0 findings over the edited workflow                           |
 | `npx vitest run tests/ci/p1-28-devops-gate.test.ts tests/ci/documented-counts.test.ts tests/ci/ci-gate.test.ts` | 52/52 across 3 files                                          |
 | `npm run validate:command-coverage`                                                                             | 178 registered, 97 required, 97/97 reachable, 98/98 hosted CI |
@@ -5345,15 +5401,41 @@ required set by the `validate:p1-28-` prefix, so it neither demanded this line n
 
 The full list, with exit codes, is the pull request's own record; every figure above was read off the
 command's own output on this branch and none is carried forward from another head.
-`npm run verify:policies` exits 0 at this head, and the new gate's report line appears inside it.
 
-**Four further derived figures moved, and both local tiers were re-recorded.** A new script and a new
-suite are counted in places outside the P1-27 marker block: the CI-automation record's script count
-(**65 → 66**), and the root unit tier's tests and files on the clean-room page with both of their twins
-in `closing-value-ledger.json` (**3324 → 3341**, **125 → 126**). `validate:p1-27-closing-values` also
-refuses a run record taken before an executable path changed, so both local tiers were re-recorded at
-this head through the P1-27 recorder — **unit 3341 tests, 0 failed, 126 files; web 4020 tests, 0
-failed, 142 files** — and the evidence manifest was regenerated with them.
+**Every figure in this section is RE-DERIVED at the sync turn, and none of it should be read forward.**
+The two report lines, the suite totals and the P1-27 counts are all measured against a tree that does
+not yet carry the merge; the run-ledger figures on the clean-room page (`3341`, `126`) are GENERATED by
+the record cycle and are never hand-edited — the eight negative cases added at review are new tests, so
+the unit total moves again the moment the recorder next runs. The sync turn merges, re-derives the
+markers, re-records both tiers last, and re-quotes every line here from that head.
+**`npm run verify:policies` does NOT exit 0 at this head, and the reason is this branch's own.** Its
+last member is `validate:p1-27-closing-values` (`package.json`), and that gate exits 1 with
+`RUN_RECORD_STALE` on both local tiers: the ledger was recorded at `545298e8` and executable paths have
+changed since — the two gates, their two suites and a workflow. Everything before it in the aggregate
+passes, and the new gate's report line appears inside the run. **The aggregate is re-taken in the sync
+turn, after the re-record, and its result is recorded there rather than claimed here.**
+
+_This paragraph first read "`npm run verify:policies` exits 0 at this head, and the new gate's report
+line appears inside it". The first half was true of the head it was measured at and false of the head
+it was written on; the second half holds._
+
+**Four further derived figures moved, and both local tiers were re-recorded — at `545298e8`, which is
+NO LONGER THIS HEAD.** A new script and a new suite are counted in places outside the P1-27 marker
+block: the CI-automation record's script count (**65 → 66**), and the root unit tier's tests and files
+on the clean-room page with both of their twins in `closing-value-ledger.json` (**3324 → 3341**,
+**125 → 126**). `validate:p1-27-closing-values` also refuses a run record taken before an executable
+path changed, so both tiers were re-recorded through the P1-27 recorder — **unit 3341 tests, 0 failed,
+126 files; web 4020 tests, 0 failed, 142 files** — and the evidence manifest regenerated with them.
+
+**Three commits have landed since**, so the ledger's `measuredAtCommit` is behind this head and the
+figures above describe a tree three commits old. They are left as measured rather than adjusted by
+hand: a run record is evidence of a run, and editing one is the defect its own gate exists to catch.
+**Both tiers are re-recorded, and the manifest regenerated, in the sync turn — after the merge, last
+in the order that gate requires** — and the unit total will move again there, because the negative
+cases added at review are new tests.
+
+_This paragraph first said "both local tiers were re-recorded at this head", which was true when
+written and made false by the two commits that followed it._
 
 _One observation from those runs, recorded rather than dispositioned._ Under the full parallel unit
 tier this machine put three cases over their own timeout —
@@ -5364,11 +5446,11 @@ recorded ledger is the clean run.
 
 ### 67.6 Dispositions
 
-| id            | finding                                                                                                                    | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | owner / slice                     | state            |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- | ---------------- |
-| **CC-57**     | **QA-004's sourcing rule had no mechanical enforcement for any P1-31 operation, and the access allow-list had lost eight** | Eleven operations carry `If-Match` in the published contract and belong to P1-31; four have a web consumer and none of the four was gated, because the P1-28 gate's scope is the appointment and reception namespaces and the delivery completion's version is an interface field its adapter walk cannot see. Separately, ten operations P1-31 screens consume were absent from `P1_31_OPERATION_IDS` — eight found by parsing the three feature trees, two more on the audit tree found at review | **both closed by construction.** A sibling gate, registered `required`, named directly by the fast hosted quality job beside its P1-28 twin, and mutation-proved by eighteen cases, now refuses a computed, cached, untraceable or un-renewed version on any of the eleven, and declares the seven with no consumer under a lifecycle that goes stale the moment one appears. The allow-list now names **all thirty-three operations a P1-31 screen consumes**, which is the rule it follows; the segment pin moved 9 → 12 and the page pin 16 → 17 | this slice                        | closed, recorded |
-| **CC-57 (a)** | **the seven PENDING operations remain unreachable, and this gate discloses that rather than closing it**                   | No screen or adapter in `apps/web` sends the three checklist-template writes, the three report-configuration writes or the employee-register transition. Six of the seven are the same absence CC-37(b) already records for their request mirrors                                                                                                                                                                                                                                                   | **recorded, not fixed, and deliberately not manufactured.** Writing adapters for them would create the declared-but-never-wired shape the phase has shipped before. The phase that builds each surface owes the adapter, the mirror and the version discipline in one change, and this gate refuses the PENDING entry the moment the adapter appears                                                                                                                                                                                                | the lane that builds each surface | open, recorded   |
-| **CC-57 (b)** | **the sourcing gate judges the SEND, not the screen state behind it**                                                      | The rule traced is where the number in the request came from. That a component re-reads after a conflict is enforced by the renewal clause; that the number it re-read is the one the operator actually saw is not statically decidable                                                                                                                                                                                                                                                             | **stated rather than claimed.** No figure here asserts a runtime property. The browser evidence for the delivery surfaces is what CC-52 (c) already holds open, and this gate neither substitutes for it nor is quoted as if it did                                                                                                                                                                                                                                                                                                                 | the acceptance re-run lane        | open, recorded   |
+| id            | finding                                                                                                                  | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | owner / slice                     | state            |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- | ---------------- |
+| **CC-57**     | **QA-004's sourcing rule had no mechanical enforcement for any P1-31 operation, and the access allow-list had lost ten** | Eleven operations carry `If-Match` in the published contract and belong to P1-31; four have a web consumer and none of the four was gated, because the P1-28 gate's scope is the appointment and reception namespaces and the delivery completion's version is an interface field its adapter walk cannot see. Separately, ten operations P1-31 screens consume were absent from `P1_31_OPERATION_IDS` — eight found by parsing the three feature trees, two more on the audit tree found at review | **both closed by construction.** A sibling gate, registered `required`, named directly by the fast hosted quality job beside its P1-28 twin, and mutation-proved by twenty-six cases of which fourteen are negatives, now refuses a computed, cached, untraceable or un-renewed version on any of the eleven, and declares the seven with no consumer under a lifecycle that goes stale the moment one appears. The allow-list now names **all thirty-three operations a P1-31 screen consumes**, which is the rule it follows; the segment pin moved 9 → 12, the page pin 16 → 10 as seven work-order pages were deferred to the gate that owns them, and a deferred-page pin was added at 7 | this slice                        | closed, recorded |
+| **CC-57 (a)** | **the seven PENDING operations remain unreachable, and this gate discloses that rather than closing it**                 | No screen or adapter in `apps/web` sends the three checklist-template writes, the three report-configuration writes or the employee-register transition. Six of the seven are the same absence CC-37(b) already records for their request mirrors                                                                                                                                                                                                                                                   | **recorded, not fixed, and deliberately not manufactured.** Writing adapters for them would create the declared-but-never-wired shape the phase has shipped before. The phase that builds each surface owes the adapter, the mirror and the version discipline in one change, and this gate refuses the PENDING entry the moment the adapter appears                                                                                                                                                                                                                                                                                                                                          | the lane that builds each surface | open, recorded   |
+| **CC-57 (b)** | **the sourcing gate judges the SEND, not the screen state behind it**                                                    | The rule traced is where the number in the request came from. That a component re-reads after a conflict is enforced by the renewal clause; that the number it re-read is the one the operator actually saw is not statically decidable                                                                                                                                                                                                                                                             | **stated rather than claimed.** No figure here asserts a runtime property. The browser evidence for the delivery surfaces is what CC-52 (c) already holds open, and this gate neither substitutes for it nor is quoted as if it did                                                                                                                                                                                                                                                                                                                                                                                                                                                           | the acceptance re-run lane        | open, recorded   |
 
 ### 67.7 What this slice did NOT do, and what is not claimed
 

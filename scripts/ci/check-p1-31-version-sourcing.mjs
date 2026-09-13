@@ -455,12 +455,52 @@ function versionOptionOf(node) {
 export function versionedSendsIn(sourceFile) {
   const helpers = pathHelpersOf(sourceFile);
   const found = [];
+  const misplaced = [];
   const visit = (node) => {
     if (
       ts.isCallExpression(node) &&
       ts.isPropertyAccessExpression(node.expression) &&
       node.expression.name.text === 'send'
     ) {
+      /*
+       * The options object is argument THREE, and that is a fact about the
+       * transport rather than a convenience: `apps/web/src/lib/api/client.ts`
+       * declares `send<T>(method, path, body?, options = {})` and `options.ifMatch`
+       * is the only value in this application that becomes an `If-Match` header.
+       * A fifth argument would not be read and a version in any earlier position
+       * would not be sent.
+       *
+       * The index is therefore kept — a structural search for "the object literal
+       * carrying the field" would accept a version in the BODY, which is a request
+       * that silently carries no header at all. What is added is the pair of
+       * refusals that make the index safe rather than merely conventional: a
+       * version option anywhere but position three is reported, and so is a call
+       * with more arguments than the signature has parameters. Either would
+       * otherwise be INVISIBLE here, and the `no versioned send at all` floor only
+       * fires when every send in the tree is missed.
+       */
+      if (node.arguments.length > 4) {
+        misplaced.push({
+          node,
+          why:
+            `is called with ${node.arguments.length} arguments; the transport's send takes four ` +
+            '(method, path, body, options). An argument past the fourth is read by nothing, so a ' +
+            'version in it is a header that was never sent.',
+        });
+      }
+      for (const [index, argument] of node.arguments.entries()) {
+        if (index === 3) continue;
+        if (versionOptionOf(argument) !== null) {
+          misplaced.push({
+            node,
+            why:
+              `carries an \`ifMatch\` at argument ${index + 1}. The transport reads it only from ` +
+              'the options object at argument 4, so this request is version-guarded in appearance ' +
+              'and unguarded on the wire.',
+          });
+        }
+      }
+
       const version = versionOptionOf(node.arguments[3]);
       if (version !== null) {
         const methodNode = node.arguments[0];
@@ -476,6 +516,7 @@ export function versionedSendsIn(sourceFile) {
     ts.forEachChild(node, visit);
   };
   ts.forEachChild(sourceFile, visit);
+  found.misplaced = misplaced;
   return found;
 }
 
@@ -617,7 +658,11 @@ export function run(injected = {}) {
     }
     parsed.set(path, sourceFile);
 
-    for (const send of versionedSendsIn(sourceFile)) {
+    const sends = versionedSendsIn(sourceFile);
+    for (const { why } of sends.misplaced ?? []) {
+      violations.push(`${path}: a request to the transport ${why}`);
+    }
+    for (const send of sends) {
       versionedSends += 1;
       const key =
         send.method === null || send.path === null
@@ -691,9 +736,31 @@ export function run(injected = {}) {
       );
     }
 
-    const node = [...fileDeclarations.entries()].find(
+    /*
+     * Resolved by name WITHIN the file, and the ambiguity is refused rather than
+     * resolved by source order.
+     *
+     * `enclosingFunctionAt` returns a NAME, not the node, so the node has to be
+     * found again — and two functions of one name in one module (an inner helper
+     * shadowing an export, a declaration beside an arrow constant) both answer to
+     * it. Taking the first match reads the parameter list of a function that may
+     * not be the one that sent the request, which decides where the version enters
+     * and therefore which caller argument is judged. A wrong answer here is worse
+     * than none.
+     */
+    const matches = [...fileDeclarations.entries()].filter(
       ([, described_]) => described_.name === described.name
     );
+    if (matches.length > 1) {
+      violations.push(
+        `${send.file}: ${matches.length} functions in this module are named ${described.name}, and ` +
+          `${send.id} is sent from one of them. This gate resolves the sending adapter by name ` +
+          'within the file, so it cannot tell which parameter list to read — and reading the wrong ' +
+          'one decides where the version enters and which caller argument is judged.'
+      );
+      continue;
+    }
+    const node = matches[0];
     const entry =
       node === undefined
         ? { kind: 'internal', index: -1 }
