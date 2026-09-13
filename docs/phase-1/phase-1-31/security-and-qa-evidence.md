@@ -544,6 +544,15 @@ ERR-VAL-001`. All three write nothing, proved as a zero row-count delta. **SEC-0
   `rpt.report-run` resolves a platform dataset rather than a tenant's own configuration, so a 404 on
   that path carries no information about tenancy and is not offered here as isolation evidence.
   Neither carries an identifier, and neither is closed.
+  _(As of 2026-09-13 the first half of that last sentence is superseded: **SEC-003-O1 is CLOSED** and
+  now carries the identifier **CC-56**, register § 66. The three creates resolve the scope claim
+  before the insert and all three answer `403 ERR-IAM-001`, identically for another organisation's
+  real company and for one that exists nowhere — applying CC-14 § 2, which rules out both a 404 and a
+  422 for a scope-target mismatch. SE-7 now compares the whole disclosed document per probe rather
+  than the status and the code, and the zero row-count delta is unchanged. **SEC-003-O2 remains open
+  and undispositioned.** This item's own subject — the TIER the set is covered on — is untouched: the
+  suites are still integration assertions and no acceptance record exercises them, so **SEC-003
+  itself does not move**.)_
 
 ## 4. SEC-004 — the write-shape gate and audit-event coverage
 

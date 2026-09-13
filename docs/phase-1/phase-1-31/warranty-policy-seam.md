@@ -138,6 +138,13 @@ The tenant boundary on a create is `fk_warranty_policies_company`, whose tenant 
 session context rather than from the request, so a company in another tenant is refused as
 `ERR-VAL-001` and no row can be written outside the caller's tenant.
 
+_(Note added 2026-09-13, **CC-56** — `change-control-2026-09-08.md` § 66. The tenant boundary on a
+create is now the SCOPE CLAIM, resolved against `org.legal_companies` under the caller's own
+row-level security before the insert and refused **403 `ERR-IAM-001`**, identically for a company in
+another tenant and for one that exists nowhere. The foreign key still runs and still holds; it is
+defence in depth rather than the boundary, and the `ERR-VAL-001` named above is no longer what this
+create answers.)_
+
 ## 5. Absence, and what a 404 means here
 
 `findPolicyById` returns null for absent and out-of-scope alike, and the service turns both into
