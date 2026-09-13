@@ -1,11 +1,14 @@
 /**
- * The warranty read seam (Phase 1-31, prerequisites P-6 and P-7).
+ * The warranty read seam (Phase 1-31, prerequisites P-6, P-7 and P-18).
  *
- * Two things are proved here and they are different in kind. **P-6** publishes
+ * Three things are proved here and they are different in kind. **P-6** publishes
  * `GET /api/v1/warranties`, the chapter's second declared API, over a branch-wide
  * query that did not exist. **P-7** mints `wty.warranty.read` and re-points
  * `wty.warranty-detail` off `wty.warranty.issue` — a READ that was gated on the
- * authority to CREATE a warranty, which is a defect and not a convention.
+ * authority to CREATE a warranty, which is a defect and not a convention. **P-18**,
+ * added 2026-09-13, publishes `GET /api/v1/warranties/{warrantyId}/status-history`
+ * over `wty.warranty_status_history`, which had no reader anywhere in
+ * `apps/api/src` — the ledger limb this file previously recorded as open.
  *
  * ## The permission claim is proved BEHAVIOURALLY, in both directions
  *
@@ -38,16 +41,23 @@
  *
  * It does not touch a write path, an eligibility rule or the issue flow, and it does
  * not close **PPD-04 / P-10** (no warranty-policy writer exists; the fixtures still
- * seed policies and coverage by SQL) or the `wty.warranty_record_status_history`
- * reader, which no prerequisite in this slice names.
+ * seed policies and coverage by SQL).
+ *
+ * It also does not invent a status ADVANCE. Nothing in this phase moves
+ * `wty.warranty_records.status` — `assertWritableStatus` refuses structurally — so the
+ * only transition an operation can produce is the genesis row `wty.issue_warranty`
+ * writes, and the P-18 section says so twice: once as the honest negative on a warranty
+ * left exactly as the product created it, and once in the comment above the fixture
+ * that appends further transitions by SQL because no writer exists to append them.
  *
  * COVERAGE-EVIDENCE (P1-31 warranty read seam):
  *   wty.warranty-list: route service authorization success denial cross-tenant isolation pagination
  *   wty.warranty-detail: route service authorization success denial cross-tenant isolation
+ *   wty.warranty-status-history: route service authorization success denial cross-tenant isolation pagination
  *
- * Neither declares an `audit` flag: both register `auditClass: 'none'`, so claiming
- * one would claim a record they do not write. Neither declares `idempotency` or
- * `stale-version` — they are reads, and neither is `idempotent` or `versionGuarded`.
+ * None declares an `audit` flag: all three register `auditClass: 'none'`, so claiming
+ * one would claim a record they do not write. None declares `idempotency` or
+ * `stale-version` — they are reads, and none is `idempotent` or `versionGuarded`.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
@@ -93,6 +103,10 @@ import {
   WARRANTY_DETAIL_OPERATION,
   GET as READ_WARRANTY,
 } from '@/app/api/v1/warranties/[warrantyId]/route';
+import {
+  WARRANTY_STATUS_HISTORY_OPERATION,
+  GET as READ_STATUS_HISTORY,
+} from '@/app/api/v1/warranties/[warrantyId]/status-history/route';
 
 let admin: Pool;
 let runtime: Pool;
@@ -139,6 +153,25 @@ interface WarrantyDetailBody extends WarrantyListRow {
   readonly replayed: boolean;
 }
 
+/** One transition as `wty.warranty-status-history` publishes it (P-18). */
+interface StatusHistoryRow {
+  readonly id: string;
+  readonly fromStatus: string | null;
+  readonly toStatus: string;
+  readonly reason: string | null;
+  readonly actorId: string;
+  readonly occurredAt: string;
+}
+
+interface StatusHistoryBody {
+  readonly warrantyId: string;
+  readonly transitions: {
+    readonly items: readonly StatusHistoryRow[];
+    readonly nextCursor: string | null;
+    readonly hasMore: boolean;
+  };
+}
+
 interface ProblemBody {
   readonly code: string;
   readonly status: number;
@@ -167,6 +200,22 @@ const readWarranty = (warrantyId: string): Promise<Response> =>
   READ_WARRANTY(new Request(`http://localhost/api/v1/warranties/${warrantyId}`), {
     params: Promise.resolve({ warrantyId }),
   });
+
+function readStatusHistory(
+  warrantyId: string,
+  query: Record<string, string | number | undefined> = {}
+): Promise<Response> {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined) search.set(key, String(value));
+  }
+  return READ_STATUS_HISTORY(
+    new Request(
+      `http://localhost/api/v1/warranties/${warrantyId}/status-history?${search.toString()}`
+    ),
+    { params: Promise.resolve({ warrantyId }) }
+  );
+}
 
 const generateWarranty = (deliveryId: string, policyId: string): Promise<Response> =>
   GENERATE_WARRANTY(
@@ -501,8 +550,96 @@ async function arrangeWarranty(tag: string): Promise<ArrangedWarranty> {
   return { warrantyId: body.id, delivery };
 }
 
+/** One arranged transition. `reason` is null where a transition carries none. */
+interface TransitionStep {
+  readonly from: string;
+  readonly to: string;
+  readonly reason: string | null;
+}
+
+/**
+ * Appends further transitions to one warranty's ledger, by SQL.
+ *
+ * This exists because **no operation in this repository advances a warranty status**.
+ * `wty.warranty_records.status` may legally move to `active`, `expired` or `voided`,
+ * `assertWritableStatus` refuses every one of them structurally, and
+ * `wty.issue_warranty` is the only writer of `wty.warranty_status_history` anywhere —
+ * so the genesis row is the only transition the product can produce today. A ledger
+ * READ still has to page a ledger of any length, and the only way to arrange one is
+ * this fixture. It is stated rather than disguised, and the honest negative below
+ * reads a warranty this fixture never touched so the single-row case is proved too.
+ *
+ * It does exactly what a writer would have to do and nothing more: the record's status
+ * moves and the transition is appended in the same transaction as that move, under the
+ * actor GUC the `shared.stamp_status_history` BEFORE INSERT trigger reads, so `actor_id`
+ * and `occurred_at` are server-stamped here exactly as they are in production. Nothing
+ * is inserted with a chosen id, actor or timestamp.
+ *
+ * **`inOneTransaction` decides whether the appended rows TIE**, and the two fixtures
+ * below use one setting each because they prove different things:
+ *
+ *  - **`false` (the default)** puts each step in its own transaction, so `occurred_at`
+ *    — which is `now()`, transaction-stable — strictly increases and the newest-first
+ *    order over the whole ledger is TOTAL on the sort key alone. That is the fixture the
+ *    ordering assertion needs, because an order that is total can be asserted exactly.
+ *  - **`true`** puts every step in ONE transaction, so the appended rows share
+ *    `occurred_at` to the MICROSECOND. That is the `P1-27-INT-006` condition — the one a
+ *    millisecond-truncated cursor silently skips — and within it the read's order is
+ *    decided by the `id` tie-break, which is a random uuid. So the tied fixture is used
+ *    for the PAGING case, which asserts that nothing is skipped or repeated, and never
+ *    for an order assertion: asserting an order across a tie would be asserting more
+ *    than the ordering contract gives.
+ */
+async function appendTransitions(
+  warrantyId: string,
+  steps: readonly TransitionStep[],
+  options: { readonly inOneTransaction?: boolean } = {}
+): Promise<void> {
+  const batches = options.inOneTransaction === true ? [steps] : steps.map((step) => [step]);
+  for (const batch of batches) {
+    const client = await admin.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `SELECT set_config('app.user_id',$1,true), set_config('app.tenant_id',$2,true)`,
+        [USER_A, TENANT_A]
+      );
+      for (const step of batch) {
+        await client.query(
+          `UPDATE wty.warranty_records SET status = $2 WHERE id = $1 AND tenant_id = $3`,
+          [warrantyId, step.to, TENANT_A]
+        );
+        await client.query(
+          `INSERT INTO wty.warranty_status_history
+             (tenant_id, company_id, branch_id, warranty_record_id, from_status, to_status, reason)
+           SELECT r.tenant_id, r.company_id, r.branch_id, r.id, $2, $3, $4
+             FROM wty.warranty_records r
+            WHERE r.id = $1 AND r.tenant_id = $5`,
+          [warrantyId, step.from, step.to, step.reason, TENANT_A]
+        );
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+}
+
 let FIRST: ArrangedWarranty;
 let SECOND: ArrangedWarranty;
+/** Transitions in SEPARATE transactions — a strictly ordered ledger. */
+let LEDGER: ArrangedWarranty;
+/** Transitions in ONE transaction — a ledger with a microsecond tie in it. */
+let TIED: ArrangedWarranty;
+/** The two steps both ledger fixtures are advanced through. */
+const VOID_REASON = 'coverage terms were superseded by a linked record';
+const ADVANCE: readonly TransitionStep[] = Object.freeze([
+  { from: 'issued', to: 'active', reason: null },
+  { from: 'active', to: 'voided', reason: VOID_REASON },
+]);
 
 beforeAll(async () => {
   admin = adminPool();
@@ -546,6 +683,16 @@ beforeAll(async () => {
   await seedSecondBranchPolicy();
   FIRST = await arrangeWarranty('p131_wty_one');
   SECOND = await arrangeWarranty('p131_wty_two');
+  // P-18. Two further warranties, both issued through the same route as the other two
+  // and both advanced through the SAME two steps — the difference is only whether the
+  // appended rows tie on `occurred_at`, and each fixture is therefore used for exactly
+  // one property. FIRST and SECOND are deliberately left as the product created them,
+  // so the genesis-only case below reads a warranty no fixture has touched rather than
+  // one this file reset.
+  LEDGER = await arrangeWarranty('p131_wty_ledger');
+  await appendTransitions(LEDGER.warrantyId, ADVANCE);
+  TIED = await arrangeWarranty('p131_wty_tied');
+  await appendTransitions(TIED.warrantyId, ADVANCE, { inOneTransaction: true });
 }, 240_000);
 
 afterEach(() => __resetAuthenticatorForTests());
@@ -1038,5 +1185,268 @@ describe('the list pages', () => {
     });
     expect(crossed.status).toBe(400);
     expect((await problemOf(crossed)).code).toBe('ERR-PAG-001');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P-18 — the transition ledger (CC-10)
+//
+// `wty.warranty_status_history` is written inside `wty.issue_warranty`, in the same
+// statement that creates the record, and before this route was read by nothing
+// anywhere in `apps/api/src`. P-6 closed VHM-06 / WF-26 / PPD-13 in its list limb
+// and left the ledger limb open; this closes it.
+// ---------------------------------------------------------------------------
+
+describe('P-18 the operation registration', () => {
+  it('declares the read code, a branch scope and no audit record', () => {
+    expect(WARRANTY_STATUS_HISTORY_OPERATION.id).toBe('wty.warranty-status-history');
+    expect(WARRANTY_STATUS_HISTORY_OPERATION.method).toBe('GET');
+    expect(WARRANTY_STATUS_HISTORY_OPERATION.path).toBe('/warranties/{warrantyId}/status-history');
+    expect(WARRANTY_STATUS_HISTORY_OPERATION.module).toBe('warranty');
+    // Uniform with the other two warranty reads. A different gate would mean a
+    // caller could read the record but not how it reached its status.
+    expect(WARRANTY_STATUS_HISTORY_OPERATION.permissions).toEqual([WARRANTY_READ]);
+    expect(WARRANTY_STATUS_HISTORY_OPERATION.permissions).not.toContain(WARRANTY_ISSUE);
+    expect(WARRANTY_STATUS_HISTORY_OPERATION.permissions).not.toContain(POLICY_MANAGE);
+    expect(WARRANTY_STATUS_HISTORY_OPERATION.scope).toBe('branch');
+    // A read writes no audit record, so declaring a class would claim one.
+    expect(WARRANTY_STATUS_HISTORY_OPERATION.auditClass).toBe('none');
+  });
+});
+
+describe('P-18 GET /api/v1/warranties/{warrantyId}/status-history', () => {
+  it('publishes every transition newest first, with the genesis row last', async () => {
+    authAs(WTY_READ_ONLY);
+    const response = await readStatusHistory(LEDGER.warrantyId);
+    expect(response.status).toBe(200);
+    const body = await bodyOf<StatusHistoryBody>(response);
+
+    // Self-identifying: the subject travels with the page, so a ledger is never a
+    // bare list with no warranty attached to it.
+    expect(body.warrantyId).toBe(LEDGER.warrantyId);
+
+    // Newest first: the two appended transitions, then the genesis row the primitive
+    // wrote when the record was created. This ledger is asserted in EXACT order
+    // because `LEDGER`'s transitions were appended in separate transactions, so no
+    // two rows share `occurred_at` and the order is total on the sort key alone. The
+    // tied ledger is deliberately NOT asserted this way — see the paging case.
+    expect(body.transitions.items.map((row) => row.toStatus)).toEqual([
+      'voided',
+      'active',
+      'issued',
+    ]);
+    expect(body.transitions.items.map((row) => row.fromStatus)).toEqual(['active', 'issued', null]);
+
+    // The stamps really do decrease, so the order above is the read's doing rather
+    // than an accident of insertion order.
+    const stamps = body.transitions.items.map((row) => Date.parse(row.occurredAt));
+    expect(stamps[0]).toBeGreaterThan(stamps[1] ?? 0);
+    expect(stamps[1]).toBeGreaterThan(stamps[2] ?? 0);
+
+    // The oldest row IS the origin: `from_status` is null on it and only on it, so
+    // no synthetic origin block is needed and none is published.
+    const oldest = body.transitions.items[body.transitions.items.length - 1];
+    expect(oldest?.fromStatus).toBeNull();
+    expect(oldest?.toStatus).toBe('issued');
+    expect(Object.keys(body)).toEqual(['warrantyId', 'transitions']);
+    expect(body).not.toHaveProperty('origin');
+
+    // `reason` is carried verbatim, and is null where no reason was given rather
+    // than an empty string standing in for one.
+    expect(body.transitions.items[0]?.reason).toBe(VOID_REASON);
+    expect(body.transitions.items[1]?.reason).toBeNull();
+    expect(oldest?.reason).toBeNull();
+
+    // Every row is attributed and server-stamped. `actor_id` is NOT NULL in the DDL
+    // and `shared.stamp_status_history` sets it from the session context, so an
+    // unattributed transition cannot exist to be published.
+    for (const row of body.transitions.items) {
+      expect(typeof row.actorId).toBe('string');
+      expect(row.actorId.length).toBeGreaterThan(0);
+      expect(new Date(row.occurredAt).toISOString()).toBe(row.occurredAt);
+    }
+
+    // The ledger carries no monetary value, because `wty` holds no monetary column.
+    refusesAnyMoneyShapedNumber(body);
+  });
+
+  it('is exactly the ledger the database holds, and nothing reconstructed', async () => {
+    // The wire rows are compared against the table itself, so a mapper that dropped,
+    // duplicated or re-ordered a transition is caught rather than assumed away.
+    // Ordered `(occurred_at DESC, id DESC)` and not by `seq`, because `id` is the
+    // tie-break the read actually uses — `keysetFragment` compares `(sort, id)`. On
+    // this ledger no two rows tie, so the two orderings agree; using the read's own
+    // one keeps the comparison honest if that ever stops being so.
+    const stored = await admin.query<{ id: string; to_status: string }>(
+      `SELECT id, to_status FROM wty.warranty_status_history
+        WHERE tenant_id = $1 AND warranty_record_id = $2
+        ORDER BY occurred_at DESC, id DESC`,
+      [TENANT_A, LEDGER.warrantyId]
+    );
+    authAs(WTY_READ_ONLY);
+    const body = await bodyOf<StatusHistoryBody>(
+      await readStatusHistory(LEDGER.warrantyId, { limit: 100 })
+    );
+    expect(body.transitions.items.map((row) => row.id)).toEqual(stored.rows.map((row) => row.id));
+  });
+
+  it('returns EXACTLY the genesis row for a warranty the product alone created', async () => {
+    // The honest negative, and the one that states what this ledger really contains
+    // today. FIRST was issued through `POST /deliveries/{id}/warranties` and never
+    // touched again: nothing in this phase advances `wty.warranty_records.status`,
+    // so its ledger is the single row `wty.issue_warranty` wrote in the same
+    // statement as the record — `NULL -> 'issued'`, attributed to the issuing actor.
+    // That is one row, not an empty page: a warranty with no history at all would
+    // mean the primitive had not written the genesis row.
+    authAs(WTY_READ_ONLY);
+    const body = await bodyOf<StatusHistoryBody>(await readStatusHistory(FIRST.warrantyId));
+    expect(body.warrantyId).toBe(FIRST.warrantyId);
+    expect(body.transitions.items).toHaveLength(1);
+    expect(body.transitions.items[0]?.fromStatus).toBeNull();
+    expect(body.transitions.items[0]?.toStatus).toBe('issued');
+    expect(body.transitions.items[0]?.reason).toBeNull();
+    expect(body.transitions.hasMore).toBe(false);
+    expect(body.transitions.nextCursor).toBeNull();
+
+    // And the record itself still reads `issued`, so the ledger and the record agree.
+    const detail = await bodyOf<WarrantyDetailBody>(await readWarranty(FIRST.warrantyId));
+    expect(detail.status).toBe('issued');
+  });
+
+  it('pages disjointly straight through a microsecond tie', async () => {
+    // `TIED`'s two appended transitions were written in ONE transaction, so
+    // `occurred_at` — the sort key — is identical to the microsecond. That is
+    // `P1-27-INT-006`: a cursor truncated to milliseconds skips the second row
+    // silently, and only a walk to exhaustion over the tie can see it happen.
+    //
+    // This case asserts completeness and disjointness and deliberately NOT an order.
+    // Within a tie the read falls back to the `id` tie-break, which is a random uuid,
+    // so the relative order of the two tied rows is not something the ordering
+    // contract promises — and asserting it would be asserting more than the contract
+    // gives. The exact order is asserted on `LEDGER`, where nothing ties.
+    authAs(WTY_READ_ONLY);
+    const walked: string[] = [];
+    const stamps: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const response: Response = await readStatusHistory(TIED.warrantyId, {
+        limit: 1,
+        ...(cursor === null ? {} : { cursor }),
+      });
+      expect(response.status).toBe(200);
+      const page: StatusHistoryBody = await bodyOf<StatusHistoryBody>(response);
+      expect(page.transitions.items).toHaveLength(1);
+      const row = page.transitions.items[0];
+      if (row !== undefined) {
+        walked.push(row.id);
+        stamps.push(row.occurredAt);
+      }
+      cursor = page.transitions.nextCursor;
+      expect(page.transitions.hasMore).toBe(cursor !== null);
+      pages += 1;
+      // A cursor that never advanced would otherwise spin for ever.
+      expect(pages).toBeLessThan(50);
+    } while (cursor !== null);
+
+    // Nothing repeated and nothing skipped, against the table itself.
+    expect(new Set(walked).size).toBe(walked.length);
+    const stored = await admin.query<{ id: string }>(
+      `SELECT id FROM wty.warranty_status_history
+        WHERE tenant_id = $1 AND warranty_record_id = $2`,
+      [TENANT_A, TIED.warrantyId]
+    );
+    expect(walked.length).toBe(3);
+    expect([...walked].sort()).toEqual(stored.rows.map((row) => row.id).sort());
+
+    // And the walk really did cross the tie, so the `id` tie-break and the
+    // microsecond cursor were both load-bearing rather than incidental. Without the
+    // tie this case would pass against a millisecond-truncated cursor too.
+    expect(new Set(stamps).size).toBeLessThan(stamps.length);
+  });
+
+  it('refuses a malformed cursor, an oversized page and a foreign cursor', async () => {
+    authAs(WTY_READ_ONLY);
+    const badCursor = await readStatusHistory(LEDGER.warrantyId, { cursor: 'not-a-cursor' });
+    expect(badCursor.status).toBe(400);
+    expect((await problemOf(badCursor)).code).toBe('ERR-PAG-001');
+
+    const oversized = await readStatusHistory(LEDGER.warrantyId, { limit: 5000 });
+    expect(oversized.status).toBe(422);
+    expect((await problemOf(oversized)).code).toBe('ERR-VAL-001');
+
+    // The ordering contract's key is part of the cursor, so a cursor minted for the
+    // DELIVERY ledger — the read this one mirrors field for field — cannot be spent
+    // here. That is the pair most likely to be confused by a caller.
+    const crossed = await readStatusHistory(LEDGER.warrantyId, {
+      cursor: Buffer.from(
+        JSON.stringify({
+          k: 'sal.delivery_status_history:occurred_at_desc',
+          v: '2026-01-01T00:00:00.000000Z',
+          i: randomUUID(),
+        })
+      ).toString('base64url'),
+    });
+    expect(crossed.status).toBe(400);
+    expect((await problemOf(crossed)).code).toBe('ERR-PAG-001');
+  });
+
+  it('401 unauthenticated', async () => {
+    __resetAuthenticatorForTests();
+    expect((await readStatusHistory(LEDGER.warrantyId)).status).toBe(401);
+  });
+
+  it('403 ERR-IAM-001 for a caller without wty.warranty.read', async () => {
+    // Both counterfactuals: the write code the detail read used to carry, and the
+    // administration code it refused to borrow. Neither reaches the ledger.
+    for (const principal of [WTY_ISSUE_ONLY, WTY_POLICY_ONLY]) {
+      authAs(principal);
+      const response = await readStatusHistory(LEDGER.warrantyId);
+      expect(response.status, principal.subject).toBe(403);
+      const problem = await problemOf(response);
+      expect(problem.code, principal.subject).toBe('ERR-IAM-001');
+      expect(problem.requiredPermissions, principal.subject).toEqual([WARRANTY_READ]);
+      __resetAuthenticatorForTests();
+    }
+  });
+});
+
+describe('P-18 the ledger is refused across a tenant and across a branch', () => {
+  it('answers a foreign tenant ERR-RES-001 for a real id and for an invented one', async () => {
+    // Not-found is decided BEFORE any scope decision, so a foreign tenant cannot
+    // tell a real warranty id from one it made up — and holding the read code makes
+    // no difference, which is what separates tenancy from permission here.
+    for (const principal of [WTY_READ_TENANT_B, SAL_TENANT_B]) {
+      authAs(principal);
+      const real = await readStatusHistory(LEDGER.warrantyId);
+      expect(real.status).toBe(404);
+      expect((await problemOf(real)).code).toBe('ERR-RES-001');
+
+      const invented = await readStatusHistory(randomUUID());
+      expect(invented.status).toBe(404);
+      expect((await problemOf(invented)).code).toBe('ERR-RES-001');
+      __resetAuthenticatorForTests();
+    }
+  });
+
+  it('404 from RLS in another branch, 403 from authorizeScope when RLS can see the row', async () => {
+    // Holds `wty.warranty.read` in A2 only, with no reach into A1: the record is
+    // invisible and the answer is an absent resource.
+    authAs(WTY_READ_SCOPED_A2);
+    const hidden = await readStatusHistory(LEDGER.warrantyId);
+    expect(hidden.status).toBe(404);
+    expect((await problemOf(hidden)).code).toBe('ERR-RES-001');
+    __resetAuthenticatorForTests();
+
+    // The decisive case. This caller holds the code in A2, so the scope-blind
+    // pre-handler check passes, and its unrelated widening grant puts BRANCH_A1
+    // inside the permission-blind `iam.allowed_branch_ids()` union, so RLS returns
+    // the record too. The in-service `authorizeScope` on the record's OWN company
+    // and branch is the only guard left, and deleting that call turns this 403 into
+    // a 200 that would publish another branch's ledger.
+    authAs(WTY_READ_ELSEWHERE);
+    const refused = await readStatusHistory(LEDGER.warrantyId);
+    expect(refused.status).toBe(403);
+    expect((await problemOf(refused)).code).toBe('ERR-IAM-001');
   });
 });
