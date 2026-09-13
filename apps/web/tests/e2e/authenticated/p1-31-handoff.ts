@@ -102,11 +102,14 @@ export interface P131FixtureItem {
  *
  * `unansweredItem` is the mandatory checklist item that case is expected to answer
  * through the interface, and it is `null` on a fixture where every item is already
- * answered. `finalOdometerValue` is the reading a completion case may send: the
- * harness composes it only when the vehicle has none on file, because
- * `guard_odometer_reading` refuses a normal reading below the current one and a
- * value guessed above an unknown reading is a case failing for a reason that is not
- * about the product.
+ * answered.
+ *
+ * `startOdometer` is `null` for every fixture: the harness builds a bare vehicle
+ * and records no reading against it, and it asserts that emptiness rather than
+ * assuming it. That is what makes `finalOdometerValue` safe to publish
+ * unconditionally — `guard_odometer_reading` refuses a normal reading below the
+ * vehicle's current one, so a value chosen above an unknown reading would fail a
+ * case for a reason that is not about the product.
  */
 export interface P131FixtureDelivery {
   readonly deliveryId: string;
@@ -122,26 +125,31 @@ export interface P131FixtureDelivery {
 }
 
 /**
- * The records the three delivery WRITE cases act on, one pair per locale project.
+ * The records the three delivery WRITE cases act on, one set per locale project.
  *
- * ## Why a pair per locale, and not one set of records
+ * ## Why one set per locale, and one handover per act
  *
  * `apps/web/playwright.config.ts` pins `workers: 1`, and `authenticated-en` runs
  * before `authenticated-ar` over the same database. A case that records a checklist
- * result CONSUMES the gap it acted on, so a single fixture would be spent by
+ * result CONSUMES the gap it acted on, so a shared fixture would be spent by
  * whichever locale ran first and the second would assert on a record that no longer
- * looks the way its case describes. The harness therefore builds a `prepare` and a
- * `release` handover for each locale, and each case opens its own locale's.
+ * looks the way its case describes.
  *
- * ## What each of the two is for
+ * Each handover carries exactly ONE gap, which is what lets its case prove the gap
+ * closing:
  *
- *   - `prepare` — a receiver verified, NO signature, and exactly ONE mandatory
- *     checklist item unanswered. The checklist case and the signature case take a
- *     different one of those two gaps each, so neither depends on the other.
- *   - `release` — everything answered and signed, so the only reason left is the
- *     financial one, which is the single blocker the delivery domain declares
- *     overridable. That is what puts the release control within reach of the
- *     odometer case.
+ *   - `checklist` — signed, receiver verified, one mandatory item unanswered. The
+ *     release control is disabled while that item stands and enabled once it is
+ *     answered, and neither is true unless the checklist reason is the only
+ *     non-overridable one left.
+ *   - `signature` — every item answered, receiver verified, no signature.
+ *   - `release` — answered and signed, so the only reason left is the financial
+ *     one: the single blocker the delivery domain declares overridable, which is
+ *     what puts the release control within reach of the odometer case.
+ *
+ * The harness reads each handover's eligibility and refuses to finish the run if one
+ * carries any other reason, so a fixture that reaches a spec is one its case can act
+ * on.
  */
 export interface P131BrowserFixtures {
   readonly template: {
@@ -154,7 +162,8 @@ export interface P131BrowserFixtures {
   readonly signaturePngBase64: string;
   readonly companyId: string;
   readonly branchId: string | null;
-  readonly prepare: Readonly<Record<string, P131FixtureDelivery>>;
+  readonly checklist: Readonly<Record<string, P131FixtureDelivery>>;
+  readonly signature: Readonly<Record<string, P131FixtureDelivery>>;
   readonly release: Readonly<Record<string, P131FixtureDelivery>>;
 }
 
@@ -185,10 +194,12 @@ export interface P131Handoff {
    * The harness runs the reports twice: once in its own section 13, where the figure
    * belongs to the record's narrative, and once at the very end, which is the figure
    * published here. The two differ, and the difference is not noise — section 15
-   * opens a second work order and a second delivery in the same branch, and
-   * `work_orders_by_status` counts every non-deleted work order opened in the period
-   * with no state filter. A browser case comparing a screen against the mid-journey
-   * figure asserts a world that no longer exists.
+   * opens a second work order and a second delivery in the same branch, section 15b
+   * opens six more for the write cases below, and `work_orders_by_status` counts
+   * every non-deleted work order opened in the period with no state filter. Both
+   * sections are INSIDE what the final pass observes, which is why the figures here
+   * still describe the world a browser opens. A case comparing a screen against the
+   * mid-journey figure asserts a world that no longer exists.
    */
   readonly reportRuns: Readonly<Record<string, P131ReportFigures>> | null;
   /** The catalogue's own answer for each dataset, at the same observation point. */
@@ -282,31 +293,35 @@ export function signedInAsJourneyAdministrator(): boolean {
 }
 
 /**
- * The fixture pair for one locale, or `null` when this handoff carries none.
+ * The three fixture handovers for one locale, or `null` when this handoff has none.
  *
- * Both halves are validated here rather than at four call sites: a fixture document
- * that names no delivery is not a fixture, and a case that read one field and
- * trusted the rest would fail deep inside an interaction with a message about a
- * missing element instead of about a missing record.
+ * Validated here rather than at three call sites: a fixture document that names no
+ * delivery is not a fixture, and a case that read one field and trusted the rest
+ * would fail deep inside an interaction with a message about a missing element
+ * instead of about a missing record.
  */
 export function browserFixtures(
   handoff: P131Handoff | null,
   locale: 'en' | 'ar'
 ): {
-  readonly prepare: P131FixtureDelivery;
+  readonly checklist: P131FixtureDelivery;
+  readonly signature: P131FixtureDelivery;
   readonly release: P131FixtureDelivery;
   readonly signaturePngBase64: string;
 } | null {
   const fixtures = handoff?.browserFixtures;
   if (fixtures === undefined || fixtures === null) return null;
-  const prepare = fixtures.prepare[locale];
+  const checklist = fixtures.checklist[locale];
+  const signature = fixtures.signature[locale];
   const release = fixtures.release[locale];
-  if (prepare === undefined || release === undefined) return null;
-  if (typeof prepare.deliveryId !== 'string' || typeof release.deliveryId !== 'string') return null;
+  if (checklist === undefined || signature === undefined || release === undefined) return null;
+  for (const fixture of [checklist, signature, release]) {
+    if (typeof fixture.deliveryId !== 'string' || fixture.deliveryId.length === 0) return null;
+  }
   if (typeof fixtures.signaturePngBase64 !== 'string' || fixtures.signaturePngBase64.length === 0) {
     return null;
   }
-  return { prepare, release, signaturePngBase64: fixtures.signaturePngBase64 };
+  return { checklist, signature, release, signaturePngBase64: fixtures.signaturePngBase64 };
 }
 
 /** The locale a project drives, from its name. The same rule `administration.spec.ts` uses. */

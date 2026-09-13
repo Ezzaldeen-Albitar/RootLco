@@ -6,7 +6,6 @@ import {
   WRONG_ACCOUNT_REASON,
   browserFixtures,
   localeOf,
-  missingReason,
   readHandoff,
   say,
   signedInAsJourneyAdministrator,
@@ -44,11 +43,21 @@ import {
  * `apps/web/playwright.config.ts` pins `workers: 1` and runs `authenticated-en`
  * before `authenticated-ar` against one database, and these cases CONSUME what
  * they act on — an answered checklist item cannot be answered again, a released
- * vehicle cannot be released again. So the harness leaves a pair of handovers per
- * locale (`browserFixtures`): a `prepare` one missing a signature and one
- * mandatory checklist result, which the checklist case and the signature case
- * take a different gap of each, and a `release` one whose only remaining reason
- * is the financial one. No case depends on another having run.
+ * vehicle cannot be released again. So the harness leaves THREE handovers per
+ * locale (`browserFixtures`), each carrying exactly ONE gap: a `checklist` one
+ * signed and missing a single mandatory result, a `signature` one answered and
+ * unsigned, and a `release` one whose only remaining reason is the financial
+ * one. No case depends on another having run, and the harness refuses to finish
+ * a run in which any of them carries a reason it was not built to carry, so a
+ * fixture that reaches a case here is one the case can act on.
+ *
+ * ## One case runs without the handoff, and the guard that requires it
+ *
+ * `_reusable-authenticated-browser.yml:478-481` fails the governed job for any
+ * spec file that contributed no executed test, by name. The first case below is
+ * this file's answer to that: it runs on the governed job's own environment, pins
+ * its outcome from the account manifest, and asserts something this file is about
+ * rather than that a page loaded.
  *
  * ## What is NOT claimed
  *
@@ -197,11 +206,22 @@ test.describe('P1-31 delivery writes, over handovers the acceptance journey left
    * outcome survives a reload — with the SERVER's own eligibility verdict, not
    * the panel that wrote it, agreeing that the reason has gone.
    *
-   * The negative is the waiver rule rather than a refused completion, and that is
-   * a property of the screen rather than a choice: `CompletionPanel` disables the
-   * release control while a reason that cannot be overridden is standing, so
-   * there is no way to send a blocked completion from here. The release case
-   * below asserts the server's refusal on the one path that CAN reach it.
+   * ## The disabled release control is the ENFORCEMENT, and it is asserted as one
+   *
+   * `CompletionPanel` draws its control from what the eligibility read published
+   * and disables it while a reason that cannot be overridden is standing. That is
+   * the rule being enforced rather than a gap in this case, so both sides of it
+   * are pinned: the control is DISABLED while the mandatory item is unanswered and
+   * ENABLED once it is answered — this handover is signed and its receiver is
+   * verified, so the checklist reason is the only non-overridable one it carries.
+   *
+   * The consequence is that a blocked completion cannot be SENT from this screen,
+   * so the server's own refusal is unreachable here. It is reachable on exactly
+   * one path — the financial reason, the one the domain declares overridable, so
+   * the control is offered and the server refuses a release taken without the
+   * override — and the release case below asserts it there. The negative in this
+   * case is therefore the waiver rule, refused in the form where it can be
+   * corrected.
    */
   test('a mandatory checklist item is recorded, and the reason it held clears', async ({
     page,
@@ -212,14 +232,28 @@ test.describe('P1-31 delivery writes, over handovers the acceptance journey left
     test.skip(!signedInAsJourneyAdministrator(), WRONG_ACCOUNT_REASON);
     const locale = localeOf(testInfo.project.name);
     const fixtures = browserFixtures(handoff, locale);
-    // test-honesty-allow: TH-002 -- the harness that wrote this handoff left no browser fixtures
-    test.skip(fixtures === null, missingReason('browser fixture handover'));
-    const prepare = (fixtures as NonNullable<typeof fixtures>).prepare;
-    // test-honesty-allow: TH-002 -- the fixture names no unanswered item, so there is nothing to answer
-    test.skip(prepare.unansweredItem === null, missingReason('unanswered checklist item'));
-    const item = prepare.unansweredItem as NonNullable<typeof prepare.unansweredItem>;
+    /*
+     * A hard failure, not a skip. This suite and the harness section that makes
+     * these handovers land together, so a handoff that carries none is a fixture
+     * defect: skipping on it would turn the one thing that can go wrong in the
+     * setup into a green run that proved nothing. The only two sanctioned skips
+     * here are an absent handoff and the wrong account, both stated above.
+     */
+    expect(
+      fixtures,
+      `the handoff names no browser fixture handover for ${locale}; the harness section that ` +
+        'makes them did not run, or did not finish'
+    ).not.toBeNull();
+    const handover = (fixtures as NonNullable<typeof fixtures>).checklist;
+    // The gap this case exists to close. A fixture without one is a fixture that
+    // was built wrong, and the harness guards the same fact from its own side.
+    expect(
+      handover.unansweredItem,
+      'the checklist fixture names no unanswered mandatory item, so there is nothing to record'
+    ).not.toBeNull();
+    const item = handover.unansweredItem as NonNullable<typeof handover.unansweredItem>;
 
-    await page.goto(`/${locale}/delivery/${prepare.deliveryId}`);
+    await page.goto(`/${locale}/delivery/${handover.deliveryId}`);
     await expect(
       page.getByRole('heading', { name: say(locale, 'delivery.summary.heading') })
     ).toBeVisible();
@@ -231,7 +265,15 @@ test.describe('P1-31 delivery writes, over handovers the acceptance journey left
     // Named, not merely counted: the panel publishes the unsatisfied item so an
     // operator is not sent hunting through a company's templates for it.
     await expect(panel(page, 'delivery-eligibility-heading')).toContainText(item.itemCode);
-    // The release control says the vehicle is held, and is not offering to release.
+    // The enforcement: the control is not merely explained as unavailable, it is
+    // unusable, and the sentence beside it says which of its two states it is in.
+    await expect(
+      panel(page, 'delivery-completion-heading').getByRole('button', {
+        name: say(locale, 'delivery.completion.submit'),
+        exact: true,
+      }),
+      'a mandatory checklist item is unanswered, so the vehicle may not be released'
+    ).toBeDisabled();
     await expect(panel(page, 'delivery-completion-heading')).toContainText(
       say(locale, 'delivery.completion.heldBack')
     );
@@ -327,6 +369,23 @@ test.describe('P1-31 delivery writes, over handovers the acceptance journey left
     await expect(factRow(page, say(locale, 'delivery.blocker.checklistIncomplete'))).toContainText(
       say(locale, 'delivery.eligibility.factSatisfied')
     );
+    /*
+     * The other half of the enforcement. This handover is signed and its receiver
+     * verified, so answering the item leaves only the financial reason, which the
+     * domain declares overridable — and the control the checklist was holding
+     * becomes usable. A control still disabled here would mean the screen was
+     * gating on something the server no longer reports.
+     */
+    await expect(
+      panel(page, 'delivery-completion-heading').getByRole('button', {
+        name: say(locale, 'delivery.completion.submit'),
+        exact: true,
+      }),
+      'the checklist reason has gone, so the release control must become usable'
+    ).toBeEnabled();
+    await expect(panel(page, 'delivery-completion-heading')).not.toContainText(
+      say(locale, 'delivery.completion.heldBack')
+    );
 
     // RE-READ. Everything above was rendered by panels that had just written; this
     // is the same screen composed from a fresh read of the server.
@@ -358,16 +417,17 @@ test.describe('P1-31 delivery writes, over handovers the acceptance journey left
    * the stored object and refuses a version it cannot decode, so a placeholder
    * would have tested the scanner instead of the binding.
    *
-   * ## The negative, and a product finding it rests on
+   * ## The negative is a rendered refusal, and it was not one until now
    *
    * A file the category does not accept is refused by the API with `ERR-VAL-001`
    * (`attachment-service.ts:311-316`), which `fromFailure` maps to the `invalid`
-   * state — and `notifyActionResult` raises nothing for `invalid`, while
-   * `SignaturesPanel`'s capture form does not render `fieldErrors`. So the refusal
-   * is real and SILENT: no message appears anywhere on the screen. This case
-   * therefore asserts what is true — the file is refused, nothing is bound, and a
-   * reload confirms it against the server — and the missing feedback is reported
-   * as a product finding rather than papered over with a weaker assertion.
+   * state — and `notifyActionResult` deliberately raises no toast for that
+   * state, because invalid input belongs beside the control. The capture form had
+   * no such place: it discarded `fieldErrors`, so a refused capture looked exactly
+   * like one that had never been attempted. It states both halves now — the
+   * reason against the control, and the refusal with the reference the backend
+   * logged — so this case asserts the message an operator actually sees, and then
+   * reloads, because a message is not evidence that nothing was bound.
    *
    * ## The reference is never published
    *
@@ -386,11 +446,21 @@ test.describe('P1-31 delivery writes, over handovers the acceptance journey left
     test.skip(!signedInAsJourneyAdministrator(), WRONG_ACCOUNT_REASON);
     const locale = localeOf(testInfo.project.name);
     const fixtures = browserFixtures(handoff, locale);
-    // test-honesty-allow: TH-002 -- the harness that wrote this handoff left no browser fixtures
-    test.skip(fixtures === null, missingReason('browser fixture handover'));
-    const { prepare, signaturePngBase64 } = fixtures as NonNullable<typeof fixtures>;
+    /*
+     * A hard failure, not a skip. This suite and the harness section that makes
+     * these handovers land together, so a handoff that carries none is a fixture
+     * defect: skipping on it would turn the one thing that can go wrong in the
+     * setup into a green run that proved nothing. The only two sanctioned skips
+     * here are an absent handoff and the wrong account, both stated above.
+     */
+    expect(
+      fixtures,
+      `the handoff names no browser fixture handover for ${locale}; the harness section that ` +
+        'makes them did not run, or did not finish'
+    ).not.toBeNull();
+    const { signature: handover, signaturePngBase64 } = fixtures as NonNullable<typeof fixtures>;
 
-    await page.goto(`/${locale}/delivery/${prepare.deliveryId}`);
+    await page.goto(`/${locale}/delivery/${handover.deliveryId}`);
     const signatures = panel(page, 'delivery-signatures-heading');
     await expect(signatures).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
@@ -422,6 +492,24 @@ test.describe('P1-31 delivery writes, over handovers the acceptance journey left
       buffer: Buffer.from('this is not an image', 'utf8'),
     });
     await submit.click();
+    // The refusal, where the operator is looking. The panel's own sentence, and
+    // beside the control the catalogue key the violation carried — neither of them
+    // composed from anything the server wrote.
+    await expect(
+      signatures.getByText(say(locale, 'delivery.signatures.refused')),
+      'a refused capture must say so on the panel it was attempted from'
+    ).toBeVisible();
+    /*
+     * And against the control, which is the half that tells an operator WHICH box
+     * to change. `form.violation.invalid` is the catalogue's fallback for a rule it
+     * carries no sentence for, and a content type the category does not accept is
+     * one of those — so this is the string the field renders, not a paraphrase of
+     * the problem document.
+     */
+    await expect(
+      signatures.getByText(say(locale, 'form.violation.invalid')),
+      'the refusal must be stated against the control the operator has to change'
+    ).toBeVisible();
     // React resets the form once the Server Action settles, which is how this side
     // knows the attempt is over rather than merely dispatched.
     await expect(file).toHaveValue('');
@@ -498,15 +586,22 @@ test.describe('P1-31 delivery writes, over handovers the acceptance journey left
    * refused by the domain naming a field the operator has already left. The form
    * holds the narrower rule, which is what this asserts.
    *
-   * ## What the re-read can and cannot show
+   * ## The re-read asserts the VALUE, and why that was a defect
    *
-   * No delivery screen renders the READING. The record and the printable sheet
-   * both carry the final odometer as a REFERENCE — `DeliveryDocument.tsx:180-181`
-   * and the summary panel — because no delivery read resolves it, which is the
-   * same shape the HTTP journey recorded (`sal.delivery-read` answers
-   * `finalOdometerReadingId`). So the reload asserts what the product publishes: a
-   * handed-over record, and a stored reading it now points at where it pointed at
-   * nothing before. The SHAPE is asserted by the refusal above it.
+   * `sal.delivery-read` publishes `finalOdometerReadingId` and no value, so the
+   * record carried the reading as an identifier and nowhere as a number. The
+   * chapter asks for none of this — it names the task and no rendering — so the
+   * defect is not against it: it is against the acceptance record's own claim for
+   * FE-005, that the reading is “reachable from the record” (steps 117 and 118),
+   * and against the purpose of a screen whose subject is the handover. A reference
+   * an operator cannot resolve is not a reading they can read.
+   *
+   * The route resolves it from the vehicle's own odometer history and the summary
+   * renders it, so the reload asserts the reading itself: the value the case sent,
+   * in the stored one-decimal shape, beside its unit. The reference remains the
+   * screen's answer when nothing resolved it, and that branch is NOT asserted here
+   * as an alternative — the journey's administrator holds `veh.vehicle.read`, so
+   * the value is the one outcome this account is entitled to.
    */
   test('the final odometer is refused, then accepted, and the vehicle is released', async ({
     page,
@@ -517,17 +612,30 @@ test.describe('P1-31 delivery writes, over handovers the acceptance journey left
     test.skip(!signedInAsJourneyAdministrator(), WRONG_ACCOUNT_REASON);
     const locale = localeOf(testInfo.project.name);
     const fixtures = browserFixtures(handoff, locale);
-    // test-honesty-allow: TH-002 -- the harness that wrote this handoff left no browser fixtures
-    test.skip(fixtures === null, missingReason('browser fixture handover'));
+    /*
+     * A hard failure, not a skip. This suite and the harness section that makes
+     * these handovers land together, so a handoff that carries none is a fixture
+     * defect: skipping on it would turn the one thing that can go wrong in the
+     * setup into a green run that proved nothing. The only two sanctioned skips
+     * here are an absent handoff and the wrong account, both stated above.
+     */
+    expect(
+      fixtures,
+      `the handoff names no browser fixture handover for ${locale}; the harness section that ` +
+        'makes them did not run, or did not finish'
+    ).not.toBeNull();
     const release = (fixtures as NonNullable<typeof fixtures>).release;
     /*
-     * The harness composes a reading only when the vehicle has none on file:
-     * `guard_odometer_reading` refuses a normal reading below the current one, so a
-     * value chosen here over an unknown one would fail this case for a reason that
-     * is not about the product.
+     * The reading this case sends, published by the harness rather than chosen
+     * here. `guard_odometer_reading` refuses a normal reading below the vehicle's
+     * current one, and the harness asserts that a fixture vehicle has none on file
+     * before it publishes a value to send — so a missing value is a fixture defect
+     * and is failed as one.
      */
-    // test-honesty-allow: TH-002 -- the fixture names no odometer reading this case may send
-    test.skip(release.finalOdometerValue === null, missingReason('final odometer value'));
+    expect(
+      release.finalOdometerValue,
+      'the release fixture publishes no reading for this case to send'
+    ).not.toBeNull();
     const reading = release.finalOdometerValue as string;
     // The same reading with one digit too many: the shape the column cannot hold.
     const refusedReading = `${reading}5`;
@@ -538,13 +646,11 @@ test.describe('P1-31 delivery writes, over handovers the acceptance journey left
     await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
     await expect(summary).toContainText(say(locale, 'delivery.summary.notDeliveredYet'));
 
-    const readingBlock = summary
-      .getByText(say(locale, 'delivery.summary.finalOdometerReading'), { exact: true })
-      .locator('xpath=..');
     await expect(
-      readingBlock.locator('code'),
-      'nothing has been released, so no reading is referenced yet'
+      summary.getByText(say(locale, 'delivery.summary.finalOdometer'), { exact: true }),
+      'nothing has been released, so there is no reading to show'
     ).toHaveCount(0);
+    await expect(summary).not.toContainText(reading);
 
     // The state the release control is drawn in: one reason, and the server says
     // this caller is the one who may set it aside.
@@ -608,12 +714,17 @@ test.describe('P1-31 delivery writes, over handovers the acceptance journey left
     const reread = panel(page, 'delivery-summary-heading');
     await expect(reread.locator('[data-status]')).toHaveAttribute('data-status', 'delivered');
     await expect(reread).not.toContainText(say(locale, 'delivery.summary.notDeliveredYet'));
+    /*
+     * The reading itself, in the shape the column holds it: the value this case
+     * sent, one digit after the point, beside its unit. The label is the one that
+     * announces a reading rather than a reference, so a record that fell back to
+     * the identifier fails on both lines.
+     */
     await expect(
-      reread
-        .getByText(say(locale, 'delivery.summary.finalOdometerReading'), { exact: true })
-        .locator('xpath=..')
-        .locator('code'),
-      'the released handover must point at the reading the completion stored'
-    ).toHaveCount(1);
+      reread.getByText(say(locale, 'delivery.summary.finalOdometer'), { exact: true }),
+      'the released handover must show the reading it stored, not a reference to it'
+    ).toBeVisible();
+    await expect(reread).toContainText(reading);
+    await expect(reread).not.toContainText(say(locale, 'delivery.summary.finalOdometerReading'));
   });
 });
