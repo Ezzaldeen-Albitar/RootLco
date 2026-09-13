@@ -835,18 +835,22 @@ Every figure below is cited to the evidence the run wrote. The evidence director
 
 ### 8.1 The environment, confirmed read-only before and after
 
-| fact                          | value                                                                                            |
-| ----------------------------- | ------------------------------------------------------------------------------------------------ |
-| checkout and branch           | `wt-p12`, `feature/p1-31-acceptance-rerun` at `75157eb77195184949e93ccc8433764acd8ff82c`         |
-| working tree                  | `git status --porcelain` empty before and after                                                  |
-| build                         | `npm run acceptance:serve` — production `next build` + `next start`; api 35.7s, web 24.9s        |
-| ports                         | API `:3000`, web `:3100`, Playwright's own `:3210`, mailbox `:54324`, database `127.0.0.1:54322` |
-| window                        | 2026-09-13T09:47:23Z to 2026-09-13T10:17:46Z, when `dev:stop` reported both ports free           |
-| migrations applied            | **141** before, **141** after, against 141 `supabase/migrations/*.sql`                           |
-| `iam.permissions`             | **121** before, **121** after                                                                    |
-| `tenant_administrator` bundle | **78** codes, uniformly across all **38** such roles                                             |
-| `org.tenants`                 | **39** before, **41** after — the two this run provisioned. Never decreased; nothing deleted     |
-| organisations                 | `p31_journey_a_mtzmvemj` and `p31_journey_b_mtzmvemj`                                            |
+| fact                          | value                                                                                            | cited to          |
+| ----------------------------- | ------------------------------------------------------------------------------------------------ | ----------------- |
+| checkout and branch           | `wt-p12`, `feature/p1-31-acceptance-rerun` at `75157eb77195184949e93ccc8433764acd8ff82c`         | `RUN-NOTES.md` §1 |
+| working tree                  | `git status --porcelain` empty before and after                                                  | `RUN-NOTES.md` §1 |
+| build                         | `npm run acceptance:serve` — production `next build` + `next start`; api 35.7s, web 24.9s        | `RUN-NOTES.md` §3 |
+| ports                         | API `:3000`, web `:3100`, Playwright's own `:3210`, mailbox `:54324`, database `127.0.0.1:54322` | `RUN-NOTES.md` §3 |
+| window                        | 2026-09-13T09:47:23Z to 2026-09-13T10:17:46Z, when `dev:stop` reported both ports free           | `RUN-NOTES.md` §2 |
+| migrations applied            | **141** before, **141** after, against 141 `supabase/migrations/*.sql`                           | `RUN-NOTES.md` §4 |
+| `iam.permissions`             | **121** before, **121** after                                                                    | `RUN-NOTES.md` §4 |
+| `tenant_administrator` bundle | **78** codes, uniformly across all **38** such roles                                             | `RUN-NOTES.md` §4 |
+| `org.tenants`                 | **39** before, **41** after — the two this run provisioned. Never decreased; nothing deleted     | `RUN-NOTES.md` §4 |
+| organisations                 | `p31_journey_a_mtzmvemj` and `p31_journey_b_mtzmvemj`                                            | `summary.json`    |
+
+The build times, the ports and the window are the operator's own record of the session
+(`RUN-NOTES.md` §2 and §3); the four environment figures are read-only SQL on 54322, recorded in
+§4 of the same file with a before and an after value.
 
 No `supabase db reset`, no `dev:reset`, no `test:db`, no `test:backend`, no mutation script and no
 tenant-prefix cleanup was issued at any point in any worktree
@@ -872,11 +876,16 @@ Two consequences a reader of the two records needs:
 - the final pass appends **eighteen** steps, so **176 became 194** and every step number after the
   refusal cases is shifted by **+18** relative to §2's table. **Compare the two runs by step LABEL,
   never by number.**
-- the case that failed in §7.1 now passes. `reports-p1-31.spec.ts` —
-  `work_orders_by_status renders exactly the rows the server answered` — passed in
-  `authenticated-en` and in `authenticated-ar`. The server answered **nine** groups for that code,
-  branch and period (`summary.json` `reportRuns.work_orders_by_status.groups`), and the screen
-  rendered nine.
+- the case that failed in §7.1 now passes, and **the figure that repaired it is the ROW count**.
+  The assertion is `reports-p1-31.spec.ts:462`, `toHaveCount(echoed.rows)`, against
+  `reportRuns.<code>.rows` from the handoff. For `work_orders_by_status` the mid-journey run
+  answered **1** row — step **130**, `report run: work_orders_by_status over a half-open day
+period`, `{"rows":1,"groups":9}` (`steps.md:132`) — and the final pass answered **2** — step
+  **177**, `report run (after the last write): work_orders_by_status`, `{"rows":2,"groups":9}`
+  (`steps.md:179`). The second work order is the difference, and 2 is what the handoff published
+  and what the screen rendered. The GROUP count is **9** in both runs and is not what changed:
+  the nine groups are the nine states of the graph, counted whether or not any order is in them.
+  The case passed in `authenticated-en` and in `authenticated-ar`.
 
 The traffic is one-way and stays so: nothing a browser observed is written back into the handoff.
 The handoff is what the server answered.
@@ -889,11 +898,11 @@ code **0**, verdict **PASS**, **194 steps, 0 findings**, `auditActionsPresent` *
 
 - organisation A was provisioned already active; the status route was not called
 - organisation B was provisioned already active; the status route was not called
-- work order left in `in_progress`: the platform state graph has no completed state, and the
+- work order left in in_progress: the platform state graph has no completed state, and the
   remaining hops are taken at closure time
 - the opened quality-control record carries no checks, so no per-check result was recorded; the
   finalisation below is what the release gate reads
-- the preview reported 1 line; every amount below is the string the server published
+- the preview reported 1 line(s); every amount below is the string the server published
 
 The four datasets answered, every measure a decimal string, currency JOD, timezone `Asia/Amman`,
 freshness live: `work_orders_by_status` **9** groups with `closed` 1 and `draft` 1;
@@ -1107,6 +1116,26 @@ harness's own record of what the response carried; the untruncated value is in `
 `.local\e2e\account-kind.json` read `{"kind":"org-administrator","source":"p1-31-handoff"}`, which
 is the identity the P1-31 cases require (`RUN-NOTES.md` §6).
 
+**What is machine-readable here, and what is not.** `apps/web/playwright.config.ts:131` emits a
+JSON report only when `CI` is set, and this run was driven locally, so **no reporter document was
+produced** and there is no HTML report either. What the run did leave is one directory per FAILED
+test under `apps/web/test-results/`, and the runner's own `.last-run.json`. Those are retained at
+`…\acceptance-20260913-1247\browser\` as `last-run.json` (the runner's ledger, 125 opaque test
+ids), `failed-tests.txt` (the 125 directory names) and `summary-from-report.json` (counts derived
+from them by the `derive.py` beside it). **The trace archives and failure screenshots were
+deliberately not copied**: a trace records request headers, which on this tier carry the session
+cookie, and this run removed its handoff precisely so that no credential is left on disk.
+
+So the two kinds of figure below are cited differently, and the difference is not cosmetic:
+
+- **failures** are evidenced by the retained artefact. `browser/summary-from-report.json` reports
+  125 failed-test directories against 125 ids in `last-run.json`, and **zero** of them belong to
+  any `*-p1-31.spec.ts`.
+- **passes and skips** leave no artefact, because a passing test writes nothing. The reporter
+  totals — **270 passed, 125 failed, 6 skipped**, 22.2 minutes — are operator-recorded from the
+  console reporter (`RUN-NOTES.md` §6), and so are the per-spec pass counts in the table below and
+  the two per-locale timings of the previously failing case.
+
 | spec                      | passed | failed |
 | ------------------------- | ------ | ------ |
 | `audit-log-p1-31.spec.ts` | 4      | 0      |
@@ -1116,9 +1145,19 @@ is the identity the P1-31 cases require (`RUN-NOTES.md` §6).
 | `warranty-p1-31.spec.ts`  | 8      | 0      |
 | **total**                 | **40** | **0**  |
 
+The **failed** column is the artefact's: no P1-31 directory exists among the 125. The **passed**
+column is the operator's record, and it is consistent with two facts that can be checked without
+it — the tier collects exactly forty P1-31 cases across the two locale projects
+(`ROOTLCO_E2E_AUTH=1 npx playwright test --list`), and none of them failed.
+
 Twenty cases in `authenticated-en` and twenty in `authenticated-ar`, which is exactly what §3 of the
 plan says the set owes; none is added to `authenticated-tablet`, whose `testMatch` names two other
 files.
+
+**A note for the next run.** Nothing in this branch changes the reporter. `CI=1` would produce
+`apps/web/playwright-report.json` — the artefact this section would rather have cited — but it also
+turns on `forbidOnly` and turns OFF `reuseExistingServer`, so an acceptance operator should set it
+deliberately rather than incidentally, and record that they did.
 
 ### 8.5 FE-010 and FE-016, no longer only reached
 
@@ -1164,17 +1203,35 @@ has. The clearest instance is `administration.spec.ts:119`, which waits for a ro
 applied **after** this run and is therefore not part of it: each of the seven legacy specs now reads
 the account kind in a `test.beforeEach` and skips with the account named — "requires the
 owner-acceptance account; signed in as `<kind>`" — when it is not `owner-acceptance`. Not one legacy
-assertion was altered. Under the governed job, which signs in as the acceptance owner, nothing
-changes and every case still executes; under a handoff-driven local run the same 125 results become
-named skips instead of failures about a fixture that was never provisioned. A future run of this
-kind will therefore report those specs as skipped, and this section is where a reader learns why.
+assertion was altered.
+
+**Seven specs were gated, and only five of them failed.** `drawer-and-restore.spec.ts` and
+`shared-ux.spec.ts` contributed **zero** failures to the 125
+(`browser/summary-from-report.json` `failuresBySpec`), and they are gated for the same STRUCTURAL
+reason as the other five rather than for a measured one: they assume the owner-acceptance account,
+and a case that happens not to touch a row that is missing is still a case asserting about the
+wrong world. Gating them on the measurement alone would have left two files that fail the next
+time they reach for one.
+
+**Where the gating is verified, and where it is not.** Statically here: the hosted job sets only
+`ROOTLCO_E2E_AUTH` and signs in the owner-acceptance account created at
+`.github/workflows/_reusable-authenticated-browser.yml:295`, so the guard's condition is false
+there and every legacy case still executes. Dynamically, only by this pull request's own hosted
+`authenticated-browser` job — no run in this record establishes it, and none is claimed to.
+
+**What changes for a local run.** A handoff-driven run now reports those seven specs as named
+skips, including the **32** `isolation.spec.ts` cases, which the hosted job continues to execute
+under the account they were written for. This section is where a reader of such a run learns why
+its isolation proof is a skip and not a silence.
 
 ### 8.7 The screens
 
 Twenty-eight screenshots and `screens.json` in `…\acceptance-20260913-1247\screens\`: nine screens
 in two locales, plus the five that idle until a target is submitted captured again with the server's
-answer beside them. **28 `ok` lines, 0 failures**, taken against the human-facing origin on `:3100`,
-each asserting the document direction (`dir=rtl` for Arabic).
+answer beside them. **30 `ok` shot records in `screens.json`, 28 of them with image files — the two
+without are the file-less signed-in navigation checks, one per locale — and 0 failures.** Taken
+against the human-facing origin on `:3100`, each asserting the document direction (`dir=rtl` for
+Arabic).
 
 ### 8.8 Evidence, the handoff, and the harness under test
 
