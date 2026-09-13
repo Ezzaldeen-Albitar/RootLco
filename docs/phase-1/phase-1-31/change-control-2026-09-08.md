@@ -4548,6 +4548,26 @@ The target was resolved and read back from the server (`current_database()` and 
 the first suite ran. 2 files, 213 tests, all passing — 208 in the escalation suite and 5 in the
 concurrency suite — and the pair was run twice in succession to establish that they are re-runnable
 against a database their own fixtures have already dirtied.
+
+**The whole backend tier was then run, on a second disposable clone.** Two suites passing says
+nothing about what they did to the suites beside them, so the tier was run entire. The target was
+`p131_backend_20260913` on the same disposable container at `127.0.0.1:55432`, cloned from the
+template `p131_employee_ci_202609121735` so the run started from a known schema rather than from a
+database these fixtures had already dirtied; 141 migrations and 121 permission rows were read back
+from it before the run. **143 test files, 3242 tests, 0 failed.** The five variables
+`DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` were set explicitly on that command
+and on every backend command in this slice, which is the only thing that keeps the tier off the
+shared stack — omitting them targets `127.0.0.1:54322` silently, and the prefix sweeps described
+above would then have reached the Owner acceptance environment. No command in this slice omitted
+them.
+
+**And the two suites were run once more after the sync.** This branch was merged with `develop`
+`474d89ef` before the pull request was opened, so the pair was re-run on the merged tree against
+that same clone `p131_backend_20260913`: **2 files, 213 tests, 0 failed.** That is the third
+execution of the pair and the first on a tree carrying §§ 55–58 and § 60. Nothing about side
+effects is claimed beyond what the suites assert themselves — the zero row-count deltas SE-7 takes
+around each of its sixteen cases, described in § 59.6.
+
 **No tier baseline was re-recorded**: the declared floors
 (`test-count-baseline.json`, `tiers.backend.minTests` 1300 against a measured 1380, and
 `tiers.web.minTests` 3700) are minima that added tests cannot breach, and a floor is re-established
