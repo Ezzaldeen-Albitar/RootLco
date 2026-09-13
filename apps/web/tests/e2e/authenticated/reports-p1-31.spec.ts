@@ -54,6 +54,36 @@ function reportsAbsentReason(locale: 'en' | 'ar'): string {
   );
 }
 
+/**
+ * What the catalogue calls one report, read off the catalogue.
+ *
+ * The name of a report is DATA, not language: the platform names its baselines with a
+ * translation key, and a workshop that has published a configuration names that report itself,
+ * in whatever language it wrote the label. A name typed into this file would therefore be a
+ * second statement of something the catalogue owns, and it is wrong for one of the four
+ * datasets in both locales — which is exactly how the Arabic cases failed.
+ *
+ * Reading it here and requiring the run screen to be headed with the SAME name is the
+ * assertion that survives both kinds of owner, and it is stronger than a typed title: it fails
+ * if the two screens disagree about what a report is called.
+ *
+ * Addressed by the row's link TARGET, because that is the report's identity and it is the same
+ * string in both locales.
+ */
+async function catalogueName(page: Page, locale: 'en' | 'ar', code: string): Promise<string> {
+  await page.goto(`/${locale}/reports`);
+  const row = page
+    .getByRole('table', { name: say(locale, 'reports.catalogue.caption') })
+    .locator('tbody tr')
+    .filter({ has: page.locator(`a[href="/${locale}/reports/${code}"]`) });
+  await expect(row, `the catalogue must offer ${code}`).toHaveCount(1);
+  const named = (await row.getByRole('link').locator('bdi').innerText()).trim();
+  expect(named.length, `the catalogue must NAME ${code} and not only identify it`).toBeGreaterThan(
+    0
+  );
+  return named;
+}
+
 /** Runs one report through its own form, for the branch and period the harness used. */
 async function runReport(
   page: Page,
@@ -70,49 +100,131 @@ async function runReport(
 
 test.describe('P1-31 reporting screens, over the acceptance journey records', () => {
   /**
-   * What runs WITHOUT a handoff, and why it is worth running.
+   * The two reporting screens, for whichever caller the browser tier signed in as.
    *
-   * The governed job stands a full stack up and signs in as the acceptance owner
-   * (`.github/workflows/_reusable-authenticated-browser.yml`, `npm run acceptance:create-owner`).
-   * That account's permission set is `OWNER_PERMISSIONS` in
-   * `scripts/dev/owner-acceptance/context.mjs`, and it does **not** hold `rpt.report.read` —
-   * the code `REPORT_PERMISSIONS.read` names and both reporting pages gate on before they
-   * read anything.
+   * ## Why these two cases carry no handoff gate, and must not
    *
-   * So continuous integration exercises the REFUSAL, and the refusal is a deliverable: the
-   * page must still render its own title, must state the denial in the shared words, and must
-   * not leak that a catalogue exists by rendering any part of it. Asserting that is not a
-   * consolation prize for the absent journey data — it is the only place this branch proves
-   * the gate runs BEFORE the read, which is the property `check-p1-31-access.mjs` enforces
-   * statically and nothing else has ever confirmed in a browser.
+   * They were handoff-gated, and that is what took this file to ZERO executed tests in the
+   * governed job. Nothing in `.github/workflows/_reusable-authenticated-browser.yml` sets
+   * `ROOTLCO_P131_HANDOFF`, so every case in the file skipped, and the tier's own guard — "a
+   * run that collected nothing is a failure, not a pass" — failed the job for a file that had
+   * gone silent. A spec file that can only execute where an acceptance has already been run is
+   * a spec file continuous integration can read nothing off at all.
+   *
+   * ## The problem these two cases actually have to solve
+   *
+   * Two different callers reach these screens, and `acceptance-record.md` §3.1 records the
+   * collision as its cause B:
+   *
+   *   - the governed job signs in through `auth.setup.ts`, which reads the credentials
+   *     `acceptance:create-owner` wrote into `.local/owner-acceptance-account.json`. That
+   *     account holds `OWNER_PERMISSIONS` (`scripts/dev/owner-acceptance/context.mjs`) — sixty
+   *     codes, and `rpt.report.read` is NOT among them, because that set is Administration,
+   *     CRM, Vehicles and whatever a P1-28 route page consults, and no P1-28 page consults a
+   *     reporting code.
+   *   - a local acceptance overrides those credentials with the first administrator of the
+   *     organisation the journey provisioned, who holds the whole tenant-administrator bundle
+   *     and therefore DOES hold `rpt.report.read`.
+   *
+   * A case that pins the refusal is false for the second caller; a case that pins the render is
+   * false for the first. Both were written, in that order, and each failed on a truth about the
+   * other environment.
+   *
+   * ## What they assert instead
+   *
+   * The part of the contract that is the same for both callers, and then whichever outcome is
+   * in front of them, asserted in FULL. It is the shape `delivery-p1-31.spec.ts` already uses
+   * for the readiness queue's two idle states, for the reason stated there: binding a browser
+   * spec to a fixture's permission set is asserting something the spec does not own.
+   *
+   * Nothing here is weaker than the version it replaces. The refusal branch requires the
+   * refusal to be COMPLETE — its title, its explanation, no trace of the surface behind the
+   * gate, and on the run screen nothing the report definition carries, which is what makes the
+   * refusal one the page's own gate reached BEFORE `readReport` was called rather than one it
+   * rendered after reading. The other branch requires the whole surface a refusal would have
+   * withheld. And the two are exclusive: a screen answering with neither — a heading over a
+   * blank region, which an operator reads as "there are no reports" — fails here.
    */
   for (const [what, path, titleKey] of [
-    ['catalogue', 'reports', 'reports.catalogue.title'],
+    ['catalogue', 'reports', CATALOGUE_TITLE_KEY],
     ['run screen', `reports/${REPORT_CODES[0]}`, 'reports.run.title'],
   ] as const) {
-    test(`the ${what} refuses a caller without the report read code, and says so`, async ({
+    test(`the ${what} answers with its surface or with a complete refusal`, async ({
       page,
     }, testInfo) => {
       const locale = localeOf(testInfo.project.name);
+      // test-honesty-allow: TH-002 -- the reporting slice is not on this checkout; see reportsAbsentReason
+      test.skip(!hasMessage(locale, CATALOGUE_TITLE_KEY), reportsAbsentReason(locale));
 
       await page.goto(`/${locale}/${path}`);
 
-      // The page still owns its heading. A refusal that swallowed the title would leave an
-      // operator unable to tell a denial from a broken route.
-      await expect(page.getByRole('heading', { name: say(locale, titleKey) })).toBeVisible();
+      /*
+       * The chrome both outcomes share, read inside `main`.
+       *
+       * Scoped there deliberately: the sidebar renders its own group headings, and a
+       * page-wide heading query for the catalogue's title matches the rail as well as the
+       * page's `h1`, which is the strict-mode ambiguity every sibling spec in this directory
+       * hit once. The `h1` is inside `main`; the rail is not.
+       */
+      const main = page.getByRole('main');
+      await expect(
+        main.getByRole('heading', { name: say(locale, titleKey), exact: true })
+      ).toBeVisible();
       await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
 
-      await expect(page.getByText(say(locale, 'state.denied.title'))).toBeVisible();
-      await expect(page.getByText(say(locale, 'state.denied.description'))).toBeVisible();
+      // No download, on either outcome. No export operation is published for a report at all
+      // and `rpt.export` is withheld by Owner decision (CC-04), so a download control on a
+      // reporting screen would contradict the contract rather than merely a permission.
+      await expect(page.locator('a[download]')).toHaveCount(0);
 
-      // Nothing of the reporting surface leaks past the gate. The catalogue's table and the
-      // run form are the two things a caller could otherwise infer the shape of.
-      await expect(
-        page.getByRole('table', { name: say(locale, 'reports.catalogue.caption') })
-      ).toHaveCount(0);
-      await expect(page.getByRole('button', { name: say(locale, 'reports.run.show') })).toHaveCount(
-        0
-      );
+      // Wait for a terminal answer. The catalogue reads its rows in the browser, so "nothing
+      // is there yet" and "nothing is there" are the same markup until that read returns.
+      await expect(main.getByText(say(locale, 'state.loading'))).toHaveCount(0);
+
+      const surface =
+        what === 'catalogue'
+          ? main.getByRole('table', { name: say(locale, 'reports.catalogue.caption') })
+          : main.getByRole('button', { name: say(locale, 'reports.run.show'), exact: true });
+
+      if ((await main.getByText(say(locale, 'state.denied.title')).count()) > 0) {
+        // A refusal, and a whole one. The explanation belongs to it: a title alone is a
+        // screen that stopped mid-sentence, and the operator's next step is in the second
+        // line rather than the first.
+        await expect(main).toContainText(say(locale, 'state.denied.description'));
+        await expect(
+          main,
+          'a permission denial was rendered as "nothing here yet", which tells an operator to ' +
+            'go and create something instead of asking for the code they are missing'
+        ).not.toContainText(say(locale, 'state.empty.title'));
+        await expect(
+          surface,
+          `the ${what} rendered the surface behind the gate to a caller it had just refused`
+        ).toHaveCount(0);
+        if (what === 'run screen') {
+          // Nothing the report definition carries is on the page, which is what "refused
+          // before the read" looks like from a browser: the idle state is part of
+          // `ReportScreen`, and `ReportScreen` is only reached once `readReport` has answered.
+          await expect(
+            main.getByText(say(locale, 'reports.run.idleTitle')),
+            'the run screen refused the caller and still showed the definition it should ' +
+              'never have read'
+          ).toHaveCount(0);
+        }
+        return;
+      }
+
+      // Not refused — so the whole surface is there. An unexplained blank region is the
+      // failure this branch exists to catch.
+      await expect(surface).toBeVisible();
+      if (what === 'catalogue') {
+        // The catalogue's standing statement about export, which is the whole of its export
+        // story and would be contradicted silently by a control appearing later.
+        await expect(main.getByText(say(locale, 'reports.catalogue.noDownload'))).toBeVisible();
+      } else {
+        // Nothing has been run yet, and the screen says so rather than showing an empty
+        // table, which reads as a report that returned nothing.
+        await expect(main.getByText(say(locale, 'reports.run.idleTitle'))).toBeVisible();
+      }
     });
   }
 
@@ -136,12 +248,53 @@ test.describe('P1-31 reporting screens, over the acceptance journey records', ()
     const table = page.getByRole('table', { name: say(locale, 'reports.catalogue.caption') });
     await expect(table).toBeVisible();
 
-    // Each dataset by its own TRANSLATED title, so a catalogue that listed four raw codes
-    // instead of four names would fail here.
+    /*
+     * Each dataset, found by the row that LINKS to it and then read for what it is called.
+     *
+     * Asserting each one by its own translated title was wrong about the product — visibly in
+     * Arabic, and by accident in English. A published tenant report configuration carries no
+     * translation key; it carries the operator's own `name`, and `reportTitle` shows that
+     * label as written in BOTH languages, because translating somebody's own label is
+     * inventing one. The acceptance journey publishes a configuration for one of these four
+     * datasets, so one row is named by the workshop and three by the platform. The English
+     * case passed only because the label the harness chose happened to equal the English
+     * catalogue string, which is a coincidence and not evidence.
+     *
+     * So a row is addressed by its link TARGET — the report's identity, the same in both
+     * locales — and its name is then required to be the right KIND of name for whoever
+     * provides the row: the platform's translated title where the platform provides it, the
+     * operator's own label where the workshop does. Either way the row must NAME the report.
+     * This screen wraps a name in `bdi` and renders a report it can only identify as a machine
+     * name, so a catalogue that had lost its names and listed four codes still fails here,
+     * which is what this loop was always for.
+     */
+    const byThePlatform = say(locale, 'reports.catalogue.origin.platform');
+    const byTheWorkshop = say(locale, 'reports.catalogue.origin.workshop');
     for (const code of REPORT_CODES) {
-      await expect(
-        table.getByRole('link', { name: say(locale, `reports.${code}.title`) })
-      ).toBeVisible();
+      const row = table
+        .locator('tbody tr')
+        .filter({ has: page.locator(`a[href="/${locale}/reports/${code}"]`) });
+      await expect(row, `the catalogue must offer ${code}`).toHaveCount(1);
+
+      // A name, rendered as a name — and the identifier shown BESIDE it rather than instead
+      // of it, which is this screen's own way of keeping the two apart.
+      const name = row.getByRole('link').locator('bdi');
+      await expect(name, `the ${code} row must name the report`).toHaveCount(1);
+      await expect(row.getByText(code, { exact: true })).toBeVisible();
+
+      if ((await row.getByText(byThePlatform, { exact: true }).count()) > 0) {
+        // The platform provides this row, so the platform's own translated title is its name.
+        await expect(name).toHaveText(say(locale, `reports.${code}.title`));
+      } else {
+        // The workshop provides it: its own label, shown as written and never translated.
+        await expect(row.getByText(byTheWorkshop, { exact: true })).toBeVisible();
+        const own = (await name.innerText()).trim();
+        expect(own.length, `the workshop's own label for ${code} must be shown`).toBeGreaterThan(0);
+        expect(
+          own,
+          `the workshop's label for ${code} must be a name, not the identifier dressed as one`
+        ).not.toBe(code);
+      }
     }
   });
 
@@ -173,9 +326,15 @@ test.describe('P1-31 reporting screens, over the acceptance journey records', ()
       expect(echoed, `the handoff must carry the recorded run of ${code}`).toBeDefined();
       if (echoed === undefined) return;
 
+      // What this report is CALLED, read off the catalogue rather than typed here — see
+      // `catalogueName`. One extra page load per case, and it buys an assertion that holds
+      // whether the platform or the workshop provides the report.
+      const named = await catalogueName(page, locale, code);
+
       await page.goto(`/${locale}/reports/${code}`);
       await expect(
-        page.getByRole('heading', { name: say(locale, `reports.${code}.title`) })
+        page.getByRole('heading', { name: named, exact: true }),
+        `the run screen must head ${code} with the name the catalogue gave it`
       ).toBeVisible();
 
       // Nothing has been run yet, and the screen says so. Asserted BEFORE the run, so a
@@ -184,16 +343,36 @@ test.describe('P1-31 reporting screens, over the acceptance journey records', ()
 
       await runReport(page, locale, h, period);
 
-      // The period travels with the result, in the branch's own zone.
-      await expect(page.getByText(say(locale, 'reports.context.timezone'))).toBeVisible();
-      await expect(page.getByText(say(locale, 'reports.context.from'))).toBeVisible();
-      await expect(page.getByText(say(locale, 'reports.context.to'))).toBeVisible();
+      /*
+       * The period travels with the result, in the branch's own zone — asserted INSIDE the
+       * list of context facts, and on the whole label rather than on a substring of it.
+       *
+       * A page-wide text match for "Time zone" matched two nodes: the fact's own label, and
+       * the sentence printed beneath the list, which explains that days and times are shown
+       * in the zone named above. Both are the product's own words, neither is a duplicate of
+       * the other, and strict mode was right to refuse. Naming the list the facts live in and
+       * matching the label exactly asserts the same thing about the place it is actually
+       * stated.
+       */
+      const context = page.locator('section[aria-labelledby="report-result-heading"] > dl');
+      await expect(context).toBeVisible();
+      await expect(
+        context.getByText(say(locale, 'reports.context.timezone'), { exact: true })
+      ).toBeVisible();
+      await expect(
+        context.getByText(say(locale, 'reports.context.from'), { exact: true })
+      ).toBeVisible();
+      await expect(
+        context.getByText(say(locale, 'reports.context.to'), { exact: true })
+      ).toBeVisible();
       if (echoed.timezone !== null) {
-        await expect(page.getByText(echoed.timezone, { exact: false })).toBeVisible();
+        await expect(context.getByText(echoed.timezone, { exact: true })).toBeVisible();
       }
       // "Read from the live records the moment you asked" — the freshness the dataset
       // registry declares, and the only claim the screen makes about how current it is.
-      await expect(page.getByText(say(locale, 'reports.context.freshness.live'))).toBeVisible();
+      await expect(
+        context.getByText(say(locale, 'reports.context.freshness.live'), { exact: true })
+      ).toBeVisible();
 
       if (echoed.rows === 0) {
         // The honest zero: a sentence, not an empty table. A report with nothing to show

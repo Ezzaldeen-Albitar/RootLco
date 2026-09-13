@@ -47,17 +47,38 @@ async function countPrintCalls(page: Page): Promise<void> {
   });
 }
 
+/** A catalogue string used inside a pattern, with its own characters kept literal. */
+function escapeForRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 async function printCalls(page: Page): Promise<number> {
   return page.evaluate(
     () => (window as unknown as { __p131PrintCalls?: number }).__p131PrintCalls ?? -1
   );
 }
 
-/** Chooses the branch the harness worked in, on the readiness queue's own form. */
+/**
+ * Chooses the branch the harness worked in, on the readiness queue's own form.
+ *
+ * Addressed by ROLE, inside the form, with an exact name — not by label text.
+ * `getByLabel(…'Branch')` matched TWO nodes and strict mode refused to guess
+ * between them: a label is matched as a SUBSTRING of an accessible name, and the
+ * form's own `aria-label` ("Choose a branch to review delivery readiness")
+ * contains the word. The form is a `form` and the control is a `combobox`, and
+ * the asterisk beside a required label is `aria-hidden`, so the control's
+ * accessible name is the field's name exactly. Naming the role and the whole name
+ * is the same fix `auth.setup.ts` records for "Password" against "Show password".
+ */
 async function chooseBranch(page: Page, locale: 'en' | 'ar', h: P131Handoff): Promise<void> {
-  await page.getByLabel(say(locale, 'delivery.queue.company')).selectOption(h.companyId);
-  await page.getByLabel(say(locale, 'delivery.queue.branch')).selectOption(h.branchId);
-  await page.getByRole('button', { name: say(locale, 'delivery.queue.show') }).click();
+  const form = page.getByRole('form', { name: say(locale, 'delivery.queue.formLabel') });
+  await form
+    .getByRole('combobox', { name: say(locale, 'delivery.queue.company'), exact: true })
+    .selectOption(h.companyId);
+  await form
+    .getByRole('combobox', { name: say(locale, 'delivery.queue.branch'), exact: true })
+    .selectOption(h.branchId);
+  await form.getByRole('button', { name: say(locale, 'delivery.queue.show'), exact: true }).click();
 }
 
 test.describe('P1-31 delivery screens, over the acceptance journey records', () => {
@@ -138,7 +159,10 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
 
     // Every column the four facts are reported through is on the table, so a row can be
     // read at all. Asserted by NAME rather than by counting: a queue that lost its
-    // readiness column and kept its width would pass a count.
+    // readiness column and kept its width would pass a count. The name is matched
+    // WHOLE, because a header name is matched as a substring otherwise and this
+    // table's names nest — the same ambiguity that made the audit log's "Action"
+    // match "Row actions".
     for (const key of [
       'delivery.queue.column.workOrder',
       'delivery.queue.column.vehicle',
@@ -147,7 +171,9 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
       'delivery.queue.column.readiness',
       'delivery.queue.column.handover',
     ]) {
-      await expect(table.getByRole('columnheader', { name: say(locale, key) })).toBeVisible();
+      await expect(
+        table.getByRole('columnheader', { name: say(locale, key), exact: true })
+      ).toBeVisible();
     }
 
     // The harness left a second handover open, so the queue is not empty. Every row must
@@ -161,12 +187,21 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
     ).toBeGreaterThan(0);
     const ready = say(locale, 'delivery.queue.ready');
     const notReady = say(locale, 'delivery.queue.notReady');
+    /*
+     * The same predicate, asserted with Playwright's own waiting rather than read once.
+     *
+     * `innerText()` takes ONE snapshot and never retries, and this table renders its rows
+     * before the queue's answer has arrived — so the first read of row one was of a row that
+     * existed and was still empty, and the case reported a blank verdict the screen goes on
+     * to fill. `toContainText` polls until the timeout, which is the difference between
+     * asserting what the screen shows and asserting what it happened to show first.
+     */
+    const verdict = new RegExp(`${escapeForRegExp(ready)}|${escapeForRegExp(notReady)}`);
     for (let index = 0; index < count; index += 1) {
-      const text = (await rows.nth(index).innerText()).trim();
-      expect(
-        text.includes(ready) || text.includes(notReady),
+      await expect(
+        rows.nth(index),
         `row ${String(index + 1)} carries no readiness verdict`
-      ).toBe(true);
+      ).toContainText(verdict);
     }
   });
 
@@ -246,7 +281,20 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
     const direction = await sheet.evaluate((node) => getComputedStyle(node).direction);
     expect(direction).toBe(locale === 'ar' ? 'rtl' : 'ltr');
 
-    const print = page.getByRole('button', { name: say(locale, 'delivery.document.print') });
+    /*
+     * The Print control, by its WHOLE name.
+     *
+     * An accessible name is matched as a substring unless the match is exact, and
+     * the control that closes the sheet is named "Hide the printable document" —
+     * which contains "Print". Two buttons matched, strict mode refused to guess,
+     * and the print counter below was never reached. Neither node is a duplicate
+     * of the other: they are two different controls, and the ambiguity was in the
+     * query rather than on the screen.
+     */
+    const print = page.getByRole('button', {
+      name: say(locale, 'delivery.document.print'),
+      exact: true,
+    });
     await expect(print).toBeVisible();
     expect(await printCalls(page), 'nothing may print before the control is used').toBe(0);
     await print.click();

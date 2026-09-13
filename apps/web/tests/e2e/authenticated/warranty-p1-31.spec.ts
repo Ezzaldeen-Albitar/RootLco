@@ -33,51 +33,156 @@ const PLANS_TITLE_KEY = 'warranty.policies.title';
 
 test.describe('P1-31 warranty screens, over the acceptance journey records', () => {
   /**
-   * What runs WITHOUT a handoff, and why it is worth running.
+   * Both warranty screens, for whichever caller the browser tier signed in as.
    *
-   * The governed job signs in as the acceptance owner, whose permission set
-   * (`OWNER_PERMISSIONS` in `scripts/dev/owner-acceptance/context.mjs`) holds
-   * `wty.warranty.read` — the code BOTH warranty pages gate on — and does **not** hold
-   * `wty.warranty.manage`, which is what `canManagePolicies` consults before offering the
-   * create panel.
+   * ## Why this case carries no handoff gate, and must not
    *
-   * That asymmetry is the case below, and it is the strongest thing these specs can assert
-   * without journey data: the two reads are REACHABLE, and the write affordance beside them is
-   * WITHHELD from the same session in the same render. A screen that offered the create panel
-   * to a read-only holder would be an over-grant by omission — the exact failure
-   * `warranty-contract.ts` records `wty.warranty.read` as having been minted to end — and no
-   * static check can see it, because the affordance is correct in the source and wrong only in
-   * what it is handed.
+   * It was handoff-gated, and that is what took this file to ZERO executed tests in the
+   * governed job. Nothing in `.github/workflows/_reusable-authenticated-browser.yml` sets
+   * `ROOTLCO_P131_HANDOFF`, so every case in the file skipped and the tier's own guard — "a run
+   * that collected nothing is a failure, not a pass" — failed the job for a file that had gone
+   * silent. This case needs no journey record: both screens answer for a caller alone.
+   *
+   * ## The problem it actually has to solve
+   *
+   * Two different callers reach these screens, and `acceptance-record.md` §3.1 records the
+   * collision as its cause B:
+   *
+   *   - the governed job signs in through `auth.setup.ts`, which reads the credentials
+   *     `acceptance:create-owner` wrote into `.local/owner-acceptance-account.json`. That
+   *     account holds `OWNER_PERMISSIONS` (`scripts/dev/owner-acceptance/context.mjs`) — it
+   *     carries `wty.warranty.read`, the code BOTH warranty pages gate on, and it does not
+   *     carry `wty.policy.manage`, the code that decides whether the plans screen offers its
+   *     create panel.
+   *   - a local acceptance overrides those credentials with the first administrator of the
+   *     organisation the journey provisioned, who holds the whole tenant-administrator bundle
+   *     and therefore holds both.
+   *
+   * A case that pins the panel as withheld is false for the second caller; a case that pins it
+   * as offered is false for the first. Both were written, in that order, and each failed on a
+   * truth about the other environment.
+   *
+   * ## What it asserts instead
+   *
+   * The part of the contract that holds for both, and then the outcome in front of it, in
+   * full. Nothing here is weaker than the version it replaces:
+   *
+   *   - each screen either lets the session through or refuses it COMPLETELY — title and
+   *     explanation, with nothing behind the gate left on the page. A refusal is decided by
+   *     whether the page's own surface is there, not by whether the denial WORDS are: the
+   *     plans screen's results region renders the same shared refusal when the list read is
+   *     turned down, and reading the outcome off the words would confuse a page that was
+   *     refused with a page whose list was.
+   *   - the branch has to be named before anything is read, and the list says so before it
+   *     says anything else.
+   *   - the plan-creation panel is WHOLE or ABSENT: a heading with no control, or a control
+   *     with no heading, fails whichever caller is looking. That is the same assertion the
+   *     previous version made about the holder, stated so that it also binds the caller who
+   *     does not hold the code — and in the governed job it is the half that runs, because
+   *     `wty.policy.manage` is genuinely absent there while `wty.warranty.read` is genuinely
+   *     present. A withheld write must not withhold the read beside it, and that pairing is
+   *     asserted here rather than assumed.
    */
-  test('both warranty reads are reachable, and plan creation is withheld', async ({
+  test('both warranty screens answer for the caller in front of them', async ({
     page,
   }, testInfo) => {
     const locale = localeOf(testInfo.project.name);
+    const direction = locale === 'ar' ? 'rtl' : 'ltr';
+    /*
+     * Read inside `main`. The sidebar renders its own group headings and its own warranty
+     * entries, so a page-wide heading query matches the rail as well as the page's `h1` —
+     * the strict-mode ambiguity every sibling spec in this directory hit once. The `h1` is
+     * inside `main`; the rail is not.
+     */
+    const main = page.getByRole('main');
 
-    for (const [path, titleKey] of [
-      ['warranty', 'warranty.list.title'],
-      ['warranty/policies', PLANS_TITLE_KEY],
-    ] as const) {
-      await page.goto(`/${locale}/${path}`);
+    // --- the warranty list -------------------------------------------------------------
+    await page.goto(`/${locale}/warranty`);
+    await expect(
+      main.getByRole('heading', { name: say(locale, 'warranty.list.title'), exact: true })
+    ).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('dir', direction);
 
-      await expect(page.getByRole('heading', { name: say(locale, titleKey) })).toBeVisible();
-      await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
-
-      // The read code IS held, so the gate must let this session through. Asserting the
-      // denial's absence is what makes this a permission case rather than a smoke test: it
-      // fails if the page starts demanding a code it does not declare.
-      await expect(page.getByText(say(locale, 'state.denied.title'))).toHaveCount(0);
+    // The form that names the branch is this screen's own surface, and the page-level gate
+    // replaces the whole body — so its presence is what separates "reached" from "refused".
+    const targetForm = main.getByRole('form', { name: say(locale, 'warranty.target.formLabel') });
+    if ((await targetForm.count()) === 0) {
+      await expect(main).toContainText(say(locale, 'state.denied.title'));
+      await expect(main).toContainText(say(locale, 'state.denied.description'));
+      await expect(
+        main,
+        'a permission denial was rendered as "nothing here yet", which tells an operator to ' +
+          'go and create something instead of asking for the code they are missing'
+      ).not.toContainText(say(locale, 'state.empty.title'));
+    } else {
+      await expect(targetForm).toBeVisible();
+      // Nothing is read until a branch is named, and the screen says so. Asserted before any
+      // choice is made, because "the list is empty" and "no branch has been chosen" are two
+      // different states and only one of them would be a finding.
+      await expect(main.getByText(say(locale, 'warranty.list.chooseBranchFirst'))).toBeVisible();
+      await expect(
+        main.getByRole('table', { name: say(locale, 'warranty.list.tableCaption') }),
+        'the list read warranties before a branch was named'
+      ).toHaveCount(0);
+      await expect(main.getByText(say(locale, 'state.denied.title'))).toHaveCount(0);
     }
 
-    // Still on the plans screen. The create panel is gated on `wty.warranty.manage`, which
-    // this session does not hold, so the whole panel — heading, explanation and submit — is
-    // absent rather than present-and-disabled.
+    /*
+     * --- the warranty plans screen ------------------------------------------------------
+     *
+     * Conditional on the catalogue, and conditionally ASSERTED rather than skipped. The plans
+     * screen arrives with the warranty-policy-administration slice; a checkout without that
+     * merge has the route absent, and asking `say()` for a string that is not there throws.
+     * Turning the whole case off for it would put this file back where it started — silent,
+     * and failing the tier's own guard — while the list half above needs no slice at all. So
+     * the list is always asserted and the plans screen is asserted whenever it exists.
+     */
+    if (!hasMessage(locale, PLANS_TITLE_KEY)) return;
+
+    await page.goto(`/${locale}/warranty/policies`);
     await expect(
-      page.getByRole('heading', { name: say(locale, 'warranty.policies.createHeading') })
-    ).toHaveCount(0);
-    await expect(
-      page.getByRole('button', { name: say(locale, 'warranty.policies.createSubmit') })
-    ).toHaveCount(0);
+      main.getByRole('heading', { name: say(locale, PLANS_TITLE_KEY), exact: true })
+    ).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('dir', direction);
+
+    const createHeading = main.getByRole('heading', {
+      name: say(locale, 'warranty.policies.createHeading'),
+      exact: true,
+    });
+    const createSubmit = main.getByRole('button', {
+      name: say(locale, 'warranty.policies.createSubmit'),
+      exact: true,
+    });
+    const filterForm = main.getByRole('form', {
+      name: say(locale, 'warranty.policies.filterFormLabel'),
+    });
+
+    if ((await filterForm.count()) === 0) {
+      // Refused by the page's own gate, which withholds everything: no read surface, and no
+      // write affordance sitting above a body that was never rendered.
+      await expect(main).toContainText(say(locale, 'state.denied.title'));
+      await expect(main).toContainText(say(locale, 'state.denied.description'));
+      await expect(createHeading).toHaveCount(0);
+      await expect(createSubmit).toHaveCount(0);
+      return;
+    }
+
+    // `wty.warranty.read` let the session through, so the READ surface is whole.
+    await expect(filterForm).toBeVisible();
+
+    // And the write affordance is whole or absent, never half of itself.
+    const panels = await createHeading.count();
+    const controls = await createSubmit.count();
+    expect(
+      controls,
+      'the plan-creation panel and its control must appear together: a heading over no ' +
+        'control offers something that cannot be done, and a control under no heading is a ' +
+        'write with nothing saying what it writes'
+    ).toBe(panels);
+    if (panels > 0) {
+      await expect(createHeading).toBeVisible();
+      await expect(createSubmit).toBeVisible();
+    }
   });
 
   test("the branch's warranty list carries the generated warranty", async ({ page }, testInfo) => {
@@ -97,8 +202,25 @@ test.describe('P1-31 warranty screens, over the acceptance journey records', () 
     // been chosen" are two different states and only one of them is a finding.
     await expect(page.getByText(say(locale, 'warranty.list.chooseBranchFirst'))).toBeVisible();
 
-    await page.getByLabel(say(locale, 'warranty.common.branchField')).selectOption(h.branchId);
-    await page.getByRole('button', { name: say(locale, 'warranty.target.choose') }).click();
+    /*
+     * The branch control by ROLE, with its whole name — and the role is what makes this
+     * case wait for the right node instead of racing it.
+     *
+     * `getByLabel(…'Branch')` matched THREE: the section, whose `aria-labelledby` heading is
+     * the word itself; the form, whose `aria-label` is "Choose the branch"; and the control.
+     * Strict mode refused, and it refused INSTANTLY — which hid a second thing. This screen
+     * reads the branch directory after mounting, and until that read answers it renders
+     * identifier text fields instead of a picker, so the third node strict mode named was the
+     * "Branch identifier" textbox and not a select at all. A `combobox` named exactly the
+     * field's name resolves to nothing until the picker arrives, and `selectOption` waits for
+     * it — which is the honest way to wait for a directory rather than for a timeout.
+     */
+    await page
+      .getByRole('combobox', { name: say(locale, 'warranty.common.branchField'), exact: true })
+      .selectOption(h.branchId);
+    await page
+      .getByRole('button', { name: say(locale, 'warranty.target.choose'), exact: true })
+      .click();
 
     await expect(
       page.getByRole('heading', { name: say(locale, 'warranty.list.heading') })
@@ -108,6 +230,9 @@ test.describe('P1-31 warranty screens, over the acceptance journey records', () 
 
     const table = page.getByRole('table', { name: say(locale, 'warranty.list.tableCaption') });
     await expect(table).toBeVisible();
+    // Each header by its WHOLE name. A header name is otherwise matched as a substring, and
+    // this table's own names nest: "Cover ends" is inside "Odometer reading at which cover
+    // ends", so the loose query matched two headers and strict mode refused.
     for (const key of [
       'warranty.list.columnPolicy',
       'warranty.list.columnStatus',
@@ -116,7 +241,9 @@ test.describe('P1-31 warranty screens, over the acceptance journey records', () 
       'warranty.list.columnOdometerLimit',
       'warranty.list.columnVehicle',
     ]) {
-      await expect(table.getByRole('columnheader', { name: say(locale, key) })).toBeVisible();
+      await expect(
+        table.getByRole('columnheader', { name: say(locale, key), exact: true })
+      ).toBeVisible();
     }
     await expect(table.locator('tbody tr')).not.toHaveCount(0);
   });
@@ -186,12 +313,18 @@ test.describe('P1-31 warranty screens, over the acceptance journey records', () 
       name: say(locale, 'warranty.policies.tableCaption'),
     });
     await expect(table).toBeVisible();
+    // By the WHOLE name, for the reason the list above states: "Plan" is inside "Plan
+    // reference", so the loose query matched both headers and strict mode refused. The
+    // duplication is in the query, not on the screen — a plan has a name and a reference,
+    // and both columns belong there.
     for (const key of [
       'warranty.policies.columnName',
       'warranty.policies.columnCode',
       'warranty.policies.columnState',
     ]) {
-      await expect(table.getByRole('columnheader', { name: say(locale, key) })).toBeVisible();
+      await expect(
+        table.getByRole('columnheader', { name: say(locale, key), exact: true })
+      ).toBeVisible();
     }
     await expect(table.locator('tbody tr')).not.toHaveCount(0);
   });

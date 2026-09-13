@@ -48,16 +48,44 @@ test.describe('P1-31 audit log, over the acceptance journey writes', () => {
     await expect(page.getByText(say(locale, 'audit.readOnly'))).toBeVisible();
     await expect(page.getByText(say(locale, 'audit.viewedNotice'))).toBeVisible();
 
+    /*
+     * Every control by its ROLE and its WHOLE name.
+     *
+     * A label is matched as a SUBSTRING of an accessible name, and this filter form's names
+     * nest in Arabic in a way they do not in English: `audit.from` is "من", which is inside
+     * "المنفّذ" — the actor field — so the date this case widens matched two textboxes and
+     * strict mode refused to guess. Role separates a date field from a text field and an
+     * exact name separates either from a longer one, which is the convention the pre-existing
+     * authenticated specs settled on for the same trap on "Password".
+     */
+    // Addressed on the PAGE rather than inside the filter form, deliberately: the date range
+    // is a pair of controls BESIDE that form and not in it, so scoping them to it would be
+    // asserting a structure this screen does not have.
+    //
     // Widen the range past the default seven days in both directions, so a run made just
     // after midnight cannot fall outside it, then narrow to the journey's own branch.
-    await page.getByLabel(say(locale, 'audit.from')).fill(dayOffset(-2));
-    await page.getByLabel(say(locale, 'audit.to')).fill(dayOffset(1));
-    await page.getByLabel(say(locale, 'audit.filter.company')).selectOption(h.companyId);
-    await page.getByLabel(say(locale, 'audit.filter.branch')).selectOption(h.branchId);
-    await page.getByRole('button', { name: say(locale, 'audit.filter.apply') }).click();
+    await page
+      .getByRole('textbox', { name: say(locale, 'audit.from'), exact: true })
+      .fill(dayOffset(-2));
+    await page
+      .getByRole('textbox', { name: say(locale, 'audit.to'), exact: true })
+      .fill(dayOffset(1));
+    await page
+      .getByRole('combobox', { name: say(locale, 'audit.filter.company'), exact: true })
+      .selectOption(h.companyId);
+    await page
+      .getByRole('combobox', { name: say(locale, 'audit.filter.branch'), exact: true })
+      .selectOption(h.branchId);
+    await page
+      .getByRole('button', { name: say(locale, 'audit.filter.apply'), exact: true })
+      .click();
 
     const table = page.getByRole('table', { name: say(locale, 'audit.title') });
     await expect(table).toBeVisible();
+    // Each header by its WHOLE name: a header name is matched as a substring otherwise, and
+    // "Action" is inside the row-actions column's own name, so the loose query matched two
+    // headers and strict mode refused. Both headers belong on the table; the ambiguity was in
+    // the query.
     for (const key of [
       'audit.column.occurredAt',
       'audit.column.actor',
@@ -65,7 +93,9 @@ test.describe('P1-31 audit log, over the acceptance journey writes', () => {
       'audit.column.entity',
       'audit.column.correlationId',
     ]) {
-      await expect(table.getByRole('columnheader', { name: say(locale, key) })).toBeVisible();
+      await expect(
+        table.getByRole('columnheader', { name: say(locale, key), exact: true })
+      ).toBeVisible();
     }
 
     // Each action filtered for on its own, rather than scanning one page for both. The log
@@ -73,8 +103,12 @@ test.describe('P1-31 audit log, over the acceptance journey writes', () => {
     // whether the writes were recorded — the mistake the P1-28 record calls a paged read
     // answering for the whole set.
     for (const action of REQUIRED_ACTIONS) {
-      await page.getByLabel(say(locale, 'audit.filter.action')).fill(action);
-      await page.getByRole('button', { name: say(locale, 'audit.filter.apply') }).click();
+      await page
+        .getByRole('textbox', { name: say(locale, 'audit.filter.action'), exact: true })
+        .fill(action);
+      await page
+        .getByRole('button', { name: say(locale, 'audit.filter.apply'), exact: true })
+        .click();
       await expect(
         table.getByRole('cell').filter({ hasText: action }).first(),
         `the audit log must carry ${action}; the operation declares it as its auditAction`
