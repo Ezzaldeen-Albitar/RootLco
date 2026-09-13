@@ -16699,7 +16699,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-31-warranty-read-seam.test.ts"],
+      "tests": [
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/backend/p1-31-warranty-read-seam.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/warranties/[warrantyId]/status-history/route.ts"
     }
