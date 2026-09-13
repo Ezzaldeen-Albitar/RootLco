@@ -1,5 +1,14 @@
 import { expect, test } from '@playwright/test';
-import { NO_HANDOFF_REASON, localeOf, readHandoff, say, type P131Handoff } from './p1-31-handoff';
+import { holds, readAccountKind } from './account-manifest';
+import {
+  NO_HANDOFF_REASON,
+  WRONG_ACCOUNT_REASON,
+  localeOf,
+  readHandoff,
+  say,
+  signedInAsJourneyAdministrator,
+  type P131Handoff,
+} from './p1-31-handoff';
 
 /**
  * P1-31 acceptance, browser half: the audit log over the journey's own writes.
@@ -24,6 +33,15 @@ const handoff = readHandoff();
 /** The two actions the journey's last two writes were obliged to record. */
 const REQUIRED_ACTIONS = ['sal.delivery.completed', 'wty.warranty.issued'] as const;
 
+/**
+ * The code the audit page gates on.
+ *
+ * Repeated here because a spec may not import product source;
+ * `tests/ci/p1-31-account-manifest.test.ts` asserts both credential kinds hold it, so
+ * the pinned outcome below is the surface for either of them.
+ */
+const AUDIT_VIEW = 'iam.audit.view';
+
 /** A day either side of the run, so the range cannot exclude it. */
 function dayOffset(days: number): string {
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -35,6 +53,8 @@ test.describe('P1-31 audit log, over the acceptance journey writes', () => {
   }, testInfo) => {
     // test-honesty-allow: TH-002 -- no acceptance handoff on this checkout; see NO_HANDOFF_REASON
     test.skip(handoff === null, NO_HANDOFF_REASON);
+    // test-honesty-allow: TH-002 -- signed in as somebody other than the journey's own administrator; see WRONG_ACCOUNT_REASON
+    test.skip(!signedInAsJourneyAdministrator(), WRONG_ACCOUNT_REASON);
     const h = handoff as P131Handoff;
     const locale = localeOf(testInfo.project.name);
 
@@ -133,12 +153,31 @@ test.describe('P1-31 audit log, over the acceptance journey writes', () => {
    */
   test('the log offers no export, and says why', async ({ page }, testInfo) => {
     const locale = localeOf(testInfo.project.name);
+    const kind = readAccountKind();
 
     await page.goto(`/${locale}/administration/audit-log`);
 
     await expect(page.getByRole('heading', { name: say(locale, 'audit.title') })).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
-    await expect(page.getByText(say(locale, 'state.denied.title'))).toHaveCount(0);
+
+    /*
+     * The one outcome this account is entitled to, asked of the manifest rather than read
+     * off the page. Both credential kinds hold the code, so the surface half is what runs
+     * here — and a build that started refusing an entitled caller fails, instead of
+     * quietly taking the other side of an either/or.
+     */
+    if (!holds(kind, AUDIT_VIEW)) {
+      await expect(
+        page.getByText(say(locale, 'state.denied.title')),
+        `${kind} does not hold ${AUDIT_VIEW}, so the audit log must refuse it`
+      ).toBeVisible();
+      await expect(page.getByText(say(locale, 'audit.noExport'))).toHaveCount(0);
+      return;
+    }
+    await expect(
+      page.getByText(say(locale, 'state.denied.title')),
+      `${kind} holds ${AUDIT_VIEW}, so the audit log must let it through`
+    ).toHaveCount(0);
 
     // The absence is stated rather than left to be noticed: the service publishes no export
     // operation for audit records, so the screen offers none and says so. A download

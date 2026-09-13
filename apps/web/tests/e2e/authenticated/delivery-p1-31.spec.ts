@@ -1,10 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
+import { holds, readAccountKind } from './account-manifest';
 import {
   NO_HANDOFF_REASON,
+  WRONG_ACCOUNT_REASON,
   localeOf,
   missingReason,
   readHandoff,
   say,
+  signedInAsJourneyAdministrator,
   type P131Handoff,
 } from './p1-31-handoff';
 
@@ -35,6 +38,26 @@ import {
  */
 
 const handoff = readHandoff();
+
+/**
+ * `DELIVERY_READINESS_PERMISSIONS`, as
+ * `apps/web/src/features/delivery/readiness-contract.ts` declares it: a CONJUNCTION,
+ * all three or nothing.
+ *
+ * Repeated here because a spec may not import product source; every one of the three
+ * is asserted into the manifest by `tests/ci/p1-31-account-manifest.test.ts`.
+ */
+const READINESS_CODES = ['sal.delivery.view', 'wo.work_order.read', 'sal.finance.view'] as const;
+
+/**
+ * The directory codes the queue's company and branch selectors are built from.
+ *
+ * They decide between the screen's two idle answers: with the directory readable and a
+ * branch in it, the queue renders its form and its "nothing has been asked for yet"
+ * state; without, it renders "no branch is available to you". That is the difference
+ * the case below pins, instead of accepting either.
+ */
+const DIRECTORY_CODES = ['org.company.read', 'org.branch.read'] as const;
 
 /** Replaces `window.print` with a counter, before any script on the page runs. */
 async function countPrintCalls(page: Page): Promise<void> {
@@ -93,14 +116,28 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
    * IDLE states, because the tenant the bootstrap makes carries no work order.
    *
    * That is the case below. It asserts the conjunction let this session through, and that the
-   * screen answered with a stated idle state rather than a blank region — the failure mode a
-   * queue has when it renders before it is asked, which reads to an operator as "nothing is
-   * ready" when the truth is "nothing has been requested".
+   * screen answered with the ONE idle state that account is entitled to — rather than with a
+   * blank region, which is the failure mode a queue has when it renders before it is asked and
+   * reads to an operator as "nothing is ready" when the truth is "nothing has been requested".
+   *
+   * ## Which idle, and why it is pinned rather than accepted either way
+   *
+   * The screen has two honest idles. `noScopes` when the session can reach no
+   * company-and-branch pair at all; `idle` when it can and has not asked yet. That is not a
+   * fixture detail this case may decline to know: it is decided by whether the account holds
+   * the two directory codes, and both credential kinds do, in an environment where an
+   * organisation with a company and a branch was provisioned before the browser ran. So the
+   * case pins `idle` and requires `noScopes` to be ABSENT. A directory that came back empty
+   * for a caller entitled to read it would fail here, which is exactly the kind of silent
+   * regression the previous "one of the two, either will do" version could not see.
    */
-  test('the readiness queue is reachable, and idles with its reason stated', async ({
+  test('the readiness queue answers exactly what the signed-in account is entitled to', async ({
     page,
   }, testInfo) => {
     const locale = localeOf(testInfo.project.name);
+    const kind = readAccountKind();
+    const mayView = READINESS_CODES.every((code) => holds(kind, code));
+    const mayReadDirectory = DIRECTORY_CODES.every((code) => holds(kind, code));
 
     await page.goto(`/${locale}/delivery`);
 
@@ -109,32 +146,57 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
     ).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
 
+    const denied = page.getByText(say(locale, 'state.denied.title'));
+    if (!mayView) {
+      // The conjunction is not satisfied, so the page refuses — wholly, and saying why.
+      await expect(
+        denied,
+        `${kind} does not hold all of ${READINESS_CODES.join(', ')}, so the queue must refuse it`
+      ).toBeVisible();
+      await expect(page.getByText(say(locale, 'state.denied.description'))).toBeVisible();
+      await expect(
+        page.getByRole('form', { name: say(locale, 'delivery.queue.formLabel') })
+      ).toHaveCount(0);
+      return;
+    }
+
     // All three codes are held, so the conjunction must pass. This fails if the page starts
     // demanding a fourth code it does not declare.
-    await expect(page.getByText(say(locale, 'state.denied.title'))).toHaveCount(0);
+    await expect(
+      denied,
+      `${kind} holds all of ${READINESS_CODES.join(', ')}, so the queue must let it through`
+    ).toHaveCount(0);
 
-    /*
-     * Exactly one of the two honest idles, and never neither.
-     *
-     * `noScopes` when the session can reach no company-and-branch pair, `idle` when it can but
-     * has not asked yet. Which one depends on what the bootstrap provisioned, and this case
-     * deliberately does not assert WHICH — that would bind a browser spec to a fixture detail
-     * it does not own. It asserts that the screen said something, because a queue that renders
-     * an empty table instead is the defect, and both sentences are the product's answer to
-     * "why is there nothing here".
-     */
     const idling = page.getByText(say(locale, 'delivery.queue.idleTitle'));
     const noScopes = page.getByText(say(locale, 'delivery.queue.noScopesTitle'));
-    const stated = (await idling.count()) + (await noScopes.count());
-    expect(
-      stated,
-      'the queue must state why it is showing nothing — an unexplained blank is the defect'
-    ).toBeGreaterThan(0);
+    if (mayReadDirectory) {
+      await expect(
+        page.getByRole('form', { name: say(locale, 'delivery.queue.formLabel') })
+      ).toBeVisible();
+      await expect(
+        idling,
+        'the queue reached its form and has been asked for nothing, so it must say so'
+      ).toBeVisible();
+      await expect(
+        noScopes,
+        `${kind} holds ${DIRECTORY_CODES.join(' and ')} in an organisation that has a branch, ` +
+          'so "no branch is available to you" is the wrong answer'
+      ).toHaveCount(0);
+    } else {
+      await expect(
+        noScopes,
+        `${kind} cannot read the company and branch directory, so the queue must say the ` +
+          'selection cannot be made rather than showing an empty form'
+      ).toBeVisible();
+      await expect(idling).toHaveCount(0);
+    }
   });
 
   test('the readiness queue answers for every row it shows', async ({ page }, testInfo) => {
     // test-honesty-allow: TH-002 -- no acceptance handoff on this checkout; see NO_HANDOFF_REASON
     test.skip(handoff === null, NO_HANDOFF_REASON);
+    // test-honesty-allow: TH-002 -- signed in as somebody other than the journey's own administrator; see WRONG_ACCOUNT_REASON
+    test.skip(!signedInAsJourneyAdministrator(), WRONG_ACCOUNT_REASON);
     const h = handoff as P131Handoff;
     const locale = localeOf(testInfo.project.name);
 
@@ -208,6 +270,8 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
   test('the handover record shows its own facts', async ({ page }, testInfo) => {
     // test-honesty-allow: TH-002 -- no acceptance handoff on this checkout; see NO_HANDOFF_REASON
     test.skip(handoff === null, NO_HANDOFF_REASON);
+    // test-honesty-allow: TH-002 -- signed in as somebody other than the journey's own administrator; see WRONG_ACCOUNT_REASON
+    test.skip(!signedInAsJourneyAdministrator(), WRONG_ACCOUNT_REASON);
     const h = handoff as P131Handoff;
     // test-honesty-allow: TH-002 -- the journey recorded no delivery; nothing to open
     test.skip(h.deliveryId === null, missingReason('delivery'));
@@ -247,6 +311,8 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
   test('the printable copy is produced and prints exactly once', async ({ page }, testInfo) => {
     // test-honesty-allow: TH-002 -- no acceptance handoff on this checkout; see NO_HANDOFF_REASON
     test.skip(handoff === null, NO_HANDOFF_REASON);
+    // test-honesty-allow: TH-002 -- signed in as somebody other than the journey's own administrator; see WRONG_ACCOUNT_REASON
+    test.skip(!signedInAsJourneyAdministrator(), WRONG_ACCOUNT_REASON);
     const h = handoff as P131Handoff;
     // test-honesty-allow: TH-002 -- the journey recorded no delivery; nothing to print
     test.skip(h.deliveryId === null, missingReason('delivery'));

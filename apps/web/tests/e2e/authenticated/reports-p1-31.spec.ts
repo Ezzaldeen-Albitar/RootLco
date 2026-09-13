@@ -1,11 +1,14 @@
 import { expect, test, type Page } from '@playwright/test';
+import { holds, readAccountKind } from './account-manifest';
 import {
   NO_HANDOFF_REASON,
+  WRONG_ACCOUNT_REASON,
   hasMessage,
   localeOf,
   missingReason,
   readHandoff,
   say,
+  signedInAsJourneyAdministrator,
   type P131Handoff,
 } from './p1-31-handoff';
 
@@ -22,9 +25,30 @@ import {
  * be a second statement of a figure the server owns, and a mere "the table is not empty"
  * would pass on a screen that dropped every row but one.
  *
+ * ## WHEN the figure was taken, which is half of what makes it an assertion
+ *
+ * The figure compared against is the one the harness read AFTER THE LAST WRITE OF THE
+ * JOURNEY, and it has to be. The first acceptance run compared against a figure taken in
+ * the middle of the chain: `work_orders_by_status` answered one row then, the refusal
+ * section afterwards opened a second work order in the same branch, and the screen — asked
+ * later still — correctly rendered two. The case failed and the product had done nothing
+ * wrong. `recordReportRuns` in the harness now re-reads all four at the end of the journey
+ * and only that reading reaches the handoff, so a screen and a handoff that disagree are
+ * disagreeing about the same world.
+ *
  * The timezone label is asserted separately, because the period is expressed in the
  * BRANCH's zone and a report that silently rendered instants in the browser's zone would
  * move rows between days while looking correct.
+ *
+ * ## One pinned outcome per credential, and no either/or
+ *
+ * Two accounts reach these screens and they hold different codes. The cases used to answer
+ * that by accepting the surface OR a complete refusal, which passes whichever way the
+ * screen answers and so cannot fail for the reason it exists. Instead the suite reads
+ * WHICH account signed in (`account-kind.json`, written by `auth.setup.ts`) and what that
+ * account holds (`account-manifest.json`, generated from the two permission authorities),
+ * and pins the single outcome that account is entitled to. `rpt.report.read` is the code
+ * all three reporting operations declare and the code the two pages gate on.
  *
  * ## Why every case is conditional on the catalogue's own strings
  *
@@ -45,6 +69,16 @@ const REPORT_CODES = [
 
 /** The one key no report screen can render without. */
 const CATALOGUE_TITLE_KEY = 'reports.catalogue.title';
+
+/**
+ * The code all three reporting operations declare and both pages gate on.
+ *
+ * `REPORT_PERMISSIONS.read` in `apps/web/src/features/reports/reports-contract.ts` is
+ * the authority; it is repeated here because a spec may not import product source,
+ * and `tests/ci/p1-31-account-manifest.test.ts` asserts the manifest's own membership
+ * of this code in both directions so the string cannot go stale unnoticed.
+ */
+const REPORT_READ = 'rpt.report.read';
 
 function reportsAbsentReason(locale: 'en' | 'ar'): string {
   return (
@@ -100,7 +134,7 @@ async function runReport(
 
 test.describe('P1-31 reporting screens, over the acceptance journey records', () => {
   /**
-   * The two reporting screens, for whichever caller the browser tier signed in as.
+   * The two reporting screens, pinned to what the signed-in account is entitled to.
    *
    * ## Why these two cases carry no handoff gate, and must not
    *
@@ -118,43 +152,40 @@ test.describe('P1-31 reporting screens, over the acceptance journey records', ()
    *
    *   - the governed job signs in through `auth.setup.ts`, which reads the credentials
    *     `acceptance:create-owner` wrote into `.local/owner-acceptance-account.json`. That
-   *     account holds `OWNER_PERMISSIONS` (`scripts/dev/owner-acceptance/context.mjs`) — sixty
-   *     codes, and `rpt.report.read` is NOT among them, because that set is Administration,
-   *     CRM, Vehicles and whatever a P1-28 route page consults, and no P1-28 page consults a
+   *     account holds `OWNER_PERMISSIONS` (`scripts/dev/owner-acceptance/context.mjs`), and
+   *     `rpt.report.read` is NOT among them, because that set is Administration, CRM,
+   *     Vehicles and whatever a P1-28 route page consults, and no P1-28 page consults a
    *     reporting code.
-   *   - a local acceptance overrides those credentials with the first administrator of the
-   *     organisation the journey provisioned, who holds the whole tenant-administrator bundle
-   *     and therefore DOES hold `rpt.report.read`.
+   *   - a local acceptance signs in with the first administrator of the organisation the
+   *     journey provisioned, who holds the whole tenant-administrator bundle and therefore
+   *     DOES hold `rpt.report.read`.
    *
-   * A case that pins the refusal is false for the second caller; a case that pins the render is
-   * false for the first. Both were written, in that order, and each failed on a truth about the
-   * other environment.
+   * ## What they assert, and why it is not "either"
    *
-   * ## What they assert instead
+   * The intermediate version accepted the surface OR a complete refusal. That is a case that
+   * cannot fail for the reason it exists: a screen that refused an entitled caller and a
+   * screen that served an unentitled one would both pass it. This version asks the manifest
+   * what the signed-in account holds and pins the one answer that account is owed — the
+   * refusal, WHOLE, when the code is absent, and the surface, WHOLE, when it is present.
    *
-   * The part of the contract that is the same for both callers, and then whichever outcome is
-   * in front of them, asserted in FULL. It is the shape `delivery-p1-31.spec.ts` already uses
-   * for the readiness queue's two idle states, for the reason stated there: binding a browser
-   * spec to a fixture's permission set is asserting something the spec does not own.
-   *
-   * Nothing here is weaker than the version it replaces. The refusal branch requires the
-   * refusal to be COMPLETE — its title, its explanation, no trace of the surface behind the
-   * gate, and on the run screen nothing the report definition carries, which is what makes the
-   * refusal one the page's own gate reached BEFORE `readReport` was called rather than one it
-   * rendered after reading. The other branch requires the whole surface a refusal would have
-   * withheld. And the two are exclusive: a screen answering with neither — a heading over a
-   * blank region, which an operator reads as "there are no reports" — fails here.
+   * The refusal branch still requires the refusal to be complete: its title, its explanation,
+   * no trace of the surface behind the gate, and on the run screen nothing the report
+   * definition carries, which is what makes it a refusal the page's own gate reached BEFORE
+   * `readReport` was called rather than one it rendered after reading.
    */
   for (const [what, path, titleKey] of [
     ['catalogue', 'reports', CATALOGUE_TITLE_KEY],
     ['run screen', `reports/${REPORT_CODES[0]}`, 'reports.run.title'],
   ] as const) {
-    test(`the ${what} answers with its surface or with a complete refusal`, async ({
+    test(`the ${what} answers exactly what the signed-in account is entitled to`, async ({
       page,
     }, testInfo) => {
       const locale = localeOf(testInfo.project.name);
       // test-honesty-allow: TH-002 -- the reporting slice is not on this checkout; see reportsAbsentReason
       test.skip(!hasMessage(locale, CATALOGUE_TITLE_KEY), reportsAbsentReason(locale));
+
+      const kind = readAccountKind();
+      const mayRead = holds(kind, REPORT_READ);
 
       await page.goto(`/${locale}/${path}`);
 
@@ -186,10 +217,14 @@ test.describe('P1-31 reporting screens, over the acceptance journey records', ()
           ? main.getByRole('table', { name: say(locale, 'reports.catalogue.caption') })
           : main.getByRole('button', { name: say(locale, 'reports.run.show'), exact: true });
 
-      if ((await main.getByText(say(locale, 'state.denied.title')).count()) > 0) {
+      if (!mayRead) {
         // A refusal, and a whole one. The explanation belongs to it: a title alone is a
         // screen that stopped mid-sentence, and the operator's next step is in the second
         // line rather than the first.
+        await expect(
+          main.getByText(say(locale, 'state.denied.title')),
+          `${kind} does not hold ${REPORT_READ}, so the ${what} must refuse it and say so`
+        ).toBeVisible();
         await expect(main).toContainText(say(locale, 'state.denied.description'));
         await expect(
           main,
@@ -213,8 +248,12 @@ test.describe('P1-31 reporting screens, over the acceptance journey records', ()
         return;
       }
 
-      // Not refused — so the whole surface is there. An unexplained blank region is the
-      // failure this branch exists to catch.
+      // The account holds the code, so the whole surface is owed — and a refusal here is
+      // a failure rather than an alternative. An unexplained blank region fails too.
+      await expect(
+        main.getByText(say(locale, 'state.denied.title')),
+        `${kind} holds ${REPORT_READ}, so the ${what} must not refuse it`
+      ).toHaveCount(0);
       await expect(surface).toBeVisible();
       if (what === 'catalogue') {
         // The catalogue's standing statement about export, which is the whole of its export
@@ -231,6 +270,9 @@ test.describe('P1-31 reporting screens, over the acceptance journey records', ()
   test('the catalogue offers all four datasets', async ({ page }, testInfo) => {
     // test-honesty-allow: TH-002 -- no acceptance handoff on this checkout; see NO_HANDOFF_REASON
     test.skip(handoff === null, NO_HANDOFF_REASON);
+    // test-honesty-allow: TH-002 -- signed in as somebody other than the journey's own administrator; see WRONG_ACCOUNT_REASON
+    test.skip(!signedInAsJourneyAdministrator(), WRONG_ACCOUNT_REASON);
+    const h = handoff as P131Handoff;
     const locale = localeOf(testInfo.project.name);
     // test-honesty-allow: TH-002 -- the reporting slice is not on this checkout; see reportsAbsentReason
     test.skip(!hasMessage(locale, CATALOGUE_TITLE_KEY), reportsAbsentReason(locale));
@@ -261,15 +303,31 @@ test.describe('P1-31 reporting screens, over the acceptance journey records', ()
      * catalogue string, which is a coincidence and not evidence.
      *
      * So a row is addressed by its link TARGET — the report's identity, the same in both
-     * locales — and its name is then required to be the right KIND of name for whoever
-     * provides the row: the platform's translated title where the platform provides it, the
-     * operator's own label where the workshop does. Either way the row must NAME the report.
-     * This screen wraps a name in `bdi` and renders a report it can only identify as a machine
-     * name, so a catalogue that had lost its names and listed four codes still fails here,
-     * which is what this loop was always for.
+     * locales — and its name is then required to be the exact name the CATALOGUE published
+     * for whoever provides it.
+     *
+     * ## Why the provider is read from the handoff and not from the row
+     *
+     * This branch used to be taken by counting the origin cell on the page. That is the
+     * screen answering a question about itself: a catalogue that had lost a workshop's row
+     * and reported it as the platform's would simply have taken the other branch and passed,
+     * and the weaker half of the branch only required the label to be non-empty and not equal
+     * to the code — which a single character satisfies. The harness now records what the
+     * `rpt.report-catalogue` operation itself said about each dataset, and both halves assert
+     * the exact string: the platform's own translated title under the recorded key, or the
+     * operator's own label as written. The origin cell is then asserted to AGREE with the
+     * recorded provider, which is the assertion the old branch quietly replaced.
      */
     const byThePlatform = say(locale, 'reports.catalogue.origin.platform');
     const byTheWorkshop = say(locale, 'reports.catalogue.origin.workshop');
+    const provenance = h.reportProvenance;
+    expect(
+      provenance,
+      'the handoff carries no report provenance; re-run the acceptance harness, which ' +
+        'records it from the catalogue operation itself'
+    ).not.toBeNull();
+    if (provenance === null) return;
+
     for (const code of REPORT_CODES) {
       const row = table
         .locator('tbody tr')
@@ -282,18 +340,32 @@ test.describe('P1-31 reporting screens, over the acceptance journey records', ()
       await expect(name, `the ${code} row must name the report`).toHaveCount(1);
       await expect(row.getByText(code, { exact: true })).toBeVisible();
 
-      if ((await row.getByText(byThePlatform, { exact: true }).count()) > 0) {
-        // The platform provides this row, so the platform's own translated title is its name.
-        await expect(name).toHaveText(say(locale, `reports.${code}.title`));
-      } else {
-        // The workshop provides it: its own label, shown as written and never translated.
+      const offered = provenance[code];
+      expect(offered, `the harness recorded no catalogue entry for ${code}`).toBeDefined();
+      if (offered === undefined) continue;
+
+      if (offered.source === 'platform') {
+        // A code-registered baseline: shown under the platform's own title, in the reader's
+        // language, by the key the operation published for it.
+        const titleKey = offered.titleKey;
+        expect(titleKey, `the platform's ${code} must be titled by a key`).not.toBeNull();
+        if (titleKey === null) continue;
+        await expect(row.getByText(byThePlatform, { exact: true })).toBeVisible();
+        await expect(name).toHaveText(say(locale, titleKey));
+      } else if (offered.source === 'tenant') {
+        // A configuration this workshop published: its own label, shown as written and
+        // never translated — so the SAME string is required in both locale projects.
+        const own = offered.name;
+        expect(own, `the workshop's ${code} must carry its own label`).not.toBeNull();
+        if (own === null) continue;
         await expect(row.getByText(byTheWorkshop, { exact: true })).toBeVisible();
-        const own = (await name.innerText()).trim();
-        expect(own.length, `the workshop's own label for ${code} must be shown`).toBeGreaterThan(0);
-        expect(
-          own,
-          `the workshop's label for ${code} must be a name, not the identifier dressed as one`
-        ).not.toBe(code);
+        await expect(name).toHaveText(own);
+      } else {
+        throw new Error(
+          `the catalogue offered ${code} with an unknown provider ${String(offered.source)}; ` +
+            'this case knows how a platform row and a workshop row must be named and refuses ' +
+            'to guess at a third'
+        );
       }
     }
   });
@@ -302,6 +374,8 @@ test.describe('P1-31 reporting screens, over the acceptance journey records', ()
     test(`${code} renders exactly the rows the server answered`, async ({ page }, testInfo) => {
       // test-honesty-allow: TH-002 -- no acceptance handoff on this checkout; see NO_HANDOFF_REASON
       test.skip(handoff === null, NO_HANDOFF_REASON);
+      // test-honesty-allow: TH-002 -- signed in as somebody other than the journey's own administrator; see WRONG_ACCOUNT_REASON
+      test.skip(!signedInAsJourneyAdministrator(), WRONG_ACCOUNT_REASON);
       const h = handoff as P131Handoff;
       const locale = localeOf(testInfo.project.name);
       // test-honesty-allow: TH-002 -- the reporting slice is not on this checkout; see reportsAbsentReason

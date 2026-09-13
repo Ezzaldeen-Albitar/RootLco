@@ -19,14 +19,16 @@ evidences the day it ran and nothing after it.
 
 **Artefacts this plan describes**
 
-| artefact                                                                    | what it is                                                      |
-| --------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| `orchestration/acceptance/p1-31-journey.mjs` (outside the repository, §1.7) | the HTTP journey, its refusal cases, and the evidence it writes |
-| `apps/web/tests/e2e/authenticated/p1-31-handoff.ts`                         | how the browser half reads the world the HTTP half made         |
-| `apps/web/tests/e2e/authenticated/delivery-p1-31.spec.ts`                   | the readiness queue, the handover record, the printable copy    |
-| `apps/web/tests/e2e/authenticated/warranty-p1-31.spec.ts`                   | the warranty list, the record, and the plans screen             |
-| `apps/web/tests/e2e/authenticated/reports-p1-31.spec.ts`                    | the catalogue and all four report screens                       |
-| `apps/web/tests/e2e/authenticated/audit-log-p1-31.spec.ts`                  | the audit log over this journey's own writes                    |
+| artefact                                                                    | what it is                                                                 |
+| --------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `orchestration/acceptance/p1-31-journey.mjs` (outside the repository, §1.7) | the HTTP journey, its refusal cases, and the evidence it writes            |
+| `apps/web/tests/e2e/authenticated/p1-31-handoff.ts`                         | how the browser half reads the world the HTTP half made                    |
+| `apps/web/tests/e2e/authenticated/delivery-p1-31.spec.ts`                   | the readiness queue, the handover record, the printable copy               |
+| `apps/web/tests/e2e/authenticated/warranty-p1-31.spec.ts`                   | the warranty list, the record, and the plans screen                        |
+| `apps/web/tests/e2e/authenticated/reports-p1-31.spec.ts`                    | the catalogue and all four report screens                                  |
+| `apps/web/tests/e2e/authenticated/audit-log-p1-31.spec.ts`                  | the audit log over this journey's own writes                               |
+| `apps/web/tests/e2e/authenticated/overview-p1-31.spec.ts`                   | the operational overview — FE-010, and FE-016 by the address               |
+| `apps/web/tests/e2e/authenticated/account-manifest.json` (generated)        | what each of the two credential kinds holds, so a case can pin one outcome |
 
 ---
 
@@ -256,6 +258,8 @@ npm run test:e2e:authenticated
 | `reports-p1-31.spec.ts`   | each of the four reports renders the rows the server answered (four cases) | yes                | yes                |
 | `audit-log-p1-31.spec.ts` | the log records the completion and the warranty issue                      | yes                | yes                |
 | `audit-log-p1-31.spec.ts` | the log offers no export, and says why                                     | yes                | yes                |
+| `overview-p1-31.spec.ts`  | the four sections carry the figures the server published (FE-010)          | yes                | yes                |
+| `overview-p1-31.spec.ts`  | the overview fixed to a branch by the address shows that branch (FE-016)   | yes                | yes                |
 
 ### 3.0 What runs in continuous integration, and what waits for a handoff
 
@@ -273,21 +277,34 @@ product's own login form. The owner's permission set is `OWNER_PERMISSIONS` in
 `scripts/dev/owner-acceptance/context.mjs`, and **what it holds and what it withholds is the
 assertion**:
 
-| spec                      | case that runs WITHOUT a handoff                                                   | what the environment provides, and what is therefore proved                                                                                                                                                                                    |
-| ------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `delivery-p1-31.spec.ts`  | the readiness queue is reachable, and idles with its reason stated                 | the owner holds all three of `sal.delivery.view`, `wo.work_order.read` and `sal.finance.view`, so the conjunction passes; the tenant has no work order, so the screen must state one of its two idle reasons rather than render a blank region |
-| `warranty-p1-31.spec.ts`  | both warranty reads are reachable, and plan creation is withheld                   | the owner holds `wty.warranty.read` and **not** `wty.warranty.manage`, so both pages render and the create panel beside them does not — the over-grant-by-omission that `wty.warranty.read` was minted to end, caught in the same render       |
-| `reports-p1-31.spec.ts`   | the catalogue and the run screen refuse a caller without the read code (two cases) | the owner does **not** hold `rpt.report.read`, so both pages render their own title and the shared denial, and leak no part of the catalogue or the run form — the only browser proof that the gate runs BEFORE the read                       |
-| `audit-log-p1-31.spec.ts` | the log offers no export, and says why                                             | the owner holds `iam.audit.view`, so the page renders; the absence of an export is a property of the screen and never needed journey data, and gating it on the handoff was a mistake this branch corrects                                     |
+| spec                      | case that runs WITHOUT a handoff                                                     | what the environment provides, and what is therefore proved                                                                                                                                                                                    |
+| ------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `delivery-p1-31.spec.ts`  | the readiness queue is reachable, and idles with its reason stated                   | the owner holds all three of `sal.delivery.view`, `wo.work_order.read` and `sal.finance.view`, so the conjunction passes; the tenant has no work order, so the screen must state one of its two idle reasons rather than render a blank region |
+| `warranty-p1-31.spec.ts`  | both warranty screens answer exactly what the signed-in account is entitled to       | the owner holds `wty.warranty.read` and **not** `wty.policy.manage`, so both pages render and the create panel beside them does not — the over-grant-by-omission that `wty.warranty.read` was minted to end, caught in the same render         |
+| `reports-p1-31.spec.ts`   | the catalogue and the run screen answer what that account is entitled to (two cases) | the owner does **not** hold `rpt.report.read`, so both pages render their own title and the shared denial, and leak no part of the catalogue or the run form — the only browser proof that the gate runs BEFORE the read                       |
+| `audit-log-p1-31.spec.ts` | the log offers no export, and says why                                               | the owner holds `iam.audit.view`, so the page renders; the absence of an export is a property of the screen and never needed journey data, and gating it on the handoff was a mistake this branch corrects                                     |
+| `overview-p1-31.spec.ts`  | the overview answers exactly what the signed-in account is entitled to               | the owner does **not** hold `rpt.report.read`, which is the code this page tests before it reads anything, so the whole body is withheld and no summary section is drawn — FE-010's gate, proved in a browser                                  |
 
 **The division is the rule, not a convenience.** A case is behind the handoff when, and only when,
 it asserts on a record the journey made — a specific delivery id, a generated warranty, a report's
-row count. Everything else — navigation reachability, permission gating in both directions, the
-honest empty and denied states, locale and text direction — is asserted unconditionally, because
-the governed job can answer for all of it today. Each remaining skip states its own reason in the
-run output rather than deferring to a shared one.
+row count, an overview section's summary. Everything else — navigation reachability, permission
+gating in both directions, the honest empty and denied states, locale and text direction — is
+asserted unconditionally, because the governed job can answer for all of it today. Each remaining
+skip states its own reason in the run output rather than deferring to a shared one.
 
-Eleven cases per project, twenty-two in total, plus the sign-in setup. The specs are **not** added to
+**Every unconditional case pins ONE outcome, chosen by which credential signed in.** Two accounts
+reach these screens and they hold different codes, and the cases used to answer that by accepting
+either the surface or a complete refusal — which passes whichever way the screen answers and so
+cannot fail for the reason it exists. Instead `auth.setup.ts` derives WHICH account signed in from
+the address it actually used and writes `account-kind.json` beside the storage state; the codes each
+kind holds are generated into `apps/web/tests/e2e/authenticated/account-manifest.json` from
+`OWNER_PERMISSIONS` and `TENANT_ADMINISTRATOR_ROLE`, and are checked against both authorities by
+`tests/ci/p1-31-account-manifest.test.ts`. An address the setup cannot place is a hard failure
+there; no case defaults a kind. The handoff-gated cases carry a second gate for the same reason:
+they run only when the browser is signed in as the organisation administrator whose records they
+are about.
+
+Twenty cases per project, forty in total, plus the sign-in setup. The specs are **not** added to
 `authenticated-tablet`: that project's rule is that a document obliges the surface to work at tablet
 width, and no document does for these screens.
 
@@ -465,17 +482,18 @@ drops the one that went red is worse than no list.
 | `npm run security:all`                                   | the aggregate security gate                             |
 | `npx vitest run tests/ci tests/openapi-contract.test.ts` | 1991 passed, 0 failed, 69 files — see §8.1              |
 
-### 8.1 The registration these four specs owed, and the hosted consequence of it
+### 8.1 The registration these five specs owed, and the hosted consequence of it
 
 `tests/ci/e2e-tier-coverage.test.ts` requires every spec under
 `apps/web/tests/e2e/authenticated/` to be named in `.github/ci-baselines/unrun-test-tiers.json` —
 under `governed.specs` if a gate-governed job executes it, in `unrun` if none does. The list named
-seven paths and none of these four, so the tier was RED from the moment the specs were committed,
-before any merge. **It is now registered under `governed.specs`, and the fact decided which list:**
+seven paths and none of these, so the tier was RED from the moment the specs were committed,
+before any merge. **All five are now registered under `governed.specs`, and the fact decided which
+list:**
 
 - `apps/web/playwright.config.ts:204` and `:215` give the `authenticated-en` and `authenticated-ar`
   projects `testMatch: /authenticated[\\/].*\.spec\.ts/` — a directory-wide glob that matches these
-  four the moment they exist. `authenticated-tablet` at `:255` matches only
+  five the moment they exist. `authenticated-tablet` at `:255` matches only
   `(administration|appointments-and-receptions)` and does not.
 - `.github/workflows/_reusable-authenticated-browser.yml:416` sets `ROOTLCO_E2E_AUTH: '1'` and runs
   `npm run test:web-e2e-authenticated`. The job is in the `needs` of both `ci-gate` and
@@ -490,13 +508,13 @@ suppression added.
 **Registration alone would not have bought a green hosted check, and the specs were changed so
 that it does.** The `A run that collected nothing is a failure, not a pass` step of the same
 workflow reads the spec **directory** — not this list — counts only results whose status is not
-`skipped`, and exits 1 naming **every file** that contributed none. As first written, all eleven
-cases in each of these four files skipped while `ROOTLCO_P131_HANDOFF` was unset, which it is on
-every runner, so all four would have been named and the check would have been red.
+`skipped`, and exits 1 naming **every file** that contributed none. As first written, every case in
+each of these files skipped while `ROOTLCO_P131_HANDOFF` was unset, which it is on every runner, so
+each of them would have been named and the check would have been red.
 
-The answer was not to weaken that step. It was to stop shipping four spec files that can never
+The answer was not to weaken that step. It was to stop shipping spec files that can never
 execute — the "declared but never wired" defect class this phase exists to clean up, and the one
-`P1-27-INT-113` is named for. **Each of the four now carries at least one case that runs on the
+`P1-27-INT-113` is named for. **Each of the five now carries at least one case that runs on the
 governed job's own environment**, asserting the permission gating, reachability, honest idle and
 denied states, and text direction that environment genuinely provides; §3.0 sets out exactly what
 each asserts and why the handoff is not needed for it. Only the assertions that genuinely require
@@ -506,6 +524,21 @@ the handoff, each stating its own reason.
 So the guard is satisfied honestly rather than accommodated: every file contributes executed
 tests, and no case pretends to prove something it has not seen. What still waits for the harness
 to be run is the journey half, which is §1 through §6 of this plan.
+
+**The overview spec is the fifth file, and it closes FE-010 and FE-016.** The record carried both
+as reached but not verified: no HTTP step called what the screen calls, and no browser case opened
+it. `overview-p1-31.spec.ts` carries three cases, in both locale projects:
+
+| case                                                                         | gate                                        | what it establishes                                                                                                                                    |
+| ---------------------------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| the overview answers exactly what the signed-in account is entitled to       | none — runs in the governed job             | FE-010's gate. `rpt.report.read` decides the one outcome asserted: the whole refusal with no section drawn, or the whole form with the idle state said |
+| the four sections carry the figures the server published                     | handoff **and** the journey's administrator | FE-010's figures. Each section renders exactly the summary rows the harness recorded for it, or says nothing was recorded — never an empty table       |
+| the overview fixed to a branch by the address shows that branch, and says so | handoff **and** the journey's administrator | FE-016. The branch comes from `?branchId=`, resolves in the caller's own directory, is shown fixed and stated as fixed, and reads the same figures     |
+
+The harness half of the same pair is a final-pass step set: the authorized company and branch
+directory the screen resolves against, and one `rpt.report-run` per approved domain at the
+overview's own page size of one row, taken twice — once for the chosen branch and once for the
+branch the address fixes — with an assertion step requiring the two to agree.
 
 A second static measurement was taken after `develop` `811e9891` was merged in, and it is the one
 that matters: **every operation the harness calls was re-read against the declaration on that head**

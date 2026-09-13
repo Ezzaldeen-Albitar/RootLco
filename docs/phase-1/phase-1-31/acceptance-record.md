@@ -24,7 +24,15 @@ reset, pushed or seeded by this run.
 
 ## 1. Verdict
 
-**PARTIAL.** The two halves answered differently and both answers are recorded as they came.
+**Engineering verdict: PASS for the P1-31 acceptance set** — **194** HTTP steps with **0** findings,
+**40 of 40** committed P1-31 browser cases, **28 of 28** screens, on run **`mtzmvemj`** of
+2026-09-13. That run is recorded in [§8](#8-corrected-re-run-2026-09-13-run-mtzmvemj) and its
+evidence is cited there by path. **The Owner verdict has not been given.** Plan §6.3 makes an
+explicit Owner Pass on the production build one of the three conditions of a phase PASS, so this
+record does not close the phase and does not stand in for that verdict.
+
+The bullets below record run **`mtz2geo1`** as it happened, and they are kept in the tense they
+belong to rather than rewritten. They are how the set got from nine passing browser cases to forty.
 
 - **The HTTP journey PASSED: 176 steps, 0 findings.** The whole chain runs end to end on an
   organisation that had nothing but its provisioning — service catalogue, published price list,
@@ -57,9 +65,11 @@ reset, pushed or seeded by this run.
   for it.
 
 Plan §6 admits a PASS only on the conjunction of zero HTTP findings, every browser case passing with
-no unexplained skip, and an Owner verdict. The first holds twice over; the second now holds for 32 of
-34 cases and not for the remaining two; the third has not happened. So the answer is still
-**PARTIAL** — but on a much smaller residue than it was, and the residue is named. Twelve tasks are
+no unexplained skip, and an Owner verdict. The first has now held on three separate runs. The
+second held for 9 of 34 cases when §3.1 was written and for 32 of 34 after the correction pass;
+**it holds for all 40 cases the set now carries**, measured on run `mtzmvemj` in §8. The third has
+not happened. So the engineering answer is **PASS** and the phase answer is not this record's to
+give — the residue is one verdict, and it belongs to the Owner. Twelve tasks are
 now moved in [`task-matrix.md`](./task-matrix.md): the six this run's HTTP half established (§6) and
 the six the correction pass's browser half established (§7.1). The rest keep their state, and §6 and
 §7.1 say which and why.
@@ -807,3 +817,448 @@ the `p1-31-frontend` profile against `origin/develop`, and the check itself unde
 executable path. **No hosted result is claimed by this section.** Whether the `authenticated-browser`
 job goes green at the head this pass produces is a fact only that job can establish, and it is not
 asserted here.
+
+## 8. Corrected re-run 2026-09-13 (run `mtzmvemj`)
+
+**What this section is.** The re-run the earlier sections' residue asked for, executed end to end on
+a corrected harness and a corrected browser half. It supersedes nothing above it: §2 to §6 remain
+the record of run `mtz2geo1`, §7.1 remains the record of the correction pass `mtz5ppq8`, and both
+are left in place because a list of runs that keeps only the green one is not a record. What this
+section adds is a run in which every P1-31 case passed, and the reason the last failing case was
+repaired by construction rather than by a weaker assertion.
+
+Every figure below is cited to the evidence the run wrote. The evidence directory is
+`orchestration\evidence\p1-31\acceptance-20260913-1247\`, outside every git working tree; it holds
+`summary.json`, `steps.json`, `steps.md`, `screens\` (28 images and `screens.json`) and
+`RUN-NOTES.md`. The refused first attempt kept its own directory beside it,
+`acceptance-20260913-1241-preflight\`. Nothing of either is committed.
+
+### 8.1 The environment, confirmed read-only before and after
+
+| fact                          | value                                                                                            | cited to          |
+| ----------------------------- | ------------------------------------------------------------------------------------------------ | ----------------- |
+| checkout and branch           | `wt-p12`, `feature/p1-31-acceptance-rerun` at `75157eb77195184949e93ccc8433764acd8ff82c`         | `RUN-NOTES.md` §1 |
+| working tree                  | `git status --porcelain` empty before and after                                                  | `RUN-NOTES.md` §1 |
+| build                         | `npm run acceptance:serve` — production `next build` + `next start`; api 35.7s, web 24.9s        | `RUN-NOTES.md` §3 |
+| ports                         | API `:3000`, web `:3100`, Playwright's own `:3210`, mailbox `:54324`, database `127.0.0.1:54322` | `RUN-NOTES.md` §3 |
+| window                        | 2026-09-13T09:47:23Z to 2026-09-13T10:17:46Z, when `dev:stop` reported both ports free           | `RUN-NOTES.md` §2 |
+| migrations applied            | **141** before, **141** after, against 141 `supabase/migrations/*.sql`                           | `RUN-NOTES.md` §4 |
+| `iam.permissions`             | **121** before, **121** after                                                                    | `RUN-NOTES.md` §4 |
+| `tenant_administrator` bundle | **78** codes, uniformly across all **38** such roles                                             | `RUN-NOTES.md` §4 |
+| `org.tenants`                 | **39** before, **41** after — the two this run provisioned. Never decreased; nothing deleted     | `RUN-NOTES.md` §4 |
+| organisations                 | `p31_journey_a_mtzmvemj` and `p31_journey_b_mtzmvemj`                                            | `summary.json`    |
+
+The build times, the ports and the window are the operator's own record of the session
+(`RUN-NOTES.md` §2 and §3); the four environment figures are read-only SQL on 54322, recorded in
+§4 of the same file with a before and an after value.
+
+No `supabase db reset`, no `dev:reset`, no `test:db`, no `test:backend`, no mutation script and no
+tenant-prefix cleanup was issued at any point in any worktree
+(`…\acceptance-20260913-1247\RUN-NOTES.md` §2). The counts are read-only SQL on 54322, recorded in
+that file's §4.
+
+### 8.2 The observation point, and why class D is repaired by construction
+
+§7.1 named a fourth defect of the instrument, class **D**: the harness recorded the report figures
+in the middle of the journey and the browser compared a screen against them afterwards. Between the
+two, the journey's own refusal section opens a **second** work order and a second delivery in the
+same company and branch, and `work_orders_by_status` counts every non-deleted work order opened in
+the period with **no state filter**. The screen was right and the figure was stale.
+
+The repair is a rule, not an adjustment: **every figure the handoff publishes is read after the last
+write of the journey.** The harness keeps its section-13 report run with its step labels unchanged —
+so the narrative of "the reports answered at this point in the chain" is unbroken — and a final pass
+at the end re-reads all four datasets over the same period with the same token and **overwrites**
+what the handoff carries. Only the overwritten value reaches the browser.
+
+Two consequences a reader of the two records needs:
+
+- the final pass appends **eighteen** steps, so **176 became 194** and every step number after the
+  refusal cases is shifted by **+18** relative to §2's table. **Compare the two runs by step LABEL,
+  never by number.**
+- the case that failed in §7.1 now passes, and **the figure that repaired it is the ROW count**.
+  The assertion is `reports-p1-31.spec.ts:462`, `toHaveCount(echoed.rows)`, against
+  `reportRuns.<code>.rows` from the handoff. For `work_orders_by_status` the mid-journey run
+  answered **1** row — step **130**, `report run: work_orders_by_status over a half-open day
+period`, `{"rows":1,"groups":9}` (`steps.md:132`) — and the final pass answered **2** — step
+  **177**, `report run (after the last write): work_orders_by_status`, `{"rows":2,"groups":9}`
+  (`steps.md:179`). The second work order is the difference, and 2 is what the handoff published
+  and what the screen rendered. The GROUP count is **9** in both runs and is not what changed:
+  the nine groups are the nine states of the graph, counted whether or not any order is in them.
+  The case passed in `authenticated-en` and in `authenticated-ar`.
+
+The traffic is one-way and stays so: nothing a browser observed is written back into the handoff.
+The handoff is what the server answered.
+
+### 8.3 The journey, step by step
+
+Run `mtzmvemj`, started **2026-09-13T09:50:30.859Z**, finished **2026-09-13T09:50:46.827Z**, exit
+code **0**, verdict **PASS**, **194 steps, 0 findings**, `auditActionsPresent` **true**
+(`…\acceptance-20260913-1247\summary.json`). The harness's own notes, verbatim from that file:
+
+- organisation A was provisioned already active; the status route was not called
+- organisation B was provisioned already active; the status route was not called
+- work order left in in_progress: the platform state graph has no completed state, and the
+  remaining hops are taken at closure time
+- the opened quality-control record carries no checks, so no per-check result was recorded; the
+  finalisation below is what the release gate reads
+- the preview reported 1 line(s); every amount below is the string the server published
+
+The four datasets answered, every measure a decimal string, currency JOD, timezone `Asia/Amman`,
+freshness live: `work_orders_by_status` **9** groups with `closed` 1 and `draft` 1;
+`technician_labor_time` **1** group; `inventory_movements` **1** group, `12.000` in and `0.000` out;
+`invoice_payment_summary` invoiced `45.0000`, outstanding `0.0000`, receipts `45.0000` fully
+allocated.
+
+The table below is `…\acceptance-20260913-1247\steps.md` as the harness wrote it. `detail` is the
+harness's own record of what the response carried; the untruncated value is in `steps.json`.
+
+| #   | step                                                                                                                          | status       | correlation id                         | detail                                                                                                                                                                                 |
+| --- | ----------------------------------------------------------------------------------------------------------------------------- | ------------ | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | platform operator: password reset requested                                                                                   | 202          | `eef5b975-7c7e-41e0-847b-b5b22310d53f` | `{}`                                                                                                                                                                                   |
+| 2   | platform operator: recovery link read out of the local mailbox                                                                | found        | -                                      | `{"messageId":"37t7sN3XNSeCQceyeQXJqg"}`                                                                                                                                               |
+| 3   | platform operator: credential set through the shipped completion route                                                        | 200          | `a0c43807-ecb0-48af-aa4f-9d92a3ae429a` | `{}`                                                                                                                                                                                   |
+| 4   | platform operator: login                                                                                                      | 200          | `43fbeed7-1c2f-4c49-a03d-1878ab410df2` | `{}`                                                                                                                                                                                   |
+| 5   | organisation A provisioned through platform.organization-provision                                                            | 201          | `5b0f5055-1f02-44bc-a664-1aae55c7a500` | `{"tenantId":"92aaa8f3-366f-44b9-baf7-cf4ebcd357fb","activated":true}`                                                                                                                 |
+| 6   | organisation B provisioned through platform.organization-provision                                                            | 201          | `e8fb3f9d-67b7-4573-a64c-b4cb09f9da4c` | `{"tenantId":"42d9b45d-a3b1-4b36-9260-cdfb46ea53fc","activated":true}`                                                                                                                 |
+| 7   | owner A: password reset requested                                                                                             | 202          | `88709eea-3193-4e23-b37e-cde98bfff6be` | `{}`                                                                                                                                                                                   |
+| 8   | owner A: recovery link read out of the local mailbox                                                                          | found        | -                                      | `{"messageId":"3AMPIymiqyVMUXxVzQLvJX"}`                                                                                                                                               |
+| 9   | owner A: credential set through the shipped completion route                                                                  | 200          | `14530dae-e382-4a43-85cb-70460dfb8fd9` | `{}`                                                                                                                                                                                   |
+| 10  | owner A: login                                                                                                                | 200          | `909c8610-6dc8-41ef-bd84-43580511581a` | `{}`                                                                                                                                                                                   |
+| 11  | owner B: password reset requested                                                                                             | 202          | `d996cbbd-ab2e-4548-a917-294d11905c30` | `{}`                                                                                                                                                                                   |
+| 12  | owner B: recovery link read out of the local mailbox                                                                          | found        | -                                      | `{"messageId":"2QE0FM04hhRoCwWjJIWcw0"}`                                                                                                                                               |
+| 13  | owner B: credential set through the shipped completion route                                                                  | 200          | `df016166-8ad8-4361-a31b-0e6be83008c0` | `{}`                                                                                                                                                                                   |
+| 14  | owner B: login                                                                                                                | 200          | `813c3277-41fd-49de-b3bc-084d3de1a9b2` | `{}`                                                                                                                                                                                   |
+| 15  | owner A session (permission count must be 78)                                                                                 | 200          | `1916fb47-95cf-4d76-8539-cfc5066462a7` | `{"permissions":78}`                                                                                                                                                                   |
+| 16  | the first administrator holds the whole tenant-administrator bundle                                                           | 78           | -                                      | `{"held":78,"expected":78}`                                                                                                                                                            |
+| 17  | owner A: branch list                                                                                                          | 200          | `0ca1f96b-dcef-4d29-9c67-fc9651ae2177` | `{"count":1}`                                                                                                                                                                          |
+| 18  | service category created                                                                                                      | 201          | `253f6c27-3f56-47a6-bc71-5f0835324628` | `{"id":"e9b3ee42-8310-43ea-b03c-d4999a9d17ad"}`                                                                                                                                        |
+| 19  | service created                                                                                                               | 201          | `45ea7b01-c18d-44f7-9401-2a9762c1014e` | `{"id":"621a5fab-3eab-41c8-8bad-5cff56a282a4","recordVersion":1}`                                                                                                                      |
+| 20  | service version created                                                                                                       | 201          | `44a5f9c2-5951-4dff-b588-ef8ed4a8f709` | `{"id":"8800312f-0878-4c35-9199-3c054798c45f","state":null}`                                                                                                                           |
+| 21  | service version published                                                                                                     | 200          | `eb85964f-d89a-4eaa-860e-63d35526aa9e` | `{"state":null}`                                                                                                                                                                       |
+| 22  | service made available at the branch                                                                                          | 200          | `e56292b1-ba95-416c-aba7-1928af514ecd` | `{}`                                                                                                                                                                                   |
+| 23  | price list created                                                                                                            | 201          | `b2e6965d-6044-4ee7-97bf-7374837e2062` | `{"id":"5cf62c2a-995b-42b7-bd46-e44338603642","recordVersion":1}`                                                                                                                      |
+| 24  | price list version created (If-Match = the LIST record version)                                                               | 201          | `51d5b0d7-f0a7-4865-8ee4-436fb01589ac` | `{"id":"29cbe0bf-c73a-411d-a9a9-b0de3687ee91"}`                                                                                                                                        |
+| 25  | price rule recorded (amount as a decimal string)                                                                              | 201          | `9f9e70b3-806f-4cb1-aa86-452d45927587` | `{"amount":"45.0000"}`                                                                                                                                                                 |
+| 26  | price list version published (If-Match = the LIST record version)                                                             | 200          | `302abca2-19bf-4880-8deb-e46ff50c1249` | `{}`                                                                                                                                                                                   |
+| 27  | price list assigned to the branch                                                                                             | 201          | `a44db126-d295-49eb-a373-db9ce492954f` | `{"id":"9ed1d56d-2b72-42fa-9d6d-072dba6d5153"}`                                                                                                                                        |
+| 28  | price RESOLVED by the server                                                                                                  | 200          | `2ae9d5ff-ee04-4c34-a065-91a930f6bb34` | `{"amount":null,"currency":"JOD"}`                                                                                                                                                     |
+| 29  | item category created                                                                                                         | 201          | `a3913e58-22e2-48a0-b5f0-228890422783` | `{"id":"171cb5f0-d290-4957-8b1e-aea45d254aa3"}`                                                                                                                                        |
+| 30  | unit list (the 'each' platform code must be offered)                                                                          | 200          | `8e1f4b26-2ecd-452a-930e-285714923e95` | `{"count":12}`                                                                                                                                                                         |
+| 31  | item created (catalogue row, no cost, no stock)                                                                               | 201          | `2c478178-0cb9-4fd5-a9fb-b998ef755a09` | `{"id":"1bf16f77-1e95-4e68-8b84-4fa09abdcf37"}`                                                                                                                                        |
+| 32  | warehouse created                                                                                                             | 201          | `d40b516f-ff60-495c-8ca3-c58e6430e013` | `{"id":"3083bffa-60a3-47f0-8b68-24ea055b03e4"}`                                                                                                                                        |
+| 33  | storage place created inside the warehouse                                                                                    | 201          | `91d6e8a6-60fb-4d25-a7dc-74f1a2b4ad53` | `{"id":"52428c97-be20-4ead-b7d8-1becc2f2b7cc"}`                                                                                                                                        |
+| 34  | opening batch opened                                                                                                          | 201          | `4e36c01f-3f37-4bb2-96b6-a29b8f76cf14` | `{"id":"2514c224-8423-47c6-bcd1-cfd5e04e4622","state":null}`                                                                                                                           |
+| 35  | opening line added (quantity as a decimal string)                                                                             | 201          | `c014a995-b192-4dd4-b4a7-f67c424a32f0` | `{"quantity":"12.000"}`                                                                                                                                                                |
+| 36  | CASE: the counter approving their own batch is REFUSED (maker != checker)                                                     | 409          | `995b9d88-19c6-4d45-8774-e09c17d82a3c` | `{"code":"ERR-TRN-001"}`                                                                                                                                                               |
+| 37  | second person: role list, to find the administrator role                                                                      | 200          | `a164d268-228f-436a-a01b-456c162d71e6` | `{"count":2}`                                                                                                                                                                          |
+| 38  | second person invited with the administrator role                                                                             | 201          | `bd882f2c-eb72-4bb4-aeca-81f92d41d80c` | `{"state":"invited"}`                                                                                                                                                                  |
+| 39  | second person: password reset requested                                                                                       | 202          | `0f3f9f1e-b4be-47f7-9e79-7d419ff946bd` | `{}`                                                                                                                                                                                   |
+| 40  | second person: recovery link read out of the local mailbox                                                                    | found        | -                                      | `{"messageId":"7BCCJn0uh505gfdi1Jg3OY"}`                                                                                                                                               |
+| 41  | second person: credential set through the shipped completion route                                                            | 200          | `852364bd-b0e4-4b5f-baa6-48f78c24c557` | `{}`                                                                                                                                                                                   |
+| 42  | second person BEFORE activation: login                                                                                        | 401          | `d53c84e7-9053-434b-ae08-751b2bddcee5` | `{}`                                                                                                                                                                                   |
+| 43  | second person activated by the administrator                                                                                  | 200          | `6ed59c92-9223-4f8f-ba2d-be95884ddc55` | `{"state":"active"}`                                                                                                                                                                   |
+| 44  | second person granted the administrator role at the branch                                                                    | 201          | `743fff53-862d-44a6-a4ca-896cf06a2716` | `{"id":"8c996c84-2b5a-440b-8916-f509d74c2b05"}`                                                                                                                                        |
+| 45  | second person (after activation): login                                                                                       | 200          | `9368dea6-6100-4de0-9ee2-8fc4e4990fc2` | `{}`                                                                                                                                                                                   |
+| 46  | batch APPROVED by the second person                                                                                           | 200          | `06872693-ce02-40f5-b9f4-21c96d76975d` | `{"state":null}`                                                                                                                                                                       |
+| 47  | CASE: the same approval replayed under the same key is not a second approval                                                  | 200          | `98d94492-6bc6-4600-9cf7-a4792a0a6dc5` | `{"state":null,"replayed":null}`                                                                                                                                                       |
+| 48  | ON HAND after approval, as the server publishes it                                                                            | 200          | `df29c833-48a7-4a65-93be-b2b8371524de` | `{"cells":[{"onHand":"12.000","available":"12.000"}]}`                                                                                                                                 |
+| 49  | movement ledger shows the opening row                                                                                         | 200          | `6a27b522-68ee-4ca8-9855-e5c6a889e76d` | `{"count":1,"types":["opening"]}`                                                                                                                                                      |
+| 50  | first journey: customer created                                                                                               | 201          | `5750b352-7ff0-4f61-a9b5-c451b8e41acf` | `{"customerId":"3b1f6d85-6dbe-4dd1-9de6-7af88be7fbf0","displayNumber":"000001"}`                                                                                                       |
+| 51  | first journey: vehicle created                                                                                                | 201          | `e8767502-6ee9-4f50-865f-ef272ed1b41d` | `{"vehicleId":"234f0515-dd5b-41c6-8491-8b62a9562e0a","lifecycle":"draft"}`                                                                                                             |
+| 52  | first journey: vehicle linked to the customer                                                                                 | 201          | `b8d890cc-c0fd-4df7-ac29-6ca856ca035f` | `{}`                                                                                                                                                                                   |
+| 53  | first journey: reception created (walk-in)                                                                                    | 201          | `b91c8e0f-ccdc-4311-8117-b4e31076ee82` | `{"receptionVisitId":"7c11575a-92fb-4bed-bfa7-e839a816c4d9","receptionStatus":"opened","recordVersion":1}`                                                                             |
+| 54  | first journey: the customer recorded on the visit as the authorized receiver                                                  | 201          | `3e3eba05-a1c8-40d7-8b7b-5d77ed5348f7` | `{"role":"authorized_receiver"}`                                                                                                                                                       |
+| 55  | first journey: the customer AUTHORIZES the work                                                                               | 201          | `13f0fb44-4055-4582-b534-033e8794c1a7` | `{"decision":"approved"}`                                                                                                                                                              |
+| 56  | first journey: reception detail, for its record version                                                                       | 200          | `f1650895-f371-413c-8f5f-05fad1af9b7c` | `{"receptionStatus":"opened","recordVersion":1}`                                                                                                                                       |
+| 57  | first journey: reception approved                                                                                             | 200          | `78393f9c-39bd-4ca9-acbb-76dae3024a76` | `{"receptionStatus":"authorized","recordVersion":3}`                                                                                                                                   |
+| 58  | first journey: reception converted to a WORK ORDER                                                                            | 200          | `7e4a988e-8c0d-454b-8e56-a94ad6be8d23` | `{"workOrderId":"950c3fb5-c27e-4924-bc6b-97e3eb9f2d46"}`                                                                                                                               |
+| 59  | employee added to the branch register (active)                                                                                | 201          | `f5b6623d-9df4-49ec-9daa-03ecdfd55e31` | `{"id":"e83c67df-6e04-4227-9ce5-b8af086a6663","status":"active"}`                                                                                                                      |
+| 60  | technician profile created for the signed-in account                                                                          | 201          | `1fbe57ba-27a7-4863-a638-a3e812990a20` | `{"id":"cf7eb9e4-980b-416d-8cb8-3f251742e43b"}`                                                                                                                                        |
+| 61  | work order detail, for the If-Match the open transition needs                                                                 | 200          | `f2c188f2-88eb-4311-946c-50d6c82e1f68` | `{"state":"draft","recordVersion":1,"nextStates":["cancelled","open"]}`                                                                                                                |
+| 62  | work order transitioned to open                                                                                               | 200          | `7b4e8b16-1122-46b0-8c4c-3c8a44e33348` | `{"state":"open","from":"draft","offered":["cancelled","open"]}`                                                                                                                       |
+| 63  | work order detail, for the If-Match the in_progress transition needs                                                          | 200          | `45eeabc4-3b00-42ea-ba88-0ef3fca00cc3` | `{"state":"open","recordVersion":2,"nextStates":["cancelled","in_progress"]}`                                                                                                          |
+| 64  | work order transitioned to in_progress                                                                                        | 200          | `e794eb87-c365-428c-936f-2a6d8ce62aac` | `{"state":"in_progress","from":"open","offered":["cancelled","in_progress"]}`                                                                                                          |
+| 65  | job created on the work order                                                                                                 | 201          | `d0b308f0-44c7-41d9-a35d-c3b9170c4fd5` | `{"id":"d8998310-2b33-404f-b630-d824808028cc","state":"planned","recordVersion":1}`                                                                                                    |
+| 66  | technician availability recorded, so the assignment has a window to sit in                                                    | 201          | `389a4cb5-c3f4-4bca-8e23-0291c7069aea` | `{"id":"26c2a05a-f559-4bb6-87c7-972d06d9cdf3","kind":"available"}`                                                                                                                     |
+| 67  | job assigned to the technician                                                                                                | 201          | `831fc053-bc09-4945-a00f-09d46471b669` | `{"id":"81fd4cf2-4a0b-48df-a9fe-933c285c3439"}`                                                                                                                                        |
+| 68  | job transitioned to assigned, which is the first state that permits labour                                                    | 200          | `aa730063-1980-4318-8091-2021a1b7c94a` | `{"state":"assigned"}`                                                                                                                                                                 |
+| 69  | labour session started                                                                                                        | 201          | `3e9b2aee-63b3-4afe-b000-ba750d743999` | `{"id":"460d157c-077c-46f1-8b72-626aff031793","recordVersion":1}`                                                                                                                      |
+| 70  | labour session STOPPED, so the recorded time is a closed interval                                                             | 200          | `fed6f689-4b7f-45eb-9800-0276a910a0c3` | `{"endedAt":"2026-09-13T09:50:38.686Z"}`                                                                                                                                               |
+| 71  | work log recorded against the job                                                                                             | 201          | `84311d80-dc01-4524-b99c-fa62d07eb0f7` | `{"id":"c93adaf8-cd36-48e4-8270-da6694cf7ec2"}`                                                                                                                                        |
+| 72  | job transitioned to in_progress                                                                                               | 200          | `8ff24e27-5878-4814-87f0-d437b44013e5` | `{"state":"in_progress"}`                                                                                                                                                              |
+| 73  | job transitioned to completed, which is terminal                                                                              | 200          | `0524c11d-8767-4187-aa23-10b54a2837ee` | `{"state":"completed"}`                                                                                                                                                                |
+| 74  | quality-control record opened                                                                                                 | 201          | `a1b97adb-3ba7-4f9a-9fe4-c808fd373b3a` | `{"id":"f35a0c66-4395-42d9-8f84-0131660a6b07","overallResult":"pending"}`                                                                                                              |
+| 75  | quality-control record read, for its checks and record version                                                                | 200          | `d9c9855a-fa80-473f-8b5c-bba9f4124d6b` | `{"checks":0,"recordVersion":null}`                                                                                                                                                    |
+| 76  | quality-control record re-read, for the If-Match the finalisation needs                                                       | 200          | `152ddf50-8aab-440f-a22f-f93a9866e380` | `{"recordVersion":null}`                                                                                                                                                               |
+| 77  | quality control FINALISED passed                                                                                              | 200          | `dea71a0d-7a10-43d3-9310-a8e26380dbdf` | `{"overallResult":"passed"}`                                                                                                                                                           |
+| 78  | quotation raised on the work order, priced from the published price list                                                      | 201          | `0b63b5b4-66a2-4a87-91cd-f3f38c07055d` | `{"id":"4e1dceba-ff14-41a2-800b-058963f6c33a","quotationNumber":"000001","revisionId":"a4ca6e39-30ed-4151-b4c1-197d690e84b8","grandTotal":"0.0000","recordVersion":1}`                 |
+| 79  | quotation ISSUED to the customer (If-Match = the QUOTATION version)                                                           | 200          | `3b408ee4-f044-455e-ab0f-f9f9be5f693c` | `{"status":"issued","recordVersion":2}`                                                                                                                                                |
+| 80  | the customer APPROVES the revision, in person — the invoice’s commercial source                                               | 201          | `6e79e638-e119-48a0-871c-7d1b593ed5fc` | `{"decided":1,"rollUp":null}`                                                                                                                                                          |
+| 81  | invoice preview (the server figures, not ours)                                                                                | 200          | `a98fda2c-cfce-4ce8-98a8-f76ceeaaa48c` | `{"lines":1}`                                                                                                                                                                          |
+| 82  | invoice created (draft), naming the payer explicitly                                                                          | 201          | `42de0bec-882e-45be-bf88-d320f9d64dac` | `{"id":"e96acf42-aa74-4afd-9738-0c7c33f9180b","status":"draft","recordVersion":1}`                                                                                                     |
+| 83  | invoice ISSUED with a number from the branch sequence (If-Match = the INVOICE version)                                        | 200          | `25c14d66-5c9e-416e-8ad5-de0cda6bb8a3` | `{"invoiceNumber":"000001","status":"issued"}`                                                                                                                                         |
+| 84  | invoice detail after issue                                                                                                    | 200          | `03bd5d2d-e709-4dd5-8efe-ec15487085bb` | `{"status":"issued","invoiceNumber":"000001","gross":"45.0000","currency":"JOD"}`                                                                                                      |
+| 85  | payment methods (the tenant cash method must be present)                                                                      | 200          | `9674c1fa-2405-4363-a2af-acb755e36683` | `{"codes":["bank_transfer","card_terminal","cash","bank_transfer","card_terminal","cash"]}`                                                                                            |
+| 86  | receipt recorded for the issued amount                                                                                        | 201          | `5d8898bd-c7e8-46ad-8536-786c34911b91` | `{"id":"bcfaac29-04a2-48f7-bac4-b5c442bab600","reference":"000001"}`                                                                                                                   |
+| 87  | receipt ALLOCATED to the invoice                                                                                              | 201          | `fe61bce2-fe22-40a6-92ea-0cf2db39a500` | `{"id":"9c692fc9-5c6d-4fb7-8ad7-08800f55b688"}`                                                                                                                                        |
+| 88  | OUTSTANDING after allocation, as the server publishes it                                                                      | 200          | `28d4b371-934a-4a12-8a93-a572bcd88265` | `{"outstanding":"0.0000","isSettled":true}`                                                                                                                                            |
+| 89  | closure eligibility read                                                                                                      | 200          | `d9e0a0ab-468e-48e2-a459-4965ba3bd06a` | `{"eligible":true,"blockers":[]}`                                                                                                                                                      |
+| 90  | work order detail, for the If-Match the qc_pending transition needs                                                           | 200          | `d52bc046-15e9-47c1-a2c2-e143dd478f66` | `{"state":"in_progress","recordVersion":3,"nextStates":["awaiting_customer","awaiting_parts","cancelled","qc_pending"]}`                                                               |
+| 91  | work order transitioned to qc_pending                                                                                         | 200          | `39167d25-d441-440f-931e-5c798bde9de3` | `{"state":"qc_pending","from":"in_progress","offered":["awaiting_customer","awaiting_parts","cancelled","qc_pending"]}`                                                                |
+| 92  | work order detail, for the If-Match the ready_to_close transition needs                                                       | 200          | `4e3faa6e-58bb-4903-9823-8b16113b8114` | `{"state":"qc_pending","recordVersion":4,"nextStates":["in_progress","ready_to_close"]}`                                                                                               |
+| 93  | work order transitioned to ready_to_close                                                                                     | 200          | `4194dc30-1bb7-4af6-9866-6abff397ce71` | `{"state":"ready_to_close","from":"qc_pending","offered":["in_progress","ready_to_close"]}`                                                                                            |
+| 94  | work order CLOSED with If-Match                                                                                               | 200          | `2090d5d9-d7d6-40f4-bf29-162913febf5d` | `{"state":"closed"}`                                                                                                                                                                   |
+| 95  | handover checklist template created with two mandatory items                                                                  | 201          | `2f0271b8-fcdc-4201-a3f7-ccf3bf582053` | `{"id":"fdccafa1-0890-4b0d-81f6-23c951b4fa0f","items":2,"recordVersion":1}`                                                                                                            |
+| 96  | checklist template read, for its items and record version                                                                     | 200          | `89088762-7176-4f1a-abb4-816fffaac6da` | `{"items":2,"status":"active","recordVersion":1}`                                                                                                                                      |
+| 97  | checklist template status set ACTIVE                                                                                          | 200          | `fafc021f-1909-4c53-a1f9-229d7a9a171b` | `{"status":"active"}`                                                                                                                                                                  |
+| 98  | warranty policy created with one coverage window                                                                              | 201          | `6ad1e4ea-4f20-46a8-a49d-5c750afc8066` | `{"id":"2800823b-bbd3-4727-b9e2-58a23a00acfd","coverage":1,"recordVersion":1}`                                                                                                         |
+| 99  | a second, service-only coverage window added to the policy                                                                    | 201          | `79e7f797-6d9d-45e2-996e-ea846bfe3ead` | `{"id":"e9ecf6b9-e10f-4c95-a1b9-9a6750269bf6","coveredScope":"service"}`                                                                                                               |
+| 100 | readiness queue: the closed work order is present with its four facts                                                         | 200          | `6329bd57-f5d2-4e90-95b0-2aacf47f43a6` | `{"count":1,"present":true,"facts":[{"blocker":"work_order_not_complete","established":true},{"blocker":"quality_control_not_passed","established":true},{"blocker":"financial_bal...` |
+| 101 | all four work-order facts were ESTABLISHED, not assumed blocking                                                              | 4            | -                                      | `{"facts":[{"blocker":"work_order_not_complete","established":true,"source":"@/modules/work-order — wo.work_orders.state against wo.work_order_states"},{"blocker":"quality_contro...` |
+| 102 | delivery opened for the work order                                                                                            | 201          | `87d61e13-6b68-462a-a662-abc3bd6a11c9` | `{"id":"05977542-b780-4872-bb74-c3c15f918149","status":"ready","recordVersion":1}`                                                                                                     |
+| 103 | CASE: the same body under the SAME key is a replay, not a second delivery                                                     | 200          | `5a3fb8f0-46e7-4e3f-9629-31e5f3f0fb7d` | `{"id":"05977542-b780-4872-bb74-c3c15f918149","replayed":false}`                                                                                                                       |
+| 104 | the replay answered the SAME delivery id                                                                                      | same row     | -                                      | `{"first":"05977542-b780-4872-bb74-c3c15f918149","replayed":"05977542-b780-4872-bb74-c3c15f918149"}`                                                                                   |
+| 105 | CASE: a SECOND key for the same work order is refused (one live delivery only)                                                | 409          | `2e2e99e5-d43a-4496-b403-7ddb7e3510c0` | `{"code":"ERR-RES-002"}`                                                                                                                                                               |
+| 106 | eligibility read before any handover evidence                                                                                 | 200          | `9b3d34fb-60ec-4c46-aebb-6c88a985e8e3` | `{"eligible":false,"blockers":["checklist_incomplete","receiver_not_verified","signature_missing"],"recordVersion":1}`                                                                 |
+| 107 | authorized receiver verified against the visit roles                                                                          | 201          | `4584147c-c4ef-4ba0-bf7f-bf4ee6781da8` | `{"id":"eb353250-c3ad-427f-bcec-21e70eb81006","deliveryStatus":"receiver_verified"}`                                                                                                   |
+| 108 | signature document: upload authorized against the reception visit                                                             | 201          | `2966c5fb-4cdc-4088-9f05-d07322d01c49` | `{"documentId":"bf19d3b7-855a-43d6-ab79-507d77264164","method":"PUT"}`                                                                                                                 |
+| 109 | signature document: bytes stored at the presigned destination                                                                 | 200          | -                                      | `{"bytes":67}`                                                                                                                                                                         |
+| 110 | signature document: version registered and scanned                                                                            | 201          | `91a8099a-fdbc-4768-a013-f50f34a1d03f` | `{"versionId":"6bf5a8d8-d51f-4778-aafe-61142fbc99fa","status":"accepted","scanStatus":"clean"}`                                                                                        |
+| 111 | signature document: linked to the reception visit, which is its provenance                                                    | 201          | `ac95b77b-a15e-4dd9-9570-e0a7539b4160` | `{"linkId":"2b3784ad-ff83-4264-ae77-e270ce5b3dfb"}`                                                                                                                                    |
+| 112 | the receiver's signature bound to the delivery by reference                                                                   | 201          | `1be5fbbe-0c3f-4fc5-8d86-b40be2f1f1f3` | `{"id":"d5219a99-f1b1-4dba-84cd-25ed1cfacae2"}`                                                                                                                                        |
+| 113 | checklist item recorded as passed: keys_returned                                                                              | 201          | `92745bd8-b2e4-42ff-8058-8b219b9497da` | `{"outcome":"passed"}`                                                                                                                                                                 |
+| 114 | checklist item recorded as passed: documents_returned                                                                         | 201          | `24381b46-4b65-44f5-97e0-2cba00cd2bbe` | `{"outcome":"passed"}`                                                                                                                                                                 |
+| 115 | eligibility read again: every fact established, no blocker, and the version to use                                            | 200          | `042bcd06-2a4a-4f97-a042-adf03ae9f2a5` | `{"eligible":true,"blockers":[],"facts":[{"blocker":"delivery_state_invalid","established":true},{"blocker":"work_order_not_complete","established":true},{"blocker":"quality_cont...` |
+| 116 | CASE: a STALE If-Match on completion is refused                                                                               | 409          | `127660e9-a616-4b0b-9ff0-8b7d941c459c` | `{"code":"ERR-CON-001"}`                                                                                                                                                               |
+| 117 | delivery COMPLETED: custody released and the final odometer captured                                                          | 200          | `1e5c4f18-157c-4f33-a787-2ce15f69fec5` | `{"status":"delivered","deliveredAt":"2026-09-13T09:50:41.831Z"}`                                                                                                                      |
+| 118 | delivery read: the record is delivered                                                                                        | 200          | `40f49776-5678-4c19-b72c-4e9770d3bc3f` | `{"status":"delivered","finalOdometerReadingId":"0bc45868-48de-43e4-9e8c-c5536a6fc4c5"}`                                                                                               |
+| 119 | status history: every stage the handover passed through                                                                       | 200          | `6f48bfc5-8a2d-4886-9f1d-c861ffc5295d` | `{"stages":["delivered","signed","receiver_verified","ready"]}`                                                                                                                        |
+| 120 | warranty generated from the delivered handover under the named policy                                                         | 201          | `e260797e-0c59-4f36-b774-f5b519c54ddf` | `{"id":"59b5adc0-19bf-42c8-9c19-998fc88e4787","status":"issued","expiryDate":"2027-09-13"}`                                                                                            |
+| 121 | warranty list for the branch contains the vehicle's new warranty                                                              | 200          | `dccdbe84-a60e-4095-8d84-df12ada6e4ce` | `{"count":1,"present":true}`                                                                                                                                                           |
+| 122 | warranty detail: its terms and what it covers                                                                                 | 200          | `044056af-453b-4e96-b2eb-661c1fde1c0c` | `{"status":"issued","startDate":"2026-09-13","expiryDate":"2027-09-13","odometerLimit":"32346","policyCode":"p31_mtzmvemj_wty","coveredScope":"all"}`                                  |
+| 123 | warranty plans list, as the plans screen reads it                                                                             | 200          | `333cbd1f-6ef8-4b79-a617-4129b24c5e2b` | `{"count":1,"codes":["p31_mtzmvemj_wty"]}`                                                                                                                                             |
+| 124 | report configuration created for work_orders_by_status                                                                        | 201          | `a5e82e5f-58a9-4e95-8e9b-1ebc8a64ecc1` | `{"id":"316dd9ac-f9e3-4ec4-b826-1074241b9fc9","recordVersion":1}`                                                                                                                      |
+| 125 | configuration version created (parameterSchema omitted, not empty)                                                            | 201          | `19a15b66-a42d-4377-8719-b81f3692f203` | `{"id":"ca08d196-6771-4052-b2c1-a7374cb0a4f4","versionNumber":1}`                                                                                                                      |
+| 126 | configuration read, for the If-Match the publish needs                                                                        | 200          | `678f0c64-8d9f-499e-933e-c3a5dc10a982` | `{"status":"draft","recordVersion":1}`                                                                                                                                                 |
+| 127 | configuration version PUBLISHED                                                                                               | 200          | `6c256b8d-4aec-4276-a78c-9125e2bdd539` | `{"publishedAt":"2026-09-13T09:50:42.527Z","recordVersion":2}`                                                                                                                         |
+| 128 | configuration status set published                                                                                            | 200          | `9c436781-423f-42e1-9dee-614634db5a3f` | `{"status":"published"}`                                                                                                                                                               |
+| 129 | report catalogue offers all four dataset codes                                                                                | 200          | `7a89cfff-eb56-42fb-9733-0914de3fd7d5` | `{"count":4,"missing":[],"executable":[{"reportCode":"technician_labor_time","executable":true},{"reportCode":"inventory_movements","executable":true},{"reportCode":"invoice_paym...` |
+| 130 | report run: work_orders_by_status over a half-open day period                                                                 | 200          | `aafef9a5-fbc6-4bfe-b068-c1d124718e6f` | `{"timezone":"Asia/Amman","rows":1,"groups":9,"freshness":"live"}`                                                                                                                     |
+| 131 | report run: technician_labor_time over a half-open day period                                                                 | 200          | `371294e6-5d65-4c8f-8a41-5d061e2f4cf7` | `{"timezone":"Asia/Amman","rows":1,"groups":1,"freshness":"live"}`                                                                                                                     |
+| 132 | report run: inventory_movements over a half-open day period                                                                   | 200          | `3fdacb87-e02c-45ad-a085-10511c80ace4` | `{"timezone":"Asia/Amman","rows":1,"groups":1,"freshness":"live"}`                                                                                                                     |
+| 133 | report run: invoice_payment_summary over a half-open day period                                                               | 200          | `fe15499a-0ec8-425f-862f-e4f81aece336` | `{"timezone":"Asia/Amman","rows":2,"groups":2,"freshness":"live"}`                                                                                                                     |
+| 134 | audit log for the branch carries the completion and the warranty issue                                                        | 200          | `b7de7fc7-bc58-44b0-8f40-5d2be86ea7a6` | `{"count":44,"missing":[]}`                                                                                                                                                            |
+| 135 | both declared audit actions were really written                                                                               | both present | -                                      | `{"missing":[]}`                                                                                                                                                                       |
+| 136 | refusal journey: customer created                                                                                             | 201          | `c2d22813-2e20-480b-a545-5e08035f32f8` | `{"customerId":"fe43d687-578e-4e24-9e39-26e853c434a9","displayNumber":"000002"}`                                                                                                       |
+| 137 | refusal journey: vehicle created                                                                                              | 201          | `9b1c1b17-dae3-4dfd-9202-2f4453357af1` | `{"vehicleId":"ee3c9734-27c9-4ecf-a527-ece285a5a027","lifecycle":"draft"}`                                                                                                             |
+| 138 | refusal journey: vehicle linked to the customer                                                                               | 201          | `2893feea-2402-4d26-bf26-dc794ad5e3d5` | `{}`                                                                                                                                                                                   |
+| 139 | refusal journey: reception created (walk-in)                                                                                  | 201          | `f9835a2f-99d8-4fce-9ddf-9938324b4c4b` | `{"receptionVisitId":"c99354f2-b9cb-49e1-bde8-dcc64638a62b","receptionStatus":"opened","recordVersion":1}`                                                                             |
+| 140 | refusal journey: the customer recorded on the visit as the authorized receiver                                                | 201          | `b2084b99-ef57-4497-8de9-fc4b28e98739` | `{"role":"authorized_receiver"}`                                                                                                                                                       |
+| 141 | refusal journey: the customer AUTHORIZES the work                                                                             | 201          | `07497d32-fbff-48b7-92ef-b00d99790216` | `{"decision":"approved"}`                                                                                                                                                              |
+| 142 | refusal journey: reception detail, for its record version                                                                     | 200          | `a85d3bf5-0a99-42f1-9544-10ef845c2e4f` | `{"receptionStatus":"opened","recordVersion":1}`                                                                                                                                       |
+| 143 | refusal journey: reception approved                                                                                           | 200          | `60c9b274-2573-4cb3-a2e8-24488da3b600` | `{"receptionStatus":"authorized","recordVersion":3}`                                                                                                                                   |
+| 144 | refusal journey: reception converted to a WORK ORDER                                                                          | 200          | `daf36e0b-dc93-4ef9-8f1d-1aa2c45a1d4c` | `{"workOrderId":"b1a46a46-2445-43b9-999c-02ae7c777199"}`                                                                                                                               |
+| 145 | a second employee added to the register, to be retired                                                                        | 201          | `a8b091a0-df1a-427e-bc94-5318ec04f151` | `{"id":"b9fa866d-8c6d-4887-b772-383b1dc76b54","status":"active","recordVersion":1}`                                                                                                    |
+| 146 | that employee set inactive                                                                                                    | 200          | `a7af0bc5-8b55-43bd-861e-3416a4f93331` | `{"status":"inactive"}`                                                                                                                                                                |
+| 147 | CASE: a RETIRED employee named as the person handing over is refused at Start                                                 | 422          | `7f54ab55-d3f9-4c97-80b0-6d18de11de85` | `{"code":"ERR-VAL-001","rules":["inactive_employee"]}`                                                                                                                                 |
+| 148 | a second handover opened with the ACTIVE employee                                                                             | 201          | `77642fef-2c70-4846-9373-da798687ce61` | `{"id":"5d4732c6-58ab-41da-aa7d-2465d4c0256e","recordVersion":1}`                                                                                                                      |
+| 149 | second handover: receiver verified                                                                                            | 201          | `96e3cad1-9f52-4515-a3a1-4dbb89bac0b3` | `{"id":"7a969f47-c694-4363-8a7a-e63bd9b50848"}`                                                                                                                                        |
+| 150 | signature document: upload authorized against the reception visit                                                             | 201          | `826194df-5d98-43e9-9a9a-bb7607faffbe` | `{"documentId":"519ec457-7f9e-44bd-b3a1-3e86cf361ce0","method":"PUT"}`                                                                                                                 |
+| 151 | signature document: bytes stored at the presigned destination                                                                 | 200          | -                                      | `{"bytes":67}`                                                                                                                                                                         |
+| 152 | signature document: version registered and scanned                                                                            | 201          | `253f2714-7bab-4b28-8a51-0f8ad9d6d932` | `{"versionId":"20e70415-36d0-4753-97ff-4a97212f43b5","status":"accepted","scanStatus":"clean"}`                                                                                        |
+| 153 | signature document: linked to the reception visit, which is its provenance                                                    | 201          | `f63f87c9-d7e3-42ec-9611-147e161a3b82` | `{"linkId":"e70acf34-4abe-4a65-b852-eae83d5502ea"}`                                                                                                                                    |
+| 154 | second handover: signature bound                                                                                              | 201          | `ee1d018f-f8ef-48e5-b7b8-64190a968432` | `{}`                                                                                                                                                                                   |
+| 155 | second handover: eligibility names the unanswered checklist                                                                   | 200          | `e7e4060e-c91b-4907-858e-6cac05e336d2` | `{"eligible":false,"blockers":["work_order_not_complete","financial_balance_outstanding","checklist_incomplete"],"checklistGaps":2}`                                                   |
+| 156 | CASE: completion with the active template's mandatory items unanswered is refused                                             | 409          | `ffae2009-3f59-4209-96cd-7301be19ba14` | `{"code":"ERR-TRN-001"}`                                                                                                                                                               |
+| 157 | ISOLATION: organisation B cannot read organisation A's delivery                                                               | 404          | `6bc2db87-cbe3-4eb7-ad41-7dfbc04aae04` | `{"code":"ERR-RES-001"}`                                                                                                                                                               |
+| 158 | ISOLATION: organisation B cannot read organisation A's warranty                                                               | 404          | `d421e465-c693-4d8d-b304-bec50956b994` | `{"code":"ERR-RES-001"}`                                                                                                                                                               |
+| 159 | ISOLATION: organisation B naming organisation A's branch sees no row                                                          | 403          | `d944ff6a-f40d-4f35-ba54-1b266de4c7a8` | `{"rows":0}`                                                                                                                                                                           |
+| 160 | ISOLATION: organisation B's readiness queue carried NO row of organisation A's — refused before any row, so the count is moot | 403          | `d944ff6a-f40d-4f35-ba54-1b266de4c7a8` | `{"rows":null}`                                                                                                                                                                        |
+| 161 | ISOLATION: organisation B cannot run a report over organisation A's branch                                                    | 403          | `8e1bb947-f740-4f50-8c2e-80ec33f377cb` | `{"rows":0}`                                                                                                                                                                           |
+| 162 | ISOLATION: organisation B's report carried NO row of organisation A's — refused before any row, so the count is moot          | 403          | `8e1bb947-f740-4f50-8c2e-80ec33f377cb` | `{"rows":null}`                                                                                                                                                                        |
+| 163 | a role WITHOUT sal.finance.view created                                                                                       | 201          | `d16f5148-6c61-4aa5-a893-5b1ed565e335` | `{"id":"3f64f51b-4924-411d-94ae-fc422c88abd0"}`                                                                                                                                        |
+| 164 | restricted role granted sal.delivery.view                                                                                     | 201          | `f357770a-0277-48b4-a0be-0fb56bbd003e` | `{}`                                                                                                                                                                                   |
+| 165 | restricted role granted wo.work_order.read                                                                                    | 201          | `b0e330ad-0bc0-4cd8-a18a-48883e0ed618` | `{}`                                                                                                                                                                                   |
+| 166 | restricted role granted rpt.report.read                                                                                       | 201          | `9e3cccb8-55de-4a8b-aec1-3cd00be3cc46` | `{}`                                                                                                                                                                                   |
+| 167 | a third person invited with the restricted role                                                                               | 201          | `a96470ec-085b-4817-ab3a-8f3f251ed114` | `{"state":"invited"}`                                                                                                                                                                  |
+| 168 | third person: password reset requested                                                                                        | 202          | `0f9d701e-fbec-4e06-b04f-4fa6ec681b9c` | `{}`                                                                                                                                                                                   |
+| 169 | third person: recovery link read out of the local mailbox                                                                     | found        | -                                      | `{"messageId":"3mQfLxhi8tsxrM0rIc6EGQ"}`                                                                                                                                               |
+| 170 | third person: credential set through the shipped completion route                                                             | 200          | `7b0ad85d-9f66-4514-a17b-aa4024fc3bb7` | `{}`                                                                                                                                                                                   |
+| 171 | third person activated                                                                                                        | 200          | `ba2264aa-bc4f-41c4-8512-08f890884f4f` | `{}`                                                                                                                                                                                   |
+| 172 | third person granted the restricted role at the branch                                                                        | 201          | `04f3b62e-1ba1-487e-81d2-de39942e4bad` | `{}`                                                                                                                                                                                   |
+| 173 | third person: login                                                                                                           | 200          | `d2987607-536f-4ae0-88a8-f73ae72eedb5` | `{}`                                                                                                                                                                                   |
+| 174 | CASE: without sal.finance.view the readiness queue is REFUSED, not blanked                                                    | 403          | `4c8e44f8-9826-48db-8c60-5e6d9517d78a` | `{"code":"ERR-IAM-001"}`                                                                                                                                                               |
+| 175 | CASE: without sal.finance.view the invoice and payment report is REFUSED                                                      | 403          | `22ac089e-44bc-4f1e-af01-862c5ac0ffcf` | `{"code":"ERR-IAM-001"}`                                                                                                                                                               |
+| 176 | the same person CAN run the report whose permission they do hold                                                              | 200          | `6c39edb9-3c3d-4f29-81db-243056c04afe` | `{"rows":2}`                                                                                                                                                                           |
+| 177 | report run (after the last write): work_orders_by_status                                                                      | 200          | `67e4ab49-c07e-4ce7-84da-e351abe5d225` | `{"timezone":"Asia/Amman","rows":2,"groups":9,"freshness":"live"}`                                                                                                                     |
+| 178 | report run (after the last write): technician_labor_time                                                                      | 200          | `bec7da88-c85c-4df2-9c11-f94613640e77` | `{"timezone":"Asia/Amman","rows":1,"groups":1,"freshness":"live"}`                                                                                                                     |
+| 179 | report run (after the last write): inventory_movements                                                                        | 200          | `9ff6e065-a114-4d52-b926-bb98fddbd2b8` | `{"timezone":"Asia/Amman","rows":1,"groups":1,"freshness":"live"}`                                                                                                                     |
+| 180 | report run (after the last write): invoice_payment_summary                                                                    | 200          | `1fd35f9c-4149-4a06-be6a-b16a6d15cd4e` | `{"timezone":"Asia/Amman","rows":2,"groups":2,"freshness":"live"}`                                                                                                                     |
+| 181 | report catalogue (after the last write): who provides each report, and its name                                               | 200          | `0e1f6dec-9415-48b3-94ba-e4f8ed2629ab` | `{"count":4,"missing":[]}`                                                                                                                                                             |
+| 182 | the catalogue names each of the four datasets and says who provides it                                                        | named        | -                                      | `{"unusable":[],"provenance":{"work_orders_by_status":{"source":"tenant","titleKey":null,"name":"Work orders by status","executable":true},"technician_labor_time":{"source":"plat...` |
+| 183 | FE-010 (after the last write): the authorized company directory the overview resolves against                                 | 200          | `ef5578d2-0314-40fe-b6f6-89a1fe082ec6` | `{"count":1}`                                                                                                                                                                          |
+| 184 | FE-010 (after the last write): the authorized branch directory the overview resolves against                                  | 200          | `4a8f9a7b-b26c-4e7d-9626-aca0129835c7` | `{"count":1}`                                                                                                                                                                          |
+| 185 | FE-016: the branch the address names resolves in the authorized directory                                                     | resolved     | -                                      | `{"branchId":"0305f216-2188-4a57-b58d-d5b2e3367187","directoryBranches":1}`                                                                                                            |
+| 186 | FE-010 overview section (after the last write): work_orders_by_status                                                         | 200          | `82cd42d2-67d4-47ca-b30e-4a77fb63f729` | `{"rows":1,"groups":9,"timezone":"Asia/Amman","freshness":"live"}`                                                                                                                     |
+| 187 | FE-016 overview section for the branch named in the address (after the last write): work_orders_by_status                     | 200          | `d3aff321-72ba-4b9a-9e65-2d3aa196555d` | `{"rows":1,"groups":9,"timezone":"Asia/Amman","freshness":"live"}`                                                                                                                     |
+| 188 | FE-010 overview section (after the last write): technician_labor_time                                                         | 200          | `1ddf1903-5034-4b8b-840d-87a558fead7b` | `{"rows":1,"groups":1,"timezone":"Asia/Amman","freshness":"live"}`                                                                                                                     |
+| 189 | FE-016 overview section for the branch named in the address (after the last write): technician_labor_time                     | 200          | `1d5bb56e-568d-4d56-a97b-b6d4e6f02c81` | `{"rows":1,"groups":1,"timezone":"Asia/Amman","freshness":"live"}`                                                                                                                     |
+| 190 | FE-010 overview section (after the last write): inventory_movements                                                           | 200          | `54ee0fa1-db09-4710-98ed-15b12aa2bcf7` | `{"rows":1,"groups":1,"timezone":"Asia/Amman","freshness":"live"}`                                                                                                                     |
+| 191 | FE-016 overview section for the branch named in the address (after the last write): inventory_movements                       | 200          | `3dc82bae-d0a5-4eef-ba11-337d084b67b4` | `{"rows":1,"groups":1,"timezone":"Asia/Amman","freshness":"live"}`                                                                                                                     |
+| 192 | FE-010 overview section (after the last write): invoice_payment_summary                                                       | 200          | `73164782-daa1-4c1d-863f-740b43d2426c` | `{"rows":1,"groups":2,"timezone":"Asia/Amman","freshness":"live"}`                                                                                                                     |
+| 193 | FE-016 overview section for the branch named in the address (after the last write): invoice_payment_summary                   | 200          | `7adb771d-2b6d-4259-a854-1e25a70e3988` | `{"rows":1,"groups":2,"timezone":"Asia/Amman","freshness":"live"}`                                                                                                                     |
+| 194 | FE-016 reads the same overview as FE-010 for the same branch                                                                  | agree        | -                                      | `{"disagreed":[]}`                                                                                                                                                                     |
+
+### 8.4 The browser half
+
+`ROOTLCO_E2E_AUTH=1` with the handoff, run from the checkout under test.
+`.local\e2e\account-kind.json` read `{"kind":"org-administrator","source":"p1-31-handoff"}`, which
+is the identity the P1-31 cases require (`RUN-NOTES.md` §6).
+
+**What is machine-readable here, and what is not.** `apps/web/playwright.config.ts:131` emits a
+JSON report only when `CI` is set, and this run was driven locally, so **no reporter document was
+produced** and there is no HTML report either. What the run did leave is one directory per FAILED
+test under `apps/web/test-results/`, and the runner's own `.last-run.json`. Those are retained at
+`…\acceptance-20260913-1247\browser\` as `last-run.json` (the runner's ledger, 125 opaque test
+ids), `failed-tests.txt` (the 125 directory names) and `summary-from-report.json` (counts derived
+from them by the `derive.py` beside it). **The trace archives and failure screenshots were
+deliberately not copied**: a trace records request headers, which on this tier carry the session
+cookie, and this run removed its handoff precisely so that no credential is left on disk.
+
+So the two kinds of figure below are cited differently, and the difference is not cosmetic:
+
+- **failures** are evidenced by the retained artefact. `browser/summary-from-report.json` reports
+  125 failed-test directories against 125 ids in `last-run.json`, and **zero** of them belong to
+  any `*-p1-31.spec.ts`.
+- **passes and skips** leave no artefact, because a passing test writes nothing. The reporter
+  totals — **270 passed, 125 failed, 6 skipped**, 22.2 minutes — are operator-recorded from the
+  console reporter (`RUN-NOTES.md` §6), and so are the per-spec pass counts in the table below and
+  the two per-locale timings of the previously failing case.
+
+| spec                      | passed | failed |
+| ------------------------- | ------ | ------ |
+| `audit-log-p1-31.spec.ts` | 4      | 0      |
+| `delivery-p1-31.spec.ts`  | 8      | 0      |
+| `overview-p1-31.spec.ts`  | 6      | 0      |
+| `reports-p1-31.spec.ts`   | 14     | 0      |
+| `warranty-p1-31.spec.ts`  | 8      | 0      |
+| **total**                 | **40** | **0**  |
+
+The **failed** column is the artefact's: no P1-31 directory exists among the 125. The **passed**
+column is the operator's record, and it is consistent with two facts that can be checked without
+it — the tier collects exactly forty P1-31 cases across the two locale projects
+(`ROOTLCO_E2E_AUTH=1 npx playwright test --list`), and none of them failed.
+
+Twenty cases in `authenticated-en` and twenty in `authenticated-ar`, which is exactly what §3 of the
+plan says the set owes; none is added to `authenticated-tablet`, whose `testMatch` names two other
+files.
+
+**A note for the next run.** Nothing in this branch changes the reporter. `CI=1` would produce
+`apps/web/playwright-report.json` — the artefact this section would rather have cited — but it also
+turns on `forbidOnly` and turns OFF `reuseExistingServer`, so an acceptance operator should set it
+deliberately rather than incidentally, and record that they did.
+
+### 8.5 FE-010 and FE-016, no longer only reached
+
+Both requirements were carried as **reached but not verified**: no HTTP step called what the
+operational overview calls, and no browser case opened it. Both halves now exist.
+
+The harness's final pass reads the authorized company and branch directory the screen resolves
+against, and then one `rpt.report-run` per approved domain at the overview's own page size of one
+row — **twice**, once for the branch an operator chooses and once for the branch an address fixes —
+with an assertion step requiring the two readings to agree. They agreed
+(`summary.json` `overview.directory` = 1 company, 1 branch, branch resolved).
+
+`overview-p1-31.spec.ts` carries three cases in each locale project: FE-010's gate, asserted for
+whichever account signed in; FE-010's figures, each section rendering exactly the summary rows the
+server published; and FE-016, where the branch comes from `?branchId=`, resolves in the caller's own
+directory, is shown fixed and is **stated** to be fixed. All six passed.
+
+### 8.6 Which account is signed in, and what that did to the legacy specs
+
+**How the kind is derived.** `auth.setup.ts` takes credentials from the environment first (the
+documented `ROOTLCO_E2E_EMAIL` / `ROOTLCO_E2E_PASSWORD` override), then from the P1-31 handoff, then
+from the bootstrap's own account file; after signing in it matches the address it actually used
+against the same two sources and writes `{ kind, email, source }` to `account-kind.json` beside the
+storage state. An address it cannot place is a hard failure there — no case defaults a kind. What
+each kind holds is generated from `OWNER_PERMISSIONS` and `TENANT_ADMINISTRATOR_ROLE` into
+`apps/web/tests/e2e/authenticated/account-manifest.json` and checked against both authorities by
+`tests/ci/p1-31-account-manifest.test.ts`. This run signed in as `org-administrator`, from the
+handoff.
+
+**The measured effect on the seven legacy specs.** The full authenticated tier reported **270
+passed, 125 failed, 6 skipped**. Every one of the 125 is in a spec that predates this phase:
+`appointments-and-receptions` 81, `isolation` 32, `administration` 6, `accessibility` 4,
+`crm-and-vehicles` 2 (`RUN-NOTES.md` §6.2). **Not one is a P1-31 case and not one is a product
+regression.** The cause was measured rather than assumed: none of the seven consults the account
+manifest, while `apps/web/playwright.config.ts:204` and `:215` give both locale projects a
+directory-wide `testMatch`, so a handoff-driven run signs those specs in as the journey's freshly
+provisioned administrator and they assert against rows only the seeded Owner-acceptance organisation
+has. The clearest instance is `administration.spec.ts:119`, which waits for a role named literally
+`acceptance_administrator`. The shape across the set is the same: 42 `ERR-RES-001` not-found and 12
+`ERR-IAM-001` forbidden answers behind visibility expectations, plus six timeouts.
+
+**No expectation was changed and no spec was skipped to obtain the P1-31 result.** The remedy was
+applied **after** this run and is therefore not part of it: each of the seven legacy specs now reads
+the account kind in a `test.beforeEach` and skips with the account named — "requires the
+owner-acceptance account; signed in as `<kind>`" — when it is not `owner-acceptance`. Not one legacy
+assertion was altered.
+
+**Seven specs were gated, and only five of them failed.** `drawer-and-restore.spec.ts` and
+`shared-ux.spec.ts` contributed **zero** failures to the 125
+(`browser/summary-from-report.json` `failuresBySpec`), and they are gated for the same STRUCTURAL
+reason as the other five rather than for a measured one: they assume the owner-acceptance account,
+and a case that happens not to touch a row that is missing is still a case asserting about the
+wrong world. Gating them on the measurement alone would have left two files that fail the next
+time they reach for one.
+
+**Where the gating is verified, and where it is not.** Statically here: the hosted job sets only
+`ROOTLCO_E2E_AUTH` and signs in the owner-acceptance account created at
+`.github/workflows/_reusable-authenticated-browser.yml:295`, so the guard's condition is false
+there and every legacy case still executes. Dynamically, only by this pull request's own hosted
+`authenticated-browser` job — no run in this record establishes it, and none is claimed to.
+
+**What changes for a local run.** A handoff-driven run now reports those seven specs as named
+skips, including the **32** `isolation.spec.ts` cases, which the hosted job continues to execute
+under the account they were written for. This section is where a reader of such a run learns why
+its isolation proof is a skip and not a silence.
+
+### 8.7 The screens
+
+Twenty-eight screenshots and `screens.json` in `…\acceptance-20260913-1247\screens\`: nine screens
+in two locales, plus the five that idle until a target is submitted captured again with the server's
+answer beside them. **30 `ok` shot records in `screens.json`, 28 of them with image files — the two
+without are the file-less signed-in navigation checks, one per locale — and 0 failures.** Taken
+against the human-facing origin on `:3100`, each asserting the document direction (`dir=rtl` for
+Arabic).
+
+### 8.8 Evidence, the handoff, and the harness under test
+
+`handoff.json` **was removed** with the harness's own `--remove-handoff` once the browser and
+screenshot halves were done, as §5.1 of the plan requires; the harness reported the removal and the
+file is gone. No credential is left on disk.
+
+| file                                         | sha256                                                             | bytes  |
+| -------------------------------------------- | ------------------------------------------------------------------ | ------ |
+| `orchestration/acceptance/p1-31-journey.mjs` | `345beb5358954bea1fa9e373286f936f3bc577641a495761095dadf291e399d9` | 162055 |
+| `orchestration/acceptance/p1-31-screens.mjs` | `d91f213afba9bf1cdf319421e447e6076043999e54e94c3304c8fd98667055cc` | 9235   |
+
+The journey's digest was recomputed after the run and matches the value the run was briefed with
+(`RUN-NOTES.md` §9). Its only destructive call is a single `rmSync`, targeting `handoff.json` under
+`--remove-handoff`.
+
+### 8.9 The runs before this one
+
+`mtz2geo1` (§2 to §6) and `mtz5ppq8` (§7.1) are left exactly as they were, with the six that preceded
+them in §7's table. Each run provisions its own pair of organisations and deletes nothing, which is
+why `org.tenants` stands at 41 and why fourteen `p31_journey_*` organisations from earlier runs are
+still present. Their codes match no backend-suite prefix, so no routine test run will remove them and
+none of them will remove anything else.
+
+### 8.10 What this section does not claim
+
+The Owner's own verdict on the production build. Any judgement of the screens' wording or layout
+beyond the fact that twenty-eight were captured with the asserted document direction. And any hosted
+result: whether the `authenticated-browser` job goes green at the head this branch produces is a fact
+only that job can establish.

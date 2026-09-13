@@ -3311,6 +3311,15 @@ for an approval nobody gave. The finding disappears because the scanner no longe
 file, and this section exists so that nobody later reads its absence as a clean bill of health for
 a file the scanner never saw.
 
+_**Amended 2026-09-13. The sentence above is preserved rather than rewritten, and the claim it makes
+is WITHDRAWN.** Relocation removed the **scanner**, not the **dataflow edge**: `js/http-to-file-access`
+is still present in the harness and would still be reported if the file were analysed, so "resolved
+by relocation" was never an accurate description of the finding's state. What the edge actually is,
+measured on the harness at the digest the corrected acceptance ran, and the disposition that replaces
+this one, are in **§ 61.5 (CC-51)**. The rest of this section stands unaltered: no entry was added to
+`dismissals`, no rule was relaxed and no path was exempted, and the harness is still held outside the
+repository on the P1-30 precedent § 52.6 cites._
+
 **What it costs, recorded rather than glossed.** A file outside the repository is not reviewed by
 CODEOWNERS, not covered by the repository gates, and not versioned with the code it drives. The
 acceptance record it produces must therefore name the driver and the commit it was run against, as
@@ -4611,3 +4620,151 @@ made, and § 48.1 forbids renumbering an identifier once allocated.
 | id        | disposition                                                                                                   | why it is recorded rather than fixed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | owner   | state          |
 | --------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- | -------------- |
 | **CC-49** | **twenty-four of the twenty-six cases this slice was scoped for were already proved, and were not rewritten** | The brief was written from a count of declarations, not from a reading of the suites. Re-measurement found every stale-`If-Match` case, every replay case and three of the four widening paths already asserted on real rows in the seam suites, plus a fifth widening pair nobody had named. Duplicating them would have added a second copy of each claim, a second place for it to drift, and no new information — so the two new suites do not restate any of it. What they add instead is the claim the brief did not ask for and SEC-003 is actually scoped over: the phase SET, probed operation by operation. The residue is recorded here so the gap between the scoped count and the delivered count is legible rather than looking like work that was skipped | QA lane | closed, stated |
+
+---
+
+## 61. The corrected acceptance re-run, the credential-kind design, and the harness re-measured (CC-51)
+
+**Slice:** `feature/p1-31-acceptance-rerun`, ownership profile `p1-31-frontend`, opened as pull
+request [#387](https://github.com/Ezzaldeen-Albitar/RootLco/pull/387). **Baseline:**
+protected `develop` **`e2908f06d283516624959713e9f3f8bfb96f379d`**. `main` `1262de74`, untouched. This slice ran an acceptance,
+recorded it, rewrote the browser half it exercised, and amends one earlier disposition. It changes
+no application source: everything it touches is a test, a manifest the tests read, an evidence
+document or this register.
+
+### 61.1 Identifier allocation
+
+Read on `develop` `e2908f06`, where this register holds sections 1 … 60 and identifiers
+CC-01 … CC-50. **Section 61 and CC-51 are the lowest free pair.** The five-PR closure plan
+pre-allocated §56 … §60 and CC-46 … CC-50, and this lane deliberately numbers above that block
+rather than into it, because it is not one of those five.
+
+**The landing order matters and is recorded rather than inferred.** This branch was written before
+its predecessors merged and took its merge-queue turn after them; every figure below was therefore
+re-taken on the merged tree rather than carried forward from the branch. Nothing is renumbered, and
+section 52 is **amended in place** — its original sentence is left visible and an italic note beside
+it withdraws the claim and names this section.
+
+### 61.2 The run — `mtzmvemj`, 2026-09-13
+
+| fact          | value                                                                                                                                                       |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| HTTP journey  | **194 steps, 0 findings**, exit code 0, verdict PASS, `auditActionsPresent` true                                                                            |
+| browser half  | **40 of 40** P1-31 cases passed — twenty in `authenticated-en`, twenty in `authenticated-ar`, zero failures                                                 |
+| screens       | **28** images and 0 failures, across 30 `ok` shot records in `screens.json`; the two without an image are the file-less signed-in navigation checks         |
+| evidence      | `orchestration\evidence\p1-31\acceptance-20260913-1247\` — outside every git working tree. **Nothing of it is committed**                                   |
+| harness       | `orchestration/acceptance/p1-31-journey.mjs`, sha256 `345beb5358954bea1fa9e373286f936f3bc577641a495761095dadf291e399d9`, **162055** bytes, recomputed after |
+| organisations | the pair this run provisioned, `p31_journey_a_mtzmvemj` and `p31_journey_b_mtzmvemj`                                                                        |
+| database      | `org.tenants` **39** before, **41** after — the two provisioned. **Nothing was deleted**: no reset, no `test:db`, no `test:backend`, no prefix cleanup      |
+| record        | `acceptance-record.md` § 8, which supersedes nothing above it — §2 … §6 stay the record of `mtz2geo1` and §7.1 that of `mtz5ppq8`                           |
+
+The verdict this run carries is **engineering**, not the phase's. No Owner Pass is recorded,
+inferred or implied, and no hosted result is claimed for it: it was driven locally against a
+production build.
+
+### 61.3 The observation point, and the class-D repair by construction
+
+§7.1 of the record named a fourth instrument defect, class **D**: the harness published its report
+figures mid-journey, and the browser compared a screen against them afterwards. Between the two the
+journey's own refusal cases open a second work order, and `work_orders_by_status` counts every
+non-deleted work order in the period with no state filter. The screen was right; the figure was
+stale.
+
+The repair is a **rule, not an adjustment**: every figure the handoff publishes is read **after the
+last write of the journey**. The mid-journey report run keeps its step labels, so the narrative is
+unbroken, and a final pass re-reads all four datasets over the same period with the same token and
+overwrites what the handoff carries. Only the overwritten value reaches the browser, and the traffic
+stays one-way — nothing a browser observed is written back.
+
+Two consequences a reader of both records needs:
+
+- the final pass appends **eighteen** steps, so **176 became 194**, and every step number after the
+  refusal cases is shifted by **+18**. **Compare the two runs by step LABEL, never by number.**
+- the case that failed is repaired by the figure, not by a weaker assertion: `work_orders_by_status`
+  answered **1** row at step **130** and **2** rows at step **177**, the second work order being the
+  difference, and 2 is what the handoff published and what the screen rendered. The group count is
+  **9** in both and is not what changed.
+
+### 61.4 The credential-kind design
+
+Two different callers reach these screens and hold different permission sets — the governed job's
+owner-acceptance account, and the organisation administrator a local acceptance provisions. The
+earlier specs accepted the surface **or** a refusal, which is a case that cannot fail for the reason
+it exists. This slice replaces that shape everywhere with **one pinned outcome per credential kind**:
+
+- **a committed manifest.** `apps/web/tests/e2e/authenticated/account-manifest.json` is generated
+  from `OWNER_PERMISSIONS` and the tenant-administrator role by
+  `scripts/dev/owner-acceptance/emit-account-manifest.mjs`, and `tests/ci/p1-31-account-manifest.test.ts`
+  checks it in both directions against those two authorities, so it cannot silently drift.
+- **a derived kind that throws.** `auth.setup.ts` matches the address it actually signed in with
+  against the same two sources and writes `{ kind, email, source }` to `account-kind.json` beside the
+  storage state. An address it cannot place is a hard failure there: no case defaults a kind.
+- **one outcome per kind.** Each unconditional case asks the manifest what the signed-in account
+  holds and pins the whole answer that account is owed — the refusal complete, with no trace of the
+  surface behind the gate, or the surface complete.
+- **the handoff-gated cases.** Fourteen of the twenty cases per locale project assert on a record the
+  journey made and carry two gates: the handoff must exist, and the browser must be signed in as the
+  administrator whose records they are. They are eleven `test(...)` declarations, two of which stand
+  inside a four-code loop. The remaining six per project are the entitlement cases, which must
+  execute everywhere and do.
+- **seven legacy specs gated by kind.** `accessibility`, `administration`,
+  `appointments-and-receptions`, `crm-and-vehicles`, `drawer-and-restore`, `isolation` and
+  `shared-ux` now skip, naming the account, when the kind is not `owner-acceptance`. **No legacy
+  assertion was altered and no expectation was weakened.** Five of them contributed the measured
+  failures of the acceptance run; the other two contributed none and are gated for the same
+  structural reason — a case that happens not to touch a missing row is still asserting about the
+  wrong world.
+
+**Where this is verified.** Statically in this pull request: the manifest test, the type and lint
+gates, and the collected case list. Dynamically only by **pull request #387's own hosted
+`authenticated-browser` job**, which sets only `ROOTLCO_E2E_AUTH` and signs in the owner-acceptance
+account, so every legacy case must still execute there. No run in the acceptance record establishes
+that, and none is claimed to.
+
+### 61.5 The two harness alerts, re-measured (and section 52's claim withdrawn)
+
+**The dataflow edge `js/http-to-file-access` is still present in the harness; relocation removed the
+scanner, not the edge.** That is the whole correction. Measured on the file itself: every filename is
+a literal on an operator-chosen directory, no identifier reaches a path (`evidenceFile` refuses
+otherwise), all writes are `'wx'`, and content passes `evidenceSafe`.
+
+**Disposition: a true positive of the rule, a false positive for path traversal and for overwrite.**
+The residuals the re-measurement did find were fixed rather than argued away — `'w'` became `'wx'`,
+and a predictable screens directory became an `mkdtemp` one. `0o700` and `0o600` are inert on
+`win32` and are **not** a mitigation on the platform this ran on; they are honoured on POSIX and are
+recorded as exactly that much.
+
+Nothing here dismisses an alert, widens an allow-list or adds a suppression:
+`.github/ci-baselines/codeql-baseline.json` keeps `maximumOpenFindings: 0` with an **empty**
+`dismissals` array, and this section adds no entry to it.
+
+### 61.6 What remains open
+
+- **The Playwright JSON reporter is conditional on `CI`.** `apps/web/playwright.config.ts:131` emits
+  a report only when `CI` is set, so a locally driven acceptance leaves no reporter artefact and its
+  pass counts are operator-recorded from the console. The failures are evidenced by the retained
+  per-failure directories and the runner's own ledger; the passes are not. Setting `CI=1` would
+  produce the artefact but also turns on `forbidOnly` and turns off `reuseExistingServer`, so an
+  acceptance operator must set it deliberately and record that they did. **This slice does not change
+  the reporter**, and the remedy is named here rather than left as a gap a later reader rediscovers.
+
+### 61.7 Dispositions
+
+| id        | finding                                                                                                                        | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **CC-51** | **section 52.6 stated that the two CodeQL findings were "resolved by RELOCATION, not by dismissal", and that is not accurate** | Re-measured on the harness itself at the digest this run used. Moving a file out of the analysed tree removes the **scanner**, not the **dataflow edge**: the path from HTTP responses to the filesystem is still there, and would still be reported if the file were analysed. What the re-measurement can say about the edge is narrower and is said in § 61.5 — literal filenames on an operator-chosen directory, no identifier reaching a path, `'wx'` on every write, `evidenceSafe` on every value, and two residuals (`'w'` and a predictable screens directory) that were **fixed** rather than dispositioned | **the earlier claim is WITHDRAWN and section 52.6 is amended in place.** The original sentence is preserved and an italic note beside it points here, so the record shows what was claimed and what replaced it. The finding is dispositioned as a true positive of the rule and a false positive for traversal and overwrite; no entry was added to `dismissals`, no threshold moved, no path exempted, and no reviewer is named for an approval nobody gave. The harness stays outside the repository on the P1-30 precedent § 52.6 cites — that part of § 52.6 stands — and this row is the reason a reader must not read its absence from the scan as a clean result |
+
+### 61.8 What this slice did NOT do
+
+- **It changed no application source.** No route, no operation, no permission code, no migration, no
+  screen. Every changed file is a test, a manifest a test reads, a document, or the acceptance
+  baseline entry that registers the fifth spec.
+- **It recorded no Owner verdict and closed no canonical task by merging.** Three matrix rows move,
+  and they move on the acceptance record's evidence under that file's own rule 2, not on this merge.
+- **It claims no hosted result.** Whether the `authenticated-browser` job goes green at the head this
+  branch produces is a fact only that job can establish.
+- **It ran no migration and no database operation**, and it deleted nothing: the acceptance was
+  read-only about every organisation that existed before it.
+- **It committed no evidence and no credential.** The handoff was removed by the harness's own
+  `--remove-handoff` once the browser and screenshot halves were done, and the trace archives were
+  deliberately not copied, because a trace carries the session cookie.
