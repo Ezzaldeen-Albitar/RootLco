@@ -3621,3 +3621,160 @@ job can establish.
 | id        | disposition                                                                                           | why it is recorded rather than fixed                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | owner             | state        |
 | --------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------- | ------------ |
 | **CC-44** | **the handoff-gated reporting cases can pass only on a run whose browser credentials are overridden** | They assert on screens that gate on `rpt.report.read`, and the account the tier signs in as by default does not hold it. §7.1's run drove them with the journey's own administrator through `ROOTLCO_E2E_EMAIL` / `ROOTLCO_E2E_PASSWORD`, which nothing in the repository states or arranges. Repairing it means changing how the tier signs in — a different decision, on a different lane — so it is measured and stated here rather than papered over by widening what the acceptance account is granted. | the Frontend lane | open, stated |
+
+---
+
+## 57. The operator runbook, the INT-084 retraction, and register hygiene (DO-002 operator half, DOC-002, DOC-001 in-repo half)
+
+### 57.1 Identifier allocation
+
+Read on `develop` `81b3bce804626353a1a7b9f4ba52f1306c8f8b6e`, where this file runs to **section 54**
+and **CC-44**, and where every section and identifier below that is settled. **This slice takes
+section 57 and CC-47** — not the next free pair, but the pair the coordinating session allocated to
+it, leaving sections 55 and 56 and identifiers CC-45 and CC-46 free for the two sibling lanes open
+at the same time. Nothing of any other lane is renumbered, in either direction: § 48.1's rule is
+that an identifier is a claim about the register at the moment it was raised.
+
+**A textual conflict with a sibling pull request at merge time is expected** and is resolved by the
+coordinator, not by this section moving. If a sibling lands section 57 first, THIS section
+renumbers itself and nothing else, on the § 52.1 precedent.
+
+### 57.2 What changed, and what was minted
+
+| changed                                                                                                                                                                                                                                                                                                                    | minted  |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| 1 new document, [`operator-runbook.md`](./operator-runbook.md) — the four merge-time operator acts in the order that is load-bearing, each with preconditions, the exact command, a verification query, a rollback criterion and a statement of what done looks like                                                       | nothing |
+| 1 table cell in `docs/product/owner-workflow-requirements.md` and 1 in `docs/phase-1/phase-1-27/finding-phase-disposition.md` — the P1-27-INT-084 overstatement retracted IN PLACE, both edited within their existing lines so neither file's pinned line count in `docs/phase-1/phase-1-27/deliverable-manifest.md` moves | nothing |
+| this section: the register's first index of open dispositions, the CC-40 note, and the routing record                                                                                                                                                                                                                      | nothing |
+| 3 rows of [`task-matrix.md`](./task-matrix.md) — DO-002, DOC-002 and DOC-001                                                                                                                                                                                                                                               | nothing |
+
+**No product code, route, permission, operation, migration, seed, audit action, gate, allow-list,
+fixture or message catalogue changed.** This slice is documentation only.
+
+### 57.3 Dispositions
+
+| id           | finding                                                                                                                           | measured                                                                                                                                                                                                                                                                                          | disposition                                                                                                                                                                                                                                                                                      | owner / slice | state              |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------- | ------------------ |
+| **CC-47**    | **this register carried no index of its own open dispositions, and every disposition is filed as "recorded" rather than "fixed"** | 64 distinct identifiers exist in this file, spread across the slice records' own disposition tables and, in two cases, across prose bullets with no state cell at all. Counted at this head: **25 open, 35 closed or settled, and 4 that state no disposition anywhere** — § 57.4 names every one | **recorded and indexed, not re-adjudicated.** § 57.4 is a derived index and changes no state. "Recorded" is the honest verb for most of these: a disposition that names a remedy a later slice owes is not a fix, and an index that called it one would be the overstatement it exists to expose | this slice    | open, indexed      |
+| **CC-37(c)** | the tenant-administrator bundle backfill has a prerequisite no repository record named (§ 49.3, line 2750)                        | § 49.3's own remedy sentence: "the operator runbook that DO-001 and DO-002 both owe and that does not exist; **the ordering must be in it**"                                                                                                                                                      | **closed by this slice.** [`operator-runbook.md`](./operator-runbook.md) § 2 states the ordering and § 3 states the prerequisite, its exit code 5, the script line that raises it and its verbatim refusal text. § 49.3's row is left as written — this is a closure, not a rewrite              | this slice    | **closed in § 57** |
+| **CC-16**    | organisations provisioned before the P-10 widening cannot administer warranty policies (§ 29.2, line 634)                         | The register named an operator act after merge that no runbook carried. A runbook now carries it                                                                                                                                                                                                  | **still open, and deliberately.** A runbook is not a run. CC-16 closes when the act has been performed on the environments it is about, and the runbook's § 1 says how few of those there are                                                                                                    | a later act   | open, unchanged    |
+| **CC-20**    | organisations provisioned before the P-10 and P-11 widenings hold neither new code (§ 34.2, line 815)                             | The same act, the same runbook, the same distinction                                                                                                                                                                                                                                              | **still open**, for CC-16's reason exactly                                                                                                                                                                                                                                                       | a later act   | open, unchanged    |
+
+### 57.4 Index of open dispositions — derived at `81b3bce8`, not transcribed
+
+Every row below was read out of this file at this head. **This index changes no state**; where a
+row's own state cell is ambiguous, the ambiguity is reported rather than resolved.
+
+**Open — 25**
+
+| id           | where             | one line                                                                                  |
+| ------------ | ----------------- | ----------------------------------------------------------------------------------------- |
+| **CC-01**    | § 3, line 66      | `wty.policy.manage` excluded from the tenant administrator bundle                         |
+| **CC-02**    | § 3, line 67      | `rpt.report.configure` excluded from the tenant administrator bundle                      |
+| **CC-04**    | § 3, line 69      | `rpt.export` excluded from the bundle although shipped operations declare it              |
+| **CC-06**    | § 8, line 145     | the checklist-results read does not close P1-27-INT-088                                   |
+| **CC-10**    | § 13, line 230    | the warranty list does not close the status-history table                                 |
+| **CC-12**    | § 22, line 420    | two Backend docblocks still say navigation names `sal.delivery.read`                      |
+| **CC-16**    | § 29.2, line 634  | organisations provisioned before P-10 cannot administer warranty policies                 |
+| **CC-20**    | § 34.2, line 815  | organisations provisioned before the P-10/P-11 widenings hold neither new code            |
+| **CC-23**    | § 37.2, line 1076 | no index was added for the list ordering, and no migration was written                    |
+| **CC-24**    | § 39.2, line 1297 | no batch variant of the four fact sources, so a page of N costs about 5N round trips      |
+| **CC-27**    | § 40.2, line 1402 | compound: (a) approved 2026-09-10 apart from the source column, **(b) open**              |
+| **CC-27(b)** | § 40.2, line 1402 | the open half of CC-27, carried in CC-27's own state cell rather than in a row of its own |
+| **CC-29**    | § 41.2, line 1549 | four recommendations remain pending                                                       |
+| **CC-30**    | § 42.3, line 1750 | an operator without `sal.finance.view` is refused the whole queue                         |
+| **CC-31**    | § 43.3, line 1825 | FE-009 ships partial — a vehicle-filtered list, no per-record transition ledger           |
+| **CC-32**    | § 44.2, line 1939 | the printed sheet carries a reference where a person's name belongs                       |
+| **CC-34**    | § 46.2, line 2223 | D-4 names a transfer whose distinct meaning the ledger cannot express                     |
+| **CC-37(a)** | § 49.3, line 2748 | eleven `wty.`/`rpt.` writes are held to no payload-mirror gate                            |
+| **CC-37(b)** | § 49.3, line 2749 | the seven report-configuration writes have no consumer outside a generated manifest       |
+| **CC-38**    | § 50.3, line 2907 | amounts, quantities and durations display as the server's raw exact strings               |
+| **CC-38(a)** | § 50.3, line 2908 | two of three drill-through targets have no screen in this application                     |
+| **CC-41**    | § 53.3, line 3403 | the overview is four report runs, not one summary read                                    |
+| **CC-42**    | § 52.4, line 3248 | open, recorded, **PROVISIONAL** — the harness lane is unmerged                            |
+| **CC-43**    | § 54.4, line 3524 | **closed in part; one cause open, stated** — the browser correction pass of § 54.6        |
+| **CC-44**    | § 54.7, line 3623 | the handoff-gated reporting cases pass only with overridden browser credentials           |
+| **CC-47**    | § 57.3            | this register carried no index of its open dispositions                                   |
+
+**States no disposition at all — 4.** These are not open and not closed; they are unstated, and
+that is the finding.
+
+| id        | where             | why it states nothing                                                                                                                  |
+| --------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **CC-22** | § 36.3, line 988  | its state cell reads `implemented, pending merge`. **That wording is stale**: § 36.1 records the slice merged as PR #360 at section 36 |
+| **CC-25** | § 38.3, line 1219 | a prose bullet, not a table row, so it has no state cell. Its text withholds the Start control pending a contract, which reads as open |
+| **CC-26** | § 38.3, line 1220 | a prose bullet for the same reason. Its text records a new backend prerequisite, which reads as open                                   |
+| **CC-40** | nowhere           | **allocated and never used.** See § 57.5                                                                                               |
+
+**Closed or settled — 35.** CC-03, CC-05, CC-07, CC-08, CC-09, CC-11, CC-13, CC-14, CC-15, CC-17,
+CC-18, CC-19, CC-21, CC-27(c), CC-28, CC-29a, CC-29b, CC-33, CC-33(a), CC-33(b), CC-34(a),
+CC-34(b), CC-34(c), CC-35, CC-35(a), CC-35(b), CC-35(c), CC-36, CC-37, **CC-37(c)** (closed by
+§ 57.3 above), CC-39, CC-39(a), CC-39(b), CC-39(c), CC-41(a).
+
+**Arithmetic, so a reader can check it rather than trust it.** This file carried **64** distinct
+identifiers before this section. **25 open + 4 stating nothing + 35 closed or settled = 64.** The
+partition is exact and no identifier is counted twice: CC-27, CC-27(b) and CC-27(c) are three
+separate entries and are filed separately, which is why CC-27 appears under open on the strength
+of its (b) half while CC-27(c) appears under closed. **CC-47**, raised by § 57.3, is the
+sixty-fifth and is not inside that arithmetic.
+
+### 57.5 CC-40 — allocated, never used, and a permanent hole
+
+**Verified at this head before being written.**
+
+- **It was allocated.** § 52.1 (line 3091) records `section 53, CC-39, CC-40, CC-41` as belonging
+  to `feature/p1-31-operational-overview`, settled on `develop` as PR #376. § 53.1 (line 3366)
+  records it instead as the acceptance-harness lane's, claiming section 52. **Both lanes claimed
+  it**, and § 52.1 says so in as many words.
+- **The collision was resolved by the harness lane moving.** § 52.5 (line 3271): "When
+  `feature/p1-31-operational-overview` merged as #376 and settled the **CC-40** both branches had
+  claimed, THIS slice moved to **CC-42** — its own identifier."
+- **The lane that kept it never used it.** § 53.3's disposition table carries exactly two rows,
+  **CC-41** and **CC-41(a)** (lines 3403 and 3404). There is no CC-40 row in § 53 or anywhere else
+  in this file — a search for `CC-40` returns only allocation-table rows and sentences about the
+  collision, and not one finding.
+
+**So CC-40 names no finding and never will.** Under § 48.1 an identifier is a claim about the
+register at the moment it was raised and is never renumbered, which means the hole is permanent by
+the same rule that protects every other number here. **No finding is invented to fill it**, and a
+later slice that reaches for the next free identifier must skip it.
+
+**One further disagreement, recorded and not resolved.** § 52.1's line 3091 also attributes
+**CC-39** to the overview lane, while § 51.1 (lines 2968–2970) records the delivery-start-selector
+lane taking section 51 and CC-39, and § 51.3 disposes of CC-39, CC-39(a), CC-39(b) and CC-39(c).
+CC-39 is therefore used, and used by section 51. The line-3091 attribution is a snapshot taken
+mid-collision and is left standing as written; **nothing here renumbers it.**
+
+### 57.6 Routing record
+
+The chapter requires the controlled record to be routed to a named approval owner.
+
+| question                                        | answer                                                                                                                                                                                                       |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Where has this register been sent for approval? | **Routed to nobody as of 2026-09-13.**                                                                                                                                                                       |
+| By whom, and when?                              | No routing event exists. No recipient is named, because naming one would be inventing one                                                                                                                    |
+| Has any approval been granted on it?            | **No.** Nothing in this file is approved, and no section claims to be                                                                                                                                        |
+| What has been decided by the Owner?             | Individual decisions, recorded in their own dated files — `owner-decisions-2026-09-09.md`, `-09-10.md` and `-09-12.md`. **A decision on a question this register raised is not an approval of the register** |
+
+[`security-and-qa-evidence.md`](./security-and-qa-evidence.md) § 13 states the same thing about
+itself: "This version has been routed to nobody and claims no approval." **This row is that fact
+recorded in the register it is about**, so a reader of the register does not have to find it
+somewhere else.
+
+### 57.7 What this slice did NOT do, and what is not claimed
+
+- **It performed none of the acts it documents.** No migration was applied, no seed was applied,
+  no backfill was run, and no database was connected to from this branch. The runbook is a
+  description, and § 1 of it says exactly what the one recorded performance does and does not prove.
+- **It closed neither CC-16 nor CC-20.** Both close on a run, not on a document.
+- **It did not touch the Owner's document.** The fourth A0-named DOC-001 correction —
+  `OWR-2026-09-06-G-10`'s evidence line naming `sal.deliveries.delivering_employee_id` where the
+  table is `sal.delivery_records` — is in `docs/product/owner-requirements-2026-09-06.md` at line
+  1501, in a requirement whose status is **Undecided**. **Changing an Owner requirement is the
+  Owner's act**, and it is recorded as owed rather than performed.
+- **It re-adjudicated nothing.** § 57.4 reports each disposition's state as that disposition
+  states it; where a state cell is stale or missing, that is reported, not corrected.
+- **It moved no other lane's row.** Only DO-002, DOC-002 and DOC-001 moved in the task matrix, and
+  none of the three moved to `end-to-end verified` — rule 2 forbids it, and documentary evidence
+  never earns that state.
+- **No hosted run, no database tier, no browser result and no acceptance result is claimed.**
