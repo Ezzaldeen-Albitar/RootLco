@@ -156,7 +156,20 @@ test.describe('P1-31 delivery writes, over handovers the acceptance journey left
     await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
 
     const denied = page.getByText(say(locale, 'state.denied.title'));
-    const absent = page.getByText(say(locale, 'state.notFound.title'));
+    /*
+     * The not-found state is observed at its HEADING, matched whole, and the same
+     * way in both locales. `NotFoundState` draws the title in the state shell's
+     * `<h2>` and the body copy under it — and in Arabic the body copy contains the
+     * title as a substring ("هذه الصفحة غير موجودة…" against "غير موجود"), which a
+     * substring text locator matches twice. English does not collide, so a text
+     * locator was one language away from being ambiguous while reading as though it
+     * were the same observation in both. The expected string is unchanged; only
+     * where it is read from is.
+     */
+    const absent = page.getByRole('heading', {
+      name: say(locale, 'state.notFound.title'),
+      exact: true,
+    });
     if (mayView) {
       await expect(
         absent,
