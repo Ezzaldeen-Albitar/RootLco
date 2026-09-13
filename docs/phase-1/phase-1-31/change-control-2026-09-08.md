@@ -3957,9 +3957,9 @@ somewhere else.
 **Slice:** `feature/p1-31-write-shape-gate`, branched from protected `develop`
 `d517a5fc70b8d851edbd81c374c4ce05e92d7418` — the head carrying pull request **#381**, the phase
 closure record. The work is committed **on the unmerged branch `feature/p1-31-write-shape-gate`**
-and is not on `develop`; **the pull request is opened at this lane's merge-queue turn, when the unit
-and web runs are re-recorded**. Until then no pull request exists and none is claimed. It has **no
-hosted result**. Its intended ownership profile is `p1-31-frontend`; section 58.6 records what
+and was not on `develop` when this section was written; **the pull request was opened at this lane's
+merge-queue turn, when the unit and web runs were re-recorded** — it is **#384**, opened against
+`develop` `ea3b7fc0`. It has **no hosted result yet**: that pull request's own run is what produces one. Its intended ownership profile is `p1-31-frontend`; section 58.6 records what
 resolves locally instead. Its application-source footprint is **two files in `apps/web`**, both in
 the warranty feature — the request-body type the generation adapter takes, extracted so the gate can
 compare it. Everything else is tooling, tests and phase records.
@@ -4096,15 +4096,16 @@ rather than left out.
 | `npm run validate:plain-language` · `npm run validate:encoding`           | the catalogues, and the new files as UTF-8 without a BOM                  |
 | `npm run validate:generated-artifacts`                                    | the regenerated P1-27 evidence manifest                                   |
 
-**Two commands are NOT green at this head and neither is claimed to be.**
+**Two commands were NOT green at the head above, and both are green at the merge-queue head.**
 
-- `npm run validate:p1-27-closing-values` **exits 1**: the recorded `unit` and `web` runs were taken
-  at `e5c52efd`, and this branch changes executable paths under them, so both read `RUN_RECORD_STALE`
-  and the unit record's file count (122) disagrees with the tree (124). Nothing is wrong with the
-  runs; they are stale by construction and are **re-recorded at this lane's merge-queue turn**.
-- `npm run verify:policies` therefore **cannot pass** at this head, because that command is one of
-  its edges; the aggregate was not run to a result here and none is quoted. Every other gate in it,
-  including `validate:p1-31-write-shape`, passes when run on its own.
+- `npm run validate:p1-27-closing-values` **exited 1** there: the recorded `unit` and `web` runs were
+  taken at `e5c52efd`, and this branch changes executable paths under them, so both read
+  `RUN_RECORD_STALE` and the unit record's file count (122) disagreed with the tree (124). Nothing was
+  wrong with the runs; they were stale by construction and were **re-recorded at this lane's
+  merge-queue turn**, on the merge with `develop` `ea3b7fc0`, where the command reports 0 problems.
+- `npm run verify:policies` **could not pass** at the earlier head, because that command is one of its
+  edges; it was not run to a result there and no result was quoted. On the merge-queue head, with the
+  record fresh, the aggregate exits 0.
 
 `npm run validate:phase-ownership` resolves this branch to profile **`p1-26-frontend`** locally — the
 known local false-profile trap, where the profile is resolved from a ref the local checkout does not
