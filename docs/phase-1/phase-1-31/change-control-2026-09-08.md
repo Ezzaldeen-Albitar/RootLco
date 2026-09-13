@@ -3621,3 +3621,133 @@ job can establish.
 | id        | disposition                                                                                           | why it is recorded rather than fixed                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | owner             | state        |
 | --------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------- | ------------ |
 | **CC-44** | **the handoff-gated reporting cases can pass only on a run whose browser credentials are overridden** | They assert on screens that gate on `rpt.report.read`, and the account the tier signs in as by default does not hold it. §7.1's run drove them with the journey's own administrator through `ROOTLCO_E2E_EMAIL` / `ROOTLCO_E2E_PASSWORD`, which nothing in the repository states or arranges. Repairing it means changing how the tier signs in — a different decision, on a different lane — so it is measured and stated here rather than papered over by widening what the acceptance account is granted. | the Frontend lane | open, stated |
+
+## 55. The phase closure record and the gate P1-G31 inputs (CC-45)
+
+**Slice:** `feature/p1-31-closure-record`, ownership profile `p1-31-frontend` (docs bucket),
+documentation only. **Baseline:** protected `develop`
+**`81b3bce804626353a1a7b9f4ba52f1306c8f8b6e`** (the merge of PR #380, the acceptance record).
+`main` `1262de74`, untouched.
+
+### 55.1 Identifier allocation
+
+Read on `develop` `81b3bce8`, where this register holds sections 1 … 54 and identifiers
+CC-01 … CC-44. **Section 55 and CC-45 are the lowest free pair**, and no lower pair is held by an
+unmerged lane: the only open pull request on this repository that touches `docs/phase-1` is #372,
+which touches `docs/phase-1/phase-1-27` and claims no P1-31 section or identifier. Nothing here is
+taken from another lane and nothing is renumbered.
+
+One identifier below this pair has no disposition row anywhere: **CC-40**. It was claimed by two
+lanes; the operational overview settled the range as #376 and the acceptance-harness lane moved to
+**CC-42** by this register's own reconciliation rule, so the sequence carries a hole at 40 rather
+than a finding. It is stated so that a reader does not go looking for a row that was never written.
+
+### 55.2 What was delivered
+
+| file                                                   | change                                                                                                                                                     |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/phase-1/phase-1-31/closure-record.md`            | **new** — scope and boundary, the 29 canonical tasks reconciled to evidence, the Definition of Done bullet by bullet, the four gate inputs, the open items |
+| `docs/phase-1/phase-1-31/change-control-2026-09-08.md` | this section                                                                                                                                               |
+
+The closure record is an **input to gate P1-G31, not the gate's decision**. Its § 4 carries the
+approval owner's verdict field and leaves it **empty**, with the statement that only the approval
+owner named in Field 35 may fill it. No verdict is recorded, inferred or implied, and the chapter's
+status for all twenty-nine tasks remains `Planned`.
+
+### 55.3 Dispositions
+
+| id        | finding                                                                                                               | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| --------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CC-45** | **four statements in `task-matrix.md` were measured before their pull requests merged, and are older than this head** | Read off the first-parent history of `develop` `81b3bce8`. (a) FE-010 and FE-016 carry the State `in open PR` for #376, which **merged at `72782f48`**. (b) The QA-005 row states that "the acceptance record does not exist and the harness is in OPEN PR #378" — #378 **merged at `6005cfa4`** and the record **merged at `81b3bce8`**. (c) The prerequisite table records P-11's engine as "in open PR #364" — #364 **merged at `c1b1a8cd`**, with the three further datasets at `6b3c6c45`. (d) The same table records P-17 as "implemented, not merged" — #370 **merged at `811e9891`**, which `a0-preflight.md` already states. The FE-002 row's note that the Start slice "is open as pull request #377" is stale in the same way: #377 merged at `9b109f63`. | **recorded, not corrected.** A State is the matrix's own to move, and it moves on evidence rather than on a merge — rule 1 of that file is that a merge closes no canonical task. The closure record is authorised to add a proving artefact; it quotes the matrix's values as they stand and names this row beside them. Moving FE-010 and FE-016 out of `in open PR` would be a state change this documentation-only slice has no evidence to make and no authority to assert. The lane that next measures the matrix owns it. |
+
+### 55.4 What this slice did NOT do
+
+- **It did not close the phase, and it recorded no verdict.** The gate's fourth condition is the
+  approval owner's and is left empty.
+- **It moved no State in `task-matrix.md`** and changed no chapter status. The matrix was not edited
+  at all: no row's proving artefact needed to point at the closure record, because the record proves
+  no task — it summarises what each task's own artefact already proves.
+- **It ran no test tier, no build, no migration and no database operation**, and claims no hosted
+  result. The gates it ran are static checkers, named in the pull request.
+- **It changed no source file, no gate, no allow-list and no fixture.** Documentation only.
+- **It did not re-quote a figure a generated register owns.** Every count in the closure record is
+  either read on this head or quoted with the phase record it comes from.
+
+---
+
+## 56. Re-measuring the assurance evidence index at the acceptance head (SEC-001 … DOC-002)
+
+**Slice:** `feature/p1-31-assurance-index-remeasure`, ownership profile `p1-31-frontend` (resolved
+through `decideOwnershipRun` in `scripts/ci/check-phase-ownership.mjs` before the branch was cut; the
+profile allows `docs`, and this slice changes nothing else).
+**Baseline:** protected `develop` **`81b3bce804626353a1a7b9f4ba52f1306c8f8b6e`** (the merge of PR
+#380, the acceptance record). **Documentation only** — no source, no test, no gate, no fixture, no
+migration and no configuration file is touched, so no tier is recordable from it and none is claimed.
+
+**Why it exists.** [`security-and-qa-evidence.md`](./security-and-qa-evidence.md) is the phase's
+assurance index for the thirteen non-Frontend tasks, and it declared itself **measured at
+`9b109f63`** — before #378 and #380 merged. Its § 9 stated in terms that "no P1-31 acceptance record
+exists, and no P1-31 acceptance run has happened". Both halves of that are now false: the run
+happened on 2026-09-12/13 and [`acceptance-record.md`](./acceptance-record.md) is on `develop`. An
+index that reports evidence as missing when it exists makes tasks look unevidenced, which is the
+same defect class this register exists to catch, so the index was re-measured at the new head rather
+than patched at the one sentence.
+
+### 56.1 Identifier allocation
+
+Read on `develop` `81b3bce8`, where the register runs to **section 54** and **CC-44**, with no gap
+in either sequence. The next free pair is section 55 with CC-45, and **this slice does not take it**:
+section 55 / CC-45 is claimed by a sibling lane not on `develop`, recording that the task matrix's
+header declared a stale measurement commit. **This slice takes section 56 and CC-46**, the next pair
+above that claim, and touches no other lane's numbering. § 48.1 applies unchanged — an identifier is
+a claim about the register at the moment it was raised, and is never renumbered to follow heading
+order. A textual conflict with a sibling lane at merge time is expected and is resolved by whoever
+integrates.
+
+_(True when written, and the expected thing then happened. The sibling lane merged as **#381** at
+`develop` `d517a5fc`, and its section 55 and CC-45 are the pair immediately above this one in this
+file. Both allocations stand as raised; neither was renumbered.)_
+
+### 56.2 What this slice changed
+
+| file                                                   | change                                                                                                                                                                                                                                       |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/phase-1/phase-1-31/security-and-qa-evidence.md`  | re-measured at `81b3bce8`; § 9 rewritten against the merged acceptance record; § 1.1 added (the code x operation x catalogue reconciliation); §§ 2, 3, 6, 7 and 8 restated; two figures corrected in place; § 15 added for this allocation   |
+| `docs/phase-1/phase-1-31/task-matrix.md`               | the header's measurement commit, and five rows — SEC-001, SEC-003, QA-002, QA-003, QA-005 — each with an artefact citation. SEC-003 moves `not started` → `phase-level incomplete`; the other four keep their state. No other row is touched |
+| `docs/phase-1/phase-1-31/change-control-2026-09-08.md` | this section                                                                                                                                                                                                                                 |
+
+### 56.3 What moved, and the rule that stopped it moving further
+
+**Rule 2 of the matrix's state vocabulary binds this slice as it binds every other:** nothing reaches
+`end-to-end verified` without an acceptance record, **and documentary evidence alone never earns that
+state**. One row moves here — **SEC-003, `not started` → `phase-level incomplete`** — and it moves on
+the revision the index's own previous version invited in writing once the delivery, warranty and
+report-configuration write paths had merged. It moves one step, not two: the index is a document, and
+a document cannot promote a row past the state its artefacts support. The other four rows keep the
+state they had and gain a citation that is true.
+
+**What SEC-003 rests on, named so nothing is double-counted:** client-asserted scope is covered by
+`validate:p1-31-access` (16 route pages across 9 owned segments, 0 violations) and by **CC-39(a)**'s
+pinning test; cross-tenant is covered by the `tests/db/*` suites for delivery, warranty, reporting,
+provisioning and employees, and by acceptance steps 157, 158, 159 and 161; permission refusal is
+covered by acceptance steps 174, 175 and 176. **Privilege WIDENING across the phase as a set is
+covered by nothing**, and is owed to a separate pull request — a new
+`tests/backend/p1-31-privilege-escalation.test.ts` that is not on this head and is not written here.
+
+### 56.4 Dispositions
+
+| id           | finding                                                                                   | disposition                                                                                                                                                                                                                                                                                                                                                                                 | owner / slice | state            |
+| ------------ | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ---------------- |
+| **CC-46**    | the assurance index asserted that no P1-31 acceptance record exists, after one had merged | **re-measured at `81b3bce8` and corrected in place**, with every figure re-derived rather than carried forward. The record's own verdict, **PARTIAL**, is quoted and not upgraded, and the index moves no row on documentary evidence alone                                                                                                                                                 | this slice    | closed, recorded |
+| **CC-46(a)** | SEC-003 sat at `not started` after the evidence its state depended on had merged          | **moved to `phase-level incomplete`** on § 3.1's four-part breakdown; the one uncovered part is named and routed to a separate pull request rather than absorbed                                                                                                                                                                                                                            | this slice    | closed, recorded |
+| **CC-46(b)** | the twelve P1-31 permission codes had no phase-level reconciliation against the catalogue | **§ 1.1 of the index publishes it** — 12 codes, 45 operations, 52 references, each code resolving to exactly one row of the 121-code catalogue — derived from the parsed `defineOperation` output of `check-permission-parity.mjs`. The gate proves no code is fictitious and publishes no per-phase breakdown. The reconciliation is a mapping and explicitly not a least-privilege review | this slice    | closed, recorded |
+| **CC-46(c)** | the OpenAPI shortfall was recorded for `sal.delivery-*` and is wider than that            | **re-measured: all 45 P1-31 operations publish a bare-object success schema** in `docs/api/openapi.v1.json`. A0 classified the shortfall as chapter-level and it stays there; the extent is recorded so the next reader does not measure a subset. The generated file was **not** edited                                                                                                    | a later slice | open, recorded   |
+| **CC-46(d)** | two figures in the index's second version did not reproduce at the new head               | **corrected in place, with what they replace named**: the three web feature trees hold 24, 8 and 10 TypeScript files rather than fifteen, six and six, and no slice touched those trees between the two heads; and the phase's own document counts now add up to the directory. A figure that does not reproduce is corrected, never restated                                               | this slice    | closed, recorded |
+
+**What was verified, and what is not claimed.** Locally and without the stack: the changed-file
+ownership gate in both its forms, the documentation count and citation-anchor gates, root Prettier
+over `docs/`, and the static checkers whose report lines the index quotes —
+`validate:p1-31-access`, `check-permission-parity.mjs`, `validate:exact-money`,
+`check-p1-30-payload-parity.mjs` and `check-p1-28-version-sourcing.mjs` — each re-run on this head so
+that no figure is transcribed. **No database tier was run, no `test:db` or `test:backend`, and no
+hosted result is claimed.**
