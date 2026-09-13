@@ -4150,3 +4150,170 @@ resolution is **verified only by the hosted run**; no local result stands for it
   mirror this slice adds, `WarrantyGenerateBody`, is the type an EXISTING adapter with an EXISTING
   consumer already had inline; nothing was written for an operation no screen calls.
 - **No other task-matrix row was touched**, and no other change-control identifier was used.
+
+## 60. The refused-download negative and the phase coverage record — **PROVISIONAL** (SEC-002 file-access half, QA-001)
+
+**Slice:** `feature/p1-31-refused-download-and-coverage`, intended ownership profile
+`p1-31-frontend`. **Baseline:** protected `develop` **`af924cab60a9b51187257b2a345e2ff49de73e87`**,
+the head carrying pull request #384 (section 58, the write-shape gate). The branch was written on
+`d517a5fc` — the head carrying #381 — and merged that baseline at its merge-queue turn; every figure
+in both artefacts was re-derived on the merged tree rather than carried over. `main` `1262de74`,
+untouched. Two commits of content, one merge, one test file and one new record: **no application
+source, no gate, no allow-list, no baseline and no migration changed.**
+
+**Authority:** the SEC-002 and QA-001 rows of [`task-matrix.md`](./task-matrix.md), and
+[`security-and-qa-evidence.md`](./security-and-qa-evidence.md) § 2 and § 5 — § 2 leaves the
+file-access half of SEC-002 with no negative behind it, and § 5 records in its own words that "no
+phase-level coverage record exists".
+
+### 60.1 Identifier allocation — PROVISIONAL, dated 2026-09-13 at `develop` `af924cab`
+
+Read on the merged tree. This register holds sections 1 … 58 and identifiers CC-01 … CC-48; section
+58 and CC-48 arrived with #384 in the merge above. **Section 59 and CC-49 are NOT free and are not
+taken here**: the closure plan pre-allocated them to the escalation lane, which is unmerged, and
+section 48.1's rule is that an identifier is allocated when its finding is raised and is **never
+renumbered** to follow heading order. So this slice keeps the pair the closure plan allocated to it,
+**section 60 and CC-50**, and renumbers nothing.
+
+**This section therefore lands out of heading order, before section 59, and that is the intended
+outcome rather than a defect.** A reader arriving at a register that runs 55, 56, 57, 58, 60 should
+expect section 59 and CC-49 to arrive later from the escalation lane, not conclude that a number was
+skipped. This file already carries one genuine hole, CC-40, recorded at section 55.1; the gap at 59
+is a different thing and is stated here so the two are not confused.
+
+### 60.2 What was delivered
+
+| file                                                      | change                                                                                                                                                |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/tests/delivery-signature-refusal.dom.test.tsx`  | **new** — the refused-download negative for the handover signature ledger and the printable sheet, **11 declared cases**                              |
+| `docs/phase-1/phase-1-31/coverage-record.md`              | **new** — the phase-level component and unit coverage record for QA-001                                                                               |
+| `docs/phase-1/phase-1-27/deliverable-manifest.md`         | the derived file-count markers and their visible cells re-derived on the merged tree; the local-run-ledger line counts re-derived after the re-record |
+| `docs/phase-1/phase-1-27/evidence/local-run-ledger.json`  | the unit and web tiers re-recorded at this head, by `check-p1-27-closing-values.mjs --record`                                                         |
+| `docs/phase-1/phase-1-27/evidence/evidence-manifest.json` | regenerated from the merged tree                                                                                                                      |
+| `docs/phase-1/phase-1-31/task-matrix.md`                  | the SEC-002 and QA-001 rows moved, on the evidence below and no further                                                                               |
+| `docs/phase-1/phase-1-31/change-control-2026-09-08.md`    | this section                                                                                                                                          |
+
+#### The negative — what it actually proves
+
+The suite renders `DeliveryDetailScreen` and the printable handover sheet with the signature-ledger
+read **refused**, and asserts what the screen does with a refusal it cannot recover from:
+
+- the shared permissions message is rendered **with the reference the backend logged**, so an
+  operator can quote it, and the refusal is never drawn as an empty ledger or swallowed into a blank
+  surface;
+- **no further page is requested** once the first read was refused;
+- the rest of the handover stays readable, and a write control the caller's own permission codes
+  grant is still offered — a refused read does not silently disable an unrelated command;
+- **nothing on the screen would dereference a stored signature document**: zero links in the region,
+  and neither the signature document version id nor the receiver's identity-evidence document
+  version id appears in the rendered text. `shared.attachment-download-authorize` is a
+  security-class command, and a speculative affordance would write an audit record for a download
+  nobody performed;
+- the same statement is asserted in **Arabic**;
+- the printable sheet says the part could not be read, with its reference, and still composes and
+  offers the rest of the sheet.
+
+**The eleventh case is the control, and it is the reason the negatives mean anything.** Ten of the
+cases assert `not.toContain` over a document reference; on a screen that had simply rendered nothing
+those assertions pass for the wrong reason. So one case drives the ledger read to **succeed**,
+proves the signature is on the screen as an event and the receiver's evidence as prose, and then
+asserts that **both** document version ids are still withheld and no link exists — with the
+adapter's answer demonstrably carrying them. Without that case the suite would be a false negative
+of exactly the shape this project has shipped before.
+
+**What it does not prove.** The adapter is mocked, as every DOM suite in this repository mocks it.
+The suite proves the screen's behaviour given a refusal; it does not prove the API refused, that the
+transport carried the refusal, or that the stored document is unreachable by any other route. No
+end-to-end claim is made and none is implied.
+
+#### The coverage record — what it contains
+
+`coverage-record.md` is the cross-screen artefact QA-001 was missing. It states the method for every
+figure before the figures, and holds:
+
+- **a per-suite table of the twelve suites on this surface, 407 declared cases**, re-derived on the
+  merged tree with the same declaration regex `tests/ci/web-test-floor.test.ts` uses. Because that
+  regex counts an `it.each` table as one declaration, and six of the twelve use one, **407 is a
+  floor and not the executed total** — the record says so where the number appears;
+- **the reconciliation against § 5 of the assurance index**: the index publishes 396 across eleven
+  files at `81b3bce8`, and the two agree exactly — the eleven are these twelve less the new suite,
+  and `396 + 11 = 407`, file by file;
+- **five holes, stated as holes**: the checklist-template administration screen that does not exist
+  (FE-004's remaining half); that **no P1-31 feature code is inside the coverage instrument at
+  all**, so no coverage percentage exists for any of it; that the dashboard route tier the P1-31
+  pages sit in is under its own floor and exempt from it; the mount point of the start-a-handover
+  panel that no suite renders; and what the suites deliberately do not assert;
+- **the limits**, in § 1 and again in § 6: component and unit only, every adapter mocked, no
+  end-to-end claim, and the record measures the phase's own surfaces rather than the web tier.
+
+Its § 6 summary answers five statements and answers **four of them "no"**. The record therefore
+closes the "no phase-level coverage record exists" item and closes nothing else.
+
+### 60.3 What is PENDING, and where the numbers come from
+
+**Seven figures in the coverage record are written as `pending the web tier run at this lane's queue
+turn` and are deliberately left unfilled by this commit.** They are: the instrumented-file counts
+per feature tree (§ 4, H-2), the dashboard route tier's own measurement (§ 4, H-3), the executed
+case total with its pass/skip/todo counts and the gate verdict (§ 5), and the four `measured`
+cells — lines, statements, functions, branches — beside the committed floors in § 5's table. Two
+further occurrences of the same phrase in the front matter and the method table are the statement
+that they are pending, not figures themselves.
+
+**They are filled from THIS pull request's own hosted `evidence-web-quality` artefact, after that
+run completes, and from nothing else.** The reason is recorded in the baseline and repeated here: a
+local coverage measurement is weaker than a hosted one and may not be written into a record or a
+baseline as though it were the same thing. A local run was taken at this queue turn to establish
+that the gate executes and to see its verdict before the pull request was opened; **its figures are
+uncitable and appear in no committed file** — not in the coverage record, not in this section, and
+not in `.github/ci-baselines/`, none of which this slice edited.
+
+**Consequently this section does not claim the coverage gate passed**, and the coverage record makes
+no assertion about any percentage. The record's own § 5 states the standing tooling fact behind
+that: `scripts/ci/coverage-gate.mjs` is named by no npm script, so a green local aggregate is not
+evidence the declared floors hold, and none is cited as though it were.
+
+### 60.4 What this closes for SEC-002, and what it does not
+
+SEC-002 has two halves, and they are now in different states.
+
+- **The export half was already decided and is not touched here.** D-6 settles it: `rpt.export` is
+  **withheld** and no audit export is provided. An approved withholding is a decided posture, not an
+  open one, and this slice neither revisits nor re-states it as a gap.
+- **The file-access half now has a negative behind it.** § 2 of the assurance index recorded the
+  posture in prose; nothing executed asserted it. The suite above is that assertion, at the
+  component layer, in both text directions, with a control that stops it passing vacuously.
+
+**That is not the whole of the file-access half.** The negative proves the screen publishes no
+reference and offers no affordance; it does not prove the server refuses a download to an actor
+lacking the code, which is a backend assertion against a running environment and is not made here.
+So SEC-002 moves on evidence and stops short of the state that would need an acceptance record.
+
+### 60.5 Dispositions
+
+| id        | finding                                                                                                               | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| --------- | --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CC-50** | **the phase coverage record exists, and seven of its figures are unfilled because only a hosted run may supply them** | The record holds a per-suite table of twelve suites and 407 declared cases, re-derived on `develop` `af924cab`, and five named holes. Seven figures carry `pending the web tier run at this lane's queue turn`: the per-tree instrumented-file counts (H-2), the dashboard route tier measurement (H-3), the executed case total with the gate verdict (§ 5), and the four `measured` cells beside the floors (§ 5). A local coverage run was taken at this queue turn to see the gate execute; its figures are uncitable and were written nowhere. | **OPEN, pending the hosted coverage figures.** The pull request that carries this section produces an `evidence-web-quality` artefact; the seven cells are filled from that artefact and from no other source, in a follow-up on this lane. Closing this row before those figures land would be recording a hosted claim from a local run, which is the failure mode the baseline's own notes describe. QA-001 stays `phase-level incomplete` until then, and this row stays open. |
+
+### 60.6 What this slice did NOT do, and what is not claimed
+
+- **It ran no database work.** `test:db` and `test:backend` were not run and no migration, seed or
+  schema object was touched. No hosted result, no browser check and no acceptance result is claimed.
+- **It moved no baseline and no floor.** `.github/ci-baselines/` is untouched, and no local
+  measurement was written into a record, a baseline or this section.
+- **It did not claim a gate passed.** The local checks it ran are named in the pull request; the
+  coverage gate's verdict is reported there as a local observation and is recorded in no document.
+- **It changed no application source, no gate, no allow-list, no suppression and no npm script.**
+  The only executable file it adds is a test.
+- **It did not move SEC-002 or QA-001 to `end-to-end verified`.** Rule 2 of the state vocabulary
+  refuses that state without an acceptance record, and both artefacts here are a component suite and
+  a document.
+- **It corrected no other slice's figure**, and it used **no change-control identifier other than
+  CC-50**. One disagreement was OBSERVED in another slice's record and is deliberately left there:
+  § 5 of `security-and-qa-evidence.md` says "seven files use `it.each`" while § 5's own table beside
+  it shows **six**, and six is what the regex returns over those same eleven files on this tree
+  (`delivery.dom` 3, `delivery-api` 4, `reports.dom` 2, `reports-api` 3, `reports-overview` 1,
+  `audit-log` 1). The number is a floor qualifier, so **neither reading moves the 396** and no count
+  in this slice's own record depends on it. `security-and-qa-evidence.md` is section 56's artefact
+  and a figure in it moves by that slice's measurement; raising an identifier for it here would be
+  claiming a finding this slice has no authority to close. Stated so the next reader does not
+  rediscover it as a defect.

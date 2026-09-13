@@ -7,8 +7,11 @@ per-suite index this record is the cross-screen artefact for), [`task-matrix.md`
 disposition for this record is § 60 / CC-50, pre-allocated by the closure plan and appended to the
 register at this lane's merge-queue turn
 
-**Measured at:** branch `feature/p1-31-refused-download-and-coverage`, based on protected `develop`
-`d517a5fc`, on 2026-09-13. Every figure below was read on that tree out of a committed artefact —
+**Measured at:** branch `feature/p1-31-refused-download-and-coverage`, at its merge of protected
+`develop` **`af924cab`**, on 2026-09-13 — the head carrying pull request #384. Every figure in this
+record was RE-DERIVED on that merged tree at this lane's queue turn, not carried over from the
+draft's earlier base `d517a5fc`; every one of the twelve per-suite counts in § 3 held, and the
+declaration total held at 407. Every figure below was read on that tree out of a committed artefact —
 the test files themselves, `apps/web/vitest.config.ts`, the API route sources, or
 `.github/ci-baselines/coverage-baseline.web.json`. Anything that would require a coverage or tier
 run is marked **pending the web tier run at this lane's queue turn** rather than quoted. Nothing
@@ -63,10 +66,22 @@ Three adapter suites carry the contract mirrors behind those screens, with no DO
 `80 + 11 + 14 + 20 + 42 + 27 + 46 + 28 + 20 = 288` (`delivery.dom` serves two rows of the table and
 is counted once), plus the three adapter suites, `48 + 45 + 26 = 119`. Six of the twelve use
 `it.each` (`delivery.dom` 3, `delivery-api` 4, `reports-api` 3, `reports-overview` 1, `reports.dom`
-2, `audit-log` 1), so the executed total is higher. The figure § 5 of the assurance index published —
-396 across eleven files at `develop` `9b109f63` — is not directly comparable: it counted
-`delivery-start.dom.test.tsx` differently and predates both this branch's new suite and the report
-overview merging.
+2, `audit-log` 1), so the executed total is higher.
+
+**Reconciled against the assurance index, re-derived at this head.** § 5 of
+[`security-and-qa-evidence.md`](./security-and-qa-evidence.md) publishes **396 across eleven
+files**, measured at `develop` `81b3bce8`. The two figures agree exactly: the index's eleven files
+are this record's twelve less `delivery-signature-refusal.dom.test.tsx`, and `396 + 11 = 407`. Every
+one of the eleven shared counts matches this record's, file by file, so nothing is reconciled away
+and neither figure supersedes the other — they are the same measurement over two file sets.
+
+**One disagreement is OBSERVED and is NOT corrected here.** § 5's prose says "seven files use
+`it.each`" while § 5's own table beside it shows **six** rows with a non-zero `it.each` column, and
+six is what the regex returns over those same eleven files on this tree. The number is a floor
+qualifier, so neither reading changes the 396; the index is another slice's record and moving a
+figure in it is that slice's act, not this one's. Recorded as an observation in § 60.6 of
+[`change-control-2026-09-08.md`](./change-control-2026-09-08.md), under no identifier of its own,
+rather than edited.
 
 ## 4. Holes — surfaces with NO component coverage, and why
 
