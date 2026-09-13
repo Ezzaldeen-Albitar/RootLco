@@ -90,6 +90,74 @@ export interface P131Overview {
   readonly branchFixed: Readonly<Record<string, P131OverviewFigures>>;
 }
 
+/** One checklist template item the browser fixtures reserve for a case. */
+export interface P131FixtureItem {
+  readonly id: string;
+  readonly itemCode: string;
+  readonly label: string | null;
+}
+
+/**
+ * One handover the harness left mid-flight for a browser case that WRITES.
+ *
+ * `unansweredItem` is the mandatory checklist item that case is expected to answer
+ * through the interface, and it is `null` on a fixture where every item is already
+ * answered. `finalOdometerValue` is the reading a completion case may send: the
+ * harness composes it only when the vehicle has none on file, because
+ * `guard_odometer_reading` refuses a normal reading below the current one and a
+ * value guessed above an unknown reading is a case failing for a reason that is not
+ * about the product.
+ */
+export interface P131FixtureDelivery {
+  readonly deliveryId: string;
+  readonly workOrderId: string;
+  readonly vehicleId: string;
+  readonly receptionVisitId: string;
+  readonly customerId: string;
+  readonly unansweredItem: P131FixtureItem | null;
+  readonly blockers: readonly string[] | null;
+  readonly recordVersion: number | null;
+  readonly startOdometer: string | null;
+  readonly finalOdometerValue: string | null;
+}
+
+/**
+ * The records the three delivery WRITE cases act on, one pair per locale project.
+ *
+ * ## Why a pair per locale, and not one set of records
+ *
+ * `apps/web/playwright.config.ts` pins `workers: 1`, and `authenticated-en` runs
+ * before `authenticated-ar` over the same database. A case that records a checklist
+ * result CONSUMES the gap it acted on, so a single fixture would be spent by
+ * whichever locale ran first and the second would assert on a record that no longer
+ * looks the way its case describes. The harness therefore builds a `prepare` and a
+ * `release` handover for each locale, and each case opens its own locale's.
+ *
+ * ## What each of the two is for
+ *
+ *   - `prepare` — a receiver verified, NO signature, and exactly ONE mandatory
+ *     checklist item unanswered. The checklist case and the signature case take a
+ *     different one of those two gaps each, so neither depends on the other.
+ *   - `release` — everything answered and signed, so the only reason left is the
+ *     financial one, which is the single blocker the delivery domain declares
+ *     overridable. That is what puts the release control within reach of the
+ *     odometer case.
+ */
+export interface P131BrowserFixtures {
+  readonly template: {
+    readonly id: string;
+    readonly templateCode: string;
+    readonly mandatory: Readonly<Record<string, P131FixtureItem>>;
+    readonly optional: P131FixtureItem | null;
+  };
+  /** A decodable 1x1 PNG, base64. The bytes the harness itself puts on file. */
+  readonly signaturePngBase64: string;
+  readonly companyId: string;
+  readonly branchId: string | null;
+  readonly prepare: Readonly<Record<string, P131FixtureDelivery>>;
+  readonly release: Readonly<Record<string, P131FixtureDelivery>>;
+}
+
 export interface P131Handoff {
   readonly api: string;
   readonly login: { readonly email: string; readonly password: string };
@@ -127,6 +195,14 @@ export interface P131Handoff {
   readonly reportProvenance: Readonly<Record<string, P131ReportProvenance>> | null;
   /** FE-010 and FE-016, read at the same observation point. */
   readonly overview: P131Overview | null;
+  /**
+   * The mid-flight handovers the WRITE cases act on, or absent.
+   *
+   * Optional because a handoff written by an earlier harness carries none, and a
+   * case that finds none must say so and assert nothing rather than invent a
+   * record to act on.
+   */
+  readonly browserFixtures?: P131BrowserFixtures | null;
 }
 
 /** The environment variable the harness prints and these specs read. */
@@ -203,6 +279,34 @@ export function signedInAsJourneyAdministrator(): boolean {
   if (login === null) return false;
   const account = readSignedInAccount();
   return account.kind === 'org-administrator' && sameAddress(login.email, account.email);
+}
+
+/**
+ * The fixture pair for one locale, or `null` when this handoff carries none.
+ *
+ * Both halves are validated here rather than at four call sites: a fixture document
+ * that names no delivery is not a fixture, and a case that read one field and
+ * trusted the rest would fail deep inside an interaction with a message about a
+ * missing element instead of about a missing record.
+ */
+export function browserFixtures(
+  handoff: P131Handoff | null,
+  locale: 'en' | 'ar'
+): {
+  readonly prepare: P131FixtureDelivery;
+  readonly release: P131FixtureDelivery;
+  readonly signaturePngBase64: string;
+} | null {
+  const fixtures = handoff?.browserFixtures;
+  if (fixtures === undefined || fixtures === null) return null;
+  const prepare = fixtures.prepare[locale];
+  const release = fixtures.release[locale];
+  if (prepare === undefined || release === undefined) return null;
+  if (typeof prepare.deliveryId !== 'string' || typeof release.deliveryId !== 'string') return null;
+  if (typeof fixtures.signaturePngBase64 !== 'string' || fixtures.signaturePngBase64.length === 0) {
+    return null;
+  }
+  return { prepare, release, signaturePngBase64: fixtures.signaturePngBase64 };
 }
 
 /** The locale a project drives, from its name. The same rule `administration.spec.ts` uses. */
