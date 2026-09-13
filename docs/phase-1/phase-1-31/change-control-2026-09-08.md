@@ -5383,3 +5383,134 @@ QA-001 stays `phase-level incomplete`.
 head. The two are not reconciled here and the baseline is not edited — that is the coverage-policy
 lane's, and § 63.3 already declined to edit a machine-read field in the same file for the same
 reason.
+
+## 68. The four phase-set proofs — emission, error paths, least privilege, isolation (CC-58)
+
+**Task ids:** P1-31-SEC-004-003 (the emission set), P1-31-QA-002-001 (the error paths and the
+matrix), P1-31-SEC-001-001 (the minimal actors and the grant map), P1-31-QA-003-001 (the isolation
+matrix and the missing database negatives) and P1-31-QA-002-002 (this section).
+
+**Register pair:** section 68 and CC-58, the pair reserved for this lane.
+
+**Baseline:** protected `develop` `591763df`, the head after pull request #389 merged. Branch
+`remediation/p1-31-backend-phase-set-proofs`. Profile `p1-31-backend`.
+
+### 68.1 What the four closures address
+
+Each of SEC-004, QA-002, SEC-001 and QA-003 published a claim about a SET — every privileged write,
+every error path, every operation's least privilege, every table's isolation — and each rested on
+evidence gathered operation by operation. Set-shaped claims fail the same way every time: the
+coverage is real, the SET is not measured, and the one member nobody reached is invisible. All four
+are now derived from the repository rather than listed, so a forty-sixth operation or a
+twenty-fifth privileged write fails the suite that claims to cover it.
+
+### 68.2 (A) SEC-004 — the audit emission set, derived
+
+`tests/backend/p1-31-audit-emission.test.ts` (new) parses the `defineOperation` literals of the 33
+route modules under the eight P1-31 namespaces AS TYPESCRIPT, filters to `auditClass: 'privileged'`,
+and joins each declaration to `AUDIT_ACTIONS` for its entity type. The set is **24**, the parse
+reports **0** unreadable declarations and **0** actions the catalogue does not register as
+privileged, and E-0 asserts the probe table equals the derived set exactly.
+
+For each of the 24 the suite arranges prerequisites, opens the delta window, drives ONE success and
+asserts four things: the total for the declared action across the fixture tenants moved by exactly
+one, the count for (action, entityId) is one, the record's `tenant_id` and `entity_type` are the
+acting tenant and the catalogue's entity type, and the second fixture tenant holds no row for that
+action before or after.
+
+| measure                                                | before | after |
+| ------------------------------------------------------ | ------ | ----- |
+| privileged actions with an emission assertion anywhere | 23     | 24    |
+| privileged actions with a set-completeness proof       | 0      | 24    |
+
+`sal.delivery_checklist_template.item_updated` is the one that had none — the action that records
+whether a checklist item became a company-wide gate on every handover.
+
+### 68.3 (B) QA-002 — the error paths, and the matrix
+
+Eleven P1-31 operations declare `versionGuarded: true` and sixteen declare `idempotent: true`. Both
+sets are read off the declarations, not listed.
+
+| column                | applicable | covered before | covered after |
+| --------------------- | ---------- | -------------- | ------------- |
+| 428 `ERR-CON-002`     | 11         | 7              | 11            |
+| 409 `ERR-CON-001`     | 11         | 9              | 11            |
+| replay same-key       | 16         | 15             | 16            |
+| replay different-body | 16         | 3              | 16            |
+| 422 invalid body      | 26         | 20             | 26            |
+| 403 (SE-5)            | 45         | 45             | 45            |
+| cross-tenant (SE-6)   | 40         | 40             | 40            |
+| database isolation    | 45         | 45             | 45            |
+
+Every case was added to the suite that already owns its operation; no operation with a suite got a
+new file. `docs/phase-1/phase-1-31/error-path-matrix.md` carries the whole table with a file and a
+line in every applicable cell and a stated reason in every inapplicable one.
+
+### 68.4 (C) SEC-001 — sufficiency, and the authority a parse cannot see
+
+`p1-31-privilege-escalation.test.ts` proved least privilege by refusal alone, and a set of refusals
+is consistent with a gate that refuses everybody. SE-5M adds the other half: **13** minimal actors,
+one per distinct declared-code set, each holding exactly the codes its operations declare and
+nothing else, and each of the 45 operations must be ADMITTED by the gate.
+
+`rpt.report-run` is the one operation whose real authority exceeds its declaration. The declaration
+is a literal and the code a run needs depends on the dataset asked for, so `ReportRunService`
+evaluates each dataset's own `requiredPermissions` and answers the same uniform `ERR-IAM-001`.
+SE-5MD runs each of the **4** registered datasets as a caller holding the declared code plus that
+dataset's own and requires 200; SE-5MD-N runs the same four as a caller holding only the declared
+code and requires 403 naming one of the dataset's codes.
+
+`docs/phase-1/phase-1-31/least-privilege-grant-map.md` is GENERATED by
+`tests/ci/p1-31-grant-map.test.ts` from the parse, the dataset registry, the permission catalogue
+and the escalation suite's own case titles, and that test fails on any difference from the committed
+copy. Every code any minimal role must hold is asserted to be a real catalogue row: a code the
+catalogue does not carry is a code no administrator can grant, and a minimal role for it would be an
+impossibility the map described as a fact.
+
+### 68.5 (D) QA-003 — the database layer, per table
+
+The structural half — RLS enabled and forced with a tenant-scoped SELECT and INSERT policy, and a
+refused cross-tenant INSERT — was already auto-enumerated over every `sal`, `wty` and `rpt` table.
+The BEHAVIOURAL half was not.
+
+| measure                                       | before | after |
+| --------------------------------------------- | ------ | ----- |
+| P1-31 tables                                  | 16     | 16    |
+| with a structural proof                       | 16     | 16    |
+| with a behavioural cross-tenant read negative | 3      | 16    |
+
+`docs/phase-1/phase-1-31/isolation-matrix.md` carries both layers: per table the migration and the
+two database proofs, and per operation the application-layer refusal or the stated reason there is
+none.
+
+### 68.6 Two records corrected here rather than rewritten
+
+Under the annotate-rather-than-rewrite discipline § 48.1 states, both corrections are recorded in
+this section and neither source document is edited.
+
+- **The assurance evidence index reads `tests/db/sal-delivery.test.ts` and
+  `tests/db/wty-warranty.test.ts` as isolation evidence.** They are CONSTRAINT suites. Every case in
+  them ran as tenant A inside a rolled-back transaction, and neither drove a cross-tenant negative
+  of any kind — the index was reading the fixture tenant and not an assertion. Both now carry one,
+  so the entry becomes true at this head, but it was not true when it was written and the final
+  integration owns the index.
+- **`tests/backend/p1-31-concurrency-and-versioning.test.ts` states in its header that "all sixteen
+  idempotent ones already carry a replay case".** Fifteen did.
+  `sal.delivery-checklist-template-item-create` did not, and the different-body half was covered for
+  three of the sixteen. That statement was the stated reason the file asserted none of it, so the
+  gap it left was invisible for exactly as long as the sentence stood. The header is left as
+  written; the measurement above is the correction.
+
+### 68.7 What stays open
+
+**Nothing, for these four proof obligations.** No cell of either matrix is uncovered, the grant map
+names a catalogue row for every code, and the emission set is complete at 24 of 24.
+
+Three things this lane deliberately did NOT do, so they are not read as closed:
+
+- no product code was changed. Every operation answered its 428, 409, replay, fingerprint and
+  emission case correctly on the first run, so there is no product finding to raise here;
+- `scripts/check-operation-test-coverage.mjs` and its marker vocabulary are untouched. The matrices
+  are this phase's artefact and the gate's vocabulary is cross-phase;
+- no baseline, no inventory and no assurance index is edited. The index correction in § 68.6 is a
+  statement for the final integration to act on, not an edit this lane made on its behalf.

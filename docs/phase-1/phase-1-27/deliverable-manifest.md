@@ -983,14 +983,14 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      whose regexes read the label and the number as adjacent cells. -->
 
 <!-- derived: files apps/web/tests = 142 -->
-<!-- derived: files tests/ci = 71 -->
+<!-- derived: files tests/ci = 72 -->
 <!-- derived: files scripts/ci = 65 -->
 <!-- derived: files apps/web/scripts = 4 -->
 <!-- derived: files supabase/migrations = 141 -->
 <!-- derived: files tests/db = 145 -->
 <!-- derived: files tests/db:all = 149 -->
-<!-- derived: files tests/backend = 143 -->
-<!-- derived: files tests/backend:all = 152 -->
+<!-- derived: files tests/backend = 144 -->
+<!-- derived: files tests/backend:all = 153 -->
 <!-- derived: files apps/web/src/features/crm = 20 -->
 <!-- derived: files apps/web/src/features/vehicles = 23 -->
 <!-- derived: files p1-27-frontend-gate = 156 -->
