@@ -3672,3 +3672,177 @@ status for all twenty-nine tasks remains `Planned`.
 - **It changed no source file, no gate, no allow-list and no fixture.** Documentation only.
 - **It did not re-quote a figure a generated register owns.** Every count in the closure record is
   either read on this head or quoted with the phase record it comes from.
+
+## 58. The write-shape gate and the audit-class review — **PROVISIONAL** (SEC-004)
+
+**Slice:** `feature/p1-31-write-shape-gate`, branched from protected `develop`
+`d517a5fc70b8d851edbd81c374c4ce05e92d7418` — the head carrying pull request **#381**, the phase
+closure record. The work is committed **on the unmerged branch `feature/p1-31-write-shape-gate`**
+and is not on `develop`; **the pull request is opened at this lane's merge-queue turn, when the unit
+and web runs are re-recorded**. Until then no pull request exists and none is claimed. It has **no
+hosted result**. Its intended ownership profile is `p1-31-frontend`; section 58.6 records what
+resolves locally instead. Its application-source footprint is **two files in `apps/web`**, both in
+the warranty feature — the request-body type the generation adapter takes, extracted so the gate can
+compare it. Everything else is tooling, tests and phase records.
+
+**Authority:** the SEC-004 row of [`task-matrix.md`](./task-matrix.md), and
+[`security-and-qa-evidence.md`](./security-and-qa-evidence.md) § 4, which records in its own words
+the two gaps this slice closes — that the eleven `wty`/`rpt` writes "are therefore held to no mirror
+gate at all", and that the audit declarations are counted while "a count is not a review".
+
+### 58.1 Identifier allocation — PROVISIONAL, dated 2026-09-13 at `develop` `d517a5fc`
+
+The register in this file, at the head this branch carries, runs to **section 55** and **CC-45** —
+section 54 is the acceptance run (#380) and section 55 the closure record (#381), both merged.
+Sections **56** and **57** and the identifiers **CC-46** and **CC-47** are not present at this head
+and are assumed held by P1-31 lanes on unmerged branches, in the same way section 53.1 records for
+the range below it. So this slice takes **section 58** and **CC-48**, allocated to it alone, the
+first heading and the first identifier above every number a lane could be holding; both stay
+**PROVISIONAL** until the branch merges. Section 48.1's rule governs a collision: an identifier is allocated when its finding
+is raised and is **never renumbered** to follow heading order, so a collision moves THIS section and
+this identifier and leaves every existing one alone. A textual conflict with a sibling lane at merge
+time is expected and is resolved by the coordinator.
+
+### 58.2 What changed, and what was minted
+
+| changed                                                                                                                                       | minted       |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| `scripts/ci/check-p1-31-write-shape.mjs` — a new gate over the `wty` and `rpt` writes                                                         | 1 npm script |
+| `tests/ci/p1-31-write-shape.test.ts` (18 cases) and `tests/ci/p1-31-write-shape-extraction.test.ts` (1 case)                                  | nothing      |
+| `scripts/ci/check-command-coverage.mjs` — one register entry, tier `required`; `package.json` — the script, and one edge in `verify:policies` | nothing      |
+| `apps/web/src/features/warranty/warranty-contract.ts` — the exported `WarrantyGenerateBody`; `warranty-api.ts` — the adapter takes it         | nothing      |
+| `docs/phase-1/phase-1-31/audit-class-review.md` — the review of all 45 audit declarations                                                     | nothing      |
+| the SEC-004 row of the task matrix, `not started` → `implemented/unmerged`; this section                                                      | nothing      |
+
+**No Backend source changed** — no route, no service, no repository, no migration, no seed, no
+permission, no audit action. **No operation was added, renamed or withdrawn**, and the P1-24 register
+is untouched. On the web side the change is type-level only: the inline request-body type of
+`generateWarranty` was moved into the warranty contract as the exported `WarrantyGenerateBody` and
+the adapter now takes it. **No screen, no request, no field and no message catalogue changed**, and
+the body the adapter sends is byte-for-byte what it sent before.
+
+### 58.3 The gate, and why it is a sibling rather than a widening
+
+`check-p1-30-payload-parity.mjs` freezes `P1_30_DOMAINS = ['svc', 'quo', 'inv', 'sal']`, its scope is
+pinned by name in its own suite, and P1-30's closure rests on it. **CC-37(a)** refuses widening
+another phase's gate, so the new file is a sibling and that one is **byte-identical** on this branch.
+
+It borrows the P1-29 gate's comparison, schema locator, naming rule and interface reader rather than
+copying them — a second reader is how the brace-counting scanners drifted — and it **parses**: the
+operation surface comes from the P1-24 register, the schema each handler parses is located in the
+handler's own AST, the zod objects are converted to JSON Schema by a vitest extraction rather than
+reconstructed by hand, and the mirror is read with the TypeScript parser. Nothing in it matches
+source text.
+
+Three things are its own:
+
+1. **The mirror lives in the feature trees.** The P1-28 contract allow-list names files under
+   `apps/web/src/lib/contracts/` and a P1-31 operation has no row in it, so the gate reads
+   `features/warranty/warranty-contract.ts` and `features/reports/reports-contract.ts`, hand-frozen
+   by name. The generated `lib/api/idempotent-operations.ts` manifest is never a mirror.
+2. **Type aliases are resolved.** Those two mirrors spell a closed vocabulary as an exported alias
+   over an exported `as const` array, because the same array is what a screen iterates to draw the
+   control. The borrowed interface reader knows nothing about aliases, so every closed vocabulary on
+   this surface read as an unresolved reference and the first run reported **4 problems that were
+   not drift**. The gate now resolves exactly two alias forms before comparing and leaves every
+   interface the borrowed reader returns untouched. An alias it cannot resolve **still fails** —
+   proved by a case that widens one to `string`.
+3. **An extra anti-vacuity clause.** Five of the eleven in-scope writes are declared away, so a
+   scope that had drifted entirely into `PENDING_MIRRORS` would otherwise pass while comparing
+   nothing.
+   The gate reports how many operations it actually compared and is red at zero.
+
+### 58.4 What the gate measured, and the three declarations it carries
+
+Its own report line on this branch: **20 operations in scope `[wty, rpt]`, 11 writes, 10 with a
+body, 1 declared bodyless, 4 pending a consumer, 6 compared against 30 mirror interfaces and 5
+resolved aliases, 0 problems.**
+
+- **`BODYLESS` (1).** `rpt.report-configuration-version-publish` parses path parameters only.
+- **`SHARED_MIRRORS` (2).** The warranty mirror shares one `WarrantyStatusSetBody` between the plan
+  and coverage status commands. The share is declared rather than silently accepted as a missing
+  interface, and the gate fails the moment the mirror declares either operation's own name.
+- **`PENDING_MIRRORS` (4), and no mirror was invented to avoid them.** All four are the
+  `rpt.report-configuration-*` writes that carry a body: **nothing under `apps/web` calls them
+  except the generated manifest**, so writing an interface for them would have manufactured the
+  declared-but-never-wired shape this task exists to catch — **CC-37(b)**. Every entry is stale the
+  moment its mirror is written, and the gate fails until the entry is deleted.
+- **The fifth pending entry was closed rather than disclosed.** `wty.warranty-generate` was declared
+  pending on a first pass because it HAS a consumer — the handover screen's issue control sends it —
+  but the adapter took a structural parameter, so no exported interface carried the shape. A hole
+  the gate discloses is still a hole, so the type was extracted to `WarrantyGenerateBody` in the
+  warranty mirror, the adapter takes it, the entry was deleted, and the operation is now compared
+  like any other. That is the difference between the report line above and the first one this slice
+  produced: **6 compared rather than 5, 4 pending rather than 5.**
+
+**A correction to a figure carried into this task.** The task brief described **seven**
+`rpt.report-configuration-*` **writes**. Re-derived from the register: there are seven
+`rpt.report-configuration-*` **operations** — **five writes and two reads** — and
+[`security-and-qa-evidence.md`](./security-and-qa-evidence.md) § 4 says "operations", not "writes".
+The count of eleven `wty`/`rpt` writes is confirmed exactly (6 `wty`, 5 `rpt`).
+
+### 58.5 The audit-class review
+
+[`audit-class-review.md`](./audit-class-review.md) covers the same 45-operation surface § 4 of the
+evidence index measures, taken twice and agreeing: from the P1-24 register filtered to the eight
+namespaces, and from a TypeScript parse of the `defineOperation` literal in each of the 33 route
+modules.
+
+- **21 `auditClass: 'none'` and 24 `'privileged'`** — both figures confirmed. All 21 are GETs, all 24
+  are writes, and **all 21 are written EXPLICITLY** rather than falling to the registry's `'none'`
+  default, which is what makes them reviewable at all.
+- **All 24 `'privileged'` declarations carry an `auditAction`**, every code exists in
+  `apps/api/src/server/auth/audit-actions.ts`, and every one is declared there with a matching
+  `class: 'privileged'`. **None is missing.**
+- **Three open items are recorded rather than justified away**: the two reads that hold
+  `sal.finance.view` and are silent, `rpt.report-run`, and the two employee-register reads. Fixing
+  any of them is an API-source change on the Backend lane and is out of this slice's scope. **No
+  Owner decision was sought on any of them and none is claimed.**
+
+### 58.6 Verification run locally on this branch
+
+Every command below **exited 0 at this head**. They were run locally, on this machine; no hosted
+result is claimed for any of them, and the two commands that do not yet exit 0 are named underneath
+rather than left out.
+
+| command                                                                   | scope                                                                     |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `node scripts/ci/check-p1-31-write-shape.mjs`                             | the new gate, whose report line is quoted in section 58.4                 |
+| `npx vitest run tests/ci/p1-31-write-shape.test.ts` and its extraction    | the two new test files, 19 cases, run directly rather than through a tier |
+| `npm run validate:command-coverage`                                       | the register entry and the `verify:policies` edge                         |
+| `npm run test:unit`                                                       | the root unit tier, 124 files                                             |
+| `npm run lint` · `npm run typecheck` · `npm run format:check`             | the root workspace; root `typecheck` does not cover `apps/web`            |
+| `npm run typecheck:web` · `npm run lint:web` · `npm run format:check:web` | the web workspace, for the two warranty files                             |
+| `npm run test:web`                                                        | the web tier, which owns the adapter the extracted type serves            |
+| `npm run validate:plain-language` · `npm run validate:encoding`           | the catalogues, and the new files as UTF-8 without a BOM                  |
+| `npm run validate:generated-artifacts`                                    | the regenerated P1-27 evidence manifest                                   |
+
+**Two commands are NOT green at this head and neither is claimed to be.**
+
+- `npm run validate:p1-27-closing-values` **exits 1**: the recorded `unit` and `web` runs were taken
+  at `e5c52efd`, and this branch changes executable paths under them, so both read `RUN_RECORD_STALE`
+  and the unit record's file count (122) disagrees with the tree (124). Nothing is wrong with the
+  runs; they are stale by construction and are **re-recorded at this lane's merge-queue turn**.
+- `npm run verify:policies` therefore **cannot pass** at this head, because that command is one of
+  its edges; the aggregate was not run to a result here and none is quoted. Every other gate in it,
+  including `validate:p1-31-write-shape`, passes when run on its own.
+
+`npm run validate:phase-ownership` resolves this branch to profile **`p1-26-frontend`** locally — the
+known local false-profile trap, where the profile is resolved from a ref the local checkout does not
+carry in the shape the hosted run does. The intended profile is **`p1-31-frontend`**, and that
+resolution is **verified only by the hosted run**; no local result stands for it.
+
+### 58.7 What this slice did NOT do, and what is not claimed
+
+- **No database was touched.** `test:db` and `test:backend` were not run; the shared instance is held
+  by another lane. The unit tier's own count moves by **+19 cases in 2 files**, and that delta is
+  **UNRECORDED** — tier baselines are recorded from the hosted run, never from a local one.
+- **No hosted run, no browser check and no acceptance result is claimed**, and SEC-004 therefore does
+  **not** move to `end-to-end verified`: rule 2 of the state vocabulary refuses that state without an
+  acceptance record, and documentary evidence never earns it.
+- **No gate was weakened, no allow-list widened, no suppression added and no floor moved.** No
+  existing gate file changed except the command register, which gained one entry.
+- **No mirror, screen, adapter or consumer was invented** to make a pending operation pass. The one
+  mirror this slice adds, `WarrantyGenerateBody`, is the type an EXISTING adapter with an EXISTING
+  consumer already had inline; nothing was written for an operation no screen calls.
+- **No other task-matrix row was touched**, and no other change-control identifier was used.
