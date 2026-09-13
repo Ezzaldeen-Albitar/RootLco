@@ -4363,3 +4363,251 @@ So SEC-002 moves on evidence and stops short of the state that would need an acc
   and a figure in it moves by that slice's measurement; raising an identifier for it here would be
   claiming a finding this slice has no authority to close. Stated so the next reader does not
   rediscover it as a defect.
+
+## 59. Closing the SEC-003 residue and QA-004 — what was measured, and what was owed
+
+This section is the change-control record of one slice, allocated § 59 and **CC-49** and holding
+no other identifier (§ 48.1: identifiers are never renumbered). It changes **no product code, no
+route, no permission, no migration, no seed, no gate, no allow-list and no message catalogue**. It
+adds two backend suites and moves two rows of the task matrix.
+
+**Slice:** `feature/p1-31-escalation-and-concurrency-tests`, opened as pull request
+[#386](https://github.com/Ezzaldeen-Albitar/RootLco/pull/386). **Baseline:** protected `develop`
+**`81b3bce804626353a1a7b9f4ba52f1306c8f8b6e`** (the merge of PR #380) for the branch's own two
+commits, then merged with protected `develop`
+**`474d89ef8ad938b09be5a3f81f22546caaf887c0`** (the merge of PR #385) before the pull request was
+opened. `main` `1262de74`, untouched.
+
+**The standing rule this slice runs under, restated because it is the rule that is easiest to
+break by accident.** A backend suite is never pointed at the shared acceptance stack. The tier
+selects its database only through `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD`
+(`tests/backend/helpers.ts:72-95`, `tests/db/helpers.ts:30-34`) and every one of those defaults to
+the shared stack, so a command that omits them targets it silently. Two of the reasons are
+specific rather than general: `cleanFixtures` calls `deleteTenantCascade([TENANT_A, TENANT_B])`,
+which removes those two fixture tenants outright; and the platform-row sweeps beside it delete
+`shared.system_settings`, `shared.localization_keys`, `shared.document_categories` and their
+neighbours by a `LIKE 'fx\_%'` code prefix with `tenant_id IS NULL`
+(`tests/db/helpers.ts:704-735`) — a prefix match, not a tenant predicate, so it reaches any
+platform-scope row that happens to carry the prefix. Both suites in this section were run only
+against a disposable container; § 59.5 records the target.
+
+### 59.1 The measurement came first, and it contradicted the brief
+
+**Why § 59 sits below § 60 on the page.** § 59 was allocated to this slice before either
+neighbour merged, and § 48.1 forbids renumbering an identifier once allocated. The merge queue
+then ordered the slices differently from the numbers: § 60 reached `develop` first, so this
+section is appended after it. The page is therefore in queue order below § 58, not in numeric
+order, and that is deliberate — the number identifies the slice, the position records when it
+landed.
+
+The slice was scoped as ten owed stale-`If-Match` cases, sixteen owed replay cases and four owed
+privilege-widening cases. Every one of those was measured against the repository before anything
+was written, and most of them turned out to be already proved.
+
+**The declaration counts were confirmed exactly.** Every `defineOperation({…})` literal under
+the phase's eight namespaces in `apps/api/src/app/api/v1` was parsed. The P1-31 surface is **45
+operations across 33 `route.ts` files** — 24 writes and 21 reads, 24 `auditClass: 'privileged'` and
+21 `auditClass: 'none'`, **11** declaring `versionGuarded: true`, **16** declaring
+`idempotent: true`, and **12** distinct permission codes. Every one of those figures is the one
+§ "The surface every section below measures" of the evidence index already carries. An earlier
+draft of this subsection said 46; the parse says 45, and the eight namespaces are `deliveries`,
+`delivery-checklist-templates`, `delivery-readiness`, `report-configurations`, `reports`,
+`warranties`, `warranty-policies` and `org/employees` — `org/**` outside `employees` is P1-13 and
+P1-19 work this phase neither added nor changed, and counting it is where the extra operation came
+from. The guarded eleven are `org.employee-status-set`,
+`rpt.report-configuration-status-set`, `rpt.report-configuration-update`,
+`rpt.report-configuration-version-publish`, `sal.delivery-checklist-template-item-update`,
+`sal.delivery-checklist-template-rename`, `sal.delivery-checklist-template-status-set`,
+`sal.delivery-complete`, `wty.warranty-coverage-status-set`, `wty.warranty-policy-rename` and
+`wty.warranty-policy-status-set`.
+
+**One naming correction.** The brief described the ten non-delivery guarded operations as three
+`delivery-checklist-template-*`, three `report-configuration-*`, three `warranty-policy-*` and
+`org.employee-status-set`. The count is right and the third group is not: only **two** are
+`warranty-policy-*` (`rename`, `status-set`). The third `wty` guarded operation is
+`wty.warranty-coverage-status-set`, which is a COVERAGE command, not a policy one — and it is the
+single operation this slice exists for, so the distinction is load-bearing rather than pedantic.
+
+**All ten already had a stale-`If-Match` case, and all sixteen a replay case.** Each was read, not
+inferred from a `COVERAGE-EVIDENCE` marker: `p1-31-warranty-policy-seam.test.ts` P10-C2 and P10-C3,
+`p1-31-report-configuration-seam.test.ts` (the edit, the status and the publish, the last offering
+the CONFIGURATION's counter on the VERSION's path), `p1-31-delivery-checklist-template-seam.test.ts`
+(rename, status, item update), and `p1-31-delivering-employee-seam.test.ts` P17-S3. Each asserts 409
+`ERR-CON-001` on a real row. **Nothing was duplicated**, and the two new suites assert none of it.
+
+**Three of the four widening paths were already proved too.** A holder of `sal.delivery.manage`
+without `sal.delivery.complete` is refused completion in `p1-22-delivery.test.ts`, which also shows
+that principal succeeding on a preparation write so the 403 can only be the missing code; the
+`wty.warranty.read` / `wty.policy.manage` pair is proved in both directions across all five writes
+by `p1-31-warranty-policy-seam.test.ts` P10-P0, P10-P1 and P10-P2; the
+`org.employee.manage` / `org.employee.read` pair is proved in both directions by
+`p1-31-delivering-employee-seam.test.ts` P17-L3 and P17-L4. **A fifth pair nobody named is also
+already proved** — `rpt.report.read` against `rpt.report.configure`, in the `RPT_READER` block of
+`p1-31-report-configuration-seam.test.ts`. None of these was rewritten.
+
+### 59.2 What was genuinely owed
+
+**The self-delegation path.** Every existing case asks whether a principal may USE an authority it
+does not hold. None asked whether it may GIVE ITSELF one. That is the sentence **CC-16** and
+**CC-20** both close on — "`ins_role_permissions_delegable` admits a mapping only when the acting
+administrator already holds the code" — and it is why those two dispositions are survivable at all:
+it is the reason an organisation on an older bundle must wait for an operator backfill instead of
+its administrator simply minting the new codes. Nothing asserted it for the P1-31 codes.
+`iam-admin-writes.test.ts` proves the neighbouring refusal (no `iam.role.manage` at all) and
+`iam-access-administration.test.ts` proves the role-GRANT path for one P1-14 code.
+
+**CC-17's first half.** CC-17 records that `wty.warranty-coverage-status-set` is version-guarded and
+deliberately NOT idempotent. Its second half — a refused reactivation into a re-covered window burns
+no version — is proved by P10-B3 of the policy seam. Its first half was declared and never
+asserted: no assertion anywhere pinned the ABSENCE of idempotency, so `idempotent: true` could have
+been added to that route and every tier would still have passed. That is precisely the class of
+defect this phase has been bitten by — a declaration nothing can disagree with.
+
+**The phase SET, rather than a path through it.** The first version of the escalation suite closed
+the self-delegation path and nothing else: every one of its contexts was the same tenant-A
+administrator, `TENANT_B` was never used, and no P1-31 operation was called by a
+lesser-privileged caller at all. So the widening claim it supported was about one table, not about
+the forty-five operations SEC-003 is scoped over. Three probes were owed and are now present, each
+driven over the parsed set rather than over a list:
+
+- **least privilege on all 45** (all declared codes withheld; each code individually for the five
+  multi-code operations) — a tenant-A caller holding every P1-31 code except the ones the operation
+  declares is refused `ERR-IAM-001`, and the refusal names exactly those codes. The twelve
+  one-code-withheld cases are what separates a gate that requires EVERY declared code from one that
+  requires any of them, which the all-at-once probe cannot do;
+- **cross-tenant on the 40 that address a tenant-owned row** — a tenant-B caller holding all
+  twelve codes addresses tenant A's rows and is refused; the five that address none (three
+  tenant-wide lists, the report catalogue and the tenant-level configuration create) carry a
+  written reason instead;
+- **client-asserted scope on the 8 that carry one** — the five reads that name a (company, branch)
+  pair in the query and the three creates that name a company in the body, each in two variants,
+  another organisation's real pair and a pair that exists nowhere, and each asserting a zero
+  row-count delta on `sal.delivery_checklist_templates`, `wty.warranty_policies` and `org.employees`
+  so that "refused" also means "wrote nothing". Every actor in that block holds an UNRESTRICTED
+  grant, so nothing is being narrowed by grant scope: the question is only whether a caller may name
+  an organisation that is not its own.
+
+Each probe carries its own control, because a negative without one is not evidence. The
+least-privilege control re-issues the same request SHAPE, with freshly generated identifiers, as a
+caller holding all twelve codes, and requires the answer to be neither `ERR-IAM-001` nor a 5xx. It
+does not require the call to SUCCEED — against invented identifiers it cannot — and that is what
+licenses those identifiers: the
+permission gate runs before validation and before any lookup
+(`apps/api/src/server/http/route-handler.ts:203-441`; every P1-31 route parses its path and body
+inside the handler callback). The cross-tenant control re-issues the request as the owning tenant
+against an EQUIVALENT row set authored by the same routine — not the same rows, because the control
+writes and the probes it protects must address rows nothing has touched — and requires the refusal
+not to appear, so a 404 for tenant B is tenancy rather than absence.
+
+### 59.3 What changed
+
+| file                                                     | change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tests/backend/p1-31-privilege-escalation.test.ts`       | NEW. SE-0 enumerates the phase surface with the permission-parity gate's own parser (`declaredPermissions`) and pins it at 45 operations over 33 route files and 12 codes, with the probe table required to cover exactly that set and every uncovered operation required to carry a reason; SE-1 pins the twelve codes as real catalogue rows and the acting administrator as holding none of them; SE-2 drives the wired service and is refused `ERR-IAM-001` naming the withheld code for all twelve, writing nothing; SE-3 bypasses the service and is refused `42501` by `ins_role_permissions_delegable` alone; SE-4 admits a `deny` for an unheld code and an `allow` for a held one, so the refusals are about delegation rather than about the table; SE-5 and SE-5C are least privilege and its control over all 45, with SE-5P withholding one declared code at a time on the five multi-code operations (12 cases); SE-6 and SE-6C are cross-tenant refusal and its control over the 40 that address a row, with SE-6R covering `rpt.report-run`, the one operation addressed by a CODE; SE-7 is client-asserted scope over the 8 that carry one, in two variants each and with a zero row-count delta asserted on the three tables the body-scoped creates write to |
+| `tests/backend/p1-31-concurrency-and-versioning.test.ts` | NEW. C17-0 pins how `shared.idempotency_keys` spells the two operations; C17-1 pins the declaration divergence against its four siblings; C17-2 proves a second submission under the SAME `Idempotency-Key` is refused 409 `ERR-CON-001` rather than replayed, burning no version; C17-3 proves this probe writes no reservation, as a before/after delta narrowed to the fixture tenants; C17-4 is the control that makes C17-3 falsifiable, and additionally requires the replay to move neither the policy's `record_version` nor its audit-record count                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `docs/phase-1/phase-1-31/task-matrix.md`                 | the **SEC-003** and **QA-004** rows only, `not started` → `phase-level incomplete`, each citing its new artefact and the pre-existing artefacts the re-measurement found. No other row touched                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `docs/phase-1/phase-1-31/change-control-2026-09-08.md`   | this section and the CC-49 disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+
+### 59.4 The control earned its place, on the first run
+
+C17-3 asserts that `shared.idempotency_keys` holds no reservation for the coverage command. On the
+first execution it passed — **for the wrong reason**. The `operation` column is not the registered
+id: `ck_idempotency_keys_operation` constrains it to `^[a-z][a-z0-9_]{1,62}$`, so `toOperationCode`
+writes `wty_warranty_coverage_status_set`, and a query for the dotted id returns zero for an
+operation that reserved perfectly normally. C17-4 — written only so that zero could be falsified —
+failed, which is how the defect was found rather than shipped. C17-0 now pins the mapping. **A zero
+that cannot be distinguished from a wrong question is not evidence**, and this file records the
+episode because the suite would have been green either way.
+
+**And the same shape twice more, found by review rather than by a run.** C17-3 and C17-4 counted
+`shared.idempotency_keys` with no tenant predicate, as ADMIN — a read that bypasses row-level
+security over a table every tenant writes to. The absolute zero they asserted was therefore a claim
+about the whole database rather than about the probe, true only because the disposable container
+held nothing else. Both are now narrowed to the fixture tenants and compared as deltas. Separately,
+C17-4 asserted a replay by its status and its body alone, which a route that simply re-executed the
+command would also satisfy; it now captures the policy's `record_version` and its audit-record count
+after the first call and requires both to be unmoved, with the audit count required to be non-zero
+first so that "unchanged" is a statement about something.
+
+### 59.5 What this slice does NOT claim
+
+Neither row reaches `end-to-end verified`, and rule 2 is the reason: no acceptance record exercises
+the self-delegation refusal, the least-privilege set or the ten non-delivery guarded operations.
+`sal.delivery-complete` is the only guarded P1-31 operation an acceptance record covers (steps 103,
+105, 116, 156). SEC-003 remains `phase-level incomplete`: the three probes are integration
+assertions against a disposable database, not an acceptance record, and abuse cases beyond
+privilege escalation, least privilege, tenancy and client-asserted scope — replay abuse, export
+posture, file access — are unaddressed. QA-004 remains `phase-level incomplete`, and its open
+decision is unchanged and undecided: whether P1-31 gets a sibling version-sourcing gate of its own
+or a written waiver. This slice does not decide it.
+
+Two further limits are stated rather than left to be inferred. The least-privilege probes address
+their operations with invented identifiers, which is sound only because the permission gate
+precedes validation and lookup; they therefore prove the GATE, and say nothing about what the
+handler behind it would do. And the absence of a side effect is asserted for SE-7 only — a zero
+row-count delta on the three tables the body-scoped creates write to — not for SE-6, whose forty
+cases pin a refusal document and nothing about the database.
+
+**The two suites were executed, and where.** Both were run against a DISPOSABLE PostgreSQL at
+`127.0.0.1:55432`, database `p131_sec_20260913`, carrying 141 migrations and 121 permission rows —
+not against the shared stack at `127.0.0.1:54322` that carries the Owner acceptance environment.
+The target was resolved and read back from the server (`current_database()` and the port) before
+the first suite ran. 2 files, 213 tests, all passing — 208 in the escalation suite and 5 in the
+concurrency suite — and the pair was run twice in succession to establish that they are re-runnable
+against a database their own fixtures have already dirtied.
+
+**The whole backend tier was then run, on a second disposable clone.** Two suites passing says
+nothing about what they did to the suites beside them, so the tier was run entire. The target was
+`p131_backend_20260913` on the same disposable container at `127.0.0.1:55432`, cloned from the
+template `p131_employee_ci_202609121735` so the run started from a known schema rather than from a
+database these fixtures had already dirtied; 141 migrations and 121 permission rows were read back
+from it before the run. **143 test files, 3242 tests, 0 failed.** The five variables
+`DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` were set explicitly on that command
+and on every backend command in this slice, which is the only thing that keeps the tier off the
+shared stack — omitting them targets `127.0.0.1:54322` silently, and the prefix sweeps described
+above would then have reached the Owner acceptance environment. No command in this slice omitted
+them.
+
+**And the two suites were run once more after the sync.** This branch was merged with `develop`
+`474d89ef` before the pull request was opened, so the pair was re-run on the merged tree against
+that same clone `p131_backend_20260913`: **2 files, 213 tests, 0 failed.** That is the third
+execution of the pair and the first on a tree carrying §§ 55–58 and § 60. Nothing about side
+effects is claimed beyond what the suites assert themselves — the zero row-count deltas SE-7 takes
+around each of its sixteen cases, described in § 59.6.
+
+**No tier baseline was re-recorded**: the declared floors
+(`test-count-baseline.json`, `tiers.backend.minTests` 1300 against a measured 1380, and
+`tiers.web.minTests` 3700) are minima that added tests cannot breach, and a floor is re-established
+from a hosted run, never a local one. No hosted result is claimed.
+
+### 59.6 One observation the probes produced, stated and not dispositioned
+
+**SEC-003-O1 — the three body-scoped creates do not agree on how they refuse a foreign company.**
+Each of the three answers the SAME way for another organisation's real company and for a company
+that exists nowhere, and each writes nothing: SE-7 runs both variants and asserts a zero row-count
+delta on `sal.delivery_checklist_templates`, `wty.warranty_policies` and `org.employees` around
+every case, so neither half of that sentence is an inference. What they disagree on is the
+document: `org.employee-create` answers 404 `ERR-RES-001`, while
+`sal.delivery-checklist-template-create` and `wty.warranty-policy-create` answer 422 `ERR-VAL-001`
+with a `body.companyId` / `unknown_company` violation, mapped deliberately from
+`fk_warranty_policies_company` and its sibling
+(`apps/api/src/modules/warranty/application/warranty-policy-service.ts:669-677`). MD-X1 records the
+body-scoped creates as keeping "the 404 their composite foreign key and RLS already produce", which
+is true of one of these three and not of the other two.
+
+**SEC-003-O2 — `rpt.report-run` resolves a PLATFORM dataset, not a tenant's own report
+configuration, and the two answer differently.** A code from `rpt.report_configurations` is not
+runnable: SE-6R shows the fixture's own published configuration answering 404 `ERR-RES-001` to the
+tenant that published it as well as to a stranger, so a 404 on that path carries no information
+about tenancy and this slice does not offer it as isolation evidence. A registered dataset code —
+`work_orders_by_status` — resolves for BOTH tenants, which is correct: the code belongs to the
+platform. The isolation is in the rows, and SE-6R states it as a count: run over tenant A's branch
+it returns a non-empty page, and run by tenant B over tenant B's OWN branch, with the same code, it
+returns exactly zero rows. The suite pins what each operation actually
+does and names this observation beside it rather than pinning a shape the platform does not have.
+No identifier is allocated: it is a contract question for the Backend lane, not a change this slice
+made, and § 48.1 forbids renumbering an identifier once allocated.
+
+| id        | disposition                                                                                                   | why it is recorded rather than fixed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | owner   | state          |
+| --------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- | -------------- |
+| **CC-49** | **twenty-four of the twenty-six cases this slice was scoped for were already proved, and were not rewritten** | The brief was written from a count of declarations, not from a reading of the suites. Re-measurement found every stale-`If-Match` case, every replay case and three of the four widening paths already asserted on real rows in the seam suites, plus a fifth widening pair nobody had named. Duplicating them would have added a second copy of each claim, a second place for it to drift, and no new information — so the two new suites do not restate any of it. What they add instead is the claim the brief did not ask for and SEC-003 is actually scoped over: the phase SET, probed operation by operation. The residue is recorded here so the gap between the scoped count and the delivered count is legible rather than looking like work that was skipped | QA lane | closed, stated |
