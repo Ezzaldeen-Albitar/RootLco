@@ -456,6 +456,26 @@ export const REGISTER = Object.freeze([
     why: 'every P1-31 route page denies and returns on a permission before its first awaited read',
   },
   {
+    name: 'validate:p1-31-write-shape',
+    owner: ROOT,
+    tier: 'required',
+    // `P1-31-SEC-004`. The hand-transcribed request payloads the warranty and
+    // reporting screens send, compared against the routes' real zod schemas.
+    // Scoped to `wty` and `rpt` — the two namespaces `validate:p1-30-payload-parity`
+    // does not cover — and a SIBLING rather than a widening of that gate, whose
+    // scope another phase's closure rests on and whose domain list is pinned by
+    // name in its own suite (CC-37(a)). It borrows the P1-29 gate's comparison,
+    // locator, naming rule and interface reader rather than copying them, and
+    // adds one thing neither sibling has: the two mirrors spell a closed
+    // vocabulary as an exported type ALIAS, which the borrowed interface reader
+    // ignores, so the alias is resolved before comparing and an alias that
+    // cannot be resolved still fails. Anti-vacuity is a relationship, not a
+    // count, and it has a clause the siblings lack — a scope that had drifted
+    // entirely into `PENDING_MIRRORS` compares nothing and is a red.
+    // Mutation-proved by tests/ci/p1-31-write-shape.test.ts.
+    why: 'every in-scope P1-31 warranty or reporting write has a mirror that matches its zod schema, or a declared reason not to',
+  },
+  {
     name: 'validate:p1-28-access',
     owner: ROOT,
     tier: 'required',
