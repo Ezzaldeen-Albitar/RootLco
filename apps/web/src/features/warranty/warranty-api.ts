@@ -19,6 +19,7 @@ import type {
   WarrantyConfigurationStatus,
   WarrantyCoverageCreateBody,
   WarrantyCoverageTerms,
+  WarrantyGenerateBody,
   WarrantyListRow,
   WarrantyPage,
   WarrantyPolicyCreateBody,
@@ -500,7 +501,7 @@ export interface WarrantyWriteState extends ActionState {
  */
 export async function generateWarranty(
   deliveryId: string,
-  input: { readonly policyId?: string | undefined } = {},
+  input: WarrantyGenerateBody = {},
   attempt = 1
 ): Promise<WarrantyWriteState> {
   const client = await authorizedClient();

@@ -522,6 +522,20 @@ export interface WarrantyStatusSetBody {
 }
 
 /**
+ * The body `wty.warranty-generate` accepts: a plan, and nothing else.
+ *
+ * `policyId` is optional and is OMITTED rather than sent as `undefined` — the
+ * route's schema is `.strict()`, and leaving it out is what makes the company's
+ * single active plan resolve. There is deliberately no duration, no odometer
+ * allowance and no covered scope here: every term comes from the coverage row
+ * effective at the handover date, and a missing row is a configuration error
+ * rather than a defaulted term.
+ */
+export interface WarrantyGenerateBody {
+  readonly policyId?: string;
+}
+
+/**
  * The catalogue codes the five administration writes answer with.
  *
  * `ERR-CON-002` is listed and is never expected: the backend raises it when

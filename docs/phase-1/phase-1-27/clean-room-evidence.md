@@ -149,13 +149,13 @@ comparing a live baseline against a record of a head the branch had left behind.
 The superseded figures are left exactly as they were, because they are a true
 account of that head; what moved is which number the check consults.
 
-**The 4009 is HOSTED, and it is the binding measurement.** It is the output of
-`node scripts/ci/check-p1-27-closing-values.mjs --record web --hosted-run`, read
-from this pull request's own hosted run of this head and recorded in
-`evidence/local-run-ledger.json` with the commit it was taken at and with the
-provenance block — the run, the job, the artefact and that artefact's published
-digest — which is what marks it hosted. The run describes this head, so the
-figure and the tree it describes are the same one.
+**The 4009 is local, and it is pending attestation by this pull request's hosted
+run.** It is the output of
+`node scripts/ci/check-p1-27-closing-values.mjs --record web` against this tree,
+recorded in `evidence/local-run-ledger.json` with the commit it was taken at and
+with no provenance block, which is what marks it local. The required hosted run can attest this local measurement without changing its
+source. A valid hosted-attested local record is retained; it is not converted
+merely for cosmetic consistency.
 
 ### `DERIVABLE_LOCAL` — a command in this repository answers it
 
@@ -164,8 +164,8 @@ figure and the tree it describes are the same one.
 | Web test files under `apps/web/tests`       | 141    | a walk of the tree                                                 |
 | Web tier — tests executed                   | 4009  | `--record web`, from the `vitest` JSON report                      |
 | Web tier — files the run reported           | 141    | the same report, cross-checked against the walk above              |
-| Root unit tier — tests executed             | 3301  | `--record unit`, from the `vitest` JSON report                     |
-| Root unit tier — files the run reported     | 122   | the same report, cross-checked against the tier's include rule      |
+| Root unit tier — tests executed             | 3320  | `--record unit`, from the `vitest` JSON report                     |
+| Root unit tier — files the run reported     | 124   | the same report, cross-checked against the tier's include rule      |
 | Committed web floor (`minTests`)            | 3700  | `.github/ci-baselines/test-count-baseline.json`                    |
 | Committed unit floor (`minTests`)           | 1050  | the same baseline                                                  |
 | Migrations on disk                          | 141   | a walk of `supabase/migrations`                                    |
