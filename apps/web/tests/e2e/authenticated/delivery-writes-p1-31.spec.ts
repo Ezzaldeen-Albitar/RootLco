@@ -170,11 +170,23 @@ test.describe('P1-31 delivery writes, over handovers the acceptance journey left
       name: say(locale, 'state.notFound.title'),
       exact: true,
     });
+    /*
+     * And the body copy, matched WHOLE, which is the half the substring locator was
+     * accidentally reading. Moving the observation to the heading would otherwise have
+     * left the sentence an operator actually reads unasserted in either language — so
+     * it is asserted here on its own terms rather than as a side effect of a locator
+     * that happened to overlap it.
+     */
+    const absentBody = page.getByText(say(locale, 'state.notFound.description'), { exact: true });
     if (mayView) {
       await expect(
         absent,
         `${kind} holds ${VIEW_CODE}, so the gate must let it through and the record itself must ` +
           'be reported as absent'
+      ).toBeVisible();
+      await expect(
+        absentBody,
+        'the not-found state must state what happened, not only head it'
       ).toBeVisible();
       await expect(
         denied,
@@ -189,6 +201,10 @@ test.describe('P1-31 delivery writes, over handovers the acceptance journey left
       await expect(
         absent,
         'a caller who may not see handovers must not be told whether this one exists'
+      ).toHaveCount(0);
+      await expect(
+        absentBody,
+        'nor by the sentence under the heading, which says the same thing'
       ).toHaveCount(0);
     }
 
