@@ -29,6 +29,26 @@ beforeEach(() => {
 });
 
 describe('accepted declarations', () => {
+  it('accepts a parameter custom action while rejecting malformed action suffixes', () => {
+    const operation = defineOperation({
+      ...BASE,
+      id: 'rpt.report-export',
+      method: 'POST',
+      path: '/reports/{reportCode}:export',
+      permissions: ['rpt.export'],
+    });
+    expect(operation.path).toBe('/reports/{reportCode}:export');
+    for (const path of [
+      '/reports/{reportCode}:',
+      '/reports/{reportCode}:export:other',
+      '/reports/{reportCode}:../export',
+    ]) {
+      expect(() =>
+        defineOperation({ ...BASE, id: 'rpt.invalid', path, permissions: ['rpt.export'] })
+      ).toThrow(OperationRegistrationError);
+    }
+  });
+
   it('registers a permissioned operation and applies the documented defaults', () => {
     const registered = defineOperation({
       ...BASE,

@@ -49,6 +49,7 @@
  *   rpt.report-run: route service authorization success denial cross-tenant isolation pagination
  *   rpt.report-catalogue: route service success cross-tenant
  *   rpt.report-read: route service success denial cross-tenant
+ *   rpt.report-export: route service authorization success denial cross-tenant isolation audit
  *
  * No `audit` flag is declared: all three register `auditClass: 'none'`, so
  * claiming one would claim a record they do not write. No `idempotency` and no
@@ -85,7 +86,11 @@ import { AppFailure } from '@/server/errors/app-failure';
 import { callerHoldsPermission } from '@/server/auth/authorization';
 import { reportingModule, REPORT_DATASET_CODES } from '@/modules/reporting';
 import { GET as RUN } from '@/app/api/v1/reports/[reportCode]/rows/route';
-import { GET as READ_DEFINITION } from '@/app/api/v1/reports/[reportCode]/route';
+import {
+  GET as READ_DEFINITION,
+  POST as EXPORT_REPORT,
+} from '@/app/api/v1/reports/[reportCode]/route';
+import type { ReportExportView } from '@/modules/reporting';
 
 let admin: Pool;
 let runtime: Pool;
@@ -190,7 +195,7 @@ const RPT_SCOPED_R2: Principal = {
   userId: 'f1310000-0000-4000-8000-000000000132',
   subject: 'fx_p1_31_rpt_scoped_r2',
   tenantId: TENANT_A,
-  permissions: [REPORT_READ, WORK_ORDER_READ],
+  permissions: [REPORT_READ, WORK_ORDER_READ, 'rpt.export'],
   scope: { companyId: COMPANY_R, branchId: BRANCH_R2 },
   grantId: 'f1310000-0000-4000-8000-0000000001f1',
 };
@@ -204,7 +209,37 @@ const RPT_TENANT_B: Principal = {
   permissions: [REPORT_READ, WORK_ORDER_READ],
 };
 
-const PRINCIPALS: readonly Principal[] = [RPT_FULL, RPT_ONLY, WO_ONLY, RPT_SCOPED_R2, RPT_TENANT_B];
+const EXPORT_FULL: Principal = {
+  ...RPT_FULL,
+  roleId: 'f1310000-0000-4000-8000-000000000191',
+  userId: 'f1310000-0000-4000-8000-000000000192',
+  subject: 'fx_p1_31_export_full',
+  permissions: [REPORT_READ, WORK_ORDER_READ, 'rpt.export'],
+};
+const EXPORT_NO_DATASET: Principal = {
+  ...EXPORT_FULL,
+  roleId: 'f1310000-0000-4000-8000-0000000001a1',
+  userId: 'f1310000-0000-4000-8000-0000000001a2',
+  subject: 'fx_p1_31_export_no_dataset',
+  permissions: [REPORT_READ, 'rpt.export'],
+};
+const EXPORT_TENANT_B: Principal = {
+  ...RPT_TENANT_B,
+  roleId: 'f1310000-0000-4000-8000-0000000001b1',
+  userId: 'f1310000-0000-4000-8000-0000000001b2',
+  subject: 'fx_p1_31_export_tenant_b',
+  permissions: [REPORT_READ, WORK_ORDER_READ, 'rpt.export'],
+};
+const PRINCIPALS: readonly Principal[] = [
+  RPT_FULL,
+  RPT_ONLY,
+  WO_ONLY,
+  RPT_SCOPED_R2,
+  RPT_TENANT_B,
+  EXPORT_FULL,
+  EXPORT_NO_DATASET,
+  EXPORT_TENANT_B,
+];
 
 const REACH_ROLE = 'f1310000-0000-4000-8000-000000000151';
 const REACH_GRANT = 'f1310000-0000-4000-8000-000000000152';
@@ -431,6 +466,97 @@ async function withExplicitReportConfiguration(
     );
   }
 }
+
+describe('rpt.report-export — explicit disclosure contract', () => {
+  function requestExport(segment = `${REPORT_CODE}:export`): Promise<Response> {
+    return EXPORT_REPORT(
+      new Request(`http://localhost/api/v1/reports/${segment}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          companyId: COMPANY_R,
+          branchId: BRANCH_R1,
+          from: FROM,
+          to: TO,
+          reason: 'Backend export acceptance',
+        }),
+      }),
+      { params: Promise.resolve({ reportCode: segment }) }
+    );
+  }
+
+  it('exports the same live branch/period rows and commits a scoped disclosure audit', async () => {
+    await withExplicitReportConfiguration({ parameterSchema: {} }, async (id) => {
+      authAs(EXPORT_FULL);
+      const response = await requestExport();
+      expect(response.status).toBe(200);
+      const result = (await response.json()) as ReportExportView;
+      expect(result).toMatchObject({
+        generated: true,
+        rowCount: 3,
+        freshness: 'live',
+        period: { from: FROM, to: TO, timezone: BRANCH_TIMEZONE },
+      });
+      for (const included of [firstOrder, middleOrder, lateOrder])
+        expect(result.file.content).toContain(included);
+      for (const excluded of [excludedBefore, excludedAfter, otherBranchOrder])
+        expect(result.file.content).not.toContain(excluded);
+      const audit = await admin.query<{ actor_id: string; correlation_id: string }>(
+        `SELECT actor_id, correlation_id FROM iam.audit_records
+         WHERE tenant_id = $1 AND entity_id = $2 AND action = 'rpt.report.exported'`,
+        [TENANT_A, id]
+      );
+      expect(audit.rows).toHaveLength(1);
+      expect(audit.rows[0]?.actor_id).toBe(EXPORT_FULL.userId);
+      expect(audit.rows[0]?.correlation_id).toBe(response.headers.get('x-correlation-id'));
+    });
+  });
+
+  it.each([
+    ['read permission only', RPT_FULL],
+    ['missing dataset permission', EXPORT_NO_DATASET],
+    ['grant in the sibling branch despite RLS reach', RPT_SCOPED_R2],
+    ['another tenant', EXPORT_TENANT_B],
+  ] as const)('refuses %s with no success audit', async (_label, principal) => {
+    await withExplicitReportConfiguration({ parameterSchema: {} }, async (id) => {
+      authAs(principal);
+      const response = await requestExport();
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({ code: 'ERR-IAM-001' });
+      const audit = await admin.query(
+        `SELECT id FROM iam.audit_records WHERE tenant_id = $1 AND entity_id = $2 AND action = 'rpt.report.exported'`,
+        [TENANT_A, id]
+      );
+      expect(audit.rowCount).toBe(0);
+    });
+  });
+
+  it('requires the configured export permission as well as rpt.export', async () => {
+    await withExplicitReportConfiguration({ parameterSchema: {} }, async (id) => {
+      await admin.query(
+        `UPDATE rpt.report_configurations SET export_permission_code = 'sal.finance.view'
+        WHERE tenant_id = $1 AND id = $2`,
+        [TENANT_A, id]
+      );
+      authAs(EXPORT_FULL);
+      const response = await requestExport();
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({ code: 'ERR-IAM-001' });
+    });
+  });
+
+  it('does not export through the baseline fallback', async () => {
+    authAs(EXPORT_FULL);
+    const response = await requestExport();
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: 'ERR-IAM-001' });
+  });
+
+  it('does not treat a plain report-code POST as the canonical export action', async () => {
+    authAs(EXPORT_FULL);
+    expect((await requestExport(REPORT_CODE)).status).toBe(422);
+  });
+});
 
 function readReportDefinition(): Promise<Response> {
   return READ_DEFINITION(new Request(`http://localhost/api/v1/reports/${REPORT_CODE}`), {

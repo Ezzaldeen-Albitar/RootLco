@@ -17,9 +17,9 @@
  */
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
-import { parseOrFail } from '@/server/http/validation';
+import { parseJsonBody, parseOrFail, schemas, scopeTargetOption } from '@/server/http/validation';
 import { z } from 'zod';
-import { reportingModule } from '@/modules/reporting';
+import { reportingModule, type ReportExportView } from '@/modules/reporting';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -54,4 +54,86 @@ export async function GET(
     const code = parseOrFail(ReportCode, reportCode, 'path.reportCode');
     return { body: await reportingModule().catalogue.readByCode(db, code) };
   });
+}
+
+const ExportBody = z
+  .object({
+    companyId: schemas.uuid,
+    branchId: schemas.uuid,
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    reason: z.string().trim().min(1).max(500),
+  })
+  .strict();
+
+const ExportResult = z
+  .object({
+    reportCode: ReportCode,
+    generated: z.literal(true),
+    freshness: z.literal('live'),
+    generatedAt: z.iso.datetime(),
+    filters: z.object({ companyId: schemas.uuid, branchId: schemas.uuid }).strict(),
+    period: z.object({ from: z.string(), to: z.string(), timezone: z.string() }).strict(),
+    rowCount: z.number().int().nonnegative(),
+    summaryCount: z.number().int().nonnegative(),
+    file: z
+      .object({
+        filename: z.string(),
+        mediaType: z.literal('text/csv'),
+        encoding: z.literal('utf-8'),
+        content: z.string(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const REPORT_EXPORT_OPERATION = defineOperation({
+  id: 'rpt.report-export',
+  module: 'reporting',
+  method: 'POST',
+  path: '/reports/{reportCode}:export',
+  summary: 'Generate a bounded CSV report under explicit scoped export permissions.',
+  permissions: ['rpt.export', 'rpt.report.read'],
+  scope: 'branch',
+  auditClass: 'export',
+  auditAction: 'rpt.report.exported',
+  rateLimitPolicy: 'expensive-read',
+  cacheCategory: 'never',
+  requestBodySchema: z.toJSONSchema(ExportBody),
+  successBodySchema: z.toJSONSchema(ExportResult),
+  pathParameterSchemas: { reportCode: z.toJSONSchema(ReportCode) },
+});
+
+/** Next receives the whole final segment; only the canonical :export action is accepted. */
+export async function POST(
+  request: Request,
+  context: { params: Promise<{ reportCode: string }> }
+): Promise<Response> {
+  const { reportCode: segment } = await context.params;
+  const raw: unknown = await request
+    .clone()
+    .json()
+    .catch(() => null);
+  return handleOperation(
+    REPORT_EXPORT_OPERATION,
+    request,
+    async ({ db, request: incoming, authorizeScope, requireScopeClaim }) => {
+      const action = parseOrFail(
+        z.string().regex(/^[a-z][a-z0-9_]{1,62}:export$/),
+        segment,
+        'path.reportCode'
+      );
+      const body = await parseJsonBody(incoming, ExportBody);
+      const target = { companyId: body.companyId, branchId: body.branchId };
+      await authorizeScope(target);
+      await requireScopeClaim(target);
+      const result: ReportExportView = await reportingModule().exports.generate(db, {
+        ...body,
+        reportCode: action.slice(0, -':export'.length),
+      });
+      ExportResult.parse(result);
+      return { body: result };
+    },
+    { ...scopeTargetOption(raw), body: raw }
+  );
 }
