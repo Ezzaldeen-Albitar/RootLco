@@ -5701,9 +5701,11 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-delivering-employee-seam.test.ts",
-        "tests/backend/p1-31-privilege-escalation.test.ts"
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/org/employees/route.ts"
@@ -5744,7 +5746,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-31-delivering-employee-seam.test.ts",
-        "tests/backend/p1-31-privilege-escalation.test.ts"
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/org/employees/[employeeId]/route.ts"
@@ -5769,7 +5772,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-31-delivering-employee-seam.test.ts",
-        "tests/backend/p1-31-privilege-escalation.test.ts"
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/org/employees/route.ts"
@@ -5813,9 +5817,11 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-delivering-employee-seam.test.ts",
-        "tests/backend/p1-31-privilege-escalation.test.ts"
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/org/employees/[employeeId]/status/route.ts"
@@ -9045,6 +9051,7 @@
         "tests/backend/p1-31-privilege-escalation.test.ts",
         "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/backend/p1-31-report-engine-work-orders.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts",
         "tests/foundation/p1-15-catalogs.test.ts",
         "tests/foundation/rate-limit-policy-registration.test.ts"
       ],
@@ -9088,9 +9095,11 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
-        "tests/backend/p1-31-report-configuration-seam.test.ts"
+        "tests/backend/p1-31-report-configuration-seam.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/report-configurations/route.ts"
@@ -9129,7 +9138,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-31-privilege-escalation.test.ts",
-        "tests/backend/p1-31-report-configuration-seam.test.ts"
+        "tests/backend/p1-31-report-configuration-seam.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/report-configurations/route.ts"
@@ -9168,7 +9178,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-31-privilege-escalation.test.ts",
-        "tests/backend/p1-31-report-configuration-seam.test.ts"
+        "tests/backend/p1-31-report-configuration-seam.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/report-configurations/[configurationId]/route.ts"
@@ -9212,9 +9223,11 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
-        "tests/backend/p1-31-report-configuration-seam.test.ts"
+        "tests/backend/p1-31-report-configuration-seam.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/report-configurations/[configurationId]/status/route.ts"
@@ -9256,9 +9269,11 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
-        "tests/backend/p1-31-report-configuration-seam.test.ts"
+        "tests/backend/p1-31-report-configuration-seam.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/report-configurations/[configurationId]/route.ts"
@@ -9300,9 +9315,11 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
-        "tests/backend/p1-31-report-configuration-seam.test.ts"
+        "tests/backend/p1-31-report-configuration-seam.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/report-configurations/[configurationId]/versions/route.ts"
@@ -9344,9 +9361,11 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
-        "tests/backend/p1-31-report-configuration-seam.test.ts"
+        "tests/backend/p1-31-report-configuration-seam.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/report-configurations/[configurationId]/versions/[versionId]/publish/route.ts"
@@ -9389,6 +9408,7 @@
         "tests/backend/p1-23-reporting.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
         "tests/backend/p1-31-report-engine-work-orders.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts",
         "tests/foundation/operation-coverage-gate.test.ts",
         "tests/foundation/p1-15-catalogs.test.ts",
         "tests/foundation/rate-limit-policy-registration.test.ts"
@@ -9438,7 +9458,9 @@
         "tests/backend/p1-31-report-engine-invoice-payment.test.ts",
         "tests/backend/p1-31-report-engine-technician-labor.test.ts",
         "tests/backend/p1-31-report-engine-work-orders.test.ts",
-        "tests/ci/p1-31-access-gate.test.ts"
+        "tests/ci/p1-31-access-gate.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts",
+        "tests/ci/p1-31-grant-map.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/reports/[reportCode]/rows/route.ts"
@@ -9575,8 +9597,10 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-22-delivery.test.ts",
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
-        "tests/backend/p1-31-privilege-escalation.test.ts"
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/deliveries/[deliveryId]/checklist-results/route.ts"
@@ -9619,7 +9643,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-31-delivery-read-seam.test.ts",
-        "tests/backend/p1-31-privilege-escalation.test.ts"
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/deliveries/[deliveryId]/checklist-results/route.ts"
@@ -9662,9 +9687,11 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-delivery-checklist-template-seam.test.ts",
-        "tests/backend/p1-31-privilege-escalation.test.ts"
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/delivery-checklist-templates/route.ts"
@@ -9708,9 +9735,11 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-delivery-checklist-template-seam.test.ts",
-        "tests/backend/p1-31-privilege-escalation.test.ts"
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/delivery-checklist-templates/[templateId]/items/route.ts"
@@ -9752,8 +9781,10 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-delivery-checklist-template-seam.test.ts",
-        "tests/backend/p1-31-privilege-escalation.test.ts"
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/delivery-checklist-templates/[templateId]/items/[itemId]/route.ts"
@@ -9797,9 +9828,11 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-delivery-checklist-template-seam.test.ts",
-        "tests/backend/p1-31-privilege-escalation.test.ts"
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/delivery-checklist-templates/[templateId]/items/[itemId]/route.ts"
@@ -9824,7 +9857,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-31-delivery-checklist-template-seam.test.ts",
-        "tests/backend/p1-31-privilege-escalation.test.ts"
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/delivery-checklist-templates/route.ts"
@@ -9863,7 +9897,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-31-delivery-checklist-template-seam.test.ts",
-        "tests/backend/p1-31-privilege-escalation.test.ts"
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/delivery-checklist-templates/[templateId]/route.ts"
@@ -9907,9 +9942,11 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-delivery-checklist-template-seam.test.ts",
-        "tests/backend/p1-31-privilege-escalation.test.ts"
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/delivery-checklist-templates/[templateId]/route.ts"
@@ -9955,9 +9992,11 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-delivery-checklist-template-seam.test.ts",
-        "tests/backend/p1-31-privilege-escalation.test.ts"
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/delivery-checklist-templates/[templateId]/status/route.ts"
@@ -10008,9 +10047,11 @@
         "tests/backend/p1-22-concurrency.test.ts",
         "tests/backend/p1-22-delivery.test.ts",
         "tests/backend/p1-22-invoice-lifecycle.test.ts",
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-delivery-read-seam.test.ts",
-        "tests/backend/p1-31-privilege-escalation.test.ts"
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/deliveries/[deliveryId]/completion/route.ts"
@@ -10057,11 +10098,13 @@
         "tests/backend/p1-22-delivery.test.ts",
         "tests/backend/p1-22-isolation.test.ts",
         "tests/backend/p1-29-w9-owner-bootstrap.test.ts",
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-delivering-employee-seam.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
         "tests/backend/p1-31-provisioning-bundle.test.ts",
-        "tests/backend/p1-31-tenant-administrator-bundle-backfill.test.ts"
+        "tests/backend/p1-31-tenant-administrator-bundle-backfill.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/deliveries/route.ts"
@@ -10103,7 +10146,8 @@
       "tests": [
         "tests/backend/p1-22-delivery.test.ts",
         "tests/backend/p1-22-isolation.test.ts",
-        "tests/backend/p1-31-privilege-escalation.test.ts"
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/deliveries/[deliveryId]/eligibility/route.ts"
@@ -10147,7 +10191,8 @@
       "tests": [
         "tests/backend/p1-31-delivering-employee-seam.test.ts",
         "tests/backend/p1-31-delivery-list-seam.test.ts",
-        "tests/backend/p1-31-privilege-escalation.test.ts"
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/deliveries/route.ts"
@@ -10190,7 +10235,8 @@
         "tests/backend/p1-31-delivery-list-seam.test.ts",
         "tests/backend/p1-31-delivery-read-seam.test.ts",
         "tests/backend/p1-31-delivery-readiness-seam.test.ts",
-        "tests/backend/p1-31-privilege-escalation.test.ts"
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/deliveries/[deliveryId]/route.ts"
@@ -10233,7 +10279,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-31-delivery-readiness-seam.test.ts",
-        "tests/backend/p1-31-privilege-escalation.test.ts"
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/delivery-readiness/route.ts"
@@ -10274,7 +10321,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-31-delivery-read-seam.test.ts",
-        "tests/backend/p1-31-privilege-escalation.test.ts"
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/deliveries/[deliveryId]/authorized-receiver/route.ts"
@@ -10319,8 +10367,10 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-22-delivery.test.ts",
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
-        "tests/backend/p1-31-privilege-escalation.test.ts"
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/deliveries/[deliveryId]/authorized-receiver/route.ts"
@@ -10365,8 +10415,10 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-22-delivery.test.ts",
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
-        "tests/backend/p1-31-privilege-escalation.test.ts"
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/deliveries/[deliveryId]/signatures/route.ts"
@@ -10409,7 +10461,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-31-delivery-read-seam.test.ts",
-        "tests/backend/p1-31-privilege-escalation.test.ts"
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/deliveries/[deliveryId]/signatures/route.ts"
@@ -10452,7 +10505,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-31-delivery-read-seam.test.ts",
-        "tests/backend/p1-31-privilege-escalation.test.ts"
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/deliveries/[deliveryId]/status-history/route.ts"
@@ -16253,9 +16307,11 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
-        "tests/backend/p1-31-warranty-policy-seam.test.ts"
+        "tests/backend/p1-31-warranty-policy-seam.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/warranty-policies/[policyId]/coverage-windows/route.ts"
@@ -16299,9 +16355,11 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
-        "tests/backend/p1-31-warranty-policy-seam.test.ts"
+        "tests/backend/p1-31-warranty-policy-seam.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/warranty-policies/[policyId]/coverage-windows/[coverageId]/status/route.ts"
@@ -16348,6 +16406,7 @@
         "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/backend/p1-31-tenant-administrator-bundle-backfill.test.ts",
         "tests/backend/p1-31-warranty-read-seam.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts",
         "tests/ci/repository-paths.test.ts"
       ],
       "classification": "Covered",
@@ -16398,10 +16457,12 @@
         "tests/backend/p1-22-helpers.ts",
         "tests/backend/p1-22-isolation.test.ts",
         "tests/backend/p1-22-warranty.test.ts",
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
         "tests/backend/p1-31-warranty-policy-seam.test.ts",
         "tests/backend/p1-31-warranty-read-seam.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts",
         "tests/foundation/operation-coverage-gate.test.ts"
       ],
       "classification": "Covered",
@@ -16447,6 +16508,7 @@
         "tests/backend/p1-31-privilege-escalation.test.ts",
         "tests/backend/p1-31-tenant-administrator-bundle-backfill.test.ts",
         "tests/backend/p1-31-warranty-read-seam.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts",
         "tests/ci/repository-paths.test.ts"
       ],
       "classification": "Covered",
@@ -16490,9 +16552,11 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
-        "tests/backend/p1-31-warranty-policy-seam.test.ts"
+        "tests/backend/p1-31-warranty-policy-seam.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/warranty-policies/route.ts"
@@ -16525,7 +16589,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-31-privilege-escalation.test.ts",
-        "tests/backend/p1-31-warranty-policy-seam.test.ts"
+        "tests/backend/p1-31-warranty-policy-seam.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/warranty-policies/route.ts"
@@ -16564,7 +16629,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-31-privilege-escalation.test.ts",
-        "tests/backend/p1-31-warranty-policy-seam.test.ts"
+        "tests/backend/p1-31-warranty-policy-seam.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/warranty-policies/[policyId]/route.ts"
@@ -16608,9 +16674,11 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
-        "tests/backend/p1-31-warranty-policy-seam.test.ts"
+        "tests/backend/p1-31-warranty-policy-seam.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/warranty-policies/[policyId]/route.ts"
@@ -16656,9 +16724,11 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
-        "tests/backend/p1-31-warranty-policy-seam.test.ts"
+        "tests/backend/p1-31-warranty-policy-seam.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/warranty-policies/[policyId]/status/route.ts"
@@ -16700,8 +16770,11 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
-        "tests/backend/p1-31-warranty-read-seam.test.ts"
+        "tests/backend/p1-31-warranty-read-seam.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts",
+        "tests/ci/p1-31-grant-map.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/warranties/[warrantyId]/status-history/route.ts"

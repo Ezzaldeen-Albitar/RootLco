@@ -1934,3 +1934,176 @@ describe('the queue reads in Arabic as Arabic', () => {
     }
   });
 });
+
+/**
+ * A refused capture SAYS SO (P1-31, FE-006).
+ *
+ * The API refuses a file the signature category does not accept with a
+ * validation failure, and the validation class deliberately raises no toast —
+ * invalid input belongs beside the control. The form used to have nowhere to put
+ * it: `fieldErrors` were discarded and a refused capture was indistinguishable
+ * from one that had never been attempted, which is the state a browser case
+ * could only assert by asserting an absence.
+ *
+ * Both halves are pinned here, in both catalogues: the control's own reason and
+ * the refusal with the reference the backend logged. And the third half, which
+ * is the one that matters: nothing was bound, so no panel is re-read.
+ */
+describe('a refused signature capture is stated where it happened', () => {
+  const REFUSAL_REFERENCE = 'corr-capture-refused';
+
+  const refuse = () =>
+    captureDeliverySignature.mockResolvedValue({
+      status: 'invalid',
+      // What `fromFailure` composes for a 422: the shared banner key, and the
+      // violation's own key against the control it named.
+      messageKey: 'form.formError',
+      fieldErrors: { contentType: 'form.violation.invalid' },
+      correlationId: REFUSAL_REFERENCE,
+      attempt: 1,
+    });
+
+  const captureIn = async (locale: 'en' | 'ar') => {
+    const user = userEvent.setup();
+    const render = locale === 'en' ? renderLtr : renderRtl;
+    render(
+      <DeliveryDetailScreen
+        locale={locale}
+        messages={locale === 'en' ? en : ar}
+        delivery={delivery}
+        canReadFinance={true}
+        canComplete={false}
+        canManage={true}
+      />
+    );
+    const text = locale === 'en' ? EN : AR;
+    const region = await screen.findByRole('region', {
+      name: text['delivery.signatures.heading'] as string,
+    });
+    await user.upload(
+      within(region).getByLabelText(text['delivery.signatures.signatureFile'] as string),
+      new File(['x'], 'not-a-signature.txt', { type: 'text/plain' })
+    );
+    await user.click(
+      within(region).getByRole('button', {
+        name: text['delivery.signatures.captureSubmit'] as string,
+      })
+    );
+    await waitFor(() => expect(captureDeliverySignature).toHaveBeenCalled());
+    return region;
+  };
+
+  it.each(['en', 'ar'] as const)('renders the refusal and its reference in %s', async (locale) => {
+    refuse();
+    const region = await captureIn(locale);
+    const text = locale === 'en' ? EN : AR;
+
+    expect(
+      await within(region).findByText(text['delivery.signatures.refused'] as string)
+    ).toBeVisible();
+    // The control's own reason, beside the control it is about.
+    expect(within(region).getByText(text['form.violation.invalid'] as string)).toBeVisible();
+    // The reference is the only diagnostic an operator ever has to hand on.
+    expect(within(region).getByText(REFUSAL_REFERENCE)).toBeVisible();
+
+    if (locale === 'ar') {
+      // A copy-paste that leaves the English sentence in the Arabic catalogue
+      // reads as translated to anyone who does not read Arabic.
+      expect(within(region).queryByText(EN['delivery.signatures.refused'] as string)).toBeNull();
+    }
+  });
+
+  it('binds nothing, and re-reads nothing, when the capture was refused', async () => {
+    refuse();
+    const region = await captureIn('en');
+    await waitFor(() =>
+      expect(within(region).getByText(EN['delivery.signatures.refused'] as string)).toBeVisible()
+    );
+    // One read, from the mount. A second would mean the screen believed a
+    // signature had been added.
+    expect(listSignatures).toHaveBeenCalledTimes(1);
+    expect(within(region).getByText(EN['delivery.signatures.noneTitle'] as string)).toBeVisible();
+  });
+});
+
+/**
+ * The final odometer reading, as a READING (P1-31, FE-005).
+ *
+ * `sal.delivery-read` publishes `finalOdometerReadingId` and no value, so the
+ * record carried the reading as an identifier and nowhere as a number. The route
+ * resolves it from the vehicle's own odometer history and hands it down; these
+ * cases pin what the record does with each answer.
+ *
+ * The value is the stored decimal STRING with its unit, composed by
+ * `odometerDisplay` — the same function the vehicle's history table uses — so
+ * the two screens cannot come to show a reading differently. Nothing rounds it,
+ * nothing converts it, and it is rendered left to right in both directions
+ * because a measurement is not language.
+ */
+describe('the final odometer reading is a reading, not a reference', () => {
+  const READING_ID = '77777777-7777-4777-8777-777777777777';
+  const released = { ...delivery, status: 'delivered', finalOdometerReadingId: READING_ID };
+  const reading = {
+    id: READING_ID,
+    value: '12345.6',
+    unit: 'km',
+    valueKm: '12345.6',
+    observedAt: '2026-09-13T09:50:41.831Z',
+    captureMethod: 'manual',
+    anomalyFlag: false,
+    correctionOf: null,
+    correctionReason: null,
+  };
+
+  const showRecord = (locale: 'en' | 'ar', over: Record<string, unknown>) => {
+    const render = locale === 'en' ? renderLtr : renderRtl;
+    return render(
+      <DeliveryDetailScreen
+        locale={locale}
+        messages={locale === 'en' ? en : ar}
+        delivery={released}
+        canReadFinance={true}
+        canComplete={false}
+        {...over}
+      />
+    );
+  };
+
+  it.each(['en', 'ar'] as const)('shows the stored value in %s', async (locale) => {
+    showRecord(locale, { finalOdometerReading: reading });
+    const text = locale === 'en' ? EN : AR;
+    const summary = screen.getByRole('region', {
+      name: text['delivery.summary.heading'] as string,
+    });
+
+    expect(
+      within(summary).getByText(text['delivery.summary.finalOdometer'] as string)
+    ).toBeVisible();
+    const shown = within(summary).getByText('12345.6 km');
+    expect(shown).toBeVisible();
+    // The digits are a measurement, so they read the same way in both
+    // directions. The label around them is what changes language.
+    expect(shown).toHaveAttribute('dir', 'ltr');
+    // The reading is resolved, so the label that says "reference" would be
+    // describing something that is no longer on screen.
+    expect(
+      within(summary).queryByText(text['delivery.summary.finalOdometerReading'] as string)
+    ).toBeNull();
+    expect(within(summary).queryByText(READING_ID)).toBeNull();
+  });
+
+  it('keeps the reference when the reading could not be resolved', async () => {
+    // The three reasons collapse into one answer here — no authority to read the
+    // vehicle, a read that did not answer, or a reading off the first page — and
+    // the record must show what it does hold rather than nothing at all.
+    showRecord('en', {});
+    const summary = screen.getByRole('region', {
+      name: EN['delivery.summary.heading'] as string,
+    });
+    expect(
+      within(summary).getByText(EN['delivery.summary.finalOdometerReading'] as string)
+    ).toBeVisible();
+    expect(within(summary).getByText(READING_ID)).toBeVisible();
+    expect(within(summary).queryByText(EN['delivery.summary.finalOdometer'] as string)).toBeNull();
+  });
+});

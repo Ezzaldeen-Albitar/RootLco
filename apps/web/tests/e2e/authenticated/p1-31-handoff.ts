@@ -9,7 +9,7 @@ import { readSignedInAccount, sameAddress } from './account-manifest';
  * `orchestration/acceptance/p1-31-journey.mjs` — held OUTSIDE this repository, for the
  * reason §1.7 of the acceptance plan gives — walks the whole delivery, warranty and
  * reporting chain over HTTP and then writes one JSON document naming the records it made.
- * The four `*-p1-31.spec.ts` files read it and walk the SCREENS over those same records.
+ * The six `*-p1-31.spec.ts` files read it and walk the SCREENS over those same records.
  *
  * ## Why the specs read a file instead of building their own world
  *
@@ -90,6 +90,83 @@ export interface P131Overview {
   readonly branchFixed: Readonly<Record<string, P131OverviewFigures>>;
 }
 
+/** One checklist template item the browser fixtures reserve for a case. */
+export interface P131FixtureItem {
+  readonly id: string;
+  readonly itemCode: string;
+  readonly label: string | null;
+}
+
+/**
+ * One handover the harness left mid-flight for a browser case that WRITES.
+ *
+ * `unansweredItem` is the mandatory checklist item that case is expected to answer
+ * through the interface, and it is `null` on a fixture where every item is already
+ * answered.
+ *
+ * `startOdometer` is `null` for every fixture: the harness builds a bare vehicle
+ * and records no reading against it, and it asserts that emptiness rather than
+ * assuming it. That is what makes `finalOdometerValue` safe to publish
+ * unconditionally — `guard_odometer_reading` refuses a normal reading below the
+ * vehicle's current one, so a value chosen above an unknown reading would fail a
+ * case for a reason that is not about the product.
+ */
+export interface P131FixtureDelivery {
+  readonly deliveryId: string;
+  readonly workOrderId: string;
+  readonly vehicleId: string;
+  readonly receptionVisitId: string;
+  readonly customerId: string;
+  readonly unansweredItem: P131FixtureItem | null;
+  readonly blockers: readonly string[] | null;
+  readonly recordVersion: number | null;
+  readonly startOdometer: string | null;
+  readonly finalOdometerValue: string | null;
+}
+
+/**
+ * The records the three delivery WRITE cases act on, one set per locale project.
+ *
+ * ## Why one set per locale, and one handover per act
+ *
+ * `apps/web/playwright.config.ts` pins `workers: 1`, and `authenticated-en` runs
+ * before `authenticated-ar` over the same database. A case that records a checklist
+ * result CONSUMES the gap it acted on, so a shared fixture would be spent by
+ * whichever locale ran first and the second would assert on a record that no longer
+ * looks the way its case describes.
+ *
+ * Each handover carries exactly ONE gap, which is what lets its case prove the gap
+ * closing:
+ *
+ *   - `checklist` — signed, receiver verified, one mandatory item unanswered. The
+ *     release control is disabled while that item stands and enabled once it is
+ *     answered, and neither is true unless the checklist reason is the only
+ *     non-overridable one left.
+ *   - `signature` — every item answered, receiver verified, no signature.
+ *   - `release` — answered and signed, so the only reason left is the financial
+ *     one: the single blocker the delivery domain declares overridable, which is
+ *     what puts the release control within reach of the odometer case.
+ *
+ * The harness reads each handover's eligibility and refuses to finish the run if one
+ * carries any other reason, so a fixture that reaches a spec is one its case can act
+ * on.
+ */
+export interface P131BrowserFixtures {
+  readonly template: {
+    readonly id: string;
+    readonly templateCode: string;
+    readonly mandatory: Readonly<Record<string, P131FixtureItem>>;
+    readonly optional: P131FixtureItem | null;
+  };
+  /** A decodable 1x1 PNG, base64. The bytes the harness itself puts on file. */
+  readonly signaturePngBase64: string;
+  readonly companyId: string;
+  readonly branchId: string | null;
+  readonly checklist: Readonly<Record<string, P131FixtureDelivery>>;
+  readonly signature: Readonly<Record<string, P131FixtureDelivery>>;
+  readonly release: Readonly<Record<string, P131FixtureDelivery>>;
+}
+
 /**
  * One transition of the warranty ledger, as the harness read it back over HTTP.
  *
@@ -155,23 +232,33 @@ export interface P131Handoff {
    * The harness runs the reports twice: once in its own section 13, where the figure
    * belongs to the record's narrative, and once at the very end, which is the figure
    * published here. The two differ, and the difference is not noise — section 15
-   * opens a second work order and a second delivery in the same branch, and
-   * `work_orders_by_status` counts every non-deleted work order opened in the period
-   * with no state filter. A browser case comparing a screen against the mid-journey
-   * figure asserts a world that no longer exists.
+   * opens a second work order and a second delivery in the same branch, section 15b
+   * opens six more for the write cases below, and `work_orders_by_status` counts
+   * every non-deleted work order opened in the period with no state filter. Both
+   * sections are INSIDE what the final pass observes, which is why the figures here
+   * still describe the world a browser opens. A case comparing a screen against the
+   * mid-journey figure asserts a world that no longer exists.
    */
   readonly reportRuns: Readonly<Record<string, P131ReportFigures>> | null;
   /** The catalogue's own answer for each dataset, at the same observation point. */
   readonly reportProvenance: Readonly<Record<string, P131ReportProvenance>> | null;
   /** FE-010 and FE-016, read at the same observation point. */
   readonly overview: P131Overview | null;
+  /**
+   * The mid-flight handovers the WRITE cases act on, or absent.
+   *
+   * Optional because a handoff written by an earlier harness carries none, and a
+   * case that finds none must say so and assert nothing rather than invent a
+   * record to act on.
+   */
+  readonly browserFixtures?: P131BrowserFixtures | null;
 }
 
 /** The environment variable the harness prints and these specs read. */
 export const HANDOFF_ENV = 'ROOTLCO_P131_HANDOFF';
 
 /**
- * The reason a skip states, written once so all four specs say the same thing.
+ * The reason a skip states, written once so all six specs say the same thing.
  *
  * A skip whose message does not say what is missing is indistinguishable from a test
  * nobody finished writing, which is the failure mode the test-honesty rule exists for.
@@ -241,6 +328,38 @@ export function signedInAsJourneyAdministrator(): boolean {
   if (login === null) return false;
   const account = readSignedInAccount();
   return account.kind === 'org-administrator' && sameAddress(login.email, account.email);
+}
+
+/**
+ * The three fixture handovers for one locale, or `null` when this handoff has none.
+ *
+ * Validated here rather than at three call sites: a fixture document that names no
+ * delivery is not a fixture, and a case that read one field and trusted the rest
+ * would fail deep inside an interaction with a message about a missing element
+ * instead of about a missing record.
+ */
+export function browserFixtures(
+  handoff: P131Handoff | null,
+  locale: 'en' | 'ar'
+): {
+  readonly checklist: P131FixtureDelivery;
+  readonly signature: P131FixtureDelivery;
+  readonly release: P131FixtureDelivery;
+  readonly signaturePngBase64: string;
+} | null {
+  const fixtures = handoff?.browserFixtures;
+  if (fixtures === undefined || fixtures === null) return null;
+  const checklist = fixtures.checklist[locale];
+  const signature = fixtures.signature[locale];
+  const release = fixtures.release[locale];
+  if (checklist === undefined || signature === undefined || release === undefined) return null;
+  for (const fixture of [checklist, signature, release]) {
+    if (typeof fixture.deliveryId !== 'string' || fixture.deliveryId.length === 0) return null;
+  }
+  if (typeof fixtures.signaturePngBase64 !== 'string' || fixtures.signaturePngBase64.length === 0) {
+    return null;
+  }
+  return { checklist, signature, release, signaturePngBase64: fixtures.signaturePngBase64 };
 }
 
 /** The locale a project drives, from its name. The same rule `administration.spec.ts` uses. */

@@ -2310,7 +2310,32 @@ test.describe('the configured workspace: the four catalogue-blocked capabilities
 
   let manifest: FixtureManifest;
 
+  /*
+   * The account gate is repeated HERE, and the repetition is the point.
+   *
+   * The file-level `test.beforeEach` above skips every case in this file for an
+   * account other than the acceptance owner — but a `beforeAll` runs BEFORE the
+   * first case's `beforeEach`, so on a handoff-driven run this hook provisioned a
+   * second workspace for a session that was about to skip every case it was for.
+   * It cannot: `configureSecondWorkspace` shells out to the owner-acceptance
+   * provisioning command, which fails against the journey's organisation, and the
+   * hook's failure was reported as three failed cases and nine that did not run
+   * rather than twelve skips.
+   *
+   * So the same condition, with the same reason, is asked first. Playwright turns
+   * a `test.skip` raised in a `beforeAll` into a skip of the case that triggered
+   * the hook and stops the remaining hooks in the group, and the file-level
+   * `beforeEach` skips the eleven after it. Nothing changes for the owner
+   * acceptance account: the condition is false, the hook provisions as before, and
+   * every case below runs unaltered.
+   */
   test.beforeAll(() => {
+    const account = readSignedInAccount();
+    // test-honesty-allow: TH-002 -- this file's fixture belongs to the owner-acceptance account; the reason names the account actually signed in
+    test.skip(
+      account.kind !== 'owner-acceptance',
+      `requires the owner-acceptance account; signed in as ${account.kind}`
+    );
     manifest = configureSecondWorkspace();
   });
 

@@ -476,6 +476,27 @@ export const REGISTER = Object.freeze([
     why: 'every in-scope P1-31 warranty or reporting write has a mirror that matches its zod schema, or a declared reason not to',
   },
   {
+    name: 'validate:p1-31-version-sourcing',
+    owner: ROOT,
+    tier: 'required',
+    // `P1-31-QA-004`. The mechanical half of P1-31's version discipline, and a
+    // SIBLING of `validate:p1-28-version-sourcing` rather than a widening of it:
+    // that gate hard-filters `apt|rec` and P1-28's closure rests on its adapter
+    // equality. Scope is the ELEVEN version-guarded P1-31 operations, frozen
+    // because no namespace expresses them — P1-30 owns all of `sal.` and `wty.` —
+    // and then asserted against the published contract, so a scope entry that
+    // stops being guarded is a violation rather than a quiet shrink. It borrows
+    // the P1-28 classifier, scope reader and renewal rule, and adds three things
+    // that gate cannot do: it binds a send to its operation by RESOLVING the path
+    // expression through the module's own helpers, it sees a version carried as
+    // an interface FIELD (the delivery completion, invisible to a parameter-list
+    // walk), and it refuses a retry that quotes the version the first attempt was
+    // refused for. Seven of the eleven have no consumer and are declared PENDING
+    // with a reason that goes stale the moment one appears. Mutation-proved by
+    // tests/ci/p1-31-version-sourcing.test.ts.
+    why: 'every version-guarded P1-31 write sources its recordVersion from a read or a command response, renews it after a conflict, and never invents one',
+  },
+  {
     name: 'validate:p1-28-access',
     owner: ROOT,
     tier: 'required',

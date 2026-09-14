@@ -50,6 +50,21 @@ import { usePagedList } from './use-paged-list';
  * Neither the accepted content types nor the size ceiling is stated here. Both
  * belong to the document category the server published and are enforced from it.
  *
+ * ## A refused capture SAYS SO, and that is not a detail
+ *
+ * The API refuses a file the category does not accept with a validation failure,
+ * which `fromFailure` maps to the `invalid` state — and `notifyActionResult`
+ * deliberately raises no toast for that state, because invalid input belongs
+ * beside the control the operator has to correct rather than in the corner of the
+ * viewport. This form used to carry no such place: it discarded `fieldErrors`,
+ * nothing was announced, and a refused capture looked exactly like a capture that
+ * had not been attempted. It renders both halves now — the field's own reason
+ * beneath the file control in the shape `FieldFrame` uses, and the refusal itself
+ * with the reference the backend logged, in the shape the release control uses.
+ *
+ * Every string is a catalogue KEY. The problem document carries a code and no
+ * prose, so nothing here composes a sentence out of what the server sent.
+ *
  * ## No claim is made about what a signature means
  *
  * What is recorded is that a document was bound to this handover in a stated
@@ -166,6 +181,32 @@ export function SignaturesPanel({
   );
 }
 
+/** What a refused capture left to say, in catalogue keys and nothing else. */
+interface Refusal {
+  /** The banner key the failure carried, or the shared one. Always a KEY. */
+  readonly messageKey: string;
+  /** The key for the control the failure named, when it named one. */
+  readonly fieldKey: string | null;
+  /** The reference the backend logged. The only diagnostic an operator sees. */
+  readonly correlationId: string | null;
+}
+
+/**
+ * The first field reason a failure carried, whatever control it named.
+ *
+ * By VALUE rather than by a known key, deliberately. The capture chain refuses
+ * on three different paths — an empty file names `signatureFile`, the size
+ * ceiling names `file`, a content type the category does not accept names
+ * `contentType` — and every value is a catalogue key. Listing the paths here
+ * would be a fourth copy of a mapping that already exists, and the one that fell
+ * behind would render nothing at all.
+ */
+function firstFieldError(fieldErrors: Readonly<Record<string, string>> | undefined): string | null {
+  if (fieldErrors === undefined) return null;
+  const [first] = Object.values(fieldErrors);
+  return first ?? null;
+}
+
 /**
  * Capture one signature image and bind it to this handover.
  *
@@ -198,14 +239,33 @@ function CaptureForm({
    * default it remounts to is the choice that was actually made.
    */
   const [attempt, setAttempt] = useState(0);
+  /*
+   * What the last attempt was refused with, or `null`.
+   *
+   * Held because the refusal has nowhere else to go: the validation class raises
+   * no toast by design, and the form is reset by React once the action settles,
+   * so an operator whose file was rejected would otherwise be looking at an empty
+   * form and no reason. Cleared at the start of every attempt, so what is on
+   * screen is always about the attempt just made.
+   */
+  const [refusal, setRefusal] = useState<Refusal | null>(null);
   const [pending, startTransition] = useTransition();
 
   const action = (formData: FormData) => {
+    setRefusal(null);
     startTransition(() => {
       void captureDeliverySignature(deliveryId, receptionVisitId, formData).then((result) => {
         notifyActionResult(result, messages);
         setAttempt((previous) => previous + 1);
-        if (result.status === 'success') onDone?.();
+        if (result.status === 'success') {
+          onDone?.();
+          return;
+        }
+        setRefusal({
+          messageKey: result.messageKey ?? 'form.formError',
+          fieldKey: firstFieldError(result.fieldErrors),
+          correlationId: result.correlationId ?? null,
+        });
       });
     });
   };
@@ -238,6 +298,38 @@ function CaptureForm({
         label={translate(messages, 'delivery.signatures.signatureFile')}
         disabled={pending}
       />
+      {/*
+        Beneath the control it is about, in the markup `FieldFrame` uses for
+        every other field in the product: the file input is the one control that
+        does not go through that frame, and a reason rendered anywhere else would
+        make the operator work out which box was wrong.
+      */}
+      {refusal === null || refusal.fieldKey === null ? null : (
+        <p role="alert" className="text-supporting text-error">
+          {translateDynamic(messages, refusal.fieldKey)}
+        </p>
+      )}
+      {refusal === null ? null : (
+        <div
+          role="alert"
+          className="flex flex-col gap-1 rounded-md border border-error-border bg-error-subtle p-3"
+        >
+          <p className="text-body text-text-primary">
+            {translate(messages, 'delivery.signatures.refused')}
+          </p>
+          <p className="text-caption text-text-secondary">
+            {translateDynamic(messages, refusal.messageKey)}
+          </p>
+          {refusal.correlationId === null ? null : (
+            <p className="text-caption text-text-muted">
+              {translate(messages, 'action.reference')}{' '}
+              <code className="font-mono text-caption" dir="ltr">
+                {refusal.correlationId}
+              </code>
+            </p>
+          )}
+        </div>
+      )}
       <div>
         <button type="submit" className={PRIMARY_BUTTON} disabled={pending}>
           {translate(messages, 'delivery.signatures.captureSubmit')}
