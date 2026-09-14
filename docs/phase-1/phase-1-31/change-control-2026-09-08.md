@@ -5564,3 +5564,111 @@ nothing here upgrades a local number into an attested one.
   run of its own that was still incomplete when this was written — two jobs in progress at 23:13Z,
   and its `static-quality` job concluded `failure` on a generated register left stale by the SE-0
   fix — and **no result of that run is claimed here**.)_
+
+---
+
+## 69. The warranty transition ledger on the record screen — FE-009's screen half (CC-59)
+
+The backend prerequisite **P-18** published `wty.warranty-status-history`. This slice consumes it:
+the warranty record screen now renders the ledger it used to say it could not read.
+
+### 69.1 Identifier allocation
+
+| identifier | meaning                                               | state                                        |
+| ---------- | ----------------------------------------------------- | -------------------------------------------- |
+| section 69 | this slice                                            | this branch, reserved for it before it began |
+| **CC-59**  | FE-009's screen half — the record consumes the reader | this branch                                  |
+
+Sections 64 to 68 and **CC-54** to **CC-58** are reserved by lanes that had not merged when this
+branch was cut. Nothing here renumbers, reuses or reconciles any of them.
+
+### 69.2 What CC-31 said, and which half of it this closes
+
+**CC-31** recorded FE-009 as shipping PARTIAL: `wty.warranty_status_history` was written by the
+database and read by no operation anywhere in `apps/api/src` (**CC-10**), so the only history the
+feature could show honestly was the vehicle-filtered warranty list. The record screen stated that in
+the operator's own language and composed nothing — an invented ledger would be believed, which is
+worse than an absent one — and the missing half was named as the backend prerequisite **P-18**.
+
+P-18 landed. **The frontend half of CC-31 closes here.** What remains open under it is the browser
+proof, which cannot be taken until the acceptance harness runs at the closing head; § 69.6 states
+exactly what is owed and what is not claimed.
+
+### 69.3 What changed
+
+- **A typed envelope, taken from the backend's own view.** `WarrantyStatusTransition` and
+  `WarrantyStatusHistoryEnvelope` mirror `WarrantyStatusHistoryEntryView` and
+  `WarrantyStatusHistoryEnvelope` field for field. Both are spelled exactly as the delivery ledger's
+  equivalents are, on both sides and deliberately: a screen that renders a handover's history and
+  then a warranty's handles one shape rather than two that can drift.
+- **One adapter, and no more.** `readWarrantyStatusHistory` goes through the shared read helper, so a
+  refusal reaches the screen as a refusal and never as an empty list. It attaches no retry key,
+  because it is a read. The cursor is passed back exactly as the server minted it and is never
+  parsed; `hasMore` is the server's own end-of-set signal, and no total is requested or invented.
+- **A history panel on the record screen.** It reads its own subresource and therefore fails on its
+  own: a caller may see the record and have the ledger refused, and the panel renders that inside
+  itself so everything above it survives. The refusal states are the shared ones, so this screen is
+  not a second authority on what a denial looks like.
+- **The oldest row is drawn as a beginning.** The transition with no previous state is the genesis
+  row `wty.issue_warranty` writes with the record. The backend deliberately publishes no synthesised
+  origin block — the genesis row is already in the table — and this side adds nothing above it.
+- **The actor is a labelled reference.** No warranty read resolves an employee to a name, so the
+  identifier is shown as a reference with a label saying what it references, left-to-right in both
+  reading directions. That is the convention the record screen already uses for the vehicle and the
+  delivery feature already uses for its own ledger; no identifier reaches the page unlabelled, and
+  no lookup is invented.
+- **The sentence CC-31 required is gone with its key.** `warranty.record.noHistoryYet` had four
+  references — the screen, both catalogues and one case — and all four are gone. It is not kept for
+  the empty state: an empty page gets `warranty.history.noneTitle` and `noneDescription`, which say
+  that no change of state has been recorded, while the retired sentence said the record could not be
+  read. Those are different facts, and sharing one sentence would restate a limitation that no
+  longer exists.
+- **Nine catalogue keys, in both languages.** `warranty.history.` heading, explain, origin,
+  movedFrom, movedTo, actor, noneTitle, noneDescription, loadMore.
+- **The access gate owns the new operation.** `wty.warranty-status-history` is added to
+  `P1_31_OPERATION_IDS`. It shares the `warranties` resource root that the list and the detail read
+  already contribute, so the gate's page and segment counts are unmoved and neither pin in
+  `tests/ci/p1-31-access-gate.test.ts` changes.
+
+### 69.4 The one-row ledger, stated rather than worked around
+
+Nothing in this phase advances `wty.warranty_records.status`, so every warranty the product can
+create carries exactly one transition — the genesis absence into `issued` — and the server answers
+`hasMore` false. **A one-row ledger is rendered as a one-row ledger.** It is not rendered as empty,
+which would tell an operator the workshop has recorded nothing when it has recorded everything there
+is; and it is not rendered as a fault, which it is not.
+
+The honest empty state is kept anyway, and the panel's docblock says why: the panel has to
+distinguish three outcomes — a refusal, an empty page, and a page of rows — and the live service
+cannot produce the middle one today. A branch that is never exercised is a branch that would be
+written wrong on the day a later writer makes it reachable, so it is exercised by a fixture and
+marked in the record as unreachable through the service rather than left to look like a state
+somebody has seen.
+
+### 69.5 What was measured
+
+Fourteen DOM cases were added and one was removed — the case that asserted the retired sentence.
+They cover: the ledger is read for the record being shown and for nothing else; the one-row ledger
+renders its origin row in English and in Arabic, with no English left in the Arabic panel; a
+multi-row ledger keeps the server's newest-first order with the state it moved from and the reason
+it carried; the actor is a labelled reference and no identifier is unlabelled, in both directions; a
+further page is offered only when the server declares one, and the cursor goes back as it arrived;
+denied, not-found and unavailable are each drawn as themselves inside the panel while the record
+above them survives; an empty page says so; and a state this build does not know is printed as the
+word the backend sent.
+
+### 69.6 What this slice did NOT do, and what is not claimed
+
+- **No browser proof was taken.** A handoff-gated case was added to `warranty-p1-31.spec.ts`, and it
+  is committed and unrun. It skips, stating its own reason, until an acceptance handoff carries
+  `warrantyHistory`. **No claim is made here that FE-009 has been verified in a browser.**
+- **The harness step it depends on is not written.** The acceptance harness is executing another
+  lane's run and was deliberately not edited. The step it owes is a `wty.warranty-status-history`
+  read for the journey's own warranty, published as the transitions page, and it must be added
+  before the case can execute.
+- **No backend change.** P-18 is somebody else's merged work; nothing under `apps/api` is touched
+  here, and this slice carries no migration.
+- **No register or closure-record edits.** `task-matrix.json` and the closure record are not
+  touched.
+- **CC-10 is unaffected.** It records the table under a name no migration created; that is a record
+  defect about naming, and it is not what this slice is about.

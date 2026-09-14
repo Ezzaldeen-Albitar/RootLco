@@ -24,7 +24,7 @@ evidences the day it ran and nothing after it.
 | `orchestration/acceptance/p1-31-journey.mjs` (outside the repository, §1.7) | the HTTP journey, its refusal cases, and the evidence it writes            |
 | `apps/web/tests/e2e/authenticated/p1-31-handoff.ts`                         | how the browser half reads the world the HTTP half made                    |
 | `apps/web/tests/e2e/authenticated/delivery-p1-31.spec.ts`                   | the readiness queue, the handover record, the printable copy               |
-| `apps/web/tests/e2e/authenticated/warranty-p1-31.spec.ts`                   | the warranty list, the record, and the plans screen                        |
+| `apps/web/tests/e2e/authenticated/warranty-p1-31.spec.ts`                   | the warranty list, the record with its ledger, and the plans screen        |
 | `apps/web/tests/e2e/authenticated/reports-p1-31.spec.ts`                    | the catalogue and all four report screens                                  |
 | `apps/web/tests/e2e/authenticated/audit-log-p1-31.spec.ts`                  | the audit log over this journey's own writes                               |
 | `apps/web/tests/e2e/authenticated/overview-p1-31.spec.ts`                   | the operational overview — FE-010, and FE-016 by the address               |
@@ -253,6 +253,7 @@ npm run test:e2e:authenticated
 | `delivery-p1-31.spec.ts`  | the printable copy is produced and prints exactly once                     | yes                | yes                |
 | `warranty-p1-31.spec.ts`  | the branch's warranty list carries the generated warranty                  | yes                | yes                |
 | `warranty-p1-31.spec.ts`  | the warranty record shows its terms and what it covers                     | yes                | yes                |
+| `warranty-p1-31.spec.ts`  | the warranty record shows the transition ledger the journey recorded       | yes                | yes                |
 | `warranty-p1-31.spec.ts`  | the warranty plans screen lists the plan                                   | yes                | yes                |
 | `reports-p1-31.spec.ts`   | the catalogue offers all four datasets                                     | yes                | yes                |
 | `reports-p1-31.spec.ts`   | each of the four reports renders the rows the server answered (four cases) | yes                | yes                |
@@ -304,7 +305,7 @@ there; no case defaults a kind. The handoff-gated cases carry a second gate for 
 they run only when the browser is signed in as the organisation administrator whose records they
 are about.
 
-Twenty cases per project, forty in total, plus the sign-in setup. The specs are **not** added to
+Twenty-one cases per project, forty-two in total, plus the sign-in setup. The specs are **not** added to
 `authenticated-tablet`: that project's rule is that a document obliges the surface to work at tablet
 width, and no document does for these screens.
 
@@ -322,6 +323,12 @@ width, and no document does for these screens.
   **equal** the count the HTTP half recorded for the same code, branch and period. A hard-coded
   number would be a second statement of a figure the server owns; "the table is not empty" would pass
   on a screen that dropped every row but one.
+- **The warranty ledger, row for row (FE-009).** The transition ledger on the warranty record
+  must hold exactly the transitions the HTTP half read back through `wty.warranty-status-history`
+  for the same warranty — the count from the handoff, never a literal in the spec — and the oldest
+  row must be drawn as a beginning: the origin wording, no "moved from", and nothing above it.
+  Today that ledger is one row long, because nothing in this phase advances a warranty's state, and
+  a one-row ledger rendered as "no history yet" is the defect this asserts against.
 - **A verdict in every queue row.** Each readiness row must read `Ready` or the not-ready sentence. A
   blank verdict cell is the defect this asserts against, and it is the whole point of the screen.
 - **Stated absences.** "There is no download here" on the report catalogue, and "the service
@@ -524,6 +531,23 @@ the handoff, each stating its own reason.
 So the guard is satisfied honestly rather than accommodated: every file contributes executed
 tests, and no case pretends to prove something it has not seen. What still waits for the harness
 to be run is the journey half, which is §1 through §6 of this plan.
+
+**FE-009's ledger case adds no registration, and it is behind the handoff for a structural
+reason.** `warranty-p1-31.spec.ts` is already declared under `governed.specs`, and the file already
+contributes an executed case in the governed job — `both warranty screens answer exactly what the
+signed-in account is entitled to` — so the zero-executed-test guard is unaffected and no list is
+edited. The new case cannot join that unconditional half: the panel lives on a warranty RECORD, and
+the governed job provisions no warranty, so there is no identifier to open. What CAN be pinned
+without a handoff is already pinned there — `account-manifest.json` records `owner-acceptance` as
+holding `wty.warranty.read`, which is the code this subresource answers, so the owner is entitled to
+the panel and is simply never shown a record. The gated case asserts that entitlement explicitly
+rather than assuming it, and treats a refusal inside the panel as a failure rather than as an
+accepted alternative outcome.
+
+**It depends on one harness step that is not yet written.** The case reads `warrantyHistory` from
+the handoff and skips, with the reason stated in the run, when the document does not carry it. The
+step the harness owes is a `wty.warranty-status-history` read for the journey's own warranty,
+published as the transitions page; until it is added, this case skips and claims nothing.
 
 **The overview spec is the fifth file, and it closes FE-010 and FE-016.** The record carried both
 as reached but not verified: no HTTP step called what the screen calls, and no browser case opened

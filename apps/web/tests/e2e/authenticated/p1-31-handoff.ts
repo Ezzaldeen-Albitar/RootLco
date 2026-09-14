@@ -90,6 +90,36 @@ export interface P131Overview {
   readonly branchFixed: Readonly<Record<string, P131OverviewFigures>>;
 }
 
+/**
+ * One transition of the warranty ledger, as the harness read it back over HTTP.
+ *
+ * The identifier, the actor and the stamp are deliberately NOT carried. A browser case
+ * comparing a rendered timestamp against one the harness recorded would be asserting on
+ * the reader's locale formatting rather than on the ledger, and an actor reference the
+ * spec pinned would make the case fail the day the journey signs in as somebody else.
+ * What is pinned is what the panel is FOR: how many transitions there are, and what each
+ * one moved from and to.
+ */
+export interface P131WarrantyTransition {
+  readonly fromStatus: string | null;
+  readonly toStatus: string;
+  readonly reason: string | null;
+}
+
+/**
+ * FE-009 — one page of the warranty's transition ledger, at the observation point.
+ *
+ * Expected to hold exactly ONE row today, the genesis `null -> issued` that
+ * `wty.issue_warranty` writes with the record, because nothing in this phase advances a
+ * warranty's state. The count is published rather than assumed so the browser case
+ * asserts against what the server actually answered: a spec that hard-coded "one row"
+ * would keep passing on the day a writer lands and the screen silently dropped the rest.
+ */
+export interface P131WarrantyHistory {
+  readonly items: readonly P131WarrantyTransition[];
+  readonly hasMore: boolean;
+}
+
 export interface P131Handoff {
   readonly api: string;
   readonly login: { readonly email: string; readonly password: string };
@@ -108,6 +138,14 @@ export interface P131Handoff {
   readonly deliveryId: string | null;
   readonly vehicleId: string | null;
   readonly warrantyId: string | null;
+  /**
+   * The transition ledger of `warrantyId`, read through `wty.warranty-status-history`.
+   *
+   * Optional, because a handoff written before the harness published this step is a
+   * handoff from a run that recorded no ledger — and the case that reads it must skip
+   * with that stated rather than assert against a field that is not there.
+   */
+  readonly warrantyHistory?: P131WarrantyHistory | null;
   readonly warrantyPolicyId: string | null;
   readonly invoiceId: string | null;
   readonly reportPeriod: { readonly from: string; readonly to: string } | null;
