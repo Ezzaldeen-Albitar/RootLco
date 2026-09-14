@@ -51,9 +51,8 @@
  *   rpt.report-read: route service success denial cross-tenant
  *   rpt.report-export: route service authorization success denial cross-tenant isolation audit
  *
- * No `audit` flag is declared: all three register `auditClass: 'none'`, so
- * claiming one would claim a record they do not write. No `idempotency` and no
- * `stale-version`: they are GETs.
+ * The three GETs declare `auditClass: 'none'`; only report export declares an
+ * audit witness. None declares idempotency or stale-version evidence.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
@@ -468,7 +467,10 @@ async function withExplicitReportConfiguration(
 }
 
 describe('rpt.report-export — explicit disclosure contract', () => {
-  function requestExport(segment = `${REPORT_CODE}:export`): Promise<Response> {
+  function requestExport(
+    segment = `${REPORT_CODE}:export`,
+    overrides: Record<string, unknown> = {}
+  ): Promise<Response> {
     return EXPORT_REPORT(
       new Request(`http://localhost/api/v1/reports/${segment}`, {
         method: 'POST',
@@ -479,6 +481,7 @@ describe('rpt.report-export — explicit disclosure contract', () => {
           from: FROM,
           to: TO,
           reason: 'Backend export acceptance',
+          ...overrides,
         }),
       }),
       { params: Promise.resolve({ reportCode: segment }) }
@@ -512,12 +515,13 @@ describe('rpt.report-export — explicit disclosure contract', () => {
     });
   });
 
-  it.each([
+  const exportRefusals = [
     ['read permission only', RPT_FULL],
     ['missing dataset permission', EXPORT_NO_DATASET],
     ['grant in the sibling branch despite RLS reach', RPT_SCOPED_R2],
     ['another tenant', EXPORT_TENANT_B],
-  ] as const)('refuses %s with no success audit', async (_label, principal) => {
+  ] as const;
+  it.each(exportRefusals)('refuses %s with no success audit', async (_label, principal) => {
     await withExplicitReportConfiguration({ parameterSchema: {} }, async (id) => {
       authAs(principal);
       const response = await requestExport();
@@ -555,6 +559,20 @@ describe('rpt.report-export — explicit disclosure contract', () => {
   it('does not treat a plain report-code POST as the canonical export action', async () => {
     authAs(EXPORT_FULL);
     expect((await requestExport(REPORT_CODE)).status).toBe(422);
+  });
+
+  it('rejects invalid export request fields before generating a file', async () => {
+    authAs(EXPORT_FULL);
+    for (const invalid of [
+      { reason: ' ' },
+      { reason: 'x'.repeat(501) },
+      { from: 'yesterday' },
+      { extra: true },
+    ]) {
+      const response = await requestExport(`${REPORT_CODE}:export`, invalid);
+      expect(response.status).toBe(422);
+      expect(await response.json()).toMatchObject({ code: 'ERR-VAL-001' });
+    }
   });
 });
 

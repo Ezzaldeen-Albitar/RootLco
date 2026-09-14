@@ -76,7 +76,7 @@ const P1_31_NAMESPACES = Object.freeze([
   'warranty-policies',
 ] as const);
 
-const EXPECTED_OPERATIONS = 46;
+const EXPECTED_OPERATIONS = 47;
 const EXPECTED_TABLES = 16;
 
 // ---------------------------------------------------------------------------
@@ -301,6 +301,22 @@ function buildCitations(): Readonly<Record<string, Citations>> {
       databaseNegative: DB_RPT,
     },
     'rpt.report-read': read('rpt.report_configurations', DB_RPT),
+    'rpt.report-export': {
+      invalidBody: cite(
+        'tests/backend/p1-31-report-engine-work-orders.test.ts',
+        'rejects invalid export request fields before generating a file'
+      ),
+      missingIfMatch: NA_NOT_GUARDED,
+      staleIfMatch: NA_NOT_GUARDED,
+      replaySameKey: NA_NOT_IDEM,
+      replayDifferentBody: NA_NOT_IDEM,
+      crossTenant: cite(
+        'tests/backend/p1-31-report-engine-work-orders.test.ts',
+        'refuses %s with no success audit'
+      ),
+      table: 'rpt.report_configurations',
+      databaseNegative: DB_RPT,
+    },
     'rpt.report-run': {
       ...read(
         'no rpt row of its own — the dataset reads wo, inv and sal',

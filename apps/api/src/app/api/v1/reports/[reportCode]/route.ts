@@ -56,7 +56,7 @@ export async function GET(
   });
 }
 
-const ExportBody = z
+export const ExportBody = z
   .object({
     companyId: schemas.uuid,
     branchId: schemas.uuid,
@@ -110,7 +110,7 @@ export async function POST(
   context: { params: Promise<{ reportCode: string }> }
 ): Promise<Response> {
   const { reportCode: segment } = await context.params;
-  const raw: unknown = await request
+  const body: unknown = await request
     .clone()
     .json()
     .catch(() => null);
@@ -123,17 +123,17 @@ export async function POST(
         segment,
         'path.reportCode'
       );
-      const body = await parseJsonBody(incoming, ExportBody);
-      const target = { companyId: body.companyId, branchId: body.branchId };
+      const input = await parseJsonBody(incoming, ExportBody);
+      const target = { companyId: input.companyId, branchId: input.branchId };
       await authorizeScope(target);
       await requireScopeClaim(target);
       const result: ReportExportView = await reportingModule().exports.generate(db, {
-        ...body,
+        ...input,
         reportCode: action.slice(0, -':export'.length),
       });
       ExportResult.parse(result);
       return { body: result };
     },
-    { ...scopeTargetOption(raw), body: raw }
+    { ...scopeTargetOption(body), body }
   );
 }

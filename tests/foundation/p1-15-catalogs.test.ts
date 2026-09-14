@@ -351,6 +351,7 @@ const EXPECTED_AUDIT_ACTIONS = [
   'rec.warning_light_code.created',
   'rec.warning_light_code.renamed',
   'rec.warning_light_code.status_changed',
+  'rpt.report.exported',
   'rpt.report_configuration.created',
   'rpt.report_configuration.status_changed',
   'rpt.report_configuration.updated',
@@ -582,6 +583,8 @@ const EXPECTED_P1_15_OPERATIONS = [
   // operation executes a report — the frozen rpt schema binds no data source
   // to a report code.
   'rpt.report-catalogue',
+  // P1-31 P-12 shares the imported report-code route; export remains separately audited.
+  'rpt.report-export',
   'rpt.report-read',
   'shared.attachment-download-authorize',
   'shared.attachment-link-create',
@@ -618,6 +621,7 @@ const EXPECTED_P1_15_OPERATIONS = [
 
 /** The audited subset, with the action each one files. */
 const EXPECTED_P1_15_AUDITED: Readonly<Record<string, string>> = {
+  'rpt.report-export': 'rpt.report.exported',
   'shared.attachment-download-authorize': 'shared.document.download_authorized',
   'shared.attachment-link-create': 'shared.document.linked',
   'shared.attachment-link-withdraw': 'shared.document.unlinked',

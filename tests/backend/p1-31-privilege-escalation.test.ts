@@ -8,7 +8,7 @@
  * `declaredPermissions` from `scripts/ci/check-permission-parity.mjs` — the same parser
  * the permission-parity gate uses — is run over every `route.ts` under the eight
  * namespaces `docs/phase-1/phase-1-31/security-and-qa-evidence.md:163` names, and SE-0 pins
- * the totals it yields: **46 operations across 34 route files, 12 distinct permission
+ * the totals it yields: **47 operations across 34 route files, 13 distinct permission
  * codes**. An operation added to or removed from any of those namespaces changes the
  * parse, and the probe table below then no longer covers it exactly, so this file fails.
  * That is the property a hand list cannot have.
@@ -46,7 +46,7 @@
  *  - **SE-1..SE-4** — self-delegation. An administrator holding `iam.role.manage` and
  *    none of the phase's codes cannot map one onto a role, at the service and at the
  *    database independently. This is the widening CC-16 and CC-20 rest on.
- *  - **SE-5** — least privilege, all 46. A tenant-A caller holding every P1-31 code
+ *  - **SE-5** — least privilege, all 47. A tenant-A caller holding every P1-31 code
  *    EXCEPT the ones the operation declares is refused `ERR-IAM-001`, and the refusal
  *    names exactly the declared codes. **SE-5P** takes the five operations that declare
  *    more than one code and withholds them ONE AT A TIME, twelve cases in all: an
@@ -252,7 +252,12 @@ import {
   POST as CONFIG_VERSION_PUBLISH,
 } from '@/app/api/v1/report-configurations/[configurationId]/versions/[versionId]/publish/route';
 import { REPORT_CATALOGUE_OPERATION, GET as REPORT_CATALOGUE } from '@/app/api/v1/reports/route';
-import { REPORT_READ_OPERATION, GET as REPORT_READ } from '@/app/api/v1/reports/[reportCode]/route';
+import {
+  REPORT_READ_OPERATION,
+  GET as REPORT_READ,
+  REPORT_EXPORT_OPERATION,
+  POST as REPORT_EXPORT,
+} from '@/app/api/v1/reports/[reportCode]/route';
 import {
   REPORT_RUN_OPERATION,
   GET as REPORT_RUN,
@@ -317,7 +322,7 @@ const P1_31_NAMESPACES = Object.freeze([
 ] as const);
 
 /** Measured totals. Restated from `security-and-qa-evidence.md:163`, not derived from it. */
-const EXPECTED_OPERATIONS = 46;
+const EXPECTED_OPERATIONS = 47;
 const EXPECTED_ROUTE_FILES = 34;
 
 interface ParsedOperation {
@@ -1078,6 +1083,23 @@ const PROBES: readonly Probe[] = [
   },
   // --- warranties --------------------------------------------------------------
   {
+    id: 'rpt.report-export',
+    operation: REPORT_EXPORT_OPERATION,
+    url: (t) => `${V1}/reports/${t.reportCode}:export`,
+    body: (_t, scope) => ({
+      ...scope,
+      from: '2020-01-01',
+      to: '2030-01-01',
+      reason: 'Isolation proof',
+    }),
+    call: (request, t) =>
+      REPORT_EXPORT(request, {
+        params: Promise.resolve({ reportCode: `${t.reportCode}:export` }),
+      }),
+    addressing: 'body-scope',
+    asserts: 'body',
+  },
+  {
     id: 'wty.warranty-list',
     operation: WARRANTY_LIST_OPERATION,
     url: (_t, scope) => `${V1}/warranties?${pair(scope)}`,
@@ -1679,7 +1701,7 @@ afterAll(async () => {
 // ---------------------------------------------------------------------------
 
 describe('P1-31-SEC-003 SE-0 — the phase operation set, parsed', () => {
-  it('is 46 operations over 34 route files, and every one is readable', () => {
+  it('is 47 operations over 34 route files, and every one is readable', () => {
     expect({
       operations: SURFACE.operations.length,
       declarations: SURFACE.declarations,
@@ -1691,7 +1713,7 @@ describe('P1-31-SEC-003 SE-0 — the phase operation set, parsed', () => {
       files: EXPECTED_ROUTE_FILES,
       malformed: 0,
     });
-    expect(P1_31_PERMISSION_CODES).toHaveLength(12);
+    expect(P1_31_PERMISSION_CODES).toHaveLength(13);
   });
 
   it('is covered by the probe table exactly — no extra probe, no unprobed operation', () => {
@@ -1713,20 +1735,21 @@ describe('P1-31-SEC-003 SE-0 — the phase operation set, parsed', () => {
     }
   });
 
-  it('derives twelve one-code-withheld cases over the five multi-code operations', () => {
+  it('derives fourteen one-code-withheld cases over the six multi-code operations', () => {
     /*
      * Derived from the parse, so an operation that gains or loses a declared code
      * changes this table. The five are named to make the derivation legible, not to
      * drive it.
      */
     expect([...new Set(PARTIAL_HOLDING_CASES.map((row) => row.probe.id))].sort()).toEqual([
+      'rpt.report-export',
       'sal.delivery-complete',
       'sal.delivery-eligibility-read',
       'sal.delivery-readiness-list',
       'sal.delivery-receiver-verify',
       'sal.delivery-signature-attach',
     ]);
-    expect(PARTIAL_HOLDING_CASES).toHaveLength(12);
+    expect(PARTIAL_HOLDING_CASES).toHaveLength(14);
 
     // Each case withholds ONE declared code and its actor holds the other eleven.
     for (const row of PARTIAL_HOLDING_CASES) {
@@ -1750,11 +1773,11 @@ describe('P1-31-SEC-003 SE-0 — the phase operation set, parsed', () => {
       'sal.delivery-checklist-template-list',
       'wty.warranty-policy-list',
     ]);
-    expect(CROSS_TENANT_PROBES).toHaveLength(41);
-    expect(SCOPE_PROBES).toHaveLength(8);
-    expect(scopeSkips).toHaveLength(EXPECTED_OPERATIONS - 8);
+    expect(CROSS_TENANT_PROBES).toHaveLength(42);
+    expect(SCOPE_PROBES).toHaveLength(9);
+    expect(scopeSkips).toHaveLength(EXPECTED_OPERATIONS - 9);
     // Two variants each, so the uniformity CC-14 claims is asserted rather than assumed.
-    expect(SCOPE_CASES).toHaveLength(16);
+    expect(SCOPE_CASES).toHaveLength(18);
 
     // Every skip carries a sentence, so a gap cannot be spelled as an omission.
     for (const probe of crossSkips) {
@@ -1981,8 +2004,8 @@ describe('P1-31-SEC-001 SE-5M — the declared codes are SUFFICIENT, not merely 
         held: [...operation.codes].sort(),
       });
     }
-    // Thirteen distinct sets across the forty-six, so thirteen accounts.
-    expect(MINIMAL_ACTORS.size).toBe(13);
+    // Fourteen distinct sets across the forty-seven, so fourteen accounts.
+    expect(MINIMAL_ACTORS.size).toBe(14);
 
     // And every code any minimal caller holds is a real catalogue row: a misspelling
     // would silently grant nothing and turn each SUFFICIENCY case below into a probe

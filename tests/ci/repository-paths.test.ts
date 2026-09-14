@@ -283,7 +283,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 412 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 413 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -345,7 +345,8 @@ describe('the API application lives in the workspace', () => {
     // modules, for the reason stated above the route-module count.
     // 412 with the P1-31 warranty status-history read (P-18): one operation over
     // one new module, so both counts move by one.
-    expect(report.operations).toHaveLength(412);
+    // P1-31 P-12 adds the report export action to the existing report-code route.
+    expect(report.operations).toHaveLength(413);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the
