@@ -268,7 +268,11 @@ class InstallingClient extends RecordingClient {
       return { rows: [{ valid_to: VALID_TO }], rowCount: 1 };
     }
     if (text.includes('iam.audit_append')) return { rows: [{ id: AUDIT_ID }], rowCount: 1 };
-    if (text.includes('SET CONSTRAINTS')) return { rows: [], command: 'SET CONSTRAINTS' };
+    // `SET` is the tag a real PostgreSQL answers `SET CONSTRAINTS ALL IMMEDIATE` with, MEASURED
+    // by `tests/db/p1-31-export-fixture.test.ts` against a disposable database. The invented
+    // `SET CONSTRAINTS` stood here until that run contradicted it; a double that answers
+    // something the server never says is a double a case could come to depend on.
+    if (text.includes('SET CONSTRAINTS')) return { rows: [], command: 'SET' };
     return { rows: [], rowCount: 1 };
   }
 }
