@@ -5701,6 +5701,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-delivering-employee-seam.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts"
@@ -5813,6 +5814,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-delivering-employee-seam.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts"
@@ -9088,6 +9090,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
         "tests/backend/p1-31-report-configuration-seam.test.ts"
@@ -9212,6 +9215,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
         "tests/backend/p1-31-report-configuration-seam.test.ts"
@@ -9256,6 +9260,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
         "tests/backend/p1-31-report-configuration-seam.test.ts"
@@ -9300,6 +9305,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
         "tests/backend/p1-31-report-configuration-seam.test.ts"
@@ -9344,6 +9350,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
         "tests/backend/p1-31-report-configuration-seam.test.ts"
@@ -9438,7 +9445,8 @@
         "tests/backend/p1-31-report-engine-invoice-payment.test.ts",
         "tests/backend/p1-31-report-engine-technician-labor.test.ts",
         "tests/backend/p1-31-report-engine-work-orders.test.ts",
-        "tests/ci/p1-31-access-gate.test.ts"
+        "tests/ci/p1-31-access-gate.test.ts",
+        "tests/ci/p1-31-grant-map.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/reports/[reportCode]/rows/route.ts"
@@ -9575,6 +9583,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-22-delivery.test.ts",
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts"
       ],
@@ -9662,6 +9671,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-delivery-checklist-template-seam.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts"
@@ -9708,6 +9718,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-delivery-checklist-template-seam.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts"
@@ -9752,6 +9763,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-delivery-checklist-template-seam.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts"
       ],
@@ -9797,6 +9809,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-delivery-checklist-template-seam.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts"
@@ -9907,6 +9920,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-delivery-checklist-template-seam.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts"
@@ -9955,6 +9969,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-delivery-checklist-template-seam.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts"
@@ -10008,6 +10023,7 @@
         "tests/backend/p1-22-concurrency.test.ts",
         "tests/backend/p1-22-delivery.test.ts",
         "tests/backend/p1-22-invoice-lifecycle.test.ts",
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-delivery-read-seam.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts"
@@ -10057,6 +10073,7 @@
         "tests/backend/p1-22-delivery.test.ts",
         "tests/backend/p1-22-isolation.test.ts",
         "tests/backend/p1-29-w9-owner-bootstrap.test.ts",
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-delivering-employee-seam.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
@@ -10319,6 +10336,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-22-delivery.test.ts",
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts"
       ],
@@ -10365,6 +10383,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-22-delivery.test.ts",
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts"
       ],
@@ -16253,6 +16272,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
         "tests/backend/p1-31-warranty-policy-seam.test.ts"
@@ -16299,6 +16319,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
         "tests/backend/p1-31-warranty-policy-seam.test.ts"
@@ -16398,6 +16419,7 @@
         "tests/backend/p1-22-helpers.ts",
         "tests/backend/p1-22-isolation.test.ts",
         "tests/backend/p1-22-warranty.test.ts",
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
         "tests/backend/p1-31-warranty-policy-seam.test.ts",
@@ -16490,6 +16512,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
         "tests/backend/p1-31-warranty-policy-seam.test.ts"
@@ -16608,6 +16631,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
         "tests/backend/p1-31-warranty-policy-seam.test.ts"
@@ -16656,6 +16680,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-concurrency-and-versioning.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
         "tests/backend/p1-31-warranty-policy-seam.test.ts"
@@ -16700,8 +16725,10 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-audit-emission.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
-        "tests/backend/p1-31-warranty-read-seam.test.ts"
+        "tests/backend/p1-31-warranty-read-seam.test.ts",
+        "tests/ci/p1-31-grant-map.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/warranties/[warrantyId]/status-history/route.ts"

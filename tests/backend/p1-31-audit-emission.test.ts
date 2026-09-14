@@ -153,9 +153,18 @@ const P1_31_NAMESPACES = Object.freeze([
   'warranty-policies',
 ] as const);
 
-/** Measured. Restated here rather than derived from the document that also states it. */
+/**
+ * Measured. Restated here rather than derived from the document that also states it.
+ *
+ * `wty.warranty-status-history` (P-18, section 65) is the 46th operation and the 34th
+ * route file. It declares `auditClass: 'none'` — it is a read — so the PRIVILEGED count
+ * is unmoved at 24 while the file count and the declaration total below both rise. That
+ * asymmetry is the reason all three are pinned separately: a write added under a `none`
+ * class would raise the file count and leave the privileged count where it is, which
+ * looks exactly like this and is a defect.
+ */
 const EXPECTED_PRIVILEGED = 24;
-const EXPECTED_ROUTE_FILES = 33;
+const EXPECTED_ROUTE_FILES = 34;
 
 interface PrivilegedDeclaration {
   readonly id: string;
@@ -1430,7 +1439,7 @@ describe('P1-31-SEC-004 E-0 — the privileged write set, parsed', () => {
       unregistered: [],
     });
     // The parse saw every declaration in those files, not merely the audited ones.
-    expect(SURFACE.declarations).toBe(45);
+    expect(SURFACE.declarations).toBe(46);
   });
 
   it('names, for each of the 24, an action the catalogue registers as privileged', () => {

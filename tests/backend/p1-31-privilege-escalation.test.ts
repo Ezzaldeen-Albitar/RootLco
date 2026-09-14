@@ -7,7 +7,7 @@
  * The phase surface is enumerated by a STATIC PARSE at run time, not by a hand list:
  * `declaredPermissions` from `scripts/ci/check-permission-parity.mjs` — the same parser
  * the permission-parity gate uses — is run over every `route.ts` under the eight
- * namespaces `docs/phase-1/phase-1-31/security-and-qa-evidence.md` names, and SE-0 pins
+ * namespaces `docs/phase-1/phase-1-31/security-and-qa-evidence.md:163` names, and SE-0 pins
  * the totals it yields: **46 operations across 34 route files, 12 distinct permission
  * codes**. An operation added to or removed from any of those namespaces changes the
  * parse, and the probe table below then no longer covers it exactly, so this file fails.
@@ -316,7 +316,7 @@ const P1_31_NAMESPACES = Object.freeze([
   'warranty-policies',
 ] as const);
 
-/** Measured totals. Restated from `security-and-qa-evidence.md:88-94`, not derived from it. */
+/** Measured totals. Restated from `security-and-qa-evidence.md:163`, not derived from it. */
 const EXPECTED_OPERATIONS = 46;
 const EXPECTED_ROUTE_FILES = 34;
 
@@ -612,9 +612,16 @@ interface Targets {
  * was well-formed and merely unauthorized. See § 66 / CC-56 in
  * `docs/phase-1/phase-1-31/change-control-2026-09-08.md`.
  *
- * The five P1-30 body-scoped creates are NOT in this phase's set and keep the answer
- * `tests/backend/p1-30-inventory-master-data.test.ts` (MD-X1) pins for them; CC-14
- * § 7 is still where that question lives.
+ * The five P1-30 body-scoped creates are NOT in this phase's set, and this comment used
+ * to say they keep "the answer MD-X1 pins for them". **MD-X1 pins no answer.** § 66.9 of
+ * the register measured both cases: MD-X1, at
+ * `tests/backend/p1-30-inventory-master-data.test.ts:685`, does cross the TENANT boundary
+ * — the boundary this decision is about — but asserts
+ * `expect([403, 404]).toContain(status)`, which passes on either code and therefore pins
+ * neither; MD-L3, at `:646-651`, pins `403` exactly, but for a GRANT-SCOPE boundary
+ * inside one tenant, which is a different question. So the five keep whatever those two
+ * cases admit, which is not a contract. CC-56 (d) records it against the P1-30 backend
+ * area, and CC-14 § 7 is still where the contract question lives.
  */
 type Addressing = 'resource-id' | 'body-scope' | 'query-scope';
 

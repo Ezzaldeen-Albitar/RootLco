@@ -75,8 +75,13 @@ const P1_31_NAMESPACES = Object.freeze([
   'warranty-policies',
 ] as const);
 
-const EXPECTED_OPERATIONS = 45;
-const EXPECTED_ROUTE_FILES = 33;
+const EXPECTED_OPERATIONS = 46;
+const EXPECTED_ROUTE_FILES = 34;
+/**
+ * Unmoved at 13 by the 46th operation: `wty.warranty-status-history` declares
+ * `wty.warranty.read` alone, which four operations already declared, so the set count
+ * is a statement about DISTINCT authority and not about the size of the surface.
+ */
 const EXPECTED_DISTINCT_SETS = 13;
 
 /**
