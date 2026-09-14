@@ -6568,58 +6568,68 @@ one would be a change nobody made a case for. `tests/ci/p1-28-devops-gate.test.t
 required set by the `validate:p1-28-` prefix, so it neither demanded this line nor is weakened by it;
 `validate:run-block-syntax` and `check-workflow-security.mjs` both pass over the edited file.
 
-### 67.5 Verification run locally on this branch
+### 67.5 Verification run locally at the merge head
 
-| command                                                                                                         | result                                                        |
-| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `node scripts/ci/check-p1-31-version-sourcing.mjs`                                                              | the report line above, 0 violations, exit 0                   |
-| `npm run validate:p1-31-version-sourcing`                                                                       | exit 0                                                        |
-| `node scripts/ci/check-p1-31-access.mjs`                                                                        | the report line above, 0 violations, exit 0                   |
-| `npx vitest run tests/ci/p1-31-version-sourcing.test.ts`                                                        | 29/29                                                         |
-| `npx vitest run tests/ci/p1-31-access-gate.test.ts`                                                             | 15/15                                                         |
-| `node scripts/ci/check-test-honesty.mjs`                                                                        | exit 0                                                        |
-| `npm run validate:run-block-syntax` · `check-workflow-security.mjs`                                             | 0 findings over the edited workflow                           |
-| `npx vitest run tests/ci/p1-28-devops-gate.test.ts tests/ci/documented-counts.test.ts tests/ci/ci-gate.test.ts` | 52/52 across 3 files                                          |
-| `npm run validate:command-coverage`                                                                             | 178 registered, 97 required, 97/97 reachable, 98/98 hosted CI |
-| `npm run validate:p1-27-doc-counts`                                                                             | 151 derived claims across 32 documents, 0 disagreements       |
-| `npm run validate:p1-27-evidence`                                                                               | in sync — 41 documents, every one reachable                   |
+| command                                                                                                         | result                                                                       |
+| --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `node scripts/ci/check-p1-31-version-sourcing.mjs`                                                              | the report line above, 0 violations, exit 0                                  |
+| `npm run validate:p1-31-version-sourcing`                                                                       | exit 0                                                                       |
+| `node scripts/ci/check-p1-31-access.mjs`                                                                        | the report line above, 0 violations, exit 0                                  |
+| `npx vitest run tests/ci/p1-31-version-sourcing.test.ts`                                                        | 29/29                                                                        |
+| `npx vitest run tests/ci/p1-31-access-gate.test.ts`                                                             | 15/15                                                                        |
+| `node scripts/ci/check-test-honesty.mjs`                                                                        | exit 0                                                                       |
+| `npm run validate:run-block-syntax` · `check-workflow-security.mjs`                                             | 0 findings over the edited workflow                                          |
+| `npx vitest run tests/ci/p1-28-devops-gate.test.ts tests/ci/documented-counts.test.ts tests/ci/ci-gate.test.ts` | 52/52 across 3 files                                                         |
+| `npm run validate:command-coverage`                                                                             | 178 registered, 97 required, 97/97 reachable, 98/98 hosted CI                |
+| `npm run validate:p1-27-doc-counts`                                                                             | 151 derived claims across 32 documents, 0 disagreements                      |
+| `npm run validate:p1-27-evidence`                                                                               | in sync — 41 documents, every one reachable                                  |
+| `node scripts/ci/check-p1-27-closing-values.mjs`                                                                | 58 classified across 2 documents, **0 problems**, no STALE                   |
+| `npm run validate:p1-24-register`                                                                               | register current and reconciled                                              |
+| `npm run typecheck` · `npm run lint` · `npm run format:check`                                                   | exit 0                                                                       |
+| `npm run verify:policies`                                                                                       | **exit 0**, with both gate report lines inside the run                       |
+| `node scripts/ci/check-phase-ownership.mjs p1-31-frontend origin/develop`                                       | 12 changed files, 0 violations (docs 4 · tooling 5 · tests 2 · rootConfig 1) |
 
 The full list, with exit codes, is the pull request's own record; every figure above was read off the
 command's own output on this branch and none is carried forward from another head.
 
-**Every figure in this section is RE-DERIVED at the final go, and none of it should be read forward.**
-The suite totals and the P1-27 counts were measured against a tree that did not yet carry the merge;
-the run-ledger figures on the clean-room page are GENERATED by the record cycle and are never
-hand-edited — the **eleven** negative cases added across the two review rounds are new tests, so the
-unit total moves the moment the recorder next runs. The two GATE report lines are the exception and
-were re-run on the merged tree: both are unchanged, so neither is re-quoted. The final go re-derives
-the markers, re-records both tiers last, and re-quotes every other line here from that head.
-**`npm run verify:policies` does NOT exit 0 at this head.** Its last member is
-`validate:p1-27-closing-values` (`package.json`), and that gate exits 1 with `RUN_RECORD_STALE` on both
-local tiers. On the MERGED tree the ledger reads `aee2fc90` with eight executable paths changed since —
-this branch's two gates, their two suites, the workflow line, the command register, `package.json` and
-the exported helper in the P1-28 gate. Everything before it in the aggregate passes, and the new gate's
-report line appears inside the run. **The aggregate is re-taken at the final go, after the re-record,
-and its result is recorded there rather than claimed here.**
+**Every figure in this section was re-derived on THIS merged head**, which is the head the pull
+request opens from. The two gate report lines above were re-run after the merge and are unchanged, so
+neither is re-quoted; the suite totals, the command inventory, the P1-27 markers and both run records
+are measured here rather than carried forward. The run-ledger figures are GENERATED by the record cycle
+and are never hand-edited — the two CR-A rows that depend on the unit total are moved with it, below.
+**`npm run verify:policies` exits 0 on this head**, re-taken after the re-record, and both gates'
+report lines appear inside the run. Its last member is `validate:p1-27-closing-values`, which now
+reports **0 problems** with no `RUN_RECORD_STALE` on either tier.
+
+_This paragraph twice said the opposite, and both statements were true when written. It first read
+"`npm run verify:policies` exits 0 at this head", which was true of the head it was measured at and
+false of the head it was written on. It then read "does NOT exit 0 at this head", naming
+`validate:p1-27-closing-values` and a ledger at `aee2fc90` with eight executable paths changed since —
+true of the pre-merge branch, and closed by the re-record recorded below rather than by re-wording._
 
 _This paragraph first read "`npm run verify:policies` exits 0 at this head, and the new gate's report
 line appears inside it". The first half was true of the head it was measured at and false of the head
 it was written on; the second half holds._
 
-**A new script and a new suite move derived figures that live outside the P1-27 marker block**: the
-CI-automation record's script count, and the root unit tier's tests and files on the clean-room page
-with both of their twins in `closing-value-ledger.json`. This branch moved them once and **no longer
-carries those moves**: the merge takes `develop`'s side whole for the run ledger, the closing values,
-the clean-room page and the evidence manifest, because those four are the record cycle's to write and
-three other lanes have re-recorded them since. **They are re-derived at the final go, after the
-re-record, and only there.**
+**Both local tiers are re-recorded at this merged head, LAST, in the order that gate requires** —
+`evidence:p1-27`, then `--record unit`, then `--record web`, with the manifest regenerated between and
+after. No `--hosted-run`: nothing here claims a hosted figure.
 
-**The ledger on this merged tree reads `aee2fc90`, seventeen commits behind this head**, so the figures
-it carries describe another lane's tree rather than this one. They are left exactly as measured rather
-than adjusted by hand: a run record is evidence of a run, and editing one is the defect its own gate
-exists to catch. Both tiers are re-recorded and the manifest regenerated at the final go — last, in the
-order that gate requires — and the unit total moves there, because the eleven negative cases added
-across the two review rounds are new tests.
+| tier     | on `develop` at `86bb4ce5` | at this head          | what moved                                                                                                                                                               |
+| -------- | -------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **unit** | 3342 tests, 127 files      | 3372 tests, 128 files | **+30 cases, +1 file** — the 29-case version-sourcing suite is the new file, and the thirtieth case is the deferral proof added to the access suite that already existed |
+| **web**  | 4026 tests, 142 files      | 4026 tests, 142 files | **nothing.** This branch changes no `apps/web` source and no web test, and the figures reproduce exactly                                                                 |
+
+**0 failed in both tiers, first attempt, no re-run needed.** The three cases that went over their own
+timeout under the earlier parallel run did not recur.
+
+The unit total moving obliges the two CR-A rows, and both are moved with it:
+`clean-room-evidence.md` — `| Root unit tier — tests executed | 3372 |` and
+`| Root unit tier — files the run reported | 128 |` — and both of their twins in
+`closing-value-ledger.json`, the `locator` line and the `value`, which is what
+`validate:p1-27-closing-values` compares. The two derived markers the merge left in conflict were
+resolved by MEASUREMENT rather than by taking a side, because neither side was true of this tree:
+**`files tests/ci` = 74** and **`files scripts/ci` = 66**.
 
 _This paragraph has been re-stated twice. It first said "both local tiers were re-recorded at this
 head", true when written and made false by the two commits that followed. It then carried this
@@ -6665,6 +6675,7 @@ recorded ledger is the clean run.
   than by naming it.
 - **It records no certification, clearance, approval or role holder**, and it asserts nothing about
   promotion. `main` is `1262de74` and this slice does not move it.
+
 ---
 
 ## 68. The four phase-set proofs — emission, error paths, least privilege, isolation (CC-58)
