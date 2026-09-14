@@ -604,6 +604,18 @@ export const REGISTER = Object.freeze([
     why: 'creates the local-only Owner acceptance account and all three synthetic tenants',
   },
   {
+    name: 'acceptance:export-fixture',
+    owner: ROOT,
+    tier: 'interactive',
+    // `interactive` for the same reason the rest of this group is, and one reason
+    // more: it refuses every target but a loopback database on 54322 with
+    // `ROOTLCO_ENV=local-acceptance` and `ROOTLCO_ACCEPTANCE_CONFIRM=p1-31`, and
+    // it only accepts identifiers an acceptance run created minutes earlier. A
+    // hosted runner holds none of those, so requiring it in CI would mean
+    // requiring CI to hold an acceptance run.
+    why: 'installs the one scoped, expiring local export role the P1-31 export companion needs',
+  },
+  {
     name: 'acceptance:provision-fixtures',
     owner: ROOT,
     tier: 'interactive',

@@ -11,6 +11,7 @@
   },
   "scripts": {
     "acceptance:create-owner": "node scripts/dev/owner-acceptance/create-owner-account.mjs",
+    "acceptance:export-fixture": "node scripts/dev/owner-acceptance/export-fixture-setup.mjs",
     "acceptance:full-cycle": "node scripts/dev/owner-acceptance/full-cycle.mjs",
     "acceptance:provision-fixtures": "node scripts/dev/owner-acceptance/provision-acceptance-fixtures.mjs",
     "acceptance:reset-owner": "node scripts/dev/owner-acceptance/reset-owner-account.mjs",
