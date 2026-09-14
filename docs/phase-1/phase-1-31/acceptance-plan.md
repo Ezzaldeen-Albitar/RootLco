@@ -309,14 +309,35 @@ there; no case defaults a kind. The handoff-gated cases carry a second gate for 
 they run only when the browser is signed in as the organisation administrator whose records they
 are about.
 
-Twenty-five cases per project, fifty in total, plus the sign-in setup. **Collected at the FE-009
-integration candidate after #393, #394 and #395:** all six P1-31 spec files are present, including
-the delivery writes and warranty ledger cases. Collection verifies the available cases, not their
-execution; closing-head browser acceptance remains pending. The specs have **not yet** been added to
-`authenticated-tablet`. This leaves the desktop/tablet obligation in `canonical-plan.md`
-lines 220–226 unproved at this candidate. The earlier claim that no document required tablet
-coverage was incorrect. A separate instrument integration will add the required project coverage
-and fresh write fixtures before the closing acceptance run.
+**Twenty-five P1-31 cases per project across THREE projects, seventy-five in total, plus the sign-in
+setup.** All six P1-31 spec files are present, including the delivery writes and warranty ledger
+cases. Collection verifies the available cases, not their execution; closing-head browser acceptance
+remains pending.
+
+**Correction of 2026-09-14 — the tablet project now runs them.** All six `*-p1-31.spec.ts` files are
+matched by `authenticated-tablet`, whose `testMatch` alternation at `apps/web/playwright.config.ts:256`
+names eight files: `(administration|appointments-and-receptions|audit-log-p1-31|delivery-p1-31|delivery-writes-p1-31|overview-p1-31|reports-p1-31|warranty-p1-31)`.
+**The authority is `canonical-plan.md:220-226`**, which gives all sixteen P1-31 Frontend tasks one
+identical description and names `desktop/tablet` among the five obligations binding every one of
+them. _(This paragraph read "The specs have not yet been added to `authenticated-tablet`. This leaves
+the desktop/tablet obligation in `canonical-plan.md` lines 220–226 unproved at this candidate", and
+before that it read that no document obliged tablet width for these screens. The first was true of the
+FE-009 integration candidate; the second was wrong when written. Both are kept above in the record's
+own convention and neither is true of this head.)_
+
+**The figures, re-collected on this tree and stated as a COLLECTION.**
+`ROOTLCO_E2E_AUTH=1 npx playwright test --project=authenticated-en --project=authenticated-ar
+--project=authenticated-tablet --list` reports **445 tests in 14 files** — `authenticated-en`
+**177**, `authenticated-ar` **177**, `authenticated-tablet` **90**, plus the `auth-setup` sign-in.
+The **P1-31 subset is 25 in each of the three projects, 75 in all**: 2 `audit-log-p1-31`,
+4 `delivery-p1-31`, 4 `delivery-writes-p1-31`, 3 `overview-p1-31`, 7 `reports-p1-31`,
+5 `warranty-p1-31`. The tablet project's other 65 are 47 `appointments-and-receptions` and
+18 `administration`. **A `--list` is what the runner would plan and not what it has passed; no run
+has been taken at this head.** The earlier figure of fifty in total was a two-project count taken
+before the tablet project matched these files and before #396 added the FE-009 warranty-history case.
+
+The three delivery WRITE cases consume single-use handovers, so the tablet project needs its **own**
+fixture set; section 15b of the harness publishes a third under the key `tablet`.
 
 ### 3.1 What only the browser establishes
 
@@ -502,11 +523,17 @@ drops the one that went red is worse than no list.
 
 _A sixth spec was added later and registered the same way: `delivery-writes-p1-31.spec.ts`, the three
 committed browser cases the closure re-measure recorded as owed (**CC-52 (c)**) — the delivery
-checklist, the final odometer and the signature evidence, each in both locale projects, each with
-a refusal, a successful write and a reload that re-reads the record from the server. It carries
-one case that executes without a handoff, for the reason this section gives, and the records
-the other three act on are made by section 15b of the harness. The section originally described five files; its current registration count now includes
-all six, while the earlier failure and correction remain recorded._
+checklist, the final odometer and the signature evidence, **each in all three authenticated projects
+since the correction of 2026-09-14**, each with a refusal, a successful write and a reload that
+re-reads the record from the server. It carries one case that executes without a handoff, for the
+reason this section gives, and the records the other three act on are made by section 15b of the
+harness. **Each of those three projects consumes its own single-use handover**, so section 15b builds
+a third fixture set and `fixtureKeyOf` in `apps/web/tests/e2e/authenticated/p1-31-handoff.ts` is what
+a case selects it with: it answers `'tablet'` for a project name ending `-tablet` and otherwise defers
+to `localeOf`. **A tablet run against a handoff carrying only `en` and `ar` fails those three cases
+rather than skipping them.** The section originally described five files, then six in two locale
+projects; its current registration count includes all six across three projects, while the earlier
+failure and correction remain recorded._
 
 `tests/ci/e2e-tier-coverage.test.ts` requires every spec under
 `apps/web/tests/e2e/authenticated/` to be named in `.github/ci-baselines/unrun-test-tiers.json` —
@@ -517,8 +544,13 @@ list:**
 
 - `apps/web/playwright.config.ts:204` and `:215` give the `authenticated-en` and `authenticated-ar`
   projects `testMatch: /authenticated[\\/].*\.spec\.ts/` — a directory-wide glob that matches these
-  six the moment they exist. `authenticated-tablet` at `:255` matches only
-  `(administration|appointments-and-receptions)` and does not.
+  six the moment they exist. **`authenticated-tablet` matches them too**: its alternation at `:256`
+  now names eight files —
+  `(administration|appointments-and-receptions|audit-log-p1-31|delivery-p1-31|delivery-writes-p1-31|overview-p1-31|reports-p1-31|warranty-p1-31)`
+  — on the authority of `canonical-plan.md:220-226`. _(This bullet read "`authenticated-tablet` at
+  `:255` matches only `(administration|appointments-and-receptions)` and does not": true when written,
+  corrected 2026-09-14. The alternation also moved from `:255` to `:256` when the docblock above it
+  grew.)_
 - `.github/workflows/_reusable-authenticated-browser.yml:416` sets `ROOTLCO_E2E_AUTH: '1'` and runs
   `npm run test:web-e2e-authenticated`. The job is in the `needs` of both `ci-gate` and
   `protected-gate`.

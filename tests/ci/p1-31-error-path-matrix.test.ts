@@ -49,6 +49,15 @@
  * have carried the shorter table's citation. `namesTable` anchors the match on both
  * sides; the two cases below witness both halves on synthetic bodies.
  *
+ * The negative case names ONE pair that discriminates the two rules —
+ * `sal.delivery_records` inside `sal.delivery_records_archive` and inside
+ * `archive_sal.delivery_records`, where `includes` answers true and `namesTable` false.
+ * Its other assertions are non-collision controls and say so in place. In particular
+ * `rpt.report_configurations` and `rpt.report_configuration_versions` are NOT a prefix
+ * pair, so `includes` was never wrong about them; they are asserted because CC-58's
+ * over-attribution finding was about that pair, and a reader must not mistake the
+ * control for the witness.
+ *
  * ## Passing on nothing is refused
  *
  * A generator that compares a rendered document to a missing file, or to an empty one,
@@ -1055,19 +1064,42 @@ describe('P1-31-QA-002 / QA-003 the two matrices', () => {
     expect(namesTable(`await query('${table}')`, table)).toBe(true);
   });
 
-  it('refuses a body that names only a longer table sharing the prefix', () => {
-    // The half `includes` could not do, and the reason this rule was changed: the
-    // shorter name is a SUBSTRING of the longer one, so the first rule read a case that
-    // queried only the longer table as evidence about the shorter. Both directions are
-    // witnessed, in the trailing and the leading position, and the phase's own
-    // neighbouring pair is witnessed with them.
+  it('refuses a body in which the attributed name occurs only inside a longer name', () => {
+    // WHAT THIS WITNESSES, and what it does not, because the earlier title claimed more
+    // than the body proves. Only two of the assertions below discriminate `namesTable`
+    // from `includes`; the other three are non-collision controls, and they are labelled
+    // as such rather than counted as witnesses.
+    //
+    // DISCRIMINATING. `sal.delivery_records` is a genuine prefix of
+    // `sal.delivery_records_archive`, and it also occurs inside `archive_sal.delivery_records`.
+    // In BOTH positions — the attributed name extended on the right, and the attributed
+    // name preceded on the left — `includes` answers TRUE and would have earned the
+    // shorter table a citation from a case that queries only the longer one.
+    // `namesTable` answers false. These two assertions are the reason the rule changed.
     const shorter = 'sal.delivery_records';
     const extended = `${shorter}_archive`;
     expect(namesTable(`select id from ${extended}`, shorter)).toBe(false);
-    expect(namesTable(`select id from ${shorter}`, extended)).toBe(false);
     expect(namesTable(`select id from archive_${shorter}`, shorter)).toBe(false);
+
+    // NON-COLLISION CONTROL, not a witness: the reverse direction of the same pair. A
+    // body naming only the shorter table does not contain the longer one at all, so
+    // `includes` already answers false here and `namesTable` agrees. It is asserted so
+    // that the anchoring is shown not to have introduced a FALSE positive in the
+    // direction the old rule already handled.
+    expect(namesTable(`select id from ${shorter}`, extended)).toBe(false);
+
+    // NON-COLLISION CONTROL, and explicitly NOT a prefix pair. The phase's own
+    // neighbouring reporting tables read as though one were a prefix of the other and
+    // are not: `rpt.report_configurations` ends `configurations` where
+    // `rpt.report_configuration_versions` continues `configuration_versions`, so neither
+    // string contains the other and `includes` was never wrong about this pair. They are
+    // asserted because CC-58's over-attribution finding was ABOUT this pair, and a
+    // reader must not take these two lines for the defect's witness — the witness is the
+    // `sal.delivery_records` pair above.
     const configurations = 'rpt.report_configurations';
     const versions = 'rpt.report_configuration_versions';
+    expect(configurations.startsWith(versions)).toBe(false);
+    expect(versions.startsWith(configurations)).toBe(false);
     expect(namesTable(`select id from ${versions}`, configurations)).toBe(false);
     expect(namesTable(`select id from ${configurations}`, versions)).toBe(false);
   });
