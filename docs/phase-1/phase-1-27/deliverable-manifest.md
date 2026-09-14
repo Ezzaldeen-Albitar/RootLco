@@ -983,12 +983,12 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      whose regexes read the label and the number as adjacent cells. -->
 
 <!-- derived: files apps/web/tests = 142 -->
-<!-- derived: files tests/ci = 74 -->
+<!-- derived: files tests/ci = 76 -->
 <!-- derived: files scripts/ci = 66 -->
 <!-- derived: files apps/web/scripts = 4 -->
 <!-- derived: files supabase/migrations = 141 -->
-<!-- derived: files tests/db = 145 -->
-<!-- derived: files tests/db:all = 149 -->
+<!-- derived: files tests/db = 146 -->
+<!-- derived: files tests/db:all = 150 -->
 <!-- derived: files tests/backend = 144 -->
 <!-- derived: files tests/backend:all = 153 -->
 <!-- derived: files apps/web/src/features/crm = 20 -->
@@ -998,7 +998,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: tracked docs/phase-1/phase-1-27 = 42 -->
 <!-- derived: tracked docs/phase-1/phase-1-27:md = 32 -->
 <!-- derived: tracked docs/product = 14 -->
-<!-- derived: commands registered = 178 -->
+<!-- derived: commands registered = 179 -->
 <!-- derived: commands required = 97 -->
 <!-- derived: commands reachable = 97 -->
 <!-- derived: commands hosted-ci = 97 -->
