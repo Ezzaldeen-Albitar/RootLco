@@ -1,5 +1,13 @@
 # P1-31 — closure record (inputs to gate P1-G31)
 
+_(2026-09-14, reviewer-assignment correction: the statements below that there is "no certifier",
+"no reviewer", or a need to appoint one are superseded. The owner-approved
+[solo-developer review policy](../../governance/solo-developer-review-policy.md) already assigns
+Eng. Ezzaldeen Al-Bitar the technical, QA and security review roles. Route the completed evidence
+and the still-required certification/clearance to that existing owner. No certification, clearance
+or acceptance verdict is created by this correction. The historical measurements below retain
+their stated heads; final evidence reconciliation remains due.)_
+
 **Measured at protected `develop` `fb65b0493d6ef2f8e65c00c39a2d51a42a98ff1f`** — the merge of PR #387, the corrected acceptance
 re-run — and re-derived there in full by the closure re-measure, change control § 62. `main`
 `1262de74`, untouched by this phase and far behind. _(This record previously declared
