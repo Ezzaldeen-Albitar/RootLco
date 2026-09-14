@@ -5567,6 +5567,436 @@ nothing here upgrades a local number into an attested one.
 
 ---
 
+## 66. The scope-target contract applied to the three body-scoped creates — **SETTLED** (SEC-003-O1, CC-56)
+
+**Slice:** `remediation/p1-31-backend-scope-target-creates`, ownership profile `p1-31-backend`,
+opened as pull request [#391](https://github.com/Ezzaldeen-Albitar/RootLco/pull/391).
+**Baseline:** protected `develop` **`72f3a71ee4a8204c494913e40e6c2a43cd683e36`** — the merge of pull
+request #388, the closure re-measure — **synced to `aa20c959`**, the merge of pull request #390 (P-18,
+§ 65), which carried pull request #389 (§ 63) with it. `main` `1262de74`, untouched. The measurements
+in § 66.6 were taken before that sync and are re-recorded at the merged head by
+`P1-31-SEC-003-008`; the run ledger this slice commits is the authority for what ran, and it names
+its own commit. **No result of #391's own hosted run is claimed anywhere in this section**; every
+figure here is LOCAL and says so.
+
+**Why it exists.** § 59.6 recorded **SEC-003-O1** — the three P1-31 body-scoped creates refuse a
+foreign company with two different documents — and the closure record calls the repair "a contract
+question for the Backend lane". The Owner settled the STANDARD for it as **D-27** in the evening
+message of 2026-09-13, and the two sentences below are quoted exactly rather than summarised — the
+antecedent that names the authority, and the consequence:
+
+> "For SEC-003-O1, compare the differing foreign-company refusal codes with the authoritative
+> contract and information-disclosure requirements."
+
+> "Correct implementation or documentation according to that authority; do not normalize codes merely
+> for numerical consistency."
+
+Both are quoted from the Owner's evening message of 2026-09-13, preserved verbatim **outside this
+repository** in `orchestration/evidence/p1-31/closeout-drafts/queue2/owner-decisions-2026-09-13.md`,
+Appendix A, and restated under D-27 in § 7 of that document. D-27 supplies the standard and **does
+not state the outcome** — it does not say which of the two documents is correct, and it does not
+disposition SEC-003-O2. This section answers the contract question against that standard, applies the
+answer, and states what the answer is derived from. _(This paragraph rendered the instruction as one
+italic sentence — "compare the differing refusal codes with the authoritative contract and the
+information-disclosure requirements, and correct implementation or documentation according to that
+authority — do not normalize codes merely for numerical consistency" — which was a faithful summary
+but not the Owner's wording: it dropped "foreign-company", joined two sentences, and re-punctuated
+the second. A summary of an instruction is not the instruction, and this register should not make a
+reader guess which one it is looking at.)_
+
+### 66.1 Identifier allocation
+
+Read on the MERGED tree, the register holds **sections 1 … 63, 65 and 66** and **identifiers
+CC-01 … CC-53, CC-55 and CC-56**. Two holes, both deliberate and neither this slice's: **CC-40**, the
+permanent one § 57.5 records, and **§ 64 / CC-54**, reserved for the Frontend proofs lane and stated
+as pending by § 65 itself. **§ 66 and CC-56 are the pair reserved for this slice** by the closure
+plan, which pre-allocated §§ 56–60 / CC-46 … CC-50 and then §§ 63–66 / CC-53 … CC-56 across the lanes
+it named.
+
+**The landing order is not the writing order, and neither is renumbered.** This section was written
+against `72f3a71e`, where the register ended at § 62 / CC-52 and §§ 63 … 65 were reservations. It
+lands third of the three: § 63 / CC-53 merged as pull request #389, § 65 / CC-55 as pull request
+#390, and § 66 sits after both because a heading follows the order of the file, while an identifier
+records the moment it was raised. § 48.1's rule holds unchanged — nothing here is renumbered to
+follow anything, and § 64 is left as a gap rather than closed up. _(This paragraph read "Read on this
+tree, the register holds sections 1 … 62 and identifiers CC-01 … CC-52 … sections 63 … 65 and
+CC-53 … CC-55 belong to other lanes and are deliberately left free rather than closed up": true of
+the head it was written at, and re-measured here at the merged head rather than left to age.)_
+
+**SEC-003-O1 is closed in place** in § 59.6, with the original text left whole and an italic note
+beside it. No identifier moves and no passage is deleted.
+
+### 66.2 The authority, quoted rather than paraphrased
+
+The platform already has an answer for this exact question, and it is not a new one.
+[`cc-14-scope-target-in-tenant.md`](../phase-1-30/cc-14-scope-target-in-tenant.md) § 2 states that a
+scope-target mismatch
+
+> is a **refusal**, not a not-found and not a validation error. A `404` would confirm the existence
+> boundary the refusal exists to hide; a `422` would claim the input was malformed
+
+and the primitive built on that sentence — `requireScopeTargetInTenant` in
+`apps/api/src/server/auth/authorization.ts` — answers **403 `ERR-IAM-001`** uniformly for a pair
+that belongs to another tenant, a pair that exists nowhere, an in-tenant pair the caller's grants do
+not reach, and a soft-deleted branch. There is no existence oracle in any of the four.
+
+What CC-14 did **not** do is apply that sentence to the writes. Its § 4 lists the body-scoped creates
+of its own era under "Not covered, each for a reason", with the table cell **"404 (untouched)"** —
+a description of what those creates did, not a decision that they were right — and its § 7 leaves
+open "whether the five body-scoped creates should unify on 403 rather than the FK/RLS 404". The one
+write CC-14 does dispose of, `svc.price-resolve` (§ 4), keeps a 422 and is a **different case**: the
+pair there is already authorized and the 422 is about the two halves cohering with each other inside
+the handler, not about whether the caller may name them.
+
+So the authority for the answer is CC-14 § 2's principle; the authority for the fact that P1-31's
+three creates were never covered by it is CC-14 § 4; and the finding that they disagree is § 59.6.
+
+### 66.3 The decision
+
+**For a P1-31 body-scoped create whose `companyId` — or `companyId`/`branchId` pair — is not visible
+in the caller's own tenant, whether it belongs to another tenant or exists nowhere, the answer is the
+scope refusal: 403 `ERR-IAM-001`, decided BEFORE the insert.** The composite foreign key and the
+row-level-security policy stay exactly where they are and remain defence in depth; they are no longer
+the thing that answers the caller.
+
+This is an application of CC-14 § 2, not a normalization for numerical consistency, and the two
+rejected alternatives are rejected by the authority's own reasoning rather than by preference:
+
+- **404 `ERR-RES-001`** — what `org.employee-create` answered. Rejected because the scope a create
+  NAMES is not a resource it addresses. CC-14 § 2: a not-found "would confirm the existence boundary
+  the refusal exists to hide". It also disagreed with that same operation's other refusal: a caller
+  whose grant does not reach the pair already received 403 there (`p1-31-delivering-employee-seam.test.ts`
+  P17-C5), so one create answered two different codes for two forms of "you may not write here".
+- **422 `ERR-VAL-001` with a `body.companyId` / `unknown_company` violation** — what
+  `sal.delivery-checklist-template-create` and `wty.warranty-policy-create` answered, mapped from
+  `fk_delivery_checklist_templates_company` and `fk_warranty_policies_company`. Rejected because the
+  body was well-formed. CC-14 § 2: a validation error "would claim the input was malformed" when it
+  was merely unauthorized — and a `violations` array naming the field is the strongest form of that
+  claim, because it tells a caller to change a value that was never wrong.
+
+**The five P1-30 body-scoped creates are NOT changed here.** They are another phase's surface and
+CC-14 § 7 is where that question lives. This decision **recommends the same resolution for them** —
+the reasoning is CC-14's own and does not depend on which phase published the route — and leaves the
+act to a lane that owns those files. _(This paragraph read "their answer is pinned by
+`tests/backend/p1-30-inventory-master-data.test.ts` (MD-X1)". **That was not true when written.**
+MD-X1, at `:685`, crosses the TENANT boundary — the one this decision is about — and asserts
+`expect([403, 404]).toContain(status)`, which passes on either code; MD-L3, at `:646-651`, pins `403`
+exactly but crosses a GRANT-SCOPE boundary inside one tenant, where the named branch is real and
+visible, so it does not answer this question. Neither pins a 404. § 66.9 row 1 sets both out and
+CC-56 (d) carries the either/or as its own finding. Nothing else in the paragraph depended on it —
+the five are out of scope either way.)_
+
+### 66.4 What changed in the code
+
+| file                                                                      | before                                                                                                                                                          | after                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/api/src/server/auth/authorization.ts`                               | one probe, `requireScopeTargetInTenant`, restricted to a full (company, branch) target and called only on the GET path                                          | adds **`requireScopeClaimInTenant`**, the write-side sibling: it resolves a company-only claim against `org.legal_companies` and a pair against `org.branches`, under the caller's own RLS, with the tenant taken from `RequestContext.principal` and never from the body. The branch predicate is now a shared private helper, so the read probe and the write probe cannot drift into two definitions of one question |
+| `apps/api/src/modules/warranty/application/warranty-policy-service.ts`    | `authorizeScope({ companyId })`, then the insert; a `23503` mapped to 422 `ERR-VAL-001` / `body.companyId`                                                      | `authorizeScope`, then `requireScopeClaimInTenant`, then the insert. The foreign-key arm is kept, guarded on the constraint NAME, and documented as unreachable for the scope case                                                                                                                                                                                                                                      |
+| `apps/api/src/modules/delivery/application/checklist-template-service.ts` | the same shape, with one difference that mattered: `#refuseWriteFailure` serves **three** call sites and mapped ANY `23503` to a message about `body.companyId` | the same repair, and the foreign-key arm is guarded on `fk_delivery_checklist_templates_company` so an item's own foreign key can no longer borrow a message about a field the item request does not carry                                                                                                                                                                                                              |
+| `apps/api/src/modules/iam/application/employee-administration-service.ts` | `branchIsReachable` false → the register's `notFound()`                                                                                                         | `requireScopeClaimInTenant` on the pair. The register's uniform 404 is **unchanged** and stays what it always was — a statement about an EMPLOYEE id, so the roster cannot be enumerated                                                                                                                                                                                                                                |
+| `apps/api/src/modules/iam/data/employee-repository.ts`                    | held `branchIsReachable`, a second copy of the branch predicate with the tenant left implicit                                                                   | removed, with a comment saying where the question is asked now. It had one caller and that caller no longer needs it; leaving a weaker copy behind is how the next writer picks the weaker one                                                                                                                                                                                                                          |
+| `apps/api/src/server/db/repository.ts`                                    | `sqlState` / `isSqlState`                                                                                                                                       | adds **`violatedConstraint`**, promoted from a file-local function in the warranty service because two modules now need it. Never imported across modules — both import it from the foundation                                                                                                                                                                                                                          |
+| `apps/api/src/server/http/route-handler.ts`                               | `HandlerInput` injected one operation-bound callback, `authorizeScope`                                                                                          | injects a second, **`requireScopeClaim`**, closing over the same `operation` and the same handle. This is what makes the write refusal carry the operation's declared codes without a service ever holding a declaration it cannot import; the public branch throws for it exactly as it throws for `authorizeScope`                                                                                                    |
+| the three create routes and the three create services                     | the service took `authorizeScope`                                                                                                                               | each takes `requireScopeClaim` beside it and calls it second. `requireScopeClaimInTenant` now takes `(db, operation, claim)`, the signature its read sibling already had                                                                                                                                                                                                                                                |
+
+**There is no separate "branch not in that company" handling to preserve**, and that is stated
+because it could look like an omission. One probe resolves the PAIR; a branch belonging to a
+different company of the same tenant is one of the four cases CC-14 requires to be indistinguishable
+from the others, so giving it its own answer would reintroduce the oracle.
+
+### 66.5 The information-disclosure property, measured
+
+The claim is that the two variants are indistinguishable, and it is asserted rather than argued.
+`tests/backend/p1-31-privilege-escalation.test.ts` SE-7 runs each of the **8** scope-asserting
+operations twice — against another organisation's REAL pair and against a pair that exists nowhere —
+and this slice strengthens what it compares. It previously asserted the status and the code; it now
+asserts **the whole document the caller receives**, minus `correlationId`, against **one** expectation
+per probe that does not depend on the variant. Two variants measured against one literal is what
+makes the uniformity a measurement.
+
+Observed after the change, for all six create cases (three operations × two variants): **403**,
+`ERR-IAM-001`, title `Not permitted`, type `urn:rootlco:error:ERR-IAM-001`, **no `violations`**, and
+`requiredPermissions` equal to the operation's declared codes — plus a zero row-count delta on
+`sal.delivery_checklist_templates`, `wty.warranty_policies` and `org.employees` around every case.
+The `UNKNOWN_COMPANY` refusal shape and the per-probe override that carried it are deleted: a table
+that can express "this one is different" is a table in which the next divergence gets recorded
+instead of refused.
+
+**The comparison that matters is not read-against-write; it is the three refusals ONE request can
+produce.** A caller sending a create can be refused three ways — by `requirePermissions` before the
+handler, by `requireScopedPermissions` through `authorizeScope`, and by `requireScopeClaim`. All
+three now publish `safeDetails.requiredPermissions` from the same `operation.permissions`, so the
+document cannot be used to work out WHICH of them answered, and in particular cannot be used to work
+out that the caller's permissions were fine and only the company was wrong. That is the property, and
+the mechanism is the route handler's injection: `requireScopeClaim` is bound to the operation exactly
+as `authorizeScope` is (`route-handler.ts`), so no service ever reaches for a declaration it cannot
+import. `tests/backend/authorization.test.ts` pins the equality of the permission refusal's and the
+claim refusal's safe details directly, and SE-7 pins the document over the wire for all eight probes.
+
+**`AppFailure.message` is not part of that document and cannot be a disclosure vector.**
+`problemFor` publishes the type, the catalogue title, the status, the code, the correlation id and
+the declared safe details, and nothing else — the message is logged, never sent. It is uniform per
+operation regardless (it names the operation, never the company or the branch), and the test pins
+what a caller can actually read instead of pinning something no caller receives. The message is the
+one thing that DOES separate the three refusals, which is why the ordering case in
+`tests/backend/authorization.test.ts` reads it: the order is a property of the code path, not of the
+response.
+
+**The ORDER is asserted, not assumed.** `authorizeScope` first and the claim second, so a caller
+missing the operation's codes is told that rather than told the company is invisible. It is
+observable only where both would refuse, so the case takes an unpermitted caller naming an invisible
+company, runs the two in the services' order, and requires the PERMISSION denial — then shows the
+claim refusal is reachable for that same caller, so the assertion is about order rather than about
+only one of them existing.
+
+### 66.6 What ran
+
+Every figure below is **LOCAL**. No hosted run, no build, no acceptance pass and no deployment is
+claimed, and no gate verdict is asserted beyond the commands named.
+
+**Two heads, and the table says which.** The rows marked **pre-sync** were measured at `77fdd4dc`,
+before `develop` `aa20c959` was merged in; the rows marked **merged head** were measured at
+`aee2fc90` after it. A pre-sync figure is kept rather than deleted where the merged head moved it,
+with both values shown, because deleting the earlier measurement would hide that the sync changed
+anything. Where the two disagree, **the merged-head figure is the one that describes this pull
+request** — and the run ledger this slice commits is the authority for the two local tiers, because it
+names its own commit and no document can be edited into agreement with it.
+
+| command                                                                                | result                                                              |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `npm run typecheck`, `npm run typecheck:api`                                           | pass                                                                |
+| `npm run lint`, `npm run lint:api`                                                     | pass                                                                |
+| `npm run format:check`, `npm run format:check:api`                                     | pass                                                                |
+| `npm run validate:module-boundaries`                                                   | pass — 615 files, eleven rules                                      |
+| `npm run validate:api-backend-only`                                                    | pass — 320 route handlers, 615 source files                         |
+| `npm run validate:authorization-coverage`, `validate:operation-coverage`               | pass — every operation guarded, every registered operation invoked  |
+| `npm run validate:p1-24-register`                                                      | **merged head** pass — 412 operations, reconciled (411 pre-sync)    |
+| `node scripts/ci/check-p1-31-write-shape.mjs`                                          | pass — 0 problems                                                   |
+| `npm run validate:encoding`, `validate:plain-language`, `validate:generated-artifacts` | pass                                                                |
+| `npm run security:all`                                                                 | **merged head** pass — five guards, 2806 tracked files              |
+| `check-phase-ownership.mjs p1-31-backend origin/develop`                               | **merged head** pass — 21 files, 0 violations                       |
+| `tests/backend/authorization.test.ts`                                                  | **20 passed** (16 before: four cases added) — both heads            |
+| `tests/backend/p1-31-privilege-escalation.test.ts`                                     | **merged head 212 passed** (208 pre-sync; P-18 added four)          |
+| `tests/backend/p1-31-delivering-employee-seam.test.ts`                                 | **31 passed** — both heads                                          |
+| `tests/backend/p1-31-warranty-policy-seam.test.ts`                                     | **31 passed** — both heads                                          |
+| `tests/backend/p1-31-delivery-checklist-template-seam.test.ts`                         | **28 passed** — both heads                                          |
+| `tests/backend/p1-31-concurrency-and-versioning.test.ts`                               | **5 passed**, pre-sync — the escalation suite's sibling             |
+| `tests/foundation/p1-18-scoped-authorization.test.ts`                                  | **197 passed** — the tier that pins the route handler's containment |
+| `tests/ci/api-backend-only.test.ts`, two foundation suites reading the handler         | **64 passed**                                                       |
+
+The backend suites ran against a database created for this slice as a TEMPLATE clone of the P1-31
+continuous-integration template — 141 applied migrations and 121 seeded permission rows, asserted
+before the clone was taken — on the disposable local container, never on the shared acceptance
+database. Nothing was reset and no organisation was removed.
+
+**Counts: +4 and no other movement.** The four are the new `requireScopeClaimInTenant` cases in
+`tests/backend/authorization.test.ts` — a soft-deleted company refused identically to an invented
+one, an in-tenant company hidden by the caller's own grant union, a claim naming no company
+resolving without a statement, and the ordering case. No case was added or deleted anywhere else by
+this slice. _(This paragraph read "the escalation suite is 208 before and after": true of `77fdd4dc`.
+At the merged head the escalation suite is **212**, and the four it gained are P-18's, not this
+slice's — § 65's `wty.warranty-status-history` probe, which SE-5, SE-6 and SE-6C each run once. This
+slice still adds four cases and they are all in `tests/backend/authorization.test.ts`.)_ What changed
+in the escalation suite is what four of its cases ASSERT.
+
+**The unit tier is recorded, and the record supersedes the attempt this paragraph used to describe.**
+At the merged head `aee2fc90`, `check-p1-27-closing-values.mjs --record unit` ran the tier ONCE and
+wrote **125 files / 3332 tests / 3332 passed / 0 failed** into
+`docs/phase-1/phase-1-27/evidence/local-run-ledger.json`, with `dirtyExecutablePaths` empty; the web
+tier is recorded beside it at the same commit as **142 files / 4020 tests / 0 failed**. Neither claims
+a hosted run. _(This paragraph read "`npm run test:unit` was run once, before the review pass, and is
+NOT re-recorded here. It reported **3322 passed, 2 failed**, both `Test timed out in 30000ms` in
+`tests/ci/p1-28-evidence-manifest.test.ts` … This is reported as a local failure, not waived." Every
+word was true of that attempt at `77fdd4dc` on a loaded machine — a different case timed out on each
+of three runs, which is the signature of a budget and not of an assertion. It is kept rather than
+deleted because a reader should be able to see that the tier once failed here. It did not recur: the
+recorded run at the merged head passed that suite inside a clean tier.)_
+
+### 66.7 What this slice did NOT do
+
+- **It did not touch the five P1-30 body-scoped creates, their suite, or any P1-30 record beyond one
+  dated note.** `tests/backend/p1-30-inventory-master-data.test.ts` is untouched;
+  `cc-14-scope-target-in-tenant.md` receives a note appended under its § 4 body-scoped-create bullet
+  and nothing else.
+- **It changed no operation declaration, no permission code, no audit action, no migration and no
+  seed.** The three create route FILES change — each threads the injected `requireScopeClaim` to its
+  service and each has its `CreateBody` docblock corrected, because both said the tenant boundary was
+  the foreign key — but no `defineOperation` literal moves, so the authorization, OpenAPI and
+  operation-coverage gates are asked the same question they were asked before. The refusal moved; the
+  surface did not.
+- **Two records that still assert the superseded behaviour are NOT edited here, and are routed
+  rather than left silent.** [`closure-record.md`](./closure-record.md):535-540 restates SEC-003-O1
+  in the observation list, and [`task-matrix.md`](./task-matrix.md):141 restates it twice in the
+  P1-31-SEC-003 row. Both are owned by the final integration — the matrix owns state and the closure
+  record quotes it, which is the order § 62 established and a Backend slice must not invert. **They
+  are knowingly stale on this head and are routed to the final integration section, which the queue
+  plan allocates as § 70 / CC-60 once §§ 67–69 (in flight) land; not yet written**, and which should
+  carry the CC-56 note into both. That allocation lives in the coordinator's queue plan, **not in this
+  register** — nothing here reserves it, and § 48.1's rule is unaffected. Nothing about SEC-003's own
+  state changes either way: this slice closes an observation, not the row.
+- **[`owner-decision-packet-2026-09-13.md`](./owner-decision-packet-2026-09-13.md):146 and :222 ARE
+  annotated**, and the distinction from the two above is the point. _(This bullet cited ":146 and
+  :213", the lines those two sentences held on the committed head. The first note, nine lines long,
+  pushed the second sentence down: it is now at **:222**, and **:213** is a row of the CC-47 table.
+  The line numbers here are read on the annotated file, which is the convention § 48.1 implies for a
+  citation that moves — cite where the reader will find it, and say where it was.)_ That document asks the Owner to
+  act, and both lines describe SEC-003-O1 as "recorded and undispositioned" — which would put an item
+  in front of the Owner that no longer needs a decision. It is not a state record the integration
+  owns, so leaving it stale would waste the Owner's attention rather than merely be untidy. Each line
+  gets an italic note saying SEC-003-O1 is dispositioned by § 66 / CC-56 **as an engineering decision
+  by cited authority (CC-14 § 2), not as an Owner decision**, that SEC-003-O2 is unchanged and open,
+  and that **the packet's own item count does not move** — deciding that is the integration's, not a
+  Backend slice's. The original wording is left whole beside each note.
+- **`docs/phase-1/phase-1-31/delivery-checklist-template-seam.md`:110-112 and
+  `warranty-policy-seam.md`:137-139 ARE edited**, because those two sentences are this lane's own
+  design records and each states, in terms, that the tenant boundary on a create is the foreign key.
+  Each receives a dated CC-56 note; the original sentence is left whole beside it.
+- **It did not resolve CC-14 § 4's other named follow-on.** The company-only probe against
+  `org.legal_companies` that CC-14 calls "a named follow-on" for the **six half-target GET
+  operations** is not that: `requireScopeTargetInTenant` still issues **no statement** for a
+  half-specified target, the six operations are untouched, and the P1-18 F9 case that measures the
+  zero-statement behaviour is unchanged. The probe added here is reached only from a create that
+  claims a company in its body.
+- **It did not widen an allow-list, add a suppression, or reword prose to satisfy a checker.**
+- **It recorded no verdict, no clearance and no approval**, and it does not move SEC-003 itself:
+  SEC-003's own state rests on an acceptance record and a named Security reviewer, neither of which
+  this slice produces. Only the observation SEC-003-O1 is closed.
+- **It claims no merge and no hosted result.** _(This bullet read "It claims no pull request and no
+  merge. The commits are local.": true when written, and false from the moment the branch was pushed.
+  The slice line at the head of this section cites pull request **#391**, opened after the sync and
+  the re-record. Nothing else in the sentence changes — no merge is claimed, and no result of #391's
+  own hosted run is claimed anywhere in this section.)_
+- **A commit message asserted gate results, which CONTRIBUTING § 2 forbids, and it is recorded rather
+  than rewritten.** The body of `0fb6aadf` states that named checks passed — "re-validated after this
+  change, 0 problems and no STALE" and a list of green validators. A commit message states what was
+  DONE; a gate result belongs to the run that produced it, and a message claiming one is unfalsifiable
+  from inside the repository. The earlier commits of this slice carry the same defect in longer form,
+  `46f45af0` most of all. They are pushed, and rewriting published history to edit prose would be the
+  worse remedy. **The check results this section reports are in § 66.6, where they can be re-run.**
+- **Trailer deviation, recorded rather than rewritten.** Commits `36eb7a83`, `77fdd4dc` and
+  `aee2fc90` carry the `Co-Authored-By` trailer for the executing model only; `46f45af0`, `868be85c`
+  and this one carry both it and the coordinating model's. The convention changed mid-slice and the
+  first three were already pushed when it did. Rewriting three commits — one of them a merge — to
+  correct a trailer would rewrite a published history for a cosmetic field, which is the worse of the
+  two defects.
+
+### 66.8 Dispositions
+
+| id            | finding                                                                                                                        | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | owner / slice                                                                             | state            |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------- |
+| **CC-56**     | **SEC-003-O1 — the three P1-31 body-scoped creates answered a foreign company with three documents across two codes**          | **settled by applying CC-14 § 2**: the scope claim is resolved before the insert and refused 403 `ERR-IAM-001`, identically for a foreign-real company and for one that exists nowhere. The FK/RLS paths remain as defence in depth. Not a normalization — the 404 and the 422 are each rejected by the sentence the platform's own read probe was built on. SE-7 now compares the whole disclosed document, so the uniformity is measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | this slice                                                                                | closed, measured |
+| **CC-56 (a)** | **the write refusal omitted `requiredPermissions` while the read refusal published it**                                        | **CLOSED, with a mechanism rather than an argument.** The route handler injects `requireScopeClaim` bound to the operation, exactly as it has always injected `authorizeScope`, so the claim probe receives the declaration and publishes its declared codes. No registry lookup, so the document does not depend on which modules a process had loaded. All three refusals one create can produce — permission, deferred scope, scope claim — now carry the same safe details; pinned directly in `tests/backend/authorization.test.ts` and over the wire for all eight probes by SE-7 _(this row read "recorded, not closed" in the first draft of this section, before the injection replaced the argument)_                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | this slice                                                                                | closed, measured |
+| **CC-56 (b)** | **the same defect survives outside this phase's operation set — enumerated, with its two mis-statements corrected, in § 66.9** | **out of scope and deliberately left open at every OPEN site: six of the seven rows § 66.9 tabulates.** The seventh, `org.department-create`, was listed as a defect in error and **already conforms** — it answers 403 `ERR-IAM-001` uniformly, verified at `organization-administration-service.ts`:342. None of the six is changed by this pull request, and that is the Owner's rule applied rather than avoided: each is a decision by cited authority for the lane that owns it, not a code normalised for consistency by a slice passing through _(this row read "the same defect survives outside this phase's operation set: the five P1-30 body-scoped creates, and `org.department-create` in the IAM module … now with both siblings named", and then "out of scope and deliberately left open, at every site". Both were wrong: "both siblings" was FALSE when written, since a read of the IAM module found four more sites; and "at every site" over-counted, since `org.department-create` is not one of them. § 66.9 carries the correction and the reason for each)_                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | the lane that owns P1-30 inventory master data (row 1); the IAM lane (rows 3, 4, 5, 6, 7) | open, recorded   |
+| **CC-56 (c)** | **the claim probe's own guard is shape-dependent rather than fail-closed**                                                     | `apps/api/src/server/auth/authorization.ts`:566-567 returns without a statement when a claim names a `branchId` and no `companyId`, and `tests/backend/authorization.test.ts`:515-518 pins that. **Unreachable today** — all three creates require `companyId` in their zod body, so no route can produce a half claim — which is why it is recorded rather than treated as a live hole. It is still the wrong default: a guard that resolves nothing when it cannot understand its input fails OPEN, and the read probe's identical early return is justified by six operations that legitimately pass one half, of which this write probe has none. **Recommendation: refuse a half claim with the same `ERR-IAM-001` and move the pin**, in the next backend slice. Not done here, because it is a behaviour change no route exercises and this pull request's scope is the three creates                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | the next backend slice                                                                    | open, recorded   |
+| **CC-56 (d)** | **the P1-30 case that crosses the TENANT boundary on a body-scoped create asserts an EITHER/OR outcome**                       | `tests/backend/p1-30-inventory-master-data.test.ts`:685 (MD-X1) asserts `expect([403, 404]).toContain(status)` for `inv.stock-location-create` named into another tenant. Its sibling MD-L3 (`:646-651`) pins `403` exactly, but for a grant-scope boundary inside one tenant, so it does not cover this one. It passes whichever of the two codes the operation gives, so it pins neither — which is how § 66.9 row 1 came to claim a 404 that nothing measures, and why that row now claims nothing. This is the assertion class the Owner named, in the evening message of 2026-09-13, quoted here exactly and with the Owner's own inner quotation marks: "Do not weaken assertions, add blanket skips, or allow arbitrary “either permitted or refused” outcomes." That sentence is section 2 of the message, whose subject is FE-004, FE-005 and FE-006; the register quotes it from the Owner's evening message of 2026-09-13, preserved verbatim outside this repository in `orchestration/evidence/p1-31/closeout-drafts/queue2/owner-decisions-2026-09-13.md`, Appendix A. **It is read here as a standing rule about assertions, not as a ruling about this suite**, which the Owner did not mention _(this cell first paraphrased the sentence inside quotation marks, flattening the Owner's inner quotes to “either-permitted-or-refused” and calling it a “standing instruction” without naming where it was said)_. **Not fixed here**: it is another phase's suite, and deciding what it should pin is the same contract question CC-14 § 7 holds for those five creates — the test and the decision should move together, in that lane | the P1-30 backend area                                                                    | open, recorded   |
+
+### 66.9 CC-56 (b) enumerated — every site outside this phase that still answers the old way
+
+The first draft of CC-56 (b) said "now with both siblings named". **That was false when written.** It
+was written from the two sites this slice had touched — the P1-30 creates it deliberately left alone,
+and `org.department-create`, which it found while reading `org.employee-create`'s neighbour — and not
+from a read of the module. A review asked for the read. This is it, and the list is longer — and then
+a second review found that the list itself was wrong in two rows, which are corrected below with the
+error kept visible. Every row here has now been opened and read against the code on this tree, and
+each claim names the line it was read from so the next reviewer can do the same in one step.
+
+**Seven ROWS: six OPEN, one that already conforms.** The unit is the table row, defined here and used
+by every counting sentence in this section and in CC-56 (b). A row is not a function and not a call
+site: **row 1 stands for five operations** (the P1-30 creates) and **rows 4, 5 and 6 are three arms of
+one function**, `assertScopeBelongsTogether`, reached from two callers. Counted as rows: six open —
+one P1-30 row and five IAM rows (3, 4, 5, 6, 7) — and one conforming row (2). Counted as owning lanes:
+two.
+
+| #   | site                                                                                                                                                                                                | what it answers today                                                                        | status against CC-14 § 2                   |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| 1   | the **five P1-30 body-scoped creates**                                                                                                                                                              | **not established by this slice.** See below and CC-56 (d)                                   | OPEN, and the question is CC-14 § 7's      |
+| 2   | `apps/api/src/modules/iam/application/organization-administration-service.ts`:262 — `org.department-create`, refusing through `branchIsReachable` (`organization-administration-repository.ts`:331) | `403 ERR-IAM-001`, from `notFound()` at `:342` — "The target is not reachable in this scope" | **ALREADY CONFORMS.** Not a sibling defect |
+| 3   | `apps/api/src/modules/iam/application/access-administration-service.ts`:681 — `createApprovalLimit`                                                                                                 | `404 ERR-RES-001` "Company not found in this tenant"                                         | OPEN                                       |
+| 4   | the same file :776 — `assertScopeBelongsTogether`, company arm, reached from `issueGrant` (:415) and `addScope` (:552)                                                                              | `404 ERR-RES-001` "Company not found in this tenant"                                         | OPEN                                       |
+| 5   | the same file :781 — the branch arm of that helper                                                                                                                                                  | `404 ERR-RES-001` "Branch not found in this tenant"                                          | OPEN                                       |
+| 6   | the same file :784-787 — the owner-mismatch arm                                                                                                                                                     | **`422 ERR-VAL-001`**, `body.branchId` / `branch_company_mismatch`                           | OPEN, and the worst of the six             |
+| 7   | `apps/api/src/modules/iam/application/organization-settings-service.ts`:374 — `requireCompanyInScope`; its branch sibling throws at `:382`                                                          | `404 ERR-RES-001` "Company not found in this tenant" / "Branch not found in this tenant"     | OPEN                                       |
+
+**Row 2 was wrong in the first version of this table and is corrected here.** It said
+`org.department-create` answers `404 ERR-RES-001` through the register's `notFound()`. It does not.
+That module's `notFound()` is at `:342` and returns **`ERR-IAM-001`**, which `catalog.ts`:130 maps to
+**403**, under a docblock that gives this section's own reasoning in its own words: "ERR-IAM-001
+rather than a 404, because `authorization.ts` requires a denial never to reveal whether the target
+exists. A caller outside the scope and a caller naming a random uuid must be told the same thing."
+`branchIsReachable` reads `org.branches` under `sel_branches_scope`, so it answers false for a
+foreign-real pair and for an invented one alike, and the refusal is therefore already uniform. The
+error was mine: the name `notFound()` is shared with the employee register's helper, which DOES
+return `ERR-RES-001`, and I read the name instead of the function. It is kept as a row rather than
+deleted so the correction is visible, and because a reviewer checking the IAM module for this defect
+should be told this site has already been checked and is clean. _(One shape difference, stated and
+not inflated: it publishes no `safeDetails`, where CC-56 (a) gives the three P1-31 creates the
+operation's declared codes. That is a smaller question than the status code and is not raised as an
+item.)_
+
+**Row 1 is a correction too.** The first version said the five P1-30 creates "answer the FK/RLS 404,
+pinned by MD-X1". **No test pins a 404.** Two cases in
+`tests/backend/p1-30-inventory-master-data.test.ts` reach a body-scoped create across a boundary, and
+both exercise the same one of the five, `inv.stock-location-create`:
+
+- **MD-L3**, `:646-651` — a caller whose grant is scoped to branch A2 names branch A1, a boundary
+  **inside one tenant**. It pins `403` exactly, and that 403 is the PERMISSION decision refusing a
+  grant-scoped caller: A1 is a real branch, visible to an unrestricted caller of that tenant, so this
+  case never reaches the question CC-56 is about.
+- **MD-X1**, `:685` — a tenant-B caller names company A1 and branch A1, the **tenant** boundary, which
+  is the CC-56 case. It asserts `expect([403, 404]).toContain(status)` — an either/or that passes
+  whichever of the two codes the operation gives.
+
+So the current answer of those five, on the boundary that matters, is **not established** by that
+suite or by this slice, and this section does not claim it. _(The first version of this paragraph
+also called `:685` "the only case in that suite reaching a body-scoped create across a boundary".
+That was wrong: MD-L3 reaches one too. The retraction stands regardless — MD-L3 pins a 403 for a
+different boundary, and nothing anywhere pins a 404.)_ What is open is the CC-14 § 7 question itself,
+unchanged. The either/or assertion is its own finding and is raised as **CC-56 (d)**.
+
+**The same mis-statement survives in one more place, and this commit cannot reach it.**
+`tests/backend/p1-31-privilege-escalation.test.ts`:545 — a comment in the SE-7 header — says the five
+P1-30 creates "keep the answer `tests/backend/p1-30-inventory-master-data.test.ts` (MD-X1) pins for
+them". That is the same claim § 66.9 row 1 retracts, and it is wrong for the same reason. It is left
+standing here **only** because the commit carrying this correction is documentation-only by
+construction: the two local tier records are bound to `aee2fc90`, and touching a file under `tests/`
+would expire them and force a re-record for a comment. **It is owed to the next commit that touches
+that suite for any other reason**, and it changes no assertion — the comment sits above a table whose
+scope probes are all P1-31.
+
+**Row 6 is why this enumeration matters more than a tidy-up.** Four of the six open rows — 3, 4, 5
+and 7 — answer a NOT-FOUND, which CC-14 § 2 rejects for confirming the existence boundary a refusal
+exists to hide. Row 6 answers something stronger: a caller that names a real branch under the wrong
+company is told, in a `violations` entry, that the branch is real and the pairing is wrong — while a
+caller that invents a branch is told it does not exist. Those are two different documents for two
+different states, which is precisely the oracle § 66.4 removed from `org.employee-create`, where a
+pair belonging to another company of the same tenant is one of the four cases CC-14 requires to be
+indistinguishable. A caller that may write in company A can, in principle, sort the branch ids of
+company B into real and invented by reading which refusal comes back.
+
+**What is NOT claimed here.** No exploit is demonstrated, no severity is assigned, and nothing says
+these sites leak data — every one of them refuses, and `companyExists`
+(`organization-repository.ts`:105) and `companyOfBranch` (`:121`) both bind the tenant from the
+context and read under the caller's own row-level security, so what they see is already narrowed to
+the caller. The defect is the SHAPE of the refusal, not the reach of the read. Whether row 6's
+containment message is worth keeping for its usability is exactly the kind of question this slice
+must not settle for the IAM lane: `svc.price-resolve` keeps a 422 for in-handler pair coherence
+(CC-14 § 4) and may be the better precedent for it. That is the lane's call, on the authority, with
+the trade stated.
+
+**Nothing in this table is changed by this pull request**, including row 2, which needs no change.
+The six open rows sit across **two owning lanes** — row 1 with P1-30 inventory master data, rows 3
+through 7 with IAM. Of the six, **four answer a NOT-FOUND** (rows 3, 4, 5 and 7), **one answers 422**
+(row 6), and **one is unpinned** (row 1, whose current answer this slice does not establish). Each is
+a contract decision for the lane that owns the surface, to be taken against CC-14 § 2 the way § 66.3
+takes it. D-27 requires each to be corrected according to the authority and not normalised for
+numerical consistency — the two sentences it quotes are at the head of this section, exact — and a
+slice that reassigned status codes across two other lanes on its way past would be doing the second
+thing rather than the first. _(This paragraph read "a slice that renamed four other lanes' status codes": the number was
+not derivable under any one unit — four is neither the count of open rows, nor of lanes, nor of
+NOT-FOUND answers taken with row 6.)_
+
+---
+
 ## 69. The warranty transition ledger on the record screen — FE-009's screen half (CC-59)
 
 The backend prerequisite **P-18** published `wty.warranty-status-history`. This slice consumes it:
@@ -5579,22 +6009,23 @@ the warranty record screen now renders the ledger it used to say it could not re
 | section 69 | this slice                                            | this branch, reserved for it before it began |
 | **CC-59**  | FE-009's screen half — the record consumes the reader | this branch                                  |
 
-**The neighbouring identifiers, stated as they actually stand** — an earlier draft of this
-paragraph said all of sections 64 to 68 were reserved by lanes that had not merged, which was
-false, and § 65 is the proof of it: it is in this file, and it is this branch's own base.
+**The neighbouring identifiers, stated as they actually stand at this merge** — an earlier draft of
+this paragraph said all of sections 64 to 68 were reserved by lanes that had not merged, which was
+false then and is more false now: two of the five are in this file.
 
-| identifier   | lane                             | where it is                                                                                 |
-| ------------ | -------------------------------- | ------------------------------------------------------------------------------------------- |
-| § 64 / CC-54 | the Frontend proofs lane         | not written yet; § 65.1 already records that it lands ABOVE § 65 when it does               |
-| § 65 / CC-55 | P-18, the backend half of FE-009 | **in this file at § 65, merged as #390** — commit `aa20c959`, which this branch is cut from |
-| § 66 / CC-56 | SEC-003-O1                       | in flight on another branch                                                                 |
-| § 67 / CC-57 | the gates lane                   | in flight on another branch                                                                 |
-| § 68 / CC-58 | E2                               | in flight on another branch                                                                 |
+| identifier   | lane                             | where it is, at `develop` `852bcebd`                                                                      |
+| ------------ | -------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| § 64 / CC-54 | the Frontend proofs lane         | **not written yet — in flight as #393**, still open; § 65.1 records that it lands ABOVE § 65 when it does |
+| § 65 / CC-55 | P-18, the backend half of FE-009 | **merged, as #390** — commit `aa20c959`, which this branch was cut from                                   |
+| § 66 / CC-56 | SEC-003-O1                       | **merged, as #391** — in this file immediately above § 69, and reached by the sync recorded below         |
+| § 67 / CC-57 | the gates lane                   | in flight on another branch                                                                               |
+| § 68 / CC-58 | E2                               | in flight on another branch                                                                               |
 
-Nothing here renumbers, reuses or reconciles any of them. § 69 is appended last and stays last
-until § 64 is written, at which point the file's numbering is out of order in one more place — as
-it already is at § 59 and § 60 — and that is the convention this register has chosen over
-renumbering.
+Nothing here renumbers, reuses or reconciles any of them. **§ 69 currently sits after § 66 because
+§ 67 and § 68 do not exist yet**; when E2 and the gates lane land it sits after § 68, and if #393
+lands § 64 sits above § 65 as that section already provides for. The file's numbering is then out of
+order in one more place — as it already is at § 59 and § 60 — and that is the convention this
+register has chosen over renumbering.
 
 ### 69.2 What CC-31 said, and which half of it this closes
 
