@@ -435,9 +435,12 @@ describe('the repository’s own run is not vacuous', () => {
      * handed over and not taken as a violation.
      */
     const appRoot = join(ROOT, 'apps', 'web', 'src', 'app');
-    const judged = p1_31PagesUnder(appRoot) as string[] & { deferred?: string[] };
-    const handedOver = judged.deferred ?? [];
+    const { judged, deferred: handedOver } = p1_31PagesUnder(appRoot) as {
+      judged: string[];
+      deferred: string[];
+    };
     expect(handedOver.length).toBe(PINNED_DEFERRED_PAGES);
+    expect(judged.length).toBe(PINNED_PAGES);
     const sibling = new Set(
       (p1_29PagesUnder(appRoot) as string[]).map((p) => p.replace(/\\/g, '/'))
     );

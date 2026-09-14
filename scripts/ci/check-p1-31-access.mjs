@@ -334,28 +334,35 @@ export function deferredSegments() {
 }
 
 /**
- * Every P1-31 route page under an app root, and the ones deferred to the sibling.
+ * Every P1-31 route page under an app root, as `{ judged, deferred }`.
  *
  * A page is judged when at least one segment admitting it is NOT deferred, so a
  * page under both — say a delivery panel routed beneath a work order — stays
  * this gate's business.
+ *
+ * Two named lists rather than one array wearing a property. The deferred set was
+ * hung off the judged array as `judged.deferred`, and an expando on an array is
+ * the kind of state that survives exactly until somebody writes `.filter(...)` or
+ * `[...pages]` — at which point the hand-over silently becomes empty, the "is
+ * every deferred page judged next door" check passes over nothing, and the report
+ * line says `0 deferred`. A shape that can be destroyed by a spread is not a
+ * shape to hold a safety check in.
  */
 export function p1_31PagesUnder(
   appRoot,
   segments = ownedSegments(),
-  deferred = deferredSegments()
+  deferredRoots = deferredSegments()
 ) {
   const judged = [];
-  const handedOver = [];
+  const deferred = [];
   for (const page of walk(appRoot)) {
     const rel = slash(page);
     const matched = segments.filter((seg) => rel.includes(`/${seg}/`));
     if (matched.length === 0) continue;
-    if (matched.some((seg) => !deferred.has(seg))) judged.push(page);
-    else handedOver.push(page);
+    if (matched.some((seg) => !deferredRoots.has(seg))) judged.push(page);
+    else deferred.push(page);
   }
-  judged.deferred = handedOver;
-  return judged;
+  return { judged, deferred };
 }
 
 function main() {
@@ -375,8 +382,8 @@ function main() {
     );
   }
 
-  const pages = p1_31PagesUnder(appRoot, segments);
-  for (const page of pages) {
+  const { judged, deferred } = p1_31PagesUnder(appRoot, segments);
+  for (const page of judged) {
     const why = judgePage(readFileSync(page, 'utf8'));
     if (why) violations.push(`gate-before-read: ${slash(relative(ROOT, page))} ${why}`);
   }
@@ -391,7 +398,6 @@ function main() {
    * against the repository, and a scratch directory is a test of the judgement
    * rather than a measurement of the tree.
    */
-  const deferred = pages.deferred ?? [];
   if (!overridden) {
     const sibling = new Set(p1_29PagesUnder(appRoot).map((p) => slash(p)));
     for (const page of deferred) {
@@ -406,12 +412,12 @@ function main() {
   }
 
   console.log(
-    `P1-31 gate-before-read: ${pages.length} route page(s) examined across ` +
+    `P1-31 gate-before-read: ${judged.length} route page(s) examined across ` +
       `${segments.length} owned segment(s) (${segments.join(', ')}); ` +
       `${deferred.length} deferred to the P1-29 gate, which judges them with the same rule.`
   );
 
-  if (pages.length < minPages) {
+  if (judged.length < minPages) {
     // Unlike its two siblings, this gate ships beside a screen. Falling under
     // the floor over the repository's own app root means the derivation stopped
     // matching, and a pass over an empty set would report that as health.
