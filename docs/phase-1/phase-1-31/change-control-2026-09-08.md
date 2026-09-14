@@ -7421,3 +7421,50 @@ manifest, all 151 derived documentation claims and the closing-values gate with 
 The P1-27 lifecycle output belongs to that earlier phase and is not a P1-31 closure verdict.
 The final export candidate is ready for its consolidated engineering review; no export PR,
 hosted result or protected merge is claimed by this LOCAL record.
+
+## 69.14 Report download, local monitoring and developer guidance
+
+LOCAL implementation source: `c2235b974144f68d07975ce768cabd853186a8ea`, based on backend
+candidate `d325741675536032a07cc8e2881c6d41c47bb4ad` and Fable tablet instrument
+`7d944e05ad77177740b2281c927219db7218af2e` integrated by normal merge. This record does not
+claim either candidate is on protected develop. Section 70 remains reserved for closing evidence.
+
+The report detail now offers a translated reason-and-download control after a successful run.
+It uses the displayed run's scope and period, not later unsubmitted form edits. Page gates require
+rpt.export and configured export authority; the backend remains authoritative for dataset,
+configured permission, scope and audit checks. The typed adapter submits five closed body fields,
+validates returned context and file metadata, and the component prevents duplicate submissions,
+ignores stale responses and cleans up its download URL. The consumed request mirror replaces the
+backend candidate's pending-consumer entry. Four report codes use the same path.
+
+The new monitoring command reads bounded local/test JSON logs and produces an exclusive local
+queue containing only validated operation, error, correlation, timestamp and reviewer-route fields.
+It makes no network connection. Report export and security faults route to the existing security
+reviewer as well as the technical reviewer. It does not infer an audit failure from every export
+fault, claim an external notification, or resolve D-10 event consumption. The operator runbook links
+the new monitoring guide; developer guidance covers contract authority, scope/version behavior,
+export semantics, meaningful verification and evidence recording.
+
+Verification to date is LOCAL and focused:
+
+- UI/adapter suite: 142 passed across four files, including eight export DOM cases in English/Arabic.
+- Monitoring suite: eight passed, including actual captureException through RecordingErrorMonitor
+  and the JSON logger, sanitized routing, malformed identifiers, bounds, duplicates, CLI completion
+  and refusal, and exclusive output preservation.
+- Root/web types and changed lint passed. Changed-file formatting and diff whitespace checks passed.
+- Retained monitoring rehearsal measured 2026-09-14T11:10:16Z at c2235b97: CLI exit zero,
+  complete=true, 460 input bytes, one record read and one routed, zero malformed/ignored/duplicates.
+  The injected secret canary is absent from the queue. Queue SHA-256:
+  `a1b8757f42bb89cb2d7573005a969b1b01d89227ef1cf16c517bb7b486462e66`.
+  Raw capture, in-memory result, CLI output/counts and digests are retained externally under
+  `orchestration/evidence/p1-31/astra-fe009-20260914/monitor-rehearsal-c2235b97/`.
+
+The rehearsal is an injected test fault, not a business acceptance run or human certification.
+The full-tier ledger still describes its earlier measured backend source; it will be refreshed
+once the frontend and assigned export acceptance instruments are consolidated. Browser export,
+protected integration and final acceptance remain pending. No old full-tier result is relabelled.
+
+The [reference-location record](./canonical-reference-map.md) resolves the external Markdown
+references previously searched only inside Git and records their actual placeholder status.
+Canonical Word authority is preserved. External acceptance packaging and final source
+synchronization remain separate work; this reference map is not a passing criterion record.
