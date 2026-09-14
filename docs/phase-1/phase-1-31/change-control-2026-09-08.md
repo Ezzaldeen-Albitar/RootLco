@@ -5446,15 +5446,15 @@ Off `develop` `72f3a71e`, in order:
 | `ffa6cb2b` | P1-31-FE-004-008: move FE-004/005/006 in the task matrix                 |
 | `f66ee8b7` | P1-31-FE-004-009: open section 64 for the browser proofs                 |
 | `8a8a246d` | P1-31-FE-004-010: correct the section 9 and 64 figures                   |
-| _(merge)_  | P1-31-FE-004-011: merge develop `852bcebd` into the browser-proofs slice |
-| _(record)_ | P1-31-FE-004-012: re-record the P1-27 runs at the merge head             |
+| `1b78de4e` | P1-31-FE-004-011: merge develop `852bcebd` into the browser-proofs slice |
+| `c5c4abf6` | P1-31-FE-004-012: re-record the P1-27 runs at the merge head             |
 | _(cite)_   | P1-31-FE-004-013: cite the record and pull request in section 64         |
 
-_(A commit cannot list itself, so the last three rows are entered by identifier and their shas are
-added by the commit that follows each. `8a8a246d` — the corrections of 2026-09-14 to §9.5, §9.9 and
-this subsection — is entered here by the merge, which is the resolution the sync turn owed; §64.1 is
-re-stated for the merged tree in the same act. `P1-31-FE-004-013` is the cite commit and cannot
-carry its own sha; the pull request records it.)_
+_(A commit cannot list itself, so each sha is entered by the commit that follows it. `8a8a246d` was
+entered by the merge, which is the resolution the sync turn owed and which re-states §64.1 for the
+merged tree in the same act; `1b78de4e` and `c5c4abf6` are entered by `P1-31-FE-004-013`, which is
+the last commit of the slice and so has nothing after it to enter its own. The pull request records
+that one.)_
 
 **The two application-source commits are `41919f7d` and `ee67a7f9`, and between them they touch
 seven files under `apps/web/src`:**
@@ -5595,6 +5595,27 @@ Three, set out in § 9.6 of the acceptance record and none of them addressed by 
   beside its replacement with the note that says when it was true. _(This bullet read "Section 63
   and CC-53 are left free for the lane merging ahead of this one": true when written, and that lane
   has since landed as #389.)_
+
+### 64.10 The record at the merge head, and the pull request
+
+The branch was brought up to `develop` `852bcebd` — the merge of #391 — by `1b78de4e`, whose only
+conflict was this file and whose resolution §64.1 describes. **Both local P1-27 tiers were then
+recorded once each at that head** by `c5c4abf6`, the unit tier over **125 files** and the web tier
+over **142 files**, with the totals the `vitest` JSON reports carried. Neither tier was repeated and
+no tier was re-run. The evidence manifest was regenerated before the first recording, between the
+two and after the second, and `local-run-ledger.json` carries the commit each tier was taken at.
+
+**The web total moved by six** from the figure `develop` carried, because `41919f7d` adds six cases
+to `apps/web/tests/delivery.dom.test.tsx`. Three derived figures on
+[`clean-room-evidence.md`](../phase-1-27/clean-room-evidence.md) are bound to that total and move
+with it, together with the three `closing-value-ledger.json` entries that bind them — their locators
+quote the figure, so a document-only edit would have unbound the very claims the check exists to
+hold.
+
+**Nothing here is recorded as hosted and no hosted run was invoked.** The pull request carrying this
+slice is `P1-31-FE-004/005/006: delivery write proofs in both locales (§64)`, opened from
+`feature/p1-31-delivery-browser-proofs`; its number is on the request itself, because a branch
+cannot cite a pull request that does not exist until it is pushed.
 
 ## 65. The warranty transition ledger published — P-18, the backend half of FE-009 (CC-55)
 
