@@ -19,6 +19,11 @@ operations), `delivery-checklist-templates` (5, 8), `delivery-readiness` (1, 1),
 `report-configurations` (5, 7), `reports` (3, 3), `warranties` (3, 3), `warranty-policies` (5, 7)
 and `org/employees` (3, 4).
 
+_(2026-09-14, P-12 correction: the preceding census was true before report export.
+The reviewed candidate now has **47 operations across 34 route files**, with `reports` (3, 4).
+There are **25 writes and 22 reads**, and three classes: **24 privileged, 22 none and one export**.
+The export-class review below supplements this historical table; no existing classification changes.)_
+
 Every figure below was taken twice and the two agree:
 
 - from `docs/phase-1/phase-1-24/evidence/operation-register.json`, filtered to those eight
@@ -168,6 +173,17 @@ read. Owner decision D-6 withheld `rpt.export`, so no export operation exists to
 **Engineering assessment:** a withheld export is not the same as an audited one, and Field 26's
 requirement that exports be themselves audited is not discharged by there being none. Whether a run
 is a privileged read is a question this record raises and does not answer.
+
+_(2026-09-14, P-12 export-class review of the preceding § 4.2: `rpt.report-export` now declares
+`auditClass: 'export'` and the registered `rpt.report.exported` action on
+`rpt.report_configuration`. This is a deliberate bulk disclosure, so the export class is appropriate.
+Its service appends the action after generation and authorization rechecks, inside the request
+transaction; disclosure follows commit. Scope, period, counts, configuration and a restricted reason
+are recorded without copying the CSV. This resolves the absence of an audited export operation;
+it does not decide whether ordinary on-screen `rpt.report-run` reads should also be audited.
+The older statement that the export member is unused is historical. Focused route/database evidence
+and the new full-backend result are recorded under § 69.13; this is engineering review, not a
+human security certification.)_
 
 ### 4.3 The employee register reads are silent
 

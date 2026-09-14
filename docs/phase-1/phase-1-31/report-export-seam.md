@@ -65,7 +65,23 @@ Common authentication, scope and validation failures use the existing problem/se
 pipeline. This slice creates no business-state transition or report-export event consumer. D-10's
 event-refresh decision remains separately recorded; file generation does not settle it.
 
-## Verification and integration status
+## Relationship to the Phase 1-15 export authorizations
+
+The shared `/exports/authorizations` contract covers resources registered in `EXPORT_RESOURCES`
+and issues an expiring authorization to be consumed by their future generators. Report datasets
+are not in that registry. This report operation is a separate synchronous disclosure contract:
+it uses the same `rpt.export` permission vocabulary but does not accept or consume a P1-15
+authorization token. It instead rechecks report, dataset, configured permission and scope during
+generation and immediately before appending the disclosure audit. No registered P1-15 resource,
+token lifetime or consumer is bypassed or changed. A future unification requires an explicit
+contract change; this implementation must not be described as the P1-15 generator integration.
+
+The current `expensive-read` rate policy and 8 MiB response bound apply. There is no separate
+daily export allowance. The audit records selection and counts, not a digest or byte length of
+the file; it cannot identify the exact downloaded bytes later. These are recorded product
+limitations, not claims of durable-file provenance.
+
+## Verification evidence
 
 Focused tests exercise permission separation, tenant/configuration restrictions, exact aggregate
 strings, CSV escaping/formula protection, pagination/size refusals and audit failure. The backend

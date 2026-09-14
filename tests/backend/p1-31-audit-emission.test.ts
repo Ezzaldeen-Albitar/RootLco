@@ -1439,7 +1439,7 @@ describe('P1-31-SEC-004 E-0 — the privileged write set, parsed', () => {
       unregistered: [],
     });
     // The parse saw every declaration in those files, not merely the audited ones.
-    expect(SURFACE.declarations).toBe(46);
+    expect(SURFACE.declarations).toBe(47);
   });
 
   it('names, for each of the 24, an action the catalogue registers as privileged', () => {
@@ -1469,8 +1469,8 @@ describe('P1-31-SEC-004 E-0 — the privileged write set, parsed', () => {
     expect(probed).toEqual(parsed);
   });
 
-  it('E-0P the emitting caller holds the twelve codes the phase declares', async () => {
-    expect(P1_31_PERMISSION_CODES).toHaveLength(12);
+  it('E-0P the emitting caller holds the thirteen codes the phase declares', async () => {
+    expect(P1_31_PERMISSION_CODES).toHaveLength(13);
     const held = await admin.query<{ permission_code: string }>(
       `SELECT p.permission_code
          FROM iam.role_permissions rp

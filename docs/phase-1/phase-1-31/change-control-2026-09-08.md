@@ -7342,9 +7342,9 @@ gate again reported zero problems and the evidence manifest remained in sync.
 
 The recorded D-6 instruction of 2026-09-09 directs completion of the report-export contract with
 explicit authorization and auditability. The instruction was not a deferral. Backend source
-fac0eb042012e3736256ab2eb0dda8401f27d53b implements it on the mapped P1-31 backend lane, based on
-protected develop32c797546f39bc9033dda95181571ce38b2f11cc. The prior source commit a9de7053 and its
-initial verification failures remain in history. Section70 remains reserved for closing acceptance.
+f8939ede90b6e73bddc83e413ed8e6f21cf9bbc8 implements it on the mapped P1-31 backend lane, based on
+protected develop 32c797546f39bc9033dda95181571ce38b2f11cc. The prior source commit a9de7053 and its
+initial verification failures remain in history. Section 70 remains reserved for closing acceptance.
 
 The published POST /api/v1/reports/{reportCode}:export generates actual bounded CSV in its JSON
 response. It requires scoped rpt.export, report-read, dataset permissions and the explicit
@@ -7359,19 +7359,19 @@ Runtime request/result validators supply the new operation's OpenAPI schemas. Op
 metadata leaves older operations' published shapes unchanged; this is not a claim to have repaired
 the platform-wide bare-object-schema limitation.
 
-The published operation population is413, with47 operations across the P1-31 namespace census,
-13 declared permission codes and14 distinct declaration sets. The new service enlarges the actual
+The published operation population is 413, with 47 operations across the P1-31 namespace census,
+13 declared permission codes and 14 distinct declaration sets. The new service enlarges the actual
 backend coverage population by one; no coverage floor is weakened. The backend register, operation
 coverage, idempotency/audit metadata, least-privilege map and both refusal/isolation matrices are
 regenerated from their controlled tools. The map documents declarations; it grants nothing.
 
-LOCAL targeted verification at the corrected source:91/91 integration checks across8files and
+LOCAL targeted verification at the corrected source: 91/91 integration checks across 8 files and
 314/314 backend cases across the report-engine and phase-wide privilege-escalation suites.
-The backend witness used only the newly created p131_astra_export_20260914 database at127.0.0.1:55432
-on the previously designated disposable container.141 migrations and the declared seeds replayed
-there. The shared54322 acceptance database was not reset, cleaned or used by this slice.
+The backend witness used only the newly created p131_astra_export_20260914 database at 127.0.0.1:55432
+on the previously designated disposable container. 141 migrations and the declared seeds replayed
+there. The shared 54322 acceptance database was not reset, cleaned or used by this slice.
 
-The initial full unit record at a9de7053 counted3398 cases with15 failures: inventory/census pins,
+The initial full unit record at a9de7053 counted 3398 cases with 15 failures: inventory/census pins,
 the new operation's missing matrix row and request-schema export, and their derived records.
 Those failures triggered the correction commit; they are not a pass. The initial focused backend
 run also retained a wrong audit-table name in the new test query, corrected before the passing
@@ -7383,7 +7383,7 @@ The candidate's final LOCAL counts are recorded below. Engineering review, PR ch
 integration are still pending at this record. No browser export journey, phase verdict or human
 certification is claimed by these backend checks.
 
-The next full unit measurement at fac0eb04 executed3398 cases with7 failures and zero skips.
+The next full unit measurement at fac0eb04 executed 3398 cases with 7 failures and zero skips.
 Six failures concerned the prior ledger's now-stale count statements or evidence digest; the
 seventh correctly refused a missing ReportExportBody frontend mirror. The backend prerequisite
 has no frontend consumer yet. It is therefore recorded in the gate's existing pending-consumer
@@ -7421,6 +7421,29 @@ manifest, all 151 derived documentation claims and the closing-values gate with 
 The P1-27 lifecycle output belongs to that earlier phase and is not a P1-31 closure verdict.
 The final export candidate is ready for its consolidated engineering review; no export PR,
 hosted result or protected merge is claimed by this LOCAL record.
+
+### 69.13.1 Consolidated review correction — CC-61
+
+CC-61 is allocated to the P-12 backend implementation and its integration corrections.
+Section 70 / CC-60 remains reserved for closing evidence; the existing 69.13 locator is retained
+rather than renumbered. This supplemental allocation does not fold export into the older FE-009
+scope of CC-59. The temporary pending-consumer exclusion for rpt.report-export belongs to CC-61:
+it widens that exclusion list until a consumer exists, and must be removed in the same frontend
+change that adds the consumed mirror. It is already removed in the local frontend integration.
+
+Fable's consolidated review of d3257416 on 2026-09-14 found four blockers: stale declaration and
+permission pins in the phase audit-emission suite, and two security records that had not been
+annotated for the export-class operation. Those are corrected together. The 24 privileged-action
+cases remain unchanged; the phase census is 47 declarations over 34 files with 13 permission codes.
+The audit-class record now reviews the export action and preserves the separate question about
+silent on-screen reads. The seam states the relationship to P1-15 export authorizations and records
+the existing rate policy and absence of file digest/byte-length audit provenance as limitations.
+
+The earlier 314-case measurement covers exactly its two named suites, not the entire backend tier.
+A full backend run on the same disposable database is required before re-freeze; until recorded,
+no full backend pass is claimed. Unit/web evidence is also re-recorded after executable corrections,
+and the controlled ledger/manifests are refreshed last. No final review verdict or hosted result
+is inferred from these corrections.
 
 ## 69.14 Report download, local monitoring and developer guidance
 
