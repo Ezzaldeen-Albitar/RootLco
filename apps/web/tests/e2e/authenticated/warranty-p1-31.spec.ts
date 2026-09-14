@@ -412,6 +412,11 @@ test.describe('P1-31 warranty screens, over the acceptance journey records', () 
     // test-honesty-allow: TH-002 -- the journey generated no warranty; nothing to open
     test.skip(h.warrantyId === null, missingReason('warranty'));
     const history = h.warrantyHistory ?? null;
+    if (history !== null && 'status' in history) {
+      throw new Error(
+        `the acceptance journey's warranty transition-ledger read failed: ${history.faults.join('; ')}`
+      );
+    }
     // test-honesty-allow: TH-002 -- the run that wrote this handoff recorded no ledger, so there is no server answer to compare the screen against
     test.skip(
       history === null,

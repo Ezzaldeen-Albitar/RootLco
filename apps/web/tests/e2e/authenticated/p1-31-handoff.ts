@@ -197,6 +197,12 @@ export interface P131WarrantyHistory {
   readonly hasMore: boolean;
 }
 
+/** A ledger prerequisite that ran and failed; acceptance must fail, not skip. */
+export interface P131WarrantyHistoryFailure {
+  readonly status: 'failed';
+  readonly faults: readonly string[];
+}
+
 export interface P131Handoff {
   readonly api: string;
   readonly login: { readonly email: string; readonly password: string };
@@ -222,7 +228,7 @@ export interface P131Handoff {
    * handoff from a run that recorded no ledger — and the case that reads it must skip
    * with that stated rather than assert against a field that is not there.
    */
-  readonly warrantyHistory?: P131WarrantyHistory | null;
+  readonly warrantyHistory?: P131WarrantyHistory | P131WarrantyHistoryFailure | null;
   readonly warrantyPolicyId: string | null;
   readonly invoiceId: string | null;
   readonly reportPeriod: { readonly from: string; readonly to: string } | null;

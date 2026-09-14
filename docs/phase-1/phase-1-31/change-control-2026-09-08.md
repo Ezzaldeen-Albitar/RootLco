@@ -7273,3 +7273,17 @@ Collection from the web workspace now reports **50 P1-31 cases across both local
 plus one sign-in setup, in six spec files and the setup file. CC-59 (d) is settled for
 collection and the acceptance plan is corrected. This is not a browser execution result;
 FE-009 closing-head acceptance remains pending. Historical counts above are retained.
+
+### 69.10 Failed acceptance prerequisite stays failed
+
+Fable found that the harness's former null result for a failed history read could send the
+browser case through its legacy-handoff skip. The harness now distinguishes an explicit
+`{ status: 'failed', faults: [...] }` result. The handoff type accepts that result and the
+warranty browser case throws its reported faults before considering the absent-ledger skip.
+An older handoff with no ledger remains distinguishable from an attempted read that failed.
+
+A controlled invocation of the actual spec callback confirms that the explicit failure stops
+before navigation, an absent legacy field skips, and a successful read proceeds to navigation.
+This local control-flow check is not browser execution. Web typechecking passes. Final tier
+records are taken after this correction; the superseded unit recording was stopped and is
+not claimed as passing.
