@@ -256,6 +256,23 @@ the P1-31 read seams inherit."
   permitted export, the refusal of a caller holding every read code and not the disclosure code,
   and a selection matching no rows. The fourth dataset already carried its own.
 
+  **The P1-24 operation register credits ONE of the four, and it undercounts rather than
+  overclaims** — stated here because a reader of that register would otherwise
+  conclude that three of these suites do not exist. Its `tests` array for the export operation
+  names `tests/backend/p1-31-report-engine-work-orders.test.ts` and does not name
+  `p1-31-report-engine-invoice-payment.test.ts`, `p1-31-report-engine-inventory-movements.test.ts`
+  or `p1-31-report-engine-technician-labor.test.ts`. The reason is mechanical and is a property of
+  the generator, not of the suites: `scripts/p1-24-operation-register.mjs` credits a file by RAW
+  SUBSTRING of the operation identifier, and the three later suites address the route by the report
+  code and the action rather than by the identifier, so the substring is absent from all three. The
+  identifier is deliberately NOT inserted to satisfy the matcher: a reference written to be counted
+  is a reference that proves nothing about the request the suite issues, and the register's own
+  distinction between a raw reference and a reviewed coverage flag exists precisely so that a
+  mention is never mistaken for a proof. The direction of the error is the safe one — the
+  register claims less database-backed export evidence than this candidate holds, and the three
+  suites are named here as that evidence. No coverage flag is claimed for them and the registered
+  evidence set for the operation is unchanged.
+
   | file (`tests/backend/`)                              | cases |
   | ---------------------------------------------------- | ----- |
   | `p1-31-delivery-read-seam.test.ts`                   | 26    |
