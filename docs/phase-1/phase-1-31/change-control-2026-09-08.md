@@ -7287,3 +7287,27 @@ before navigation, an absent legacy field skips, and a successful read proceeds 
 This local control-flow check is not browser execution. Web typechecking passes. Final tier
 records are taken after this correction; the superseded unit recording was stopped and is
 not claimed as passing.
+
+### 69.11 Final local integration records
+
+Both full tiers were recorded after the failed-prerequisite correction at executable commit
+`5224feaa7f2fc577ca5096d66cacd58d4a44b1f6`: **unit 3372/3372 across 128 files** and
+**web 4057/4057 across 142 files**, each exit 0, with no skipped cases or dirty executable paths.
+The records in `../phase-1-27/evidence/local-run-ledger.json` remain LOCAL; no hosted result
+is inferred from them. The earlier targeted DOM check passed 211 cases across four files.
+Changed-file lint/format, web typechecking and the access, version-sourcing, write-shape,
+web-boundary, phase-ownership and generated-artifact gates passed during integration.
+
+The protected prerequisite #395 is confirmed at
+`e97db8ced0de80947e007df288d35f383e9fa68e`: all 19 actual post-merge check-runs completed
+successfully, including `protected-gate`; its last check completed at 2026-09-14T07:42:35Z.
+These checks describe that prerequisite head, not this FE-009 candidate.
+
+Raw reports, the preserved index snapshot, controlled failure regression, browser collection
+and GitHub check-run evidence are retained outside the repository in the shared orchestration
+evidence directory `astra-fe009-20260914`. FE-009 hosted checks and closing-head browser
+acceptance remain pending at this local record.
+
+The final `npm run verify:policies` completed with exit 0 after these records were
+refreshed. The closing-values gate reported zero problems, and the evidence manifest
+was in sync across all 41 evidence documents.
