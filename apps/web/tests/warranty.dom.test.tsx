@@ -389,6 +389,29 @@ describe('the list asks for nothing until a branch is named', () => {
     // The cursor goes back exactly as the server minted it.
     expect(listWarranties.mock.calls[1]?.[2]).toBe('next-cursor');
   });
+
+  it('states a further page it could not resolve, and never the key composed from it', async () => {
+    /*
+     * CC-59 (c) on this screen. The failed page's outcome was held as a bare string and
+     * the sentence was built as `state.${status}.title`, which is a catalogue key for
+     * four of the five outcomes and NOT a key for `not-found` — the catalogue holds
+     * `state.notFound.title`, and a missing key renders AS the key. The screen now
+     * renders the outcome through the same shared states its FIRST page uses.
+     */
+    listWarranties
+      .mockResolvedValueOnce(page([row], true, 'next-cursor'))
+      .mockResolvedValueOnce(refusedList('not-found'));
+    const user = userEvent.setup();
+    await renderListPage();
+    await nameBranch(user);
+    await user.click(
+      await screen.findByRole('button', { name: EN['warranty.list.loadMore'] as string })
+    );
+    expect(await screen.findByText(EN['state.notFound.title'] as string)).toBeInTheDocument();
+    expect(screen.queryByText('state.not-found.title')).toBeNull();
+    // The rows already read stay on screen: the operator keeps their place.
+    expect(screen.getByText(policy.name)).toBeInTheDocument();
+  });
 });
 
 describe('the record shows the terms it was issued under', () => {
@@ -740,7 +763,9 @@ describe('the transition ledger is read, and the oldest row is a beginning', () 
     const region = await failFurtherPage('unavailable');
     expect(await within(region).findByText(EN['state.unavailable.title'] as string)).toBeVisible();
     expect(within(region).getAllByRole('listitem')).toHaveLength(1);
-    expect(within(region).getByText(EN['warranty.history.origin'] as string, { exact: false }));
+    expect(
+      within(region).getByText(EN['warranty.history.origin'] as string, { exact: false })
+    ).toBeInTheDocument();
   });
 
   it('prints the reference the backend logged for a further page it refused', async () => {

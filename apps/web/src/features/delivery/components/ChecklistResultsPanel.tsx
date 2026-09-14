@@ -207,13 +207,11 @@ export function ChecklistResultsPanel({
           )}
 
           {page.moreFailed === null ? null : (
-            <div role="alert">
-              <PanelFailure
-                messages={messages}
-                status={page.moreFailed.status}
-                correlationId={page.moreFailed.correlationId}
-              />
-            </div>
+            <PanelFailure
+              messages={messages}
+              status={page.moreFailed.status}
+              correlationId={page.moreFailed.correlationId}
+            />
           )}
           {page.hasMore ? (
             <div>

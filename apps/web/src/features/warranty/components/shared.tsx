@@ -103,6 +103,27 @@ export function ReadFailure({
 }
 
 /**
+ * A read that failed AFTER the first page: what happened, and the reference the
+ * backend logged.
+ *
+ * The OUTCOME is carried rather than its name, and every caller renders it through
+ * `ReadFailure` below — the same component the FIRST page's failure goes through.
+ * Building a catalogue key out of the status instead, as `state.${status}.title`,
+ * is right for four of the five outcomes and wrong for `not-found`: the catalogue
+ * holds `state.notFound.title`, nothing holds `state.not-found.title`, and a
+ * missing key renders AS the key. Four screens of this feature shipped that way.
+ * The type is what stops a key being built from a machine value here.
+ *
+ * The correlation reference travels because it is the only diagnostic an operator
+ * ever sees, and printing it on the first page while dropping it on the second
+ * makes the same fault reportable or not depending on when it happened.
+ */
+export interface MoreFailure {
+  readonly status: ReadFailureStatus;
+  readonly correlationId: string | null;
+}
+
+/**
  * A labelled identifier.
  *
  * No warranty read resolves a vehicle, a work order or a handover to a name, so each

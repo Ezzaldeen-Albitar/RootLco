@@ -251,6 +251,55 @@ describe('the plan list', () => {
       expect(screen.getByText(EN['warranty.policies.noneTitle'] as string)).toBeInTheDocument()
     );
   });
+
+  it('states a further page it could not resolve, and never the key composed from it', async () => {
+    /*
+     * CC-59 (c) on this screen. A further page that failed was reported by composing
+     * `state.${status}.title`. That is a catalogue key for four of the five outcomes
+     * and NOT a key for `not-found`: the catalogue holds `state.notFound.title`, and
+     * `translate` renders a missing key AS the key, so the operator was shown a dotted
+     * internal string. The outcome now goes through the same shared states the FIRST
+     * page's failure already used.
+     */
+    listWarrantyPolicies
+      .mockResolvedValueOnce(policyPage([policy], true, 'next-cursor'))
+      .mockResolvedValueOnce(refusedRead('not-found'));
+    const user = userEvent.setup();
+    await renderListPage();
+    await waitFor(() => expect(listWarrantyPolicies).toHaveBeenCalled());
+    await user.click(
+      await screen.findByRole('button', { name: EN['warranty.policies.loadMore'] as string })
+    );
+    expect(await screen.findByText(EN['state.notFound.title'] as string)).toBeInTheDocument();
+    expect(screen.queryByText('state.not-found.title')).toBeNull();
+    // The page already read stays on screen.
+    expect(screen.getByRole('link', { name: 'Standard cover' })).toBeInTheDocument();
+  });
+
+  it('states a failed re-read of one plan without composing a key from it', async () => {
+    /*
+     * The same defect on the single-plan screen, reached by a different path: every
+     * mutation re-reads, and a re-read that fails used to print
+     * `state.${status}.title` beside the sentence that explains it. The explanatory
+     * sentence is the catalogue's and stays; the outcome beside it is now rendered by
+     * the shared state.
+     */
+    PERMISSIONS = [READ, MANAGE];
+    readWarrantyPolicy
+      .mockResolvedValueOnce({ status: 'ok', data: detail, correlationId: 'corr-1' })
+      .mockResolvedValue(refusedRead('not-found'));
+    const user = userEvent.setup();
+    await renderDetailPage();
+    await user.click(
+      screen.getByRole('button', { name: EN['warranty.policies.renameSubmit'] as string })
+    );
+    await waitFor(() => expect(renameWarrantyPolicy).toHaveBeenCalled());
+    expect(
+      await screen.findByText(EN['warranty.policies.rereadFailed'] as string)
+    ).toBeInTheDocument();
+    expect(await screen.findByText(EN['state.notFound.title'] as string)).toBeInTheDocument();
+    expect(screen.queryByText('state.not-found.title')).toBeNull();
+  });
 });
 
 describe('creating a plan is drawn on the administration code and on nothing else', () => {

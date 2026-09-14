@@ -31,6 +31,7 @@ import {
   Section,
   UUID,
   refusalKeyFor,
+  type MoreFailure,
 } from './shared';
 import type { ReadFailureStatus } from '@/lib/api/read-operation';
 
@@ -80,7 +81,7 @@ interface Held {
   readonly nextCursor: string | null;
   readonly hasMore: boolean;
   readonly correlationId: string | null;
-  readonly moreFailed: string | null;
+  readonly moreFailed: MoreFailure | null;
 }
 
 export function WarrantyPolicyListScreen({
@@ -145,7 +146,10 @@ export function WarrantyPolicyListScreen({
     if (next.status !== 'ok') {
       // The pages already read stay on screen. Wiping them to report a transient
       // fault loses the operator's place for no benefit.
-      setHeld({ ...held, moreFailed: next.status });
+      setHeld({
+        ...held,
+        moreFailed: { status: next.status, correlationId: next.correlationId },
+      });
       return;
     }
     setHeld({
@@ -265,9 +269,11 @@ export function WarrantyPolicyListScreen({
             </table>
 
             {current.moreFailed === null ? null : (
-              <p role="alert" className="mt-2 text-body text-error">
-                {translateDynamic(messages, `state.${current.moreFailed}.title`)}
-              </p>
+              <ReadFailure
+                messages={messages}
+                status={current.moreFailed.status}
+                correlationId={current.moreFailed.correlationId}
+              />
             )}
 
             {current.hasMore ? (

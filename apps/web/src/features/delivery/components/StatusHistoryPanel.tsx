@@ -102,13 +102,11 @@ export function StatusHistoryPanel({
             ))}
           </ol>
           {page.moreFailed === null ? null : (
-            <div role="alert" className="mt-2">
-              <PanelFailure
-                messages={messages}
-                status={page.moreFailed.status}
-                correlationId={page.moreFailed.correlationId}
-              />
-            </div>
+            <PanelFailure
+              messages={messages}
+              status={page.moreFailed.status}
+              correlationId={page.moreFailed.correlationId}
+            />
           )}
           {page.hasMore ? (
             <button

@@ -6,7 +6,7 @@ import { EmptyState, LoadingState } from '@/components/states/States';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
-import type { ReadFailureStatus, ReadState } from '@/lib/api/read-operation';
+import type { ReadState } from '@/lib/api/read-operation';
 import { formatDateTime } from '@/lib/format';
 
 import { readWarrantyStatusHistory } from '../warranty-api';
@@ -15,7 +15,14 @@ import type {
   WarrantyStatusHistoryEnvelope,
   WarrantyStatusTransition,
 } from '../warranty-contract';
-import { ReadFailure, Reference, SECONDARY_BUTTON, Section, WarrantyStatusLabel } from './shared';
+import {
+  ReadFailure,
+  Reference,
+  SECONDARY_BUTTON,
+  Section,
+  WarrantyStatusLabel,
+  type MoreFailure,
+} from './shared';
 
 /**
  * Every state this warranty has held (P1-31, FE-009), newest first.
@@ -53,26 +60,6 @@ import { ReadFailure, Reference, SECONDARY_BUTTON, Section, WarrantyStatusLabel 
  * ledger in the delivery feature — and inventing a lookup here would be a second
  * authority on who did something.
  */
-
-/**
- * A further page that failed: what happened, and the reference the backend logged.
- *
- * The OUTCOME is carried rather than its name, and it is rendered through the same
- * shared states the first page's failure goes through. Building a catalogue key out of
- * the status — `state.${status}.title` — is wrong for exactly one of the five:
- * `not-found` composes `state.not-found.title`, which the catalogue does not hold, and
- * a missing key renders AS the key, so an operator whose second page could not be
- * resolved would be shown a dotted internal string. The type is what stops a key being
- * built from a machine value here.
- *
- * The correlation reference travels because it is the only diagnostic an operator ever
- * sees, and printing it on the first page but not the second would make the same fault
- * reportable or not depending on when it happened.
- */
-interface MoreFailure {
-  readonly status: ReadFailureStatus;
-  readonly correlationId: string | null;
-}
 
 /** What one page of the ledger, and the read that fetched it, amount to on screen. */
 interface Ledger {
@@ -254,13 +241,11 @@ export function WarrantyHistoryPanel({
             ))}
           </ol>
           {ledger.moreFailed === null ? null : (
-            <div role="alert" className="mt-2">
-              <ReadFailure
-                messages={messages}
-                status={ledger.moreFailed.status}
-                correlationId={ledger.moreFailed.correlationId}
-              />
-            </div>
+            <ReadFailure
+              messages={messages}
+              status={ledger.moreFailed.status}
+              correlationId={ledger.moreFailed.correlationId}
+            />
           )}
           {ledger.canLoadMore ? (
             <button
