@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
+import type { OdometerReadingEntry } from '@/features/vehicles/history-contract';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
@@ -93,6 +94,7 @@ export function DeliveryDocumentPanel({
   delivery,
   eligibility,
   canReadWorkOrder,
+  finalOdometerReading = null,
   revision = 0,
 }: {
   readonly locale: Locale;
@@ -102,6 +104,8 @@ export function DeliveryDocumentPanel({
   readonly eligibility: HeldEligibility;
   /** Whether the caller holds the code the work-order read declares. */
   readonly canReadWorkOrder: boolean;
+  /** The reading the record points at, resolved by the route, or `null`. */
+  readonly finalOdometerReading?: OdometerReadingEntry | null;
   readonly revision?: number;
 }) {
   const [open, setOpen] = useState(false);
@@ -176,6 +180,7 @@ export function DeliveryDocumentPanel({
           checklist={sectionFrom(held.checklist, (envelope) => envelope.results)}
           signatures={sectionFrom(held.signatures, (envelope) => envelope.signatures)}
           history={sectionFrom(held.history, (envelope) => envelope.transitions)}
+          finalOdometerReading={finalOdometerReading}
         />
       )}
     </section>

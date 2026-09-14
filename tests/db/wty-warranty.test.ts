@@ -11,17 +11,21 @@ import {
   ensureTestLogins,
   ensureOrgFixtures,
   cleanFixtures,
+  withCommittedTx,
   withRolledBackTx,
   TENANT_A,
+  TENANT_B,
   COMPANY_A1,
   BRANCH_A1,
   USER_A,
+  USER_B,
 } from './helpers';
 import {
   seedP111Base,
   ctxA,
   expectFail,
   buildReadyDelivery,
+  completeDelivery,
   seedCompletedDelivery,
   seedWarrantyPolicy,
   seedWarrantyCoverage,
@@ -184,5 +188,124 @@ describe('p1-11 wty warranty', () => {
         [TENANT_A, COMPANY_A1, policy, USER_A]
       );
     });
+  });
+});
+
+// ===========================================================================
+/**
+ * P1-31 QA-003 — the DATABASE layer of the two-layer isolation claim, for the four
+ * warranty tables.
+ *
+ * Every case above this one runs as `ctxA` inside a rolled-back transaction: this is a
+ * CONSTRAINT suite, and until now it drove no cross-tenant negative at all. The
+ * structural half — RLS enabled and forced, a tenant-scoped SELECT and INSERT policy,
+ * and a refused cross-tenant INSERT — is auto-enumerated over every `wty` table by
+ * `p1-11-isolation.test.ts`, whose behavioural read negative covers no `wty` table.
+ *
+ * A warranty record is the document a customer holds the workshop to, and three of
+ * these four tables reach their tenant through a parent rather than through a column
+ * a policy could be written against by accident. So the read negative is asserted per
+ * table rather than per schema.
+ *
+ * The rows are COMMITTED, because a row inside the writer's own transaction is
+ * invisible to a second session for a reason that has nothing to do with tenancy, and
+ * they are removed by id afterwards — including the mandatory checklist item the
+ * handover needed, which would otherwise gate every other suite's completions.
+ */
+describe('p1-31 QA-003 the warranty tables are hidden from another tenant at the database', () => {
+  it('shows a tenant-B and a no-context session none of a committed tenant-A warranty', async () => {
+    const seeded = await withCommittedTx(runtime, ctxA, async (c) => {
+      const chain = await buildReadyDelivery(c, 'p131wtyiso');
+      await completeDelivery(c, chain.delivery, 100000);
+      const policy = await seedWarrantyPolicy(c, 'p131wtyiso');
+      const coverage = await seedWarrantyCoverage(c, policy, {
+        durationMonths: 12,
+        effectiveFrom: '2020-01-01',
+      });
+      const warranty = await issueWarranty(c, chain.delivery, policy);
+      return { chain, policy, coverage, warranty };
+    });
+
+    const rows: readonly (readonly [string, string, string])[] = [
+      ['wty.warranty_policies', 'id', seeded.policy],
+      ['wty.warranty_coverage', 'id', seeded.coverage],
+      ['wty.warranty_records', 'id', seeded.warranty],
+      ['wty.warranty_status_history', 'warranty_record_id', seeded.warranty],
+    ];
+
+    try {
+      // The control first: as the owning tenant every one answers with a row, so the
+      // zeros below are tenancy rather than a chain that was never written.
+      await withRolledBackTx(runtime, ctxA, async (c) => {
+        for (const [table, column, id] of rows) {
+          const own = await c.query(`SELECT 1 FROM ${table} WHERE ${column} = $1`, [id]);
+          expect({ table, visible: own.rowCount }).toEqual({ table, visible: 1 });
+        }
+      });
+
+      for (const context of [{ tenantId: TENANT_B, userId: USER_B }, {}]) {
+        await withRolledBackTx(runtime, context, async (c) => {
+          for (const [table, column, id] of rows) {
+            const seen = await c.query(`SELECT 1 FROM ${table} WHERE ${column} = $1`, [id]);
+            expect({ table, visible: seen.rowCount }).toEqual({ table, visible: 0 });
+          }
+          // The covered-item table too, which a foreign tenant must not be able to
+          // enumerate even though this warranty carries no line of its own.
+          const items = await c.query(
+            `SELECT 1 FROM wty.warranty_record_items WHERE warranty_record_id = $1`,
+            [seeded.warranty]
+          );
+          expect(items.rowCount).toBe(0);
+
+          // Not merely unreadable: unwritable. The USING clause narrows the update to
+          // nothing rather than refusing it, so a row count of zero is the assertion.
+          const archived = await c.query(
+            `UPDATE wty.warranty_policies SET status = 'archived' WHERE id = $1`,
+            [seeded.policy]
+          );
+          expect(archived.rowCount).toBe(0);
+        });
+      }
+    } finally {
+      const drop = async (sql: string, id: string): Promise<void> => {
+        await admin.query(sql, [id]);
+      };
+      await drop(
+        `DELETE FROM wty.warranty_status_history WHERE warranty_record_id = $1`,
+        seeded.warranty
+      );
+      await drop(
+        `DELETE FROM wty.warranty_record_items WHERE warranty_record_id = $1`,
+        seeded.warranty
+      );
+      await drop(`DELETE FROM wty.warranty_records WHERE id = $1`, seeded.warranty);
+      await drop(`DELETE FROM wty.warranty_coverage WHERE policy_id = $1`, seeded.policy);
+      await drop(`DELETE FROM wty.warranty_policies WHERE id = $1`, seeded.policy);
+      await drop(
+        `DELETE FROM sal.delivery_signatures WHERE delivery_record_id = $1`,
+        seeded.chain.delivery
+      );
+      await drop(
+        `DELETE FROM sal.delivery_checklist_results WHERE delivery_record_id = $1`,
+        seeded.chain.delivery
+      );
+      await drop(
+        `DELETE FROM sal.authorized_receivers WHERE delivery_record_id = $1`,
+        seeded.chain.delivery
+      );
+      await drop(
+        `DELETE FROM sal.delivery_status_history WHERE delivery_record_id = $1`,
+        seeded.chain.delivery
+      );
+      await drop(`DELETE FROM sal.delivery_records WHERE id = $1`, seeded.chain.delivery);
+      await drop(
+        `DELETE FROM sal.delivery_checklist_template_items WHERE template_id = $1`,
+        seeded.chain.template
+      );
+      await drop(
+        `DELETE FROM sal.delivery_checklist_templates WHERE id = $1`,
+        seeded.chain.template
+      );
+    }
   });
 });

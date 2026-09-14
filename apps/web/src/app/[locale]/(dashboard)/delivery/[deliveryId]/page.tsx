@@ -9,8 +9,10 @@ import {
   SessionExpiredState,
 } from '@/components/states/States';
 import { requireSession } from '@/features/authentication/api/session';
-import { holds } from '@/features/crm/permissions';
+import { holds, VEHICLE_PERMISSIONS } from '@/features/crm/permissions';
 import { readDelivery } from '@/features/delivery/api';
+import { listOdometerReadings } from '@/features/vehicles/history-api';
+import type { OdometerReadingEntry } from '@/features/vehicles/history-contract';
 import { DeliveryDetailScreen } from '@/features/delivery/components/DeliveryDetailScreen';
 import { DELIVERY_PERMISSIONS } from '@/features/delivery/delivery-contract';
 import { WARRANTY_PERMISSIONS } from '@/features/warranty/warranty-contract';
@@ -72,7 +74,25 @@ import { pageMetadata } from '@/lib/page-metadata';
  * identifiers the delivery record carries instead. It does not gate the page,
  * because a handover is readable without it.
  *
- * **All six are affordances, never enforcement.** Every read and every write is
+ * ## A seventh code, and the one reference this page RESOLVES
+ *
+ * `sal.delivery-read` publishes `finalOdometerReadingId` and no value, so the
+ * reading captured at handover was on the record as an identifier and nowhere as
+ * a number — FE-005's own subject, unreadable on the screen that owns it. The
+ * value is read here, from `veh.vehicle-odometer-history`, which is the operation
+ * that publishes it and declares `veh.vehicle.read`.
+ *
+ * Three things decide whether the read happens at all, and all three before it:
+ * the record has to name a reading, the caller has to hold that code, and the
+ * page has to have a record to name it. A caller without the code is not asked to
+ * spend a request discovering that, and the screen falls back to the reference —
+ * which is what the delivery record itself carries.
+ *
+ * It is a page read rather than a panel read for the reason every other read on
+ * this screen is placed where it is: this is where the permission is known, and a
+ * component that read for itself would ask before anyone had decided it may.
+ *
+ * **All seven are affordances, never enforcement.** Every read and every write is
  * decided again by the backend against the actual record.
  */
 export default async function DeliveryDetailPage({
@@ -170,6 +190,22 @@ export default async function DeliveryDetailPage({
     return shell(<ErrorState messages={messages} correlationId={reference} />);
   }
 
+  /*
+   * The reading the record points at, or `null`.
+   *
+   * `listOdometerReadings` is a CURSOR page of the vehicle's readings, newest
+   * first, and the handover's reading is the most recent one on that vehicle at
+   * the moment it was captured — so the first page is where it is. Nothing walks
+   * the cursor: a reading that is not on the first page is reported as
+   * unresolved and the record shows its reference, which is honest and costs one
+   * request rather than an unbounded number.
+   */
+  const finalOdometerReading = await resolveFinalOdometer(
+    record.data.vehicleId,
+    record.data.finalOdometerReadingId,
+    holds(session.permissions, VEHICLE_PERMISSIONS.vehicleRead)
+  );
+
   return shell(
     <DeliveryDetailScreen
       locale={locale}
@@ -181,8 +217,44 @@ export default async function DeliveryDetailPage({
       canIssueWarranty={holds(session.permissions, WARRANTY_PERMISSIONS.issue)}
       canReadWarrantyPolicies={holds(session.permissions, WARRANTY_PERMISSIONS.read)}
       canReadWorkOrder={holds(session.permissions, WORK_ORDER_PERMISSIONS.read)}
+      finalOdometerReading={finalOdometerReading}
     />
   );
 }
+
+/**
+ * The stored reading behind a delivery's final-odometer reference.
+ *
+ * Returns `null` for every reason it could not be established, and the three are
+ * deliberately not distinguished to the screen: no reading on the record, no
+ * authority to read the vehicle, and a read that did not answer all mean the same
+ * thing to a reader — the value is not known here, so the reference is what is
+ * shown. Nothing is invented and nothing is hidden.
+ */
+async function resolveFinalOdometer(
+  vehicleId: string,
+  readingId: string | null,
+  mayReadVehicle: boolean
+): Promise<OdometerReadingEntry | null> {
+  if (readingId === null || !mayReadVehicle) return null;
+  const page = await listOdometerReadings(
+    vehicleId,
+    { page: 1, pageSize: ODOMETER_PAGE_SIZE, sort: null, filters: [], search: '' },
+    null
+  );
+  if (page.status !== 'ok') return null;
+  return page.rows.find((reading) => reading.id === readingId) ?? null;
+}
+
+/**
+ * How many of the vehicle's readings are asked for.
+ *
+ * One page, and small: the reading a completion just stored is the newest on the
+ * vehicle, and a page big enough to cover a handover taken after a few later
+ * corrections is big enough. It is not a limit on anything the operator can see —
+ * the vehicle's own history screen pages properly — it is the size of the single
+ * lookup this page spends.
+ */
+const ODOMETER_PAGE_SIZE = 20;
 
 export const generateMetadata = pageMetadata('delivery.detail.title');

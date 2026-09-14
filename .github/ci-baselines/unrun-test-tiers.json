@@ -20,6 +20,7 @@
       "apps/web/tests/e2e/authenticated/drawer-and-restore.spec.ts",
       "apps/web/tests/e2e/authenticated/audit-log-p1-31.spec.ts",
       "apps/web/tests/e2e/authenticated/delivery-p1-31.spec.ts",
+      "apps/web/tests/e2e/authenticated/delivery-writes-p1-31.spec.ts",
       "apps/web/tests/e2e/authenticated/reports-p1-31.spec.ts",
       "apps/web/tests/e2e/authenticated/warranty-p1-31.spec.ts",
       "apps/web/tests/e2e/authenticated/overview-p1-31.spec.ts"

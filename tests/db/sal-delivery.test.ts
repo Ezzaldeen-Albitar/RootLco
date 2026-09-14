@@ -12,11 +12,14 @@ import {
   ensureTestLogins,
   ensureOrgFixtures,
   cleanFixtures,
+  withCommittedTx,
   withRolledBackTx,
   TENANT_A,
+  TENANT_B,
   COMPANY_A1,
   BRANCH_A1,
   USER_A,
+  USER_B,
 } from './helpers';
 import {
   seedP111Base,
@@ -286,5 +289,102 @@ describe('p1-31 P-9b sal.complete_delivery template lifecycle gate', () => {
       expect(await completeDelivery(c, b.delivery, 100006)).toBeTruthy();
       expect(await statusOf(c, b.delivery)).toBe('delivered');
     });
+  });
+});
+
+// ===========================================================================
+/**
+ * P1-31 QA-003 — the DATABASE layer of the two-layer isolation claim, for the seven
+ * delivery tables.
+ *
+ * Every case above this one runs as `ctxA` inside a rolled-back transaction: this is a
+ * CONSTRAINT suite, and until now it drove no cross-tenant negative at all. The
+ * structural half of isolation — RLS enabled and forced, a tenant-scoped SELECT and
+ * INSERT policy, and a refused cross-tenant INSERT — is auto-enumerated over every
+ * `sal` table by `p1-11-isolation.test.ts`, whose behavioural read negative covers
+ * `sal.invoices` and nothing of the delivery chain.
+ *
+ * That gap matters here more than elsewhere because six of these seven tables reach
+ * their tenant through the delivery record rather than carrying the boundary in a
+ * column a policy could be written against by accident: a predicate joined to the
+ * wrong parent would satisfy the structural check and still show one tenant another's
+ * handovers, receivers and signatures.
+ *
+ * The rows are COMMITTED, because a row inside the writer's own transaction is
+ * invisible to a second session for a reason that has nothing to do with tenancy, and
+ * they are removed by id afterwards — a mandatory checklist item left behind in
+ * `COMPANY_A1` is a company-wide gate on every other suite's handovers.
+ */
+describe('p1-31 QA-003 the delivery tables are hidden from another tenant at the database', () => {
+  it('shows a tenant-B and a no-context session none of a committed tenant-A handover', async () => {
+    const seeded = await withCommittedTx(runtime, ctxA, async (c) =>
+      buildReadyDelivery(c, 'p131iso')
+    );
+
+    /** Every delivery-chain table, with the column that addresses this handover. */
+    const rows: readonly (readonly [string, string, string])[] = [
+      ['sal.delivery_records', 'id', seeded.delivery],
+      ['sal.authorized_receivers', 'delivery_record_id', seeded.delivery],
+      ['sal.delivery_checklist_results', 'delivery_record_id', seeded.delivery],
+      ['sal.delivery_signatures', 'delivery_record_id', seeded.delivery],
+      ['sal.delivery_checklist_templates', 'id', seeded.template],
+      ['sal.delivery_checklist_template_items', 'id', seeded.item],
+    ];
+
+    try {
+      // The control first: as the owning tenant every one of the six answers with a
+      // row, so the zeros below are tenancy rather than an empty chain.
+      await withRolledBackTx(runtime, ctxA, async (c) => {
+        for (const [table, column, id] of rows) {
+          const own = await c.query(`SELECT 1 FROM ${table} WHERE ${column} = $1`, [id]);
+          expect({ table, visible: own.rowCount }).toEqual({ table, visible: 1 });
+        }
+      });
+
+      for (const context of [{ tenantId: TENANT_B, userId: USER_B }, {}]) {
+        await withRolledBackTx(runtime, context, async (c) => {
+          for (const [table, column, id] of rows) {
+            const seen = await c.query(`SELECT 1 FROM ${table} WHERE ${column} = $1`, [id]);
+            expect({ table, visible: seen.rowCount }).toEqual({ table, visible: 0 });
+          }
+          // The status ledger too, which carries no id of its own worth naming.
+          const history = await c.query(
+            `SELECT 1 FROM sal.delivery_status_history WHERE delivery_record_id = $1`,
+            [seeded.delivery]
+          );
+          expect(history.rowCount).toBe(0);
+
+          // Not merely unreadable: unwritable. The USING clause narrows the update to
+          // nothing rather than refusing it, so a row count of zero is the assertion.
+          const retired = await c.query(
+            `UPDATE sal.delivery_checklist_templates SET status = 'inactive' WHERE id = $1`,
+            [seeded.template]
+          );
+          expect(retired.rowCount).toBe(0);
+        });
+      }
+    } finally {
+      await admin.query(`DELETE FROM sal.delivery_signatures WHERE delivery_record_id = $1`, [
+        seeded.delivery,
+      ]);
+      await admin.query(
+        `DELETE FROM sal.delivery_checklist_results WHERE delivery_record_id = $1`,
+        [seeded.delivery]
+      );
+      await admin.query(`DELETE FROM sal.authorized_receivers WHERE delivery_record_id = $1`, [
+        seeded.delivery,
+      ]);
+      await admin.query(`DELETE FROM sal.delivery_status_history WHERE delivery_record_id = $1`, [
+        seeded.delivery,
+      ]);
+      await admin.query(`DELETE FROM sal.delivery_records WHERE id = $1`, [seeded.delivery]);
+      await admin.query(
+        `DELETE FROM sal.delivery_checklist_template_items WHERE template_id = $1`,
+        [seeded.template]
+      );
+      await admin.query(`DELETE FROM sal.delivery_checklist_templates WHERE id = $1`, [
+        seeded.template,
+      ]);
+    }
   });
 });
