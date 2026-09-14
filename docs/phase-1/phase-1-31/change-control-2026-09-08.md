@@ -6436,18 +6436,21 @@ Three things this lane deliberately did NOT do, so they are not read as closed:
 
 ### 68.8 Verification — what was run, where, and what attests it
 
-**Record commit.** `P1-31-SEC-004-008`, `986efe39`. Both local tiers were re-run at the merge head
-`d05f1252` by `node scripts/ci/check-p1-27-closing-values.mjs --record`, which spawns the tier
-itself so the run ledger has one author and a hand-assembled total cannot enter it:
+**Record commit.** `P1-31-SEC-004-011`, `63153de9` — the LAST record of this push. It supersedes
+`P1-31-SEC-004-008` / `986efe39`, whose unit figures were taken before the matrix generator existed
+and whose web record the ledger then reported STALE against three changed executable paths rather
+than letting the older figure stand. Both local tiers were re-run at `075592a9` by
+`node scripts/ci/check-p1-27-closing-values.mjs --record`, which spawns the tier itself so the run
+ledger has one author and a hand-assembled total cannot enter it:
 
 | tier      | tests | files | failed | attempts |
 | --------- | ----- | ----- | ------ | -------- |
-| root unit | 3336  | 126   | 0      | 1        |
+| root unit | 3341  | 127   | 0      | 1        |
 | web       | 4026  | 142   | 0      | 1        |
 
-The unit figures move from 3332 over 125 because this branch adds two test files — the emission
-suite, which the unit tier does not run, and `tests/ci/p1-31-grant-map.test.ts`, whose four cases it
-does. The web figures are § 64's and are unmoved by this branch. The two CR-A unit rows in
+The unit figures move from 3332 over 125 because this branch adds three test files — the emission
+suite, which the unit tier does not run, and `tests/ci/p1-31-grant-map.test.ts` and
+`tests/ci/p1-31-error-path-matrix.test.ts`, whose four and five cases it does. The web figures are § 64's and are unmoved by this branch. The two CR-A unit rows in
 `clean-room-evidence.md` and their entries in `evidence/closing-value-ledger.json` were updated
 together, value and locator, and `check-p1-27-closing-values.mjs` then reported **0 problems** with
 no `STALE` record.
