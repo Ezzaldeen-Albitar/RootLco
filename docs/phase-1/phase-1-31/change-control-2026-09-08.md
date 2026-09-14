@@ -7337,3 +7337,87 @@ After that review, web typechecking and the two changed browser-proof files' lin
 re-executed successfully; raw output is retained in `post-review-static.log` in the same
 external evidence directory. The code is unchanged from `5224feaa`. The closing-values
 gate again reported zero problems and the evidence manifest remained in sync.
+
+### 69.13 P-12 — explicitly authorized report export
+
+The recorded D-6 instruction of 2026-09-09 directs completion of the report-export contract with
+explicit authorization and auditability. The instruction was not a deferral. Backend source
+fac0eb042012e3736256ab2eb0dda8401f27d53b implements it on the mapped P1-31 backend lane, based on
+protected develop32c797546f39bc9033dda95181571ce38b2f11cc. The prior source commit a9de7053 and its
+initial verification failures remain in history. Section70 remains reserved for closing acceptance.
+
+The published POST /api/v1/reports/{reportCode}:export generates actual bounded CSV in its JSON
+response. It requires scoped rpt.export, report-read, dataset permissions and the explicit
+published tenant configuration's export permission. No baseline export entitlement, role grant,
+bootstrap widening or audit-log export is introduced. It reuses the report runner's selection,
+preserves detail values/labels and exact separately keyed summary measures, neutralizes formula
+prefixes, rejects oversized/nonadvancing exports and commits an append-only disclosure audit before
+returning content. The result states live freshness; no snapshot or durable storage claim is made.
+
+[The seam record](./report-export-seam.md) specifies the request, result, limits, context and audit.
+Runtime request/result validators supply the new operation's OpenAPI schemas. Optional schema
+metadata leaves older operations' published shapes unchanged; this is not a claim to have repaired
+the platform-wide bare-object-schema limitation.
+
+The published operation population is413, with47 operations across the P1-31 namespace census,
+13 declared permission codes and14 distinct declaration sets. The new service enlarges the actual
+backend coverage population by one; no coverage floor is weakened. The backend register, operation
+coverage, idempotency/audit metadata, least-privilege map and both refusal/isolation matrices are
+regenerated from their controlled tools. The map documents declarations; it grants nothing.
+
+LOCAL targeted verification at the corrected source:91/91 integration checks across8files and
+314/314 backend cases across the report-engine and phase-wide privilege-escalation suites.
+The backend witness used only the newly created p131_astra_export_20260914 database at127.0.0.1:55432
+on the previously designated disposable container.141 migrations and the declared seeds replayed
+there. The shared54322 acceptance database was not reset, cleaned or used by this slice.
+
+The initial full unit record at a9de7053 counted3398 cases with15 failures: inventory/census pins,
+the new operation's missing matrix row and request-schema export, and their derived records.
+Those failures triggered the correction commit; they are not a pass. The initial focused backend
+run also retained a wrong audit-table name in the new test query, corrected before the passing
+backend evidence. Matrix write-mode deliberately fails after generation; only a subsequent
+no-write run is validation. A manual phase-ownership invocation selected its documented legacy
+frontend default; the actual mapped p1-31-backend profile then passed against the declared base.
+
+The candidate's final LOCAL counts are recorded below. Engineering review, PR checks and protected
+integration are still pending at this record. No browser export journey, phase verdict or human
+certification is claimed by these backend checks.
+
+The next full unit measurement at fac0eb04 executed3398 cases with7 failures and zero skips.
+Six failures concerned the prior ledger's now-stale count statements or evidence digest; the
+seventh correctly refused a missing ReportExportBody frontend mirror. The backend prerequisite
+has no frontend consumer yet. It is therefore recorded in the gate's existing pending-consumer
+lifecycle, which requires removal as soon as the next frontend integration adds its consumed
+mirror. This is an explicit integration dependency, not a completion claim or waived requirement.
+The measured count statements and controlled evidence manifest were refreshed before revalidation.
+
+Source `56d7011446873e7c0bfee0adf17e4db2e8546c70` then passed all 3398 unit cases and 4057 web
+cases, with zero failures or skips. Final inspection identified an empty-selection context gap:
+the JSON result carried the selected scope/period, but a CSV with no details or groups contained
+only its header. Source `f8939ede90b6e73bddc83e413ed8e6f21cf9bbc8` corrects that gap with an
+explicit context record inside every CSV, excluded from detail and summary counts. Its focused
+export suite passes 26 cases, including a zero-row disclosure audit and a rectangular empty file.
+
+Final LOCAL measurements at `f8939ede90b6e73bddc83e413ed8e6f21cf9bbc8`:
+
+- Root unit: **3399/3399**, 129 files, zero failures/skips, runner exit 0 and reporter success.
+- Web: **4057/4057**, 142 files, zero failures/skips, runner exit 0 and reporter success.
+- Both records carry no dirty executable paths. The recorded counts and their closing-value
+  locators are reconciled with the controlled run ledger; prior failed records are retained
+  externally, rather than rewritten into passing observations.
+- API typechecking and the changed service/test lint checks pass after the context correction.
+  The whole-root formatter reported the test while that new regression was being formatted;
+  the completed targeted format check passes. This overlapping check is not represented as a
+  whole-root format pass.
+
+Raw logs and reporter JSON are in the shared workspace's
+`orchestration/evidence/p1-31/astra-fe009-20260914/`, with `export-` prefixes distinguishing them
+from FE-009's earlier records. The 314-case database/security evidence above establishes the
+unchanged authorization and isolation behavior; the later empty-file change is covered by the
+new unit witness and final full tiers. It did not alter SQL, permission requirements or the route.
+
+The final `verify:policies` run passes, including the request-mirror lifecycle, the evidence
+manifest, all 151 derived documentation claims and the closing-values gate with zero problems.
+The P1-27 lifecycle output belongs to that earlier phase and is not a P1-31 closure verdict.
+The final export candidate is ready for its consolidated engineering review; no export PR,
+hosted result or protected merge is claimed by this LOCAL record.
