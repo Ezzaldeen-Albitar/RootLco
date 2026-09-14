@@ -52,7 +52,7 @@
  *    more than one code and withholds them ONE AT A TIME, fourteen cases in all: an
  *    all-or-nothing probe cannot tell a gate that requires every declared code from one
  *    that requires any of them.
- *  - **SE-6** — cross-tenant, the 41 operations that address a tenant-owned row. A
+ *  - **SE-6** — cross-tenant, the 42 operations that address a tenant-owned row. A
  *    tenant-B caller holding all thirteen codes addresses tenant A's REAL rows. The
  *    pinned refusal is the one the platform already standardises, and which is: an
  *    operation addressed by a resource id answers 404 `ERR-RES-001`, the answer
@@ -65,10 +65,10 @@
  *    request, against an equivalent row set authored by the same routine, must NOT
  *    produce that refusal for the owning tenant — so the tenant-B 404 is tenancy and
  *    not absence.
- *  - **SE-7** — client-asserted scope, the 8 operations that carry a company or branch
+ *  - **SE-7** — client-asserted scope, the 9 operations that carry a company or branch
  *    the caller chose. Every actor here holds an UNRESTRICTED grant, so nothing is being
  *    narrowed by grant scope: the question is whether a caller may name an organisation
- *    that is not its own. All eight answer 403 `ERR-IAM-001` since CC-56, whether the
+ *    that is not its own. All nine answer 403 `ERR-IAM-001` since CC-56, whether the
  *    scope arrives in the query or in the body. Two variants each — another
  *    organisation's real pair, and a pair that exists nowhere — and the WHOLE disclosed
  *    document is compared against one per-probe expectation, so uniformity across the
@@ -657,7 +657,7 @@ const refusalFor = (probe: Probe): Refusal =>
  * pinning it here would pin something no caller can read. What a caller CAN read is
  * this, and it is asserted whole rather than field by field.
  *
- * `requiredPermissions` is present on ALL EIGHT, and that is the point rather than an
+ * `requiredPermissions` is present on ALL NINE, and that is the point rather than an
  * incidental. The three body-scoped creates once published nothing here, because the
  * probe behind them was called from an application service that holds no operation
  * declaration; the route handler now injects it bound to the operation, the way it
