@@ -105,3 +105,22 @@ export function isSqlState(
 ): boolean {
   return sqlState(error) === state;
 }
+
+/**
+ * Reads the violated constraint name from an unknown driver error, if present.
+ *
+ * A SQLSTATE says WHICH KIND of rule was broken and a table usually has several of
+ * the same kind, so a mapping keyed on the state alone answers for constraints it
+ * was never written for. `violatedConstraint` is what lets a handler map exactly
+ * the one it means and re-throw the rest. It lives beside `sqlState` because two
+ * modules now need it and a copy in each is how two readings of the same driver
+ * error start to disagree; the name is the driver's `constraint` field, which
+ * PostgreSQL populates for the integrity-violation classes.
+ */
+export function violatedConstraint(error: unknown): string | undefined {
+  if (typeof error === 'object' && error !== null && 'constraint' in error) {
+    const name = (error as { constraint?: unknown }).constraint;
+    return typeof name === 'string' ? name : undefined;
+  }
+  return undefined;
+}

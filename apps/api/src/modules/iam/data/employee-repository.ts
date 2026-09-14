@@ -221,25 +221,11 @@ export class EmployeeRepository extends Repository {
     }));
   }
 
-  /**
-   * Whether the company/branch pair is visible to THIS session.
-   *
-   * The read runs under `sel_branches_scope`, so it answers "reachable", not
-   * "exists" — which is exactly the question the create needs to ask before it
-   * trusts a pair that came from the request body. Duplicated from the
-   * department repository's `branchIsReachable` rather than shared, because the
-   * two repositories are separate write models and a shared private helper
-   * across them would be a boundary this module does not have.
-   */
-  async branchIsReachable(db: DbHandle, companyId: string, branchId: string): Promise<boolean> {
-    const row = await this.runOne<{ ok: boolean }>(
-      db,
-      `SELECT true AS ok FROM org.branches
-        WHERE id = $1 AND company_id = $2 AND deleted_at IS NULL`,
-      [branchId, companyId]
-    );
-    return row?.ok === true;
-  }
+  // `branchIsReachable` lived here and is gone: `createEmployee` now resolves the
+  // pair through `requireScopeClaimInTenant`, the platform probe the query-scoped
+  // reads use, so that a scope claim this surface cannot see is refused with the
+  // same 403 everywhere (CC-56). Leaving a second, tenant-implicit copy of the
+  // same predicate behind would invite the next writer to use the weaker one.
 
   /** Whether a user account exists in this tenant, as this session can see it. */
   async userAccountExists(db: DbHandle, userAccountId: string): Promise<boolean> {

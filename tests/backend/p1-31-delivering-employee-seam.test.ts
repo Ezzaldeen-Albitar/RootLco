@@ -794,11 +794,18 @@ describe('org.employee-create', () => {
       branchId: BRANCH_B1,
       displayName: 'Officer in the other tenant',
     });
-    // Never a 500. Before the reachability check the composite foreign key would
-    // have refused this at the INSERT, which reaches the exception monitor as an
+    // Never a 500. Before the scope check the composite foreign key would have
+    // refused this at the INSERT, which reaches the exception monitor as an
     // incident and tells the caller nothing.
-    expect(response.status).toBe(404);
-    expect(await codeOf(response)).toBe('ERR-RES-001');
+    //
+    // 403 `ERR-IAM-001` since CC-56, and it was a 404 `ERR-RES-001` when this case
+    // was written. The scope this create NAMES is not an employee: a not-found
+    // would confirm the existence boundary the refusal exists to hide, and it
+    // disagreed with the 403 the same create already gives a caller whose grant does
+    // not reach the pair (P17-C5 above). The register's own uniform not-found is
+    // unchanged and is about an EMPLOYEE id — P17-L7, P17-L8 and P17-S4 pin it.
+    expect(response.status).toBe(403);
+    expect(await codeOf(response)).toBe('ERR-IAM-001');
     expect(await employeeCount(TENANT_B)).toBe(0);
   });
 
