@@ -412,7 +412,7 @@ export function readFixtureInput(env = process.env, argv = process.argv.slice(2)
     refuse(
       `Refused: attempt ${String(attempt)} is beyond the bound of ` +
         `${String(MAX_FIXTURE_ATTEMPT)}. A retry is a bounded recovery for a run that has ` +
-        'already cost 520 HTTP steps, not a loop; a fourth failure is a defect to read, not ' +
+        'already cost 520 HTTP steps, not a loop; a third failure is a defect to read, not ' +
         'an attempt to repeat.',
       7
     );
