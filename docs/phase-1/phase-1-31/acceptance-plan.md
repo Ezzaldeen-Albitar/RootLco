@@ -600,7 +600,8 @@ published as the transitions page; until it is added, this case skips and claims
 
 **The overview spec is the fifth file, and it closes FE-010 and FE-016.** The record carried both
 as reached but not verified: no HTTP step called what the screen calls, and no browser case opened
-it. `overview-p1-31.spec.ts` carries three cases, in both locale projects:
+it. `overview-p1-31.spec.ts` carries three cases, **in all three authenticated projects since the
+correction of 2026-09-14**:
 
 | case                                                                         | gate                                        | what it establishes                                                                                                                                    |
 | ---------------------------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
