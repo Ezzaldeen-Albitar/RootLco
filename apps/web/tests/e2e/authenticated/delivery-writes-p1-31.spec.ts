@@ -5,6 +5,7 @@ import {
   NO_HANDOFF_REASON,
   WRONG_ACCOUNT_REASON,
   browserFixtures,
+  fixtureKeyOf,
   localeOf,
   readHandoff,
   say,
@@ -40,16 +41,24 @@ import {
  *
  * ## Each case owns its own handover
  *
- * `apps/web/playwright.config.ts` pins `workers: 1` and runs `authenticated-en`
- * before `authenticated-ar` against one database, and these cases CONSUME what
- * they act on — an answered checklist item cannot be answered again, a released
- * vehicle cannot be released again. So the harness leaves THREE handovers per
- * locale (`browserFixtures`), each carrying exactly ONE gap: a `checklist` one
- * signed and missing a single mandatory result, a `signature` one answered and
- * unsigned, and a `release` one whose only remaining reason is the financial
- * one. No case depends on another having run, and the harness refuses to finish
- * a run in which any of them carries a reason it was not built to carry, so a
- * fixture that reaches a case here is one the case can act on.
+ * `apps/web/playwright.config.ts` pins `workers: 1` and runs `authenticated-en`,
+ * `authenticated-ar` and `authenticated-tablet` in that order against one
+ * database, and these cases CONSUME what they act on — an answered checklist item
+ * cannot be answered again, a released vehicle cannot be released again. So the
+ * harness leaves THREE handovers per PROJECT (`browserFixtures`), each carrying
+ * exactly ONE gap: a `checklist` one signed and missing a single mandatory
+ * result, a `signature` one answered and unsigned, and a `release` one whose only
+ * remaining reason is the financial one. No case depends on another having run,
+ * and the harness refuses to finish a run in which any of them carries a reason
+ * it was not built to carry, so a fixture that reaches a case here is one the
+ * case can act on.
+ *
+ * WHICH SET a case takes is `fixtureKeyOf(testInfo.project.name)`, and that is a
+ * different question from `localeOf`, which every text and `dir` assertion below
+ * goes on using. The tablet project renders in English — so it asserts English
+ * strings and `dir="ltr"` — while consuming its own records, because the English
+ * set is already spent by `authenticated-en` before it starts. Content locale
+ * comes from the locale suffix; fixture identity comes from the project.
  *
  * ## One case runs without the handoff, and the guard that requires it
  *
@@ -260,7 +269,8 @@ test.describe('P1-31 delivery writes, over handovers the acceptance journey left
     // test-honesty-allow: TH-002 -- signed in as somebody other than the journey's own administrator; see WRONG_ACCOUNT_REASON
     test.skip(!signedInAsJourneyAdministrator(), WRONG_ACCOUNT_REASON);
     const locale = localeOf(testInfo.project.name);
-    const fixtures = browserFixtures(handoff, locale);
+    const fixtureKey = fixtureKeyOf(testInfo.project.name);
+    const fixtures = browserFixtures(handoff, fixtureKey);
     /*
      * A hard failure, not a skip. This suite and the harness section that makes
      * these handovers land together, so a handoff that carries none is a fixture
@@ -270,7 +280,7 @@ test.describe('P1-31 delivery writes, over handovers the acceptance journey left
      */
     expect(
       fixtures,
-      `the handoff names no browser fixture handover for ${locale}; the harness section that ` +
+      `the handoff names no browser fixture handover for ${fixtureKey}; the harness section that ` +
         'makes them did not run, or did not finish'
     ).not.toBeNull();
     const handover = (fixtures as NonNullable<typeof fixtures>).checklist;
@@ -474,7 +484,8 @@ test.describe('P1-31 delivery writes, over handovers the acceptance journey left
     // test-honesty-allow: TH-002 -- signed in as somebody other than the journey's own administrator; see WRONG_ACCOUNT_REASON
     test.skip(!signedInAsJourneyAdministrator(), WRONG_ACCOUNT_REASON);
     const locale = localeOf(testInfo.project.name);
-    const fixtures = browserFixtures(handoff, locale);
+    const fixtureKey = fixtureKeyOf(testInfo.project.name);
+    const fixtures = browserFixtures(handoff, fixtureKey);
     /*
      * A hard failure, not a skip. This suite and the harness section that makes
      * these handovers land together, so a handoff that carries none is a fixture
@@ -484,7 +495,7 @@ test.describe('P1-31 delivery writes, over handovers the acceptance journey left
      */
     expect(
       fixtures,
-      `the handoff names no browser fixture handover for ${locale}; the harness section that ` +
+      `the handoff names no browser fixture handover for ${fixtureKey}; the harness section that ` +
         'makes them did not run, or did not finish'
     ).not.toBeNull();
     const { signature: handover, signaturePngBase64 } = fixtures as NonNullable<typeof fixtures>;
@@ -640,7 +651,8 @@ test.describe('P1-31 delivery writes, over handovers the acceptance journey left
     // test-honesty-allow: TH-002 -- signed in as somebody other than the journey's own administrator; see WRONG_ACCOUNT_REASON
     test.skip(!signedInAsJourneyAdministrator(), WRONG_ACCOUNT_REASON);
     const locale = localeOf(testInfo.project.name);
-    const fixtures = browserFixtures(handoff, locale);
+    const fixtureKey = fixtureKeyOf(testInfo.project.name);
+    const fixtures = browserFixtures(handoff, fixtureKey);
     /*
      * A hard failure, not a skip. This suite and the harness section that makes
      * these handovers land together, so a handoff that carries none is a fixture
@@ -650,7 +662,7 @@ test.describe('P1-31 delivery writes, over handovers the acceptance journey left
      */
     expect(
       fixtures,
-      `the handoff names no browser fixture handover for ${locale}; the harness section that ` +
+      `the handoff names no browser fixture handover for ${fixtureKey}; the harness section that ` +
         'makes them did not run, or did not finish'
     ).not.toBeNull();
     const release = (fixtures as NonNullable<typeof fixtures>).release;
