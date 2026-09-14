@@ -213,9 +213,9 @@ test.describe('P1-31 reporting screens, over the acceptance journey records', ()
       ).toBeVisible();
       await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
 
-      // No download, on either outcome. No export operation is published for a report at all
-      // and `rpt.export` is withheld by Owner decision (CC-04), so a download control on a
-      // reporting screen would contradict the contract rather than merely a permission.
+      // No download, on either outcome. The export operation exists on this candidate, but
+      // `rpt.export` is withheld from this administrator by Owner decision (CC-04) and the
+      // control mounts only beneath a submitted run, which neither of these cases submits.
       await expect(page.locator('a[download]')).toHaveCount(0);
 
       // Wait for a terminal answer. The catalogue reads its rows in the browser, so "nothing

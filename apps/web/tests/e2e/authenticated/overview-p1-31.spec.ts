@@ -171,8 +171,8 @@ test.describe('P1-31 operational overview, over the acceptance journey records',
     ).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
 
-    // No download, on either outcome. No export operation is published for a report at
-    // all, so a download control here would contradict the contract and not a permission.
+    // No download, on either outcome. The export operation exists on this candidate, but no
+    // export control is published on the overview: it lives on the single-report screen.
     await expect(page.locator('a[download]')).toHaveCount(0);
 
     const form = main.getByRole('form', { name: say(locale, 'reports.run.formLabel') });

@@ -333,7 +333,7 @@ describe('the catalogue renders what the operation returned, and decides nothing
     );
   });
 
-  it('offers no download anywhere, because there is no operation to offer', async () => {
+  it('offers no download on the catalogue, because export lives on the report screen', async () => {
     await renderCataloguePage();
     expect(await screen.findByText(EN['reports.catalogue.noDownload'] as string)).toBeVisible();
     expect(screen.queryByRole('link', { name: /download/i })).toBeNull();
