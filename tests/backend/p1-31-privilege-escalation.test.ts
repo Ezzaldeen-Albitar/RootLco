@@ -57,20 +57,24 @@
  *    pinned refusal is the one the platform already standardises, and which is: an
  *    operation addressed by a resource id answers 404 `ERR-RES-001`, the answer
  *    `p1-31-delivery-read-seam.test.ts:705-718` and `p1-31-warranty-read-seam.test.ts:891-911`
- *    already pin; an operation that NAMES a (company, branch) pair answers 403
- *    `ERR-IAM-001`, which `requireScopeTargetInTenant`
- *    (`apps/api/src/server/auth/authorization.ts:457-508`, CC-14) states is identical
- *    for a foreign tenant's real pair. SE-6C is the anti-vacuity control: the same
+ *    already pin; an operation that NAMES the scope it acts in answers 403
+ *    `ERR-IAM-001`, from `requireScopeTargetInTenant` when the name arrives in the
+ *    query (CC-14) and from `requireScopeClaimInTenant` when it arrives in the body
+ *    (CC-56), both in `apps/api/src/server/auth/authorization.ts` and both identical
+ *    for a foreign tenant's real scope. SE-6C is the anti-vacuity control: the same
  *    request, against an equivalent row set authored by the same routine, must NOT
  *    produce that refusal for the owning tenant — so the tenant-B 404 is tenancy and
  *    not absence.
  *  - **SE-7** — client-asserted scope, the 8 operations that carry a company or branch
  *    the caller chose. Every actor here holds an UNRESTRICTED grant, so nothing is being
  *    narrowed by grant scope: the question is whether a caller may name an organisation
- *    that is not its own. Two variants each — another organisation's real pair, and a
- *    pair that exists nowhere — and both assert a zero row-count delta on the three
- *    tables the body-scoped creates write to, so "it refused" also means "it wrote
- *    nothing".
+ *    that is not its own. All eight answer 403 `ERR-IAM-001` since CC-56, whether the
+ *    scope arrives in the query or in the body. Two variants each — another
+ *    organisation's real pair, and a pair that exists nowhere — and the WHOLE disclosed
+ *    document is compared against one per-probe expectation, so uniformity across the
+ *    two is measured rather than asserted for the status alone. Both variants also
+ *    assert a zero row-count delta on the three tables the body-scoped creates write
+ *    to, so "it refused" also means "it wrote nothing".
  *
  * Everything the parse yields that a probe does not cover is listed with a REASON and
  * the list is asserted, so a silent gap is not representable.
@@ -520,15 +524,26 @@ interface Targets {
  *  - `resource-id` — the request names a tenant-owned row by id. Refusal: 404
  *    `ERR-RES-001`, so nothing is confirmed to exist.
  *  - `body-scope` — a create whose BODY names the company (and branch) to write into.
- *    The refusal is NOT uniform across the three and is therefore pinned per probe:
- *    `org.employee-create` answers 404 `ERR-RES-001`, the answer MD-X1 records these
- *    creates keep from the composite foreign key and RLS; the other two answer 422
- *    `ERR-VAL-001` with a `body.companyId` violation, mapped deliberately from the
- *    foreign-key failure. See SEC-003-O1 in
- *    `docs/phase-1/phase-1-31/change-control-2026-09-08.md` § 59.6.
+ *    Refusal: 403 `ERR-IAM-001`, the same scope refusal a query-scoped read gives,
+ *    from `requireScopeClaimInTenant`.
  *  - `query-scope` — a read whose QUERY names the (company, branch) pair. Refusal: 403
  *    `ERR-IAM-001` from the CC-14 scope-target probe, which is identical for a foreign
  *    tenant's real pair and for a pair that exists nowhere.
+ *
+ * The two ways of NAMING a scope therefore answer alike, and that is a decision
+ * rather than a coincidence. This file used to pin three different answers for the
+ * three body-scoped creates — `org.employee-create` a 404 from its register's
+ * not-found, the other two a 422 `ERR-VAL-001` on `body.companyId` mapped from the
+ * composite foreign key — and reported the disagreement as SEC-003-O1. CC-56 settled
+ * it on CC-14 § 2's own reasoning: a scope-target mismatch "is a refusal, not a
+ * not-found and not a validation error. A `404` would confirm the existence boundary
+ * the refusal exists to hide; a `422` would claim the input was malformed" when it
+ * was well-formed and merely unauthorized. See § 66 / CC-56 in
+ * `docs/phase-1/phase-1-31/change-control-2026-09-08.md`.
+ *
+ * The five P1-30 body-scoped creates are NOT in this phase's set and keep the answer
+ * `tests/backend/p1-30-inventory-master-data.test.ts` (MD-X1) pins for them; CC-14
+ * § 7 is still where that question lives.
  */
 type Addressing = 'resource-id' | 'body-scope' | 'query-scope';
 
@@ -540,11 +555,44 @@ interface Refusal {
 const NOT_FOUND: Refusal = { status: 404, code: 'ERR-RES-001' };
 const SCOPE_REFUSED: Refusal = { status: 403, code: 'ERR-IAM-001' };
 
-/** Refused as a company that is not in the caller's tenant (SEC-003-O1). */
-const UNKNOWN_COMPANY: Refusal = { status: 422, code: 'ERR-VAL-001' };
-
+/**
+ * Addressing decides the refusal, with no per-probe override.
+ *
+ * The override existed for exactly the two probes SEC-003-O1 was about. Its removal
+ * is part of the finding's closure: a table that can express "this one is different"
+ * would let the next divergence be recorded rather than refused.
+ */
 const refusalFor = (probe: Probe): Refusal =>
-  probe.refusal ?? (probe.addressing === 'query-scope' ? SCOPE_REFUSED : NOT_FOUND);
+  probe.addressing === 'resource-id' ? NOT_FOUND : SCOPE_REFUSED;
+
+/**
+ * The WHOLE document a scope-refused caller receives, which both variants must match.
+ *
+ * `AppFailure.message` never crosses the wire — `problemFor` publishes the type, the
+ * catalogue title, the status, the code, the correlation id and the declared safe
+ * details, and nothing else — so the message cannot be the disclosure vector and
+ * pinning it here would pin something no caller can read. What a caller CAN read is
+ * this, and it is asserted whole rather than field by field.
+ *
+ * `requiredPermissions` is present on ALL EIGHT, and that is the point rather than an
+ * incidental. The three body-scoped creates once published nothing here, because the
+ * probe behind them was called from an application service that holds no operation
+ * declaration; the route handler now injects it bound to the operation, the way it
+ * has always injected `authorizeScope`. So the scope refusal carries the same
+ * declared codes as the PERMISSION refusal of the very same request — a caller
+ * cannot tell from the document which of the two answered it, and there is nothing
+ * in the shape that separates a create from a read.
+ *
+ * The codes are read from the probe's own operation rather than listed, so an
+ * operation that changes its declaration cannot leave a stale literal here.
+ */
+const scopeRefusalDocumentFor = (probe: Probe): Record<string, unknown> => ({
+  type: 'urn:rootlco:error:ERR-IAM-001',
+  title: 'Not permitted',
+  status: 403,
+  code: 'ERR-IAM-001',
+  requiredPermissions: [...probe.operation.permissions],
+});
 
 interface Probe {
   readonly id: string;
@@ -556,11 +604,6 @@ interface Probe {
   readonly addressing: Addressing | { readonly none: string };
   /** Whether the caller asserts a scope of its own choosing, or why it does not. */
   readonly asserts: 'query' | 'body' | { readonly none: string };
-  /**
-   * The refusal this operation actually gives, when it is not the one its addressing
-   * mode implies. Present on exactly two probes, and see SEC-003-O1 in the header.
-   */
-  readonly refusal?: Refusal;
 }
 
 let codeSequence = 0;
@@ -730,7 +773,6 @@ const PROBES: readonly Probe[] = [
     call: (request) => TEMPLATE_CREATE(request),
     addressing: 'body-scope',
     asserts: 'body',
-    refusal: UNKNOWN_COMPANY,
   },
   {
     id: 'sal.delivery-checklist-template-read',
@@ -1006,7 +1048,6 @@ const PROBES: readonly Probe[] = [
     call: (request) => POLICY_CREATE(request),
     addressing: 'body-scope',
     asserts: 'body',
-    refusal: UNKNOWN_COMPANY,
   },
   {
     id: 'wty.warranty-policy-read',
@@ -1133,12 +1174,31 @@ const SCOPE_CASES: readonly ScopeCase[] = SCOPE_PROBES.flatMap((probe) =>
 // ---------------------------------------------------------------------------
 
 interface Problem {
+  readonly type?: string;
+  readonly title?: string;
+  readonly status?: number;
   readonly code?: string;
+  readonly correlationId?: string;
+  readonly violations?: readonly { readonly path: string; readonly rule: string }[];
   readonly requiredPermissions?: readonly string[];
 }
 
 const problemOf = async (response: Response): Promise<Problem> =>
   (await response.json()) as Problem;
+
+/**
+ * The refusal document with the one field that legitimately differs removed.
+ *
+ * `correlationId` is per-request by construction. Everything else a refused caller
+ * can see must be identical between the two SE-7 variants, so everything else is
+ * compared — not a chosen subset of it, which is how a `violations` array naming
+ * `body.companyId` survived here as an unnoticed difference between the two ways of
+ * naming a scope.
+ */
+const disclosedBy = (problem: Problem): Record<string, unknown> => {
+  const { correlationId: _ignored, ...rest } = problem;
+  return rest;
+};
 
 /**
  * A report code the PLATFORM registers, as opposed to one a tenant configures.
@@ -1970,6 +2030,12 @@ describe('P1-31-SEC-003 SE-7 — a caller cannot assert another organisation’s
        * the caller's organisation. The row-count delta is asserted because a refusal
        * document is a claim about the RESPONSE, and the claim SEC-003 needs is about
        * the database.
+       *
+       * The WHOLE disclosed document is compared, against an expectation that depends
+       * on the probe and NOT on the variant. That is how the uniformity is asserted
+       * rather than assumed: both cases of a probe are measured against one literal,
+       * so a foreign organisation's real pair and a pair that exists nowhere cannot
+       * answer differently in any field a caller can read.
        */
       const before = await businessRowCounts();
 
@@ -1986,6 +2052,13 @@ describe('P1-31-SEC-003 SE-7 — a caller cannot assert another organisation’s
         name: `${probe.id} ${variant.label}`,
         status: refusal.status,
         code: refusal.code,
+      });
+      expect({
+        name: `${probe.id} ${variant.label}`,
+        disclosed: disclosedBy(problem),
+      }).toEqual({
+        name: `${probe.id} ${variant.label}`,
+        disclosed: scopeRefusalDocumentFor(probe),
       });
       expect(await businessRowCounts()).toEqual(before);
     }

@@ -41,6 +41,7 @@ import { sessionAuthenticator } from '../context/principal';
 import { withTransaction, type DbHandle } from '../db/transaction';
 import {
   requirePermissions,
+  requireScopeClaimInTenant,
   requireScopeTargetInTenant,
   requireScopedPermissions,
   type AuthorizationTarget,
@@ -107,6 +108,28 @@ export interface HandlerInput {
    * operation's own declaration rather than restating it.
    */
   readonly authorizeScope: ScopeAuthorizer;
+  /**
+   * Resolves the scope a BODY-SCOPED create claims, and refuses it when the
+   * caller cannot see it inside its own tenant (CC-56, applying CC-14 § 2).
+   *
+   * The counterpart of the probe the GET path runs above, for the requests that
+   * path cannot serve: a create names its company — or its company and branch —
+   * in a body this pipeline has deliberately not parsed, so the claim can only
+   * be resolved once the handler has validated it. `authorizeScope` is not
+   * enough on its own and never was: it asks whether the CALLER may write in the
+   * named scope, and a holder of an unrestricted grant satisfies that for any
+   * pair it cares to invent.
+   *
+   * Injected here, closing over the operation, for the same reason
+   * `authorizeScope` is: the permission codes stay in `defineOperation`, the
+   * refusal carries the operation's own declared codes, and a service never
+   * needs to reach for a declaration it cannot see without importing `app/**`.
+   *
+   * ORDER is the caller's to keep, and it is the same order the read path uses:
+   * `authorizeScope` first, this second. A caller missing the permission must be
+   * told that, not told the scope is invisible.
+   */
+  readonly requireScopeClaim: ScopeAuthorizer;
 }
 
 export type OperationHandler<T> = (input: HandlerInput) => Promise<HandlerResult<T>>;
@@ -420,6 +443,12 @@ export async function handleOperation<T>(
               // and reopen P1-18-A-01 through this very API.
               authorizeScope: (target: AuthorizationTarget) =>
                 requireScopedPermissions(db, operation, target),
+              // Bound to the same `operation` and the same handle, so the refusal
+              // it raises carries the declared codes and runs inside this
+              // transaction — a scope claim refused after a partial write would
+              // otherwise leave the write.
+              requireScopeClaim: (claim: AuthorizationTarget) =>
+                requireScopeClaimInTenant(db, operation, claim),
             });
 
           if (!idempotencyKey || !fingerprint) return execute();
@@ -497,6 +526,12 @@ async function handlePublic<T>(
     // caller, and returning "allowed" would be the dangerous reading.
     authorizeScope: () => {
       throw new Error(`Operation ${operation.id} is public and cannot authorize a scope`);
+    },
+    // Same argument: a public operation has no tenant to resolve a claim inside,
+    // so asking is a coding error and answering "visible" would be the dangerous
+    // reading.
+    requireScopeClaim: () => {
+      throw new Error(`Operation ${operation.id} is public and cannot resolve a scope claim`);
     },
   });
   metrics().increment(METRICS.requestCount, { operation: operation.id, result: 'success' });

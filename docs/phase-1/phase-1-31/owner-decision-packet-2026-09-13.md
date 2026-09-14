@@ -148,6 +148,15 @@ reviewer.**"
    `ERR-RES-001` from one and 422 `ERR-VAL-001` from the other two, all three writing nothing — and
    `rpt.report-run` resolves a platform dataset rather than a tenant configuration, so a 404 on that
    path carries no tenancy information.
+   _(Note added 2026-09-14: **SEC-003-O1 is DISPOSITIONED**, by § 66 / **CC-56** of the register, and
+   the codes quoted above are no longer what those three creates answer — all three now refuse an
+   invisible company with **403 `ERR-IAM-001`**, identically for a foreign-real company and for one
+   that exists nowhere. **This is an engineering decision taken by cited authority — CC-14 § 2 — and
+   is NOT an Owner decision**; it is recorded here so the Owner is not asked to settle something the
+   authority already settles, and it needs no reply. **SEC-003-O2 is unchanged and open**: § 66 states
+   only that it remains where § 59.6 left it. **The item count of this packet does not move on this
+   note** — this item is not one of the eight blocking items, and re-counting the packet belongs to
+   the integration that owns it. The sentence above is left whole because it was true when written.)_
 4. **The escalation probes run against a disposable database, not an acceptance.** They are
    integration assertions, and no acceptance record exercises them.
 
@@ -212,6 +221,11 @@ this head and is filed as **CC-52 (a)**.
 
 **Two security residues are not register rows and are carried with the set**: SEC-003-O1 and
 SEC-003-O2 (change-control-2026-09-08.md:4602).
+_(Note added 2026-09-14: **SEC-003-O1 is no longer a residue and IS a register row** — it carries the
+identifier **CC-56** and is closed by § 66, applying CC-14 § 2. An engineering decision by cited
+authority, not an Owner decision, and it asks nothing of this packet. **SEC-003-O2 remains a residue
+and remains open.** The sentence above was true when written; the count of items this packet puts to
+the Owner is not changed by this note, because that count is the integration's to re-measure.)_
 
 **Deliberately NOT in this list, because the register records them closed or settled at this head:**
 CC-01, CC-02, CC-17, CC-18, CC-22, CC-33 with (a) and (b), CC-34 with (a), (b) and (c), CC-35 with

@@ -183,10 +183,15 @@ export const CoverageBody = z
  * policy cannot be created already `archived` — one `assertPolicyActive` refuses at
  * issue time while it still holds its code. The column defaults to `active`.
  *
- * `companyId` is REQUIRED and is a claim, not a scope: the service authorizes it
- * against the caller's own grants before anything is written, and
- * `fk_warranty_policies_company` resolves it with the tenant taken from the session
- * context, so a company belonging to another tenant cannot be named into existence.
+ * `companyId` is REQUIRED and is a CLAIM, not a scope, and the service settles it
+ * twice before anything is written: `authorizeScope` decides whether this caller may
+ * write in that company, and `requireScopeClaim` decides whether the company is the
+ * caller's to name at all, resolving it under the caller's own row-level security. A
+ * company the caller cannot see is refused 403 `ERR-IAM-001`, identically whether it
+ * belongs to another tenant or exists nowhere (CC-56, applying CC-14 § 2).
+ * `fk_warranty_policies_company` still resolves the pair with the tenant taken from
+ * the session context, and remains defence in depth behind that decision rather than
+ * the boundary the surface relies on.
  *
  * `coverage` may be omitted, but when it is present it lands in the SAME transaction as
  * the header — a policy that exists with half of its terms is not a state this surface
@@ -239,7 +244,7 @@ export async function POST(request: Request): Promise<Response> {
   return handleOperation(
     WARRANTY_POLICY_CREATE_OPERATION,
     request,
-    async ({ db, authorizeScope }) => {
+    async ({ db, authorizeScope, requireScopeClaim }) => {
       const parsed = parseOrFail(CreateBody, body, 'body');
       const created = await warrantyModule().policies.createPolicy(
         db,
@@ -249,7 +254,8 @@ export async function POST(request: Request): Promise<Response> {
           name: parsed.name,
           coverage: parsed.coverage ?? [],
         },
-        authorizeScope
+        authorizeScope,
+        requireScopeClaim
       );
       // The ETag is the POLICY's version, which is what `If-Match` on the rename and
       // the status command expects. A coverage row carries its own counter and is

@@ -173,7 +173,8 @@ export class EmployeeAdministrationService {
       readonly userAccountId?: string | undefined;
       readonly employmentRef?: string | undefined;
     },
-    authorizeScope: ScopeAuthorizer
+    authorizeScope: ScopeAuthorizer,
+    requireScopeClaim: ScopeAuthorizer
   ): Promise<EmployeeView> {
     await authorizeScope({ companyId: input.companyId, branchId: input.branchId });
 
@@ -186,9 +187,27 @@ export class EmployeeAdministrationService {
     // existed; the write was never possible, but a denial arriving as a server
     // fault reaches the error monitor as an incident and tells the caller
     // nothing.
-    if (!(await this.repository.branchIsReachable(db, input.companyId, input.branchId))) {
-      throw notFound();
-    }
+    //
+    // The REFUSAL is the platform's scope refusal — 403 `ERR-IAM-001`, from the
+    // same probe the query-scoped reads use — and not this register's not-found
+    // (CC-56, applying CC-14 § 2). The two are different questions and this is
+    // the only place they were confused. `notFound()` below is about an EMPLOYEE:
+    // absent, soft-deleted, out of reach and foreign are one answer so that the
+    // register cannot be used to enumerate another organisation's people, and the
+    // two row-addressed operations keep it unchanged. This check is about the
+    // (company, branch) the caller NAMED, where a 404 would confirm the existence
+    // boundary the refusal exists to hide and would also disagree with the 403
+    // this same create already gives a caller whose grant does not reach the pair.
+    // Nothing is disclosed either way: another tenant's real pair, a pair that
+    // exists nowhere, an in-tenant pair this caller's grants do not reach and a
+    // soft-deleted branch all receive the identical document.
+    //
+    // There is no separate "branch not in that company" handling to keep: one
+    // probe resolves the PAIR, and a branch belonging to a different company is
+    // one of the four cases CC-14 requires to be indistinguishable.
+    // Injected by the route handler and bound to the same operation as
+    // `authorizeScope`, so both refusals of this POST carry the same document.
+    await requireScopeClaim({ companyId: input.companyId, branchId: input.branchId });
 
     // Same argument for the optional account link, and one more: the composite
     // key `(tenant_id, user_account_id)` makes a foreign account a 23503, and a

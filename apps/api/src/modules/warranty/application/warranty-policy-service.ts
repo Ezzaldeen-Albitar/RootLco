@@ -83,7 +83,7 @@
  */
 import { AppFailure } from '@/server/errors/app-failure';
 import { appendAudit } from '@/server/audit/audit';
-import { isSqlState, SQLSTATE } from '@/server/db/repository';
+import { isSqlState, SQLSTATE, violatedConstraint } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { pageRequest, type Page, type PageRequest } from '@/server/db/pagination';
@@ -199,15 +199,6 @@ const COVERAGE_CHECK_FIELD: Readonly<Record<string, string>> = Object.freeze({
   ck_warranty_coverage_status: 'status',
 });
 
-/** Reads the violated constraint name from an unknown driver error, if present. */
-function violatedConstraint(error: unknown): string | undefined {
-  if (typeof error === 'object' && error !== null && 'constraint' in error) {
-    const name = (error as { constraint?: unknown }).constraint;
-    return typeof name === 'string' ? name : undefined;
-  }
-  return undefined;
-}
-
 export class WarrantyPolicyService {
   public constructor(private readonly repository: WarrantyRepository) {}
 
@@ -264,13 +255,24 @@ export class WarrantyPolicyService {
   public async createPolicy(
     db: DbHandle,
     input: CreateWarrantyPolicyInput,
-    authorizeScope: ScopeAuthorizer
+    authorizeScope: ScopeAuthorizer,
+    requireScopeClaim: ScopeAuthorizer
   ): Promise<WarrantyPolicyDetailView> {
     // The company is a CLAIM about where the row belongs, checked against the
     // caller's own grant scope before anything is written. There is no branch half:
     // neither table has a branch column, and `requireScopedPermissions` accepts a
     // company-only target — the shape `iam.company-settings-write` already uses.
     await authorizeScope({ companyId: input.companyId });
+
+    // And then the claim itself, in this order (CC-56). `authorizeScope` answers
+    // "may this caller write in that company"; an unrestricted grant satisfies it
+    // for a company the caller cannot see at all, so the second question — is that
+    // company the caller's to name — is the one this asks. A caller missing the
+    // permission must be told THAT, not told the company is invisible, which is why
+    // the permission decision runs first here as it does for the reads. Both are
+    // injected by the route handler and bound to the same operation, so the two
+    // refusals are the same document.
+    await requireScopeClaim({ companyId: input.companyId });
 
     // Refused here rather than left to `ex_warranty_coverage_no_overlap`, because the
     // constraint would abort the transaction and the caller would learn only that
@@ -666,10 +668,22 @@ export class WarrantyPolicyService {
         safeDetails: { violations: [{ path: 'body.policyCode', rule: 'duplicate_code' }] },
       });
     }
-    if (isSqlState(cause, SQLSTATE.foreignKeyViolation)) {
+    if (
+      isSqlState(cause, SQLSTATE.foreignKeyViolation) &&
+      violatedConstraint(cause) === 'fk_warranty_policies_company'
+    ) {
+      // DEFENCE IN DEPTH, and no longer the answer (CC-56).
+      //
       // `fk_warranty_policies_company` resolves `(tenant_id, company_id)` with the
-      // tenant taken from the session context, so this is a company that is not in
-      // the caller's tenant — including one that exists in another tenant.
+      // tenant taken from the session context, so reaching it means the named
+      // company is not in the caller's tenant. That used to be how a foreign
+      // company was refused, as a 422 naming `body.companyId` — the shape CC-14 § 2
+      // rules out, because the input was well-formed and merely unauthorized.
+      // `requireScopeClaimInTenant` now resolves the claim before the insert and
+      // answers 403 `ERR-IAM-001`, so this arm is unreachable for the scope case
+      // and is kept only for the race in which the company is removed between the
+      // probe and the write. It is guarded on the constraint NAME so a different
+      // foreign key can never borrow a message about the company.
       throw new AppFailure('ERR-VAL-001', {
         message: 'The named company does not exist in this tenant',
         safeDetails: { violations: [{ path: 'body.companyId', rule: 'unknown_company' }] },
