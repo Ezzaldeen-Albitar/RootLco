@@ -6225,9 +6225,11 @@ NOT-FOUND answers taken with row 6.)_
 
 ## 67. The version-sourcing gate and the access allow-list completed (CC-57)
 
-**Slice:** `feature/p1-31-version-sourcing-and-access-gate`, ownership profile `p1-31-frontend`.
-**Baseline:** protected `develop` **`72f3a71ee4a8204c494913e40e6c2a43cd683e36`**. `main` `1262de74`,
-untouched and far behind. **Two deliverables, both engineering against this phase's own recorded
+**Slice:** `feature/p1-31-version-sourcing-and-access-gate`, ownership profile `p1-31-frontend`,
+opened as pull request [#395](https://github.com/Ezzaldeen-Albitar/RootLco/pull/395) at head
+**`5e7ebafc`**. **Baseline:** protected `develop` **`72f3a71e`**, synced twice while the branch was
+open — to **`852bcebd`** (#391) and then to **`a0620bd2`** (#394), which is the base this pull request
+opens against. `main` `1262de74`, untouched and far behind. **Two deliverables, both engineering against this phase's own recorded
 criteria**: **QA-004**, the mechanical half of P1-31's record-version discipline, and **DO-001**, the
 completeness of the access gate's operation allow-list. No application source, no route, no
 operation, no permission code, no migration and no seed; one new gate, one new suite, one allow-list,
@@ -6569,6 +6571,10 @@ required set by the `validate:p1-28-` prefix, so it neither demanded this line n
 `validate:run-block-syntax` and `check-workflow-security.mjs` both pass over the edited file.
 
 ### 67.5 Verification run locally at the merge head
+
+Every figure below was read off the command's own output at **`5e7ebafc`**, the head pull request #395
+opens from. **Nothing here is a hosted result**, and the pull request's own checks are the hosted
+record; this section does not anticipate them.
 
 | command                                                                                                         | result                                                                       |
 | --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
