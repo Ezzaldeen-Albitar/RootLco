@@ -7,7 +7,7 @@
  * The phase surface is enumerated by a STATIC PARSE at run time, not by a hand list:
  * `declaredPermissions` from `scripts/ci/check-permission-parity.mjs` — the same parser
  * the permission-parity gate uses — is run over every `route.ts` under the eight
- * namespaces `docs/phase-1/phase-1-31/security-and-qa-evidence.md` names, and SE-0 pins
+ * namespaces `docs/phase-1/phase-1-31/security-and-qa-evidence.md:163` names, and SE-0 pins
  * the totals it yields: **46 operations across 34 route files, 12 distinct permission
  * codes**. An operation added to or removed from any of those namespaces changes the
  * parse, and the probe table below then no longer covers it exactly, so this file fails.
@@ -135,6 +135,7 @@ import { OrganizationRepository } from '@/modules/iam/data/organization-reposito
 import { DelegationPolicy } from '@/modules/iam/domain/delegation-policy';
 import { CredentialPolicy } from '@/modules/iam/domain/credential-policy';
 import { IdentityPolicy } from '@/modules/iam/domain/identity-policy';
+import { REPORT_DATASETS, REPORT_DATASET_CODES, type ReportDatasetCode } from '@/modules/reporting';
 
 // --- the 34 route modules, imported so every probe drives the DEPLOYED handler -------
 
@@ -315,7 +316,7 @@ const P1_31_NAMESPACES = Object.freeze([
   'warranty-policies',
 ] as const);
 
-/** Measured totals. Restated from `security-and-qa-evidence.md:88-94`, not derived from it. */
+/** Measured totals. Restated from `security-and-qa-evidence.md:163`, not derived from it. */
 const EXPECTED_OPERATIONS = 46;
 const EXPECTED_ROUTE_FILES = 34;
 
@@ -470,11 +471,81 @@ const withholdingActorFor = (code: string): Actor => {
   return actor;
 };
 
+/**
+ * One MINIMAL actor per distinct declared-code set: exactly the codes the operation
+ * declares, and NOTHING else.
+ *
+ * SE-5, SE-5P and their complement actors are all about refusal, and a set of refusals
+ * is consistent with a gate that refuses everybody. This is the other half of least
+ * privilege — SUFFICIENCY — and without it "the operation requires exactly these codes"
+ * is only ever half-measured: a route that had quietly acquired a second requirement,
+ * or whose declaration had drifted away from what the handler asks for, would go on
+ * passing every refusal case in this file.
+ *
+ * Thirteen sets across forty-six operations, so thirteen accounts. Each is
+ * `unrestricted`, because grant SCOPE is a different question and SE-7 owns it.
+ */
+const MINIMAL_ACTORS = new Map<string, Actor>(
+  [...new Set(SURFACE.operations.map((operation) => operation.codes.join('+')))]
+    .sort()
+    .map((key, index) => [key, actorAt(50 + index, TENANT_A, key.split('+'))])
+);
+
+const minimalFor = (codes: readonly string[]): Actor => {
+  const actor = MINIMAL_ACTORS.get([...codes].sort().join('+'));
+  if (!actor) throw new Error(`no minimal actor for ${codes.join('+')}`);
+  return actor;
+};
+
+/**
+ * The authority `rpt.report-run` enforces that NO static parse can see.
+ *
+ * The declaration names `rpt.report.read` and can name nothing else — an operation
+ * declaration is a literal, and the code a run needs depends on which dataset the
+ * caller asked for. `ReportRunService` therefore evaluates every code in the DATASET's
+ * own `requiredPermissions` against the same company and branch
+ * (`report-run-service.ts:29-32`), and answers the same uniform `ERR-IAM-001`.
+ *
+ * So the minimal actor for `rpt.report-run` is not one actor: it is one per dataset,
+ * holding the declared code AND that dataset's own. Both halves are proved below —
+ * the caller that holds them is answered, and the caller that holds only the declared
+ * code is refused. Without the second, `requiredPermissions` could be deleted from
+ * every dataset and nothing in the repository would notice.
+ */
+const REPORT_RUN_CODES: readonly string[] =
+  SURFACE.operations.find((operation) => operation.id === 'rpt.report-run')?.codes ?? [];
+
+interface DatasetCase {
+  readonly code: ReportDatasetCode;
+  /** The dataset's own service-enforced codes. */
+  readonly serviceEnforced: readonly string[];
+  /** Declared plus service-enforced, and nothing else. */
+  readonly actor: Actor;
+}
+
+const DATASET_CASES: readonly DatasetCase[] = REPORT_DATASET_CODES.map((code, index) => {
+  const serviceEnforced = [...REPORT_DATASETS[code].requiredPermissions].sort();
+  return {
+    code,
+    serviceEnforced,
+    actor: actorAt(
+      70 + index,
+      TENANT_A,
+      [...new Set([...REPORT_RUN_CODES, ...serviceEnforced])].sort()
+    ),
+  };
+});
+
+/** Holds `rpt.report.read` and nothing else — the report-run row's minimal actor. */
+const REPORT_RUN_MINIMAL = minimalFor(REPORT_RUN_CODES);
+
 const ALL_ACTORS: readonly Actor[] = Object.freeze([
   FULL_A,
   FULL_B,
   ...COMPLEMENT_ACTORS.values(),
   ...WITHHOLD_ACTORS.values(),
+  ...MINIMAL_ACTORS.values(),
+  ...DATASET_CASES.map((dataset) => dataset.actor),
 ]);
 
 const actAs = (actor: Actor): void => {
@@ -541,9 +612,16 @@ interface Targets {
  * was well-formed and merely unauthorized. See § 66 / CC-56 in
  * `docs/phase-1/phase-1-31/change-control-2026-09-08.md`.
  *
- * The five P1-30 body-scoped creates are NOT in this phase's set and keep the answer
- * `tests/backend/p1-30-inventory-master-data.test.ts` (MD-X1) pins for them; CC-14
- * § 7 is still where that question lives.
+ * The five P1-30 body-scoped creates are NOT in this phase's set, and this comment used
+ * to say they keep "the answer MD-X1 pins for them". **MD-X1 pins no answer.** § 66.9 of
+ * the register measured both cases: MD-X1, at
+ * `tests/backend/p1-30-inventory-master-data.test.ts:685`, does cross the TENANT boundary
+ * — the boundary this decision is about — but asserts
+ * `expect([403, 404]).toContain(status)`, which passes on either code and therefore pins
+ * neither; MD-L3, at `:646-651`, pins `403` exactly, but for a GRANT-SCOPE boundary
+ * inside one tenant, which is a different question. So the five keep whatever those two
+ * cases admit, which is not a contract. CC-56 (d) records it against the P1-30 backend
+ * area, and CC-14 § 7 is still where the contract question lives.
  */
 type Addressing = 'resource-id' | 'body-scope' | 'query-scope';
 
@@ -1890,6 +1968,124 @@ describe('P1-31-SEC-003 SE-5 — least privilege, on every operation of the phas
         code: 'ERR-IAM-001',
       });
       expect([...(problem.requiredPermissions ?? [])].sort()).toEqual([...declared].sort());
+    }
+  );
+});
+
+describe('P1-31-SEC-001 SE-5M — the declared codes are SUFFICIENT, not merely necessary', () => {
+  it('SE-5M0 gives every operation a minimal caller holding exactly its declared codes', async () => {
+    for (const operation of SURFACE.operations) {
+      const actor = minimalFor(operation.codes);
+      expect({ id: operation.id, held: [...actor.permissions].sort() }).toEqual({
+        id: operation.id,
+        held: [...operation.codes].sort(),
+      });
+    }
+    // Thirteen distinct sets across the forty-six, so thirteen accounts.
+    expect(MINIMAL_ACTORS.size).toBe(13);
+
+    // And every code any minimal caller holds is a real catalogue row: a misspelling
+    // would silently grant nothing and turn each SUFFICIENCY case below into a probe
+    // of a caller that holds nothing at all.
+    const wanted = [
+      ...new Set([
+        ...[...MINIMAL_ACTORS.values()].flatMap((actor) => actor.permissions),
+        ...DATASET_CASES.flatMap((dataset) => dataset.actor.permissions),
+      ]),
+    ].sort();
+    const found = await admin.query<{ permission_code: string }>(
+      `SELECT permission_code FROM iam.permissions
+        WHERE permission_code = ANY($1::text[]) ORDER BY permission_code`,
+      [wanted]
+    );
+    expect(found.rows.map((row) => row.permission_code)).toEqual(wanted);
+  });
+
+  it.each([...PROBES])(
+    'SE-5M $id admits a caller holding ONLY its declared codes',
+    async (probe) => {
+      /*
+       * The sufficiency half. The claim is deliberately the mirror of SE-5C's and no
+       * wider: NOT that the call succeeds — the identifiers are invented and it cannot
+       * — but that the authority gate does not refuse it. An operation that had
+       * acquired a requirement its declaration does not publish would answer
+       * `ERR-IAM-001` here while every refusal case in this file stayed green, and a
+       * client built from the published contract would be permanently locked out of it.
+       */
+      const codes = SURFACE.operations.find((operation) => operation.id === probe.id)?.codes ?? [];
+      expect(codes.length).toBeGreaterThan(0);
+
+      actAs(minimalFor(codes));
+      const scope = { companyId: COMPANY_A1, branchId: BRANCH_A1 };
+      const targets = invented();
+      const response = await probe.call(requestFor(probe, targets, scope), targets);
+      const problem = response.status >= 300 ? await problemOf(response) : {};
+
+      expect({ id: probe.id, denied: problem.code === 'ERR-IAM-001' }).toEqual({
+        id: probe.id,
+        denied: false,
+      });
+      expect({ id: probe.id, serverError: response.status >= 500 }).toEqual({
+        id: probe.id,
+        serverError: false,
+      });
+    }
+  );
+
+  it.each([...DATASET_CASES])(
+    'SE-5MD rpt.report-run over $code admits the declared code plus the DATASET’s own',
+    async ({ code, actor }) => {
+      /*
+       * The four registered datasets, each run by a caller holding `rpt.report.read`
+       * and that dataset's `requiredPermissions` and nothing else. This is the only
+       * place in the phase where an operation's real authority is larger than its
+       * declaration, and it is larger for a reason the declaration cannot express.
+       */
+      const probe = probeFor('rpt.report-run');
+      const targets: Targets = { ...real, reportCode: code };
+
+      actAs(actor);
+      const response = await probe.call(
+        requestFor(probe, targets, { companyId: COMPANY_A1, branchId: BRANCH_A1 }),
+        targets
+      );
+      const problem = response.status >= 300 ? await problemOf(response) : {};
+      expect({ code, status: response.status, refusal: problem.code }).toEqual({
+        code,
+        status: 200,
+        refusal: undefined,
+      });
+    }
+  );
+
+  it.each([...DATASET_CASES])(
+    'SE-5MD-N rpt.report-run over $code REFUSES a caller holding only the declared code',
+    async ({ code, serviceEnforced }) => {
+      /*
+       * The falsifier for the four above, and the case that makes the service-enforced
+       * half a claim rather than a comment: the same request, from a caller holding
+       * `rpt.report.read` and nothing else, is refused — and the refusal names the
+       * DATASET's own code rather than the declared one, which is how the grant map
+       * can be checked against the product instead of against the declaration.
+       */
+      const probe = probeFor('rpt.report-run');
+      const targets: Targets = { ...real, reportCode: code };
+
+      actAs(REPORT_RUN_MINIMAL);
+      const response = await probe.call(
+        requestFor(probe, targets, { companyId: COMPANY_A1, branchId: BRANCH_A1 }),
+        targets
+      );
+      const problem = await problemOf(response);
+      expect({ code, status: response.status, refusal: problem.code }).toEqual({
+        code,
+        status: 403,
+        refusal: 'ERR-IAM-001',
+      });
+      // One code at a time, and it is one of the dataset's own.
+      const named = [...(problem.requiredPermissions ?? [])];
+      expect({ code, named: named.length }).toEqual({ code, named: 1 });
+      expect(serviceEnforced).toContain(named[0]);
     }
   );
 });

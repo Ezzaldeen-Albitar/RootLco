@@ -6222,3 +6222,331 @@ slice that reassigned status codes across two other lanes on its way past would 
 thing rather than the first. _(This paragraph read "a slice that renamed four other lanes' status codes": the number was
 not derivable under any one unit — four is neither the count of open rows, nor of lanes, nor of
 NOT-FOUND answers taken with row 6.)_
+
+---
+
+## 68. The four phase-set proofs — emission, error paths, least privilege, isolation (CC-58)
+
+**Task ids:** P1-31-SEC-004-003 (the emission set), P1-31-QA-002-001 (the error paths and the
+matrix), P1-31-SEC-001-001 (the minimal actors and the grant map), P1-31-QA-003-001 (the isolation
+matrix and the missing database negatives), P1-31-QA-002-002 (this section) and
+P1-31-SEC-004-004 … 006 (the review corrections, the merge and the 46th operation's pins).
+
+**Register pair:** section 68 and CC-58, the pair reserved for this lane, and neither is renumbered
+to follow heading order — § 48.1's rule holds. **The register at this head runs
+sections 1 … 66 and 68, with CC-01 … CC-56 and CC-58.** § 64 / CC-54, the delivery WRITE browser
+proofs, arrived with pull request #393 while this branch was in preparation and sits between § 63 and
+§ 65 where its lane placed it. Two identifiers are allocated and in flight rather than missing, and
+each is named here so a gap in the sequence is read as a reservation and not as a loss: **§ 67** with
+the gates lane, and **§ 69** with FE-009. This section sits after § 66 and would sit after § 67 had
+that lane landed first; it is behind neither in the heading order it claims.
+
+**Baseline:** protected `develop` `591763df`, the head after pull request #389 merged, then merged up
+to **`852bcebd`** — the merge of #391, after #390 published the warranty transition ledger — and
+finally to **`6e50c161`**, the merge of #393, before
+this branch was proposed. Branch `remediation/p1-31-backend-phase-set-proofs`, opened as pull request
+[#394](https://github.com/Ezzaldeen-Albitar/RootLco/pull/394). Profile `p1-31-backend`. `main`
+`1262de74`, untouched and far behind.
+
+### 68.1 What the four closures address
+
+Each of SEC-004, QA-002, SEC-001 and QA-003 published a claim about a SET — every privileged write,
+every error path, every operation's least privilege, every table's isolation — and each rested on
+evidence gathered operation by operation. Set-shaped claims fail the same way every time: the
+coverage is real, the SET is not measured, and the one member nobody reached is invisible. All four
+are now derived from the repository rather than listed, so a forty-sixth operation or a
+twenty-fifth privileged write fails the suite that claims to cover it.
+
+### 68.2 (A) SEC-004 — the audit emission set, derived
+
+`tests/backend/p1-31-audit-emission.test.ts` (new) parses the `defineOperation` literals of the 34
+route modules under the eight P1-31 namespaces AS TYPESCRIPT, filters to `auditClass: 'privileged'`,
+and joins each declaration to `AUDIT_ACTIONS` for its entity type. The set is **24**, the parse
+reports **0** unreadable declarations and **0** actions the catalogue does not register as
+privileged, and E-0 asserts the probe table equals the derived set exactly.
+
+For each of the 24 the suite arranges prerequisites, opens the delta window, drives ONE success and
+asserts four things: the total for the declared action across the fixture tenants moved by exactly
+one, the count for (action, entityId) is one, the record's `tenant_id` and `entity_type` are the
+acting tenant and the catalogue's entity type, and the second fixture tenant holds no row for that
+action before or after.
+
+| measure                                                | before | after |
+| ------------------------------------------------------ | ------ | ----- |
+| privileged actions with an emission assertion anywhere | 23     | 24    |
+| privileged actions with a set-completeness proof       | 0      | 24    |
+
+`sal.delivery_checklist_template.item_updated` is the one that had none — the action that records
+whether a checklist item became a company-wide gate on every handover.
+
+**The 46th operation did not move this count, and the suite proves that rather than assuming it.**
+`wty.warranty-status-history` (P-18, § 65) is the 34th route file and the 46th operation, and it
+declares `auditClass: 'none'` — it is a read. So the file total and the declaration total both rise
+by one while the privileged total stays at 24, and all three are pinned separately for that reason:
+a WRITE added under a `none` class would move exactly the two that moved here, which is the shape
+this suite exists to catch.
+
+### 68.3 (B) QA-002 — the error paths, and the matrix
+
+Eleven P1-31 operations declare `versionGuarded: true` and sixteen declare `idempotent: true`. Both
+sets are read off the declarations, not listed.
+
+| column                | applicable | covered before | covered after |
+| --------------------- | ---------- | -------------- | ------------- |
+| 428 `ERR-CON-002`     | 11         | 7              | 11            |
+| 409 `ERR-CON-001`     | 11         | 9              | 11            |
+| replay same-key       | 16         | 15             | 16            |
+| replay different-body | 16         | 3              | 16            |
+| 422 invalid body      | 27         | 20             | 27            |
+| 403 (SE-5)            | 46         | 46             | 46            |
+| cross-tenant (SE-6)   | 41         | 41             | 41            |
+| database isolation    | 46         | 46             | 46            |
+
+Every case was added to the suite that already owns its operation; no operation with a suite got a
+new file. `docs/phase-1/phase-1-31/error-path-matrix.md` carries the whole table with a file and a
+line in every applicable cell and a stated reason in every inapplicable one.
+
+**The matrix is GENERATED and diffed by a committed test.**
+`tests/ci/p1-31-error-path-matrix.test.ts` renders it — and the isolation matrix — from the parsed
+operation set and from the case TITLES of the suites that own each operation, resolves each title
+against that suite's source at run time, THROWS when a title matches no line or more than one, and
+fails on any difference from the committed copy. `P1_31_MATRIX_WRITE=1` is the only way to rewrite
+either file. _(This paragraph read only that the matrix "carries the whole table with a file and a
+line": true of what the table held, and written before the generator existed — see § 68.9.)_
+
+The four totals reading 46, 46, 41 and 27 include `wty.warranty-status-history`, the 46th operation
+(§ 65). It is a GET, so five of the eight columns are inapplicable to it by declaration; its 422 is
+an oversized page rather than a body, and its cross-tenant refusal is the SE-6 case plus its own
+seam's 404 for a real id and an invented one alike.
+
+**A correction, recorded rather than silently applied.** The first version of this table read
+`cross-tenant 40` while the matrix marked SEVEN operations as having no row to cross with. The
+escalation suite's own reason list names **five** — `sal.delivery-checklist-template-create` and
+`wty.warranty-policy-create` are body-scoped creates and ARE probed, so marking them as
+unreachable was wrong in the matrix and wrong in the count that followed it. Both cells now cite
+SE-6 and the row reads 41, derived from the suite rather than typed.
+
+**The replay different-body row counts OPERATIONS, not assertions.** Three operations already had a
+`ERR-INT-001` fingerprint case and sixteen have one now, which is the 3 → 16 the table states.
+**Fourteen** new assertions were written to move it, not thirteen: `sal.delivery-checklist-record`
+received one although `p1-22-delivery.test.ts:1779` already refuses a re-record of the same item,
+because that case uses two DIFFERENT keys and is answered by the row's own uniqueness — it is not a
+statement about the fingerprint at all, and reading it as one was the mistake this row exists to
+make impossible. Every other column in the table counts operations in the same way.
+
+### 68.4 (C) SEC-001 — sufficiency, and the authority a parse cannot see
+
+`p1-31-privilege-escalation.test.ts` proved least privilege by refusal alone, and a set of refusals
+is consistent with a gate that refuses everybody. SE-5M adds the other half: **13** minimal actors,
+one per distinct declared-code set, each holding exactly the codes its operations declare and
+nothing else, and each of the 46 operations must be ADMITTED by the gate. The 46th declares
+`wty.warranty.read`, which four operations already declared, so the SET count is unmoved at 13 — it
+is a statement about distinct authority and not about the size of the surface.
+
+`rpt.report-run` is the one operation whose real authority exceeds its declaration **that this lane
+found**. The declaration is a literal and the code a run needs depends on the dataset asked for, so
+`ReportRunService` evaluates each dataset's own `requiredPermissions` and answers the same uniform
+`ERR-IAM-001`. SE-5MD runs each of the **4** registered datasets as a caller holding the declared
+code plus that dataset's own and requires 200; SE-5MD-N runs the same four as a caller holding only
+the declared code and requires 403 naming one of the dataset's codes.
+
+**What SE-5M proves, and the class it cannot see.** Its positive case is deliberately narrow and is
+the mirror of SE-5C's: the request is built with INVENTED identifiers, and the assertion is that the
+answer is neither `ERR-IAM-001` nor a 5xx. That is sufficiency of the **pre-handler gate** — the
+declared codes are enough to get PAST the authority check — and it is not a claim that the operation
+succeeds, because with invented identifiers it cannot. The consequence is a real limit and is stated
+here rather than left to be discovered: a SERVICE-level authority check, of exactly the kind SE-5MD
+found inside `rpt.report-run`, runs after the identifiers are resolved and is therefore **invisible
+to SE-5M for the other 45 operations**. Only `rpt.report-run` is probed against real rows with a
+minimal caller. So the honest reading of the 46 SE-5M cases is: no operation requires an
+UNDECLARED code at the gate; whether one requires an undeclared code deeper in its service is
+established for one operation and open for forty-five. Closing it would mean driving each of the 46
+to a real success with its minimal caller, which is the emission suite's shape applied to
+authority — a larger slice than this one, and not attempted here.
+
+`docs/phase-1/phase-1-31/least-privilege-grant-map.md` is GENERATED by
+`tests/ci/p1-31-grant-map.test.ts` from the parse, the dataset registry, the permission catalogue
+and the escalation suite's own case titles, and that test fails on any difference from the committed
+copy. Every code any minimal role must hold is asserted to be a real catalogue row: a code the
+catalogue does not carry is a code no administrator can grant, and a minimal role for it would be an
+impossibility the map described as a fact.
+
+### 68.5 (D) QA-003 — the database layer, per table
+
+The structural half — RLS enabled and forced with a tenant-scoped SELECT and INSERT policy, and a
+refused cross-tenant INSERT — was already auto-enumerated over every `sal`, `wty` and `rpt` table.
+The BEHAVIOURAL half was not.
+
+| measure                                       | before | after |
+| --------------------------------------------- | ------ | ----- |
+| P1-31 tables                                  | 16     | 16    |
+| with a structural proof                       | 16     | 16    |
+| with a behavioural cross-tenant read negative | 3      | 16    |
+
+**The 46th operation added no table.** `wty.warranty_status_history` has been inside this matrix's
+Layer 1 since P1-11 — CC-10 was open precisely because the table existed and no operation read it —
+so P-18 publishing `wty.warranty-status-history` (§ 65) adds a Layer 2 row and moves no Layer 1
+proof. The table count stays at 16 and the Layer 2 count moves 45 → 46.
+
+`docs/phase-1/phase-1-31/isolation-matrix.md` carries both layers: per table the migration and the
+two database proofs, and per operation the application-layer refusal or the stated reason there is
+none. It is GENERATED and diffed by the same committed test as the error-path matrix, on the same
+terms — see § 68.3 and § 68.9.
+
+### 68.6 Two records corrected here rather than rewritten
+
+Under the annotate-rather-than-rewrite discipline § 48.1 states, both corrections are recorded in
+this section and neither source document is edited.
+
+- **The assurance evidence index reads `tests/db/sal-delivery.test.ts` and
+  `tests/db/wty-warranty.test.ts` as isolation evidence.** They are CONSTRAINT suites. Every case in
+  them ran as tenant A inside a rolled-back transaction, and neither drove a cross-tenant negative
+  of any kind — the index was reading the fixture tenant and not an assertion. Both now carry one,
+  so the entry becomes true at this head, but it was not true when it was written and the final
+  integration owns the index.
+- **`tests/backend/p1-31-concurrency-and-versioning.test.ts` states in its header that "all sixteen
+  idempotent ones already carry a replay case".** Fifteen did.
+  `sal.delivery-checklist-template-item-create` did not, and the different-body half was covered for
+  three of the sixteen. That statement was the stated reason the file asserted none of it, so the
+  gap it left was invisible for exactly as long as the sentence stood. The header is left as
+  written; the measurement above is the correction.
+
+### 68.7 What stays open
+
+**Nothing, for these four proof obligations, as they are scoped.** No cell of either matrix is
+uncovered, the grant map names a catalogue row for every code, and the emission set is complete at
+24 of 24. The one limit inside the scope is stated in § 68.4: SE-5M establishes sufficiency at the
+pre-handler gate and not below it, so a service-level authority requirement stays invisible for 45
+of the 46 operations.
+
+**What was executed, and what attests it, is § 68.8.** Every figure this section rests on is a
+LOCAL run of this lane's own, taken on a disposable clone and reported by the executor; § 68.8 names
+the clone, the suites, the counts, the one red local run and the fact that the attestation is the
+hosted run of the pull request head rather than any of them. It is stated once, there, so the two
+places cannot drift apart.
+
+Three things this lane deliberately did NOT do, so they are not read as closed:
+
+- no product code was changed. No case went red against product behaviour at any point in the
+  slice, which is a statement about the local runs in § 68.8 and nothing more;
+- `scripts/check-operation-test-coverage.mjs` and its marker vocabulary are untouched. The matrices
+  are this phase's artefact and the gate's vocabulary is cross-phase;
+- no baseline, no inventory and no assurance index is edited. The index correction in § 68.6 is a
+  statement for the final integration to act on, not an edit this lane made on its behalf.
+
+### 68.8 Verification — what was run, where, and what attests it
+
+**Record commit.** `P1-31-SEC-004-014`, `0b63d08a` — the LAST record of this push. It supersedes
+`P1-31-SEC-004-008` / `986efe39` and `P1-31-SEC-004-011` / `63153de9`: the first predates the matrix
+generator, the second predates the per-table attribution case the generator gained, and the ledger
+reported the intervening web record STALE against the changed executable paths rather than letting
+an older figure stand. Both local tiers were re-run at `86bb4ce5` by
+`node scripts/ci/check-p1-27-closing-values.mjs --record`, which spawns the tier itself so the run
+ledger has one author and a hand-assembled total cannot enter it:
+
+| tier      | tests | files | failed | attempts |
+| --------- | ----- | ----- | ------ | -------- |
+| root unit | 3342  | 127   | 0      | 1        |
+| web       | 4026  | 142   | 0      | 1        |
+
+The unit figures move from 3332 over 125 because this branch adds three test files — the emission
+suite, which the unit tier does not run, and `tests/ci/p1-31-grant-map.test.ts` and
+`tests/ci/p1-31-error-path-matrix.test.ts`, whose four and six cases it does. The web figures are § 64's and are unmoved by this branch. The two CR-A unit rows in
+`clean-room-evidence.md` and their entries in `evidence/closing-value-ledger.json` were updated
+together, value and locator, and `check-p1-27-closing-values.mjs` then reported **0 problems** with
+no `STALE` record.
+
+**The database suites, and the database they ran against.** Every suite below was run on a
+DISPOSABLE PostgreSQL 17 clone — `p131_sets_20260914` at `127.0.0.1:55432`, created from the
+`p131_employee_ci_202609121735` template, with 141 migrations and 121 permission rows asserted
+before use and matching the 141 migrations this tree tracks. **Never the shared acceptance
+database.** The host, port and database name were printed and re-asserted before each run, and all
+five `DB_*` variables were set explicitly on every command.
+
+**Every row below names the head it was measured at.** A count taken before a pin moved is a true
+statement about that head and a false one about this one, so the head is part of the figure rather
+than context around it.
+
+| suite                                                                                                                                           | cases                      | head                                                                                                           |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `tests/backend/p1-31-privilege-escalation.test.ts`                                                                                              | 267 / 267                  | `deca2666` and again after each later merge                                                                    |
+| the same suite, before the 46th operation's pins                                                                                                | 262 / 262                  | `88d9f133`                                                                                                     |
+| `tests/backend/p1-31-audit-emission.test.ts`                                                                                                    | 28 / 28                    | `88d9f133`, `deca2666` and the merge head                                                                      |
+| `tests/backend/p1-31-delivery-checklist-template-seam.test.ts`, `p1-31-report-configuration-seam.test.ts`, `p1-31-warranty-policy-seam.test.ts` | 104 / 104                  | `deca2666`                                                                                                     |
+| `tests/backend/p1-22-delivery.test.ts`                                                                                                          | 58 / 58                    | `deca2666`                                                                                                     |
+| `tests/db/sal-delivery.test.ts`, `wty-warranty.test.ts`, `rpt-reporting.test.ts`                                                                | 23 / 23                    | `deca2666`                                                                                                     |
+| the whole database tier, once                                                                                                                   | 1770 / 1770 over 145 files | `88d9f133` — **not re-run at a later head**; the three files this lane changed were re-run alone at `deca2666` |
+| `tests/ci/p1-31-grant-map.test.ts`, without the write flag                                                                                      | 4 / 4                      | every head from `88d9f133` on                                                                                  |
+| `tests/ci/p1-31-error-path-matrix.test.ts`, without the write flag                                                                              | 6 / 6                      | the head of this push                                                                                          |
+
+**Static checks, and the head each was last run at.** `typecheck`, `lint`, `format:check`,
+`check-test-honesty` (**416** test files, no findings), `validate:p1-27-doc-counts` (151 derived
+claims, 0 disagreements), `validate:operation-coverage`, `validate:command-coverage`,
+`scripts/p1-24-operation-register.mjs --check` (412 operations, reconciled) and
+`check-phase-ownership.mjs p1-31-backend origin/develop` (0 violations) were all run at **the head
+of this push**. `validate:authorization-coverage`, `security:all`, `validate:encoding`,
+`validate:generated-artifacts` and `validate:plain-language` were last run at **`686ed1ec`** and
+have not been re-run since: the commits after it change `tests/` and `docs/` only, and none of them
+touches an input those five read that the checks above do not already cover. They are listed here
+as what they are — clean at an earlier head of the same branch, not re-measured at this one.
+
+**These are the lane's own runs, executor-reported, on one machine.** They are **not independent
+verification and they are not the attestation.** The attestation for this branch is the hosted run
+of **pull request #394**'s head; no figure in this section is offered as a gate result, and none is claimed
+for a head other than the one named beside it. Two local runs are recorded as red rather than
+omitted: an earlier root unit tier reported two timeouts in `tests/ci/p1-28-access-gate.test.ts`,
+both at the 30-second limit under contention and neither on an assertion — the file passes 48 / 48
+when run alone, it is not this lane's file, and the recorded unit run above has `0 failed`.
+
+### 68.9 What `deca2666` claimed that was not in the tree, and how it is closed
+
+Recorded rather than quietly repaired, because a commit message is part of the record and this one
+described two things that did not exist at the commit it described.
+
+- **"a script that resolves every citation by CASE TITLE"** — the script existed and did the work,
+  but it was never committed. It lived in a temporary directory outside the repository, so the two
+  matrices were derived IN FACT and reproducible by nobody: the property the commit message claimed
+  was the property the tree did not have. The generator is now
+  `tests/ci/p1-31-error-path-matrix.test.ts`, in the tests bucket, with no new npm script and no new
+  `scripts/ci` file.
+- **"the correction recorded beside the table"** — the 7 → 5 correction to the cross-tenant count was
+  described in that commit's body and appears in no document in
+  `docs/phase-1/phase-1-31/` at that head. It is now in § 68.3, beside the table it corrects.
+
+**And the defect the uncommitted script left behind, which the committed one caught immediately.**
+Its line-extraction used `split(':')[2]` on a `file:line` string, which has one colon and therefore
+no third field, so **35 citations were written as the literal `:undefined`** — 12 in the error-path
+matrix and 23 in the isolation matrix, including all sixteen Layer-1 structural cells. Those cells
+said "covered" and named no line, which is exactly what the rule at the head of the error-path matrix
+forbids. Both documents are regenerated by the committed test and now carry **zero**; every citation
+in both was re-checked against the file and the line it names.
+
+This is the case for the generator being in the repository rather than beside it: the uncommitted
+script and the committed test implement the same idea, and only the second one could fail.
+
+**Two smaller corrections, for the same reason.**
+
+- `075592a9`'s body said the regenerated documents changed in "nothing else but the alignment the
+  wider cells produce and the GENERATED banner". **That was false**, and the thing it hid is the
+  paragraph above: 35 citations changed from `:undefined` to a real line, which is not alignment.
+  The sentence was written from a diff read for layout rather than for content.
+- The Dispositions subsection is numbered **68.10** and was drafted as 68.8. **No landed identifier
+  was renumbered**: § 68 has never been on `develop`, and both the Verification subsection and this
+  one were inserted before it, in the same unmerged branch. The § 48.1 rule is about identifiers the
+  register has published, and it is not engaged here — but a reader comparing two drafts of this
+  branch would see the number move, so it is stated rather than left to be noticed.
+- The over-attribution the committed generator itself shipped at `075592a9` is recorded with the
+  rest: it cited `tests/db/p1-11-isolation.test.ts:117` for **every** `rpt` table, and that case
+  queries `sal.invoices` and `rpt.report_configurations` and nothing else. So
+  `rpt.report_configuration_versions` carried a citation naming a case that never touches it. The
+  generator now attributes per TABLE and reads each cited case's own body back to check the claim,
+  with the corrected case as its own falsifier.
+
+### 68.10 Dispositions
+
+| id            | finding                                                                                                                                                                                                                                                                                                   | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | owner / slice                                 | state            |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- | ---------------- |
+| **CC-58**     | **four phase-set claims — SEC-004, QA-002, SEC-001 and QA-003 — rested on evidence gathered operation by operation, with no proof that the SET was covered.** A set-shaped claim fails the same way every time: the coverage is real, the set is not measured, and the member nobody reached is invisible | 23 of 24 privileged actions carried an emission assertion somewhere and `sal.delivery_checklist_template.item_updated` carried none; 7 of 11 version-guarded operations had a 428 case and 9 had a stale-`If-Match` 409; 15 of 16 idempotent operations had a replay case and **3** had a different-body refusal; 20 of 27 applicable writes and reads had a 422; least privilege was proved by refusal alone, so nothing established that the declared codes were SUFFICIENT; and 3 of 16 P1-31 tables carried a behavioural cross-tenant read negative, the delivery and warranty database suites being CONSTRAINT suites that drove none | **closed in code and in two matrices and a generated map.** All four sets are now DERIVED from the route literals at run time, so a forty-sixth operation or a twenty-fifth privileged write fails the suite that claims to cover it. Counts after: emission 24/24 with set-completeness asserted; 428 11/11, 409 11/11, replay 16/16, different-body 16/16, 422 27/27, 403 46/46, cross-tenant 41/41, isolation 46/46; 13 minimal actors plus 4 dataset actors; 16/16 tables with a behavioural read negative. The residual limit is named in § 68.4 and § 68.7 rather than closed: SE-5M establishes sufficiency at the pre-handler gate only | this lane                                     | closed, recorded |
+| **CC-58 (a)** | **SE-5M cannot see a service-level authority requirement for 45 of the 46 operations**                                                                                                                                                                                                                    | SE-5M builds each request with invented identifiers and asserts only that the answer is neither `ERR-IAM-001` nor a 5xx, which is the pre-handler gate. A check inside a service runs after the identifiers resolve. `rpt.report-run` is the one operation probed against real rows with a minimal caller (SE-5MD, SE-5MD-N), and it is the one where such a check was found                                                                                                                                                                                                                                                                | **recorded, not closed.** Closing it means driving each of the 46 to a real success with its minimal caller — the emission suite's shape applied to authority, a larger slice than this one. Nothing here is widened or relaxed to accommodate it, and no claim in this section reads past the limit                                                                                                                                                                                                                                                                                                                                            | a later security-assurance slice              | open, recorded   |
+| **CC-58 (b)** | **the assurance evidence index reads two constraint suites as isolation evidence they did not carry**                                                                                                                                                                                                     | `tests/db/sal-delivery.test.ts` and `tests/db/wty-warranty.test.ts` ran every case as tenant A inside a rolled-back transaction and drove no cross-tenant negative of any kind; the index was reading the fixture tenant and not an assertion                                                                                                                                                                                                                                                                                                                                                                                               | **recorded here, and the code half repaired.** Both suites now carry a behavioural negative, so the entry becomes true at this head — but it was not true when written, and editing the index is a rewrite of a document this lane does not own (§ 48.1)                                                                                                                                                                                                                                                                                                                                                                                        | the final integration                         | open, recorded   |
+| **CC-58 (c)** | **`p1-31-concurrency-and-versioning.test.ts` states a replay coverage it did not have, and that statement is why it asserted none**                                                                                                                                                                       | Its header says "all sixteen idempotent ones already carry a replay case". Fifteen did; `sal.delivery-checklist-template-item-create` did not, and the different-body half was covered for three of the sixteen                                                                                                                                                                                                                                                                                                                                                                                                                             | **recorded, header left as written.** The gap it hid is closed by § 68.3 and the header is annotated by this row rather than rewritten, in the § 48.1 discipline                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | this lane, recorded for the final integration | open, recorded   |

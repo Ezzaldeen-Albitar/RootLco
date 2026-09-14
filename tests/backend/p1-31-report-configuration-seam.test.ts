@@ -857,6 +857,49 @@ describe('authoring a definition', () => {
     expect(Number(rows.rows[0]?.n ?? '0')).toBe(1);
     expect(await auditCount('rpt.report_configuration.created', created.id)).toBe(1);
   });
+
+  it('refuses the same key offered with a DIFFERENT body, and writes nothing', async () => {
+    /*
+     * The half of the replay contract a replay case cannot assert. `withIdempotency`
+     * matches on a fingerprint over the principal, the method, the path template, the
+     * resolved parameters and the canonicalised body, so a route that stored the KEY
+     * alone would answer this second, different request with the FIRST definition's
+     * document — reporting a report code registered that was never written.
+     */
+    authAs(RPT_CONFIGURER);
+    const key = randomUUID();
+    const firstCode = nextCode('fp_first');
+    const secondCode = nextCode('fp_second');
+    const first = await createConfiguration(
+      {
+        reportCode: firstCode,
+        name: 'First definition',
+        scopeLevel: 'tenant',
+        exportPermissionCode: EXPORT_CODE,
+      },
+      key
+    );
+    expect(first.status).toBe(201);
+
+    const conflicting = await createConfiguration(
+      {
+        reportCode: secondCode,
+        name: 'Second definition',
+        scopeLevel: 'tenant',
+        exportPermissionCode: EXPORT_CODE,
+      },
+      key
+    );
+    expect(conflicting.status).toBe(409);
+    expect(await codeOf(conflicting)).toBe('ERR-INT-001');
+
+    const rows = await admin.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM rpt.report_configurations
+        WHERE tenant_id = $1 AND report_code = $2`,
+      [TENANT_A, secondCode]
+    );
+    expect(Number(rows.rows[0]?.n ?? '0')).toBe(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -960,6 +1003,45 @@ describe('the status command', () => {
     expect(replay.status).toBe(200);
     expect(await bodyOf<ConfigurationBody>(replay)).toEqual(changed);
     expect((await configurationRow(authored.id))?.record_version).toBe(authored.recordVersion + 1);
+    expect(await auditCount('rpt.report_configuration.status_changed', authored.id)).toBe(1);
+  });
+
+  it('refuses a status change with NO If-Match, leaving the definition where it was', async () => {
+    /*
+     * `rpt.report-configuration-status-set` declares `versionGuarded: true` on its own
+     * route. The stale case above covers the mismatch; the MISSING header was covered
+     * only through the EDIT operation, which is a different declaration — so a guard
+     * dropped from this route would have left every assertion in this file green.
+     */
+    const authored = await authorConfiguration({ stem: 'status_unguarded' });
+    authAs(RPT_CONFIGURER);
+
+    const missing = await setStatus(authored.id, 'published', null);
+    expect(missing.status).toBe(428);
+    expect(await codeOf(missing)).toBe('ERR-CON-002');
+
+    const row = await configurationRow(authored.id);
+    expect({ status: row?.status, recordVersion: row?.record_version }).toEqual({
+      status: 'draft',
+      recordVersion: authored.recordVersion,
+    });
+  });
+
+  it('refuses the same status key offered with a DIFFERENT status', async () => {
+    const authored = await authorConfiguration({ stem: 'status_fp' });
+    authAs(RPT_CONFIGURER);
+    const key = randomUUID();
+
+    const first = await setStatus(authored.id, 'published', authored.recordVersion, key);
+    expect(first.status).toBe(200);
+    const published = await bodyOf<ConfigurationBody>(first);
+
+    const conflicting = await setStatus(authored.id, 'archived', published.recordVersion, key);
+    expect(conflicting.status).toBe(409);
+    expect(await codeOf(conflicting)).toBe('ERR-INT-001');
+
+    // The refused second body did not archive the definition.
+    expect((await configurationRow(authored.id))?.status).toBe('published');
     expect(await auditCount('rpt.report_configuration.status_changed', authored.id)).toBe(1);
   });
 });
@@ -1121,6 +1203,33 @@ describe('versions', () => {
     const detail = await bodyOf<DetailBody>(await readConfiguration(authored.id));
     expect(detail.versions).toHaveLength(1);
     expect(await auditCount('rpt.report_configuration.version_created', created.id)).toBe(1);
+  });
+
+  it('refuses the same version key offered with a DIFFERENT parameter schema', async () => {
+    // A draft version carries a parameter schema, so two requests under one key can
+    // genuinely differ. Without the fingerprint the second would be answered with the
+    // first version's document, telling the caller a schema was recorded that was not.
+    const authored = await authorConfiguration({ stem: 'version_fp' });
+    authAs(RPT_CONFIGURER);
+    const key = randomUUID();
+
+    const first = await createVersion(
+      authored.id,
+      { parameterSchema: { filters: { branchId: { type: 'uuid' } } } },
+      key
+    );
+    expect(first.status).toBe(201);
+
+    const conflicting = await createVersion(
+      authored.id,
+      { parameterSchema: { filters: { companyId: { type: 'uuid' } } } },
+      key
+    );
+    expect(conflicting.status).toBe(409);
+    expect(await codeOf(conflicting)).toBe('ERR-INT-001');
+
+    const detail = await bodyOf<DetailBody>(await readConfiguration(authored.id));
+    expect(detail.versions).toHaveLength(1);
   });
 });
 
