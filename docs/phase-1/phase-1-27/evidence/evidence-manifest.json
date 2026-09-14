@@ -52,7 +52,7 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "3983dee906b4028eec60caec1b2af63ee96e8e771a40c611130c59fd0413716d",
+      "sha256": "f16e66b155d17c5e01899f36945d0402e71053c86b2e5dc770a05a7323a72ca3",
       "bytes": 149608
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
@@ -76,7 +76,7 @@
       "bytes": 1420
     },
     "docs/phase-1/phase-1-27/evidence/task-traceability.md": {
-      "sha256": "e163d9ba6633230b3f7bf69a555c817fb50bb856b0b10031758cdaec62909b21",
+      "sha256": "1544b40e63098fdbdf358d3101a473df876002dd47bde19943af785e85472056",
       "bytes": 114007
     },
     "docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json": {

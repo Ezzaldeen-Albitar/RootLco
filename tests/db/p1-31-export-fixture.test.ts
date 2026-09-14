@@ -40,6 +40,23 @@
  * `current_database()` is `postgres`, because this file installs privileged grants and writing
  * them into the acceptance environment would contaminate a run in progress. Cleanup is by the
  * identifiers each case created, through `deleteTenantCascade`, and never by a name prefix.
+ *
+ * ## The runner, which is NOT the shared database tier
+ *
+ * That refusal and the shared tier are incompatible by construction: `tests/db/helpers.ts`
+ * falls back to `postgres`, and every hosted database job supplies that name at job level. So
+ * this file is EXCLUDED from `vitest.config.db.ts` by name and carries its own configuration,
+ * `vitest.config.db-fixture.ts`, reached by
+ *
+ *     npm run test:db-fixture
+ *
+ * with `DB_NAME` pointing at the disposable database. The consequence is stated rather than
+ * hidden: NO hosted job runs this file, because no hosted job has a disposable database to
+ * give it. It is an explicit operator proof, registered `environment` in
+ * `scripts/ci/check-command-coverage.mjs`, and the closing acceptance procedure names both the
+ * command and the database so it is taken deliberately. The alternative — relaxing the refusal
+ * into a skip so the file could ride the shared tier — would put a privileged writer one
+ * environment variable away from the acceptance database and report the near miss as green.
  */
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -560,13 +577,60 @@ describe('the export fixture writer, against a real database', () => {
      * rather than as no transaction at all. Half two is the control: without the forced
      * statement the identical writes survive to `COMMIT` and the commit is what fails, which
      * is what makes the constraint genuinely deferred and half one a real reordering.
+     *
+     * ## The falsifiability control, and what this suite does and does not carry
+     *
+     * That the negative BREAKS when the scope row is added back was taken once by hand, in a
+     * scratch copy of this file that was never committed, and it is NOT carried by the suite.
+     * Saying so is the honest reading: this case proves the ordering and the source of the
+     * refusal, and the statement "it would pass with the scope row" rests on a measurement no
+     * reader of this repository can re-take from what is here. Adding it as a committed case
+     * would mean committing a scoped grant and its scope row by hand for no other purpose, and
+     * that is a change to be taken with the database in front of the author rather than
+     * written blind.
      */
     const world = await makeWorld();
     const principal = world.principals[0];
     if (principal === undefined) throw new Error('the world carries no principal');
     const client = await writer.connect();
 
-    const scopelessGrant = async (roleCode: string): Promise<void> => {
+    /**
+     * The refusal, identified by more than its SQLSTATE.
+     *
+     * `23514` is `check_violation` in general: any CHECK over any row this hand-issued
+     * transaction writes would answer it, and `expectSqlState` returns the code and discards
+     * the error — so asserting the code alone would be satisfied by an unrelated violation
+     * raised in the same transaction, which is not what this case claims to have observed.
+     *
+     * The two TRIGGER names — `tg_role_grants_require_scope` and
+     * `tg_grant_scopes_require_scope`
+     * (`supabase/migrations/20260718092000_iam_role_grants_and_scopes.sql:205-215`) — are not
+     * carried by the error: `RAISE EXCEPTION … USING ERRCODE` leaves the `constraint` field
+     * unset, and PostgreSQL does not name the firing trigger in a PL/pgSQL error. What it does
+     * carry is the FUNCTION both of those triggers execute — `iam.enforce_scoped_grant_has_scope`,
+     * in the PL/pgSQL context line — and that function's own message, which names the offending
+     * grant. Both are asserted, so the refusal is pinned to this constraint and to this row.
+     */
+    const expectScopeRefusal = async (
+      promise: Promise<unknown>,
+      grantId: string
+    ): Promise<void> => {
+      try {
+        await promise;
+      } catch (thrown) {
+        const error = thrown as { code?: string; message?: string; where?: string };
+        expect(error.code).toBe('23514');
+        expect(error.message).toBe(`scoped active grant ${grantId} must have at least one scope`);
+        expect(
+          error.where ?? '(no PL/pgSQL context)',
+          'a check violation was raised, but not by the deferred scope trigger'
+        ).toContain('enforce_scoped_grant_has_scope');
+        return;
+      }
+      throw new Error('the statement succeeded: the deferred scope constraint did not fire at all');
+    };
+
+    const scopelessGrant = async (roleCode: string): Promise<string> => {
       const roleId = randomUUID();
       const grantId = randomUUID();
       await client.query("SELECT set_config('app.user_id', $1, true)", [SYSTEM_ACTOR]);
@@ -582,25 +646,24 @@ describe('the export fixture writer, against a real database', () => {
          VALUES ($1, $2, $3, $4, 'scoped', now() + interval '2 hours', $5, $5)`,
         [grantId, world.tenantId, principal.id, roleId, SYSTEM_ACTOR]
       );
+      return grantId;
     };
 
     try {
       await client.query('BEGIN');
-      await scopelessGrant(`${fixtureRoleCode(world.stamp, 2)}_negative`);
+      const forced = await scopelessGrant(`${fixtureRoleCode(world.stamp, 2)}_negative`);
       // The insert itself is accepted: the constraint is DEFERRED, so nothing has complained yet.
       const open = await client.query('SELECT count(*)::int AS grants FROM iam.role_grants');
       expect(open.rows[0].grants).toBeGreaterThan(0);
 
-      expect(await expectSqlState(client.query('SET CONSTRAINTS ALL IMMEDIATE'), '23514')).toBe(
-        '23514'
-      );
+      await expectScopeRefusal(client.query('SET CONSTRAINTS ALL IMMEDIATE'), forced);
       // Still inside the transaction, now aborted — the failure was not at a commit.
       await expectSqlState(client.query('SELECT 1'), '25P02');
       await client.query('ROLLBACK');
 
       await client.query('BEGIN');
-      await scopelessGrant(`${fixtureRoleCode(world.stamp, 3)}_negative`);
-      expect(await expectSqlState(client.query('COMMIT'), '23514')).toBe('23514');
+      const committed = await scopelessGrant(`${fixtureRoleCode(world.stamp, 3)}_negative`);
+      await expectScopeRefusal(client.query('COMMIT'), committed);
     } finally {
       try {
         await client.query('ROLLBACK');

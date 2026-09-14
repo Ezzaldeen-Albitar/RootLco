@@ -11,6 +11,16 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/db/**/*.test.ts'],
+    // ONE file is excluded, by name, and the exclusion is a requirement rather
+    // than a preference. `tests/db/p1-31-export-fixture.test.ts` installs
+    // privileged role grants, so it REFUSES to run when `current_database()` is
+    // `postgres` — the name `tests/db/helpers.ts` defaults to and the name every
+    // hosted database job supplies. Left in this list it would turn this tier red
+    // on every branch and in every job that runs it, and the honest answer is a
+    // separate runner rather than a weakened refusal or a silent skip: it runs
+    // under `vitest.config.db-fixture.ts` (`npm run test:db-fixture`) against a
+    // disposable database the operator names. Nothing else is excluded.
+    exclude: ['tests/db/p1-31-export-fixture.test.ts', 'node_modules/**'],
     // Database fixtures are stateful: files run sequentially so cleanup in one
     // file can never race provisioning in another. Concurrency is exercised
     // INSIDE the tests (50 parallel connections), not by the runner.

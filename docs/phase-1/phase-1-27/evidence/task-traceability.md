@@ -246,7 +246,7 @@ rather than task deliverables in their own right:
 <!-- derived: cases p1-27-guidance-reconciliation.test.ts = 10 -->
 <!-- derived: cases p1-27-evidence-manifest.test.ts = 39 -->
 <!-- derived: cases idempotent-operations-manifest.test.ts = 6 -->
-<!-- derived: commands registered = 179 -->
+<!-- derived: commands registered = 180 -->
 <!-- derived: commands required = 97 -->
 <!-- derived: commands reachable = 97 -->
 <!-- derived: commands hosted-ci = 97 -->

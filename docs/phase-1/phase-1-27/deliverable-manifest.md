@@ -998,7 +998,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: tracked docs/phase-1/phase-1-27 = 42 -->
 <!-- derived: tracked docs/phase-1/phase-1-27:md = 32 -->
 <!-- derived: tracked docs/product = 14 -->
-<!-- derived: commands registered = 179 -->
+<!-- derived: commands registered = 180 -->
 <!-- derived: commands required = 97 -->
 <!-- derived: commands reachable = 97 -->
 <!-- derived: commands hosted-ci = 97 -->

@@ -68,6 +68,7 @@
     "test:backend": "vitest run --config vitest.config.backend.ts",
     "test:coverage": "vitest run --coverage",
     "test:db": "vitest run --config vitest.config.db.ts",
+    "test:db-fixture": "vitest run --config vitest.config.db-fixture.ts",
     "test:integration": "npm run test:db",
     "test:unit": "vitest run",
     "test:watch": "vitest",
