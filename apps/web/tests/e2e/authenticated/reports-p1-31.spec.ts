@@ -1,14 +1,17 @@
 import { expect, test, type Page } from '@playwright/test';
 import { holds, readAccountKind } from './account-manifest';
 import {
+  NO_EXPORT_HANDOFF_REASON,
   NO_HANDOFF_REASON,
   WRONG_ACCOUNT_REASON,
   hasMessage,
   localeOf,
   missingReason,
+  readExportHandoff,
   readHandoff,
   say,
   signedInAsJourneyAdministrator,
+  type P131ExportHandoff,
   type P131Handoff,
 } from './p1-31-handoff';
 
@@ -118,15 +121,22 @@ async function catalogueName(page: Page, locale: 'en' | 'ar', code: string): Pro
   return named;
 }
 
-/** Runs one report through its own form, for the branch and period the harness used. */
+/**
+ * Runs one report through its own form, for the branch and period the harness used.
+ *
+ * `scope` is the two identifiers the form needs rather than the whole handoff: the export
+ * companion's document names the same pair for a different principal, and a parameter
+ * that insisted on the journey's handoff would have forced a second copy of these five
+ * lines for the sake of a type.
+ */
 async function runReport(
   page: Page,
   locale: 'en' | 'ar',
-  h: P131Handoff,
+  scope: { readonly companyId: string; readonly branchId: string },
   period: { readonly from: string; readonly to: string }
 ): Promise<void> {
-  await page.getByLabel(say(locale, 'reports.run.company')).selectOption(h.companyId);
-  await page.getByLabel(say(locale, 'reports.run.branch')).selectOption(h.branchId);
+  await page.getByLabel(say(locale, 'reports.run.company')).selectOption(scope.companyId);
+  await page.getByLabel(say(locale, 'reports.run.branch')).selectOption(scope.branchId);
   await page.getByLabel(say(locale, 'reports.run.from')).fill(period.from);
   await page.getByLabel(say(locale, 'reports.run.to')).fill(period.to);
   await page.getByRole('button', { name: say(locale, 'reports.run.show') }).click();
@@ -472,4 +482,169 @@ test.describe('P1-31 reporting screens, over the acceptance journey records', ()
       }
     });
   }
+});
+
+/* ================================================================== *
+ * The export principal — a holder of rpt.export, from the companion
+ * ================================================================== */
+
+/** The section the export control renders as, addressed by the heading it labels itself with. */
+const EXPORT_SECTION = 'section[aria-labelledby="report-export-heading"]';
+
+/**
+ * The catalogue entries the export control cannot be rendered without.
+ *
+ * Named rather than read off the page: a control whose words are missing renders as an
+ * untranslated key, which `translate()` returns and a text query would happily match.
+ */
+const EXPORT_CONTROL_KEYS = [
+  'reports.export.title',
+  'reports.export.reason',
+  'reports.export.download',
+] as const;
+
+const exportHandoff = readExportHandoff();
+
+test.describe('export principal (companion)', () => {
+  /*
+   * A fresh, signed-out context: the captured session belongs to the journey's
+   * administrator, and this case is about a different principal entirely — one that holds
+   * `rpt.export`, which no administrator in this product holds.
+   */
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  /**
+   * STAGE 1 of the export browser evidence.
+   *
+   * ## What it establishes today
+   *
+   * That the principal the export companion created can sign in through the real form and
+   * open the reporting surface at all. That is the half this repository can answer for on
+   * its own: the companion proves the export itself over HTTP, and this case proves the
+   * same identity reaches the screens.
+   *
+   * ## Why the export control is asserted and NOT skipped over
+   *
+   * The Owner's D-6 instruction requires the export to be completed with explicit
+   * authorization, and the phase's own rule is that a required positive case is never
+   * quietly omitted. The reports export control is the frontend consumer of the backend
+   * contract in `docs/phase-1/phase-1-31/report-export-seam.md`, and it is NOT on this
+   * checkout yet. So this case FAILS while it is missing, deliberately: a skip here would
+   * let a closing run report a complete export story with no browser evidence of one, and
+   * that is precisely the shape of green tick this phase has already been burned by.
+   *
+   * THE DEPENDENCY, stated so the failure is actionable rather than mysterious: the
+   * control must render as a section labelled by `report-export-heading`, carrying the
+   * three catalogue entries named above and a download control, on the run screen beneath
+   * a successful run. Those anchors come from the integration draft the backend author
+   * recorded beside the export candidate; if the shipped control names itself differently,
+   * this locator is what moves, and it moves by agreement rather than by guess.
+   *
+   * ## The one condition under which it may skip
+   *
+   * No companion handoff on this checkout — no principal, therefore no holder of
+   * `rpt.export` to sign in as. Every other absence is a failure.
+   */
+  test('a holder of rpt.export opens the reports surface and is offered the export', async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    // test-honesty-allow: TH-002 -- no export companion handoff on this checkout; see NO_EXPORT_HANDOFF_REASON
+    test.skip(exportHandoff === null, NO_EXPORT_HANDOFF_REASON);
+    const h = exportHandoff as P131ExportHandoff;
+    const locale = localeOf(testInfo.project.name);
+    // test-honesty-allow: TH-002 -- the reporting slice is not on this checkout; see reportsAbsentReason
+    test.skip(!hasMessage(locale, CATALOGUE_TITLE_KEY), reportsAbsentReason(locale));
+
+    /*
+     * Signing in through the real form, ONCE, for the reason
+     * `appointments-and-receptions.spec.ts` gives: the session is an `httpOnly` cookie set
+     * by a Server Action, so driving the form proves the form, the action, the API contract
+     * and the cookie together. `POST /api/v1/auth/login` is rationed at ten per sixty
+     * seconds per client address and this tier shares one bucket, so this block spends
+     * exactly one sign-in per project and caches nothing it does not need.
+     *
+     * The form is opened in English regardless of the project's locale — the session is the
+     * same cookie either way, and the screens under assertion are then opened in the
+     * project's own language. The password is addressed by role because `getByLabel`
+     * matches an accessible name as a SUBSTRING and the reveal control inside the field is
+     * named for showing the password.
+     */
+    await page.goto('/en/login');
+    await page.getByLabel(say('en', 'auth.login.email')).fill(h.exportPrincipal.email);
+    await page
+      .getByRole('textbox', { name: say('en', 'auth.login.password'), exact: true })
+      .fill(h.exportPrincipal.password);
+    await page.getByRole('button', { name: say('en', 'auth.login.submit') }).click();
+    await page.waitForURL(/\/en(\?.*)?$/, { timeout: 20_000 });
+
+    // The catalogue, for a principal that holds `rpt.report.read` in this branch and
+    // nothing like an administrator's bundle. A refusal here is a failure: the fixture the
+    // companion recorded grants that read, and the companion's own evidence says whether
+    // its setup succeeded.
+    await page.goto(`/${locale}/reports`);
+    const main = page.getByRole('main');
+    await expect(
+      main.getByRole('heading', { name: say(locale, CATALOGUE_TITLE_KEY), exact: true })
+    ).toBeVisible();
+    await expect(main.getByText(say(locale, 'state.loading'))).toHaveCount(0);
+    await expect(
+      main.getByText(say(locale, 'state.denied.title')),
+      'the export principal holds the report read code, so the catalogue must not refuse it — ' +
+        'if it does, read the companion evidence for whether its fixture setup succeeded'
+    ).toHaveCount(0);
+    await expect(
+      main.getByRole('table', { name: say(locale, 'reports.catalogue.caption') })
+    ).toBeVisible();
+
+    // The run screen for the very dataset the companion exported over HTTP, run over the
+    // same branch and the same period, because the control mounts beneath a result.
+    await page.goto(`/${locale}/reports/${h.reportCode}`);
+    await expect(page.getByText(say(locale, 'reports.run.idleTitle'))).toBeVisible();
+    await runReport(page, locale, h, h.reportPeriod);
+    await expect(
+      page.locator('section[aria-labelledby="report-result-heading"] > dl')
+    ).toBeVisible();
+
+    /*
+     * THE DEPENDENCY. Everything above is satisfiable today; this is not, and it is meant
+     * to fail until the export control ships. See the docblock above for what must land.
+     */
+    const absent = EXPORT_CONTROL_KEYS.filter((key) => !hasMessage(locale, key));
+    expect(
+      absent,
+      `${locale}.json carries no ${absent.join(', ')}, so the reports export control is not on ` +
+        'this checkout. The positive export browser evidence D-6 requires cannot be collected ' +
+        'until it lands; this case fails rather than skipping so the gap cannot be mistaken ' +
+        'for evidence.'
+    ).toEqual([]);
+
+    const control = page.locator(EXPORT_SECTION);
+    await expect(
+      control,
+      'the run screen offered no export control to a holder of rpt.export. The backend ' +
+        'contract is published and the principal holds the code, so the missing half is the ' +
+        'frontend consumer.'
+    ).toBeVisible();
+    await expect(
+      control.getByRole('button', { name: say(locale, 'reports.export.download') })
+    ).toBeEnabled();
+
+    /*
+     * The two surfaces must agree with each other.
+     *
+     * The catalogue's standing sentence is that there is no download here and reports are
+     * read on screen. For a caller who has just been offered a download that sentence is
+     * false, and a screen that says both is a screen contradicting itself. Asserted only
+     * once the control is really there, so it can never fail for the control's absence —
+     * this is a consistency check between two published surfaces, not a guess about how
+     * either one is built.
+     */
+    await page.goto(`/${locale}/reports`);
+    await expect(
+      page.getByRole('main').getByText(say(locale, 'reports.catalogue.noDownload')),
+      'the catalogue still tells a holder of rpt.export that there is no download here, ' +
+        'while the run screen offers them one'
+    ).toHaveCount(0);
+  });
 });
