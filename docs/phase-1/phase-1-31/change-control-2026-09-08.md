@@ -7445,6 +7445,43 @@ no full backend pass is claimed. Unit/web evidence is also re-recorded after exe
 and the controlled ledger/manifests are refreshed last. No final review verdict or hosted result
 is inferred from these corrections.
 
+### 69.13.2 Actual full-tier review measurements and final correction
+
+The full LOCAL backend tier at eba70a5cf68e682eecf164f3f66e97d5c839485a executed **3383 cases**
+across **144 files**: **3382 passed, one failed, zero skipped**, runner exit 1. The one failure was
+the provisioning-bundle suite's expected list of rpt.export declarers, which still named only the
+two P1-15 operations. The corrected phase audit-emission suite and the other backend suites passed.
+The failure is retained, not described as a full-tier pass.
+
+Source **59e3087222e948decabe4520a78d8e0695fe9142** adds rpt.report-export to that expected list and
+states explicitly that CC-04 still excludes rpt.export from the administrator bundle. It changes
+only this test expectation/comment, no API code or permissions. The entire affected provisioning
+suite then passed **8/8** on the same disposable database. A passing full hosted backend integration
+job at the actual PR head is still required before merge, as allowed by review item 5; neither the
+cross-run evidence nor that future required job is represented as an already passing full LOCAL tier.
+
+The first unit record at eba70a5c had **3397 passes and two failures**, zero skips. Both failures were
+in P1-28 evidence-seal tests; one case took 269 seconds and the other reported a pending-binding
+mismatch. A direct subsequent evaluation reported zero pending-binding problems without changing
+that seal. The serial full unit record at 59e30872 passed **3399/3399**, 129 files, zero failures/skips,
+exit 0, no dirty executable paths, measured 2026-09-14T12:02:30.286Z. These observations do not identify
+a proven root cause for the first run's failures; they preserve both the failure and non-reproduction.
+The web tier at eba70a5c passed 4057/4057, 142 files; the current-source record follows separately.
+
+Raw reports, logs and the failed-cycle ledger are retained with eba70/59e308 identifiers in the
+external export evidence directory. No failed record is overwritten into a passing one. The original
+d3257416 candidate manifest also remains separate from the corrected review manifest.
+
+The final LOCAL web record at 59e30872 passed **4057/4057**, 142 files, zero failures/skips, exit 0,
+no dirty executable paths, measured 09/14/2026 12:06:28. Together with the serial unit
+record, both controlled tiers now describe the corrected source. Full hosted backend verification
+remains required before merge; neither these records nor engineering review supplies certification.
+
+Final verify:policies passes after the controlled record refresh, including zero closing-value
+problems and the current evidence manifest. Contract validation and API types at the unchanged API
+source, plus lint on the final corrected test, pass. The corrected candidate awaits bounded
+engineering re-review and its actual hosted required checks; no human certification is implied.
+
 ## 69.14 Report download, local monitoring and developer guidance
 
 LOCAL implementation source: `c2235b974144f68d07975ce768cabd853186a8ea`, based on backend
