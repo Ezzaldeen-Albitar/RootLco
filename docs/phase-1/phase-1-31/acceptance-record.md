@@ -1329,7 +1329,7 @@ handover screen answers for a record that does not exist, and offers no write_ �
 `expect(locator).toBeVisible()` refused for a **strict mode violation — resolved to 2 elements**,
 locator `getByText('غير موجود')` (`RUN-NOTES.md` §6.2; error context in
 `browser\p1-31-ar-delivery-writes-error-context.md`). The screen was right: `NotFoundState`
-(`apps/web/src/components/states/States.tsx:172-181`) draws `state.notFound.title` in the state
+(`apps/web/src/components/states/States.tsx:181-190`) draws `state.notFound.title` in the state
 shell's `<h2>` and `state.notFound.description` under it, and in Arabic the description
 ("هذه الصفحة غير موجودة…") contains the title ("غير موجود") as a substring while the English pair
 does not. A substring text locator therefore matched twice in one language and once in the other.
@@ -1467,8 +1467,11 @@ string, the same way in both locales.
 nothing else** — no failure, no case that did not run. The twelve cases of its second-workspace
 section, four in each project, are among those skips.
 
-**The screens.** Twenty-eight PNG files and `screens.json` in `screens\`. The script reported `ok`
-for every capture, its manifest carries an empty failure list, and its exit code was 0.
+**The screens.** `screens.json` in `screens\` carries **30 shot records, all `ok`, of which 28
+wrote a PNG file**; the two without a file are the signed-in navigation checks, one per locale,
+exactly as in §8.7. The manifest's failure list is empty and the script's exit code was 0.
+_(This paragraph read "Twenty-eight PNG files … the script reported `ok` for every capture": both
+halves are true and read together they suggest twenty-eight records rather than thirty.)_
 
 **Exit codes:** journey 0, browser tier 0, screenshot pass 0, `--remove-handoff` 0, `dev:stop` 0.
 
@@ -1567,9 +1570,14 @@ the calls in the harness's `runJourney`. The sum is 413.
 
 **S1 to S16 without S15b is exactly 194** — the same total run `mtzmvemj` recorded in §8, and the
 reason nothing outside the fixture section needs re-reading against that record. **S15b is 219**: 3
-template steps, 48 work-order state transitions (8 for each of six work orders), 24 signature
+template steps, 48 work-order state transitions (8 for each of six work orders), 16 signature
 document steps (4 for each of the four fixtures that bind a signature), and 152 per-fixture steps
 (25 for each checklist and signature fixture, 26 for each release fixture, in two locales).
+_(That third addend read **24**, which made the four addends sum to 227 rather than 219 and
+contradicted its own parenthetical. **24 is the count of `signature document:` steps across the
+WHOLE run**; eight of them belong to §11 and the refusal cases, and **16** are inside S15b. The
+total 219 is measured off `steps.json` rows 177 to 395 and is unchanged — it is the addend that
+was wrong, not the sum.)_
 
 The brief for this run anticipated **407**. The six beyond it are all inside S15b, since the rest
 is identical to `mtzmvemj`'s 194. Four one-per-fixture assertion families each contribute exactly
@@ -2056,7 +2064,7 @@ numbers are this run's; **compare runs by step LABEL, never by number.**
 ### 9.9 What this section does not claim
 
 The Owner's own verdict on the production build. Any judgement of the screens' wording or layout
-beyond the fact that twenty-eight were captured. Any hosted result: whether the
+beyond the fact that thirty shot records were taken and twenty-eight of them wrote an image. Any hosted result: whether the
 `authenticated-browser` job goes green at the head this branch produces is a fact only that job can
 establish, and none of the ledger tiers was re-recorded in the turn that wrote this section. And
 any claim about the two runs' report figures beyond what §9.1 (c) and §9.2 state — `mu0diepc`'s are

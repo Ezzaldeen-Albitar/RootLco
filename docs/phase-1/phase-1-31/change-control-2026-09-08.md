@@ -5079,10 +5079,13 @@ shape, and it is raised as **CC-52 (a)** rather than fixed by editing four other
 
 **Slice:** `feature/p1-31-delivery-browser-proofs`, ownership profile `p1-31-frontend`. **Baseline:**
 protected `develop` **`72f3a71e`** — the head the closure queue left. `main` `1262de74`, untouched
-and far behind. **This slice changes application source in two files only** — a delivery panel that
-had discarded its field errors and a record view that had published a reference where a reading
-belongs, both landed before this section was written — and is otherwise browser tests, an
-out-of-repository acceptance harness, and these records.
+and far behind. **This slice changes application source for two defects, in two commits, across
+seven files under `apps/web/src`** — a delivery panel that had discarded its field errors and a
+record view that had published a reference where a reading belongs, both landed before this
+section was written — and is otherwise browser tests, an out-of-repository acceptance harness,
+and these records. The seven are listed in §64.2. _(This sentence read "changes application
+source in two files only": it counted the two defects and not the files they took, and it was
+wrong as written.)_
 
 **Purpose.** CC-52 (c) lowered FE-004, FE-005 and FE-006 out of `end-to-end verified` because no
 committed browser case exercised the delivery checklist, the final odometer or the signature
@@ -5117,9 +5120,23 @@ Off `develop` `72f3a71e`, in order:
 | `9e98731b` | P1-31-FE-004-006: correct the handoff and spec counts                   |
 | `f13a2d41` | P1-31-FE-004-007: record runs mu0diepc and mu0g1b1a in section 9        |
 | `ffa6cb2b` | P1-31-FE-004-008: move FE-004/005/006 in the task matrix                |
+| `f66ee8b7` | P1-31-FE-004-009: open section 64 for the browser proofs                |
 
-The two application-source commits are `41919f7d` and `ee67a7f9`. The first gives the signature
-capture form somewhere to state a refusal: it had discarded `fieldErrors`, and
+_(A commit cannot list itself. `f66ee8b7` opened this section and is entered above by the commit
+that follows it. **`P1-31-FE-004-010`, which carries the corrections of 2026-09-14 to §9.5, §9.9
+and this subsection, is the head at the moment this note is written; its identifier is owed to the
+sync turn**, together with the re-statement §64.1 needs once §63 and §65 are on the merged tree.)_
+
+**The two application-source commits are `41919f7d` and `ee67a7f9`, and between them they touch
+seven files under `apps/web/src`:**
+
+| commit     | files under `apps/web/src`                                                                                                                                                                                                        |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `41919f7d` | `features/delivery/components/SignaturesPanel.tsx`, `i18n/messages/en.json`, `i18n/messages/ar.json`                                                                                                                              |
+| `ee67a7f9` | `app/[locale]/(dashboard)/delivery/[deliveryId]/page.tsx`, `features/delivery/components/DeliveryDetailScreen.tsx`, `features/delivery/components/DeliveryDocument.tsx`, `features/delivery/components/DeliveryDocumentPanel.tsx` |
+
+`41919f7d` also adds cases to `apps/web/tests/delivery.dom.test.tsx`; that is a test file and is not
+one of the seven. The first gives the signature capture form somewhere to state a refusal: it had discarded `fieldErrors`, and
 `notifyActionResult` raises no toast for the `invalid` state, so a refused capture had looked
 exactly like one that was never attempted. The second resolves the final odometer reading from the
 vehicle's own history so the record shows the reading rather than an identifier a reader cannot
@@ -5131,10 +5148,10 @@ in the acceptance record's § 9.7 as the surfaces those cases assert.
 Both are recorded in [`acceptance-record.md`](./acceptance-record.md) **§ 9**, and both evidence
 directories are outside every git working tree with nothing of either committed.
 
-| run        | evidence directory            | HTTP                  | browser                                                                                                        | screens        |
-| ---------- | ----------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------- | -------------- |
-| `mu0diepc` | `…\acceptance-20260914-0105\` | 413 steps, 0 findings | 48 P1-31 cases executed, **47 passed, 1 failed**; the file's own tier reported 4 failed and 9 that did not run | 28, 0 failures |
-| `mu0g1b1a` | `…\acceptance-20260914-0216\` | 413 steps, 0 findings | 418 collected, **49 passed** (1 sign-in setup + **48 of 48 P1-31**), 0 failed, 369 skipped, 0 did not run      | 28, 0 failures |
+| run        | evidence directory            | HTTP                  | browser                                                                                                        | screens                                           |
+| ---------- | ----------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `mu0diepc` | `…\acceptance-20260914-0105\` | 413 steps, 0 findings | 48 P1-31 cases executed, **47 passed, 1 failed**; the file's own tier reported 4 failed and 9 that did not run | 30 records all `ok`, 28 with an image, 0 failures |
+| `mu0g1b1a` | `…\acceptance-20260914-0216\` | 413 steps, 0 findings | 418 collected, **49 passed** (1 sign-in setup + **48 of 48 P1-31**), 0 failed, 369 skipped, 0 did not run      | 30 records all `ok`, 28 with an image, 0 failures |
 
 `mu0diepc` is kept because it is the run that found the defects, not because it is green. Its three
 findings are set out in § 9.1 and none is a product defect: an Arabic locator that matched a
