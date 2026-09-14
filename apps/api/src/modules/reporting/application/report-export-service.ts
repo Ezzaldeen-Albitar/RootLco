@@ -130,6 +130,24 @@ export class ReportExportService extends ApplicationService {
             ...page.columns.flatMap((column) => [`${column.key}.value`, `${column.key}.label`]),
           ])
         );
+        // An empty selection still carries its scope and period inside the downloaded file.
+        append(
+          csvRow([
+            page.reportCode,
+            page.filters.companyId,
+            page.filters.branchId,
+            page.period.from,
+            page.period.to,
+            page.period.timezone,
+            page.generatedAt,
+            page.freshness,
+            'context',
+            null,
+            null,
+            null,
+            ...page.columns.flatMap(() => [null, null]),
+          ])
+        );
         // Keep the engine's exact, separately keyed aggregates; never total unlike currencies/items.
         for (const group of page.groups) {
           append(

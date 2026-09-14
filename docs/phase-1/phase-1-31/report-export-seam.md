@@ -35,7 +35,9 @@ success schemas in OpenAPI derive from the route's runtime validators; the succe
 also applied before returning the response.
 
 The CSV is rectangular. Every record retains report/company/branch, period, timezone, first-read
-time and freshness. `recordType` distinguishes detail `row` records from `summary` records.
+time and freshness. The first `recordType: context` record preserves these values even when the
+selection is empty; it is not counted as a detail row. Other `recordType` values distinguish detail
+`row` records from `summary` records.
 Detail columns carry both the server's machine value and display label. Summary records carry
 the engine's group key and exact measure strings in JSON cells, plus its label. This preserves
 separate currencies and inventory units rather than inventing a combined total. Summary columns

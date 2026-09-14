@@ -85,6 +85,35 @@ describe('P1-31 report export disclosure', () => {
     );
   });
 
+  it('retains scope and period in an empty downloaded file without inventing a detail row', async () => {
+    run.mockResolvedValue(page([]));
+    const result = await service.generate(db, input);
+    expect(result).toMatchObject({ rowCount: 0, summaryCount: 0 });
+    const lines = result.file.content.trimEnd().split('\r\n');
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toContain('"context"');
+    for (const value of [
+      input.reportCode,
+      input.companyId,
+      input.branchId,
+      input.from,
+      input.to,
+      'Asia/Amman',
+      'live',
+    ]) {
+      expect(lines[1]).toContain(`"${value}"`);
+    }
+    expect(lines[1]?.split(',')).toHaveLength(lines[0]!.split(',').length);
+    expect(calls.audit).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        details: expect.arrayContaining([
+          { field: 'row_count', classification: 'internal', value: '0' },
+        ]),
+      })
+    );
+  });
+
   it.each(['rpt.export', 'rpt.report.read', 'wo.work_order.read', 'sal.finance.view'])(
     'refuses missing %s before reading rows',
     async (missing) => {
