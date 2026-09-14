@@ -334,7 +334,7 @@ async function renderGrantMap(): Promise<string> {
 }
 
 describe('P1-31-SEC-001 the least-privilege grant map', () => {
-  it('parses 45 operations over 33 route files with nothing unreadable', () => {
+  it(`parses ${String(EXPECTED_OPERATIONS)} operations over ${String(EXPECTED_ROUTE_FILES)} route files with nothing unreadable`, () => {
     expect({
       operations: SURFACE.operations.length,
       files: SURFACE.files,

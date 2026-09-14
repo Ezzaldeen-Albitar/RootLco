@@ -6476,14 +6476,18 @@ than context around it.
 | `tests/db/sal-delivery.test.ts`, `wty-warranty.test.ts`, `rpt-reporting.test.ts`                                                                | 23 / 23                    | `deca2666`                                                                                                     |
 | the whole database tier, once                                                                                                                   | 1770 / 1770 over 145 files | `88d9f133` — **not re-run at a later head**; the three files this lane changed were re-run alone at `deca2666` |
 | `tests/ci/p1-31-grant-map.test.ts`, without the write flag                                                                                      | 4 / 4                      | every head from `88d9f133` on                                                                                  |
-| `tests/ci/p1-31-error-path-matrix.test.ts`, without the write flag                                                                              | 5 / 5                      | the head of this push                                                                                          |
+| `tests/ci/p1-31-error-path-matrix.test.ts`, without the write flag                                                                              | 6 / 6                      | the head of this push                                                                                          |
 
-**Static checks.** `typecheck`, `lint`, `format:check`, `check-test-honesty` (415 test files, no
-findings), `validate:operation-coverage`, `validate:authorization-coverage`,
-`validate:p1-27-doc-counts` (151 derived claims, 0 disagreements), `security:all`,
-`validate:encoding`, `validate:generated-artifacts`, `validate:plain-language`,
-`scripts/p1-24-operation-register.mjs --check`, and
-`check-phase-ownership.mjs p1-31-backend origin/develop` — 0 violations.
+**Static checks, and the head each was last run at.** `typecheck`, `lint`, `format:check`,
+`check-test-honesty` (**416** test files, no findings), `validate:p1-27-doc-counts` (151 derived
+claims, 0 disagreements), `validate:operation-coverage`, `validate:command-coverage`,
+`scripts/p1-24-operation-register.mjs --check` (412 operations, reconciled) and
+`check-phase-ownership.mjs p1-31-backend origin/develop` (0 violations) were all run at **the head
+of this push**. `validate:authorization-coverage`, `security:all`, `validate:encoding`,
+`validate:generated-artifacts` and `validate:plain-language` were last run at **`686ed1ec`** and
+have not been re-run since: the commits after it change `tests/` and `docs/` only, and none of them
+touches an input those five read that the checks above do not already cover. They are listed here
+as what they are — clean at an earlier head of the same branch, not re-measured at this one.
 
 **These are the lane's own runs, executor-reported, on one machine.** They are **not independent
 verification and they are not the attestation.** The attestation for this branch is the hosted run
@@ -6518,6 +6522,24 @@ in both was re-checked against the file and the line it names.
 
 This is the case for the generator being in the repository rather than beside it: the uncommitted
 script and the committed test implement the same idea, and only the second one could fail.
+
+**Two smaller corrections, for the same reason.**
+
+- `075592a9`'s body said the regenerated documents changed in "nothing else but the alignment the
+  wider cells produce and the GENERATED banner". **That was false**, and the thing it hid is the
+  paragraph above: 35 citations changed from `:undefined` to a real line, which is not alignment.
+  The sentence was written from a diff read for layout rather than for content.
+- The Dispositions subsection is numbered **68.10** and was drafted as 68.8. **No landed identifier
+  was renumbered**: § 68 has never been on `develop`, and both the Verification subsection and this
+  one were inserted before it, in the same unmerged branch. The § 48.1 rule is about identifiers the
+  register has published, and it is not engaged here — but a reader comparing two drafts of this
+  branch would see the number move, so it is stated rather than left to be noticed.
+- The over-attribution the committed generator itself shipped at `075592a9` is recorded with the
+  rest: it cited `tests/db/p1-11-isolation.test.ts:117` for **every** `rpt` table, and that case
+  queries `sal.invoices` and `rpt.report_configurations` and nothing else. So
+  `rpt.report_configuration_versions` carried a citation naming a case that never touches it. The
+  generator now attributes per TABLE and reads each cited case's own body back to check the claim,
+  with the corrected case as its own falsifier.
 
 ### 68.10 Dispositions
 

@@ -19,8 +19,12 @@
  * rather than a guess. That is the property the committed documents could not have on
  * their own, and it is why they are regenerated here instead of edited.
  *
- * Set `P1_31_MATRIX_WRITE=1` to rewrite both after a deliberate change; the assertions
- * are what make the rewrite visible in review.
+ * Set `P1_31_MATRIX_WRITE=1` to rewrite both after a deliberate change. **The flag can
+ * never produce a green run**: the write happens and the case then FAILS, telling the
+ * caller to re-run without it. Writing and asserting in the same pass would have the
+ * generator satisfy its own comparison, which is the shape of a check that cannot fail —
+ * so the regeneration and the proof are deliberately two runs, and only the second one
+ * counts.
  *
  * ## The three sources, and why each is the authority for its part
  *
@@ -522,110 +526,175 @@ const SAL_MIGRATION = '20260724094000_sal_delivery.sql';
 const WTY_MIGRATION = '20260724095000_wty_warranty.sql';
 const RPT_MIGRATION = '20260724096000_rpt_reporting.sql';
 
+/** One case, named by the suite it lives in and the title it carries. */
+interface CaseRef {
+  readonly file: string;
+  readonly title: string;
+}
+
 interface PhaseTable {
   readonly table: string;
   readonly migration: string;
   /** `structural: 'module'` reads the module-schema sweep instead of the sal/wty/rpt one. */
   readonly structural: 'schema' | 'module';
-  readonly behavioural: 'sal' | 'wty' | 'rpt' | 'org' | 'review';
+  /**
+   * The behavioural read negative(s) for THIS table.
+   *
+   * Named per table rather than per schema, and every one is checked against the case's
+   * own body: a case earns a citation only where it actually queries the table. The
+   * first version of this file attributed by schema, so `p1-11-isolation.test.ts`'s
+   * read negative — which queries `sal.invoices` and `rpt.report_configurations` and
+   * nothing else — was cited for `rpt.report_configuration_versions` as well, a table
+   * it never touches. That is the over-attribution a matrix of evidence exists to
+   * prevent, committed by the document meant to prevent it.
+   */
+  readonly behavioural: readonly CaseRef[];
 }
+
+/**
+ * The body of one case, from its `it(` line to the closing brace at the same depth.
+ *
+ * Used to CHECK an attribution rather than to make one: a citation is written by hand
+ * above and then required to be about the table it claims.
+ */
+function caseBodyOf(file: string, title: string): string {
+  const located = at(file, title);
+  const lines = linesOf(file);
+  const start = Number(lineOf(located)) - 1;
+  const indent = /^\s*/.exec(lines[start] ?? '')?.[0].length ?? 0;
+  const closing = new RegExp(`^\\s{0,${String(indent)}}\\}\\);\\s*$`);
+  for (let end = start + 1; end < lines.length; end += 1) {
+    if (closing.test(lines[end] ?? '')) return lines.slice(start, end + 1).join('\n');
+  }
+  throw new Error(`${file}: "${title}" has no closing brace`);
+}
+
+/** The four database suites that carry a behavioural cross-tenant read negative. */
+const SAL_CASE: CaseRef = {
+  file: 'tests/db/sal-delivery.test.ts',
+  title: 'none of a committed tenant-A handover',
+};
+const WTY_CASE: CaseRef = {
+  file: 'tests/db/wty-warranty.test.ts',
+  title: 'none of a committed tenant-A warranty',
+};
+const RPT_CASE: CaseRef = {
+  file: 'tests/db/rpt-reporting.test.ts',
+  title: 'none of a committed tenant-A definition',
+};
+const ORG_CASE: CaseRef = {
+  file: 'tests/db/org-employees.test.ts',
+  title: 'Tenant A cannot see an employee of Tenant B',
+};
+const REVIEW_CASE: CaseRef = {
+  file: 'tests/db/org-employees.test.ts',
+  title: 'shows a runtime and a read-only session their own tenant row',
+};
+/**
+ * P1-11's own read negative. It queries `sal.invoices` and `rpt.report_configurations`
+ * and NOTHING else, so it is cited for that one `rpt` table and for no other.
+ */
+const P111_CASE: CaseRef = {
+  file: 'tests/db/p1-11-isolation.test.ts',
+  title: 'hides committed tenant-A rows from tenant B',
+};
 
 const PHASE_TABLES: readonly PhaseTable[] = Object.freeze([
   {
     table: 'sal.delivery_records',
     migration: SAL_MIGRATION,
     structural: 'schema',
-    behavioural: 'sal',
+    behavioural: [SAL_CASE],
   },
   {
     table: 'sal.authorized_receivers',
     migration: SAL_MIGRATION,
     structural: 'schema',
-    behavioural: 'sal',
+    behavioural: [SAL_CASE],
   },
   {
     table: 'sal.delivery_checklist_results',
     migration: SAL_MIGRATION,
     structural: 'schema',
-    behavioural: 'sal',
+    behavioural: [SAL_CASE],
   },
   {
     table: 'sal.delivery_signatures',
     migration: SAL_MIGRATION,
     structural: 'schema',
-    behavioural: 'sal',
+    behavioural: [SAL_CASE],
   },
   {
     table: 'sal.delivery_status_history',
     migration: SAL_MIGRATION,
     structural: 'schema',
-    behavioural: 'sal',
+    behavioural: [SAL_CASE],
   },
   {
     table: 'sal.delivery_checklist_templates',
     migration: SAL_MIGRATION,
     structural: 'schema',
-    behavioural: 'sal',
+    behavioural: [SAL_CASE],
   },
   {
     table: 'sal.delivery_checklist_template_items',
     migration: SAL_MIGRATION,
     structural: 'schema',
-    behavioural: 'sal',
+    behavioural: [SAL_CASE],
   },
   {
     table: 'sal.delivery_legacy_identity_review',
     migration: '20260910091000_sal_delivery_delivering_employee_identity.sql',
     structural: 'schema',
-    behavioural: 'review',
+    behavioural: [REVIEW_CASE],
   },
   {
     table: 'wty.warranty_policies',
     migration: WTY_MIGRATION,
     structural: 'schema',
-    behavioural: 'wty',
+    behavioural: [WTY_CASE],
   },
   {
     table: 'wty.warranty_coverage',
     migration: WTY_MIGRATION,
     structural: 'schema',
-    behavioural: 'wty',
+    behavioural: [WTY_CASE],
   },
   {
     table: 'wty.warranty_records',
     migration: WTY_MIGRATION,
     structural: 'schema',
-    behavioural: 'wty',
+    behavioural: [WTY_CASE],
   },
   {
     table: 'wty.warranty_record_items',
     migration: WTY_MIGRATION,
     structural: 'schema',
-    behavioural: 'wty',
+    behavioural: [WTY_CASE],
   },
   {
     table: 'wty.warranty_status_history',
     migration: WTY_MIGRATION,
     structural: 'schema',
-    behavioural: 'wty',
+    behavioural: [WTY_CASE],
   },
   {
     table: 'rpt.report_configurations',
     migration: RPT_MIGRATION,
     structural: 'schema',
-    behavioural: 'rpt',
+    behavioural: [RPT_CASE, P111_CASE],
   },
   {
     table: 'rpt.report_configuration_versions',
     migration: RPT_MIGRATION,
     structural: 'schema',
-    behavioural: 'rpt',
+    behavioural: [RPT_CASE],
   },
   {
     table: 'org.employees',
     migration: '20260910090000_org_employees.sql',
     structural: 'module',
-    behavioural: 'org',
+    behavioural: [ORG_CASE],
   },
 ]);
 
@@ -781,17 +850,8 @@ async function renderIsolationMatrix(): Promise<string> {
     'tests/db/org-employees.test.ts',
     'Tenant A cannot see an employee of Tenant B'
   );
-  const DB_REVIEW = cite(
-    'tests/db/org-employees.test.ts',
-    'shows a runtime and a read-only session their own tenant row'
-  );
-  const behaviouralOf = (kind: PhaseTable['behavioural']): string => {
-    if (kind === 'sal') return DB_SAL;
-    if (kind === 'wty') return DB_WTY;
-    if (kind === 'org') return DB_ORG;
-    if (kind === 'review') return DB_REVIEW;
-    return `${DB_RPT}, and \`${P111}:${lineOf(p111Read)}\``;
-  };
+  const behaviouralOf = (entry: PhaseTable): string =>
+    entry.behavioural.map((ref) => cite(ref.file, ref.title)).join(', and ');
 
   const total = OPERATION_IDS.length;
   const noRow = 'not applicable — names no row and no scope to cross with';
@@ -842,7 +902,7 @@ async function renderIsolationMatrix(): Promise<string> {
   for (const entry of PHASE_TABLES) {
     const structuralCell = entry.structural === 'module' ? moduleSweep : structural;
     lines.push(
-      `| \`${entry.table}\` | \`supabase/migrations/${entry.migration}\` | ${structuralCell} | ${behaviouralOf(entry.behavioural)} |`
+      `| \`${entry.table}\` | \`supabase/migrations/${entry.migration}\` | ${structuralCell} | ${behaviouralOf(entry)} |`
     );
   }
   lines.push('');
@@ -924,6 +984,42 @@ describe('P1-31-QA-002 / QA-003 the two matrices', () => {
     expect(unknown).toEqual([]);
   });
 
+  it('cites a database case for a table only where that case queries the table', () => {
+    /*
+     * The check the first version of this file did not have. Attribution was by SCHEMA,
+     * so `p1-11-isolation.test.ts`'s read negative — which queries `sal.invoices` and
+     * `rpt.report_configurations` and nothing else — was cited for
+     * `rpt.report_configuration_versions` too, a table it never touches. A citation that
+     * names a case which does not assert on the row is worse than a blank cell: it reads
+     * as evidence and is not.
+     *
+     * So every Layer-1 citation is read back out of the cited case's own BODY. The
+     * mapping above is written by hand, because which case covers which table is a
+     * judgement; whether the case is about that table is not, and that half is measured.
+     */
+    for (const entry of PHASE_TABLES) {
+      expect({ table: entry.table, cases: entry.behavioural.length }).toEqual({
+        table: entry.table,
+        cases: entry.behavioural.length,
+      });
+      expect(entry.behavioural.length).toBeGreaterThan(0);
+      for (const ref of entry.behavioural) {
+        const body = caseBodyOf(ref.file, ref.title);
+        expect({
+          table: entry.table,
+          case: ref.title,
+          queries: body.includes(entry.table),
+        }).toEqual({ table: entry.table, case: ref.title, queries: true });
+      }
+    }
+
+    // And the falsifier: the case that used to be over-attributed does NOT name the
+    // table it was cited for, so the check above would have caught it.
+    const p111 = caseBodyOf(P111_CASE.file, P111_CASE.title);
+    expect(p111.includes('rpt.report_configurations')).toBe(true);
+    expect(p111.includes('rpt.report_configuration_versions')).toBe(false);
+  });
+
   it('refuses a citation that resolves to no line or to more than one', () => {
     // The guarantee every cell rests on, exercised rather than described: `at` throws
     // both ways round. Without this the resolver could quietly return a first match and
@@ -962,13 +1058,21 @@ describe('P1-31-QA-002 / QA-003 the two matrices', () => {
 
   it('matches the committed error-path matrix exactly', async () => {
     const rendered = await renderErrorPathMatrix();
-    if (process.env.P1_31_MATRIX_WRITE === '1') writeFileSync(ERROR_PATH_MATRIX, rendered, 'utf8');
+    if (process.env.P1_31_MATRIX_WRITE === '1') {
+      writeFileSync(ERROR_PATH_MATRIX, rendered, 'utf8');
+      // Never green under the flag: a pass here would be the generator agreeing with
+      // what it has just written.
+      expect.fail('documents regenerated; re-run without the flag');
+    }
     expect(committed(ERROR_PATH_MATRIX)).toBe(rendered);
   });
 
   it('matches the committed isolation matrix exactly', async () => {
     const rendered = await renderIsolationMatrix();
-    if (process.env.P1_31_MATRIX_WRITE === '1') writeFileSync(ISOLATION_MATRIX, rendered, 'utf8');
+    if (process.env.P1_31_MATRIX_WRITE === '1') {
+      writeFileSync(ISOLATION_MATRIX, rendered, 'utf8');
+      expect.fail('documents regenerated; re-run without the flag');
+    }
     expect(committed(ISOLATION_MATRIX)).toBe(rendered);
   });
 });

@@ -1426,7 +1426,7 @@ afterAll(async () => {
 // ---------------------------------------------------------------------------
 
 describe('P1-31-SEC-004 E-0 — the privileged write set, parsed', () => {
-  it('is 24 privileged writes over the 33 route files, all readable and all registered', () => {
+  it(`is ${String(EXPECTED_PRIVILEGED)} privileged writes over the ${String(EXPECTED_ROUTE_FILES)} route files, all readable and all registered`, () => {
     expect({
       privileged: SURFACE.privileged.length,
       files: SURFACE.files,

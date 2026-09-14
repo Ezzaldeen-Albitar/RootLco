@@ -41,7 +41,7 @@ A cross-tenant INSERT is refused on every `sal`, `wty` and `rpt` table by `tests
 | `wty.warranty_record_items`             | `supabase/migrations/20260724095000_wty_warranty.sql`                              | `tests/db/p1-11-isolation.test.ts:58`   | `tests/db/wty-warranty.test.ts:216`                                              |
 | `wty.warranty_status_history`           | `supabase/migrations/20260724095000_wty_warranty.sql`                              | `tests/db/p1-11-isolation.test.ts:58`   | `tests/db/wty-warranty.test.ts:216`                                              |
 | `rpt.report_configurations`             | `supabase/migrations/20260724096000_rpt_reporting.sql`                             | `tests/db/p1-11-isolation.test.ts:58`   | `tests/db/rpt-reporting.test.ts:156`, and `tests/db/p1-11-isolation.test.ts:117` |
-| `rpt.report_configuration_versions`     | `supabase/migrations/20260724096000_rpt_reporting.sql`                             | `tests/db/p1-11-isolation.test.ts:58`   | `tests/db/rpt-reporting.test.ts:156`, and `tests/db/p1-11-isolation.test.ts:117` |
+| `rpt.report_configuration_versions`     | `supabase/migrations/20260724096000_rpt_reporting.sql`                             | `tests/db/p1-11-isolation.test.ts:58`   | `tests/db/rpt-reporting.test.ts:156`                                             |
 | `org.employees`                         | `supabase/migrations/20260910090000_org_employees.sql`                             | `tests/db/shared-hardening.test.ts:329` | `tests/db/org-employees.test.ts:180`                                             |
 
 ## Layer 2 — the application
