@@ -5569,13 +5569,15 @@ nothing here upgrades a local number into an attested one.
 
 ## 66. The scope-target contract applied to the three body-scoped creates — **SETTLED** (SEC-003-O1, CC-56)
 
-**Slice:** `remediation/p1-31-backend-scope-target-creates`, ownership profile `p1-31-backend`.
+**Slice:** `remediation/p1-31-backend-scope-target-creates`, ownership profile `p1-31-backend`,
+opened as pull request [#391](https://github.com/Ezzaldeen-Albitar/RootLco/pull/391).
 **Baseline:** protected `develop` **`72f3a71ee4a8204c494913e40e6c2a43cd683e36`** — the merge of pull
 request #388, the closure re-measure — **synced to `aa20c959`**, the merge of pull request #390 (P-18,
 § 65), which carried pull request #389 (§ 63) with it. `main` `1262de74`, untouched. The measurements
 in § 66.6 were taken before that sync and are re-recorded at the merged head by
 `P1-31-SEC-003-008`; the run ledger this slice commits is the authority for what ran, and it names
-its own commit.
+its own commit. **No result of #391's own hosted run is claimed anywhere in this section**; every
+figure here is LOCAL and says so.
 
 **Why it exists.** § 59.6 recorded **SEC-003-O1** — the three P1-31 body-scoped creates refuse a
 foreign company with two different documents — and the closure record calls the repair "a contract
