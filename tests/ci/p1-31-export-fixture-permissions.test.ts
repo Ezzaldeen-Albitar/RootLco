@@ -41,6 +41,7 @@ import {
   FIXTURE_GRANT_HOURS,
   REQUIRED_OPERATOR_CODE,
 } from '../../scripts/dev/owner-acceptance/export-fixture-setup.mjs';
+import { REQUIRED_PLATFORM_CODE } from '../../scripts/platform/backfill-tenant-administrator-bundle.mjs';
 import {
   REPORT_DATASETS,
   REPORT_DATASET_CODES,
@@ -115,10 +116,19 @@ describe('the P1-31 export fixture grants exactly what the export path needs', (
   });
 
   it('is authorised by an existing platform code and time boxed', () => {
-    // The authority is the code `platform.organization-provision` already declares — the
-    // operation that created the organisation this fixture is installed in. Minting a new
-    // platform permission for a test fixture is what this asserts has not happened.
-    expect(REQUIRED_OPERATOR_CODE).toBe('platform.organization.provision');
+    /*
+     * The SAME authority the committed tenant-administrator backfill runs under, compared
+     * against that script's own exported constant rather than against a string typed here.
+     *
+     * Two things follow from writing it this way. Minting a new platform permission for a
+     * test fixture is what this asserts has not happened — the code already sanctions
+     * writing role permissions into an organisation, because that is what provisioning one
+     * does. And the code is not NAMED in this file: the operation register attributes a
+     * test file to every operation whose id it mentions, and a fixture-permission test is
+     * not coverage of the provisioning operation. Comparing the two constants states the
+     * fact without making that false claim.
+     */
+    expect(REQUIRED_OPERATOR_CODE).toBe(REQUIRED_PLATFORM_CODE);
     expect(
       FIXTURE_GRANT_HOURS,
       'the fixture grant must expire within the window of one acceptance run'
