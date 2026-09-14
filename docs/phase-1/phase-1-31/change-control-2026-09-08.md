@@ -7064,6 +7064,7 @@ the warranty record screen now renders the ledger it used to say it could not re
 | ---------- | ----------------------------------------------------- | -------------------------------------------- |
 | section 69 | this slice                                            | this branch, reserved for it before it began |
 | **CC-59**  | FE-009's screen half — the record consumes the reader | this branch                                  |
+| **CC-61**  | P-12's backend half — the report export contract      | this branch, allocated at § 69.13.1          |
 
 _Historical prepared-head table: read with the integrated state in § 69.9 below._
 
@@ -7337,3 +7338,209 @@ After that review, web typechecking and the two changed browser-proof files' lin
 re-executed successfully; raw output is retained in `post-review-static.log` in the same
 external evidence directory. The code is unchanged from `5224feaa`. The closing-values
 gate again reported zero problems and the evidence manifest remained in sync.
+
+### 69.13 P-12 — explicitly authorized report export
+
+The recorded D-6 instruction of 2026-09-09 directs completion of the report-export contract with
+explicit authorization and auditability. The instruction was not a deferral. Backend source
+f8939ede90b6e73bddc83e413ed8e6f21cf9bbc8 implements it on the mapped P1-31 backend lane, based on
+protected develop 32c797546f39bc9033dda95181571ce38b2f11cc. The prior source commit a9de7053 and its
+initial verification failures remain in history. Section 70 remains reserved for closing acceptance.
+
+The published POST /api/v1/reports/{reportCode}:export generates actual bounded CSV in its JSON
+response. It requires scoped rpt.export, report-read, dataset permissions and the explicit
+published tenant configuration's export permission. No baseline export entitlement, role grant,
+bootstrap widening or audit-log export is introduced. It reuses the report runner's selection,
+preserves detail values/labels and exact separately keyed summary measures, neutralizes formula
+prefixes, rejects oversized/nonadvancing exports and commits an append-only disclosure audit before
+returning content. The result states live freshness; no snapshot or durable storage claim is made.
+
+[The seam record](./report-export-seam.md) specifies the request, result, limits, context and audit.
+Runtime request/result validators supply the new operation's OpenAPI schemas. Optional schema
+metadata leaves older operations' published shapes unchanged; this is not a claim to have repaired
+the platform-wide bare-object-schema limitation.
+
+The published operation population is 413, with 47 operations across the P1-31 namespace census,
+13 declared permission codes and 14 distinct declaration sets. The new service enlarges the actual
+backend coverage population by one; no coverage floor is weakened. The backend register, operation
+coverage, idempotency/audit metadata, least-privilege map and both refusal/isolation matrices are
+regenerated from their controlled tools. The map documents declarations; it grants nothing.
+
+LOCAL targeted verification at the corrected source: 91/91 integration checks across 8 files and
+314/314 backend cases across the report-engine and phase-wide privilege-escalation suites.
+The backend witness used only the newly created p131_astra_export_20260914 database at 127.0.0.1:55432
+on the previously designated disposable container. 141 migrations and the declared seeds replayed
+there. The shared 54322 acceptance database was not reset, cleaned or used by this slice.
+
+The initial full unit record at a9de7053 counted 3398 cases with 15 failures: inventory/census pins,
+the new operation's missing matrix row and request-schema export, and their derived records.
+Those failures triggered the correction commit; they are not a pass. The initial focused backend
+run also retained a wrong audit-table name in the new test query, corrected before the passing
+backend evidence. Matrix write-mode deliberately fails after generation; only a subsequent
+no-write run is validation. A manual phase-ownership invocation selected its documented legacy
+frontend default; the actual mapped p1-31-backend profile then passed against the declared base.
+
+The candidate's final LOCAL counts are recorded below. Engineering review, PR checks and protected
+integration are still pending at this record. No browser export journey, phase verdict or human
+certification is claimed by these backend checks.
+
+The next full unit measurement at fac0eb04 executed 3398 cases with 7 failures and zero skips.
+Six failures concerned the prior ledger's now-stale count statements or evidence digest; the
+seventh correctly refused a missing ReportExportBody frontend mirror. The backend prerequisite
+has no frontend consumer yet. It is therefore recorded in the gate's existing pending-consumer
+lifecycle, which requires removal as soon as the next frontend integration adds its consumed
+mirror. This is an explicit integration dependency, not a completion claim or waived requirement.
+The measured count statements and controlled evidence manifest were refreshed before revalidation.
+
+Source `56d7011446873e7c0bfee0adf17e4db2e8546c70` then passed all 3398 unit cases and 4057 web
+cases, with zero failures or skips. Final inspection identified an empty-selection context gap:
+the JSON result carried the selected scope/period, but a CSV with no details or groups contained
+only its header. Source `f8939ede90b6e73bddc83e413ed8e6f21cf9bbc8` corrects that gap with an
+explicit context record inside every CSV, excluded from detail and summary counts. Its focused
+export suite passes 26 cases, including a zero-row disclosure audit and a rectangular empty file.
+
+Final LOCAL measurements at `f8939ede90b6e73bddc83e413ed8e6f21cf9bbc8`:
+
+- Root unit: **3399/3399**, 129 files, zero failures/skips, runner exit 0 and reporter success.
+- Web: **4057/4057**, 142 files, zero failures/skips, runner exit 0 and reporter success.
+- Both records carry no dirty executable paths. The recorded counts and their closing-value
+  locators are reconciled with the controlled run ledger; prior failed records are retained
+  externally, rather than rewritten into passing observations.
+- API typechecking and the changed service/test lint checks pass after the context correction.
+  The whole-root formatter reported the test while that new regression was being formatted;
+  the completed targeted format check passes. This overlapping check is not represented as a
+  whole-root format pass.
+
+Raw logs and reporter JSON are in the shared workspace's
+`orchestration/evidence/p1-31/astra-fe009-20260914/`, with `export-` prefixes distinguishing them
+from FE-009's earlier records. The 314-case database/security evidence above establishes the
+unchanged authorization and isolation behavior; the later empty-file change is covered by the
+new unit witness and final full tiers. It did not alter SQL, permission requirements or the route.
+
+The final `verify:policies` run passes, including the request-mirror lifecycle, the evidence
+manifest, all 151 derived documentation claims and the closing-values gate with zero problems.
+The P1-27 lifecycle output belongs to that earlier phase and is not a P1-31 closure verdict.
+The final export candidate is ready for its consolidated engineering review; no export PR,
+hosted result or protected merge is claimed by this LOCAL record.
+
+_(2026-09-14, P-12 record deviation, beside this slice text: the three correction commits
+`eba70a5c`, `59e30872` and `0cf1fe5e` are subjected `P1-31:` and carry no canonical task
+identifier, against `CONTRIBUTING.md:48`; every other commit on this branch uses the
+`P1-31-QA-002-0nn:` form. They are deliberately NOT rewritten: they are already merge parents
+inside the combined LOCAL frontend branch, so rewriting them would orphan that branch's merge
+history. The deviation is recorded here rather than repaired by rewriting shared history, and
+the correction commits made after this note carry the canonical form.)_
+
+### 69.13.1 Consolidated review correction — CC-61
+
+CC-61 is allocated to the P-12 backend implementation and its integration corrections.
+Section 70 / CC-60 remains reserved for closing evidence; the existing 69.13 locator is retained
+rather than renumbered. This supplemental allocation does not fold export into the older FE-009
+scope of CC-59. The temporary pending-consumer exclusion for rpt.report-export belongs to CC-61:
+it widens that exclusion list until a consumer exists, and must be removed in the same frontend
+change that adds the consumed mirror. It is already removed in the local frontend integration.
+
+Fable's consolidated review of d3257416 on 2026-09-14 found four blockers: stale declaration and
+permission pins in the phase audit-emission suite, and two security records that had not been
+annotated for the export-class operation. Those are corrected together. The 24 privileged-action
+cases remain unchanged; the phase census is 47 declarations over 34 files with 13 permission codes.
+The audit-class record now reviews the export action and preserves the separate question about
+silent on-screen reads. The seam states the relationship to P1-15 export authorizations and records
+the existing rate policy and absence of file digest/byte-length audit provenance as limitations.
+
+The earlier 314-case measurement covers exactly its two named suites, not the entire backend tier.
+A full backend run on the same disposable database is required before re-freeze; until recorded,
+no full backend pass is claimed. Unit/web evidence is also re-recorded after executable corrections,
+and the controlled ledger/manifests are refreshed last. No final review verdict or hosted result
+is inferred from these corrections.
+
+### 69.13.2 Actual full-tier review measurements and final correction
+
+The full LOCAL backend tier at eba70a5cf68e682eecf164f3f66e97d5c839485a executed **3383 cases**
+across **144 files**: **3382 passed, one failed, zero skipped**, runner exit 1. The one failure was
+the provisioning-bundle suite's expected list of rpt.export declarers, which still named only the
+two P1-15 operations. The corrected phase audit-emission suite and the other backend suites passed.
+The failure is retained, not described as a full-tier pass.
+
+Source **59e3087222e948decabe4520a78d8e0695fe9142** adds rpt.report-export to that expected list and
+states explicitly that CC-04 still excludes rpt.export from the administrator bundle. It changes
+only this test expectation/comment, no API code or permissions. The entire affected provisioning
+suite then passed **8/8** on the same disposable database. A passing full hosted backend integration
+job at the actual PR head is still required before merge, as allowed by review item 5; neither the
+cross-run evidence nor that future required job is represented as an already passing full LOCAL tier.
+
+The first unit record at eba70a5c had **3397 passes and two failures**, zero skips. Both failures were
+in P1-28 evidence-seal tests; one case took 269 seconds and the other reported a pending-binding
+mismatch. A direct subsequent evaluation reported zero pending-binding problems without changing
+that seal. The serial full unit record at 59e30872 passed **3399/3399**, 129 files, zero failures/skips,
+exit 0, no dirty executable paths, measured 2026-09-14T12:02:30.286Z. These observations do not identify
+a proven root cause for the first run's failures; they preserve both the failure and non-reproduction.
+The web tier at eba70a5c passed 4057/4057, 142 files; the current-source record follows separately.
+
+Raw reports, logs and the failed-cycle ledger are retained with eba70/59e308 identifiers in the
+external export evidence directory. No failed record is overwritten into a passing one. The original
+d3257416 candidate manifest also remains separate from the corrected review manifest.
+
+The final LOCAL web record at 59e30872 passed **4057/4057**, 142 files, zero failures/skips, exit 0,
+no dirty executable paths, measured 09/14/2026 12:06:28. Together with the serial unit
+record, both controlled tiers now describe the corrected source. Full hosted backend verification
+remains required before merge; neither these records nor engineering review supplies certification.
+
+Final verify:policies passes after the controlled record refresh, including zero closing-value
+problems and the current evidence manifest. Contract validation and API types at the unchanged API
+source, plus lint on the final corrected test, pass. The corrected candidate awaits bounded
+engineering re-review and its actual hosted required checks; no human certification is implied.
+
+_(2026-09-14, P-12 correction beside the preceding contract sentence: that sentence was measured
+BEFORE source `59e30872`, and the evidence log it rests on records "OK: register is current and
+reconciled" at the earlier head. It is retained as written and is NOT the authority for the
+reviewed candidate. At `0cf1fe5e` the same contract step exited **1**: `validate:p1-24-register`,
+and therefore `verify:contracts` which runs it, failed with the single problem that the generated
+register was stale. The mechanism is that the generator records test references by raw substring,
+and `59e30872` added the literal `'rpt.report-export'` to
+`tests/backend/p1-31-provisioning-bundle.test.ts`, so that operation owed one more entry in its
+`tests` array. The register was regenerated in commit `e164a315`: exactly one entry changed by one
+added array element, with the operation population and the coverage classification both unmoved at
+413 of 413. **Re-measured at `e164a315` on 2026-09-14, on a clean tree:**
+`npm run validate:p1-24-register` exit 0, `npm run verify:contracts` exit 0, `npm run typecheck`
+(root) exit 0, `npm run lint` (root) exit 0. Nothing beyond those four commands is re-measured by
+this note; no hosted job, no database or web tier, and no approval is asserted.)_
+
+_(2026-09-14, P-12 addendum beside the two provenance sentences of this section: those sentences name the
+run-ledger entries "at `59e30872` … measured 2026-09-14T12:02:30.286Z" for the unit tier and "at
+`59e30872` … measured 09/14/2026 12:06:28" for the web tier. Both are retained exactly as written and
+were true when written; the ledger entries they cite no longer exist, because both controlled tiers have
+since been re-run and re-recorded twice. First at `0561d8d6`, after the citation correction: unit measured
+2026-09-14T14:26:45.467Z, web measured 2026-09-14T14:28:33.709Z. Then at `59b9c6e4`, after the docblock
+count corrections of this batch: unit measured 2026-09-14T16:44:50.618Z, web measured
+2026-09-14T16:46:47.690Z. **The figures did not move across either re-record** — unit **3399 of 3399**
+over **129 files**, web **4057 of 4057** over **142 files**, zero failures, zero skips, runner exit 0 and
+no dirty executable paths on every one of those records.
+`docs/phase-1/phase-1-27/evidence/local-run-ledger.json` now carries the `59b9c6e4` measurement, which is
+the only provenance this note offers as current. Nothing beyond those two controlled tiers is re-measured
+by this note: no full backend tier, no hosted job and no approval.)_
+
+### 69.13.3 Dispositions — CC-61
+
+| id            | finding                                                                                                    | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | disposition                                                                                                                                                                                                                                                                                                    | owner / slice                                     | state                                                                                                                                                                                                                                                                                                                    |
+| ------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **CC-61**     | **P-12: the D-6 report-export contract is published as an explicitly authorized, audited operation**       | `POST /api/v1/reports/{reportCode}:export` declares `rpt.export` with the report and dataset reads and the published tenant configuration's own export permission, `auditClass: 'export'` and the action `rpt.report.exported`. The phase census at this head is **47 operations over 34 route files**, **13** distinct permission codes, **14** distinct declared-code sets, **24 privileged / 22 none / 1 export**, and `reports (3, 4)`; the platform register holds 413 operations, 413 Covered | **recorded as landed in source, and NOT recorded as closed.** No baseline export entitlement, role grant or bootstrap widening is introduced and `rpt.export` stays withheld from the administrator bundle under CC-04. The rows below are the conditions this identifier still carries                        | this slice, then the integration that consumes it | **open, recorded — the sub-rows below are what it closes on**                                                                                                                                                                                                                                                            |
+| **CC-61 (a)** | **the backend prerequisite is published before any frontend consumer, so the write-shape gate is widened** | `PENDING_MIRRORS` in `scripts/ci/check-p1-31-write-shape.mjs:171` carries `rpt.report-export` with the sentence that the next P1-31 frontend integration owes the consumed `ReportExportBody` mirror. The same file's lifecycle docblock binds the entry: the moment the mirror declares the interface the entry is STALE and the gate fails until it is deleted                                                                                                                                    | **recorded as a temporary widening with a named remover, not as a waiver.** It **must be removed in the same frontend change that adds the consumed mirror**, which is the lifecycle the gate already enforces on itself. Backend publication is not frontend completion and is not described as one           | the next P1-31 frontend integration               | **open until the consumed mirror lands and the entry is deleted in that change**                                                                                                                                                                                                                                         |
+| **CC-61 (b)** | **the export has no separate daily allowance — only the shared expensive-read policy and a size bound**    | `report-export-seam.md:79-80` states the `expensive-read` rate policy and the 8 MiB response bound apply and that there is no separate daily export allowance. Both check out: the operation declares `rateLimitPolicy: 'expensive-read'` at `apps/api/src/app/api/v1/reports/[reportCode]/route.ts:100`, and `MAX_FILE_BYTES = 8 * 1024 * 1024` is `report-export-service.ts:37`; `export-policy.ts:74` is where the shared `rpt.export` permission itself comes from                              | **recorded as a product limitation rather than repaired here.** A dedicated disclosure allowance is a policy decision with an Owner input, not a correction this slice may make, so the limit the operation actually enforces is written down instead of implied                                               | a future policy decision                          | **open, recorded as a limitation**                                                                                                                                                                                                                                                                                       |
+| **CC-61 (c)** | **the disclosure audit cannot identify the exact bytes that were downloaded**                              | `report-export-seam.md:80-82` states the audit records the selection and the counts, not a digest or a byte length of the file, so it cannot identify the exact downloaded bytes later. `report-export-service.ts:210-225` appends `rpt.report.exported` inside the request transaction before the result is returned at `:226`, and its `details` carry the report code, the scope, the period, the timezone, the row and summary counts and the reason — no digest and no byte length             | **recorded as a limitation, and the audit is deliberately not described as durable-file provenance.** The append-only disclosure record proves that a disclosure happened, who made it and what was selected; it does not prove which bytes left. Adding a digest is a contract change and is not claimed here | a future contract change                          | **open, recorded as a limitation**                                                                                                                                                                                                                                                                                       |
+| **CC-61 (d)** | **no hosted job has run at any head of this candidate**                                                    | Every measurement recorded for this slice is LOCAL. The full local backend tier is recorded with its one failure and its correction, and the disposable-database runs are named with their database                                                                                                                                                                                                                                                                                                 | **a passing full HOSTED backend integration job at the actual pull-request head is required before merge.** Until that job is recorded, no full backend pass is claimed, and neither the local records nor any engineering review supplies it                                                                  | the pull request, before any protected merge      | **open — the condition is required before merge and is not satisfied by this head** — _retained as written and true when written; 2026-09-14: **the required hosted job has since run and passed at head `b62ad310`**, so the condition this row carries is discharged at that head — see the addendum below this table_ |
+
+_(2026-09-14, P-12 addendum to CC-61 (d): the finding sentence "no hosted job has run at any head of this
+candidate" and the original wording of its state cell are retained above and were true when written. A
+hosted run has since completed at the pull request's current head `b62ad310`. Read back from the
+repository's own check-runs API on 2026-09-14 before this note was written: **integration tests —
+success, completed 2026-09-14T15:29:24Z**, job
+`https://github.com/Ezzaldeen-Albitar/RootLco/actions/runs/34861493861/job/104034691136`; in that same run
+`34861493861`, **hosted clean room — success, completed 15:40:25Z** and **unit tests with coverage
+— success, completed 15:22:56Z**. All **21** check runs reported for `b62ad310` carry the conclusion
+`success`, including the five contexts the `Protect develop` ruleset requires: `Docker build validation`,
+`Secret and sensitive-file scan`, `Lint, types, tests, build`, `Database migrations and RLS tests` and
+`ci-gate`. The condition this row states — a passing full hosted backend integration job at the actual
+pull-request head — is therefore satisfied at `b62ad310`. Nothing beyond those job conclusions is
+claimed here: no phase verdict, no human certification, no promotion and no merge. The observation is bound
+to that head, and a later commit on this branch does not inherit it.)_

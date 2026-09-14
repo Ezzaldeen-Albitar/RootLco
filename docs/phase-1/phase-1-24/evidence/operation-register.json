@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 412,
-    "openapiPaths": 320,
-    "openapiOperations": 412,
+    "operations": 413,
+    "openapiPaths": 321,
+    "openapiOperations": 413,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -11,10 +11,10 @@
     "outboxForeignWriters": 0,
     "errorCodes": 28,
     "permissionCodes": 121,
-    "auditActions": 234
+    "auditActions": 235
   },
   "counts": {
-    "Covered": 412
+    "Covered": 413
   },
   "operations": [
     {
@@ -9369,6 +9369,53 @@
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/report-configurations/[configurationId]/versions/[versionId]/publish/route.ts"
+    },
+    {
+      "id": "rpt.report-export",
+      "domain": "reporting",
+      "method": "POST",
+      "route": "/api/v1/reports/{reportCode}:export",
+      "permissions": ["rpt.export", "rpt.report.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "transactional write",
+      "auditClass": "export",
+      "auditAction": "rpt.report.exported",
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/reports/{reportCode}:export",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": [
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
+        "tests/backend/p1-31-report-engine-work-orders.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts",
+        "tests/foundation/operation-registry.test.ts",
+        "tests/foundation/p1-15-catalogs.test.ts"
+      ],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/reports/[reportCode]/route.ts"
     },
     {
       "id": "rpt.report-read",

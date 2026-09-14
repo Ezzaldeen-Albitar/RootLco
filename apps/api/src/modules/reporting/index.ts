@@ -23,9 +23,11 @@ import { composeModule } from '@/server/layering';
 import { ReportCatalogueRepository } from './data/report-catalogue-repository';
 import { ReportCatalogueService } from './application/report-catalogue-service';
 import { ReportRunService } from './application/report-run-service';
+import { ReportExportService } from './application/report-export-service';
 import { ReportConfigurationRepository } from './data/report-configuration-repository';
 import { ReportConfigurationService } from './application/report-configuration-service';
 
+export type { ReportExportInput, ReportExportView } from './application/report-export-service';
 export type {
   ReportDefinitionSource,
   ReportDefinitionView,
@@ -97,6 +99,10 @@ export const reportingModule = composeModule({
     catalogue: new ReportCatalogueService(new ReportCatalogueRepository()),
     // Tenant restrictions come from rpt; dataset rows remain behind wo's port.
     runs: new ReportRunService(new ReportCatalogueRepository()),
+    exports: new ReportExportService(
+      new ReportCatalogueRepository(),
+      new ReportRunService(new ReportCatalogueRepository())
+    ),
     configurations: new ReportConfigurationService(new ReportConfigurationRepository()),
   }),
 });

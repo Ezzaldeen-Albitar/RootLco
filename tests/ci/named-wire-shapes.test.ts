@@ -136,8 +136,9 @@ describe('every route body serialises a named type', () => {
     // gate refuses an inline return type, and naming it is what let the row shape
     // be named `WarrantyStatusHistoryEntryView` as well — so `named` moves by one
     // and `composed` does not.
-    expect(summary.bodies).toBe(412);
-    expect(summary.named).toBe(359);
+    // P1-31 P-12 adds the named ReportExportView response.
+    expect(summary.bodies).toBe(413);
+    expect(summary.named).toBe(360);
     expect(summary.composed).toBe(53);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

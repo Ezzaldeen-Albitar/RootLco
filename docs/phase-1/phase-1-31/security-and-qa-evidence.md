@@ -189,6 +189,15 @@ and 22 `auditClass: 'none'`**. Nothing else in it moves: the new operation is a 
 twelve. **No other figure in this record is touched by this correction**; the closing re-measure
 re-derives the whole index at one head, which is this file's rule 5.)_
 
+_(2026-09-14, P-12 correction: the candidate adds `rpt.report-export` to the existing report route.
+The current census is **47 operations across 34 route files**, `reports` (3, 4), **25 writes and
+22 reads**, **24 privileged, 22 none and one export** class, and **13 distinct permission codes**
+with the addition of `rpt.export`. The counts of version-guarded and idempotent operations remain
+11 and 16. The preceding 46/34/12 observations retain their historical basis; they are not the
+authority for the new candidate's backend pins. The audit-emission suite still covers exactly
+24 privileged operations; report-export disclosure is separately covered in the report-engine
+suite and reviewed in `audit-class-review.md` § 4.2. Full final index re-derivation remains due.)_
+
 ## 1. SEC-001 — least privilege and resolved scope
 
 **Transposed definition.** P1-28 SEC-001 is "least-privilege permission and resolved-scope

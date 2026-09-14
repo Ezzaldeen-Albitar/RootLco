@@ -507,7 +507,8 @@ describe('the coverage include lists are pinned, because they are the denominato
       typeScriptFilesUnder(pattern.slice(0, -'/**/*.ts'.length))
     );
     expect(files.filter((file) => file.endsWith('.d.ts'))).toEqual([]);
-    expect(files.length).toBe(290);
+    // P1-31 P-12 adds ReportExportService to the measured backend population.
+    expect(files.length).toBe(291);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -585,6 +586,6 @@ describe('the coverage include lists are pinned, because they are the denominato
      * together by the same count is what says no file slipped in behind the
      * exclusion.
      */
-    expect(instrumented.length).toBe(289);
+    expect(instrumented.length).toBe(290);
   });
 });

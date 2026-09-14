@@ -61,7 +61,8 @@ describe('every operation publishes the success status it returns', () => {
     expect(unresolved).toEqual([]);
     // 412 with the P1-31 warranty status-history read (P-18), one further route
     // module whose single literal status the scanner resolves from the handler.
-    expect(actual.size).toBe(412);
+    // P1-31 P-12 adds one 200 export response.
+    expect(actual.size).toBe(413);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -133,7 +134,7 @@ describe('every operation publishes the success status it returns', () => {
     // GET returning 200 with the 201 and 202 counts unchanged. That pair not
     // moving is the assertion carrying weight: a ledger read that had shipped an
     // append beside it would show up here and nowhere else in this file.
-    expect(counts[200]).toBe(296);
+    expect(counts[200]).toBe(297);
   });
 
   it('reads the handler, not the declaration', () => {

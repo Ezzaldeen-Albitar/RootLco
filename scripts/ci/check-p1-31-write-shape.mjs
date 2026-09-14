@@ -142,7 +142,7 @@ export const DISPOSITIONS = Object.freeze({});
  * Operations whose request-body mirror does not exist, keyed by operation id,
  * each with a `PENDING: ` reason.
  *
- * The four `rpt.report-configuration-*` writes with a body are the whole of it,
+ * The four `rpt.report-configuration-*` writes with a body are the original set,
  * and they are here because they have NO consumer: nothing under `apps/web` references them except the
  * generated `lib/api/idempotent-operations.ts` manifest, which is never a
  * mirror. Writing an interface for them would manufacture the
@@ -150,6 +150,10 @@ export const DISPOSITIONS = Object.freeze({});
  * pending with the reason instead — change-control CC-37(b). The fifth
  * configuration write, `rpt.report-configuration-version-publish`, parses no
  * body at all and is declared in `BODYLESS`.
+ *
+ * `rpt.report-export` is published by the P-12 backend prerequisite before its
+ * frontend download control. That next integration must add its consumed mirror
+ * and remove this pending entry; backend publication is not frontend completion.
  *
  * `wty.warranty-generate` was declared here for a different reason and no
  * longer is: it HAS a consumer — the handover screen's issue control sends it —
@@ -163,6 +167,8 @@ export const DISPOSITIONS = Object.freeze({});
  * is STALE and this gate fails until it is deleted in that same change.
  */
 export const PENDING_MIRRORS = Object.freeze({
+  'rpt.report-export':
+    'PENDING: P-12 backend prerequisite is published before its frontend download control; the next P1-31 frontend integration owes the consumed ReportExportBody mirror',
   'rpt.report-configuration-create':
     'PENDING: no screen or adapter in apps/web calls this write — CC-37(b); the phase that builds the configuration screen owes the mirror',
   'rpt.report-configuration-update':

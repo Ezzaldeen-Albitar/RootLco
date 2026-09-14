@@ -95,6 +95,10 @@ export interface OperationDeclaration {
    * the two disagree, so this field is checked rather than trusted.
    */
   readonly successStatus?: 200 | 201 | 202 | 204;
+  /** Optional JSON Schemas supplied by the operation's runtime validators. */
+  readonly requestBodySchema?: Readonly<Record<string, unknown>>;
+  readonly successBodySchema?: Readonly<Record<string, unknown>>;
+  readonly pathParameterSchemas?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
 }
 
 export interface RegisteredOperation extends OperationDeclaration {
@@ -115,13 +119,14 @@ export class OperationRegistrationError extends Error {
 
 const ID_PATTERN = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/;
 /**
- * Each segment is either a lower-case literal or a `{camelCase}` parameter.
+ * Each segment is either a lower-case literal or a `{camelCase}` parameter,
+ * optionally followed by a lower-case custom action, e.g. `{reportCode}:export`.
  *
  * P1-13's pattern was a character class, which accepted `/a{b}c}` and rejected
  * `{userId}` (no upper case) — fine while no route had a parameter, wrong as
  * soon as one did. This form states the grammar instead of the alphabet.
  */
-const PATH_PATTERN = /^(?:\/(?:[a-z0-9-]+|\{[a-z][a-zA-Z0-9]*\}))+$/;
+const PATH_PATTERN = /^(?:\/(?:[a-z0-9-]+|\{[a-z][a-zA-Z0-9]*\}(?::[a-z][a-z0-9-]*)?))+$/;
 
 /**
  * Registers an operation. Throws — loudly, at import time — when the declaration

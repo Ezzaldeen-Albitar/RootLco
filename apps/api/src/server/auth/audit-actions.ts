@@ -1798,6 +1798,12 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'A warranty coverage window was archived or reactivated. Archiving is what withdraws those terms from future generation while leaving every warranty already issued under them readable and intact. A reactivation can be refused when a newer window has since covered the same days for the same scope, because two active windows would make the terms a customer receives depend on which row the database returned first.',
   },
+  {
+    code: 'rpt.report.exported',
+    class: 'export',
+    entityType: 'rpt.report_configuration',
+    description: 'A bounded CSV report was generated under explicit scoped export permissions.',
+  },
 ]);
 
 const BY_CODE: ReadonlyMap<string, AuditActionDefinition> = new Map(

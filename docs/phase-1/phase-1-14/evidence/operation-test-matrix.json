@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 412,
-    "publicApi": 412,
+    "registered": 413,
+    "publicApi": 413,
     "internal": 0,
-    "withRequiredEvidence": 412,
+    "withRequiredEvidence": 413,
     "invocationOnly": 0,
     "p1_15": {
       "registered": 28,
@@ -8225,6 +8225,48 @@
         "route",
         "service",
         "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "rpt.report-export",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/reports/{reportCode}:export",
+      "public": false,
+      "files": ["tests/backend/p1-31-report-engine-work-orders.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "audit"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
         "success"
       ],
       "missing": [],

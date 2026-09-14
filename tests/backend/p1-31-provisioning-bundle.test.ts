@@ -517,6 +517,9 @@ describe('P1-31 P-1 — the derivation', () => {
       expect(declarersOf(code).length).toBeGreaterThan(0);
     }
     expect(declarersOf('rpt.export').sort()).toEqual([
+      // P-12 adds a separately authorized report disclosure; CC-04 still excludes
+      // this permission from the administrator bundle. No bundle grant is added.
+      'rpt.report-export',
       'shared.export-authorize',
       'shared.export-catalogue',
     ]);
