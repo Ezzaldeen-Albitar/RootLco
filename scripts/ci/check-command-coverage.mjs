@@ -572,6 +572,12 @@ export const REGISTER = Object.freeze([
     why: 'no technical vocabulary in a message a workshop employee reads',
   },
   { name: 'dev:all', owner: ROOT, tier: 'interactive', why: 'owner-visible local stack launcher' },
+  {
+    name: 'monitor:p1-31',
+    owner: ROOT,
+    tier: 'interactive',
+    why: 'routes an explicitly selected local/test log file to a new local reviewer queue; parser and CLI refusals run in the required unit tier',
+  },
   { name: 'dev:status', owner: ROOT, tier: 'interactive', why: 'reports the live local stack' },
   { name: 'dev:stop', owner: ROOT, tier: 'interactive', why: 'stops only launcher-owned PIDs' },
   {
