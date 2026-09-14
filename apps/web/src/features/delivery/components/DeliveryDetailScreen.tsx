@@ -7,6 +7,7 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 import { GenerateWarrantyPanel } from '@/features/warranty/components/GenerateWarrantyPanel';
+import { odometerDisplay, type OdometerReadingEntry } from '@/features/vehicles/history-contract';
 import type { DeliveryRecord } from '../delivery-contract';
 import { ChecklistResultsPanel } from './ChecklistResultsPanel';
 import { StatusLabel } from './CodeLabel';
@@ -64,6 +65,22 @@ import { useEligibility } from './use-eligibility';
  * name invented on this side would be the second, rotting authority on who a
  * person is. The work order is the exception, because a work-order screen exists
  * and can be linked to.
+ *
+ * ## The final odometer is the ONE reference that is resolved, and not here
+ *
+ * `sal.delivery-read` publishes `finalOdometerReadingId` and no value, so the
+ * reading an operator entered at handover was on the record as an identifier and
+ * nowhere as a number — the one fact FE-005 is about, unreadable on the screen
+ * that owns it. The value is resolved by the ROUTE, from the vehicle's own
+ * odometer history (`veh.vehicle-odometer-history`), and handed down: the page is
+ * where the permission for that read is decided, and a client-side read here
+ * would ask for it before knowing whether the caller may.
+ *
+ * It arrives as `null` for three different reasons — the caller does not hold the
+ * vehicle read code, the read failed, or the reading is not on the page that was
+ * asked for — and all three render the REFERENCE, which is what the record
+ * carries. A screen that showed nothing at all in those cases would be hiding the
+ * only thing it does know.
  */
 export function DeliveryDetailScreen({
   locale,
@@ -75,6 +92,7 @@ export function DeliveryDetailScreen({
   canIssueWarranty = false,
   canReadWarrantyPolicies = false,
   canReadWorkOrder = false,
+  finalOdometerReading = null,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -113,6 +131,13 @@ export function DeliveryDetailScreen({
    * not asked to spend a request discovering that.
    */
   readonly canReadWorkOrder?: boolean;
+  /**
+   * The reading `finalOdometerReadingId` points at, resolved by the route.
+   *
+   * `null` or absent means it could not be resolved, and the reference is shown
+   * instead. Never resolved here: see the note above.
+   */
+  readonly finalOdometerReading?: OdometerReadingEntry | null;
 }) {
   const [revision, setRevision] = useState(0);
   const refresh = useCallback(() => setRevision((previous) => previous + 1), []);
@@ -176,10 +201,25 @@ export function DeliveryDetailScreen({
               {delivery.deliveringEmployeeDisplayName}
             </Fact>
           )}
-          <Reference
-            label={translate(messages, 'delivery.summary.finalOdometerReading')}
-            value={delivery.finalOdometerReadingId}
-          />
+          {/*
+            The value when the route resolved it, the reference when it did not,
+            and the LABEL says which of the two is on screen — "reference" is part
+            of the reference label and would be a lie above a reading.
+
+            `odometerDisplay` composes it, so the reading is presented here
+            exactly as the vehicle's own history presents it: the stored decimal
+            string and its unit, never converted and never parsed into a number.
+          */}
+          {finalOdometerReading === null ? (
+            <Reference
+              label={translate(messages, 'delivery.summary.finalOdometerReading')}
+              value={delivery.finalOdometerReadingId}
+            />
+          ) : (
+            <Fact label={translate(messages, 'delivery.summary.finalOdometer')}>
+              <span dir="ltr">{odometerDisplay(finalOdometerReading).primary}</span>
+            </Fact>
+          )}
           <p className="text-caption text-text-muted">
             {translate(messages, 'delivery.summary.identifiersExplain')}
           </p>
@@ -273,6 +313,7 @@ export function DeliveryDetailScreen({
         delivery={delivery}
         eligibility={eligibility}
         canReadWorkOrder={canReadWorkOrder}
+        finalOdometerReading={finalOdometerReading}
         revision={revision}
       />
     </div>
