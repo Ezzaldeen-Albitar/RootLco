@@ -775,7 +775,7 @@ const crossTenantApplicable = (): number =>
 
 async function renderErrorPathMatrix(): Promise<string> {
   const SE5 = cite(ESC, 'SE-5 $id refuses a caller holding every P1-31 code except its own');
-  const SE6 = cite(ESC, 'SE-6 $id refuses a tenant-B caller holding all twelve codes');
+  const SE6 = cite(ESC, 'SE-6 $id refuses a tenant-B caller holding all thirteen codes');
   const SE6C = at(ESC, 'SE-6C $id reaches a real row for the tenant that owns it');
   const SE6R = at(ESC, 'SE-6R rpt.report-run over');
   const reasons = at(ESC, 'names a reason for every operation SE-6 and SE-7 do not reach');
@@ -889,7 +889,7 @@ async function renderErrorPathMatrix(): Promise<string> {
 }
 
 async function renderIsolationMatrix(): Promise<string> {
-  const SE6 = cite(ESC, 'SE-6 $id refuses a tenant-B caller holding all twelve codes');
+  const SE6 = cite(ESC, 'SE-6 $id refuses a tenant-B caller holding all thirteen codes');
   const SE6C = at(ESC, 'SE-6C $id reaches a real row for the tenant that owns it');
   const SE6R = at(ESC, 'SE-6R rpt.report-run over');
   const reasons = at(ESC, 'names a reason for every operation SE-6 and SE-7 do not reach');

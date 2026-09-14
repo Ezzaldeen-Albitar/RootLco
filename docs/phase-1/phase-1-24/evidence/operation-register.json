@@ -9408,6 +9408,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/backend/p1-31-report-engine-work-orders.test.ts",
         "tests/ci/p1-31-error-path-matrix.test.ts",
         "tests/foundation/operation-registry.test.ts",

@@ -31,7 +31,7 @@
  * So: **the permission gate precedes both validation and every lookup.** SE-5 therefore
  * addresses each operation with random UUIDs and a minimally shaped body, which is
  * sound, and it is not taken on trust — SE-5C re-issues the same request SHAPE, with
- * freshly generated identifiers, as a caller holding all twelve codes, and requires the
+ * freshly generated identifiers, as a caller holding all thirteen codes, and requires the
  * answer to be neither `ERR-IAM-001` nor a 5xx. It does NOT require the request to
  * succeed: with invented identifiers it cannot. Without SE-5C a 403 would be equally
  * consistent with a gate that ran last.
@@ -48,12 +48,12 @@
  *    database independently. This is the widening CC-16 and CC-20 rest on.
  *  - **SE-5** — least privilege, all 47. A tenant-A caller holding every P1-31 code
  *    EXCEPT the ones the operation declares is refused `ERR-IAM-001`, and the refusal
- *    names exactly the declared codes. **SE-5P** takes the five operations that declare
- *    more than one code and withholds them ONE AT A TIME, twelve cases in all: an
+ *    names exactly the declared codes. **SE-5P** takes the six operations that declare
+ *    more than one code and withholds them ONE AT A TIME, fourteen cases in all: an
  *    all-or-nothing probe cannot tell a gate that requires every declared code from one
  *    that requires any of them.
- *  - **SE-6** — cross-tenant, the 41 operations that address a tenant-owned row. A
- *    tenant-B caller holding all twelve codes addresses tenant A's REAL rows. The
+ *  - **SE-6** — cross-tenant, the 42 operations that address a tenant-owned row. A
+ *    tenant-B caller holding all thirteen codes addresses tenant A's REAL rows. The
  *    pinned refusal is the one the platform already standardises, and which is: an
  *    operation addressed by a resource id answers 404 `ERR-RES-001`, the answer
  *    `p1-31-delivery-read-seam.test.ts:705-718` and `p1-31-warranty-read-seam.test.ts:891-911`
@@ -65,10 +65,10 @@
  *    request, against an equivalent row set authored by the same routine, must NOT
  *    produce that refusal for the owning tenant — so the tenant-B 404 is tenancy and
  *    not absence.
- *  - **SE-7** — client-asserted scope, the 8 operations that carry a company or branch
+ *  - **SE-7** — client-asserted scope, the 9 operations that carry a company or branch
  *    the caller chose. Every actor here holds an UNRESTRICTED grant, so nothing is being
  *    narrowed by grant scope: the question is whether a caller may name an organisation
- *    that is not its own. All eight answer 403 `ERR-IAM-001` since CC-56, whether the
+ *    that is not its own. All nine answer 403 `ERR-IAM-001` since CC-56, whether the
  *    scope arrives in the query or in the body. Two variants each — another
  *    organisation's real pair, and a pair that exists nowhere — and the WHOLE disclosed
  *    document is compared against one per-probe expectation, so uniformity across the
@@ -83,7 +83,7 @@
  *
  * The ROLE-GRANT widening path — granting an existing role to a principal — is proved
  * for one P1-14 code in `iam-access-administration.test.ts` and is not restated here for
- * the twelve. SEC-003's phase-set claim is the three probes above, not that one.
+ * the thirteen. SEC-003's phase-set claim is the three probes above, not that one.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
@@ -391,7 +391,7 @@ function parsePhaseSurface(): ParsedSurface {
 
 const SURFACE = parsePhaseSurface();
 
-/** The twelve codes the phase declares, derived from the parse rather than typed out. */
+/** The thirteen codes the phase declares, derived from the parse rather than typed out. */
 const P1_31_PERMISSION_CODES: readonly string[] = Object.freeze(
   [...new Set(SURFACE.operations.flatMap((operation) => operation.codes))].sort()
 );
@@ -427,8 +427,8 @@ const FULL_B = actorAt(2, TENANT_B, P1_31_PERMISSION_CODES);
 /**
  * One least-privileged actor per DISTINCT declared-code set, derived from the parse.
  *
- * Thirteen sets across forty-six operations, so thirteen accounts rather than
- * forty-six. Each holds every P1-31 code EXCEPT the ones its operations declare, which
+ * Fourteen sets across forty-seven operations, so fourteen accounts rather than
+ * forty-seven. Each holds every P1-31 code EXCEPT the ones its operations declare, which
  * is what makes its refusal about the withheld authority and not about being a stranger
  * to the phase.
  */
@@ -455,7 +455,7 @@ const complementFor = (codes: readonly string[]): Actor => {
  * One actor per code, holding every P1-31 code EXCEPT that one.
  *
  * SE-5P needs a caller that holds ALL of a multi-code operation's declared codes but
- * one. Withholding a single code from the full twelve is exactly that, and it is also
+ * one. Withholding a single code from the full thirteen is exactly that, and it is also
  * the strongest form of the probe: nothing else the operation could be asking for is
  * missing, so a 403 can only be about the one code that is.
  */
@@ -487,7 +487,7 @@ const withholdingActorFor = (code: string): Actor => {
  * or whose declaration had drifted away from what the handler asks for, would go on
  * passing every refusal case in this file.
  *
- * Thirteen sets across forty-six operations, so thirteen accounts. Each is
+ * Fourteen sets across forty-seven operations, so fourteen accounts. Each is
  * `unrestricted`, because grant SCOPE is a different question and SE-7 owns it.
  */
 const MINIMAL_ACTORS = new Map<string, Actor>(
@@ -657,7 +657,7 @@ const refusalFor = (probe: Probe): Refusal =>
  * pinning it here would pin something no caller can read. What a caller CAN read is
  * this, and it is asserted whole rather than field by field.
  *
- * `requiredPermissions` is present on ALL EIGHT, and that is the point rather than an
+ * `requiredPermissions` is present on ALL NINE, and that is the point rather than an
  * incidental. The three body-scoped creates once published nothing here, because the
  * probe behind them was called from an application service that holds no operation
  * declaration; the route handler now injects it bound to the operation, the way it
@@ -1790,7 +1790,7 @@ describe('P1-31-SEC-003 SE-0 — the phase operation set, parsed', () => {
 });
 
 describe('P1-31-SEC-003 — an administrator cannot widen itself into this phase', () => {
-  it('SE-1 the twelve codes are real, and the acting administrator holds none of them', async () => {
+  it('SE-1 the thirteen codes are real, and the acting administrator holds none of them', async () => {
     /*
      * Without this, every refusal below would be satisfiable by a set of misspelled
      * codes: `addRolePermission` answers ERR-RES-001 for an unknown code, which is not
@@ -1811,7 +1811,7 @@ describe('P1-31-SEC-003 — an administrator cannot widen itself into this phase
     for (const code of P1_31_PERMISSION_CODES) expect(held.has(code)).toBe(false);
   });
 
-  it('SE-2 the service refuses an `allow` mapping for every one of the twelve', async () => {
+  it('SE-2 the service refuses an `allow` mapping for every one of the thirteen', async () => {
     const before = await targetMappings();
 
     for (const code of P1_31_PERMISSION_CODES) {
@@ -1831,7 +1831,7 @@ describe('P1-31-SEC-003 — an administrator cannot widen itself into this phase
       ).toEqual([code]);
     }
 
-    // Twelve refusals, zero rows. CC-16 and CC-20 both rest on this number.
+    // Thirteen refusals, zero rows. CC-16 and CC-20 both rest on this number.
     expect(await targetMappings()).toBe(before);
   });
 
@@ -1844,7 +1844,7 @@ describe('P1-31-SEC-003 — an administrator cannot widen itself into this phase
      * `ins_role_permissions_delegable` — which re-evaluates the caller's CURRENT
      * authority against the permission code being written and yields a bare 42501.
      *
-     * Two codes rather than twelve: the policy predicate does not branch on the code,
+     * Two codes rather than thirteen: the policy predicate does not branch on the code,
      * so a third would re-run the same clause. One from each half of the phase is what
      * makes it a P1-31 assertion rather than a restatement of the P1-14 regression.
      */
@@ -1932,10 +1932,10 @@ describe('P1-31-SEC-003 SE-5 — least privilege, on every operation of the phas
   );
 
   it.each([...PROBES])(
-    'SE-5C $id answers a caller holding all twelve with neither ERR-IAM-001 nor a 5xx',
+    'SE-5C $id answers a caller holding all thirteen with neither ERR-IAM-001 nor a 5xx',
     async (probe) => {
       /*
-       * The falsifier for all forty-six above. The identifiers are freshly generated,
+       * The falsifier for all forty-seven above. The identifiers are freshly generated,
        * so this is the same request SHAPE rather than the same request, and the claim
        * is deliberately narrow: NOT that the call succeeds — with invented identifiers
        * it cannot — but that whatever it answers is not the authority refusal and is
@@ -1966,8 +1966,8 @@ describe('P1-31-SEC-003 SE-5 — least privilege, on every operation of the phas
     async ({ probe, withheld, declared }) => {
       /*
        * SE-5 withholds an operation's declared codes ALL AT ONCE, and a gate that
-       * required merely ANY of them would refuse that caller too. These twelve cases
-       * are what tells the two readings apart: the caller holds eleven of the twelve
+       * required merely ANY of them would refuse that caller too. These fourteen cases
+       * are what tells the two readings apart: the caller holds twelve of the thirteen
        * P1-31 codes and is missing exactly one the operation declares.
        *
        * `requiredPermissions` is asserted against the DECLARED SET rather than against
@@ -2142,7 +2142,7 @@ describe('P1-31-SEC-003 SE-6 — a foreign tenant cannot address this tenant’s
   );
 
   it.each([...CROSS_TENANT_PROBES])(
-    'SE-6 $id refuses a tenant-B caller holding all twelve codes',
+    'SE-6 $id refuses a tenant-B caller holding all thirteen codes',
     async (probe) => {
       actAs(FULL_B);
       // Tenant A's own pair, named by a tenant-B caller: the cross-boundary case for a

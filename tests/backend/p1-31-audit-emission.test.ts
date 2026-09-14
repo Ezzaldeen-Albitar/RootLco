@@ -162,6 +162,13 @@ const P1_31_NAMESPACES = Object.freeze([
  * asymmetry is the reason all three are pinned separately: a write added under a `none`
  * class would raise the file count and leave the privileged count where it is, which
  * looks exactly like this and is a defect.
+ *
+ * (2026-09-14, P-12 annotation: the 46th/34th ordinal above was true when P-18 landed
+ * and is retained as written. The P-12 report export has since been added to the existing
+ * `reports` route file, so the phase declaration total pinned below is 47 over the same
+ * 34 route files, and the phase declares 13 permission codes. The PRIVILEGED count is
+ * still 24 because the export operation declares `auditClass: 'export'` rather than
+ * `privileged`; the asymmetry the paragraph describes is unchanged.)
  */
 const EXPECTED_PRIVILEGED = 24;
 const EXPECTED_ROUTE_FILES = 34;
@@ -292,7 +299,7 @@ const declarationFor = (id: string): PrivilegedDeclaration => {
 };
 
 /**
- * The twelve codes the phase declares, from the permission-parity gate's own parser.
+ * The thirteen codes the phase declares, from the permission-parity gate's own parser.
  *
  * The emitting caller holds all of them. This suite is not about who may call — that
  * is `p1-31-privilege-escalation.test.ts` — so the actor is deliberately the one that
@@ -319,7 +326,7 @@ const P1_31_PERMISSION_CODES = parsePhaseCodes();
 /**
  * One tenant-A account holding every P1-31 code, unrestricted.
  *
- * `wo.work_order.read` is among the twelve, so the same account also reads the work
+ * `wo.work_order.read` is among the thirteen, so the same account also reads the work
  * orders the delivery cases arrange. The work-order TRANSITIONS those cases need are
  * driven as P1-19's own `FULL` principal, because closing a work order is that
  * phase's authority and borrowing it here would be a grant this suite invented.
@@ -349,7 +356,7 @@ let runtime: Pool;
  *
  * The `role_permissions` insert JOINS `iam.permissions` on `permission_code`, so a
  * code absent from the catalogue yields no row and the actor silently holds nothing.
- * E-0 asserts the twelve codes are all real rows before any success is read as one.
+ * E-0 asserts the thirteen codes are all real rows before any success is read as one.
  */
 async function seedEmitter(): Promise<void> {
   await admin.query(
