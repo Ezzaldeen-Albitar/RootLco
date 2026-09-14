@@ -35,11 +35,13 @@ import {
   Distance,
   Fact,
   PRIMARY_BUTTON,
+  ReadFailure,
   Reference,
   SECONDARY_BUTTON,
   Section,
   isStaleView,
   refusalKeyFor,
+  type MoreFailure,
 } from './shared';
 
 /**
@@ -116,7 +118,7 @@ export function WarrantyPolicyScreen({
 }) {
   const [detail, setDetail] = useState<WarrantyPolicyDetail>(initial);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
-  const [rereadFailed, setRereadFailed] = useState<string | null>(null);
+  const [rereadFailed, setRereadFailed] = useState<MoreFailure | null>(null);
   const [busy, setBusy] = useState(false);
 
   const policy = detail.policy;
@@ -130,7 +132,7 @@ export function WarrantyPolicyScreen({
   const refresh = async () => {
     const next = await readWarrantyPolicy(policyId);
     if (next.status !== 'ok') {
-      setRereadFailed(next.status);
+      setRereadFailed({ status: next.status, correlationId: next.correlationId });
       return;
     }
     setRereadFailed(null);
@@ -245,10 +247,16 @@ export function WarrantyPolicyScreen({
           />
         </div>
         {rereadFailed === null ? null : (
-          <p role="alert" className="mt-3 text-body text-error">
-            {translate(messages, 'warranty.policies.rereadFailed')}{' '}
-            {translateDynamic(messages, `state.${rereadFailed}.title`)}
-          </p>
+          <div className="mt-3">
+            <p className="text-body text-text-secondary">
+              {translate(messages, 'warranty.policies.rereadFailed')}
+            </p>
+            <ReadFailure
+              messages={messages}
+              status={rereadFailed.status}
+              correlationId={rereadFailed.correlationId}
+            />
+          </div>
         )}
       </Section>
 

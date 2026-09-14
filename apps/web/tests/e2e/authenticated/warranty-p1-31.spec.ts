@@ -10,6 +10,7 @@ import {
   say,
   signedInAsJourneyAdministrator,
   type P131Handoff,
+  type P131WarrantyHistory,
 } from './p1-31-handoff';
 
 /**
@@ -53,6 +54,20 @@ const PLANS_TITLE_KEY = 'warranty.policies.title';
  */
 const WARRANTY_READ = 'wty.warranty.read';
 const POLICY_MANAGE = 'wty.policy.manage';
+
+/**
+ * The catalogue key suffix that names a warranty state the server sent.
+ *
+ * `WARRANTY_STATUS_LABEL_KEYS` in `apps/web/src/features/warranty/warranty-contract.ts` is
+ * the authority and a spec may not import product source, so the one transformation that
+ * table performs is restated here: each state is its own word, and the only multi-word
+ * one is camel-cased. Nothing is guessed silently — `say()` throws on a key the catalogue
+ * does not hold, so a state this gets wrong fails at the line that names it rather than
+ * matching nothing and passing.
+ */
+function labelOf(status: string): string {
+  return status.replace(/_(.)/g, (_match, letter: string) => letter.toUpperCase());
+}
 
 test.describe('P1-31 warranty screens, over the acceptance journey records', () => {
   /**
@@ -354,6 +369,116 @@ test.describe('P1-31 warranty screens, over the acceptance journey records', () 
         page.getByRole('link', { name: say(locale, 'warranty.summary.deliveryLink') })
       ).toBeVisible();
     }
+  });
+
+  /**
+   * FE-009, the transition ledger, over the ledger the harness actually read.
+   *
+   * ## Why it is handoff-gated and cannot be otherwise
+   *
+   * The panel lives on a warranty RECORD, and a record needs an identifier. The governed
+   * job provisions Tenant A, Tenant B and the acceptance owner and stops there — it opens
+   * no work order, completes no handover and issues no warranty — so there is no record
+   * to open and therefore nothing to render a ledger for. Asserting the panel on a page
+   * that cannot exist would assert nothing.
+   *
+   * ## The pinned outcome for the account that DOES run unconditionally
+   *
+   * `account-manifest.json` records `owner-acceptance` as holding `wty.warranty.read`,
+   * which is the code this subresource answers — the same code the record itself answers,
+   * deliberately, because how a warranty reached its state says no more about it than the
+   * record does. So the owner is ENTITLED to this panel; it is simply never shown one,
+   * for the reason above. The entitlement is pinned here rather than assumed: a caller
+   * that reaches this case must hold the read code, and a refusal inside the panel is a
+   * failure of the case and not an accepted alternative.
+   *
+   * ## What is asserted, and why it is a count and not a sentence
+   *
+   * Exactly the rows the harness recorded, by number and by content. Today that is one —
+   * the genesis transition into `issued` — and the origin row must be drawn as a
+   * beginning: the origin wording, no "moved from", and nothing synthetic above it. The
+   * count comes from the handoff rather than from a literal in this file, so the day a
+   * writer lands and the ledger grows, a screen that dropped the extra rows fails here
+   * instead of quietly agreeing with a number nobody re-read.
+   */
+  test('the warranty record shows the transition ledger the journey recorded', async ({
+    page,
+  }, testInfo) => {
+    // test-honesty-allow: TH-002 -- no acceptance handoff on this checkout; see NO_HANDOFF_REASON
+    test.skip(handoff === null, NO_HANDOFF_REASON);
+    // test-honesty-allow: TH-002 -- signed in as somebody other than the journey's own administrator; see WRONG_ACCOUNT_REASON
+    test.skip(!signedInAsJourneyAdministrator(), WRONG_ACCOUNT_REASON);
+    const h = handoff as P131Handoff;
+    // test-honesty-allow: TH-002 -- the journey generated no warranty; nothing to open
+    test.skip(h.warrantyId === null, missingReason('warranty'));
+    const history = h.warrantyHistory ?? null;
+    if (history !== null && 'status' in history) {
+      throw new Error(
+        `the acceptance journey's warranty transition-ledger read failed: ${history.faults.join('; ')}`
+      );
+    }
+    // test-honesty-allow: TH-002 -- the run that wrote this handoff recorded no ledger, so there is no server answer to compare the screen against
+    test.skip(
+      history === null,
+      'the P1-31 handoff carries no warranty transition ledger, so this case has nothing ' +
+        'to compare the screen against. Counting the rows on the page and calling that a ' +
+        'pass would be the screen answering a question about itself.'
+    );
+    const recorded = history as P131WarrantyHistory;
+    const locale = localeOf(testInfo.project.name);
+    const kind = readAccountKind();
+
+    // The entitlement, pinned rather than assumed: this subresource answers the same
+    // code the record does, and a caller that reaches this case holds it.
+    expect(
+      holds(kind, WARRANTY_READ),
+      `${kind} must hold ${WARRANTY_READ} to reach the warranty record's ledger`
+    ).toBe(true);
+
+    await page.goto(`/${locale}/warranty/${String(h.warrantyId)}`);
+    await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
+
+    const ledger = page.locator('section[aria-labelledby="warranty-history-heading"]');
+    await expect(ledger).toBeVisible();
+    await expect(
+      ledger.getByRole('heading', { name: say(locale, 'warranty.history.heading'), exact: true })
+    ).toBeVisible();
+
+    // A refusal inside the panel is a failure of this case, not an outcome it accepts:
+    // the account holds the code, so the ledger is its to see.
+    await expect(ledger.getByText(say(locale, 'state.denied.title'))).toHaveCount(0);
+    // A one-row ledger is a ledger. Reporting it as "no history yet" would tell an
+    // operator the workshop recorded nothing when it recorded everything there is.
+    await expect(ledger.getByText(say(locale, 'warranty.history.noneTitle'))).toHaveCount(0);
+
+    // Exactly the rows the server answered with — the harness's count, not a literal.
+    await expect(ledger.locator('li')).toHaveCount(recorded.items.length);
+
+    // The OLDEST row is the origin, and it is drawn as a beginning. The list is newest
+    // first, so the origin is the last item.
+    const oldest = ledger.locator('li').last();
+    await expect(oldest).toContainText(say(locale, 'warranty.history.origin'));
+    await expect(
+      oldest,
+      'the oldest transition has no previous state, so no "moved from" may be drawn for it'
+    ).not.toContainText(say(locale, 'warranty.history.movedFrom'));
+
+    // Every transition the harness recorded, in the order it recorded them, by the
+    // state it moved to. The origin's own destination is asserted by the same rule.
+    for (const [index, transition] of recorded.items.entries()) {
+      const rendered = ledger.locator('li').nth(index);
+      await expect(rendered).toContainText(
+        say(locale, `warranty.status.${labelOf(transition.toStatus)}`)
+      );
+      if (transition.fromStatus !== null) {
+        await expect(rendered).toContainText(say(locale, 'warranty.history.movedFrom'));
+      }
+    }
+
+    // No further page is offered unless the server declared one.
+    await expect(
+      ledger.getByRole('button', { name: say(locale, 'warranty.history.loadMore'), exact: true })
+    ).toHaveCount(recorded.hasMore ? 1 : 0);
   });
 
   test('the warranty plans screen lists the plan the journey created', async ({

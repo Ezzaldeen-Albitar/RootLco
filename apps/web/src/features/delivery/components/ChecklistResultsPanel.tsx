@@ -207,9 +207,11 @@ export function ChecklistResultsPanel({
           )}
 
           {page.moreFailed === null ? null : (
-            <p role="alert" className="text-body text-error">
-              {translateDynamic(messages, `state.${page.moreFailed}.title`)}
-            </p>
+            <PanelFailure
+              messages={messages}
+              status={page.moreFailed.status}
+              correlationId={page.moreFailed.correlationId}
+            />
           )}
           {page.hasMore ? (
             <div>

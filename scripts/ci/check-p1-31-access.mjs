@@ -157,6 +157,12 @@ export const P1_31_OPERATION_IDS = Object.freeze([
   // a P1-31 screen calls that is absent here is one this gate does not own.
   'wty.warranty-detail',
   'wty.warranty-generate',
+  // FE-009's transition ledger, published by P-18 and consumed by the history panel on
+  // the same record screen. It is addressed under the `warranties` resource root the
+  // list and the detail read already contribute, so it widens nothing about the
+  // segments — it is named because an operation a P1-31 screen calls that is absent
+  // from this list is one this gate does not own.
+  'wty.warranty-status-history',
   // The two policy READS P-10 published. The list feeds the plan picker on the issue
   // surface — its own route docblock names that picker as the reason it exists — and
   // the single-policy read is named beside it because they share one resource root:
