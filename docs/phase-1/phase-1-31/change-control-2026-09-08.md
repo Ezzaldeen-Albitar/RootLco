@@ -6244,8 +6244,9 @@ that lane landed first; it is behind neither in the heading order it claims.
 **Baseline:** protected `develop` `591763df`, the head after pull request #389 merged, then merged up
 to **`852bcebd`** — the merge of #391, after #390 published the warranty transition ledger — and
 finally to **`6e50c161`**, the merge of #393, before
-this branch was proposed. Branch `remediation/p1-31-backend-phase-set-proofs`. Profile
-`p1-31-backend`. `main` `1262de74`, untouched and far behind.
+this branch was proposed. Branch `remediation/p1-31-backend-phase-set-proofs`, opened as pull request
+[#394](https://github.com/Ezzaldeen-Albitar/RootLco/pull/394). Profile `p1-31-backend`. `main`
+`1262de74`, untouched and far behind.
 
 ### 68.1 What the four closures address
 
@@ -6388,32 +6389,72 @@ uncovered, the grant map names a catalogue row for every code, and the emission 
 pre-handler gate and not below it, so a service-level authority requirement stays invisible for 45
 of the 46 operations.
 
-**What was executed, where, and by whom.** Every suite named in this section was run **locally**, on
-a disposable PostgreSQL 17 clone `p131_sets_20260914` at `127.0.0.1:55432` created from the
-`p131_employee_ci_202609121735` template (141 migrations, 121 permission rows, both asserted before
-use) — **never the shared acceptance database**. The runs are the lane's own and are
-executor-reported: the emission suite 28/28, the escalation suite 262/262, the checklist-template
-seam 35/35, the report-configuration seam 33/33, the warranty-policy seam 36/36,
-`p1-22-delivery.test.ts` 58/58, the whole database tier 145 files and 1770 cases, and
-`tests/ci/p1-31-grant-map.test.ts` 4/4. **No product code was changed and no product finding is
-raised**, because no case went red against product behaviour at any point in the slice — that is a
-statement about these local runs and nothing more. **They are not independent verification and they
-are not the attestation.** The attestation for this branch is the hosted run of the pull request
-head, and until that run exists no figure here is claimed as a gate result. One local run did go
-red: the root unit tier reported two timeouts in `tests/ci/p1-28-access-gate.test.ts`, both at the
-30-second limit under contention rather than on an assertion; the file re-run alone passes 48/48.
-Neither is this lane's file and neither is claimed as green on the aggregate.
+**What was executed, and what attests it, is § 68.8.** Every figure this section rests on is a
+LOCAL run of this lane's own, taken on a disposable clone and reported by the executor; § 68.8 names
+the clone, the suites, the counts, the one red local run and the fact that the attestation is the
+hosted run of the pull request head rather than any of them. It is stated once, there, so the two
+places cannot drift apart.
 
 Three things this lane deliberately did NOT do, so they are not read as closed:
 
-- no product code was changed; see the paragraph above for what that statement rests on and what it
-  does not;
+- no product code was changed. No case went red against product behaviour at any point in the
+  slice, which is a statement about the local runs in § 68.8 and nothing more;
 - `scripts/check-operation-test-coverage.mjs` and its marker vocabulary are untouched. The matrices
   are this phase's artefact and the gate's vocabulary is cross-phase;
 - no baseline, no inventory and no assurance index is edited. The index correction in § 68.6 is a
   statement for the final integration to act on, not an edit this lane made on its behalf.
 
-### 68.8 Dispositions
+### 68.8 Verification — what was run, where, and what attests it
+
+**Record commit.** `P1-31-SEC-004-008`, `986efe39`. Both local tiers were re-run at the merge head
+`d05f1252` by `node scripts/ci/check-p1-27-closing-values.mjs --record`, which spawns the tier
+itself so the run ledger has one author and a hand-assembled total cannot enter it:
+
+| tier      | tests | files | failed | attempts |
+| --------- | ----- | ----- | ------ | -------- |
+| root unit | 3336  | 126   | 0      | 1        |
+| web       | 4026  | 142   | 0      | 1        |
+
+The unit figures move from 3332 over 125 because this branch adds two test files — the emission
+suite, which the unit tier does not run, and `tests/ci/p1-31-grant-map.test.ts`, whose four cases it
+does. The web figures are § 64's and are unmoved by this branch. The two CR-A unit rows in
+`clean-room-evidence.md` and their entries in `evidence/closing-value-ledger.json` were updated
+together, value and locator, and `check-p1-27-closing-values.mjs` then reported **0 problems** with
+no `STALE` record.
+
+**The database suites, and the database they ran against.** Every suite below was run on a
+DISPOSABLE PostgreSQL 17 clone — `p131_sets_20260914` at `127.0.0.1:55432`, created from the
+`p131_employee_ci_202609121735` template, with 141 migrations and 121 permission rows asserted
+before use and matching the 141 migrations this tree tracks. **Never the shared acceptance
+database.** The host, port and database name were printed and re-asserted before each run, and all
+five `DB_*` variables were set explicitly on every command.
+
+| suite                                                                                                                                           | cases                      |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `tests/backend/p1-31-privilege-escalation.test.ts`                                                                                              | 267 / 267                  |
+| `tests/backend/p1-31-audit-emission.test.ts`                                                                                                    | 28 / 28                    |
+| `tests/backend/p1-31-delivery-checklist-template-seam.test.ts`, `p1-31-report-configuration-seam.test.ts`, `p1-31-warranty-policy-seam.test.ts` | 104 / 104                  |
+| `tests/backend/p1-22-delivery.test.ts`                                                                                                          | 58 / 58                    |
+| `tests/db/sal-delivery.test.ts`, `wty-warranty.test.ts`, `rpt-reporting.test.ts`                                                                | 23 / 23                    |
+| the whole database tier, once, before the last merge                                                                                            | 1770 / 1770 over 145 files |
+| `tests/ci/p1-31-grant-map.test.ts`, without the write flag                                                                                      | 4 / 4                      |
+
+**Static checks.** `typecheck`, `lint`, `format:check`, `check-test-honesty` (415 test files, no
+findings), `validate:operation-coverage`, `validate:authorization-coverage`,
+`validate:p1-27-doc-counts` (151 derived claims, 0 disagreements), `security:all`,
+`validate:encoding`, `validate:generated-artifacts`, `validate:plain-language`,
+`scripts/p1-24-operation-register.mjs --check`, and
+`check-phase-ownership.mjs p1-31-backend origin/develop` — 0 violations.
+
+**These are the lane's own runs, executor-reported, on one machine.** They are **not independent
+verification and they are not the attestation.** The attestation for this branch is the hosted run
+of **pull request #394**'s head; no figure in this section is offered as a gate result, and none is claimed
+for a head other than the one named beside it. Two local runs are recorded as red rather than
+omitted: an earlier root unit tier reported two timeouts in `tests/ci/p1-28-access-gate.test.ts`,
+both at the 30-second limit under contention and neither on an assertion — the file passes 48 / 48
+when run alone, it is not this lane's file, and the recorded unit run above has `0 failed`.
+
+### 68.9 Dispositions
 
 | id            | finding                                                                                                                                                                                                                                                                                                   | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | owner / slice                                 | state            |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- | ---------------- |
