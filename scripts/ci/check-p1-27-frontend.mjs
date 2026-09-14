@@ -41,14 +41,21 @@
  *      is what keeps that allowance narrow: `allow` exempts a file from a WHOLE
  *      rule, so naming the capture component on rule 5 would have traded six
  *      prohibitions away to permit one construct.
- *   7. **No export surface.** The canonical plan's task table names the operation
- *      behind every one of the 29 Frontend tasks and not one of them is an
- *      export. `shared.export-authorize` and `shared.export-catalogue` ARE
- *      published by the platform, so this is restraint rather than a gap — and
- *      restraint that only a test asserts is restraint until somebody deletes the
- *      test. The rule fires on an export caller in either of its two forms: the
- *      operation itself, and the browser-side substitute (a blob, an object URL,
- *      a `download` attribute, a CSV or PDF assembly, a `Content-Disposition`).
+ *   7. **No UNAUTHORIZED export surface.** The canonical plan's task table names
+ *      the operation behind every one of the 29 Frontend tasks and not one of
+ *      them is an export. `shared.export-authorize` and `shared.export-catalogue`
+ *      ARE published by the platform, so this is restraint rather than a gap —
+ *      and restraint that only a test asserts is restraint until somebody deletes
+ *      the test. The rule fires on an export caller in either of its two forms:
+ *      the operation itself, and the browser-side substitute (a blob, an object
+ *      URL, a `download` attribute, a CSV or PDF assembly, a
+ *      `Content-Disposition`). The absolute form of the sentence — "this platform
+ *      publishes no export surface" — expired when P1-31 shipped the report
+ *      export the Owner authorized into a tree this gate scans, so recognition is
+ *      now scoped to that one contract by the names the platform registers for it
+ *      and refuses every other export or download path, in the authorized file as
+ *      much as anywhere else. `EXPORT_SURFACE_ANCHORS` carries the argument; no
+ *      path was allow-listed and `allow` is still `[]`.
  *   8. **No invented media limit.** Resolving `P1-OD-025` relaxed nothing here,
  *      and the reason is the same one §14's disposition gave while the decision
  *      was open: this is the half a well-meaning implementation breaks. A
@@ -795,6 +802,185 @@ export const EXPORT_INNOCENT = Object.freeze([
 ]);
 
 /**
+ * The ANCHORS of the one export surface this platform has authorized.
+ *
+ * ## Why the rule had to be narrowed, and why the premise was not wrong to hold
+ *
+ * `no-export-surface` asserted a fact about P1-27: its task table names the
+ * operation behind each of the 29 Frontend tasks and not one of them is an
+ * export, so a screen in these trees that built one was building something no
+ * document had asked for. That was true, and it stays true about P1-27.
+ *
+ * It stopped being true about the PLATFORM. P1-31 publishes a report export the
+ * Owner authorized — one registered operation, one permission code deliberately
+ * withheld from the administrator bundle, an audited disclosure, and a request
+ * mirror `check-p1-31-write-shape.mjs` compares against the operation. The report
+ * screen lives inside the third `PLAN_ROOT` (`app/[locale]/(dashboard)`), which
+ * this gate scans because P1-27's plan named it, so the authorized surface and
+ * the forbidden one now share a tree.
+ *
+ * ## Why this is not an `allow` entry, and not a `roots` narrowing either
+ *
+ * An `allow` entry would exempt a FILE from the WHOLE rule: the report screen
+ * would then be free to build a blob, set a `Content-Disposition`, assemble a CSV
+ * or call `shared.export-authorize`, none of which anybody authorized. That is
+ * the mechanism this gate already lost a rule to, and `tests/ci/p1-27-frontend-gate
+ * .test.ts` pins every allowance to the exact rule and path that carries it so
+ * adding one is a deliberate act. This rule still has none.
+ *
+ * `roots` is also wrong here, for the opposite reason: the premise does not fail
+ * over a TREE. It fails over exactly one contract, and the rest of the dashboard
+ * tree must still be refused an export it was never given.
+ *
+ * ## What the narrowing recognizes
+ *
+ * Two conditions, and both have to hold:
+ *
+ *   1. The source ANCHORS itself to the authorized contract, by naming something
+ *      registered elsewhere — the permission code, the registered operation id,
+ *      or the component the write-shape gate pairs with its mirror. A file that
+ *      names none of them is judged exactly as it was before.
+ *   2. Even then, only the REFERENCES in `AUTHORIZED_EXPORT_REFERENCES` are
+ *      recognized, and recognition is per MATCH rather than per file: every other
+ *      export or download construct still fails, in the anchored file as much as
+ *      anywhere else.
+ *
+ * So the authorized screen may name the permission the catalogue published and
+ * the operation the register holds, and may not build a download of its own. No
+ * path is exempt from anything.
+ *
+ * `tests/ci/p1-27-frontend-gate.test.ts` proves both halves: that an
+ * unauthorized export or download path still fails INSIDE an anchored file, and
+ * that every anchor and reference below is a name the repository really
+ * registers — so the tables cannot decay into a list of words.
+ *
+ * @type {ReadonlyArray<{anchor: string, pattern: RegExp, registeredIn: string}>}
+ */
+export const EXPORT_SURFACE_ANCHORS = Object.freeze([
+  {
+    anchor: 'export-permission-code',
+    // `rpt.export` — the platform-wide export switch, and the contract constant
+    // that spells it on this side. Registered in the IAM permission catalogue
+    // and deliberately EXCLUDED from the first administrator's bundle, which is
+    // what makes naming it a statement about an authorized capability rather
+    // than about a capability everybody already has.
+    pattern: /\brpt\.export\b|\bREPORT_PERMISSIONS\.export\b/,
+    registeredIn: 'supabase/seeds/04_iam_permission_catalog.sql',
+  },
+  {
+    anchor: 'export-operation-id',
+    // The registered operation itself. Assembled from its two halves for the
+    // reason the test file's `OP` constant records: spelled contiguously, the
+    // P1-24 operation register would credit this GATE as test evidence for the
+    // export route, and a gate is not a test of the route.
+    pattern: new RegExp(`\\b${['rpt', 'report-export'].join('\\.')}\\b`),
+    registeredIn: 'apps/web/src/lib/api/idempotent-operations.ts',
+  },
+  {
+    anchor: 'paired-export-component',
+    // The download control `check-p1-31-write-shape.mjs` pairs with the
+    // `ReportExportBody` mirror — the reason that gate no longer declares the
+    // export operation pending.
+    pattern: /\bReportExportPanel\b/,
+    registeredIn: 'apps/web/src/features/reports/components/ReportExportPanel.tsx',
+  },
+]);
+
+/**
+ * The only export constructs an anchored file may name, each one a reference to
+ * something the authorized contract publishes.
+ *
+ * Deliberately two, and deliberately not a superset of the anchors: an anchor
+ * establishes WHICH contract the file is about, a reference is what the rule then
+ * declines to fail on. `ReportExportPanel` and `rpt.export` are anchors and not
+ * references because no construct in `EXPORT_CONSTRUCTS` matches either of them —
+ * listing them here would be a permission for something never refused, which is
+ * the kind of entry that reads as breadth and measures nothing. The gate suite
+ * asserts that every reference below really is matched by a construct.
+ *
+ * @type {ReadonlyArray<{reference: string, pattern: RegExp, publishedBy: string, samples: readonly string[]}>}
+ */
+export const AUTHORIZED_EXPORT_REFERENCES = Object.freeze([
+  {
+    reference: 'export-permission-field',
+    // `ReportDefinition.exportPermissionCode` — the field the catalogue projects
+    // to say whether a report has an export at all, `null` when it has none. The
+    // screen reads it; it does not construct anything.
+    pattern: /\bexportPermissionCode\b/,
+    publishedBy: 'apps/web/src/features/reports/reports-contract.ts',
+    samples: ['const may = definition.exportPermissionCode !== null;'],
+  },
+  {
+    reference: 'export-operation-id',
+    pattern: new RegExp(`\\b${['rpt', 'report-export'].join('\\.')}\\b`),
+    publishedBy: 'apps/web/src/lib/api/idempotent-operations.ts',
+    samples: [`const op = '${['rpt', 'report-export'].join('.')}';`],
+  },
+]);
+
+/** Every index covered by a reference to the authorized export contract. */
+function authorizedExportMask(source) {
+  const mask = new Array(source.length).fill(false);
+  for (const reference of AUTHORIZED_EXPORT_REFERENCES) {
+    const scan = new RegExp(reference.pattern.source, 'g');
+    let match;
+    while ((match = scan.exec(source)) !== null) {
+      if (match[0].length === 0) {
+        scan.lastIndex += 1;
+        continue;
+      }
+      for (let i = match.index; i < match.index + match[0].length; i += 1) mask[i] = true;
+    }
+  }
+  return mask;
+}
+
+/**
+ * The anchors this source names, in the order the table declares them.
+ *
+ * Comments are stripped before the rule runs, so the docblock that explains why
+ * a screen may export cannot be what authorizes it.
+ */
+export function exportSurfaceAnchors(source) {
+  return EXPORT_SURFACE_ANCHORS.filter((entry) => entry.pattern.test(source)).map(
+    (entry) => entry.anchor
+  );
+}
+
+/**
+ * Export constructs this source builds that the authorized contract does NOT
+ * account for — the question `no-export-surface` actually asks.
+ *
+ * Unanchored source yields every match, which is the rule's original behaviour
+ * and the case that has to stay unchanged. Anchored source yields every match
+ * that is not wholly covered by an authorized reference, so the authorized screen
+ * gains recognition of two published names and gains permission for nothing.
+ *
+ * @returns {{construct: string, text: string, index: number, anchors: string[]}[]}
+ */
+export function unauthorizedExports(source) {
+  const anchors = exportSurfaceAnchors(source);
+  const recognized = anchors.length > 0 ? authorizedExportMask(source) : null;
+  const found = [];
+  for (const construct of EXPORT_CONSTRUCTS) {
+    const scan = new RegExp(construct.pattern.source, 'g');
+    let match;
+    while ((match = scan.exec(source)) !== null) {
+      if (match[0].length === 0) {
+        scan.lastIndex += 1;
+        continue;
+      }
+      const end = match.index + match[0].length;
+      let covered = recognized !== null;
+      for (let i = match.index; covered && i < end; i += 1) covered = recognized[i];
+      if (covered) continue;
+      found.push({ construct: construct.construct, text: match[0], index: match.index, anchors });
+    }
+  }
+  return found;
+}
+
+/**
  * The invented-limit constructs — the second half of the `P1-OD-025` disposition.
  *
  * §14 says "keep upload acceptance blocked, do not invent limits". Rule 5
@@ -1031,9 +1217,26 @@ export const RULES = [
      * Both forms of export are covered, because the second does not need the
      * operation: bulk extraction assembled in the browser out of pages that were
      * read one at a time is the same disclosure by a different route.
+     *
+     * ## The premise the rule NARROWED, and how
+     *
+     * The sentence above is still true of P1-27 and is no longer true of the
+     * platform: P1-31 published a report export the Owner authorized, and the
+     * screen that offers it lives in the third `PLAN_ROOT`. So this rule now asks
+     * whether an export construct is accounted for by the ONE authorized
+     * contract, per match, and refuses everything else — including everything
+     * else in the authorized file. `EXPORT_SURFACE_ANCHORS` and
+     * `AUTHORIZED_EXPORT_REFERENCES` carry the argument, the scoping and the
+     * reason neither an `allow` entry nor a `roots` narrowing would have been
+     * honest. `allow` is still `[]`, and no path is exempt.
+     *
+     * `pattern` is kept alongside `detect` deliberately: the gate suite asserts
+     * the rule's pattern is assembled from the construct table, so a construct
+     * cannot be dropped from the sweep by editing the recognition instead.
      */
     pattern: anyOf(EXPORT_CONSTRUCTS),
-    what: 'builds an export or download path; P1-27 publishes no export surface',
+    detect: (source) => unauthorizedExports(source).length > 0,
+    what: 'builds an export or download path no authorized export contract accounts for',
     allow: [],
   },
   {
