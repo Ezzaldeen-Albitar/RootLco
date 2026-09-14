@@ -28,9 +28,12 @@ import { join } from 'node:path';
 import {
   P1_31_AREAS,
   P1_31_OPERATION_IDS,
+  deferredSegments,
   deriveSegments,
   ownedSegments,
+  p1_31PagesUnder,
 } from '../../scripts/ci/check-p1-31-access.mjs';
+import { p1_29PagesUnder } from '../../scripts/ci/check-p1-29-access.mjs';
 
 const ROOT = process.cwd();
 const GATE = join(ROOT, 'scripts', 'ci', 'check-p1-31-access.mjs');
@@ -123,9 +126,38 @@ export default async function Page({ params }) {
  * because both share that same root. Both numbers below are read off the gate's
  * own report line on THIS merged head, which carries the overview page and this
  * form together.
+ *
+ * The DO-001 completeness pass moved the SEGMENT count from 9 to 10 and left the
+ * page count at 16. It added the eight operations P1-31 screens consume that this
+ * list had never named: the five delivery writes and the company directory, all of
+ * which share a resource root the list already derived, and the two
+ * checklist-template reads, whose root `delivery-checklist-templates` nothing else
+ * derives. So one new segment and no new page — and, as with `warranty` and
+ * `reports` before it, a configuration page landing under that segment tomorrow
+ * meets this rule already written. Both numbers are read off the gate's own report
+ * line on this head.
+ *
+ * The same pass then moved BOTH numbers, 10 to 12 and 16 to 17, when the audit
+ * screen was measured against the rule the list follows: every operation a P1-31
+ * screen consumes is named, whether or not P1-31 published it. That screen is one
+ * this phase modified and it carries its own committed browser specification, so
+ * its two operations are claimed — a new derived root, `audit-events` — and the
+ * `audit-log` area is named beside them, because the page lives under
+ * `(dashboard)/administration/audit-log` and no derived root matches it. Two new
+ * segments, one new page. Both numbers are read off the gate's own report line.
+ *
+ * Review then found what those numbers were hiding: SEVEN of the seventeen judged
+ * pages were `(dashboard)/work-orders/**`, admitted by the resource root of
+ * the work-order delivery read — a SUB-resource at `/work-orders/{id}/delivery`
+ * — and six of them consume no P1-31 operation at all. They are now DEFERRED to
+ * the P1-29 gate, which owns that area and judges them with `judgePage`, the same
+ * function this gate imports. So the judged count is 10 and the deferred count 7;
+ * the SEGMENT count does not move, because owning the operation root is a separate
+ * claim from judging the pages under it.
  */
-const PINNED_PAGES = 16;
-const PINNED_OWNED_SEGMENTS = 9;
+const PINNED_PAGES = 10;
+const PINNED_OWNED_SEGMENTS = 12;
+const PINNED_DEFERRED_PAGES = 7;
 
 describe('the derivation is P1-31’s own and is not empty', () => {
   it('derives the delivery and warranty resource roots from the register', () => {
@@ -134,7 +166,17 @@ describe('the derivation is P1-31’s own and is not empty', () => {
     // meaningless, and the gate itself refuses it.
     expect(segments.length).toBeGreaterThan(0);
     expect(segments.length, segments.join(', ')).toBe(PINNED_OWNED_SEGMENTS);
-    for (const expected of ['deliveries', 'warranties', 'work-orders', 'org']) {
+    for (const expected of [
+      'deliveries',
+      'warranties',
+      'work-orders',
+      'org',
+      // Derived only by the two checklist-template reads DO-001 added, and by
+      // nothing else — which is why the segment count moved with them.
+      ['delivery', 'checklist', 'templates'].join('-'),
+      // Derived only by the two audit-event reads the same pass added.
+      ['audit', 'events'].join('-'),
+    ]) {
       expect(segments, `${expected} is a P1-31 resource root`).toContain(expected);
     }
   });
@@ -191,6 +233,38 @@ describe('the derivation is P1-31’s own and is not empty', () => {
     // directory the form picks a branch from.
     expect(P1_31_OPERATION_IDS).toContain(id('org', 'employee-list'));
     expect(P1_31_OPERATION_IDS).toContain(id('org', 'branch-list'));
+    // The company directory the readiness queue and the report scope selector
+    // consume. Same root as the two above, so it widens nothing about the segments
+    // and everything about the claim.
+    expect(P1_31_OPERATION_IDS).toContain(id('org', 'company-list'));
+    // The five delivery WRITES the handover screens send. Every one shares the
+    // `deliveries` root the reads already contribute, so no segment moved when they
+    // landed and nothing said they were unowned — which is the failure mode an
+    // allow-list has and a namespace does not.
+    for (const tail of [
+      'delivery-create',
+      'delivery-receiver-verify',
+      'delivery-checklist-record',
+      'delivery-signature-attach',
+      'delivery-complete',
+    ]) {
+      expect(P1_31_OPERATION_IDS, `${tail} is owned`).toContain(id('sal', tail));
+    }
+    // The two checklist-template reads the handover assembles its checklist from.
+    // Their root is derived by nothing else this list names, so these two are what
+    // moved the segment count.
+    expect(P1_31_OPERATION_IDS).toContain(id('sal', 'delivery-checklist-template-list'));
+    expect(P1_31_OPERATION_IDS).toContain(id('sal', 'delivery-checklist-template-read'));
+    // The two audit-event reads the audit screen consumes. P1-31 did not publish
+    // them and that is not the test: the rule this list follows is EVERY operation
+    // a P1-31 screen consumes, which is why the branch and company directories are
+    // here too. The area that makes their page judged is named beside them.
+    expect(P1_31_OPERATION_IDS).toContain(id('iam', 'audit-event-list'));
+    expect(P1_31_OPERATION_IDS).toContain(id('iam', 'audit-event-detail'));
+    expect(P1_31_AREAS).toContain(['audit', 'log'].join('-'));
+    // …and the PARENT is deliberately not an area: naming it would pull every
+    // administration screen in the product into this gate's subject.
+    expect(P1_31_AREAS).not.toContain('administration');
     // Three operations on the same two subjects are deliberately NOT claimed. The
     // two administration commands: no screen of this phase administers a roster.
     // The single-employee read: it was claimed while an adapter with no consumer
@@ -346,8 +420,40 @@ describe('the repository’s own run is not vacuous', () => {
     // See PINNED_PAGES / PINNED_OWNED_SEGMENTS above: both move whenever a
     // P1-31 page or owned segment is added or removed.
     const owned = /across (\d+) owned segment\(s\)/.exec(out)?.[1] ?? '0';
+    const handedOver = /(\d+) deferred to the P1-29 gate/.exec(out)?.[1] ?? '0';
     expect(Number(examined), out).toBe(PINNED_PAGES);
     expect(Number(owned), out).toBe(PINNED_OWNED_SEGMENTS);
+    expect(Number(handedOver), out).toBe(PINNED_DEFERRED_PAGES);
+  });
+
+  it('defers only pages the P1-29 gate really judges, and says how many', () => {
+    /*
+     * The deferral is the one thing here that could silently remove coverage, so
+     * it is proved from both ends rather than asserted. Every page this gate
+     * hands over is in the sibling's own page set — computed by the sibling, not
+     * restated — and the gate itself carries the same check and reports a page
+     * handed over and not taken as a violation.
+     */
+    const appRoot = join(ROOT, 'apps', 'web', 'src', 'app');
+    const { judged, deferred: handedOver } = p1_31PagesUnder(appRoot) as {
+      judged: string[];
+      deferred: string[];
+    };
+    expect(handedOver.length).toBe(PINNED_DEFERRED_PAGES);
+    expect(judged.length).toBe(PINNED_PAGES);
+    const sibling = new Set(
+      (p1_29PagesUnder(appRoot) as string[]).map((p) => p.replace(/\\/g, '/'))
+    );
+    for (const page of handedOver) {
+      expect(sibling, `${page} is judged by the P1-29 gate`).toContain(page.replace(/\\/g, '/'));
+    }
+    // …and the deferral is DERIVED from that gate, so it cannot outlive it. Only
+    // the work-orders area is in the intersection today, and the P1-30 gate is
+    // deliberately not deferred to — doing so would recreate the singular-area
+    // hole this file exists to close.
+    expect(deferredSegments().has('work-orders')).toBe(true);
+    expect(deferredSegments().has('delivery')).toBe(false);
+    expect(deferredSegments().has(['warranty', 'policies'].join('-'))).toBe(false);
   });
 
   it('refuses an application root under the floor, instead of reporting health', () => {
