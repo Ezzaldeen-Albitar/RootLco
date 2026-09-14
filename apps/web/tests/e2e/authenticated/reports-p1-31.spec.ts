@@ -573,7 +573,15 @@ test.describe('export principal (companion)', () => {
    * ## The one condition under which it may skip
    *
    * No companion handoff on this checkout — so no principal, and therefore no holder of
-   * `rpt.export` to sign in as. Every other absence is a failure.
+   * `rpt.export` to sign in as. Every other absence is a failure, and that includes the
+   * REPORTING SLICE itself, which the sibling cases above are entitled to skip on and this
+   * one is not. The difference is what the companion handoff means: it is written only by a
+   * run that has already created the principal and exported over HTTP, so once it exists the
+   * browser half of the disclosure is owed. A checkout without the reporting screens is the
+   * acceptance procedure's unmet case, and the procedure records the witness as unmet —
+   * a recorded outcome, taken deliberately. A skip here would spell that same situation as
+   * "nothing to report" inside a green tier, which is the exact shape of green tick this
+   * phase has already been burned by, so the absence fails with the reason named instead.
    */
   test('a holder of rpt.export downloads the report from the screen', async ({
     page,
@@ -583,8 +591,19 @@ test.describe('export principal (companion)', () => {
     test.skip(exportHandoff === null, NO_EXPORT_HANDOFF_REASON);
     const h = exportHandoff as P131ExportHandoff;
     const locale = localeOf(testInfo.project.name);
-    // test-honesty-allow: TH-002 -- the reporting slice is not on this checkout; see reportsAbsentReason
-    test.skip(!hasMessage(locale, CATALOGUE_TITLE_KEY), reportsAbsentReason(locale));
+    /*
+     * THE FIRST DEPENDENCY, and a FAILURE rather than a skip — see the docblock. The
+     * handoff above establishes that a companion run happened; from here on every absence
+     * is a gap in the evidence this case exists to produce, and the acceptance procedure
+     * classifies the checkout rather than this file quietly opting out of it.
+     */
+    expect(
+      hasMessage(locale, CATALOGUE_TITLE_KEY),
+      `${reportsAbsentReason(locale)} The export companion has run on this checkout, so the ` +
+        'positive export browser witness is owed and this case FAILS rather than skipping: ' +
+        'the acceptance procedure records an unmet witness as unmet, and a skipped case inside ' +
+        'a green tier is not that record.'
+    ).toBe(true);
 
     /*
      * Signing in through the real form, once, for the reason
