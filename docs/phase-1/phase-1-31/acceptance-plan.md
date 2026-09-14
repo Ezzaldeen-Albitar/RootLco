@@ -305,7 +305,10 @@ there; no case defaults a kind. The handoff-gated cases carry a second gate for 
 they run only when the browser is signed in as the organisation administrator whose records they
 are about.
 
-Twenty-one cases per project, forty-two in total, plus the sign-in setup. The specs are **not** added to
+Twenty-one cases per project, forty-two in total, plus the sign-in setup. **That count is measured
+on this branch and it moves:** it covers the five `*-p1-31.spec.ts` files that exist here and does
+not include the delivery-writes spec, which is on an unmerged Frontend-proofs branch. After that
+branch merges the figure becomes twenty-five per project and fifty in total. The specs are **not** added to
 `authenticated-tablet`: that project's rule is that a document obliges the surface to work at tablet
 width, and no document does for these screens.
 
