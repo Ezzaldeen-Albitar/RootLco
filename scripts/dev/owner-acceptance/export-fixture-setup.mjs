@@ -96,21 +96,29 @@
  *
  * ## The deferred constraints, and the connection that can prove them
  *
- * Four constraint triggers over the rows below are deferred:
- * `tg_role_grants_require_scope` and `tg_grant_scopes_require_scope`
- * (`supabase/migrations/20260718092000_iam_role_grants_and_scopes.sql:206-215`), and
- * `tg_role_grants_delegation_authority` and `tg_grant_scopes_delegation_authority`
- * (`20260727090000_iam_grant_delegation_scope_backstop.sql:249-256`). **`ROLLBACK` never
+ * THREE deferred constraint triggers can fire on this insert-only path:
+ * `tg_role_grants_require_scope`
+ * (`supabase/migrations/20260718092000_iam_role_grants_and_scopes.sql:205-208`),
+ * `tg_role_grants_delegation_authority`
+ * (`20260727090000_iam_grant_delegation_scope_backstop.sql:248-251`) and
+ * `tg_grant_scopes_delegation_authority` (`:253-256`). A fourth deferred trigger guards these
+ * tables — `tg_grant_scopes_require_scope`
+ * (`20260718092000_iam_role_grants_and_scopes.sql:210-213`) — but it fires `AFTER DELETE ON
+ * iam.grant_scopes` and this tool issues no delete, so it never fires here. **`ROLLBACK` never
  * fires a deferred constraint**, so a rehearsal that only rolled back would establish
  * nothing whatever about the scope rows. `SET CONSTRAINTS ALL IMMEDIATE` therefore runs
  * inside the transaction after the writes — before the rehearsal's `ROLLBACK` and before the
  * real `COMMIT` — and the evidence carries `deferredConstraintsForced` as the witness.
  *
- * The delegation backstop returns true only under a superuser or `BYPASSRLS` connection
- * (`20260727090000_iam_grant_delegation_scope_backstop.sql:108-113`). So the fixture also
- * asks whether its own connection is one and refuses with its own exit code when it is not,
- * recording the answer as `connectionRole`. Without that question a rehearsal could pass on
- * a connection under which the real commit would fail.
+ * The delegation backstop returns true — that is, declines to constrain — under more than one
+ * condition: a superuser or `BYPASSRLS` connection
+ * (`20260727090000_iam_grant_delegation_scope_backstop.sql:108-113`), and equally a caller that
+ * is not a member of `app_runtime` (`:114-116`). So the privileged connection this fixture
+ * requires is **sufficient, not necessary**: what requiring it buys is that the proof does not
+ * rest on which role happens to be connected. The fixture asks whether its own connection is
+ * superuser or `BYPASSRLS`, refuses with its own exit code when it is not, and records the
+ * answer as `connectionRole`. Without that question a rehearsal could pass on a connection
+ * under which the real commit would fail.
  *
  * Even with both, a rehearsal cannot prove the COMMIT-time state of a DIFFERENT connection.
  * What it establishes is narrower and is stated in those words: the same statements ran, and
@@ -127,11 +135,27 @@
  * The details quads name the principal, the role, the codes, the expiry, the environment and
  * — in plain words — that this row is an acceptance fixture.
  *
- * Plus one evidence JSON, RESERVED BEFORE the transaction opens: created `wx` with a
- * `status: 'pending'` record, so a path that already exists or cannot be written refuses
- * before anything has been granted rather than after, and then finalized in place — the same
- * reserved file, never a second exclusive create. It carries identifiers and permission codes
- * only.
+ * Plus one evidence JSON, RESERVED IMMEDIATELY BEFORE the transaction opens and AFTER every
+ * guard: created `wx` with a `status: 'pending'` record once the target, the confirmation, the
+ * connection's privilege and the shared lease are all settled, and then finalized in place —
+ * the same reserved file, never a second exclusive create. It carries identifiers and
+ * permission codes only.
+ *
+ * That order is the point, and it is the order the exit codes assume:
+ *
+ *   - a refusal BEFORE the reservation — a wrong environment, a wrong confirmation token, a
+ *     connection that cannot prove the deferred constraints, a contended lease — leaves **no
+ *     evidence file at all**, so the same attempt number can simply be run again;
+ *   - a refusal AFTER the reservation, the ones inside the transaction included, **finalizes
+ *     the reserved file** with `status: 'refused'` and the reason, so the record says what
+ *     happened rather than sitting at `pending`;
+ *   - exit 8 therefore means what it says: a genuine prior attempt already owns that file, and
+ *     the attempt number must advance.
+ *
+ * Two cases can leave `pending` behind and no others: a CRASH between the reservation and the
+ * finalize — a killed process, a lost machine — and a finalize that itself failed, which is
+ * exit 11 and prints under its own prefix saying the work committed. A `pending` file is read as
+ * exactly that, and the audit rows are where to establish whether the transaction committed.
  *
  * ## Inputs
  *
@@ -157,6 +181,10 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { GuardFailure, SYSTEM_ACTOR, assertLocalTarget } from './context.mjs';
+// The field names of the result, from the one module the consumer loads too. Building the
+// object through `buildExportFixtureResult` is what makes a rename here a thrown error instead
+// of a null in the companion's summary.
+import { buildExportFixtureResult } from './export-fixture-result-contract.mjs';
 import {
   DATABASE_LEASE_KEY,
   acquireDatabaseLease,
@@ -354,8 +382,11 @@ function parseArgs(argv) {
  * exercised by connecting to a database is a guard nobody exercises.
  * `tests/ci/p1-31-export-fixture-refusals.test.ts` is where that matrix is actually driven —
  * every refusal below, plus the environment guard, the exclusive reservation, the lease and
- * the connection-privilege precondition, each asserting its exit code and that no write
- * statement reached the client.
+ * the connection-privilege precondition. Each case asserts its exit code; the cases that run
+ * with a client additionally assert what reached it, which is no write statement for every
+ * refusal before `BEGIN` and a finalized `refused` record for the one raised inside the
+ * transaction. The earlier cases cannot make that second assertion because no client exists
+ * yet — the input is parsed before anything connects — and that file names which ones do.
  */
 export function readFixtureInput(env = process.env, argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
@@ -629,12 +660,32 @@ async function takeFixtureLease(client) {
 }
 
 /**
- * The whole fixture: the two preconditions that cannot be taken back, then one transaction.
+ * The whole fixture: every guard, then the reservation, then one transaction.
  *
  * Exported so a proof can drive it against a database without spawning a process, and so
- * `--dry-run` is the same code path as the real run with a different ending. The order here
- * is the point — the connection's privilege and the shared lease are settled BEFORE the
- * rehearsal's `BEGIN`, because a rehearsal that cannot be trusted is worse than none.
+ * `--dry-run` is the same code path as the real run with a different ending.
+ *
+ * ## The order, which is the whole design
+ *
+ *   1. `assertLocalAndConfirmed` — the loopback target and the confirmation token;
+ *   2. `assertPrivilegedConnection` — whether this connection can prove the deferred
+ *      constraints at all (exit 10);
+ *   3. `takeFixtureLease` — the one shared-database lease, contention refused not awaited
+ *      (exit 9);
+ *   4. **reserve the evidence file `wx`** (exit 8);
+ *   5. `writeExportFixture` — `BEGIN`, the writes, `SET CONSTRAINTS ALL IMMEDIATE`, then
+ *      `COMMIT` or the rehearsal's `ROLLBACK`;
+ *   6. finalize the reserved file — `applied`, `dry-run`, or `refused` with the reason.
+ *
+ * The reservation sits at 4 and not at 1 because an attempt that refused at 1, 2 or 3 granted
+ * nothing, wrote nothing and cost nothing: it must leave no residue, so the operator re-runs the
+ * SAME attempt number instead of spending one of three bounded attempts on a run that never
+ * opened a transaction. It sits before 5 and not after because a path that cannot be written
+ * must refuse while there is still nothing installed to inspect.
+ *
+ * Anything that refuses from 4 onwards finalizes the reserved file as `refused`. A file left at
+ * `pending` therefore means one of exactly two things: the process died between the reservation
+ * and the finalize, or step 6 ITSELF failed — which is exit 11, and stderr says so in words.
  */
 export async function installExportFixture(client, input, options = {}) {
   const { assertTarget = assertLocalTarget } = options;
@@ -642,15 +693,48 @@ export async function installExportFixture(client, input, options = {}) {
   const connectionRole = await assertPrivilegedConnection(client);
   const lease = await takeFixtureLease(client);
   try {
-    return await writeExportFixture(client, input, {
-      dbTarget: {
-        host: target?.host ?? null,
-        port: target?.port ?? null,
-        database: target?.database ?? null,
-      },
-      connectionRole,
-      lease,
-    });
+    const evidencePath = reserveFixtureEvidence(input);
+    let result;
+    try {
+      result = await writeExportFixture(client, input, {
+        dbTarget: {
+          host: target?.host ?? null,
+          port: target?.port ?? null,
+          database: target?.database ?? null,
+        },
+        connectionRole,
+        lease,
+      });
+    } catch (error) {
+      // The reservation exists and the transaction did not survive, so the record says so.
+      // Never `pending`: a reader cannot tell a refused run from a dead machine.
+      recordRefusedEvidence(evidencePath, input, error);
+      throw error;
+    }
+    try {
+      finalizeFixtureEvidence(evidencePath, input, result);
+    } catch (error) {
+      /*
+       * AFTER the commit on a real pass.
+       *
+       * So this is not a failure to install: the role, the grant and the audit row exist. The
+       * message says so in those words and never implies a rollback, because an operator who
+       * read "failed" and re-ran would be told the principal already holds a live grant
+       * (exit 6) and would have to work out why from first principles. On a rehearsal there is
+       * nothing committed, so the original error travels unchanged.
+       */
+      if (input.dryRun) throw error;
+      throw new FixtureRefused(
+        'committed — inspect the audit row(s) before any retry. The role ' +
+          `${result.roleCode} (${result.roleId}), the grant ${result.grantId} and the audit ` +
+          `record ${result.auditRecordId} ARE installed for ${result.principal}; what failed is ` +
+          `the evidence file (${String(error?.code ?? 'write failed')}). Nothing was rolled ` +
+          `back. Read those rows first; then, if a retry is still wanted, run --attempt ` +
+          `${String(input.attempt + 1)}.`,
+        11
+      );
+    }
+    return result;
   } finally {
     try {
       await releaseDatabaseLease(client);
@@ -841,7 +925,18 @@ async function writeExportFixture(client, input, { dbTarget, connectionRole, lea
      */
     const forced = await client.query('SET CONSTRAINTS ALL IMMEDIATE');
 
-    const result = {
+    /*
+     * ASSEMBLED FROM THE CONTRACT, not typed out as a literal.
+     *
+     * `buildExportFixtureResult` refuses an object whose keys are not exactly the contract's,
+     * so a field renamed, dropped or added here throws on this line — inside the transaction,
+     * before either ending — rather than reaching the companion as a null it would record
+     * without complaint. The names are spelled in
+     * `scripts/dev/owner-acceptance/export-fixture-result-contract.mjs` and checked against
+     * this object by `tests/ci/p1-31-export-fixture-refusals.test.ts`, which drives this very
+     * function with a stub client and compares the key set of what it returns.
+     */
+    const result = buildExportFixtureResult({
       kind:
         'privileged LOCAL identity fixture setup — an operator act. Not HTTP delegation of ' +
         'rpt.export, not a bundle change, and not a human approval.',
@@ -882,7 +977,7 @@ async function writeExportFixture(client, input, { dbTarget, connectionRole, lea
         tenantCreatedAt: new Date(freshness.tenantCreatedAt).toISOString(),
         accountCreatedAt: new Date(freshness.accountCreatedAt).toISOString(),
       },
-    };
+    });
 
     if (input.dryRun) {
       /*
@@ -927,11 +1022,19 @@ export function fixtureEvidencePath(input) {
  * `orchestration/acceptance/p1-31-export-companion.mjs` reads `parsed.result`, and flattening
  * it would break the consumer for no gain.
  */
-export function fixtureEvidenceDocument(input, result, status, now = new Date()) {
+export function fixtureEvidenceDocument(input, result, status, now = new Date(), refusal = null) {
   return {
     what: 'P1-31 export companion — privileged LOCAL identity fixture setup',
-    /** `pending` before the transaction, then `dry-run` or `applied`. */
+    /**
+     * `pending` between the reservation and the ending, then `dry-run`, `applied` or `refused`.
+     *
+     * Every refusal from the reservation onwards finalizes this file as `refused`, so a record
+     * that stays `pending` means either the process died in between or this very write failed —
+     * the second of which exits 11 and says on stderr that the work committed.
+     */
     status,
+    /** The refusal that ended the run, or `null`. Never a driver message — see below. */
+    refusal,
     at: now.toISOString(),
     attempt: input.attempt,
     attemptBound: MAX_FIXTURE_ATTEMPT,
@@ -972,13 +1075,20 @@ export function fixtureEvidenceDocument(input, result, status, now = new Date())
 }
 
 /**
- * The evidence file, RESERVED before the transaction opens.
+ * The evidence file, RESERVED immediately before the transaction opens — and after every guard.
  *
- * This is the whole point of the two-step: reserving afterwards meant a path that already
- * existed, or a directory that could not be written, refused AFTER the grant had committed —
- * a run that granted and then could not say so. `wx` here refuses first, while there is still
- * nothing to inspect. The finalize step below overwrites this same reserved file and never
- * takes a second exclusive create.
+ * Two orderings are wrong and this is the third. Reserving AFTER the transaction meant a path
+ * that already existed, or a directory that could not be written, refused after the grant had
+ * committed: a run that granted and then could not say so. Reserving BEFORE the guards meant a
+ * wrong environment, an unprivileged connection or a contended lease left a `pending` file
+ * behind having granted nothing, so the natural re-run collided with that residue on exit 8 and
+ * the only documented recovery spent one of three bounded attempts. So `wx` runs here, once the
+ * target, the confirmation, the connection's privilege and the lease are all settled and
+ * immediately before `BEGIN`: a refusal earlier than this leaves nothing at all, and a refusal
+ * from here on finalizes this file as `refused`.
+ *
+ * The finalize step below overwrites this same reserved file and never takes a second exclusive
+ * create.
  */
 export function reserveFixtureEvidence(input, now = new Date()) {
   const path = fixtureEvidencePath(input);
@@ -1013,18 +1123,68 @@ export function finalizeFixtureEvidence(path, input, result, now = new Date()) {
   return path;
 }
 
+/**
+ * The reason a refusal is bounded to a class and a code when it is not one of ours.
+ *
+ * A `FixtureRefused` message is written in this file and is safe to keep. Anything else may be a
+ * `pg` error, whose message carries the host, the port, the user and sometimes the password —
+ * and this evidence file is archived. So the same rule the CLI handler follows applies here: the
+ * class and the code, never the message, never a stack.
+ */
+function refusalRecordFor(error) {
+  if (error instanceof FixtureRefused) {
+    return { exitCode: error.exitCode, kind: error.name, reason: error.message };
+  }
+  const kind = error instanceof Error ? error.name : 'Error';
+  return {
+    exitCode: exitCodeFor(error),
+    kind,
+    code: error?.code === undefined ? null : String(error.code),
+    reason:
+      'The underlying message is deliberately not recorded: a driver error carries the ' +
+      'connection settings and this file is kept. The class and the code above are what this ' +
+      'record may safely hold; the audit rows are where to establish the database state.',
+  };
+}
+
+/**
+ * The reserved file, finalized as REFUSED rather than left at `pending`.
+ *
+ * Called for every refusal from the reservation onwards, the ones raised inside the transaction
+ * included, so `pending` means a crash and nothing else. A failure to write this record is
+ * swallowed on purpose: the refusal that brought us here is the outcome the caller must see, and
+ * replacing it with a filesystem error would hide the fault behind its own bookkeeping. That is
+ * the one path that can still leave `pending` behind, and it is the same path a killed process
+ * takes.
+ */
+function recordRefusedEvidence(path, input, error, now = new Date()) {
+  try {
+    writeFileSync(
+      path,
+      `${JSON.stringify(
+        fixtureEvidenceDocument(input, null, 'refused', now, refusalRecordFor(error)),
+        null,
+        2
+      )}\n`,
+      { encoding: 'utf8', mode: 0o600, flag: 'w' }
+    );
+  } catch {
+    // See the docblock: the original refusal wins.
+  }
+  return path;
+}
+
 async function main() {
   const input = readFixtureInput();
 
   /*
-   * RESERVED FIRST, before a connection is even opened.
+   * NO RESERVATION HERE.
    *
-   * Nothing has been granted at this point, so a path that is already taken or a directory
-   * that cannot be written refuses here — where there is nothing to inspect and nothing to
-   * undo — instead of after the commit, which is where it used to refuse.
+   * The evidence file is reserved inside `installExportFixture`, after the target, the
+   * confirmation, the connection's privilege and the lease, and immediately before `BEGIN` —
+   * see that function's docblock for why each of the other two orderings was wrong. `main`
+   * only needs the PATH for its own output, and that is a pure function of the input.
    */
-  const evidencePath = reserveFixtureEvidence(input);
-
   const target = assertLocalTarget();
   const client = new pg.Client(target);
   await client.connect();
@@ -1040,29 +1200,7 @@ async function main() {
     }
   }
 
-  /*
-   * Everything from HERE is after the commit on a real pass.
-   *
-   * So a failure here is not a failure to install: the role, the grant and the audit row
-   * exist. The message says so in those words and never implies a rollback, because an
-   * operator who read "failed" and re-ran would be told the principal already holds a live
-   * grant (exit 6) and would have to work out why from first principles.
-   */
-  try {
-    finalizeFixtureEvidence(evidencePath, input, result);
-  } catch (error) {
-    if (input.dryRun) throw error;
-    throw new FixtureRefused(
-      'committed — inspect the audit row(s) before any retry. The role ' +
-        `${result.roleCode} (${result.roleId}), the grant ${result.grantId} and the audit ` +
-        `record ${result.auditRecordId} ARE installed for ${result.principal}; what failed is ` +
-        `the evidence file (${String(error?.code ?? 'write failed')}). Nothing was rolled ` +
-        `back. Read those rows first; then, if a retry is still wanted, run --attempt ` +
-        `${String(input.attempt + 1)}.`,
-      11
-    );
-  }
-
+  const evidencePath = fixtureEvidencePath(input);
   process.stdout.write('P1-31 export fixture setup\n');
   process.stdout.write(`  outcome     ${result.outcome}\n`);
   process.stdout.write(
@@ -1090,7 +1228,19 @@ const invokedDirectly =
 if (invokedDirectly) {
   main().catch((error) => {
     if (error instanceof FixtureRefused) {
-      process.stderr.write(`\nExport fixture setup refused: ${error.message}\n\n`);
+      /*
+       * Exit 11 is NOT a refusal and must not be printed as one.
+       *
+       * It travels as a `FixtureRefused` because that is how this command carries an exit code,
+       * but what it means is the opposite: the transaction COMMITTED and something after it
+       * failed. Printing it under "refused" invited exactly the misreading the whole ordering
+       * exists to prevent, so it gets its own prefix, which states the truth.
+       */
+      const prefix =
+        error.exitCode === 11
+          ? 'Export fixture setup COMMITTED, then failed after commit:'
+          : 'Export fixture setup refused:';
+      process.stderr.write(`\n${prefix} ${error.message}\n\n`);
       process.exit(exitCodeFor(error));
     }
     if (error instanceof GuardFailure) {

@@ -13,15 +13,33 @@
  * is a guard nobody exercises, and an acceptance fixture whose refusals are unexercised is a
  * privileged writer with an untested safety catch.
  *
- * ## What every case here asserts, and why it is two things and not one
+ * ## What every case here asserts, and which cases assert the second thing
  *
- * Each case asserts the EXIT CODE the refusal carries — through `exitCodeFor`, the same
+ * EVERY case asserts the EXIT CODE the refusal carries — through `exitCodeFor`, the same
  * function the command's own CLI handler exits with, so the code documented is the code the
- * process uses — and that NO WRITE STATEMENT reached the client. The second half is the one
- * that matters: a guard that refuses after issuing `BEGIN` and an `INSERT` has already done
- * the thing it was meant to prevent, and an exit code alone cannot tell the two apart. The
- * stub client below records every statement it is asked for, and the assertion is over that
- * record.
+ * process uses.
+ *
+ * The second assertion — what reached the client — is made by the cases that HAVE a client, and
+ * an earlier version of this docblock claimed all of them did. They do not, and they cannot: the
+ * command parses and validates its input, checks its target and reads its confirmation token
+ * before anything connects, so for those cases there is no client in existence to assert about
+ * and a stub passed in would be asserting on the test's own furniture. Named exactly:
+ *
+ *   - the six cases under "a malformed invocation" and the three under "a target that is not
+ *     the local acceptance database" drive `readFixtureInput` and `assertLocalAndConfirmed`,
+ *     which run before `client.connect()`. Exit code only;
+ *   - the two direct-call cases under "reserves its evidence" drive `reserveFixtureEvidence`
+ *     itself and assert on the FILESYSTEM instead — that the pending record is written, and
+ *     that a taken path is refused with its code and left byte for byte as it was;
+ *   - every case that passes a `RecordingClient` asserts the statement record: no write
+ *     statement at all for the privilege precondition, the unreadable role, lease contention
+ *     and the reservation collision — all four of which refuse before `BEGIN` — and, for the
+ *     one case that refuses INSIDE the transaction, that `BEGIN` did reach the client and the
+ *     reserved evidence file was finalized as `refused` rather than left `pending`.
+ *
+ * A guard that refuses after issuing `BEGIN` and an `INSERT` has already done the thing it was
+ * meant to prevent, and an exit code alone cannot tell the two apart. That is why the stub below
+ * records every statement it is asked for.
  *
  * ## Why there is no database here, and no bypass either
  *
@@ -29,23 +47,31 @@
  * `assertLocalTarget`. The command line has no flag, no environment variable and no argument
  * that substitutes it, so nothing an operator can type relaxes the loopback check — the seam
  * exists for in-process callers: this file, and the disposable-database proof that must run
- * the real SQL against an isolated database and record the target it used. The two cases that
- * inject a stub target therefore prove the guards AFTER it, and the two cases that call the
- * real `assertLocalTarget` prove the guard itself by manipulating the environment it reads.
+ * the real SQL against an isolated database and record the target it used. The cases that inject
+ * a stub target therefore prove the guards AFTER it, and the cases that call the real
+ * `assertLocalTarget` prove the guard itself by manipulating the environment it reads — including
+ * the one that proves a refusal there leaves no evidence file behind.
  */
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 // The key from its OWN authority, not from the command under test: a test that read the
 // number out of the command could not tell a second, invented key from the shared one.
 import { DATABASE_LEASE_KEY } from '../../scripts/lib/database-lease.mjs';
+// The contract module the COMPANION loads at runtime out of this checkout, imported here as the
+// companion imports it. Nothing in this file re-states a field name.
 import {
+  EXPORT_FIXTURE_RESULT_CONSUMED,
+  EXPORT_FIXTURE_RESULT_FIELDS,
+  validateExportFixtureResult,
+} from '../../scripts/dev/owner-acceptance/export-fixture-result-contract.mjs';
+import {
+  EXPORT_FIXTURE_PERMISSIONS,
   FIXTURE_LEASE_HARNESS,
   MAX_FIXTURE_ATTEMPT,
   assertLocalAndConfirmed,
   exitCodeFor,
-  finalizeFixtureEvidence,
   fixtureEvidenceDocument,
   fixturePrincipalAddress,
   fixtureRoleCode,
@@ -136,7 +162,7 @@ class RecordingClient {
   readonly statements: string[] = [];
 
   constructor(
-    private readonly answers: {
+    protected readonly answers: {
       readonly privileged?: boolean;
       readonly roleReadable?: boolean;
       readonly lockGranted?: boolean;
@@ -145,24 +171,118 @@ class RecordingClient {
 
   query(text: string): Promise<StubAnswer> {
     this.statements.push(text);
+    return Promise.resolve(this.answer(text));
+  }
+
+  /** The canned answers, in a method a subclass can extend without losing the recording. */
+  protected answer(text: string): StubAnswer {
     if (text.includes('pg_roles')) {
-      if (this.answers.roleReadable === false) return Promise.resolve({ rows: [] });
-      return Promise.resolve({
-        rows: [{ name: 'postgres', privileged: this.answers.privileged !== false }],
-      });
+      if (this.answers.roleReadable === false) return { rows: [] };
+      return { rows: [{ name: 'postgres', privileged: this.answers.privileged !== false }] };
     }
     if (text.includes('pg_try_advisory_lock')) {
-      return Promise.resolve({ rows: [{ locked: this.answers.lockGranted !== false }] });
+      return { rows: [{ locked: this.answers.lockGranted !== false }] };
     }
     if (text.includes('pg_advisory_unlock')) {
-      return Promise.resolve({ rows: [{ unlocked: true }] });
+      return { rows: [{ unlocked: true }] };
     }
-    return Promise.resolve({ rows: [], rowCount: 0 });
+    return { rows: [], rowCount: 0 };
   }
 
   get wrote(): string[] {
     return this.statements.filter((statement) => WRITE_STATEMENT.test(statement));
   }
+}
+
+/** One identifier per row the installing stub answers with. None of them names anything real. */
+const GRANT_ID = '66666666-6666-4666-8666-666666666666';
+const AUDIT_ID = '77777777-7777-4777-8777-777777777777';
+const OPERATOR_ACCOUNT_ID = '88888888-8888-4888-8888-888888888888';
+const VALID_TO = '2026-09-14T15:00:00.000Z';
+const CREATED_AT = '2026-09-14T13:00:00.000Z';
+
+/**
+ * A client that lets the transaction run to its end, so the WRITER'S OWN result can be read.
+ *
+ * This is what makes the drift test able to fail. The previous version compared a result typed
+ * out in this file against a key list also typed out in this file, which agreed with each other
+ * no matter what the command did. This stub instead answers every precondition truthfully enough
+ * for `installExportFixture` to reach its own `COMMIT` and RETURN the object it really builds; the
+ * assertions are then over that object and the shared contract module.
+ *
+ * It is still not a `pg` double — nothing connects — and no case asserts on the imitation. The
+ * statements are matched on the distinctive fragment of each query, and `liveGrants` exists so one
+ * case can make the command refuse INSIDE the transaction.
+ */
+class InstallingClient extends RecordingClient {
+  constructor(private readonly world: { readonly liveGrants?: number } = {}) {
+    super();
+  }
+
+  protected override answer(text: string): StubAnswer {
+    if (text.includes('pg_roles') || text.includes('advisory')) return super.answer(text);
+    // The operator lookup and the freshness lookup both name `iam.user_accounts`, so each is
+    // matched on the fragment only it carries.
+    if (text.includes('SELECT id, tenant_id FROM iam.user_accounts')) {
+      return { rows: [{ id: OPERATOR_ACCOUNT_ID, tenant_id: TENANT }], rowCount: 1 };
+    }
+    if (text.includes('iam.platform_grants')) return { rows: [{ '?column?': 1 }], rowCount: 1 };
+    if (text.includes('org.tenants t')) return { rows: [{ '?column?': 1 }], rowCount: 1 };
+    if (text.includes('FROM org.tenants')) {
+      return {
+        rows: [{ id: TENANT, tenant_code: `p31_journey_a_${STAMP}`, created_at: CREATED_AT }],
+        rowCount: 1,
+      };
+    }
+    if (text.includes('email::text AS email')) {
+      return { rows: [{ id: USER, email: '', created_at: CREATED_AT }], rowCount: 1 };
+    }
+    if (text.includes('org.legal_companies')) return { rows: [{ id: COMPANY }], rowCount: 1 };
+    if (text.includes('org.branches')) return { rows: [{ id: BRANCH }], rowCount: 1 };
+    if (text.includes('SELECT id, valid_to FROM iam.role_grants')) {
+      const live = this.world.liveGrants ?? 0;
+      return {
+        rows: live > 0 ? [{ id: GRANT_ID, valid_to: VALID_TO }] : [],
+        rowCount: live,
+      };
+    }
+    if (text.includes('SELECT id FROM iam.roles')) return { rows: [], rowCount: 0 };
+    if (text.includes('SELECT id, permission_code FROM iam.permissions')) {
+      return {
+        rows: EXPORT_FIXTURE_PERMISSIONS.map((code: string, index: number) => ({
+          id: `perm-${String(index)}`,
+          permission_code: code,
+        })),
+        rowCount: EXPORT_FIXTURE_PERMISSIONS.length,
+      };
+    }
+    if (text.includes('INSERT INTO iam.role_permissions')) {
+      return {
+        rows: EXPORT_FIXTURE_PERMISSIONS.map((_code: string, index: number) => ({
+          permission_id: `perm-${String(index)}`,
+        })),
+        rowCount: EXPORT_FIXTURE_PERMISSIONS.length,
+      };
+    }
+    if (text.includes('INSERT INTO iam.role_grants')) {
+      return { rows: [{ valid_to: VALID_TO }], rowCount: 1 };
+    }
+    if (text.includes('iam.audit_append')) return { rows: [{ id: AUDIT_ID }], rowCount: 1 };
+    if (text.includes('SET CONSTRAINTS')) return { rows: [], command: 'SET CONSTRAINTS' };
+    return { rows: [], rowCount: 1 };
+  }
+}
+
+/** The writer's OWN result object, produced by driving the real function to its commit. */
+async function installedResult(
+  input: unknown,
+  world: { readonly liveGrants?: number } = {}
+): Promise<{ readonly result: Record<string, unknown>; readonly client: InstallingClient }> {
+  const client = new InstallingClient(world);
+  const result = (await installExportFixture(client, input, {
+    assertTarget: stubTarget,
+  })) as Record<string, unknown>;
+  return { result, client };
 }
 
 /**
@@ -410,8 +530,7 @@ describe('the export fixture refuses before it writes, and the record shows it w
     expect(FIXTURE_LEASE_HARNESS.length).toBeGreaterThan(0);
   });
 });
-
-describe('the export fixture reserves its evidence before it mutates anything', () => {
+describe('the export fixture reserves its evidence immediately before the transaction', () => {
   it('reserves the file exclusively and writes a pending record into it', () => {
     const directory = temporaryDirectory();
     const path = join(directory, 'export-fixture-setup.json');
@@ -425,7 +544,7 @@ describe('the export fixture reserves its evidence before it mutates anything', 
     expect(
       reserved.status,
       'the reserved record must say it is pending, so a run that died between the reservation ' +
-        'and the commit is readable as exactly that'
+        'and the ending is readable as exactly that — and nothing else leaves it that way'
     ).toBe('pending');
     expect(reserved.result).toBeNull();
     expect(reserved.attempt).toBe(1);
@@ -448,137 +567,249 @@ describe('the export fixture reserves its evidence before it mutates anything', 
     ).toBe('another run wrote this\n');
   });
 
-  it('finalizes the SAME reserved file rather than taking a second exclusive create', () => {
+  it('refuses a taken path through the command without the transaction opening', async () => {
+    // The reservation now runs AFTER the lease and immediately before `BEGIN`, so a collision is
+    // a refusal that a client IS present for — and exit 8 now means what it says: a genuine prior
+    // attempt owns that file. So the statement record has to show the transaction never opened.
+    const directory = temporaryDirectory();
+    const path = join(directory, 'export-fixture-setup.json');
+    writeFileSync(path, 'an earlier attempt wrote this\n', 'utf8');
+    const input = readFixtureInput(LOCAL_ENV, [...argv(), '--evidence', path]);
+    const client = new RecordingClient();
+    const refusal = await asyncRefusalOf(() =>
+      installExportFixture(client, input, { assertTarget: stubTarget })
+    );
+    expect(refusal.code).toBe(8);
+    expect(
+      client.wrote,
+      'the reservation sits before BEGIN, so a collision issues no write statement'
+    ).toEqual([]);
+    expect(
+      readFileSync(path, 'utf8'),
+      'the prior attempt’s record is left byte for byte as it was'
+    ).toBe('an earlier attempt wrote this\n');
+  });
+
+  it('leaves NO evidence file when the environment refuses, so the attempt is not spent', async () => {
     const directory = temporaryDirectory();
     const path = join(directory, 'export-fixture-setup.json');
     const input = readFixtureInput(LOCAL_ENV, [...argv(), '--evidence', path]);
-    reserveFixtureEvidence(input);
-    finalizeFixtureEvidence(path, input, sampleResult(), new Date('2026-09-14T13:00:00.000Z'));
-    const finalized = JSON.parse(readFileSync(path, 'utf8')) as { status: string };
+    const client = new RecordingClient();
+    const originalEnvironment = process.env.ROOTLCO_ENV;
+    process.env.ROOTLCO_ENV = 'production';
+    try {
+      // The REAL target guard: no `assertTarget` is passed, so the default is what refuses.
+      const refusal = await asyncRefusalOf(() => installExportFixture(client, input));
+      expect(refusal.code).toBe(2);
+    } finally {
+      if (originalEnvironment === undefined) delete process.env.ROOTLCO_ENV;
+      else process.env.ROOTLCO_ENV = originalEnvironment;
+    }
+    expect(
+      existsSync(path),
+      'a refusal before the reservation granted nothing and must leave nothing, so the operator ' +
+        'runs the SAME attempt number again instead of spending one of three'
+    ).toBe(false);
+    expect(
+      client.statements,
+      'the target guard runs before the connection is asked anything at all'
+    ).toEqual([]);
+  });
+
+  it('leaves NO evidence file when another harness holds the shared lease', async () => {
+    const directory = temporaryDirectory();
+    const path = join(directory, 'export-fixture-setup.json');
+    const input = readFixtureInput(LOCAL_ENV, [...argv(), '--evidence', path]);
+    const client = new RecordingClient({ lockGranted: false });
+    const refusal = await asyncRefusalOf(() =>
+      installExportFixture(client, input, { assertTarget: stubTarget })
+    );
+    expect(refusal.code, 'lease contention carries its own exit code').toBe(9);
+    expect(
+      existsSync(path),
+      'contention wrote nothing to the database, so it must write nothing to the filesystem either'
+    ).toBe(false);
+    expect(client.wrote).toEqual([]);
+  });
+
+  it('finalizes the reserved file as refused when the transaction refuses, not as pending', async () => {
+    const directory = temporaryDirectory();
+    const path = join(directory, 'export-fixture-setup.json');
+    const input = readFixtureInput(LOCAL_ENV, [...argv(), '--evidence', path]);
+    // A principal that already holds a live grant is refused INSIDE the transaction, which is
+    // the case that used to be able to leave a `pending` record behind.
+    const client = new InstallingClient({ liveGrants: 1 });
+    const refusal = await asyncRefusalOf(() =>
+      installExportFixture(client, input, { assertTarget: stubTarget })
+    );
+    expect(refusal.code, 'an existing live grant carries its own exit code').toBe(6);
+    expect(
+      client.wrote,
+      'this refusal is raised inside the transaction, so BEGIN really did reach the client'
+    ).toContain('BEGIN');
+    const recorded = JSON.parse(readFileSync(path, 'utf8')) as {
+      status: string;
+      result: unknown;
+      refusal: { exitCode: number; reason: string } | null;
+    };
+    expect(
+      recorded.status,
+      'a refusal after the reservation must finalize the record with what happened'
+    ).toBe('refused');
+    expect(recorded.status, 'only a crash may leave a record pending').not.toBe('pending');
+    expect(recorded.result).toBeNull();
+    expect(recorded.refusal?.exitCode, 'the record carries the exit code the process used').toBe(6);
+    expect(
+      String(recorded.refusal?.reason),
+      'and the command’s own words, which are safe to keep because this file wrote them'
+    ).toContain('live grant');
+  });
+
+  it('finalizes the SAME reserved file rather than taking a second exclusive create', async () => {
+    const directory = temporaryDirectory();
+    const path = join(directory, 'export-fixture-setup.json');
+    const input = readFixtureInput(LOCAL_ENV, [...argv(), '--evidence', path]);
+    // Driven through the command, which reserves and finalizes the one file itself. A second
+    // exclusive create would refuse with exit 8 here rather than reach an applied record.
+    const { result } = await installedResult(input);
+    const finalized = JSON.parse(readFileSync(path, 'utf8')) as {
+      status: string;
+      refusal: unknown;
+    };
     expect(finalized.status).toBe('applied');
+    expect(finalized.refusal, 'a run that did not refuse records no refusal').toBeNull();
+    expect(result.outcome).toBe('applied');
   });
 });
 
 /**
- * A result shaped exactly as the writer's transaction returns one.
+ * The writer and its consumer, held to ONE list of field names without a database.
  *
- * Not read from anywhere: it is the sample the drift test below parses with the consumer's
- * own key list, so the two files are compared without either of them running.
+ * The first version of this block could not fail. It compared a `sampleResult()` typed out in
+ * this file against a `COMPANION_READS_FROM_RESULT` key list also typed out in this file, so both
+ * sides of the comparison were the test's own furniture: renaming a field in the command left it
+ * green while the companion, which defaults every field it cannot find to `null`, recorded a
+ * column of nulls that no gate reads as a failure. That is the defect class this file exists to
+ * close, so it had to be closed here too.
+ *
+ * What replaces it has no hand-written copy of anything:
+ *
+ *   - the names live once, in `scripts/dev/owner-acceptance/export-fixture-result-contract.mjs`.
+ *     The writer ASSEMBLES its result through that module's `buildExportFixtureResult`, which
+ *     refuses an object whose keys are not exactly the contract's, and the companion IMPORTS the
+ *     same module out of the repository checkout it already resolves and validates the parsed
+ *     `result` with it before it summarises anything;
+ *   - the cases below obtain the writer's REAL result by driving `installExportFixture` with the
+ *     stub client above, and assert its key set against the contract. A rename in the writer
+ *     fails on the writer's own path; a rename in the contract fails here; a field the companion
+ *     needs and the writer stopped emitting fails the validator.
+ *
+ * The companion is held outside this repository — for the reason the acceptance plan gives — so
+ * its reader cannot be imported here. What can be, and now is, is the one module both sides load.
  */
-function sampleResult(): Record<string, unknown> {
-  return {
-    kind: 'privileged LOCAL identity fixture setup — an operator act.',
-    outcome: 'applied',
-    attempt: 1,
-    attemptBound: MAX_FIXTURE_ATTEMPT,
-    lease: { key: DATABASE_LEASE_KEY, harness: FIXTURE_LEASE_HARNESS, acquired: true },
-    connectionRole: { name: 'postgres', privileged: true },
-    // The three keys the command records, and no fourth: the target it writes down names the
-    // database and never the credential it connected with.
-    dbTarget: { host: '127.0.0.1', port: 54_322, database: 'postgres' },
-    deferredConstraintsForced: true,
-    tenantId: TENANT,
-    tenantCode: `p31_journey_a_${STAMP}`,
-    principal: fixturePrincipalAddress(STAMP, 1),
-    userId: USER,
-    companyId: COMPANY,
-    branchId: BRANCH,
-    roleId: '55555555-5555-4555-8555-555555555555',
-    roleCode: fixtureRoleCode(STAMP, 1),
-    grantId: '66666666-6666-4666-8666-666666666666',
-    scope: 'branch',
-    permissions: ['rpt.export'],
-    validTo: '2026-09-14T15:00:00.000Z',
-    setupActor: '00000000-0000-0000-0000-000000000000',
-    approvalRef: null,
-    auditAction: 'iam.grant.issued',
-    auditRecordId: '77777777-7777-4777-8777-777777777777',
-  };
-}
+describe('the fixture result and its evidence keep the shape the export companion reads', () => {
+  async function drivenResult(): Promise<Record<string, unknown>> {
+    const directory = temporaryDirectory();
+    const input = readFixtureInput(LOCAL_ENV, [
+      ...argv(),
+      '--evidence',
+      join(directory, 'export-fixture-setup.json'),
+    ]);
+    const { result } = await installedResult(input);
+    return result;
+  }
 
-/**
- * The writer and its consumer, held to the same document shape without a database.
- *
- * TWO files disagree in one of two ways and only one of them is visible to a typechecker.
- * The writer is `scripts/dev/owner-acceptance/export-fixture-setup.mjs`, whose evidence nests
- * the run's facts under `result`. The consumer is
- * `orchestration/acceptance/p1-31-export-companion.mjs`, which is held OUTSIDE this repository
- * — for the reason the acceptance plan gives — and reads `parsed.result` and then twelve keys
- * off it. It cannot be imported here, so the twelve keys are DUPLICATED below with this
- * comment naming both files: if the writer renames one of them, this fails, and the closing
- * run does not discover it at the point where its evidence summary quietly turns to nulls.
- *
- * An independent read established that the two AGREE today; the shape is nested on both sides
- * and is deliberately left that way. This test is what keeps that true.
- */
-const COMPANION_READS_FROM_RESULT = [
-  'kind',
-  'outcome',
-  'roleId',
-  'roleCode',
-  'grantId',
-  'scope',
-  'validTo',
-  'setupActor',
-  'approvalRef',
-  'auditAction',
-  'auditRecordId',
-  'permissions',
-] as const;
+  it('returns a result whose key set is exactly the shared contract’s', async () => {
+    const result = await drivenResult();
+    expect(
+      Object.keys(result).sort(),
+      'this is the object the command really built, not a sample of one'
+    ).toEqual([...EXPORT_FIXTURE_RESULT_FIELDS].sort());
+  });
 
-describe('the fixture evidence keeps the shape the export companion reads', () => {
-  it('nests the run under `result`, where the companion looks for it', () => {
-    const input = readFixtureInput(LOCAL_ENV, argv());
+  it('passes the companion’s validator, which really does reject a renamed field', async () => {
+    const result = await drivenResult();
+    expect(
+      validateExportFixtureResult(result),
+      'the reader can find every field it consumes, and nothing it cannot account for'
+    ).toEqual({ missing: [], extra: [] });
+    // And the validator is not vacuous. Renaming each consumed field in turn must be reported,
+    // because a validator that accepted everything would be the previous defect in a new place.
+    for (const field of EXPORT_FIXTURE_RESULT_CONSUMED) {
+      const renamed: Record<string, unknown> = { ...result };
+      delete renamed[field];
+      renamed[`${field}Renamed`] = result[field];
+      const drift = validateExportFixtureResult(renamed);
+      expect(drift.missing, `a renamed ${field} must be reported as missing`).toEqual([field]);
+      expect(drift.extra, `and the new spelling must be reported as unknown`).toEqual([
+        `${field}Renamed`,
+      ]);
+    }
+  });
+
+  it('nests that same result under `result`, where the companion looks for it', async () => {
+    const directory = temporaryDirectory();
+    const input = readFixtureInput(LOCAL_ENV, [
+      ...argv(),
+      '--evidence',
+      join(directory, 'export-fixture-setup.json'),
+    ]);
+    const { result } = await installedResult(input);
     const document = fixtureEvidenceDocument(
       input,
-      sampleResult(),
+      result,
       'applied',
       new Date('2026-09-14T13:00:00.000Z')
     ) as Record<string, unknown>;
+    // Through JSON, because JSON is all the companion ever sees of this object.
     const parsed = JSON.parse(JSON.stringify(document)) as { result?: Record<string, unknown> };
     expect(
       parsed.result,
       'the companion reads `parsed.result`; a flattened document would read as an empty summary ' +
         'rather than as a failure'
     ).toBeTypeOf('object');
-    const result = parsed.result ?? {};
-    const missing = COMPANION_READS_FROM_RESULT.filter((key) => !(key in result));
     expect(
-      missing,
-      'the export companion reads these keys off `result` and records null for each one it does ' +
-        'not find, so a rename here is silent at the point of use'
-    ).toEqual([]);
-    expect(Array.isArray(result.permissions)).toBe(true);
+      validateExportFixtureResult(parsed.result),
+      'the nested object survives the round trip with every consumed field intact'
+    ).toEqual({ missing: [], extra: [] });
+    expect(Array.isArray((parsed.result ?? {}).permissions)).toBe(true);
   });
 
-  it('carries the new witnesses the correction pass added, at both statuses', () => {
-    const input = readFixtureInput(LOCAL_ENV, argv());
+  it('carries the new witnesses the correction pass added, at both statuses', async () => {
+    const directory = temporaryDirectory();
+    const input = readFixtureInput(LOCAL_ENV, [
+      ...argv(),
+      '--evidence',
+      join(directory, 'export-fixture-setup.json'),
+    ]);
     const pending = fixtureEvidenceDocument(input, null, 'pending') as Record<string, unknown>;
     expect(pending.status).toBe('pending');
     expect(pending.result).toBeNull();
     expect(pending.attempt).toBe(1);
+    expect(pending.refusal, 'a reserved record refuses nothing yet').toBeNull();
 
-    const applied = fixtureEvidenceDocument(input, sampleResult(), 'applied') as Record<
-      string,
-      unknown
-    >;
-    const result = applied.result as Record<string, unknown>;
+    const { result } = await installedResult(input);
+    const applied = fixtureEvidenceDocument(input, result, 'applied') as Record<string, unknown>;
+    const recorded = applied.result as Record<string, unknown>;
     for (const key of ['lease', 'connectionRole', 'dbTarget', 'deferredConstraintsForced']) {
-      expect(result[key], `the evidence must witness ${key}`).toBeDefined();
+      expect(recorded[key], `the evidence must witness ${key}`).toBeDefined();
     }
-    expect((result.dbTarget as Record<string, unknown>).database).toBeDefined();
+    expect((recorded.dbTarget as Record<string, unknown>).database).toBeDefined();
     expect(
-      Object.keys(result.dbTarget as Record<string, unknown>).sort(),
+      Object.keys(recorded.dbTarget as Record<string, unknown>).sort(),
       'the recorded target names the database and never a credential'
     ).toEqual(['database', 'host', 'port']);
   });
 
-  it('states the retry consequence in the operator’s own words', () => {
-    const input = readFixtureInput(LOCAL_ENV, argv());
-    const document = fixtureEvidenceDocument(input, sampleResult(), 'applied') as Record<
-      string,
-      unknown
-    >;
+  it('states the retry consequence in the operator’s own words', async () => {
+    const directory = temporaryDirectory();
+    const input = readFixtureInput(LOCAL_ENV, [
+      ...argv(),
+      '--evidence',
+      join(directory, 'export-fixture-setup.json'),
+    ]);
+    const { result } = await installedResult(input);
+    const document = fixtureEvidenceDocument(input, result, 'applied') as Record<string, unknown>;
     expect(
       String(document.retryTruth),
       'the consequence of a failed post-commit attempt is recorded, not implied'
