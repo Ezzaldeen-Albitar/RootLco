@@ -40,6 +40,15 @@
  *    a route parse, and it is checked by the isolation suites themselves rather than by
  *    this file.
  *
+ * ## Attribution is by WHOLE table name
+ *
+ * A Layer-1 citation is earned only where the cited case's own body names the table,
+ * and "names" is the whole qualified `schema.table` — never the name as a substring.
+ * `includes` was the first rule and it cannot tell `sal.delivery_records` from
+ * `sal.delivery_records_archive`, so a case that queried only the longer table would
+ * have carried the shorter table's citation. `namesTable` anchors the match on both
+ * sides; the two cases below witness both halves on synthetic bodies.
+ *
  * ## Passing on nothing is refused
  *
  * A generator that compares a rendered document to a missing file, or to an empty one,
@@ -547,6 +556,10 @@ interface PhaseTable {
    * nothing else — was cited for `rpt.report_configuration_versions` as well, a table
    * it never touches. That is the over-attribution a matrix of evidence exists to
    * prevent, committed by the document meant to prevent it.
+   *
+   * The body is read for the WHOLE qualified name (`namesTable`), not for the name as
+   * a substring, so a body mentioning only a longer table that the attributed name is
+   * a prefix of does not earn the citation either.
    */
   readonly behavioural: readonly CaseRef[];
 }
@@ -567,6 +580,23 @@ function caseBodyOf(file: string, title: string): string {
     if (closing.test(lines[end] ?? '')) return lines.slice(start, end + 1).join('\n');
   }
   throw new Error(`${file}: "${title}" has no closing brace`);
+}
+
+/**
+ * Whether `body` names `table` as a WHOLE qualified name, `schema.table`.
+ *
+ * The first version of the attribution check asked `body.includes(table)`, which any
+ * LONGER name the attributed one is a prefix of also satisfies: a case querying only
+ * `sal.delivery_records_archive` would have earned the citation for
+ * `sal.delivery_records`. That is the same over-attribution the per-table mapping
+ * exists to prevent, one character further along the name. So the match is anchored on
+ * both sides — no word character and no dot before the schema, no word character after
+ * the table — while a column reference (`schema.table.column`) still counts, because it
+ * is a use of the table.
+ */
+function namesTable(body: string, table: string): boolean {
+  const escaped = table.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?<![\\w.])${escaped}(?![\\w])`).test(body);
 }
 
 /** The four database suites that carry a behavioural cross-tenant read negative. */
@@ -998,17 +1028,13 @@ describe('P1-31-QA-002 / QA-003 the two matrices', () => {
      * judgement; whether the case is about that table is not, and that half is measured.
      */
     for (const entry of PHASE_TABLES) {
-      expect({ table: entry.table, cases: entry.behavioural.length }).toEqual({
-        table: entry.table,
-        cases: entry.behavioural.length,
-      });
       expect(entry.behavioural.length).toBeGreaterThan(0);
       for (const ref of entry.behavioural) {
         const body = caseBodyOf(ref.file, ref.title);
         expect({
           table: entry.table,
           case: ref.title,
-          queries: body.includes(entry.table),
+          queries: namesTable(body, entry.table),
         }).toEqual({ table: entry.table, case: ref.title, queries: true });
       }
     }
@@ -1016,8 +1042,34 @@ describe('P1-31-QA-002 / QA-003 the two matrices', () => {
     // And the falsifier: the case that used to be over-attributed does NOT name the
     // table it was cited for, so the check above would have caught it.
     const p111 = caseBodyOf(P111_CASE.file, P111_CASE.title);
-    expect(p111.includes('rpt.report_configurations')).toBe(true);
-    expect(p111.includes('rpt.report_configuration_versions')).toBe(false);
+    expect(namesTable(p111, 'rpt.report_configurations')).toBe(true);
+    expect(namesTable(p111, 'rpt.report_configuration_versions')).toBe(false);
+  });
+
+  it('attributes a table to a body that names it as a whole qualified name', () => {
+    // The positive half of the rule, on synthetic bodies rather than a fixture, in the
+    // three shapes a query writes a table name: bare, carrying a column, and quoted.
+    const table = 'rpt.report_configurations';
+    expect(namesTable(`select id from ${table} where tenant_id = $1`, table)).toBe(true);
+    expect(namesTable(`select ${table}.id from ${table}`, table)).toBe(true);
+    expect(namesTable(`await query('${table}')`, table)).toBe(true);
+  });
+
+  it('refuses a body that names only a longer table sharing the prefix', () => {
+    // The half `includes` could not do, and the reason this rule was changed: the
+    // shorter name is a SUBSTRING of the longer one, so the first rule read a case that
+    // queried only the longer table as evidence about the shorter. Both directions are
+    // witnessed, in the trailing and the leading position, and the phase's own
+    // neighbouring pair is witnessed with them.
+    const shorter = 'sal.delivery_records';
+    const extended = `${shorter}_archive`;
+    expect(namesTable(`select id from ${extended}`, shorter)).toBe(false);
+    expect(namesTable(`select id from ${shorter}`, extended)).toBe(false);
+    expect(namesTable(`select id from archive_${shorter}`, shorter)).toBe(false);
+    const configurations = 'rpt.report_configurations';
+    const versions = 'rpt.report_configuration_versions';
+    expect(namesTable(`select id from ${versions}`, configurations)).toBe(false);
+    expect(namesTable(`select id from ${configurations}`, versions)).toBe(false);
   });
 
   it('refuses a citation that resolves to no line or to more than one', () => {
