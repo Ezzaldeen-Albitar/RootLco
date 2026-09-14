@@ -1738,7 +1738,7 @@ describe('P1-31-SEC-003 SE-0 — the phase operation set, parsed', () => {
   it('derives fourteen one-code-withheld cases over the six multi-code operations', () => {
     /*
      * Derived from the parse, so an operation that gains or loses a declared code
-     * changes this table. The five are named to make the derivation legible, not to
+     * changes this table. The six are named to make the derivation legible, not to
      * drive it.
      */
     expect([...new Set(PARTIAL_HOLDING_CASES.map((row) => row.probe.id))].sort()).toEqual([
@@ -1751,7 +1751,7 @@ describe('P1-31-SEC-003 SE-0 — the phase operation set, parsed', () => {
     ]);
     expect(PARTIAL_HOLDING_CASES).toHaveLength(14);
 
-    // Each case withholds ONE declared code and its actor holds the other eleven.
+    // Each case withholds ONE declared code and its actor holds the other twelve.
     for (const row of PARTIAL_HOLDING_CASES) {
       const actor = withholdingActorFor(row.withheld);
       expect(actor.permissions).not.toContain(row.withheld);

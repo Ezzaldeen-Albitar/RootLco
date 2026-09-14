@@ -119,7 +119,8 @@ export class OperationRegistrationError extends Error {
 
 const ID_PATTERN = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/;
 /**
- * Each segment is either a lower-case literal or a `{camelCase}` parameter.
+ * Each segment is either a lower-case literal or a `{camelCase}` parameter,
+ * optionally followed by a lower-case custom action, e.g. `{reportCode}:export`.
  *
  * P1-13's pattern was a character class, which accepted `/a{b}c}` and rejected
  * `{userId}` (no upper case) — fine while no route had a parameter, wrong as
