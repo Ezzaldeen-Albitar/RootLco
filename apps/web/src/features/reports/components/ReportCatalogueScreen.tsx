@@ -52,12 +52,13 @@ import { useCursorTrail } from './use-cursor-trail';
  * that exists for some rows and silently vanishes for others reads as a fault
  * rather than as a fact about the report.
  *
- * ## No download is offered, because there is no operation to offer
+ * ## Export belongs to a submitted report selection
  *
- * Report export is a prerequisite that has not been built and the export
- * permission is deliberately withheld, so a baseline names no export authority at
- * all. A download assembled in the browser would be a copy of restricted data
- * leaving through a path with no server-side authorization and no record of it.
+ * The report screen offers the P-12 export command after a branch and period have
+ * been submitted, under explicit export permission and published configuration.
+ * The catalogue itself has no selection to export. Platform baselines still name
+ * no export authority, and the backend commits a disclosure audit before returning
+ * any generated file.
  */
 const catalogueSignals = (page: CursorPage<ReportDefinition>) => ({
   nextCursor: page.nextCursor,

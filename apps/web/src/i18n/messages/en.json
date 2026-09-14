@@ -3696,7 +3696,7 @@
   "reports.catalogue.noFurther": "There is nothing further on this page.",
   "reports.catalogue.orderingLabel": "Order",
   "reports.catalogue.orderingNote": "The reports the system provides are listed first, then the ones your workshop set up.",
-  "reports.catalogue.noDownload": "There is no download here. Reports are read on screen.",
+  "reports.catalogue.noDownload": "Open a report to see its available export options. Export requires explicit authorization.",
   "reports.overview.title": "Operational overview",
   "reports.overview.description": "The four approved reports for one branch and one period, summarised side by side. Every figure is worked out by the system.",
   "reports.overview.crumb": "Overview",
@@ -3981,5 +3981,13 @@
   "warranty.policies.refusedInvalid": "Something you entered was refused. Check the fields and try again.",
   "warranty.policies.refusedDenied": "You are not allowed to change warranty plans. Ask an administrator if you need to.",
   "warranty.policies.refusedMissing": "This plan could not be found. It may have stopped being visible to you since this screen was opened.",
-  "warranty.policies.refusedNotSent": "The change could not be sent. Read the plan again and try once more."
+  "warranty.policies.refusedNotSent": "The change could not be sent. Read the plan again and try once more.",
+  "reports.export.title": "Export this report",
+  "reports.export.withheld": "Export is not available for this report with your current permissions.",
+  "reports.export.liveNote": "Export all rows for the displayed branch and period using current data. Values may have changed since this report was shown.",
+  "reports.export.reason": "Reason for export",
+  "reports.export.reasonRequired": "Enter a reason for export, up to 500 characters.",
+  "reports.export.preparing": "Preparing file…",
+  "reports.export.download": "Download CSV",
+  "reports.export.ready": "Report file prepared for download."
 }

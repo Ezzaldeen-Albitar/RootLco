@@ -153,6 +153,10 @@ export default async function ReportPage({
       locale={locale}
       messages={messages}
       definition={definition.data}
+      canExport={
+        holds(session.permissions, REPORT_PERMISSIONS.export) &&
+        definition.data.exportPermissionCode !== null
+      }
       scopeOptions={scopeOptions}
       named={namedReportSelection(query)}
     />

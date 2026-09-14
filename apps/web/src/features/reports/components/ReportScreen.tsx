@@ -33,6 +33,7 @@ import {
   ReportLoading,
 } from './ReportShell';
 import { ReportScopeForm } from './ReportScopeForm';
+import { ReportExportPanel } from './ReportExportPanel';
 import { useCursorTrail } from './use-cursor-trail';
 
 /**
@@ -41,9 +42,8 @@ import { useCursorTrail } from './use-cursor-trail';
  * ONE screen serves every report code, and that is the whole design. The
  * catalogue decides which reports exist; the run envelope decides what each one
  * renders — its columns, their kinds, its grouping and its drill-through all
- * arrive in the response. Nothing below branches on a report code, so the three
- * approved reports the engine has not registered yet need no second screen and
- * no contract guessed at in advance.
+ * arrive in the response. The four registered reports share this screen and its
+ * scoped export control without duplicating their dataset rules in the browser.
  *
  * ## Nothing is computed here. Nothing.
  *
@@ -115,12 +115,14 @@ export function ReportScreen({
   messages,
   definition,
   scopeOptions,
+  canExport = false,
   named = {},
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly definition: ReportDefinition;
   readonly scopeOptions: ReadState<ReportScopeOptions>;
+  readonly canExport?: boolean;
   /**
    * The selection the ADDRESS named — the overview's drill-through, or a link
    * somebody kept. Resolved against the caller's own directory by
@@ -206,6 +208,7 @@ export function ReportScreen({
           submitted={submitted}
           companyName={chosenCompany?.legalName ?? null}
           branchName={chosenBranch?.name ?? null}
+          canExport={canExport}
         />
       )}
     </div>
@@ -236,6 +239,7 @@ function ReportResults({
   submitted,
   companyName,
   branchName,
+  canExport,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -243,6 +247,7 @@ function ReportResults({
   readonly submitted: ReportScopeSelection;
   readonly companyName: string | null;
   readonly branchName: string | null;
+  readonly canExport: boolean;
 }) {
   const { companyId, branchId, from, to } = submitted;
   const read = useCallback(
@@ -329,6 +334,18 @@ function ReportResults({
       <p className="text-caption text-text-muted" lang={locale}>
         {translate(messages, 'reports.context.periodNote')}
       </p>
+
+      <ReportExportPanel
+        messages={messages}
+        reportCode={reportCode}
+        permitted={canExport}
+        selection={{
+          companyId: run.filters?.companyId ?? submitted.companyId,
+          branchId: run.filters?.branchId ?? submitted.branchId,
+          from: run.period.from,
+          to: run.period.to,
+        }}
+      />
 
       {groups.length === 0 ? null : (
         <GroupTable messages={messages} groups={groups} locale={locale} />

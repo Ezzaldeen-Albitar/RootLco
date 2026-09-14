@@ -43,6 +43,7 @@
     "gate:p1-12": "node scripts/db/gate-p1-12.mjs",
     "gate:p1-13": "npm run validate:module-boundaries && npm run validate:authorization-coverage && npm run validate:openapi && npm run lint && npm run typecheck && npm run format:check && npm run security:all && npm run test && npm run test:backend",
     "lint": "eslint",
+    "monitor:p1-31": "node scripts/ops/p1-31-monitor-alerts.mjs",
     "lint:api": "npm run lint --workspace @rootlco/api",
     "lint:fix": "eslint --fix",
     "lint:web": "npm run lint --workspace @rootlco/web",

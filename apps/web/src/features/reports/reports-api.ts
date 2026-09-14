@@ -1,5 +1,7 @@
 'use server';
 
+import { authorizedClient } from '@/lib/api/server-client';
+import { fromFailure, success } from '@/lib/forms/action-result';
 import {
   branchTargetQuery,
   query,
@@ -10,16 +12,19 @@ import {
 } from '@/lib/api/read-operation';
 import {
   isReportPeriod,
+  isSelectedReportExport,
   reportPageSize,
   type ReportDefinition,
+  type ReportExportBody,
+  type ReportExportState,
   type ReportRun,
   type ReportScopeOptions,
 } from './reports-contract';
 
 /**
- * The three reads the report screens issue (P1-31, FE-011 … FE-014).
+ * The reads and explicitly authorized export the report screens issue (P1-31, FE-011 … FE-014).
  *
- * Nothing here fetches. `readOperation` calls `authorizedClient()`, the only
+ * `readOperation` and the export action use `authorizedClient()`, the only
  * network owner in this application, and turns a transport outcome into a view
  * state — so a refusal reaches the screen as a refusal and never as an empty
  * report, which an operator reads as "there was no work in that period".
@@ -152,4 +157,64 @@ export async function runReport(input: {
       }
     );
   return readOperation<ReportRun>(path);
+}
+
+export async function exportReport(
+  reportCode: string,
+  input: ReportExportBody
+): Promise<ReportExportState> {
+  if (
+    !input ||
+    typeof reportCode !== 'string' ||
+    typeof input.reason !== 'string' ||
+    !input.reason.trim() ||
+    input.reason.trim().length > 500 ||
+    !isReportPeriod(input.from, input.to)
+  ) {
+    return {
+      status: 'invalid',
+      messageKey: 'reports.export.reasonRequired',
+      fieldErrors: { reason: 'reports.export.reasonRequired' },
+    };
+  }
+  const scopes = await readReportScopes();
+  if (scopes.status !== 'ok') {
+    return {
+      status:
+        scopes.status === 'denied'
+          ? 'denied'
+          : scopes.status === 'expired'
+            ? 'expired'
+            : 'unavailable',
+      messageKey: 'action.failed',
+      correlationId: scopes.correlationId,
+    };
+  }
+  if (
+    !scopes.data.companies.some((company) => company.id === input.companyId) ||
+    !scopes.data.branches.some(
+      (branch) => branch.id === input.branchId && branch.companyId === input.companyId
+    )
+  ) {
+    return { status: 'denied', messageKey: 'state.denied.title' };
+  }
+  const client = await authorizedClient();
+  if (!client) return { status: 'expired', messageKey: 'state.expired.title' };
+  const body: ReportExportBody = {
+    companyId: input.companyId,
+    branchId: input.branchId,
+    from: input.from,
+    to: input.to,
+    reason: input.reason.trim(),
+  };
+  const result = await client.send<unknown>(
+    'POST',
+    `/api/v1/reports/${encodeURIComponent(reportCode)}:export`,
+    body
+  );
+  if (!result.ok) return fromFailure(result, 1);
+  if (!isSelectedReportExport(result.data, reportCode, body)) {
+    return { status: 'error', messageKey: 'action.failed', correlationId: result.correlationId };
+  }
+  return { ...success('reports.export.ready', 1), exported: result.data };
 }

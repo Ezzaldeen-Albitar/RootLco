@@ -3696,7 +3696,7 @@
   "reports.catalogue.noFurther": "لا يوجد المزيد في هذه الصفحة.",
   "reports.catalogue.orderingLabel": "الترتيب",
   "reports.catalogue.orderingNote": "تظهر التقارير التي يوفرها النظام أولًا، ثم التقارير التي أعدّتها ورشتك.",
-  "reports.catalogue.noDownload": "لا يوجد تنزيل هنا. تُقرأ التقارير على الشاشة.",
+  "reports.catalogue.noDownload": "افتح تقريرًا للاطلاع على خيارات التصدير المتاحة له. يتطلب التصدير صلاحية صريحة.",
   "reports.overview.title": "لمحة تشغيلية عامة",
   "reports.overview.description": "التقارير الأربعة المعتمدة لفرع واحد ومدة واحدة، ملخّصة جنبًا إلى جنب. كل رقم يحسبه النظام.",
   "reports.overview.crumb": "لمحة عامة",
@@ -3981,5 +3981,13 @@
   "warranty.policies.refusedInvalid": "رُفض شيء مما أدخلته. راجع الحقول وحاول مرة أخرى.",
   "warranty.policies.refusedDenied": "لا يُسمح لك بتغيير خطط الضمان. اسأل مسؤولًا إن كنت بحاجة إلى ذلك.",
   "warranty.policies.refusedMissing": "تعذر العثور على هذه الخطة. ربما لم تعد ظاهرة لك منذ فتح هذه الشاشة.",
-  "warranty.policies.refusedNotSent": "تعذر إرسال التغيير. اقرأ الخطة من جديد وحاول مرة أخرى."
+  "warranty.policies.refusedNotSent": "تعذر إرسال التغيير. اقرأ الخطة من جديد وحاول مرة أخرى.",
+  "reports.export.title": "تصدير هذا التقرير",
+  "reports.export.withheld": "تصدير هذا التقرير غير متاح بصلاحياتك الحالية.",
+  "reports.export.liveNote": "تصدير جميع الصفوف للفرع والفترة المعروضين باستخدام البيانات الحالية. قد تكون القيم تغيرت منذ عرض هذا التقرير.",
+  "reports.export.reason": "سبب التصدير",
+  "reports.export.reasonRequired": "أدخل سبب التصدير بما لا يتجاوز 500 حرف.",
+  "reports.export.preparing": "جارٍ تجهيز الملف…",
+  "reports.export.download": "تنزيل CSV",
+  "reports.export.ready": "تم تجهيز ملف التقرير للتنزيل."
 }

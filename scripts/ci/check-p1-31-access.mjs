@@ -183,7 +183,7 @@ export const P1_31_OPERATION_IDS = Object.freeze([
   'wty.warranty-policy-status-set',
   'wty.warranty-coverage-create',
   'wty.warranty-coverage-status-set',
-  // The three reporting operations the FE-011 … FE-014 screens consume. Their
+  // The four reporting operations the FE-011 … FE-014 screens consume. Their
   // resource root is `reports`, which `P1_31_AREAS` already names — so these
   // entries widen nothing about the segments and everything about the CLAIM:
   // this gate's docblock requires an operation to be listed in the same change
@@ -192,6 +192,7 @@ export const P1_31_OPERATION_IDS = Object.freeze([
   'rpt.report-catalogue',
   'rpt.report-read',
   'rpt.report-run',
+  'rpt.report-export',
   // The employee register READ the FE-002 handover form consumes. P-17 published
   // four operations on that register; this is the one this phase's screens call.
   // The single-employee read was claimed here too and has been WITHDRAWN with the
