@@ -458,3 +458,98 @@ export function missingReason(what: string): string {
     'weaker.'
   );
 }
+
+/* ================================================================== *
+ * The export COMPANION handoff — a second document, read separately
+ * ================================================================== */
+
+/**
+ * What the export companion hands the browser half, and why it is not the same file.
+ *
+ * `orchestration/acceptance/p1-31-export-companion.mjs` runs AFTER the journey and
+ * beside it. The journey's own handoff is written by the journey and describes a run
+ * that made every record over HTTP; the export principal is a different identity
+ * altogether — created over HTTP with NO roles, then entitled by an explicitly recorded
+ * privileged LOCAL test fixture, which is why its proof is a separately labelled run and
+ * not a section of the journey.
+ *
+ * So it arrives as its own document under its own variable. Nothing here touches
+ * `P131Handoff.login`: that credential belongs to the organisation administrator the
+ * journey created, `auth.setup.ts` may sign in with it, and a reader that could return
+ * one where the other was expected is a reader that can hand a case the wrong principal.
+ */
+export interface P131ExportPrincipal {
+  readonly email: string;
+  readonly password: string;
+}
+
+/**
+ * Whether the privileged fixture the principal's entitlement depends on really ran.
+ *
+ * Carried so a browser case can say WHY an export control is missing — a setup that
+ * failed and a control that was never built are different facts, and the companion
+ * records the first with the marker `EXPORT_SETUP_FAILED`.
+ */
+export interface P131ExportSetup {
+  readonly ran: boolean;
+  readonly exitCode: number | null;
+  readonly marker: string | null;
+}
+
+export interface P131ExportHandoff {
+  readonly api: string;
+  readonly exportPrincipal: P131ExportPrincipal;
+  readonly companyId: string;
+  readonly branchId: string;
+  /** The dataset the companion exported over HTTP, so the browser opens the same one. */
+  readonly reportCode: string;
+  readonly reportPeriod: { readonly from: string; readonly to: string };
+  readonly setup?: P131ExportSetup | null;
+}
+
+/** The environment variable the companion prints and the export case reads. */
+export const EXPORT_HANDOFF_ENV = 'ROOTLCO_P131_EXPORT_HANDOFF';
+
+/**
+ * The reason the export case states when no companion has run on this checkout.
+ *
+ * The ONLY condition under which that case may skip. Once the document is there the
+ * case asserts, and a missing export control is a failure rather than another skip:
+ * the positive export evidence is required, and a suite that skipped its way past a
+ * missing control would let a closing run look complete without it.
+ */
+export const NO_EXPORT_HANDOFF_REASON =
+  `no P1-31 export companion handoff: set ${EXPORT_HANDOFF_ENV} to the export-handoff.json ` +
+  'that orchestration/acceptance/p1-31-export-companion.mjs wrote. That run creates the ' +
+  'principal and records the fixture its entitlement comes from, so without it there is no ' +
+  'holder of rpt.export to sign in as and nothing is claimed.';
+
+/**
+ * The companion's handoff, validated, or `null`.
+ *
+ * Every field the export case needs is checked here rather than at the point of use, for
+ * the reason `browserFixtures` states: a document that names half a principal is not a
+ * principal, and a case that trusted the rest would fail deep inside a form with a
+ * message about an element instead of about a missing record.
+ */
+export function readExportHandoff(): P131ExportHandoff | null {
+  const path = process.env[EXPORT_HANDOFF_ENV];
+  if (path === undefined || path === '') return null;
+  if (!existsSync(path)) return null;
+  const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  const handoff = parsed as P131ExportHandoff;
+  const principal: unknown = handoff.exportPrincipal;
+  if (typeof principal !== 'object' || principal === null) return null;
+  const { email, password } = principal as { email?: unknown; password?: unknown };
+  if (typeof email !== 'string' || email.length === 0) return null;
+  if (typeof password !== 'string' || password.length === 0) return null;
+  if (typeof handoff.companyId !== 'string' || handoff.companyId.length === 0) return null;
+  if (typeof handoff.branchId !== 'string' || handoff.branchId.length === 0) return null;
+  if (typeof handoff.reportCode !== 'string' || handoff.reportCode.length === 0) return null;
+  const period: unknown = handoff.reportPeriod;
+  if (typeof period !== 'object' || period === null) return null;
+  const { from, to } = period as { from?: unknown; to?: unknown };
+  if (typeof from !== 'string' || typeof to !== 'string') return null;
+  return handoff;
+}

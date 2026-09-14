@@ -11,6 +11,7 @@
   },
   "scripts": {
     "acceptance:create-owner": "node scripts/dev/owner-acceptance/create-owner-account.mjs",
+    "acceptance:export-fixture": "node scripts/dev/owner-acceptance/export-fixture-setup.mjs",
     "acceptance:full-cycle": "node scripts/dev/owner-acceptance/full-cycle.mjs",
     "acceptance:provision-fixtures": "node scripts/dev/owner-acceptance/provision-acceptance-fixtures.mjs",
     "acceptance:reset-owner": "node scripts/dev/owner-acceptance/reset-owner-account.mjs",
@@ -68,6 +69,7 @@
     "test:backend": "vitest run --config vitest.config.backend.ts",
     "test:coverage": "vitest run --coverage",
     "test:db": "vitest run --config vitest.config.db.ts",
+    "test:db-fixture": "vitest run --config vitest.config.db-fixture.ts",
     "test:integration": "npm run test:db",
     "test:unit": "vitest run",
     "test:watch": "vitest",
