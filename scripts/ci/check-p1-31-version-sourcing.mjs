@@ -547,7 +547,11 @@ export function versionedSendsIn(sourceFile) {
           // In the right place under the wrong name. The transport reads
           // `ifMatch`; anything else in the options object is a value nothing
           // looks at, which is the same defect wearing a better address.
-          if (spelling !== 'ifMatch' && versionOptionOf(argument) === null) {
+          //
+          // One test, not two: `versionSpellingOf` returns the FIRST spelling in
+          // `VERSION_SPELLINGS` and `ifMatch` is first, so a spelling that is not
+          // `ifMatch` is already an object that has no `ifMatch` in it.
+          if (spelling !== 'ifMatch') {
             misplaced.push({
               node,
               why:
