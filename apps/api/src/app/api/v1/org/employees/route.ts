@@ -150,7 +150,7 @@ export async function POST(request: Request): Promise<Response> {
   return handleOperation(
     EMPLOYEE_CREATE_OPERATION,
     request,
-    async ({ db, authorizeScope }) => {
+    async ({ db, authorizeScope, requireScopeClaim }) => {
       const parsed = parseOrFail(Body, body, 'body');
       const created = await iamRegistryModule().employees.createEmployee(
         db,
@@ -161,7 +161,8 @@ export async function POST(request: Request): Promise<Response> {
           userAccountId: parsed.userAccountId,
           employmentRef: parsed.employmentRef,
         },
-        authorizeScope
+        authorizeScope,
+        requireScopeClaim
       );
       return { status: 201, body: created, recordVersion: created.recordVersion };
     },

@@ -178,9 +178,13 @@ same file are the cheap half of the evidence rather than the whole of it.
   `wty.warranty.read`, so its administrator loses the warranty detail read and cannot delegate the
   code. The bundle is written once and no route can widen an existing organisation's server-owned
   role, so this waits on A0 decision **D-2** (the backfill) or on a freshly provisioned organisation.
-- **CC-10** — `wty.warranty_record_status_history` still has no reader anywhere in `apps/api/src`.
-  P-6 names the list and only the list, so **VHM-06 / WF-26 / PPD-13** is closed in its list limb and
-  open in its ledger limb.
+- **CC-10** — `wty.warranty_status_history` had no reader anywhere in `apps/api/src` when this slice
+  landed. P-6 names the list and only the list, so **VHM-06 / WF-26 / PPD-13** was closed in its list
+  limb and open in its ledger limb. _(This bullet named the table `wty.warranty_record_status_history`,
+  which no migration ever created — corrected in place by change control § 65 / CC-55 (b). **The
+  ledger limb closed on 2026-09-13** with prerequisite **P-18**, `wty.warranty-status-history`; see
+  [`warranty-history-seam.md`](./warranty-history-seam.md). Nothing else in this bullet changes: the
+  statement was true of this slice and of the five that followed it.)_
 - **P-10 / PPD-04** — no writer exists for `wty.warranty_policies` or `wty.warranty_coverage`, so on
   a freshly provisioned tenant every generation still returns `ERR-RES-001`. The suite seeds policies
   by SQL and says so. `wty.policy.manage` stays excluded from the bundle (CC-01).

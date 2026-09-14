@@ -160,11 +160,11 @@ every one of them.
 
 ## The surface every section below measures
 
-**Measured fact.** The phase's own route surface is **45 operations across 33 `route.ts` files in
+**Measured fact.** The phase's own route surface is **46 operations across 34 `route.ts` files in
 eight namespaces** — `deliveries` (9 files, 13 operations), `delivery-checklist-templates` (5, 8),
-`delivery-readiness` (1, 1), `report-configurations` (5, 7), `reports` (3, 3), `warranties` (2, 2),
+`delivery-readiness` (1, 1), `report-configurations` (5, 7), `reports` (3, 3), `warranties` (3, 3),
 `warranty-policies` (5, 7) and `org/employees` (3, 4), all under `apps/api/src/app/api/v1/`. Of the
-45: **24 writes and 21 reads; 24 `auditClass: 'privileged'` and 21 `auditClass: 'none'`; 11
+45 measured at `fb65b049`: **24 writes and 21 reads; 24 `auditClass: 'privileged'` and 21 `auditClass: 'none'`; 11
 `versionGuarded: true`; 16 `idempotent: true`; 12 distinct permission codes** —
 `org.employee.manage`, `org.employee.read`, `rpt.report.configure`, `rpt.report.read`,
 `sal.delivery.complete`, `sal.delivery.manage`, `sal.delivery.view`, `sal.finance.view`,
@@ -177,6 +177,17 @@ which catalogue row each code resolves to, is § 1.1. _(A parse that counts `ver
 textually returns twelve on this tree; the twelfth is inside a docblock in
 `org/employees/[employeeId]/status/route.ts`, and **eleven** declarations is the figure. It is
 recorded here because the same over-count would recur for the next reader.)_
+
+_(The headline of this section read "**45 operations across 33 `route.ts` files**" with `warranties`
+(2, 2), and it was true when written. **P-18** published `wty.warranty-status-history` on
+2026-09-13 — change control [§ 65 / **CC-55 (c)**](./change-control-2026-09-08.md) — and the
+headline is corrected in place above on **2026-09-14**: the surface is **46 operations across 34
+files**, with `warranties` (3, 3). The breakdown that follows the headline keeps its `fb65b049`
+measurement and moves by exactly one read — **24 writes and 22 reads, 24 `auditClass: 'privileged'`
+and 22 `auditClass: 'none'`**. Nothing else in it moves: the new operation is a GET, is neither
+`versionGuarded` nor `idempotent`, and its permission `wty.warranty.read` was already one of the
+twelve. **No other figure in this record is touched by this correction**; the closing re-measure
+re-derives the whole index at one head, which is this file's rule 5.)_
 
 ## 1. SEC-001 — least privilege and resolved scope
 
@@ -523,9 +534,15 @@ it cites.
 
 **Open items.**
 
-- **CC-10** is unchanged and was re-measured: `wty.warranty_record_status_history` has **no reader
-  anywhere in `apps/api/src`**, so the warranty status ledger cannot be exercised by an abuse case
-  that does not exist. **CC-31** names the missing reader as prerequisite P-18.
+- **CC-10** was unchanged at this head and was re-measured: `wty.warranty_status_history` had **no
+  reader anywhere in `apps/api/src`**, so the warranty status ledger could not be exercised by an
+  abuse case that did not exist. **CC-31** names the missing reader as prerequisite P-18.
+  _(This bullet named the table `wty.warranty_record_status_history`, which no migration ever
+  created — corrected in place on **2026-09-13** by change control § 65 / **CC-55 (b)**. **CC-10
+  closed** that day: `wty.warranty-status-history` publishes the ledger under `wty.warranty.read`,
+  branch-scoped, and `tests/backend/p1-31-warranty-read-seam.test.ts` now carries its cross-tenant,
+  cross-branch and permission refusals — so the abuse case this bullet says does not exist now does.
+  The re-measurement of this record is its owning lane's; nothing else here is re-based.)_
 - **CC-16** is unchanged as a property, and its operator act has now been performed once on one
   local environment — see § 11, which states exactly where and what that does and does not prove.
 - **Privilege widening across the phase as a set is covered, and the tier it is covered on is the
@@ -544,6 +561,15 @@ ERR-VAL-001`. All three write nothing, proved as a zero row-count delta. **SEC-0
   `rpt.report-run` resolves a platform dataset rather than a tenant's own configuration, so a 404 on
   that path carries no information about tenancy and is not offered here as isolation evidence.
   Neither carries an identifier, and neither is closed.
+  _(As of 2026-09-13 the first half of that last sentence is superseded: **SEC-003-O1 is CLOSED** and
+  now carries the identifier **CC-56**, register § 66. The three creates resolve the scope claim
+  before the insert and all three answer `403 ERR-IAM-001`, identically for another organisation's
+  real company and for one that exists nowhere — applying CC-14 § 2, which rules out both a 404 and a
+  422 for a scope-target mismatch. SE-7 now compares the whole disclosed document per probe rather
+  than the status and the code, and the zero row-count delta is unchanged. **SEC-003-O2 remains open
+  and undispositioned.** This item's own subject — the TIER the set is covered on — is untouched: the
+  suites are still integration assertions and no acceptance record exercises them, so **SEC-003
+  itself does not move**.)_
 
 ## 4. SEC-004 — the write-shape gate and audit-event coverage
 

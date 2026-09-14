@@ -9,10 +9,10 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 411   |
+| Public operations        | 412   |
 | Domains (modules)        | 20    |
-| OpenAPI paths            | 319   |
-| OpenAPI operations       | 411   |
+| OpenAPI paths            | 320   |
+| OpenAPI operations       | 412   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 121   |
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 411        |
+| Covered           | 412        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -52,7 +52,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | shared-services | 28         | 28      | 18     | 18      | 6          | 6               |
 | technician      | 18         | 18      | 12     | 12      | 4          | 5               |
 | vehicle         | 27         | 27      | 12     | 12      | 12         | 0               |
-| warranty        | 10         | 10      | 6      | 6       | 4          | 3               |
+| warranty        | 11         | 11      | 6      | 6       | 4          | 3               |
 | work-order      | 38         | 38      | 19     | 20      | 17         | 8               |
 
 ## Operations
@@ -470,6 +470,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `wty.warranty-policy-read`                          | GET    | `/api/v1/warranty-policies/{policyId}`                                              | tenant  | `wty.warranty.read`                                                  | —                                              | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
 | `wty.warranty-policy-rename`                        | PATCH  | `/api/v1/warranty-policies/{policyId}`                                              | company | `wty.policy.manage`                                                  | wty.warranty_policy.renamed                    | —    | yes | audit authorization cross-tenant denial isolation route service stale-version success                                         | Covered |
 | `wty.warranty-policy-status-set`                    | POST   | `/api/v1/warranty-policies/{policyId}/status`                                       | company | `wty.policy.manage`                                                  | wty.warranty_policy.status_changed             | yes  | yes | audit authorization cross-tenant denial idempotency isolation route service stale-version success                             | Covered |
+| `wty.warranty-status-history`                       | GET    | `/api/v1/warranties/{warrantyId}/status-history`                                    | branch  | `wty.warranty.read`                                                  | —                                              | —    | —   | authorization cross-tenant denial isolation pagination route service success                                                  | Covered |
 
 ## Event coverage matrix
 

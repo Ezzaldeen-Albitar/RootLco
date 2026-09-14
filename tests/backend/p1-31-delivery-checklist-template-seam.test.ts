@@ -595,15 +595,22 @@ describe('sal.delivery-checklist-template-create', () => {
     expect(await templateCount()).toBe(before);
   });
 
-  it('refuses a company that is not in the caller tenant', async () => {
+  it('refuses a company that is not visible to the caller', async () => {
     authAs(SAL_FULL);
     const response = await createTemplate({
       companyId: randomUUID(),
       templateCode: nextCode('nocompany'),
       name: 'Belongs nowhere',
     });
-    expect(response.status).toBe(422);
-    expect(await codeOf(response)).toBe('ERR-VAL-001');
+    // 403 `ERR-IAM-001` since CC-56, and it was a 422 `ERR-VAL-001` naming
+    // `body.companyId` when this case was written — mapped from
+    // `fk_delivery_checklist_templates_company` at the INSERT. The body was
+    // well-formed and merely named a company this caller may not name, so a
+    // validation error claimed something untrue about it; CC-14 § 2 settles that a
+    // scope-target mismatch is a refusal. The company is resolved before the insert
+    // now, and the constraint stays behind it as defence in depth.
+    expect(response.status).toBe(403);
+    expect(await codeOf(response)).toBe('ERR-IAM-001');
   });
 
   it('refuses a body that tries to choose the status or the id', async () => {

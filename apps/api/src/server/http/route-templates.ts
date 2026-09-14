@@ -331,6 +331,7 @@ export const ROUTE_TEMPLATES = Object.freeze([
   '/vehicles/{vehicleId}/status',
   '/warranties',
   '/warranties/{warrantyId}',
+  '/warranties/{warrantyId}/status-history',
   '/warranty-policies',
   '/warranty-policies/{policyId}',
   '/warranty-policies/{policyId}/coverage-windows',

@@ -63,6 +63,7 @@ import { pageRequest, type Page, type PageRequest } from '@/server/db/pagination
 import {
   MAX_COVERED_ITEMS,
   WARRANTY_ORDER,
+  WARRANTY_STATUS_HISTORY_ORDER,
   type WarrantyCoverageRow,
   type WarrantyPolicyRow,
   type WarrantyRecordItemRow,
@@ -226,6 +227,49 @@ export interface WarrantyRecordListView {
   readonly odometerLimit: string | null;
   readonly policy: WarrantyPolicyView;
   readonly recordVersion: number;
+}
+
+/**
+ * One transition of the append-only warranty ledger (P1-31 prerequisite P-18).
+ *
+ * Spelled exactly as `DeliveryStatusHistoryEntryView` spells it — same field names, same
+ * order, same nullability — because it is the same kind of row read for the same reason,
+ * and a screen that renders a delivery's history and then a warranty's should handle one
+ * shape rather than two that can drift.
+ *
+ * `fromStatus` is null on the genesis row and only there: `wty.issue_warranty` writes
+ * `NULL -> 'issued'` in the same statement as the record. `actorId` is never null — the
+ * column is NOT NULL and `shared.stamp_status_history` sets it from the session — so an
+ * unattributed transition cannot be published. `occurredAt` is the server's stamp
+ * rendered as an ISO-8601 instant, never a value any caller supplied.
+ *
+ * No monetary field, because `wty` has none, and no correlation id, because that is
+ * platform diagnostics rather than a fact about the warranty.
+ */
+export interface WarrantyStatusHistoryEntryView {
+  readonly id: string;
+  readonly fromStatus: string | null;
+  readonly toStatus: string;
+  readonly reason: string | null;
+  readonly actorId: string;
+  readonly occurredAt: string;
+}
+
+/**
+ * The envelope `wty.warranty-status-history` answers with.
+ *
+ * Named and exported rather than written inline at the return type, because
+ * `scripts/ci/check-named-wire-shapes.mjs` refuses an anonymous type on the wire: an
+ * unnamed shape cannot be referenced by a contract document, a frontend adapter or a
+ * review, so it is a wire contract nobody can cite.
+ *
+ * It carries `warrantyId` beside the page so the response is self-identifying when it is
+ * logged or composed into a warranty document, and so a single-row page is never a bare
+ * answer with no subject. That is the `DeliveryStatusHistoryEnvelope` shape.
+ */
+export interface WarrantyStatusHistoryEnvelope {
+  readonly warrantyId: string;
+  readonly transitions: Page<WarrantyStatusHistoryEntryView>;
 }
 
 /**
@@ -536,6 +580,77 @@ export class WarrantyService {
       });
     }
     return this.toView(record, policy, coverage, found.items, false);
+  }
+
+  // -------------------------------------------------------------------------
+  // `wty.warranty-status-history`
+  // -------------------------------------------------------------------------
+
+  /**
+   * The warranty's append-only transition ledger, newest first (P1-31 P-18, **CC-10**).
+   *
+   * `wty.warranty_status_history` is written by `wty.issue_warranty` and, until this
+   * method, was read by nothing anywhere in `apps/api/src`. The ledger limb of
+   * **VHM-06 / WF-26 / PPD-13** was open for exactly that reason.
+   *
+   * ## What a caller will actually see today
+   *
+   * Exactly one row on any warranty this application issued: the genesis
+   * `NULL -> 'issued'`. Nothing in this phase advances `wty.warranty_records.status`,
+   * so there is no second transition to read yet. That is a fact about the writers,
+   * not a limitation of this read, and it is stated here rather than left for a caller
+   * to infer from an unexpectedly short page.
+   *
+   * ## Order of operations
+   *
+   * The record is read FIRST, exactly as in `readWarranty`, and `authorizeScope` runs
+   * against the record's OWN company and branch. So `ERR-RES-001` is decided before any
+   * scope decision, a record outside the caller's grants is invisible to RLS and reported
+   * as not found, and the branch this ledger is read in is the row's own rather than one
+   * a caller supplied. The opposite order — the one `listWarranties` uses — is only
+   * correct where there is no row to take a scope from.
+   *
+   * `wty.warranty.read` is the gate, uniform with the other two warranty reads: a
+   * transition ledger says no more about the warranty than the record it belongs to,
+   * and gating it differently would mean a caller could read the record but not how it
+   * got there, or the reverse.
+   */
+  public async readStatusHistory(
+    db: DbHandle,
+    warrantyRecordId: string,
+    page: { readonly cursor?: string | undefined; readonly limit?: number | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<WarrantyStatusHistoryEnvelope> {
+    const found = await this.repository.findWarrantyRecord(db, warrantyRecordId);
+    if (found === null) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Warranty record ${warrantyRecordId} is not visible`,
+      });
+    }
+    const record = found.record;
+    await authorizeScope({ companyId: record.companyId, branchId: record.branchId });
+
+    const request: PageRequest = pageRequest(WARRANTY_STATUS_HISTORY_ORDER, page);
+    const rows = await this.repository.listStatusHistory(
+      db,
+      { companyId: record.companyId, branchId: record.branchId },
+      record.id,
+      request
+    );
+    return {
+      warrantyId: record.id,
+      transitions: {
+        ...rows,
+        items: rows.items.map((row) => ({
+          id: row.id,
+          fromStatus: row.fromStatus,
+          toStatus: row.toStatus,
+          reason: row.reason,
+          actorId: row.actorId,
+          occurredAt: row.occurredAt.toISOString(),
+        })),
+      },
+    };
   }
 
   // -------------------------------------------------------------------------
