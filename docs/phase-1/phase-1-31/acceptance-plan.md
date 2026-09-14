@@ -246,20 +246,23 @@ set ROOTLCO_P131_HANDOFF=<the handoff.json path the harness printed>
 npm run test:e2e:authenticated
 ```
 
-| spec                      | case                                                                       | `authenticated-en` | `authenticated-ar` |
-| ------------------------- | -------------------------------------------------------------------------- | ------------------ | ------------------ |
-| `delivery-p1-31.spec.ts`  | the readiness queue answers for every row it shows                         | yes                | yes                |
-| `delivery-p1-31.spec.ts`  | the handover record shows its own facts                                    | yes                | yes                |
-| `delivery-p1-31.spec.ts`  | the printable copy is produced and prints exactly once                     | yes                | yes                |
-| `warranty-p1-31.spec.ts`  | the branch's warranty list carries the generated warranty                  | yes                | yes                |
-| `warranty-p1-31.spec.ts`  | the warranty record shows its terms and what it covers                     | yes                | yes                |
-| `warranty-p1-31.spec.ts`  | the warranty plans screen lists the plan                                   | yes                | yes                |
-| `reports-p1-31.spec.ts`   | the catalogue offers all four datasets                                     | yes                | yes                |
-| `reports-p1-31.spec.ts`   | each of the four reports renders the rows the server answered (four cases) | yes                | yes                |
-| `audit-log-p1-31.spec.ts` | the log records the completion and the warranty issue                      | yes                | yes                |
-| `audit-log-p1-31.spec.ts` | the log offers no export, and says why                                     | yes                | yes                |
-| `overview-p1-31.spec.ts`  | the four sections carry the figures the server published (FE-010)          | yes                | yes                |
-| `overview-p1-31.spec.ts`  | the overview fixed to a branch by the address shows that branch (FE-016)   | yes                | yes                |
+| spec                            | case                                                                                 | `authenticated-en` | `authenticated-ar` |
+| ------------------------------- | ------------------------------------------------------------------------------------ | ------------------ | ------------------ |
+| `delivery-p1-31.spec.ts`        | the readiness queue answers for every row it shows                                   | yes                | yes                |
+| `delivery-p1-31.spec.ts`        | the handover record shows its own facts                                              | yes                | yes                |
+| `delivery-p1-31.spec.ts`        | the printable copy is produced and prints exactly once                               | yes                | yes                |
+| `delivery-writes-p1-31.spec.ts` | a mandatory checklist item is recorded, and the reason it held clears (FE-004)       | yes                | yes                |
+| `delivery-writes-p1-31.spec.ts` | a signature is refused, then captured, and the reference stays off the page (FE-006) | yes                | yes                |
+| `delivery-writes-p1-31.spec.ts` | the final odometer is refused, then accepted, and the vehicle is released (FE-005)   | yes                | yes                |
+| `warranty-p1-31.spec.ts`        | the branch's warranty list carries the generated warranty                            | yes                | yes                |
+| `warranty-p1-31.spec.ts`        | the warranty record shows its terms and what it covers                               | yes                | yes                |
+| `warranty-p1-31.spec.ts`        | the warranty plans screen lists the plan                                             | yes                | yes                |
+| `reports-p1-31.spec.ts`         | the catalogue offers all four datasets                                               | yes                | yes                |
+| `reports-p1-31.spec.ts`         | each of the four reports renders the rows the server answered (four cases)           | yes                | yes                |
+| `audit-log-p1-31.spec.ts`       | the log records the completion and the warranty issue                                | yes                | yes                |
+| `audit-log-p1-31.spec.ts`       | the log offers no export, and says why                                               | yes                | yes                |
+| `overview-p1-31.spec.ts`        | the four sections carry the figures the server published (FE-010)                    | yes                | yes                |
+| `overview-p1-31.spec.ts`        | the overview fixed to a branch by the address shows that branch (FE-016)             | yes                | yes                |
 
 ### 3.0 What runs in continuous integration, and what waits for a handoff
 
@@ -277,13 +280,14 @@ product's own login form. The owner's permission set is `OWNER_PERMISSIONS` in
 `scripts/dev/owner-acceptance/context.mjs`, and **what it holds and what it withholds is the
 assertion**:
 
-| spec                      | case that runs WITHOUT a handoff                                                     | what the environment provides, and what is therefore proved                                                                                                                                                                                    |
-| ------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `delivery-p1-31.spec.ts`  | the readiness queue is reachable, and idles with its reason stated                   | the owner holds all three of `sal.delivery.view`, `wo.work_order.read` and `sal.finance.view`, so the conjunction passes; the tenant has no work order, so the screen must state one of its two idle reasons rather than render a blank region |
-| `warranty-p1-31.spec.ts`  | both warranty screens answer exactly what the signed-in account is entitled to       | the owner holds `wty.warranty.read` and **not** `wty.policy.manage`, so both pages render and the create panel beside them does not — the over-grant-by-omission that `wty.warranty.read` was minted to end, caught in the same render         |
-| `reports-p1-31.spec.ts`   | the catalogue and the run screen answer what that account is entitled to (two cases) | the owner does **not** hold `rpt.report.read`, so both pages render their own title and the shared denial, and leak no part of the catalogue or the run form — the only browser proof that the gate runs BEFORE the read                       |
-| `audit-log-p1-31.spec.ts` | the log offers no export, and says why                                               | the owner holds `iam.audit.view`, so the page renders; the absence of an export is a property of the screen and never needed journey data, and gating it on the handoff was a mistake this branch corrects                                     |
-| `overview-p1-31.spec.ts`  | the overview answers exactly what the signed-in account is entitled to               | the owner does **not** hold `rpt.report.read`, which is the code this page tests before it reads anything, so the whole body is withheld and no summary section is drawn — FE-010's gate, proved in a browser                                  |
+| spec                            | case that runs WITHOUT a handoff                                                     | what the environment provides, and what is therefore proved                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `delivery-p1-31.spec.ts`        | the readiness queue is reachable, and idles with its reason stated                   | the owner holds all three of `sal.delivery.view`, `wo.work_order.read` and `sal.finance.view`, so the conjunction passes; the tenant has no work order, so the screen must state one of its two idle reasons rather than render a blank region                                                                                                                                                    |
+| `warranty-p1-31.spec.ts`        | both warranty screens answer exactly what the signed-in account is entitled to       | the owner holds `wty.warranty.read` and **not** `wty.policy.manage`, so both pages render and the create panel beside them does not — the over-grant-by-omission that `wty.warranty.read` was minted to end, caught in the same render                                                                                                                                                            |
+| `reports-p1-31.spec.ts`         | the catalogue and the run screen answer what that account is entitled to (two cases) | the owner does **not** hold `rpt.report.read`, so both pages render their own title and the shared denial, and leak no part of the catalogue or the run form — the only browser proof that the gate runs BEFORE the read                                                                                                                                                                          |
+| `audit-log-p1-31.spec.ts`       | the log offers no export, and says why                                               | the owner holds `iam.audit.view`, so the page renders; the absence of an export is a property of the screen and never needed journey data, and gating it on the handoff was a mistake this branch corrects                                                                                                                                                                                        |
+| `overview-p1-31.spec.ts`        | the overview answers exactly what the signed-in account is entitled to               | the owner does **not** hold `rpt.report.read`, which is the code this page tests before it reads anything, so the whole body is withheld and no summary section is drawn — FE-010's gate, proved in a browser                                                                                                                                                                                     |
+| `delivery-writes-p1-31.spec.ts` | the handover screen answers for a record that does not exist, and offers no write    | the owner holds `sal.delivery.view`, so the record page's gate — tested BEFORE the read is issued — must let it through and the answer must be that the record is absent rather than a refusal; the owner also holds `sal.delivery.manage`, so the absence of the checklist, signature and release panels over an unreadable record is an assertion about the record and not about the permission |
 
 **The division is the rule, not a convenience.** A case is behind the handoff when, and only when,
 it asserts on a record the journey made — a specific delivery id, a generated warranty, a report's
@@ -483,6 +487,14 @@ drops the one that went red is worse than no list.
 | `npx vitest run tests/ci tests/openapi-contract.test.ts` | 1991 passed, 0 failed, 69 files — see §8.1              |
 
 ### 8.1 The registration these five specs owed, and the hosted consequence of it
+
+_A sixth spec was added later and registered the same way: `delivery-writes-p1-31.spec.ts`, the three
+committed browser cases the closure re-measure recorded as owed (**CC-52 (c)**) — the delivery
+checklist, the final odometer and the signature evidence, each in both locale projects, each with
+a refusal, a successful write and a reload that re-reads the record from the server. It carries
+one case that executes without a handoff, for the reason this section gives, and the records
+the other three act on are made by section 15b of the harness. Everything below was written of
+the original five and is left as it was._
 
 `tests/ci/e2e-tier-coverage.test.ts` requires every spec under
 `apps/web/tests/e2e/authenticated/` to be named in `.github/ci-baselines/unrun-test-tiers.json` —
