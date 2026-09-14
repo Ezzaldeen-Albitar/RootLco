@@ -125,15 +125,19 @@ export interface P131FixtureDelivery {
 }
 
 /**
- * The records the three delivery WRITE cases act on, one set per locale project.
+ * The records the three delivery WRITE cases act on, one set per PROJECT that runs them.
  *
- * ## Why one set per locale, and one handover per act
+ * ## Why one set per project, and one handover per act
  *
- * `apps/web/playwright.config.ts` pins `workers: 1`, and `authenticated-en` runs
- * before `authenticated-ar` over the same database. A case that records a checklist
- * result CONSUMES the gap it acted on, so a shared fixture would be spent by
- * whichever locale ran first and the second would assert on a record that no longer
- * looks the way its case describes.
+ * `apps/web/playwright.config.ts` pins `workers: 1`, and `authenticated-en`,
+ * `authenticated-ar` and `authenticated-tablet` run in that order over the same
+ * database. A case that records a checklist result CONSUMES the gap it acted on, so a
+ * shared fixture would be spent by whichever project ran first and the next would
+ * assert on a record that no longer looks the way its case describes.
+ *
+ * So the sets are keyed by FIXTURE KEY, not by locale: `'en'`, `'ar'` and `'tablet'`.
+ * The tablet project renders in English and asserts English text, and it still needs
+ * its own records — `fixtureKeyOf` is where those two facts are separated.
  *
  * Each handover carries exactly ONE gap, which is what lets its case prove the gap
  * closing:
@@ -293,7 +297,12 @@ export function signedInAsJourneyAdministrator(): boolean {
 }
 
 /**
- * The three fixture handovers for one locale, or `null` when this handoff has none.
+ * The three fixture handovers under one fixture KEY, or `null` when this handoff has
+ * none. `fixtureKeyOf` below is what a case reads the key with; the key is a locale
+ * for the two locale projects and `'tablet'` for the tablet one, which is why the
+ * parameter is a plain string rather than the locale union — the three maps on
+ * `P131BrowserFixtures` have always been string-keyed, and an unknown key answers
+ * `null` here exactly as a missing one always did.
  *
  * Validated here rather than at three call sites: a fixture document that names no
  * delivery is not a fixture, and a case that read one field and trusted the rest
@@ -302,7 +311,7 @@ export function signedInAsJourneyAdministrator(): boolean {
  */
 export function browserFixtures(
   handoff: P131Handoff | null,
-  locale: 'en' | 'ar'
+  key: string
 ): {
   readonly checklist: P131FixtureDelivery;
   readonly signature: P131FixtureDelivery;
@@ -311,9 +320,9 @@ export function browserFixtures(
 } | null {
   const fixtures = handoff?.browserFixtures;
   if (fixtures === undefined || fixtures === null) return null;
-  const checklist = fixtures.checklist[locale];
-  const signature = fixtures.signature[locale];
-  const release = fixtures.release[locale];
+  const checklist = fixtures.checklist[key];
+  const signature = fixtures.signature[key];
+  const release = fixtures.release[key];
   if (checklist === undefined || signature === undefined || release === undefined) return null;
   for (const fixture of [checklist, signature, release]) {
     if (typeof fixture.deliveryId !== 'string' || fixture.deliveryId.length === 0) return null;
@@ -327,6 +336,31 @@ export function browserFixtures(
 /** The locale a project drives, from its name. The same rule `administration.spec.ts` uses. */
 export function localeOf(projectName: string): 'en' | 'ar' {
   return projectName.endsWith('-ar') ? 'ar' : 'en';
+}
+
+/**
+ * WHICH FIXTURE SET a project consumes, from its name — a different question from
+ * which locale it renders in, and the reason both functions exist.
+ *
+ * `authenticated-tablet` renders in English, so `localeOf` answers `'en'` for it and
+ * every text assertion is right to ask that. But the handover fixtures are SINGLE
+ * USE: a mandatory checklist item cannot be answered twice, a vehicle cannot be
+ * released twice. `playwright.config.ts` pins `workers: 1` and runs the projects in
+ * order, so by the time the tablet project reaches a write case, the `'en'` set is
+ * already spent by `authenticated-en` and the case would act on a handover that no
+ * longer carries the gap it was built with.
+ *
+ * So the harness publishes a THIRD set under the key `'tablet'`, and this is the
+ * function that picks it. Content locale is decided by the locale suffix; fixture
+ * identity is decided by the PROJECT, because the project is what consumes.
+ *
+ * Stated as a suffix rule rather than a list of project names for the reason
+ * `localeOf` is: a new tablet project would be `<something>-tablet` and would need
+ * its own set on the same argument, and a name this rule does not recognise falls
+ * back to its content locale, which is the behaviour every read-only case wants.
+ */
+export function fixtureKeyOf(projectName: string): string {
+  return projectName.endsWith('-tablet') ? 'tablet' : localeOf(projectName);
 }
 
 /**
