@@ -21,7 +21,7 @@ import {
   type EmployeeSummary,
 } from '../employee-contract';
 import { StatusLabel } from './CodeLabel';
-import { PRIMARY_BUTTON } from './PanelShell';
+import { PRIMARY_BUTTON, PanelFailure } from './PanelShell';
 
 /**
  * The way in from a work order to its handover, and the control that starts one
@@ -159,12 +159,11 @@ export function WorkOrderDeliveryPanel({
       {state === null ? (
         <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
       ) : state.status !== 'ok' ? (
-        <p role="alert" className="text-body text-error">
-          {translateDynamic(messages, `state.${state.status}.title`)}
-          {state.correlationId
-            ? ` ${translate(messages, 'action.reference')} ${state.correlationId}`
-            : ''}
-        </p>
+        <PanelFailure
+          messages={messages}
+          status={state.status}
+          correlationId={state.correlationId}
+        />
       ) : state.data.delivery === null ? (
         <div className="flex flex-col gap-3">
           <p className="text-body text-text-secondary">

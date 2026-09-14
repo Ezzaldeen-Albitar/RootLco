@@ -4,7 +4,7 @@ import { EmptyState } from '@/components/states/States';
 import { formatDateTime } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { translate } from '@/i18n/get-messages';
 import { listStatusHistory } from '../api';
 import type { DeliveryStatusHistoryEnvelope, DeliveryStatusTransition } from '../delivery-contract';
 import { StatusLabel } from './CodeLabel';
@@ -102,9 +102,11 @@ export function StatusHistoryPanel({
             ))}
           </ol>
           {page.moreFailed === null ? null : (
-            <p role="alert" className="mt-2 text-body text-error">
-              {translateDynamic(messages, `state.${page.moreFailed}.title`)}
-            </p>
+            <PanelFailure
+              messages={messages}
+              status={page.moreFailed.status}
+              correlationId={page.moreFailed.correlationId}
+            />
           )}
           {page.hasMore ? (
             <button

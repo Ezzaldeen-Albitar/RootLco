@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
@@ -6,7 +6,7 @@ import ar from '../src/i18n/messages/ar.json';
 import { renderLtr, renderRtl } from './render';
 
 /**
- * The warranty screens, rendered (P1-31, FE-008 warranty record, FE-009 partial).
+ * The warranty screens, rendered (P1-31, FE-008 warranty record, FE-009 history).
  *
  * The properties under test: both route pages decide before they read; the list asks
  * for nothing until a branch has been named, because the branch is the read's target
@@ -14,8 +14,10 @@ import { renderLtr, renderRtl } from './render';
  * never as a branch that has issued nothing; the record shows the terms it was issued
  * under and keeps the two odometer figures apart; the issue control is ABSENT without
  * the code the generation declares and is withheld while the vehicle is still in the
- * workshop; the missing transition ledger is stated rather than simulated; and every
- * word on screen comes from the catalogue in both reading directions.
+ * workshop; the transition ledger is READ, its oldest row is drawn as a beginning
+ * rather than as a gap, and a refusal of it is neither an empty ledger nor a broken
+ * record; and every word on screen comes from the catalogue in both reading
+ * directions.
  */
 
 const EN = en as Record<string, string>;
@@ -35,12 +37,14 @@ const readWarranty = vi.fn();
 const listBranches = vi.fn();
 const generateWarranty = vi.fn();
 const listWarrantyPolicies = vi.fn();
+const readWarrantyStatusHistory = vi.fn();
 vi.mock('@/features/warranty/warranty-api', () => ({
   listWarranties: (...args: unknown[]) => listWarranties(...args),
   readWarranty: (...args: unknown[]) => readWarranty(...args),
   listBranches: (...args: unknown[]) => listBranches(...args),
   generateWarranty: (...args: unknown[]) => generateWarranty(...args),
   listWarrantyPolicies: (...args: unknown[]) => listWarrantyPolicies(...args),
+  readWarrantyStatusHistory: (...args: unknown[]) => readWarrantyStatusHistory(...args),
 }));
 
 let PERMISSIONS: readonly string[] = [];
@@ -149,6 +153,58 @@ const page = (items: readonly unknown[], hasMore = false, nextCursor: string | n
   correlationId: 'corr-1',
 });
 
+/*
+ * The transition ledger (FE-009), as `wty.warranty-status-history` publishes it.
+ *
+ * `ACTOR_ID` is deliberately a different reference from every other identifier in this
+ * file: the actor is an employee and the rows around it are a vehicle, a job and a
+ * handover, and a shared constant would let a panel render the wrong one and still
+ * pass.
+ */
+const ACTOR_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+
+/**
+ * The one transition every warranty carries today: the row that wrote it.
+ *
+ * Nothing in this phase advances a warranty's state, so the live service answers with
+ * exactly this row and `hasMore` false. It has no previous state because there is none
+ * — not because a value is missing.
+ */
+const originTransition = {
+  id: 'a1111111-1111-4111-8111-111111111111',
+  fromStatus: null,
+  toStatus: 'issued',
+  reason: null,
+  actorId: ACTOR_ID,
+  occurredAt: '2026-09-01T08:00:00.000Z',
+};
+
+/**
+ * A second transition, which no writer produces today.
+ *
+ * It is a fixture and not a claim about the product: the ledger is append-only with no
+ * ceiling in its schema, later writers are the subject of later work, and a panel that
+ * had only ever been shown one row would be untested for the shape it exists to draw.
+ */
+const advanceTransition = {
+  id: 'b2222222-2222-4222-8222-222222222222',
+  fromStatus: 'issued',
+  toStatus: 'active',
+  reason: 'Cover started at the counter.',
+  actorId: ACTOR_ID,
+  occurredAt: '2026-09-02T09:30:00.000Z',
+};
+
+const ledger = (items: readonly unknown[], hasMore = false, nextCursor: string | null = null) => ({
+  status: 'ok' as const,
+  data: { warrantyId: WARRANTY_ID, transitions: { items, nextCursor, hasMore } },
+  correlationId: 'corr-1',
+});
+
+/** The history panel by its own region, so nothing outside it can satisfy a case. */
+const historyPanel = (catalogue: Record<string, string> = EN) =>
+  screen.getByRole('region', { name: catalogue['warranty.history.heading'] as string });
+
 const refusedList = (status: string) => ({
   status,
   rows: [],
@@ -164,6 +220,9 @@ beforeEach(() => {
   listBranches.mockReset();
   generateWarranty.mockReset();
   listWarrantyPolicies.mockReset();
+  readWarrantyStatusHistory.mockReset();
+  // The ledger the live service answers with today: one row, and no further page.
+  readWarrantyStatusHistory.mockResolvedValue(ledger([originTransition]));
   listWarranties.mockResolvedValue(page([row]));
   readWarranty.mockResolvedValue({ status: 'ok', data: record, correlationId: 'corr-1' });
   listBranches.mockResolvedValue({ status: 'denied', correlationId: 'corr-9' });
@@ -330,6 +389,29 @@ describe('the list asks for nothing until a branch is named', () => {
     // The cursor goes back exactly as the server minted it.
     expect(listWarranties.mock.calls[1]?.[2]).toBe('next-cursor');
   });
+
+  it('states a further page it could not resolve, and never the key composed from it', async () => {
+    /*
+     * CC-59 (c) on this screen. The failed page's outcome was held as a bare string and
+     * the sentence was built as `state.${status}.title`, which is a catalogue key for
+     * four of the five outcomes and NOT a key for `not-found` — the catalogue holds
+     * `state.notFound.title`, and a missing key renders AS the key. The screen now
+     * renders the outcome through the same shared states its FIRST page uses.
+     */
+    listWarranties
+      .mockResolvedValueOnce(page([row], true, 'next-cursor'))
+      .mockResolvedValueOnce(refusedList('not-found'));
+    const user = userEvent.setup();
+    await renderListPage();
+    await nameBranch(user);
+    await user.click(
+      await screen.findByRole('button', { name: EN['warranty.list.loadMore'] as string })
+    );
+    expect(await screen.findByText(EN['state.notFound.title'] as string)).toBeInTheDocument();
+    expect(screen.queryByText('state.not-found.title')).toBeNull();
+    // The rows already read stay on screen: the operator keeps their place.
+    expect(screen.getByText(policy.name)).toBeInTheDocument();
+  });
 });
 
 describe('the record shows the terms it was issued under', () => {
@@ -396,21 +478,370 @@ describe('the record shows the terms it was issued under', () => {
     );
   });
 
-  it('says the transition ledger cannot be read yet instead of inventing one', () => {
-    // FE-009 asked for a history. The table exists, no operation publishes it, and a
-    // sequence assembled from the record's current state would be believed.
-    renderLtr(
-      <WarrantyRecordScreen locale="en" messages={en as never} warranty={record as never} />
-    );
-    expect(screen.getByText(EN['warranty.record.noHistoryYet'] as string)).toBeInTheDocument();
-  });
-
   it('prints a state this build does not know as the word the backend sent', () => {
     const unknown = { ...record, status: 'under_review' };
     renderLtr(
       <WarrantyRecordScreen locale="en" messages={en as never} warranty={unknown as never} />
     );
     expect(screen.getByText('under_review')).toBeInTheDocument();
+  });
+});
+
+describe('the transition ledger is read, and the oldest row is a beginning', () => {
+  /*
+   * FE-009. The table has existed since `20260724095000_wty_warranty.sql`; until P-18
+   * published `wty.warranty-status-history` nothing could read it, and this screen said
+   * so rather than composing a sequence from the record's current state (CC-31). These
+   * cases are about the panel that now reads it.
+   */
+
+  const renderRecord = (locale: 'en' | 'ar' = 'en') =>
+    locale === 'ar'
+      ? renderRtl(
+          <WarrantyRecordScreen locale="ar" messages={ar as never} warranty={record as never} />
+        )
+      : renderLtr(
+          <WarrantyRecordScreen locale="en" messages={en as never} warranty={record as never} />
+        );
+
+  /** Wait for the panel's own read, so no case asserts against a loading state. */
+  const settled = async () => {
+    await waitFor(() => expect(readWarrantyStatusHistory).toHaveBeenCalledWith(WARRANTY_ID));
+    await screen.findByRole('region', { name: EN['warranty.history.heading'] as string });
+  };
+
+  it('reads the ledger of the record it is showing, and nothing else', async () => {
+    renderRecord();
+    await settled();
+    expect(readWarrantyStatusHistory).toHaveBeenCalledTimes(1);
+    expect(readWarrantyStatusHistory).toHaveBeenCalledWith(WARRANTY_ID);
+  });
+
+  it('draws the one row every warranty carries today as a beginning, not as a gap', async () => {
+    renderRecord();
+    await settled();
+    const region = historyPanel();
+    // The state name sits in the same sentence as the wording around it, so the
+    // assertion is on the sentence rather than on a bare label node.
+    const origin = within(region).getByText(
+      new RegExp(escape(EN['warranty.history.origin'] as string))
+    );
+    expect(origin).toHaveTextContent(EN['warranty.status.issued'] as string);
+    // Nothing synthetic above it. The genesis row has no previous state, so no
+    // "moved from" is drawn and no earlier row is invented.
+    expect(
+      within(region).queryByText(new RegExp(escape(EN['warranty.history.movedFrom'] as string)))
+    ).toBeNull();
+    expect(within(region).getAllByRole('listitem')).toHaveLength(1);
+  });
+
+  it('draws a one-row ledger as a ledger and never as an empty one', async () => {
+    // The distinction this case exists for: today the service can only answer with one
+    // row, and reporting that as "no history yet" would tell an operator the workshop
+    // has recorded nothing when it has recorded everything there is.
+    renderRecord();
+    await settled();
+    const region = historyPanel();
+    expect(within(region).queryByText(EN['warranty.history.noneTitle'] as string)).toBeNull();
+    expect(within(region).queryByText(EN['state.error.title'] as string)).toBeNull();
+  });
+
+  it('reads the same origin row in Arabic, with no English left in it', async () => {
+    renderRecord('ar');
+    await waitFor(() => expect(readWarrantyStatusHistory).toHaveBeenCalledWith(WARRANTY_ID));
+    const region = await screen.findByRole('region', {
+      name: AR['warranty.history.heading'] as string,
+    });
+    const origin = within(region).getByText(
+      new RegExp(escape(AR['warranty.history.origin'] as string))
+    );
+    expect(origin).toHaveTextContent(AR['warranty.status.issued'] as string);
+    expect(within(region).queryByText(EN['warranty.history.origin'] as string)).toBeNull();
+    expect(within(region).queryByText(EN['warranty.status.issued'] as string)).toBeNull();
+  });
+
+  it('keeps the order the server sent, newest first, with the state it moved from', async () => {
+    readWarrantyStatusHistory.mockResolvedValue(ledger([advanceTransition, originTransition]));
+    renderRecord();
+    await settled();
+    const rows = within(historyPanel()).getAllByRole('listitem');
+    expect(rows).toHaveLength(2);
+    // Newest first is the SERVER's order and nothing here re-sorts it: a ledger sorted
+    // on this side would disagree with the cursor the next page is asked for.
+    expect(rows[0]).toHaveTextContent(EN['warranty.history.movedFrom'] as string);
+    expect(rows[0]).toHaveTextContent(EN['warranty.status.active'] as string);
+    expect(rows[1]).toHaveTextContent(EN['warranty.history.origin'] as string);
+    expect(rows[1]).not.toHaveTextContent(EN['warranty.history.movedFrom'] as string);
+  });
+
+  it('shows the reason a transition carried, and nothing where it carried none', async () => {
+    readWarrantyStatusHistory.mockResolvedValue(ledger([advanceTransition, originTransition]));
+    renderRecord();
+    await settled();
+    const rows = within(historyPanel()).getAllByRole('listitem');
+    expect(rows[0]).toHaveTextContent('Cover started at the counter.');
+    expect(rows[1]).not.toHaveTextContent('Cover started at the counter.');
+  });
+
+  it('shows the actor as the labelled reference it is, never as bare text', async () => {
+    // No warranty read resolves an employee to a name, so the identifier is presented
+    // as a reference with a label saying what it references — the convention this
+    // product already uses for the vehicle above and for the handover ledger. What is
+    // asserted is that no identifier reaches the page unlabelled.
+    renderRecord();
+    await settled();
+    const region = historyPanel();
+    expect(within(region).getByText(EN['warranty.history.actor'] as string)).toBeInTheDocument();
+    const actor = within(region).getByText(ACTOR_ID);
+    expect(actor.tagName).toBe('CODE');
+    // An identifier is not language: it reads left-to-right in both directions.
+    expect(actor).toHaveAttribute('dir', 'ltr');
+    // The envelope names the warranty it answers for; the panel shows the ledger and
+    // not the subject, which the screen around it already states.
+    expect(within(region).queryByText(WARRANTY_ID)).toBeNull();
+  });
+
+  it('keeps the actor reference left-to-right inside a right-to-left screen', async () => {
+    renderRecord('ar');
+    await waitFor(() => expect(readWarrantyStatusHistory).toHaveBeenCalled());
+    const region = await screen.findByRole('region', {
+      name: AR['warranty.history.heading'] as string,
+    });
+    expect(within(region).getByText(ACTOR_ID)).toHaveAttribute('dir', 'ltr');
+  });
+
+  it('offers another page only when the SERVER says one exists', async () => {
+    readWarrantyStatusHistory.mockResolvedValue(ledger([originTransition], true, 'next-cursor'));
+    const user = userEvent.setup();
+    renderRecord();
+    await settled();
+    const more = within(historyPanel()).getByRole('button', {
+      name: EN['warranty.history.loadMore'] as string,
+    });
+    await user.click(more);
+    await waitFor(() => expect(readWarrantyStatusHistory.mock.calls.length).toBeGreaterThan(1));
+    // The cursor goes back exactly as the server minted it, and is never parsed here.
+    expect(readWarrantyStatusHistory.mock.calls[1]?.[1]).toEqual({ cursor: 'next-cursor' });
+  });
+
+  it('offers no further page when the server has declared the end of the set', async () => {
+    renderRecord();
+    await settled();
+    expect(
+      within(historyPanel()).queryByRole('button', {
+        name: EN['warranty.history.loadMore'] as string,
+      })
+    ).toBeNull();
+  });
+
+  it('draws a refusal of the ledger as a refusal, not as a warranty without history', async () => {
+    readWarrantyStatusHistory.mockResolvedValue({ status: 'denied', correlationId: 'corr-9' });
+    renderRecord();
+    await settled();
+    const region = historyPanel();
+    expect(within(region).getByText(EN['state.denied.title'] as string)).toBeInTheDocument();
+    expect(within(region).getByText('corr-9')).toBeInTheDocument();
+    expect(within(region).queryByText(EN['warranty.history.noneTitle'] as string)).toBeNull();
+    // The panel reads its own subresource, so its failure keeps everything above it.
+    expect(screen.getByText(EN['warranty.summary.heading'] as string)).toBeInTheDocument();
+  });
+
+  it('reports a ledger the backend would not resolve as missing, disclosing nothing', async () => {
+    readWarrantyStatusHistory.mockResolvedValue({ status: 'not-found', correlationId: 'corr-9' });
+    renderRecord();
+    await settled();
+    const region = historyPanel();
+    expect(within(region).getByText(EN['state.notFound.title'] as string)).toBeInTheDocument();
+    expect(within(region).queryByText('corr-9')).toBeNull();
+  });
+
+  it('states an unreachable backend as unavailable, with the reference it logged', async () => {
+    readWarrantyStatusHistory.mockResolvedValue({ status: 'unavailable', correlationId: 'corr-9' });
+    renderRecord();
+    await settled();
+    const region = historyPanel();
+    expect(within(region).getByText(EN['state.unavailable.title'] as string)).toBeInTheDocument();
+    expect(within(region).getByText('corr-9')).toBeInTheDocument();
+  });
+
+  it('says an empty page is empty rather than drawing a ledger with no rows', async () => {
+    /*
+     * The live service cannot produce this today: every warranty carries its genesis
+     * transition, so the first page always holds at least one row. It is asserted
+     * anyway because the panel has to distinguish THREE things — a refusal, an empty
+     * page and a page of rows — and a branch that is never exercised is a branch that
+     * would be written wrong on the day a later writer makes it reachable.
+     */
+    readWarrantyStatusHistory.mockResolvedValue(ledger([]));
+    renderRecord();
+    await settled();
+    const region = historyPanel();
+    expect(
+      within(region).getByText(EN['warranty.history.noneTitle'] as string)
+    ).toBeInTheDocument();
+    expect(within(region).queryAllByRole('listitem')).toHaveLength(0);
+    expect(within(region).queryByText(EN['state.denied.title'] as string)).toBeNull();
+  });
+
+  it('prints a state this build does not know as the word the backend sent', async () => {
+    readWarrantyStatusHistory.mockResolvedValue(
+      ledger([{ ...originTransition, toStatus: 'under_review' }])
+    );
+    renderRecord();
+    await settled();
+    expect(within(historyPanel()).getByText('under_review')).toBeInTheDocument();
+  });
+
+  it('sends an ended session to sign in again rather than reporting a fault', async () => {
+    readWarrantyStatusHistory.mockResolvedValue({ status: 'expired', correlationId: null });
+    renderRecord();
+    await settled();
+    const region = historyPanel();
+    expect(within(region).getByText(EN['state.expired.title'] as string)).toBeInTheDocument();
+    // Nothing was logged for a session that had already ended, so no reference is drawn.
+    expect(within(region).queryByText(EN['state.correlationId'] as string)).toBeNull();
+  });
+
+  it('falls back to the shared failure wording for anything else', async () => {
+    readWarrantyStatusHistory.mockResolvedValue({ status: 'error', correlationId: 'corr-9' });
+    renderRecord();
+    await settled();
+    const region = historyPanel();
+    expect(within(region).getByText(EN['state.error.title'] as string)).toBeInTheDocument();
+    expect(within(region).getByText('corr-9')).toBeInTheDocument();
+  });
+
+  /*
+   * A FURTHER page that fails, one case per outcome.
+   *
+   * Each is its own case because the five are told apart only by the status the read
+   * answered with, and a single case would leave four mappings unmeasured. The
+   * regression each of them guards is one the panel actually shipped with: the failure
+   * used to be rendered by composing `state.${status}.title`, which is a catalogue key
+   * for four of the five and NOT a key for `not-found` — `state.not-found.title` is
+   * not in either catalogue, and a missing key renders AS the key, so an operator whose
+   * second page could not be resolved was shown that dotted string. Every case below
+   * therefore asserts the localised sentence AND the absence of a composed key.
+   */
+  const FURTHER_PAGE_OUTCOMES = [
+    ['denied', 'state.denied.title'],
+    ['not-found', 'state.notFound.title'],
+    ['unavailable', 'state.unavailable.title'],
+    ['expired', 'state.expired.title'],
+    ['error', 'state.error.title'],
+  ] as const;
+
+  /** Load a first page that offers another, then fail the page it asks for. */
+  const failFurtherPage = async (status: string) => {
+    readWarrantyStatusHistory
+      .mockResolvedValueOnce(ledger([originTransition], true, 'next-cursor'))
+      .mockResolvedValueOnce({ status, correlationId: 'corr-9' });
+    const user = userEvent.setup();
+    renderRecord();
+    await settled();
+    await user.click(
+      within(historyPanel()).getByRole('button', {
+        name: EN['warranty.history.loadMore'] as string,
+      })
+    );
+    await waitFor(() => expect(readWarrantyStatusHistory).toHaveBeenCalledTimes(2));
+    return historyPanel();
+  };
+
+  for (const [status, titleKey] of FURTHER_PAGE_OUTCOMES) {
+    it(`states a further page refused as ${status} in the operator's own language`, async () => {
+      const region = await failFurtherPage(status);
+      expect(await within(region).findByText(EN[titleKey] as string)).toBeInTheDocument();
+      // The defect this case exists for: a key composed from the status.
+      expect(within(region).queryByText(`state.${status}.title`)).toBeNull();
+    });
+  }
+
+  it('keeps the rows already on screen when a further page fails', async () => {
+    // The operator keeps their place. Wiping the ledger to report a transient fault
+    // loses what they were reading for no benefit.
+    const region = await failFurtherPage('unavailable');
+    expect(await within(region).findByText(EN['state.unavailable.title'] as string)).toBeVisible();
+    expect(within(region).getAllByRole('listitem')).toHaveLength(1);
+    expect(
+      within(region).getByText(EN['warranty.history.origin'] as string, { exact: false })
+    ).toBeInTheDocument();
+  });
+
+  it('prints the reference the backend logged for a further page it refused', async () => {
+    const region = await failFurtherPage('denied');
+    expect(await within(region).findByText('corr-9')).toBeInTheDocument();
+  });
+
+  it('offers nothing clickable when the server claims a page it publishes no cursor for', async () => {
+    /*
+     * A response that says another page exists and names no cursor describes a page
+     * that cannot be asked for. The control is drawn from whether a request can be
+     * MADE, not from the claim alone: a button whose only possible outcome is nothing
+     * happening teaches an operator that the screen is broken.
+     */
+    readWarrantyStatusHistory.mockResolvedValue(ledger([originTransition], true, null));
+    renderRecord();
+    await settled();
+    const region = historyPanel();
+    expect(
+      within(region).queryByRole('button', { name: EN['warranty.history.loadMore'] as string })
+    ).toBeNull();
+    // The rows it did answer with are still shown; only the control is withheld.
+    expect(within(region).getAllByRole('listitem')).toHaveLength(1);
+  });
+
+  it('does not append a page read for one warranty to another warranty ledger', async () => {
+    /*
+     * The stale-view guard inside the updater, which the render-time comparison does
+     * not cover: a further page already in flight when the screen moves to another
+     * warranty would otherwise land on THAT warranty's ledger and be believed. The
+     * second read is held open deliberately so the move happens while it is pending,
+     * which is the only moment the guard is reachable.
+     */
+    const OTHER_WARRANTY_ID = '66666666-6666-4666-8666-666666666666';
+    let releaseSecondPage: ((value: unknown) => void) | null = null;
+    readWarrantyStatusHistory
+      .mockResolvedValueOnce(ledger([originTransition], true, 'next-cursor'))
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            releaseSecondPage = resolve;
+          })
+      );
+
+    const user = userEvent.setup();
+    const view = renderLtr(
+      <WarrantyRecordScreen locale="en" messages={en as never} warranty={record as never} />
+    );
+    await settled();
+    await user.click(
+      within(historyPanel()).getByRole('button', {
+        name: EN['warranty.history.loadMore'] as string,
+      })
+    );
+
+    // The screen moves to another warranty while that page is still in flight.
+    view.rerender(
+      <WarrantyRecordScreen
+        locale="en"
+        messages={en as never}
+        warranty={{ ...record, id: OTHER_WARRANTY_ID } as never}
+      />
+    );
+    await waitFor(() => expect(readWarrantyStatusHistory).toHaveBeenCalledWith(OTHER_WARRANTY_ID));
+
+    // Now the first warranty's page lands.
+    await act(async () => {
+      (releaseSecondPage as unknown as (value: unknown) => void)(ledger([advanceTransition]));
+    });
+
+    const region = historyPanel();
+    // The second warranty's own ledger, and only that: one row, and not the row the
+    // first warranty's further page carried.
+    expect(within(region).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(region).queryByText('Cover started at the counter.')).toBeNull();
+    expect(within(region).queryByText(EN['warranty.status.active'] as string)).toBeNull();
   });
 });
 

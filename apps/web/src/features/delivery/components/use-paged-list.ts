@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import type { ReadState } from '@/lib/api/read-operation';
+import type { ReadFailureStatus, ReadState } from '@/lib/api/read-operation';
 import type { DeliveryPage } from '../delivery-contract';
 
 /**
@@ -39,7 +39,32 @@ import type { DeliveryPage } from '../delivery-contract';
  * The operator keeps the pages they have. Wiping them to report a transient
  * fault loses their place for no benefit; the failure is reported beside the
  * button that caused it.
+ *
+ * ## The failed page's OUTCOME is carried, not its name
+ *
+ * `moreFailed` holds the `ReadFailureStatus` and the correlation reference the
+ * backend logged, and the panels render it through the same shared states the
+ * FIRST page's failure goes through. It used to be a bare `string`, and every
+ * panel built a catalogue key out of it — `state.${status}.title`. That key is
+ * wrong for exactly one of the five statuses: `not-found` composes
+ * `state.not-found.title`, which the catalogue does not hold, and `translate`
+ * renders a missing key AS the key, so an operator whose second page 404'd was
+ * shown the string `state.not-found.title`. A status is a machine value and a
+ * catalogue key is not built from one anywhere else in this product; the type
+ * is what stops it being built from one here.
  */
+
+/**
+ * A further page that failed: what happened, and the reference the backend logged.
+ *
+ * The reference travels because it is the only diagnostic an operator ever sees,
+ * and dropping it on the second page while printing it on the first would make
+ * the same fault reportable or not depending on when it happened.
+ */
+export interface MoreFailure {
+  readonly status: ReadFailureStatus;
+  readonly correlationId: string | null;
+}
 export interface PagedList<E, T> {
   /** The first read's outcome, `null` while it is still in flight. */
   readonly first: ReadState<E> | null;
@@ -50,7 +75,7 @@ export interface PagedList<E, T> {
   /** True while a further page is being read. */
   readonly loading: boolean;
   /** The outcome of a failed further page, or `null`. */
-  readonly moreFailed: string | null;
+  readonly moreFailed: MoreFailure | null;
   readonly loadMore: () => Promise<void>;
 }
 
@@ -59,7 +84,7 @@ interface Held<E, T> {
   readonly key: string;
   readonly first: ReadState<E>;
   readonly pages: readonly DeliveryPage<T>[];
-  readonly moreFailed: string | null;
+  readonly moreFailed: MoreFailure | null;
 }
 
 /**
@@ -111,7 +136,12 @@ export function usePagedList<E, T>(
     setLoading(false);
     setHeld((previous) => {
       if (previous === null || previous.key !== key) return previous;
-      if (next.status !== 'ok') return { ...previous, moreFailed: next.status };
+      if (next.status !== 'ok') {
+        return {
+          ...previous,
+          moreFailed: { status: next.status, correlationId: next.correlationId },
+        };
+      }
       return { ...previous, pages: [...previous.pages, select(next.data)], moreFailed: null };
     });
   }, [current, deliveryId, key, last, loading, reader, select]);

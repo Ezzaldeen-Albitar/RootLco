@@ -1824,9 +1824,9 @@ the pins in `tests/ci/p1-31-access-gate.test.ts` were moved to 11 and 8 in this 
 
 ### 43.3 Disposition
 
-| id        | what is accepted                                                                       | measured basis                                                                                                                                                                                                                                                                                                                                                              | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | owner                                                                        | state                                |
-| --------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------ |
-| **CC-31** | **FE-009 ships PARTIAL: a vehicle-filtered list, and no per-record transition ledger** | `wty.warranty_status_history` (the table’s real name; CC-10 above records it as `wty.warranty_record_status_history`, which no migration ever created) is written by the database and read by **no operation anywhere** in `apps/api/src` — **CC-10**, unchanged. The only history that can be read honestly is `wty.warranty-list` filtered by its one filter, `vehicleId` | **accepted, with the missing half NAMED and NOT simulated.** The record screen states in the operator's own language that the transition record cannot be read yet. No sequence is composed from the record's current state: an invented ledger would be believed, which is worse than an absent one. The backend prerequisite is named as **P-18 — warranty history reader**, a `wty.warranty.read` branch-scoped read over the existing table. It is a Backend seam and is not in this lane. _**2026-09-13, § 65 / CC-55:** the named prerequisite is DELIVERED. `wty.warranty-status-history` publishes the ledger under `wty.warranty.read`, branch-scoped, over the existing table — exactly the read this cell specified. **The frontend half of this row stays open**: the record screen still states the transition record cannot be read, because a web change is outside this branch's ownership profile. What is closed is the obstacle, not the screen._ | a Backend seam lane (backend half delivered); the screen owed to a web slice | open, recorded — backend half closed |
+| id        | what is accepted                                                                       | measured basis                                                                                                                                                                                                                                                                                                                                                              | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | owner                                                                        | state                                |
+| --------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------ |
+| **CC-31** | **FE-009 ships PARTIAL: a vehicle-filtered list, and no per-record transition ledger** | `wty.warranty_status_history` (the table’s real name; CC-10 above records it as `wty.warranty_record_status_history`, which no migration ever created) is written by the database and read by **no operation anywhere** in `apps/api/src` — **CC-10**, unchanged. The only history that can be read honestly is `wty.warranty-list` filtered by its one filter, `vehicleId` | **accepted, with the missing half NAMED and NOT simulated.** The record screen states in the operator's own language that the transition record cannot be read yet. No sequence is composed from the record's current state: an invented ledger would be believed, which is worse than an absent one. The backend prerequisite is named as **P-18 — warranty history reader**, a `wty.warranty.read` branch-scoped read over the existing table. It is a Backend seam and is not in this lane. _**2026-09-13, § 65 / CC-55:** the named prerequisite is DELIVERED. `wty.warranty-status-history` publishes the ledger under `wty.warranty.read`, branch-scoped, over the existing table — exactly the read this cell specified. **The frontend half of this row stays open**: the record screen still states the transition record cannot be read, because a web change is outside this branch's ownership profile. What is closed is the obstacle, not the screen._ _**2026-09-14, § 69 / CC-59:** every word above was true when it was written and none of it is rewritten. The sentence "the record screen still states the transition record cannot be read" is no longer true of the tree: the web slice recorded in § 69 removed `warranty.record.noHistoryYet` and renders the ledger through `wty.warranty-status-history`. **CC-31's frontend half is delivered; CC-31 itself stays open** until the browser proof at the closing head, which is CC-59 and CC-59 (a)._ | a Backend seam lane (backend half delivered); the screen owed to a web slice | open, recorded — backend half closed |
 
 ### 43.4 What this slice did NOT do
 
@@ -7050,3 +7050,290 @@ script and the committed test implement the same idea, and only the second one c
 | **CC-58 (a)** | **SE-5M cannot see a service-level authority requirement for 45 of the 46 operations**                                                                                                                                                                                                                    | SE-5M builds each request with invented identifiers and asserts only that the answer is neither `ERR-IAM-001` nor a 5xx, which is the pre-handler gate. A check inside a service runs after the identifiers resolve. `rpt.report-run` is the one operation probed against real rows with a minimal caller (SE-5MD, SE-5MD-N), and it is the one where such a check was found                                                                                                                                                                                                                                                                | **recorded, not closed.** Closing it means driving each of the 46 to a real success with its minimal caller — the emission suite's shape applied to authority, a larger slice than this one. Nothing here is widened or relaxed to accommodate it, and no claim in this section reads past the limit                                                                                                                                                                                                                                                                                                                                            | a later security-assurance slice              | open, recorded   |
 | **CC-58 (b)** | **the assurance evidence index reads two constraint suites as isolation evidence they did not carry**                                                                                                                                                                                                     | `tests/db/sal-delivery.test.ts` and `tests/db/wty-warranty.test.ts` ran every case as tenant A inside a rolled-back transaction and drove no cross-tenant negative of any kind; the index was reading the fixture tenant and not an assertion                                                                                                                                                                                                                                                                                                                                                                                               | **recorded here, and the code half repaired.** Both suites now carry a behavioural negative, so the entry becomes true at this head — but it was not true when written, and editing the index is a rewrite of a document this lane does not own (§ 48.1)                                                                                                                                                                                                                                                                                                                                                                                        | the final integration                         | open, recorded   |
 | **CC-58 (c)** | **`p1-31-concurrency-and-versioning.test.ts` states a replay coverage it did not have, and that statement is why it asserted none**                                                                                                                                                                       | Its header says "all sixteen idempotent ones already carry a replay case". Fifteen did; `sal.delivery-checklist-template-item-create` did not, and the different-body half was covered for three of the sixteen                                                                                                                                                                                                                                                                                                                                                                                                                             | **recorded, header left as written.** The gap it hid is closed by § 68.3 and the header is annotated by this row rather than rewritten, in the § 48.1 discipline                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | this lane, recorded for the final integration | open, recorded   |
+
+---
+
+## 69. The warranty transition ledger on the record screen — FE-009's screen half (CC-59)
+
+The backend prerequisite **P-18** published `wty.warranty-status-history`. This slice consumes it:
+the warranty record screen now renders the ledger it used to say it could not read.
+
+### 69.1 Identifier allocation
+
+| identifier | meaning                                               | state                                        |
+| ---------- | ----------------------------------------------------- | -------------------------------------------- |
+| section 69 | this slice                                            | this branch, reserved for it before it began |
+| **CC-59**  | FE-009's screen half — the record consumes the reader | this branch                                  |
+
+_Historical prepared-head table: read with the integrated state in § 69.9 below._
+
+**The neighbouring identifiers, stated as they actually stand at this merge** — an earlier draft of
+this paragraph said all of sections 64 to 68 were reserved by lanes that had not merged, which was
+false then and is more false now: two of the five are in this file.
+
+| identifier   | lane                             | where it is, at `develop` `852bcebd`                                                                      |
+| ------------ | -------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| § 64 / CC-54 | the Frontend proofs lane         | **not written yet — in flight as #393**, still open; § 65.1 records that it lands ABOVE § 65 when it does |
+| § 65 / CC-55 | P-18, the backend half of FE-009 | **merged, as #390** — commit `aa20c959`, which this branch was cut from                                   |
+| § 66 / CC-56 | SEC-003-O1                       | **merged, as #391** — in this file immediately above § 69, and reached by the sync recorded below         |
+| § 67 / CC-57 | the gates lane                   | in flight on another branch                                                                               |
+| § 68 / CC-58 | E2                               | in flight on another branch                                                                               |
+
+Nothing here renumbers, reuses or reconciles any of them. **§ 69 currently sits after § 66 because
+§ 67 and § 68 do not exist yet**; when E2 and the gates lane land it sits after § 68, and if #393
+lands § 64 sits above § 65 as that section already provides for. The file's numbering is then out of
+order in one more place — as it already is at § 59 and § 60 — and that is the convention this
+register has chosen over renumbering.
+
+### 69.2 What CC-31 said, and which half of it this closes
+
+**CC-31** recorded FE-009 as shipping PARTIAL: `wty.warranty_status_history` was written by the
+database and read by no operation anywhere in `apps/api/src` (**CC-10**), so the only history the
+feature could show honestly was the vehicle-filtered warranty list. The record screen stated that in
+the operator's own language and composed nothing — an invented ledger would be believed, which is
+worse than an absent one — and the missing half was named as the backend prerequisite **P-18**.
+
+P-18 landed. **The frontend half of CC-31 closes here.** What remains open under it is the browser
+proof, which cannot be taken until the acceptance harness runs at the closing head; § 69.6 states
+exactly what is owed and what is not claimed.
+
+### 69.3 What changed
+
+- **A typed envelope, taken from the backend's own view.** `WarrantyStatusTransition` and
+  `WarrantyStatusHistoryEnvelope` mirror `WarrantyStatusHistoryEntryView` and
+  `WarrantyStatusHistoryEnvelope` field for field. Both are spelled exactly as the delivery ledger's
+  equivalents are, on both sides and deliberately: a screen that renders a handover's history and
+  then a warranty's handles one shape rather than two that can drift.
+- **One adapter, and no more.** `readWarrantyStatusHistory` goes through the shared read helper, so a
+  refusal reaches the screen as a refusal and never as an empty list. It attaches no retry key,
+  because it is a read. The cursor is passed back exactly as the server minted it and is never
+  parsed; `hasMore` is the server's own end-of-set signal, and no total is requested or invented.
+  It ALWAYS sends a page size — `limit=25`, this feature's `PAGE_SIZE`, at `warranty-api.ts:242` —
+  rather than sending only what a caller supplied. That is what `listWarrantyPolicies` already does
+  and it sits well inside the route's own bound of 100; leaving it off would take the server's
+  default of 50 instead, which is a different page size chosen by a different authority for no
+  reason anyone could point at.
+- **A history panel on the record screen.** It reads its own subresource and therefore fails on its
+  own: a caller may see the record and have the ledger refused, and the panel renders that inside
+  itself so everything above it survives. The refusal states are the shared ones, so this screen is
+  not a second authority on what a denial looks like.
+- **The oldest row is drawn as a beginning.** The transition with no previous state is the genesis
+  row `wty.issue_warranty` writes with the record. The backend deliberately publishes no synthesised
+  origin block — the genesis row is already in the table — and this side adds nothing above it.
+- **The actor is a labelled reference.** No warranty read resolves an employee to a name, so the
+  identifier is shown as a reference with a label saying what it references, left-to-right in both
+  reading directions. That is the convention the record screen already uses for the vehicle and the
+  delivery feature already uses for its own ledger; no identifier reaches the page unlabelled, and
+  no lookup is invented.
+- **The sentence CC-31 required is gone with its key.** `warranty.record.noHistoryYet` had four
+  references — the screen, both catalogues and one case — and all four are gone. It is not kept for
+  the empty state: an empty page gets `warranty.history.noneTitle` and `noneDescription`, which say
+  that no change of state has been recorded, while the retired sentence said the record could not be
+  read. Those are different facts, and sharing one sentence would restate a limitation that no
+  longer exists.
+- **Nine catalogue keys, in both languages.** `warranty.history.` heading, explain, origin,
+  movedFrom, movedTo, actor, noneTitle, noneDescription, loadMore.
+- **The access gate owns the new operation.** `wty.warranty-status-history` is added to
+  `P1_31_OPERATION_IDS`. It shares the `warranties` resource root that the list and the detail read
+  already contribute, so the gate's page and segment counts are unmoved and neither pin in
+  `tests/ci/p1-31-access-gate.test.ts` changes.
+
+### 69.4 The one-row ledger, stated rather than worked around
+
+Nothing in this phase advances `wty.warranty_records.status`, so every warranty the product can
+create carries exactly one transition — the genesis absence into `issued` — and the server answers
+`hasMore` false. **A one-row ledger is rendered as a one-row ledger.** It is not rendered as empty,
+which would tell an operator the workshop has recorded nothing when it has recorded everything there
+is; and it is not rendered as a fault, which it is not.
+
+The honest empty state is kept anyway, and the panel's docblock says why: the panel has to
+distinguish three outcomes — a refusal, an empty page, and a page of rows — and the live service
+cannot produce the middle one today. A branch that is never exercised is a branch that would be
+written wrong on the day a later writer makes it reachable, so it is exercised by a fixture and
+marked in the record as unreachable through the service rather than left to look like a state
+somebody has seen.
+
+### 69.5 What was measured
+
+**`apps/web/tests/warranty.dom.test.tsx`: twenty-six cases added, one removed** — the case that
+asserted the retired sentence. The file runs **67**; it ran **42** on `aa20c959`.
+
+The first fifteen cover the ledger itself: it is read for the record being shown and for nothing
+else; the one-row ledger renders its origin row in English and in Arabic, with no English left in
+the Arabic panel; a multi-row ledger keeps the server's newest-first order with the state it moved
+from and the reason it carried; the actor is a labelled reference and no identifier is unlabelled,
+in both directions; a further page is offered only when the server declares one, and the cursor goes
+back as it arrived; denied, not-found and unavailable are each drawn as themselves inside the panel
+while the record above them survives; an empty page says so; and a state this build does not know is
+printed as the word the backend sent.
+
+The eleven added on review close the gaps that review found. Two first-page outcomes that had no
+case at all — `expired` and `error`. Five further-page outcomes, one case each, every one asserting
+the localised sentence AND the absence of a key composed from the status, which is CC-59 (c). One
+that the rows already on screen survive a failed further page, and one that the correlation
+reference the backend logged is printed for it. One that a response claiming another page while
+publishing no cursor draws nothing clickable. And one for the stale-warranty guard inside the
+updater: a further page still in flight when the screen moves to another warranty must not append to
+that warranty's ledger, which is reachable only by holding the second read open across the move.
+
+**`apps/web/tests/delivery.dom.test.tsx`: one case added**, for the same CC-59 (c) defect in the
+delivery ledger. The file runs **86**, from 85.
+
+**Two cases for the work-order handover panel**, in `delivery-start.dom.test.tsx`, which runs
+**22**, from 20: the localised `not-found` sentence with the composed key absent, and the
+correlation reference printed for a read that could not be completed. One existing case in
+`delivery.dom.test.tsx` moved with the fix rather than around it — it asserted the failure by
+`getByRole('alert')`, which was the hand-rolled markup's role; it now reads the shared state's own
+`role="status"` and additionally asserts the denial sentence, so it measures more than it did
+before. The file still runs **86**.
+
+**Three further cases, one per warranty screen that carried the same defect.** The warranty list
+(`warranty.dom.test.tsx`, which runs **68**), and the plan list and the single-plan screen
+(`warranty-policies.dom.test.tsx`, which runs **29**, from 27). Each asserts the localised
+`not-found` sentence AND the absence of the key composed from the status; the single-plan case
+reaches the defect by a different path from the other two, through the re-read that follows every
+mutation rather than through a further page.
+
+**The `not-found` case was confirmed to falsify.** Before the fix was restored, the defect was put
+back and that single case run: it failed, and the rendered panel in the failure output contained the
+literal string `state.not-found.title` where the operator's sentence belongs. It is a regression
+test, not a description of what the code already did.
+
+**Two cases in the file are deliberately unmoved.** `renderRecord` drives the record screen
+directly rather than the route page, so the page-level gate cases above it are untouched by any of
+this — what the panel decides and what the page decides are measured apart, and collapsing them
+would let a page-level pass stand in for a panel that never rendered.
+
+### 69.6 What this slice did NOT do, and what is not claimed
+
+- **No browser proof was taken.** A handoff-gated case was added to `warranty-p1-31.spec.ts`, and it
+  is committed and unrun. It carries **four** `test.skip` guards — no handoff, the wrong account
+  kind, no warranty in the journey, and no ledger in the handoff — each annotated `TH-002` with its
+  own reason, which is the same shape its three handoff-gated siblings in the file carry. **No claim
+  is made here that FE-009 has been verified in a browser.**
+- **The harness step it depends on is not written.** The acceptance harness is executing another
+  lane's run and was deliberately not edited. The step it owes is a `wty.warranty-status-history`
+  read for the journey's own warranty, published as the transitions page, and it must be added
+  before the case can execute.
+- **No backend change.** P-18 is somebody else's merged work; nothing under `apps/api` is touched
+  here, and this slice carries no migration.
+- **No register or closure-record edits.** `task-matrix.json` and the closure record are not
+  touched.
+- **One ARIA convention for a failure, not two.** The further-page failure was briefly wrapped in a
+  `<div role="alert">` while the first-page failure rendered the shared state bare. That was wrong in
+  both directions: it gave the same fault two different announcements depending on which page it
+  happened on, and it nested a live region inside another one — `StateShell` already carries
+  `role="status"`, with a comment in `States.tsx` explaining that these are results of an action the
+  operator just took and that `alert` interrupts where `status` does not. The wrapper is removed from
+  all four panels; every failure in this feature now renders the shared state bare, exactly as the
+  first page does.
+- **CC-10 is unaffected.** It records the table under a name no migration created; that is a record
+  defect about naming, and it is not what this slice is about.
+- **The P1-27 run record is NOT re-recorded here, and that is the rule rather than an omission.**
+  This slice adds executable web cases — eleven warranty DOM cases, one delivery DOM case and one
+  browser case in two locale projects — so the web tier's executed count moves. The closing-value
+  ledger (`docs/phase-1/phase-1-27/evidence/local-run-ledger.json`) is what QA-005 binds through,
+  and it expires the moment any executable path changes; re-recording it mid-slice would produce a
+  figure that the next commit on this branch invalidates. It is therefore re-recorded **last, in the
+  sync turn**, against the head that is actually merged.
+- **`.github/ci-baselines/test-count-baseline.json` is not touched, and no floor is raised here.**
+  That file's own `enforcementNote` says only `minTests` is enforced — `summarise-vitest.mjs` fails a
+  tier that runs fewer — and that `measured` is **provenance**, recording what one named run
+  observed. Raising `measured` to match a local run would restate a measurement as though a new run
+  had produced it. The web floor is 3700 against a measured 3749 on 135 files, and `WTF-08` forces a
+  raise only when the DECLARED case count would rise above the floor, which adding a dozen cases to
+  an existing tier does not do. A floor is raised in the same commit that makes it necessary; this
+  is not that commit.
+- **The browser-case count in `acceptance-plan.md` is a figure that moves.** Twenty-one P1-31 cases
+  per locale project and forty-two in total is what this tree collects, measured rather than
+  asserted, and it counts the five `*-p1-31.spec.ts` files that exist here. It does **not** count the
+  delivery-writes spec, which is on an unmerged Frontend-proofs branch and is absent from
+  `aa20c959`. When that branch merges, the figure becomes twenty-five per locale and fifty in total,
+  and the sentence in § 3 of the acceptance plan moves with it.
+
+### 69.7 Dispositions
+
+| id            | finding                                                                                           | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | owner / slice                                               | state                                                                               |
+| ------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| **CC-59**     | **FE-009's screen half: the record screen stated the ledger could not be read, and now reads it** | **CC-31** recorded FE-009 as PARTIAL and named **P-18** as the missing prerequisite; § 65 / **CC-55** delivered it. The screen, the adapter, the envelope and the catalogue sentence that stood in for the ledger were all still on the CC-31 footing at `aa20c959`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | **the screen consumes the reader.** A typed envelope mirroring the backend view, one adapter, a history panel that reads its own subresource and fails on its own, the origin row drawn as a beginning, and `warranty.record.noHistoryYet` retired with its key. **This does NOT close CC-59.** The web change is one half of the claim; the other half is a browser assertion over a real ledger, which only the closing-head acceptance run can give                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | this slice                                                  | **open, recorded — closes with the closing-head browser proof and the matrix move** |
+| **CC-59 (a)** | **the acceptance harness publishes no warranty ledger, so the browser case cannot execute**       | The handoff document written by `orchestration/acceptance/p1-31-journey.mjs` carries no `warrantyHistory`, because no HTTP step reads `wty.warranty-status-history`. The harness was executing another lane's run for the whole of this slice and was deliberately not edited                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | **the case is written to the field it needs and skips, saying so, until the field exists.** The step the harness owes is a `wty.warranty-status-history` read for the journey's own warranty, published as the transitions page; its exact text is handed to the coordinator with this branch rather than written into a file another lane is running. The closing-head run is what turns the skip into a result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | the acceptance-harness lane, then a closing-head run        | **open**                                                                            |
+| **CC-59 (b)** | **the access allow-list is edited by two branches at once**                                       | `P1_31_OPERATION_IDS` in `scripts/ci/check-p1-31-access.mjs` gains one id here. The gates lane adds eight ids to the same frozen array on a branch that had not merged when this one was cut, so whichever merges second re-derives the list                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | **recorded rather than pre-resolved.** A one-line addition to a frozen array is a textual conflict and not a semantic one: the ids are independent and the gate's page and segment counts are unmoved by this one, because `wty.warranty-status-history` shares the `warranties` resource root the list and the detail read already contribute. The second merge re-runs the gate and both pins                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | whichever of the two branches merges second                 | **open until the second merge re-derives the list**                                 |
+| **CC-59 (c)** | **a further page that failed was reported to the operator as a catalogue key, in FOUR panels**    | The failed page's outcome was held as a bare string and the panels composed `state.${status}.title`. That is a key for four of the five outcomes and NOT a key for `not-found`: the catalogue holds `state.notFound.title`, and `translate` renders a missing key AS the key. Found in this slice's own warranty panel and in all three paged delivery panels, which share `usePagedList`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | **fixed in both hooks, all four panels and all three remaining warranty screens in this branch**, by carrying the `ReadFailureStatus` and the correlation reference and rendering them through the same shared states the FIRST page's failure already used. The `not-found` case was confirmed to FAIL against the defect before the fix was restored, so it is a regression test and not a description. The three delivery panels were fixed rather than left as a convention to copy. **This row is closed for NINE sites and no more, and they are exactly the P1-31 surfaces** — the warranty history panel, the warranty list, the plan list and the plan screen; the three paged delivery panels through `usePagedList`; and `features/delivery/components/WorkOrderDeliveryPanel.tsx:163`, which is a FIRST-page render rather than a further-page one and was fixed the same way. That last one was briefly recorded under CC-59 (e) as residue and that was wrong: it is this phase's own feature, so it belongs to the row that closes rather than to the row that defers. **Sixteen sites of the same class remain live in other features** and are enumerated in CC-59 (e); none of them is claimed as fixed here | this slice                                                  | **closed by this commit**                                                           |
+| **CC-59 (e)** | **the same composed-key defect remains at sixteen sites across nine files outside this phase**    | `grep -rn 'state.\${' apps/web/src` at this head, minus the nine sites CC-59 (c) fixed and minus two docblocks that quote the pattern in order to name it. Every one composes `state.${status}.title` from a `ReadFailureStatus`; every one therefore renders the literal `state.not-found.title` to an operator when that read answers `not-found`. `features/diagnostics/components/JobDiagnosticsScreen.tsx:113`, `TemplateCatalogueScreen.tsx:42`, `TemplateDetailScreen.tsx:87` and `:404`; `features/quality/components/JobBlockersPanel.tsx:118`, `WorkOrderClosureScreen.tsx:126`, `:991`, `:1356` and `:1367`, `WorkOrderHistorySection.tsx:73`; `features/technicians/components/JobWorkPanel.tsx:387`, `:692` and `:900`; `features/work-orders/components/JobPanel.tsx:235`, `WorkOrderDetailScreen.tsx:152` and `:576`. **There is no billing site, and the review's brief that named one is corrected here rather than followed:** billing composes `invoices.status.${…}`, which is a closed PRODUCT vocabulary with a matching catalogue entry for every value and no camel-cased member, so it is a different class from a key built out of a read-failure status. The wider grep for `translateDynamic(messages, \`…${` returns roughly 150 such vocabulary compositions across the product; not one of them is this defect, and none is listed here. **Sixteen sites, NINE files** — the count is the passages, not the files, and both figures are re-derived from the grep at this head rather than carried: an earlier draft of this row said eight files, which was a miscount of the same list | **listed and NOT fixed, deliberately.** All sixteen belong to P1-29 and P1-30 features; rewriting them from this branch would be a platform-wide change made under a warranty ticket, reviewed by nobody who owns those screens, and it would put nine untested files in a slice whose subject is one panel. It is recorded as a platform follow-up so the next lane that owns those features has the enumeration rather than the grep. **The one site that was NOT outside this phase has been removed from this row and fixed** — see CC-59 (c). It was listed here for one commit because the review's instruction said to defer the whole residue while its stated reason covered only other phases' features; the contradiction was reported rather than resolved by this lane, and the coordinator's answer was to fix it                                                                                                                                                                                                                                                                                                                                                                                                | a platform follow-up lane; the delivery site is P1-31's own | **open**                                                                            |
+| **CC-59 (d)** | **the acceptance plan's browser-case count does not include a spec that has not merged**          | `--list` on this tree collects **21 P1-31 cases per locale project, 42 in total**, across the five `*-p1-31.spec.ts` files that exist at `aa20c959`. The delivery-writes spec is on the unmerged Frontend proofs branch (§ 64 / CC-54) and contributes none of them                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | **the figure is stated as measured and named as one that moves.** After the Frontend proofs branch merges the count becomes twenty-five per locale and fifty in total, and the sentence in § 3 of the acceptance plan moves with it. Nothing is pre-written to a number no run has produced                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | this integration, after #393                                | **settled for collection — § 69.9; earlier state: open**                            |
+
+### 69.9 Resumed integration on 2026-09-14
+
+The interrupted merge from protected `develop`
+`e97db8ced0de80947e007df288d35f383e9fa68e` was resumed in place above preserved
+`5bc317ac14b6d479813ca2b4c94b57dd54bcabd6`. The earlier § 69.1 neighbour table and
+CC-59 (d) collection observation describe the prepared head, not this integration:
+#393, #394 and #395 have merged; sections 64 through 68 are now present, and section 69
+follows section 68. Both delivery browser fixture types and warranty ledger types are retained.
+
+Collection from the web workspace now reports **50 P1-31 cases across both locales**,
+plus one sign-in setup, in six spec files and the setup file. CC-59 (d) is settled for
+collection and the acceptance plan is corrected. This is not a browser execution result;
+FE-009 closing-head acceptance remains pending. Historical counts above are retained.
+
+### 69.10 Failed acceptance prerequisite stays failed
+
+Fable found that the harness's former null result for a failed history read could send the
+browser case through its legacy-handoff skip. The harness now distinguishes an explicit
+`{ status: 'failed', faults: [...] }` result. The handoff type accepts that result and the
+warranty browser case throws its reported faults before considering the absent-ledger skip.
+An older handoff with no ledger remains distinguishable from an attempted read that failed.
+
+A controlled invocation of the actual spec callback confirms that the explicit failure stops
+before navigation, an absent legacy field skips, and a successful read proceeds to navigation.
+This local control-flow check is not browser execution. Web typechecking passes. Final tier
+records are taken after this correction; the superseded unit recording was stopped and is
+not claimed as passing.
+
+### 69.11 Final local integration records
+
+Both full tiers were recorded after the failed-prerequisite correction at executable commit
+`5224feaa7f2fc577ca5096d66cacd58d4a44b1f6`: **unit 3372/3372 across 128 files** and
+**web 4057/4057 across 142 files**, each exit 0, with no skipped cases or dirty executable paths.
+The records in `../phase-1-27/evidence/local-run-ledger.json` remain LOCAL; no hosted result
+is inferred from them. The earlier targeted DOM check passed 211 cases across four files.
+Changed-file lint/format, web typechecking and the access, version-sourcing, write-shape,
+web-boundary, phase-ownership and generated-artifact gates passed during integration.
+
+The protected prerequisite #395 is confirmed at
+`e97db8ced0de80947e007df288d35f383e9fa68e`: all 19 actual post-merge check-runs completed
+successfully, including `protected-gate`; its last check completed at 2026-09-14T07:42:35Z.
+These checks describe that prerequisite head, not this FE-009 candidate.
+
+Raw reports, the preserved index snapshot, controlled failure regression, browser collection
+and GitHub check-run evidence are retained outside the repository in the shared orchestration
+evidence directory `astra-fe009-20260914`. FE-009 hosted checks and closing-head browser
+acceptance remain pending at this local record.
+
+The final `npm run verify:policies` completed with exit 0 after these records were
+refreshed. The closing-values gate reported zero problems, and the evidence manifest
+was in sync across all 41 evidence documents.
+
+### 69.12 Consolidated engineering review
+
+Fable reviewed complete candidate `40b02368a96eb403ac4c685bfd159aa4eefdd3f2` and
+returned PASS-WITH-NOTES with no blockers on 2026-09-14 at 08:30Z. This is agent
+engineering review, not a human QA or security certification. Its documentation notes
+are corrected here: the residue is sixteen sites; the collection disposition points to
+§ 69.9; the plan names six specs; and the prepared-head table is labelled historical.
+
+The controlled failed-prerequisite regression is external at
+`astra-fe009-20260914/history-failure-regression.cjs`; it is not a committed regression
+suite. The integration commit history is preserved as recorded, including the longer
+subject on `44d8a223` and the existing message/trailer conventions. No history was rewritten.
+
+Tablet proof and the assurance matrix-test correction are being prepared separately by
+Fable for integration after FE-009. The canonical tablet criterion is still owed at
+this head; the older acceptance-plan claim that no document requires it is superseded
+by `canonical-plan.md` lines 220–226. Closing acceptance waits for that instrument
+integration and its protected verification.
+
+After that review, web typechecking and the two changed browser-proof files' lint were
+re-executed successfully; raw output is retained in `post-review-static.log` in the same
+external evidence directory. The code is unchanged from `5224feaa`. The closing-values
+gate again reported zero problems and the evidence manifest remained in sync.

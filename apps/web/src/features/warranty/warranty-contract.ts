@@ -1,14 +1,15 @@
 /**
  * The warranty contract this phase consumes (P1-31, FE-008 warranty record,
- * FE-009 warranty history as far as the backend publishes one).
+ * FE-009 warranty history).
  *
- * | operation                  | method | path                                  | permissions (ALL required) |
- * | -------------------------- | ------ | ------------------------------------- | -------------------------- |
- * | `wty.warranty-list`        | GET    | `/warranties`                         | `wty.warranty.read`        |
- * | `wty.warranty-detail`      | GET    | `/warranties/{warrantyId}`            | `wty.warranty.read`        |
- * | `wty.warranty-generate`    | POST   | `/deliveries/{deliveryId}/warranties` | `wty.warranty.issue`       |
- * | `wty.warranty-policy-list` | GET    | `/warranty-policies`                  | `wty.warranty.read`        |
- * | `wty.warranty-policy-read` | GET    | `/warranty-policies/{policyId}`       | `wty.warranty.read`        |
+ * | operation                        | method | path                                       | permissions (ALL required) |
+ * | -------------------------------- | ------ | ------------------------------------------ | -------------------------- |
+ * | `wty.warranty-list`              | GET    | `/warranties`                              | `wty.warranty.read`        |
+ * | `wty.warranty-detail`            | GET    | `/warranties/{warrantyId}`                 | `wty.warranty.read`        |
+ * | `wty.warranty-status-history`    | GET    | `/warranties/{warrantyId}/status-history`  | `wty.warranty.read`        |
+ * | `wty.warranty-generate`          | POST   | `/deliveries/{deliveryId}/warranties`      | `wty.warranty.issue`       |
+ * | `wty.warranty-policy-list`       | GET    | `/warranty-policies`                       | `wty.warranty.read`        |
+ * | `wty.warranty-policy-read`       | GET    | `/warranty-policies/{policyId}`            | `wty.warranty.read`        |
  *
  * The plan ADMINISTRATION surface (P1-31, FE-008 policy administration) adds the five
  * writes P-10 published, every one of them on the administration code and none of
@@ -75,17 +76,20 @@
  * whole branch would read it as that vehicle's warranties. Nothing else is offered
  * here, because nothing else is offered there.
  *
- * ## FE-009 is PARTIAL, and the missing half is named rather than simulated
+ * ## FE-009 is WHOLE, and the ledger is read rather than composed
  *
  * `wty.warranty_status_history` — the table's real name, spelled as
- * `20260724095000_wty_warranty.sql` creates it — has no reader anywhere in
+ * `20260724095000_wty_warranty.sql` creates it — had no reader anywhere in
  * `apps/api/src` (**CC-10**, which records the same table under a longer name that no
- * migration ever used). So the history this feature can show is the vehicle-filtered LIST —
- * every warranty issued for one vehicle, newest first — and not the per-record
- * transition ledger the table holds. The reader is named as a backend prerequisite
- * (**P-18 warranty history reader**) in `warranty-record-screens.md`. No transition
- * is derived, inferred or composed on this side: a ledger assembled from a record's
- * current state would be a second, wrong authority on what happened to it.
+ * migration ever used), so this feature could show only the vehicle-filtered LIST and
+ * said so on the record screen in the operator's own words (**CC-31**). P-18 published
+ * the reader, and the per-record transition ledger is now read from it. Nothing here
+ * changes: no transition is derived, inferred or composed on this side, because a
+ * ledger assembled from a record's current state would be a second, wrong authority on
+ * what happened to it.
+ *
+ * The vehicle-filtered list keeps its own job — every warranty issued for one vehicle —
+ * which is a different question from how ONE warranty reached the state it is in.
  *
  * ## No money, by measurement
  *
@@ -366,6 +370,49 @@ export interface WarrantyListRow {
   readonly odometerLimit: string | null;
   readonly policy: WarrantyPolicy;
   readonly recordVersion: number;
+}
+
+/**
+ * `WarrantyStatusHistoryEntryView` — one transition of the append-only warranty ledger.
+ *
+ * Spelled exactly as the backend's own view spells it, which is in turn spelled exactly
+ * as `DeliveryStatusHistoryEntryView` is: same field names, same order, same absences.
+ * That is deliberate on both sides — a screen that renders a handover's history and
+ * then a warranty's handles ONE shape rather than two that can drift apart.
+ *
+ * `fromStatus` is absent on the OLDEST row and only there. `wty.issue_warranty` writes
+ * the genesis transition in the same statement as the record, so that row has no
+ * previous state rather than a missing one, and nothing above it is rendered.
+ * `actorId` is never absent — the column refuses it and the database stamps it from the
+ * session — so an unattributed transition cannot arrive here. Both status fields are
+ * typed as the wire's `string` for the reason `WarrantyRecord.status` is: the check
+ * constraint is the database's, and a value added there must reach the screen as
+ * itself rather than be narrowed away by a type this side invented.
+ */
+export interface WarrantyStatusTransition {
+  readonly id: string;
+  readonly fromStatus: string | null;
+  readonly toStatus: string;
+  readonly reason: string | null;
+  readonly actorId: string;
+  readonly occurredAt: string;
+}
+
+/**
+ * `wty.warranty-status-history` — `WarrantyStatusHistoryEnvelope`, newest first.
+ *
+ * The page is NAMED rather than bare, exactly as the policy list's is: the route
+ * answers `{ warrantyId, transitions: { … } }`, and flattening it here would make this
+ * type disagree with the wire at the one place a disagreement is invisible until
+ * runtime. The subject travels beside the page so a single-row answer is never a page
+ * with nothing saying what it is about.
+ *
+ * The route bounds `limit` at 100 and defaults it to 50; this feature asks for
+ * `PAGE_SIZE`, which sits inside both.
+ */
+export interface WarrantyStatusHistoryEnvelope {
+  readonly warrantyId: string;
+  readonly transitions: WarrantyPage<WarrantyStatusTransition>;
 }
 
 /**

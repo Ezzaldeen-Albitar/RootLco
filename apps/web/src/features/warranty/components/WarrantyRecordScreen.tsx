@@ -8,6 +8,7 @@ import { translate } from '@/i18n/get-messages';
 import { formatDate, formatInteger } from '@/lib/format';
 
 import type { WarrantyRecord } from '../warranty-contract';
+import { WarrantyHistoryPanel } from './WarrantyHistoryPanel';
 import {
   ConfigurationStatusLabel,
   CoveredScopeLabel,
@@ -20,11 +21,11 @@ import {
 } from './shared';
 
 /**
- * One warranty record (P1-31, FE-008).
+ * One warranty record (P1-31, FE-008), with its transition ledger (FE-009).
  *
- * Four sections, in the order an operator asks the questions: what state is this
- * warranty in and how long does it run; under which policy; on what terms; and over
- * which jobs and parts.
+ * Five sections, in the order an operator asks the questions: what state is this
+ * warranty in and how long does it run; under which policy; on what terms; over which
+ * jobs and parts; and how it reached the state the first section reports.
  *
  * ## Nothing here is derived
  *
@@ -50,11 +51,22 @@ import {
  * exists to link to, and the work order likewise; a link is navigation, not a name.
  * The policy is shown by its own code and name because the read carries both.
  *
+ * ## The history is READ, and it is the last section for a reason
+ *
+ * The transition ledger sits below the facts rather than above them, because the
+ * question it answers — how did this warranty get here — only arises once the reader
+ * knows where "here" is. It reads its own subresource and therefore fails on its own:
+ * a caller may see the record and have the ledger refused, and rendering that inside
+ * the panel keeps everything above it. Until P-18 published the reader this screen
+ * stated in the operator's own language that the ledger could not be read (CC-31); it
+ * now shows the rows, and it still composes none of its own.
+ *
  * ## No money, and no claim history
  *
  * The warranty schema holds no amount, no currency and no cap in any unit of account,
  * so there is no figure to show and none is invented. There is no claim table in any
- * schema either, so there is no claim history to render.
+ * schema either, so there is no claim history to render — the ledger below records
+ * changes of STATE, which is a different thing.
  */
 export function WarrantyRecordScreen({
   locale,
@@ -224,9 +236,7 @@ export function WarrantyRecordScreen({
         )}
       </Section>
 
-      <p className="text-caption text-text-muted">
-        {translate(messages, 'warranty.record.noHistoryYet')}
-      </p>
+      <WarrantyHistoryPanel locale={locale} messages={messages} warrantyId={warranty.id} />
     </div>
   );
 }

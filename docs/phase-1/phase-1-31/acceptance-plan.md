@@ -24,7 +24,7 @@ evidences the day it ran and nothing after it.
 | `orchestration/acceptance/p1-31-journey.mjs` (outside the repository, §1.7) | the HTTP journey, its refusal cases, and the evidence it writes            |
 | `apps/web/tests/e2e/authenticated/p1-31-handoff.ts`                         | how the browser half reads the world the HTTP half made                    |
 | `apps/web/tests/e2e/authenticated/delivery-p1-31.spec.ts`                   | the readiness queue, the handover record, the printable copy               |
-| `apps/web/tests/e2e/authenticated/warranty-p1-31.spec.ts`                   | the warranty list, the record, and the plans screen                        |
+| `apps/web/tests/e2e/authenticated/warranty-p1-31.spec.ts`                   | the warranty list, the record with its ledger, and the plans screen        |
 | `apps/web/tests/e2e/authenticated/reports-p1-31.spec.ts`                    | the catalogue and all four report screens                                  |
 | `apps/web/tests/e2e/authenticated/audit-log-p1-31.spec.ts`                  | the audit log over this journey's own writes                               |
 | `apps/web/tests/e2e/authenticated/overview-p1-31.spec.ts`                   | the operational overview — FE-010, and FE-016 by the address               |
@@ -256,6 +256,7 @@ npm run test:e2e:authenticated
 | `delivery-writes-p1-31.spec.ts` | the final odometer is refused, then accepted, and the vehicle is released (FE-005)   | yes                | yes                |
 | `warranty-p1-31.spec.ts`        | the branch's warranty list carries the generated warranty                            | yes                | yes                |
 | `warranty-p1-31.spec.ts`        | the warranty record shows its terms and what it covers                               | yes                | yes                |
+| `warranty-p1-31.spec.ts`        | the warranty record shows the transition ledger the journey recorded                 | yes                | yes                |
 | `warranty-p1-31.spec.ts`        | the warranty plans screen lists the plan                                             | yes                | yes                |
 | `reports-p1-31.spec.ts`         | the catalogue offers all four datasets                                               | yes                | yes                |
 | `reports-p1-31.spec.ts`         | each of the four reports renders the rows the server answered (four cases)           | yes                | yes                |
@@ -308,9 +309,14 @@ there; no case defaults a kind. The handoff-gated cases carry a second gate for 
 they run only when the browser is signed in as the organisation administrator whose records they
 are about.
 
-Twenty cases per project, forty in total, plus the sign-in setup. The specs are **not** added to
-`authenticated-tablet`: that project's rule is that a document obliges the surface to work at tablet
-width, and no document does for these screens.
+Twenty-five cases per project, fifty in total, plus the sign-in setup. **Collected at the FE-009
+integration candidate after #393, #394 and #395:** all six P1-31 spec files are present, including
+the delivery writes and warranty ledger cases. Collection verifies the available cases, not their
+execution; closing-head browser acceptance remains pending. The specs have **not yet** been added to
+`authenticated-tablet`. This leaves the desktop/tablet obligation in `canonical-plan.md`
+lines 220–226 unproved at this candidate. The earlier claim that no document required tablet
+coverage was incorrect. A separate instrument integration will add the required project coverage
+and fresh write fixtures before the closing acceptance run.
 
 ### 3.1 What only the browser establishes
 
@@ -326,6 +332,12 @@ width, and no document does for these screens.
   **equal** the count the HTTP half recorded for the same code, branch and period. A hard-coded
   number would be a second statement of a figure the server owns; "the table is not empty" would pass
   on a screen that dropped every row but one.
+- **The warranty ledger, row for row (FE-009).** The transition ledger on the warranty record
+  must hold exactly the transitions the HTTP half read back through `wty.warranty-status-history`
+  for the same warranty — the count from the handoff, never a literal in the spec — and the oldest
+  row must be drawn as a beginning: the origin wording, no "moved from", and nothing above it.
+  Today that ledger is one row long, because nothing in this phase advances a warranty's state, and
+  a one-row ledger rendered as "no history yet" is the defect this asserts against.
 - **A verdict in every queue row.** Each readiness row must read `Ready` or the not-ready sentence. A
   blank verdict cell is the defect this asserts against, and it is the whole point of the screen.
 - **Stated absences.** "There is no download here" on the report catalogue, and "the service
@@ -486,26 +498,26 @@ drops the one that went red is worse than no list.
 | `npm run security:all`                                   | the aggregate security gate                             |
 | `npx vitest run tests/ci tests/openapi-contract.test.ts` | 1991 passed, 0 failed, 69 files — see §8.1              |
 
-### 8.1 The registration these five specs owed, and the hosted consequence of it
+### 8.1 The registration these six specs owed, and the hosted consequence of it
 
 _A sixth spec was added later and registered the same way: `delivery-writes-p1-31.spec.ts`, the three
 committed browser cases the closure re-measure recorded as owed (**CC-52 (c)**) — the delivery
 checklist, the final odometer and the signature evidence, each in both locale projects, each with
 a refusal, a successful write and a reload that re-reads the record from the server. It carries
 one case that executes without a handoff, for the reason this section gives, and the records
-the other three act on are made by section 15b of the harness. Everything below was written of
-the original five and is left as it was._
+the other three act on are made by section 15b of the harness. The section originally described five files; its current registration count now includes
+all six, while the earlier failure and correction remain recorded._
 
 `tests/ci/e2e-tier-coverage.test.ts` requires every spec under
 `apps/web/tests/e2e/authenticated/` to be named in `.github/ci-baselines/unrun-test-tiers.json` —
 under `governed.specs` if a gate-governed job executes it, in `unrun` if none does. The list named
 seven paths and none of these, so the tier was RED from the moment the specs were committed,
-before any merge. **All five are now registered under `governed.specs`, and the fact decided which
+before any merge. **All six are now registered under `governed.specs`, and the fact decided which
 list:**
 
 - `apps/web/playwright.config.ts:204` and `:215` give the `authenticated-en` and `authenticated-ar`
   projects `testMatch: /authenticated[\\/].*\.spec\.ts/` — a directory-wide glob that matches these
-  five the moment they exist. `authenticated-tablet` at `:255` matches only
+  six the moment they exist. `authenticated-tablet` at `:255` matches only
   `(administration|appointments-and-receptions)` and does not.
 - `.github/workflows/_reusable-authenticated-browser.yml:416` sets `ROOTLCO_E2E_AUTH: '1'` and runs
   `npm run test:web-e2e-authenticated`. The job is in the `needs` of both `ci-gate` and
@@ -526,7 +538,7 @@ each of them would have been named and the check would have been red.
 
 The answer was not to weaken that step. It was to stop shipping spec files that can never
 execute — the "declared but never wired" defect class this phase exists to clean up, and the one
-`P1-27-INT-113` is named for. **Each of the five now carries at least one case that runs on the
+`P1-27-INT-113` is named for. **Each of the six now carries at least one case that runs on the
 governed job's own environment**, asserting the permission gating, reachability, honest idle and
 denied states, and text direction that environment genuinely provides; §3.0 sets out exactly what
 each asserts and why the handoff is not needed for it. Only the assertions that genuinely require
@@ -536,6 +548,23 @@ the handoff, each stating its own reason.
 So the guard is satisfied honestly rather than accommodated: every file contributes executed
 tests, and no case pretends to prove something it has not seen. What still waits for the harness
 to be run is the journey half, which is §1 through §6 of this plan.
+
+**FE-009's ledger case adds no registration, and it is behind the handoff for a structural
+reason.** `warranty-p1-31.spec.ts` is already declared under `governed.specs`, and the file already
+contributes an executed case in the governed job — `both warranty screens answer exactly what the
+signed-in account is entitled to` — so the zero-executed-test guard is unaffected and no list is
+edited. The new case cannot join that unconditional half: the panel lives on a warranty RECORD, and
+the governed job provisions no warranty, so there is no identifier to open. What CAN be pinned
+without a handoff is already pinned there — `account-manifest.json` records `owner-acceptance` as
+holding `wty.warranty.read`, which is the code this subresource answers, so the owner is entitled to
+the panel and is simply never shown a record. The gated case asserts that entitlement explicitly
+rather than assuming it, and treats a refusal inside the panel as a failure rather than as an
+accepted alternative outcome.
+
+**It depends on one harness step that is not yet written.** The case reads `warrantyHistory` from
+the handoff and skips, with the reason stated in the run, when the document does not carry it. The
+step the harness owes is a `wty.warranty-status-history` read for the journey's own warranty,
+published as the transitions page; until it is added, this case skips and claims nothing.
 
 **The overview spec is the fifth file, and it closes FE-010 and FE-016.** The record carried both
 as reached but not verified: no HTTP step called what the screen calls, and no browser case opened

@@ -20,6 +20,7 @@ import {
   Section,
   UUID,
   WarrantyStatusLabel,
+  type MoreFailure,
 } from './shared';
 import type { BranchOption } from '@/features/services/services-contract';
 
@@ -306,7 +307,7 @@ interface Held {
   readonly rows: readonly WarrantyListRow[];
   readonly nextCursor: string | null;
   readonly hasMore: boolean;
-  readonly moreFailed: string | null;
+  readonly moreFailed: MoreFailure | null;
 }
 
 const keyOf = (target: Target, vehicleId: string | null) =>
@@ -356,7 +357,10 @@ function ResultsSection({
     if (next.status !== 'ok') {
       // The operator keeps the pages they have. Wiping them to report a transient
       // fault loses their place for no benefit.
-      setHeld({ ...held, moreFailed: next.status });
+      setHeld({
+        ...held,
+        moreFailed: { status: next.status, correlationId: next.correlationId },
+      });
       return;
     }
     setHeld({
@@ -452,9 +456,11 @@ function ResultsSection({
           </table>
 
           {current.moreFailed === null ? null : (
-            <p role="alert" className="mt-2 text-body text-error">
-              {translateDynamic(messages, `state.${current.moreFailed}.title`)}
-            </p>
+            <ReadFailure
+              messages={messages}
+              status={current.moreFailed.status}
+              correlationId={current.moreFailed.correlationId}
+            />
           )}
 
           {current.hasMore ? (

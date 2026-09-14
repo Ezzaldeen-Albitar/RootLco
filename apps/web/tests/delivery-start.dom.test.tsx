@@ -156,6 +156,44 @@ function renderPanel(
 const section = (text: Record<string, string> = EN) =>
   screen.getByRole('region', { name: text['delivery.workOrder.heading'] as string });
 
+describe('the read this panel is drawn from', () => {
+  it('states a handover it could not resolve, and never the key composed from it', async () => {
+    /*
+     * CC-59 (c). This panel held the read's outcome and built `state.${status}.title`
+     * from it. That is a catalogue key for four of the five outcomes and NOT a key for
+     * `not-found`: the catalogue holds `state.notFound.title`, nothing holds
+     * `state.not-found.title`, and `translate` renders a missing key AS the key — so a
+     * work order whose handover read answered 404 showed the operator a dotted internal
+     * string where the sentence belongs. It is the same defect as the three paged
+     * delivery panels and the four warranty surfaces, on a FIRST-page render rather than
+     * on a further page, and it is fixed the same way: the outcome goes through the
+     * shared states.
+     */
+    readWorkOrderDelivery.mockResolvedValue(refusedRead('not-found'));
+    renderPanel();
+    await waitFor(() => expect(readWorkOrderDelivery).toHaveBeenCalledWith(WORK_ORDER_ID));
+    const region = section();
+    expect(
+      await within(region).findByText(EN['state.notFound.title'] as string)
+    ).toBeInTheDocument();
+    expect(within(region).queryByText('state.not-found.title')).toBeNull();
+    // A refused read is not an absent handover: the panel must not offer to start one
+    // over an answer it could not read.
+    expect(within(region).queryByText(EN['delivery.workOrder.none'] as string)).toBeNull();
+  });
+
+  it('prints the reference the backend logged for a read it could not complete', async () => {
+    readWorkOrderDelivery.mockResolvedValue(refusedRead('unavailable'));
+    renderPanel();
+    await waitFor(() => expect(readWorkOrderDelivery).toHaveBeenCalledWith(WORK_ORDER_ID));
+    const region = section();
+    expect(
+      await within(region).findByText(EN['state.unavailable.title'] as string)
+    ).toBeInTheDocument();
+    expect(within(region).getByText('corr-9')).toBeInTheDocument();
+  });
+});
+
 describe('the two authorities that decide what the Start control looks like', () => {
   it('draws no form at all for a caller who may not open a handover', async () => {
     renderPanel({ canManage: false });

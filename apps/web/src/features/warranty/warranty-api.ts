@@ -28,6 +28,7 @@ import type {
   WarrantyPolicyRenameBody,
   WarrantyPolicySummary,
   WarrantyRecord,
+  WarrantyStatusHistoryEnvelope,
   WarrantyStatusSetBody,
 } from './warranty-contract';
 
@@ -82,15 +83,15 @@ import type {
  * published contract, which is why the plan create, the coverage create and the plan
  * status command carry one while the coverage status command deliberately does not.
  *
- * ## No history reader exists, and nothing here pretends otherwise
+ * ## The history reader exists now, and the ledger is read rather than reconstructed
  *
  * `wty.warranty_status_history` — the name `20260724095000_wty_warranty.sql` gives the
- * table — is written by the database and read by no operation in `apps/api/src`
- * (**CC-10**, which records it under a longer name no migration ever used). There is
- * therefore no history adapter in this file. FE-009 is served by the vehicle-filtered
- * list — the warranties issued for one vehicle, newest first — and the per-record
- * transition ledger waits on the backend prerequisite named in
- * `warranty-record-screens.md` as **P-18**.
+ * table — was written by the database and read by no operation in `apps/api/src`
+ * (**CC-10**), so this file carried no history adapter and FE-009 shipped partial
+ * (**CC-31**). **P-18** published `wty.warranty-status-history`, and
+ * `readWarrantyStatusHistory` below is the whole of this side's answer to it: one read,
+ * on the same `wty.warranty.read` code the record itself answers, with the cursor and
+ * the end-of-set signal left to the server.
  */
 
 /** What a warranty list read answers with, refusals included. */
@@ -209,6 +210,37 @@ export async function listBranches(): Promise<ReadState<ItemsOnly<BranchOption>>
  */
 export async function readWarranty(warrantyId: string): Promise<ReadState<WarrantyRecord>> {
   return readOperation<WarrantyRecord>(warrantyPath(warrantyId));
+}
+
+/**
+ * One warranty's transition ledger, newest first (`wty.warranty-status-history`).
+ *
+ * The reader **P-18** published, and the reason FE-009 is no longer partial. It answers
+ * `wty.warranty.read` — the same code the record itself answers — because how a
+ * warranty reached its state says no more about it than the record does, and a
+ * different gate would let a caller read the record but not how it got there.
+ *
+ * A `not-found` means the warranty could not be resolved, decided before any scope
+ * decision: the backend does not confirm that a record it will not show you exists, and
+ * it does not confirm it through this subresource either.
+ *
+ * `cursor` is passed back exactly as it arrived and never parsed, and `hasMore` is the
+ * server's own end-of-set signal. No total is requested and none is invented. The
+ * OLDEST row is the origin — the transition that wrote the warranty — and nothing here
+ * adds a row above it: the backend deliberately publishes no synthesised origin block,
+ * because the genesis transition is already in the table.
+ */
+export async function readWarrantyStatusHistory(
+  warrantyId: string,
+  input: {
+    readonly cursor?: string | null | undefined;
+    readonly limit?: number | undefined;
+  } = {}
+): Promise<ReadState<WarrantyStatusHistoryEnvelope>> {
+  return readOperation<WarrantyStatusHistoryEnvelope>(
+    `${warrantyPath(warrantyId)}/status-history` +
+      query({ cursor: input.cursor ?? null, limit: input.limit ?? PAGE_SIZE })
+  );
 }
 
 /**
