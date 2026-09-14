@@ -47,9 +47,13 @@
  *     `production-maintenance` mode: the backfill precedent has one because it repairs real
  *     organisations; this installs a test fixture and has no business anywhere else.
  *   - It refuses anything but the ONE fresh identity the run just made: the tenant code
- *     `p31_journey_a_<stamp>`, the address `p31.export.<stamp>@rootlco.local`, and a company
- *     and branch of that tenant — each predicate evaluated and **named separately** when it
- *     fails, so a refusal says which fact was not true.
+ *     `p31_journey_a_<stamp>`, the address `p31.export.<stamp>@rootlco.local` — or, on a
+ *     retry, `p31.export.<stamp>-a<N>@rootlco.local` for the attempt `--attempt <N>` names —
+ *     and a company and branch of that tenant, each predicate evaluated and **named
+ *     separately** when it fails, so a refusal says which fact was not true.
+ *   - It refuses a fourth attempt. `--attempt` is a whole number 1 to 3 (Astra's bound,
+ *     `orchestration/P1-31-ASTRA-HANDOFF-20260914.md:93-101` at 2026-09-14T12:18Z): a retry
+ *     is a bounded recovery for a run that already cost 520 HTTP steps, not a loop.
  *   - It creates **no unrestricted grant and no reusable shared role**. The role code
  *     carries the run's stamp, the grant is `scoped` to one branch, and it expires.
  *   - It invents **no approval**. `approval_ref` stays NULL, the writer is the existing
@@ -72,14 +76,45 @@
  * a grant. So **two hours is an operator time box, not a tamper-proof limit**; it bounds an
  * acceptance run, and it is not offered as a security control.
  *
- * ## The lease this ASSUMES
+ * ## The lease this TAKES
  *
  * `FOR UPDATE OF t, u` locks the tenant and the account rows. It does **not** exclude a
  * concurrent insert into `iam.role_grants` for the same principal, because a row that does
- * not exist yet cannot be locked. The exclusive use of the shared local database for the
- * duration of the run is therefore an **asserted precondition**, recorded in the evidence:
- * the acceptance protocol grants one writer at a time, and this script relies on that rather
- * than pretending to enforce it.
+ * not exist yet cannot be locked. So exclusive use of the shared local database is no longer
+ * merely asserted here: this script TAKES the one shared lease before it writes anything,
+ * including before the dry run's `BEGIN` — `acquireDatabaseLease` on the advisory key
+ * `DATABASE_LEASE_KEY` of `scripts/lib/database-lease.mjs`, the same key and the same
+ * protocol the backend outbox suite speaks. Contention is a refusal with its own exit code,
+ * never a wait, and closing the connection releases the lease.
+ *
+ * A lease binds only those who speak the protocol. The frozen main journey
+ * `orchestration/acceptance/p1-31-journey.mjs` does **not** take it, and is deliberately not
+ * modified to: the acceptance protocol still admits one writer at a time, so that is a
+ * consistency gap between the two instruments and not a run breaker. What the lease buys
+ * here is that a second writer which DOES speak the protocol cannot interleave with this
+ * transaction.
+ *
+ * ## The deferred constraints, and the connection that can prove them
+ *
+ * Four constraint triggers over the rows below are deferred:
+ * `tg_role_grants_require_scope` and `tg_grant_scopes_require_scope`
+ * (`supabase/migrations/20260718092000_iam_role_grants_and_scopes.sql:206-215`), and
+ * `tg_role_grants_delegation_authority` and `tg_grant_scopes_delegation_authority`
+ * (`20260727090000_iam_grant_delegation_scope_backstop.sql:249-256`). **`ROLLBACK` never
+ * fires a deferred constraint**, so a rehearsal that only rolled back would establish
+ * nothing whatever about the scope rows. `SET CONSTRAINTS ALL IMMEDIATE` therefore runs
+ * inside the transaction after the writes — before the rehearsal's `ROLLBACK` and before the
+ * real `COMMIT` — and the evidence carries `deferredConstraintsForced` as the witness.
+ *
+ * The delegation backstop returns true only under a superuser or `BYPASSRLS` connection
+ * (`20260727090000_iam_grant_delegation_scope_backstop.sql:108-113`). So the fixture also
+ * asks whether its own connection is one and refuses with its own exit code when it is not,
+ * recording the answer as `connectionRole`. Without that question a rehearsal could pass on
+ * a connection under which the real commit would fail.
+ *
+ * Even with both, a rehearsal cannot prove the COMMIT-time state of a DIFFERENT connection.
+ * What it establishes is narrower and is stated in those words: the same statements ran, and
+ * the deferred constraints were forced and passed, before the rollback.
  *
  * ## What it records
  *
@@ -92,8 +127,11 @@
  * The details quads name the principal, the role, the codes, the expiry, the environment and
  * — in plain words — that this row is an acceptance fixture.
  *
- * Plus one evidence JSON, written `wx` so it can never overwrite another run's record, and
- * carrying identifiers and permission codes only.
+ * Plus one evidence JSON, RESERVED BEFORE the transaction opens: created `wx` with a
+ * `status: 'pending'` record, so a path that already exists or cannot be written refuses
+ * before anything has been granted rather than after, and then finalized in place — the same
+ * reserved file, never a second exclusive create. It carries identifiers and permission codes
+ * only.
  *
  * ## Inputs
  *
@@ -104,11 +142,14 @@
  *
  *     npm run acceptance:export-fixture -- --confirm <operator-email> \
  *       --stamp <run> --tenant <uuid> --principal <email> --user <uuid> \
- *       --company <uuid> --branch <uuid> [--evidence <path>] [--dry-run]
+ *       --company <uuid> --branch <uuid> [--attempt <1..3>] [--evidence <path>] [--dry-run]
  *
  * Exit codes: 2 a guard or a usage error, 3 the declared identity is not there or not
  * fresh, 4 the operator's authority, 5 the permission catalogue, 6 a fixture that already
- * exists.
+ * exists, 7 an attempt outside 1 to 3, 8 the evidence file could not be reserved
+ * exclusively, 9 another harness holds the shared-database lease, 10 the connection cannot
+ * prove the deferred constraints, 11 a failure AFTER the commit — the role, the grant and
+ * the audit row are installed, so the operator inspects those rows before any retry.
  */
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -116,9 +157,29 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { GuardFailure, SYSTEM_ACTOR, assertLocalTarget } from './context.mjs';
+import {
+  DATABASE_LEASE_KEY,
+  acquireDatabaseLease,
+  releaseDatabaseLease,
+} from '../../lib/database-lease.mjs';
 
 /** The one value that opts a run in, beside the loopback check. */
 export const REQUIRED_CONFIRMATION = 'p1-31';
+
+/** The name this harness takes the shared-database lease under. */
+export const FIXTURE_LEASE_HARNESS = 'p1-31 export fixture setup';
+
+/**
+ * The highest attempt this tool will install, and why there is a ceiling at all.
+ *
+ * A retry exists because the companion's 520-step journey is expensive: a failure after the
+ * fixture committed used to be unrecoverable without re-running the whole thing. It is a
+ * bounded recovery and not a loop — the bound is Astra's, recorded at
+ * `orchestration/P1-31-ASTRA-HANDOFF-20260914.md:93-101` on 2026-09-14T12:18Z — so a fourth
+ * attempt is refused rather than accommodated. Each attempt names its OWN principal, its own
+ * role code and its own evidence file, and never reuses or overwrites an earlier attempt's.
+ */
+export const MAX_FIXTURE_ATTEMPT = 3;
 
 /**
  * The authority the run is gated on — an EXISTING platform permission, none minted.
@@ -185,6 +246,34 @@ export const FIXTURE_AUDIT_ACTION = 'iam.grant.issued';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const STAMP = /^[a-z0-9]{6,16}$/;
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const ATTEMPT = /^[1-9][0-9]*$/;
+
+/**
+ * The ONE address each attempt may install for, derived rather than accepted.
+ *
+ * Attempt 1 keeps the plain address the companion has always published, so the normal case
+ * is unchanged. A retry carries `-a<N>` before the `@`, which is what lets the second attempt
+ * invite a principal at all: `iam.invitation-create` refuses a duplicate address, so a retry
+ * on the SAME address could never get past its own invitation step.
+ */
+export function fixturePrincipalAddress(stamp, attempt) {
+  return attempt === 1
+    ? `p31.export.${stamp}@rootlco.local`
+    : `p31.export.${stamp}-a${String(attempt)}@rootlco.local`;
+}
+
+/**
+ * The private role code, which carries the attempt for the same reason.
+ *
+ * An existing fixture role is refused outright (exit 6), so a retry that reused the code
+ * could not install anything. The attempt in the code is what keeps each attempt's grant a
+ * separate, separately auditable row rather than a reuse of an earlier one.
+ */
+export function fixtureRoleCode(stamp, attempt) {
+  return attempt === 1
+    ? `p31_${stamp}_export_fixture`
+    : `p31_${stamp}_export_fixture_a${String(attempt)}`;
+}
 
 /** A refusal that carries its own exit code, so the caller can tell the kinds apart. */
 export class FixtureRefused extends Error {
@@ -199,6 +288,21 @@ function refuse(message, exitCode = 2) {
   throw new FixtureRefused(message, exitCode);
 }
 
+/**
+ * The exit code a thrown error becomes — in ONE place.
+ *
+ * The CLI handler at the foot of this file and
+ * `tests/ci/p1-31-export-fixture-refusals.test.ts` both read this function, so the code a
+ * refusal is DOCUMENTED with is the code the process actually exits with. Stating it twice —
+ * once in a handler and once as a number typed into a test — is how a refusal matrix comes to
+ * assert something the command does not do.
+ */
+export function exitCodeFor(error) {
+  if (error instanceof FixtureRefused) return error.exitCode;
+  if (error instanceof GuardFailure) return 2;
+  return 1;
+}
+
 function parseArgs(argv) {
   const parsed = {
     confirm: undefined,
@@ -208,6 +312,7 @@ function parseArgs(argv) {
     userId: undefined,
     companyId: undefined,
     branchId: undefined,
+    attempt: undefined,
     evidencePath: undefined,
     dryRun: false,
   };
@@ -219,6 +324,7 @@ function parseArgs(argv) {
     ['--user', 'userId'],
     ['--company', 'companyId'],
     ['--branch', 'branchId'],
+    ['--attempt', 'attempt'],
     ['--evidence', 'evidencePath'],
   ]);
   for (let index = 0; index < argv.length; index += 1) {
@@ -229,6 +335,10 @@ function parseArgs(argv) {
     }
     const key = single.get(arg);
     if (key === undefined) refuse(`Unknown argument: ${arg}`);
+    // A repeated flag is refused rather than resolved. Silently taking the last one means a
+    // caller that named two tenants installs the fixture in whichever the shell happened to
+    // put second, which is the one thing a fixture that refuses everything else must not do.
+    if (parsed[key] !== undefined) refuse(`${arg} is given more than once`);
     const value = argv[index + 1];
     if (value === undefined || value.startsWith('--')) refuse(`${arg} requires a value`);
     parsed[key] = value.trim();
@@ -242,6 +352,10 @@ function parseArgs(argv) {
  *
  * Exported so the DB-free tier can drive the whole refusal matrix: a guard that can only be
  * exercised by connecting to a database is a guard nobody exercises.
+ * `tests/ci/p1-31-export-fixture-refusals.test.ts` is where that matrix is actually driven —
+ * every refusal below, plus the environment guard, the exclusive reservation, the lease and
+ * the connection-privilege precondition, each asserting its exit code and that no write
+ * statement reached the client.
  */
 export function readFixtureInput(env = process.env, argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
@@ -258,15 +372,29 @@ export function readFixtureInput(env = process.env, argv = process.argv.slice(2)
       refuse(`${flag} must be the identifier the acceptance run answered, as a uuid`);
     }
   }
+  const attemptGiven = args.attempt ?? '1';
+  if (!ATTEMPT.test(attemptGiven)) {
+    refuse('--attempt must be a whole number', 7);
+  }
+  const attempt = Number.parseInt(attemptGiven, 10);
+  if (attempt > MAX_FIXTURE_ATTEMPT) {
+    refuse(
+      `Refused: attempt ${String(attempt)} is beyond the bound of ` +
+        `${String(MAX_FIXTURE_ATTEMPT)}. A retry is a bounded recovery for a run that has ` +
+        'already cost 520 HTTP steps, not a loop; a fourth failure is a defect to read, not ' +
+        'an attempt to repeat.',
+      7
+    );
+  }
   if (args.principal === undefined || !EMAIL.test(args.principal)) {
     refuse('--principal must be the export principal’s address');
   }
-  const expectedEmail = `p31.export.${args.stamp}@rootlco.local`;
+  const expectedEmail = fixturePrincipalAddress(args.stamp, attempt);
   if (args.principal.toLowerCase() !== expectedEmail) {
     refuse(
       `Refused: this tool installs the fixture for ${expectedEmail} and nothing else. ` +
-        'The address is derived from the run stamp, so a different one means a different ' +
-        'principal than the run created.',
+        'The address is derived from the run stamp and the attempt, so a different one means ' +
+        'a different principal than the run created.',
       3
     );
   }
@@ -279,13 +407,14 @@ export function readFixtureInput(env = process.env, argv = process.argv.slice(2)
   }
   return Object.freeze({
     stamp: args.stamp,
+    attempt,
     tenantId: args.tenantId,
     tenantCode: `p31_journey_a_${args.stamp}`,
     principal: expectedEmail,
     userId: args.userId,
     companyId: args.companyId,
     branchId: args.branchId,
-    roleCode: `p31_${args.stamp}_export_fixture`,
+    roleCode: fixtureRoleCode(args.stamp, attempt),
     operator: { email: operator },
     dryRun: args.dryRun,
     evidencePath: args.evidencePath ?? '',
@@ -300,15 +429,61 @@ export function readFixtureInput(env = process.env, argv = process.argv.slice(2)
  * `main` below calls `assertLocalTarget()` too, because it needs the connection settings it
  * returns. This is not a duplicate: it is the check being on the path that writes, so that
  * an importer of `installExportFixture` cannot arrive without it.
+ *
+ * ## Why the guard is a parameter, and why that is not a bypass
+ *
+ * `assertTarget` defaults to the real `assertLocalTarget` and the CLI never passes anything
+ * else — there is no flag, no environment variable and no argument that substitutes it, so
+ * nothing an operator can type relaxes it. What the parameter buys is that an IN-PROCESS
+ * caller — the disposable-database proof, which must run the real SQL against an isolated
+ * database on a different port — can supply the target it is actually using and have the run
+ * record it, instead of the proof being impossible or the command growing a switch that would
+ * live in it forever.
  */
-function assertLocalAndConfirmed(input) {
-  assertLocalTarget();
+export function assertLocalAndConfirmed(input, assertTarget = assertLocalTarget) {
+  const target = assertTarget();
   if (input.confirmation !== REQUIRED_CONFIRMATION) {
     refuse(
       `Fail closed: ROOTLCO_ACCEPTANCE_CONFIRM must be exactly '${REQUIRED_CONFIRMATION}'. ` +
         `Received ${input.confirmation === '' ? '(unset)' : `'${input.confirmation}'`}.`
     );
   }
+  return target;
+}
+
+/**
+ * Whether this connection can prove the deferred delegation backstop.
+ *
+ * `tg_role_grants_delegation_authority` returns true only under a superuser or `BYPASSRLS`
+ * connection, so on any other role the grant insert would be refused the moment the deferred
+ * constraints fire. Asking first turns that into a named refusal before the transaction
+ * instead of a constraint violation inside it — and it closes the gap where a rehearsal
+ * passed on a connection under which the real commit could not.
+ */
+async function assertPrivilegedConnection(client) {
+  const answered = await client.query(
+    `SELECT rolname AS name, (rolsuper OR rolbypassrls) AS privileged
+       FROM pg_roles
+      WHERE rolname = current_user`
+  );
+  const row = answered.rows[0];
+  if (row === undefined) {
+    refuse(
+      'Refused: this connection’s own role is not readable, so whether it can prove the ' +
+        'deferred delegation backstop is unknown. The fixture does not guess.',
+      10
+    );
+  }
+  if (row.privileged !== true) {
+    refuse(
+      `Refused: the connection role ${String(row.name)} is neither a superuser nor ` +
+        'BYPASSRLS, and the deferred delegation backstop returns true only for one of those. ' +
+        'The grant would be refused when the constraints fire. Connect as the local ' +
+        'acceptance owner.',
+      10
+    );
+  }
+  return { name: String(row.name), privileged: true };
 }
 
 /**
@@ -398,15 +573,21 @@ async function resolveTarget(client, input) {
   };
 }
 
-/** The operator whose authority the writes are attributed to. */
+/**
+ * The operator whose authority the writes are attributed to.
+ *
+ * ACTIVE and undeleted, not merely undeleted. A suspended or invited account is not an
+ * authority: `deleted_at IS NULL` alone would let the fixture be attributed to somebody who
+ * cannot sign in, which is precisely the attribution an audit row must not carry.
+ */
 async function resolveOperator(client, input) {
   const operator = await client.query(
     `SELECT id, tenant_id FROM iam.user_accounts
-      WHERE email = $1::extensions.citext AND deleted_at IS NULL`,
+      WHERE email = $1::extensions.citext AND status = 'active' AND deleted_at IS NULL`,
     [input.operator.email]
   );
   if (operator.rowCount === 0) {
-    refuse(`Refused: no account exists for ${input.operator.email}`, 4);
+    refuse(`Refused: no active, undeleted account exists for ${input.operator.email}`, 4);
   }
   if (operator.rowCount > 1) {
     refuse(
@@ -431,15 +612,57 @@ async function resolveOperator(client, input) {
   return accountId;
 }
 
+/** The shared-database lease, taken before anything is written, or a typed refusal. */
+async function takeFixtureLease(client) {
+  try {
+    await acquireDatabaseLease(client, FIXTURE_LEASE_HARNESS);
+  } catch (error) {
+    refuse(
+      'Refused: another harness holds the RootLco shared-database lease (advisory key ' +
+        `${String(DATABASE_LEASE_KEY)}). Two writers on one database is how one run’s records ` +
+        'end up inside another’s evidence. Stop the other harness and run again. ' +
+        `Reported as: ${error instanceof Error ? error.name : 'lease refused'}.`,
+      9
+    );
+  }
+  return { key: DATABASE_LEASE_KEY, harness: FIXTURE_LEASE_HARNESS, acquired: true };
+}
+
 /**
- * The whole fixture, in ONE transaction.
+ * The whole fixture: the two preconditions that cannot be taken back, then one transaction.
  *
  * Exported so a proof can drive it against a database without spawning a process, and so
- * `--dry-run` is the same code path as the real run with a different ending.
+ * `--dry-run` is the same code path as the real run with a different ending. The order here
+ * is the point — the connection's privilege and the shared lease are settled BEFORE the
+ * rehearsal's `BEGIN`, because a rehearsal that cannot be trusted is worse than none.
  */
-export async function installExportFixture(client, input) {
-  assertLocalAndConfirmed(input);
+export async function installExportFixture(client, input, options = {}) {
+  const { assertTarget = assertLocalTarget } = options;
+  const target = assertLocalAndConfirmed(input, assertTarget);
+  const connectionRole = await assertPrivilegedConnection(client);
+  const lease = await takeFixtureLease(client);
+  try {
+    return await writeExportFixture(client, input, {
+      dbTarget: {
+        host: target?.host ?? null,
+        port: target?.port ?? null,
+        database: target?.database ?? null,
+      },
+      connectionRole,
+      lease,
+    });
+  } finally {
+    try {
+      await releaseDatabaseLease(client);
+    } catch {
+      // Closing the connection releases it too; a failure here is not worth masking the
+      // outcome of the fixture with.
+    }
+  }
+}
 
+/** The transaction itself, with the preconditions already established. */
+async function writeExportFixture(client, input, { dbTarget, connectionRole, lease }) {
   const roleId = randomUUID();
   const grantId = randomUUID();
 
@@ -583,6 +806,9 @@ export async function installExportFixture(client, input) {
             class: 'public',
           },
           { field: 'role_code', old: null, new: input.roleCode, class: 'public' },
+          // The attempt, so the audit trail of a retried run says which principal holds
+          // which grant without anybody having to read the addresses back to front.
+          { field: 'attempt', old: null, new: String(input.attempt), class: 'public' },
           {
             field: 'permission_codes_granted',
             old: null,
@@ -603,11 +829,37 @@ export async function installExportFixture(client, input) {
       ]
     );
 
+    /*
+     * The deferred constraints, FORCED — the one statement without which the rehearsal is
+     * theatre.
+     *
+     * Four of the triggers guarding these rows are DEFERRABLE INITIALLY DEFERRED, and
+     * `ROLLBACK` never fires a deferred constraint. So this runs after every write and before
+     * either ending: the rehearsal learns whether the scope rows and the delegation backstop
+     * actually accept the grant, and the real pass learns it a statement earlier than the
+     * commit would have told it.
+     */
+    const forced = await client.query('SET CONSTRAINTS ALL IMMEDIATE');
+
     const result = {
       kind:
         'privileged LOCAL identity fixture setup — an operator act. Not HTTP delegation of ' +
         'rpt.export, not a bundle change, and not a human approval.',
       outcome: input.dryRun ? 'dry-run' : 'applied',
+      attempt: input.attempt,
+      attemptBound: MAX_FIXTURE_ATTEMPT,
+      lease,
+      connectionRole,
+      dbTarget,
+      deferredConstraintsForced: true,
+      deferredConstraints: {
+        statement: 'SET CONSTRAINTS ALL IMMEDIATE',
+        command: forced.command ?? null,
+        when: 'inside the transaction, after every write, before the rollback or the commit',
+        proves: input.dryRun
+          ? 'the deferred scope and delegation constraints ran and passed before the rollback'
+          : 'the deferred scope and delegation constraints ran and passed before the commit',
+      },
       tenantId: input.tenantId,
       tenantCode: input.tenantCode,
       principal: input.principal,
@@ -633,8 +885,16 @@ export async function installExportFixture(client, input) {
     };
 
     if (input.dryRun) {
-      // END TO END, then undone: every statement above ran, including the audit append and
-      // the deferred scope constraint, and none of it persists.
+      /*
+       * END TO END, then undone — and stated for exactly what that is worth.
+       *
+       * Every statement above ran, the audit append included, and `SET CONSTRAINTS ALL
+       * IMMEDIATE` forced the deferred scope and delegation checks, which passed, before this
+       * rollback. None of it persists. What this does NOT establish is the commit-time state
+       * of a DIFFERENT connection: another writer may take the address, the role code or a
+       * grant in between, and this rehearsal cannot see that. It says the same statements ran
+       * and the deferred constraints held — not that the run that follows will succeed.
+       */
       await client.query('ROLLBACK');
       return result;
     }
@@ -650,50 +910,121 @@ export async function installExportFixture(client, input) {
   }
 }
 
-/** The evidence, written exclusively so it can never overwrite another run's record. */
-export function writeFixtureEvidence(input, result) {
-  const path =
-    input.evidencePath !== ''
-      ? resolve(input.evidencePath)
-      : resolve(`.tmp/p1-31-export-fixture-${input.stamp}.json`);
-  mkdirSync(dirname(path), { recursive: true });
+/** Where this attempt's evidence goes. The attempt is in the default name for a reason. */
+export function fixtureEvidencePath(input) {
+  if (input.evidencePath !== '') return resolve(input.evidencePath);
+  const suffix = input.attempt === 1 ? '' : `-a${String(input.attempt)}`;
+  return resolve(`.tmp/p1-31-export-fixture-${input.stamp}${suffix}.json`);
+}
+
+/**
+ * The evidence document, for both the pending record and the final one.
+ *
+ * ONE builder, so the reserved record and the finalized record cannot drift into two shapes
+ * — and so the DB-free tier can assert the shape the companion reads without a database.
+ * `result` is `null` while the record is pending and the run's own object afterwards; it stays
+ * NESTED under `result` because
+ * `orchestration/acceptance/p1-31-export-companion.mjs` reads `parsed.result`, and flattening
+ * it would break the consumer for no gain.
+ */
+export function fixtureEvidenceDocument(input, result, status, now = new Date()) {
+  return {
+    what: 'P1-31 export companion — privileged LOCAL identity fixture setup',
+    /** `pending` before the transaction, then `dry-run` or `applied`. */
+    status,
+    at: now.toISOString(),
+    attempt: input.attempt,
+    attemptBound: MAX_FIXTURE_ATTEMPT,
+    environment: input.environment,
+    dryRun: input.dryRun,
+    authority: REQUIRED_OPERATOR_CODE,
+    operatorEmail: input.operator.email,
+    principal: input.principal,
+    roleCode: input.roleCode,
+    result,
+    scopeTruth:
+      'The grant is branch-scoped, which binds iam.has_permission_in_scope. The unscoped ' +
+      'iam.has_permission has no scope predicate, so for an operation requiring only ' +
+      'rpt.export with no scope claim this code is effectively tenant-wide for this ' +
+      'principal while the grant lives.',
+    expiryTruth:
+      'valid_to is not in the grant immutability guard and a tenant administrator may ' +
+      'update a grant, so the two-hour window is an operator time box and not a ' +
+      'tamper-proof limit.',
+    leaseTaken:
+      'The shared-database lease (advisory key from scripts/lib/database-lease.mjs) is ' +
+      'ACQUIRED before any write, including before the rehearsal transaction, and contention ' +
+      'is a refusal rather than a wait. It binds only writers that speak the protocol: the ' +
+      'main journey does not take it, and nothing here claims a stranger cannot write.',
+    deferredConstraintTruth:
+      'ROLLBACK never fires a deferred constraint, so SET CONSTRAINTS ALL IMMEDIATE runs ' +
+      'inside the transaction after every write and before either ending. The rehearsal ' +
+      'therefore establishes that the same statements ran and the deferred scope and ' +
+      'delegation constraints passed before the rollback — not the commit-time state of a ' +
+      'different connection.',
+    retryTruth:
+      'A failed post-commit attempt may leave its scoped test grant alive until expiry, so a ' +
+      'journey may temporarily have up to three such principals. These are synthetic local ' +
+      'fixture identities, not a production grant or a rollback claim.',
+    revoked: 'nothing — this tool issues no DELETE and no UPDATE',
+    secrets: 'none — no password, key or token is recorded here',
+  };
+}
+
+/**
+ * The evidence file, RESERVED before the transaction opens.
+ *
+ * This is the whole point of the two-step: reserving afterwards meant a path that already
+ * existed, or a directory that could not be written, refused AFTER the grant had committed —
+ * a run that granted and then could not say so. `wx` here refuses first, while there is still
+ * nothing to inspect. The finalize step below overwrites this same reserved file and never
+ * takes a second exclusive create.
+ */
+export function reserveFixtureEvidence(input, now = new Date()) {
+  const path = fixtureEvidencePath(input);
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(
+      path,
+      `${JSON.stringify(fixtureEvidenceDocument(input, null, 'pending', now), null, 2)}\n`,
+      { encoding: 'utf8', mode: 0o600, flag: 'wx' }
+    );
+  } catch (error) {
+    // The CODE, never the driver or filesystem message: a bounded refusal an operator can act
+    // on, with no path echoed beyond the one they passed in.
+    refuse(
+      `Refused: the evidence file for attempt ${String(input.attempt)} could not be reserved ` +
+        `exclusively (${String(error?.code ?? 'write refused')}). Every attempt writes its own ` +
+        'file and never overwrites another; name a free path, or run the next attempt.',
+      8
+    );
+  }
+  return path;
+}
+
+/** The same reserved file, finalized in place. Never a second `wx`. */
+export function finalizeFixtureEvidence(path, input, result, now = new Date()) {
+  const status = result.outcome === 'dry-run' ? 'dry-run' : 'applied';
   writeFileSync(
     path,
-    `${JSON.stringify(
-      {
-        what: 'P1-31 export companion — privileged LOCAL identity fixture setup',
-        at: new Date().toISOString(),
-        environment: input.environment,
-        dryRun: input.dryRun,
-        authority: REQUIRED_OPERATOR_CODE,
-        operatorEmail: input.operator.email,
-        result,
-        scopeTruth:
-          'The grant is branch-scoped, which binds iam.has_permission_in_scope. The unscoped ' +
-          'iam.has_permission has no scope predicate, so for an operation requiring only ' +
-          'rpt.export with no scope claim this code is effectively tenant-wide for this ' +
-          'principal while the grant lives.',
-        expiryTruth:
-          'valid_to is not in the grant immutability guard and a tenant administrator may ' +
-          'update a grant, so the two-hour window is an operator time box and not a ' +
-          'tamper-proof limit.',
-        leaseAssumed:
-          'Exclusive use of the shared local database for the duration of the run is an ' +
-          'asserted precondition: the row locks taken here cannot exclude a concurrent ' +
-          'insert of a grant that does not exist yet.',
-        revoked: 'nothing — this tool issues no DELETE and no UPDATE',
-        secrets: 'none — no password, key or token is recorded here',
-      },
-      null,
-      2
-    )}\n`,
-    { encoding: 'utf8', mode: 0o600, flag: 'wx' }
+    `${JSON.stringify(fixtureEvidenceDocument(input, result, status, now), null, 2)}\n`,
+    { encoding: 'utf8', mode: 0o600, flag: 'w' }
   );
   return path;
 }
 
 async function main() {
   const input = readFixtureInput();
+
+  /*
+   * RESERVED FIRST, before a connection is even opened.
+   *
+   * Nothing has been granted at this point, so a path that is already taken or a directory
+   * that cannot be written refuses here — where there is nothing to inspect and nothing to
+   * undo — instead of after the commit, which is where it used to refuse.
+   */
+  const evidencePath = reserveFixtureEvidence(input);
+
   const target = assertLocalTarget();
   const client = new pg.Client(target);
   await client.connect();
@@ -701,18 +1032,56 @@ async function main() {
   try {
     result = await installExportFixture(client, input);
   } finally {
-    await client.end();
+    try {
+      await client.end();
+    } catch {
+      // The fixture's outcome is already decided; a failure closing the connection does not
+      // get to replace it. Closing also releases the lease.
+    }
   }
-  const path = writeFixtureEvidence(input, result);
+
+  /*
+   * Everything from HERE is after the commit on a real pass.
+   *
+   * So a failure here is not a failure to install: the role, the grant and the audit row
+   * exist. The message says so in those words and never implies a rollback, because an
+   * operator who read "failed" and re-ran would be told the principal already holds a live
+   * grant (exit 6) and would have to work out why from first principles.
+   */
+  try {
+    finalizeFixtureEvidence(evidencePath, input, result);
+  } catch (error) {
+    if (input.dryRun) throw error;
+    throw new FixtureRefused(
+      'committed — inspect the audit row(s) before any retry. The role ' +
+        `${result.roleCode} (${result.roleId}), the grant ${result.grantId} and the audit ` +
+        `record ${result.auditRecordId} ARE installed for ${result.principal}; what failed is ` +
+        `the evidence file (${String(error?.code ?? 'write failed')}). Nothing was rolled ` +
+        `back. Read those rows first; then, if a retry is still wanted, run --attempt ` +
+        `${String(input.attempt + 1)}.`,
+      11
+    );
+  }
+
   process.stdout.write('P1-31 export fixture setup\n');
   process.stdout.write(`  outcome     ${result.outcome}\n`);
+  process.stdout.write(
+    `  attempt     ${String(result.attempt)} of at most ${String(result.attemptBound)}\n`
+  );
   process.stdout.write(`  organisation ${result.tenantCode} (${result.tenantId})\n`);
   process.stdout.write(`  principal   ${result.principal}\n`);
   process.stdout.write(`  role        ${result.roleCode} (${result.roleId})\n`);
   process.stdout.write(`  grant       ${result.grantId}, branch-scoped, until ${result.validTo}\n`);
   process.stdout.write(`  codes       ${String(result.permissions.length)}\n`);
   process.stdout.write(`  audit       ${result.auditAction} ${result.auditRecordId}\n`);
-  process.stdout.write(`  evidence    ${path}\n`);
+  process.stdout.write(
+    `  lease       advisory key ${String(result.lease.key)}, acquired by ${result.lease.harness}\n`
+  );
+  process.stdout.write(
+    `  connection  ${result.connectionRole.name} (superuser or BYPASSRLS: required, confirmed)\n`
+  );
+  process.stdout.write('  constraints SET CONSTRAINTS ALL IMMEDIATE ran before the ending\n');
+  process.stdout.write(`  evidence    ${evidencePath}\n`);
   process.stdout.write('\n  LOCAL ACCEPTANCE FIXTURE — an operator act, not a product grant.\n');
 }
 
@@ -722,13 +1091,29 @@ if (invokedDirectly) {
   main().catch((error) => {
     if (error instanceof FixtureRefused) {
       process.stderr.write(`\nExport fixture setup refused: ${error.message}\n\n`);
-      process.exit(error.exitCode);
+      process.exit(exitCodeFor(error));
     }
     if (error instanceof GuardFailure) {
       process.stderr.write(`\n${error.message}\n\n`);
-      process.exit(2);
+      process.exit(exitCodeFor(error));
     }
-    process.stderr.write(`${String(error.stack ?? error)}\n`);
+    /*
+     * BOUNDED, and one line: the error's class and its code, never its message and never a
+     * stack.
+     *
+     * A `pg` failure puts the host, the port and the user into `error.message` — and a
+     * misconfigured connection string can put the password there too. An acceptance run's
+     * stderr is archived beside its evidence, so this is the one place where printing what
+     * the driver said would put connection settings into a kept record.
+     */
+    const kind = error instanceof Error ? error.name : 'Error';
+    const code = error?.code === undefined ? '' : ` (${String(error.code)})`;
+    process.stderr.write(
+      `\nExport fixture setup failed: ${kind}${code}. The underlying message is deliberately ` +
+        'not printed — a driver error carries the connection settings and this output is kept. ' +
+        'Reaching here means the transaction was rolled back or never opened; a failure AFTER ' +
+        'the commit exits 11 and says so in words.\n\n'
+    );
     process.exit(1);
   });
 }
