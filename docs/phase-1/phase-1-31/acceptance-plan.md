@@ -312,9 +312,11 @@ are about.
 Twenty-five cases per project, fifty in total, plus the sign-in setup. **Collected at the FE-009
 integration candidate after #393, #394 and #395:** all six P1-31 spec files are present, including
 the delivery writes and warranty ledger cases. Collection verifies the available cases, not their
-execution; closing-head browser acceptance remains pending. The specs are **not** added to
-`authenticated-tablet`: that project's rule is that a document obliges the surface to work at tablet
-width, and no document does for these screens.
+execution; closing-head browser acceptance remains pending. The specs have **not yet** been added to
+`authenticated-tablet`. This leaves the desktop/tablet obligation in `canonical-plan.md`
+lines 220–226 unproved at this candidate. The earlier claim that no document required tablet
+coverage was incorrect. A separate instrument integration will add the required project coverage
+and fresh write fixtures before the closing acceptance run.
 
 ### 3.1 What only the browser establishes
 
@@ -496,26 +498,26 @@ drops the one that went red is worse than no list.
 | `npm run security:all`                                   | the aggregate security gate                             |
 | `npx vitest run tests/ci tests/openapi-contract.test.ts` | 1991 passed, 0 failed, 69 files — see §8.1              |
 
-### 8.1 The registration these five specs owed, and the hosted consequence of it
+### 8.1 The registration these six specs owed, and the hosted consequence of it
 
 _A sixth spec was added later and registered the same way: `delivery-writes-p1-31.spec.ts`, the three
 committed browser cases the closure re-measure recorded as owed (**CC-52 (c)**) — the delivery
 checklist, the final odometer and the signature evidence, each in both locale projects, each with
 a refusal, a successful write and a reload that re-reads the record from the server. It carries
 one case that executes without a handoff, for the reason this section gives, and the records
-the other three act on are made by section 15b of the harness. Everything below was written of
-the original five and is left as it was._
+the other three act on are made by section 15b of the harness. The section originally described five files; its current registration count now includes
+all six, while the earlier failure and correction remain recorded._
 
 `tests/ci/e2e-tier-coverage.test.ts` requires every spec under
 `apps/web/tests/e2e/authenticated/` to be named in `.github/ci-baselines/unrun-test-tiers.json` —
 under `governed.specs` if a gate-governed job executes it, in `unrun` if none does. The list named
 seven paths and none of these, so the tier was RED from the moment the specs were committed,
-before any merge. **All five are now registered under `governed.specs`, and the fact decided which
+before any merge. **All six are now registered under `governed.specs`, and the fact decided which
 list:**
 
 - `apps/web/playwright.config.ts:204` and `:215` give the `authenticated-en` and `authenticated-ar`
   projects `testMatch: /authenticated[\\/].*\.spec\.ts/` — a directory-wide glob that matches these
-  five the moment they exist. `authenticated-tablet` at `:255` matches only
+  six the moment they exist. `authenticated-tablet` at `:255` matches only
   `(administration|appointments-and-receptions)` and does not.
 - `.github/workflows/_reusable-authenticated-browser.yml:416` sets `ROOTLCO_E2E_AUTH: '1'` and runs
   `npm run test:web-e2e-authenticated`. The job is in the `needs` of both `ci-gate` and
@@ -536,7 +538,7 @@ each of them would have been named and the check would have been red.
 
 The answer was not to weaken that step. It was to stop shipping spec files that can never
 execute — the "declared but never wired" defect class this phase exists to clean up, and the one
-`P1-27-INT-113` is named for. **Each of the five now carries at least one case that runs on the
+`P1-27-INT-113` is named for. **Each of the six now carries at least one case that runs on the
 governed job's own environment**, asserting the permission gating, reachability, honest idle and
 denied states, and text direction that environment genuinely provides; §3.0 sets out exactly what
 each asserts and why the handoff is not needed for it. Only the assertions that genuinely require
