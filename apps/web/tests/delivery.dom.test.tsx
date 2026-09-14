@@ -1036,7 +1036,16 @@ describe('the work order’s own handover section', () => {
     const region = screen.getByRole('region', {
       name: EN['delivery.workOrder.heading'] as string,
     });
-    expect(within(region).getByRole('alert')).toHaveTextContent('corr-403');
+    /*
+     * The shared state, by its own role. This read `role="alert"` while the panel
+     * hand-rolled its failure; the panel now renders `PanelFailure` like every other
+     * failure in this feature, and `StateShell` carries `role="status"` deliberately —
+     * `States.tsx` says these are results of an action the operator just took, and
+     * `alert` interrupts where `status` does not. The reference the backend logged is
+     * still asserted, which is what this case was always about.
+     */
+    expect(within(region).getByRole('status')).toHaveTextContent('corr-403');
+    expect(within(region).getByText(EN['state.denied.title'] as string)).toBeInTheDocument();
     expect(within(region).queryByText(EN['delivery.workOrder.none'] as string)).toBeNull();
   });
 });
