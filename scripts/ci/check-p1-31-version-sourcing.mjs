@@ -59,6 +59,17 @@
  * cannot follow `deliveryPath(id, '/completion')` manufactures the debt it exists
  * to police.
  *
+ * The options object is read at argument THREE, because the transport's own
+ * signature fixes it there — `send<T>(method, path, body?, options = {})` — and
+ * `options.ifMatch` is the only value in this application that becomes a header.
+ * Two refusals make that index safe rather than merely conventional: a version
+ * anywhere but the options object, and a send with more arguments than the
+ * signature takes. For those refusals ONLY, three spellings count — `ifMatch`,
+ * `recordVersion`, `version` — because a version that has ended up where nothing
+ * reads it is a mistake, and a mistake need not use the right word for itself.
+ * Acceptance is never widened: the options position is judged on `ifMatch` alone,
+ * and a version spelled anything else there is refused too.
+ *
  * It fails CLOSED, and the direction is precise: a versioned send whose path this
  * gate cannot resolve is a violation when its resource root is one of the eleven
  * operations' roots, and out of subject when it provably is not. `POST
@@ -130,6 +141,7 @@
  * has none.
  *
  * Usage:  node scripts/ci/check-p1-31-version-sourcing.mjs [--json]
+ *         node scripts/ci/check-p1-31-version-sourcing.mjs --web-root <dir>   # red-branch proof
  * Exit:   0 clean · 1 a violation · 2 the check could not run.
  */
 import { readFileSync, readdirSync, lstatSync, statSync } from 'node:fs';
@@ -317,8 +329,8 @@ function walk(dir, out = []) {
 }
 
 /** The web sources this gate reads, as `[repositoryPath, content]`. */
-export function repositorySources() {
-  return walk(WEB_SRC).map((file) => [
+export function repositorySources(webRoot = WEB_SRC) {
+  return walk(webRoot).map((file) => [
     relative(ROOT, file).split(sep).join('/'),
     readFileSync(file, 'utf8'),
   ]);
@@ -429,16 +441,56 @@ export function resourceRootOf(path) {
  * The sends
  * ------------------------------------------------------------------ */
 
-/** The `ifMatch` value one options-object argument carries, as text, or `null`. */
-function versionOptionOf(node) {
+/**
+ * The named property of one object-literal argument, as text, or `null`.
+ *
+ * A shorthand yields its own name, which is what the classifier then traces.
+ */
+function propertyOf(node, wanted) {
   if (!node || !ts.isObjectLiteralExpression(node)) return null;
   for (const property of node.properties) {
-    if (ts.isShorthandPropertyAssignment(property) && property.name.text === 'ifMatch') {
-      return 'ifMatch';
+    if (ts.isShorthandPropertyAssignment(property) && property.name.text === wanted) {
+      return wanted;
     }
-    if (ts.isPropertyAssignment(property) && property.name.getText() === 'ifMatch') {
+    if (ts.isPropertyAssignment(property) && property.name.getText() === wanted) {
       return property.initializer.getText();
     }
+  }
+  return null;
+}
+
+/**
+ * The `ifMatch` value one options-object argument carries, as text, or `null`.
+ *
+ * Exactly one spelling, because exactly one spelling is READ:
+ * `apps/web/src/lib/api/client.ts` turns `options.ifMatch` into the header and
+ * looks at nothing else.
+ */
+function versionOptionOf(node) {
+  return propertyOf(node, 'ifMatch');
+}
+
+/**
+ * Spellings a misplaced record version may wear, for the refusals below only.
+ *
+ * The transport reads `ifMatch` and nothing else, so the OPTIONS position is
+ * judged on that one name. A version that has ended up somewhere it is not read
+ * is a mistake, though, and a mistake is not obliged to use the right word for
+ * itself: `recordVersion` is what every read in this application calls the value,
+ * and `version` is what a hurried hand writes. Recognising all three widens only
+ * the refusal, never the acceptance.
+ *
+ * Checked against the tree before it was widened: no request body or option
+ * object under `apps/web/src` carries a `recordVersion` or `version` field today,
+ * so this adds no false positive — and if a legitimate body ever needs one, the
+ * gate will say so loudly rather than silently, which is the correct direction.
+ */
+const VERSION_SPELLINGS = Object.freeze(['ifMatch', 'recordVersion', 'version']);
+
+/** The first version-like spelling an object-literal argument carries, or `null`. */
+function versionSpellingOf(node) {
+  for (const spelling of VERSION_SPELLINGS) {
+    if (propertyOf(node, spelling) !== null) return spelling;
   }
   return null;
 }
@@ -489,16 +541,29 @@ export function versionedSendsIn(sourceFile) {
         });
       }
       for (const [index, argument] of node.arguments.entries()) {
-        if (index === 3) continue;
-        if (versionOptionOf(argument) !== null) {
-          misplaced.push({
-            node,
-            why:
-              `carries an \`ifMatch\` at argument ${index + 1}. The transport reads it only from ` +
-              'the options object at argument 4, so this request is version-guarded in appearance ' +
-              'and unguarded on the wire.',
-          });
+        const spelling = versionSpellingOf(argument);
+        if (spelling === null) continue;
+        if (index === 3) {
+          // In the right place under the wrong name. The transport reads
+          // `ifMatch`; anything else in the options object is a value nothing
+          // looks at, which is the same defect wearing a better address.
+          if (spelling !== 'ifMatch' && versionOptionOf(argument) === null) {
+            misplaced.push({
+              node,
+              why:
+                `carries a version spelled \`${spelling}\` in its options object. The transport ` +
+                'reads `options.ifMatch` and nothing else, so this request sends no If-Match at all.',
+            });
+          }
+          continue;
         }
+        misplaced.push({
+          node,
+          why:
+            `carries a version spelled \`${spelling}\` at argument ${index + 1}. The transport ` +
+            'reads it only from the options object at argument 4, so this request is ' +
+            'version-guarded in appearance and unguarded on the wire.',
+        });
       }
 
       const version = versionOptionOf(node.arguments[3]);
@@ -516,8 +581,14 @@ export function versionedSendsIn(sourceFile) {
     ts.forEachChild(node, visit);
   };
   ts.forEachChild(sourceFile, visit);
-  found.misplaced = misplaced;
-  return found;
+  /*
+   * Two named lists, not an array wearing a property. `found.misplaced = …` is
+   * state an expando holds only until somebody writes `.filter(...)` or a
+   * spread — at which point the refusals vanish and the gate reports a clean
+   * sweep of the sends it did look at. A shape that a spread can destroy is not
+   * a shape to keep a refusal in.
+   */
+  return { sends: found, misplaced };
 }
 
 /* ------------------------------------------------------------------ *
@@ -635,7 +706,7 @@ export function run(injected = {}) {
     }
   }
 
-  const sources = injected.sources ?? repositorySources();
+  const sources = injected.sources ?? repositorySources(injected.webRoot);
   const contract = readContract(document);
   const scope = scopeOf(contract, injected.frozen ?? P1_31_GUARDED_OPERATIONS);
   const pending = injected.pending ?? PENDING_CONSUMERS;
@@ -658,8 +729,8 @@ export function run(injected = {}) {
     }
     parsed.set(path, sourceFile);
 
-    const sends = versionedSendsIn(sourceFile);
-    for (const { why } of sends.misplaced ?? []) {
+    const { sends, misplaced } = versionedSendsIn(sourceFile);
+    for (const { why } of misplaced) {
       violations.push(`${path}: a request to the transport ${why}`);
     }
     for (const send of sends) {
@@ -986,7 +1057,18 @@ export function run(injected = {}) {
  * ------------------------------------------------------------------ */
 
 function main() {
-  const report = run();
+  /*
+   * `--web-root` exists for one reason: to prove the RED branch by executing it.
+   *
+   * The anti-vacuity clauses are the only rules here with no tree that triggers
+   * them, so the suite reaches them by injecting sources into `run` — which
+   * proves the rules and not `main`. Pointed at a directory holding no source,
+   * this walks nothing, the `no files were scanned` clause fires, and the exit
+   * code and the message are observed rather than reasoned about. Its sibling
+   * `check-p1-31-write-shape.mjs` carries `--mirror-root` for exactly this.
+   */
+  const index = process.argv.indexOf('--web-root');
+  const report = run(index === -1 ? {} : { webRoot: process.argv[index + 1] });
   if (process.argv.includes('--json')) {
     console.log(JSON.stringify(report, null, 2));
   } else {

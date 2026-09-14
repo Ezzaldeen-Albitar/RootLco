@@ -21,8 +21,9 @@
  * would make this file appear as evidence for an operation it never exercises.
  */
 import { describe, expect, it } from 'vitest';
-import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
@@ -464,8 +465,52 @@ export async function probeMisplaced(deliveryId: string, ifMatch: number) {
 }
 `,
     ]);
-    expect(violations.join('\n')).toMatch(/carries an `ifMatch` at argument 3/);
+    expect(violations.join('\n')).toMatch(/carries a version spelled `ifMatch` at argument 3/);
     expect(violations.join('\n')).toMatch(/unguarded on the wire/);
+  });
+
+  it('refuses a version in the body under a name the transport never reads', () => {
+    // The widened vocabulary, and the reason for it: a version that has ended up
+    // where nothing reads it is a mistake, and a mistake need not use the right
+    // word for itself. Only the REFUSAL is widened — the options position is
+    // still judged on `ifMatch` alone.
+    const { violations } = withFixtures([
+      'apps/web/src/features/probe/misspelled-api.ts',
+      `'use server';
+export async function probeMisspelled(deliveryId: string, recordVersion: number) {
+  const client = await authorizedClient();
+  return client.send(
+    'POST',
+    \`/api/v1/deliveries/\${encodeURIComponent(deliveryId)}/completion\`,
+    { recordVersion }
+  );
+}
+`,
+    ]);
+    expect(violations.join('\n')).toMatch(
+      /carries a version spelled `recordVersion` at argument 3/
+    );
+  });
+
+  it('refuses a version in the options object under a name the transport never reads', () => {
+    const { violations } = withFixtures([
+      'apps/web/src/features/probe/misnamed-option-api.ts',
+      `'use server';
+export async function probeMisnamedOption(deliveryId: string, recordVersion: number) {
+  const client = await authorizedClient();
+  return client.send(
+    'POST',
+    \`/api/v1/deliveries/\${encodeURIComponent(deliveryId)}/completion\`,
+    {},
+    { recordVersion }
+  );
+}
+`,
+    ]);
+    expect(violations.join('\n')).toMatch(
+      /carries a version spelled `recordVersion` in its options object/
+    );
+    expect(violations.join('\n')).toMatch(/sends no If-Match at all/);
   });
 
   it('refuses a send with more arguments than the transport takes', () => {
@@ -571,6 +616,32 @@ export async function probeElsewhere(visitId: string, ifMatch: number) {
     const { violations } = withFixtures(POSITIONAL_ADAPTER);
     expect(violations.join('\n')).toMatch(/demands a version from its callers and has none/);
     expect(violations.join('\n')).toMatch(/positional-api\.ts/);
+  });
+
+  it('the RED branch is proved by executing it, not by reading `run`', () => {
+    /*
+     * Every case above calls `run` and reads the violations it returns, which
+     * proves the rules and says nothing about `main`: the exit code, the stream
+     * the messages land on, and the branch that chooses between them. A gate
+     * whose refusals are all observed through its own API is a gate nobody has
+     * watched fail.
+     *
+     * So the CLI is spawned over a directory holding no source. It walks nothing,
+     * the first anti-vacuity clause fires, and the process is required to exit
+     * non-zero with the clause's own words in what it wrote.
+     */
+    const empty = mkdtempSync(join(tmpdir(), 'p131-version-sourcing-empty-'));
+    const result = spawnSync(process.execPath, [GATE, '--web-root', empty], {
+      cwd: ROOT,
+      encoding: 'utf8',
+    });
+    rmSync(empty, { recursive: true, force: true });
+    expect(result.status).toBe(1);
+    const out = `${result.stdout}${result.stderr}`;
+    expect(out).toMatch(/no files were scanned/);
+    expect(out).toMatch(/violation\(s\)/);
+    // …and the clean branch is not what ran: the OK line belongs to a green tree.
+    expect(out).not.toMatch(/OK: every version-guarded P1-31 command/);
   });
 });
 
