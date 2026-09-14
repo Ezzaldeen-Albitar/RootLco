@@ -873,6 +873,23 @@ jobs:
           name: evidence-${{ inputs.task }}
           retention-days: ${{ inputs.artifact-retention-days }}
           if-no-files-found: ignore
+          # No comment lines inside the block scalar below: `path:` is a literal
+          # block, so a `#` line is a search path and not a comment.
+          #
+          # The web tier's machine-readable coverage output is in the list for
+          # the reason the unit tier's equivalent pair is — `coverage-gate.json`
+          # and `coverage/unit/coverage-summary.json`. The web half uploaded only
+          # the RENDERED `coverage-web.md` under `*.md`, so the per-file
+          # measurement lived for the length of one job and was then destroyed,
+          # and no reviewer could count instrumented files per tree or read the
+          # dashboard-route figures from a run. `coverage-baseline.web.json`
+          # cites `apps/web/coverage/web/coverage-summary.json` inside artifact
+          # `evidence-web-quality` as the source of its 131-file figure — a file
+          # that artifact did not carry, so the citation could not be opened.
+          #
+          # Nothing here changes WHAT is measured. The "Web coverage ratchet"
+          # step already writes both files at exactly these paths; this decides
+          # only whether the run keeps them.
           path: |
             workflow-security.json
             phase-ownership-context.json
@@ -892,6 +909,8 @@ jobs:
             apps/web/vitest-web.json
             apps/web/playwright-report.json
             test-totals-web.json
+            apps/web/coverage/web/coverage-summary.json
+            coverage-gate-web.json
             unrun-tiers.md
             web-build-scan.json
             web-build.log

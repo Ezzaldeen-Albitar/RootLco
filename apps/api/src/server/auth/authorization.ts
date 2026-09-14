@@ -464,20 +464,7 @@ export async function requireScopeTargetInTenant(
 
   const context: RequestContext = db.context;
 
-  // The same predicate `PricingRepository.branchBelongsToCompany` and the
-  // service-catalogue repository already use, kept identical on purpose: one
-  // statement, the tenant from the CONTEXT rather than from the request, and
-  // `deleted_at IS NULL` so a soft-deleted branch is refused like a missing one.
-  const result = await db.query<{ ok: boolean }>(
-    `SELECT EXISTS (
-       SELECT 1 FROM org.branches b
-        WHERE b.tenant_id = $1 AND b.company_id = $2 AND b.id = $3
-          AND b.deleted_at IS NULL
-     ) AS ok`,
-    [context.principal.tenantId, target.companyId, target.branchId]
-  );
-
-  if (result.rows[0]?.ok === true) return;
+  if (await branchVisibleInTenant(db, target.companyId, target.branchId)) return;
 
   metrics().increment(METRICS.errorCount, { code: 'ERR-IAM-001', operation: operation.id });
   log.warn('Authorization denied', {
@@ -506,4 +493,158 @@ export async function requireScopeTargetInTenant(
       `Denied ${operation.id}: the named company and branch are not visible ` +
       `to the caller inside its tenant`,
   });
+}
+
+/**
+ * Resolves a WRITE's scope CLAIM — the company, or the company and branch, that a
+ * body-scoped create names as the place to write into — and refuses it with the
+ * same 403 the reads use (CC-56, applying CC-14 § 2).
+ *
+ * ## Why a create needs this at all, and why the database was not enough
+ *
+ * `authorizeScope` decides whether the CALLER may write in the named scope. It
+ * cannot decide whether the named scope is the caller's to name: a holder of an
+ * unrestricted grant satisfies `iam.has_permission_in_scope` for any pair it cares
+ * to invent, exactly as CC-14 records for the reads. What used to answer such a
+ * claim was the composite foreign key and row-level security, at the INSERT —
+ * `fk_warranty_policies_company` and `fk_delivery_checklist_templates_company`
+ * resolve `(tenant_id, company_id)` with the tenant from the session, and
+ * `org.employee-create` probed `org.branches` and raised its register's
+ * not-found. So one surface answered `422` and another `404` for the same act.
+ *
+ * CC-14 § 2 settles which is right, and the answer is neither: a scope-target
+ * mismatch "is a refusal, not a not-found and not a validation error. A `404`
+ * would confirm the existence boundary the refusal exists to hide; a `422` would
+ * claim the input was malformed" when it was well-formed and merely unauthorized.
+ * So the claim is resolved HERE, before the insert, and the foreign key and the
+ * policy stay behind it as defence in depth rather than as the answer.
+ *
+ * ## Uniform across both variants, which is the property that matters
+ *
+ * A company that belongs to another tenant, a company that exists nowhere, an
+ * in-tenant company this caller's grants do not reach, and a soft-deleted branch
+ * are ONE answer with ONE message. The probe runs under the caller's own RLS —
+ * `sel_legal_companies_tenant` and `sel_branches_scope` both narrow by
+ * `iam.allowed_company_ids()` — so it answers "not visible to this caller inside
+ * its tenant", never "does not exist", and the surface is not an existence oracle
+ * for another organisation's structure.
+ *
+ * ## The SAME document as the other two refusals of the same request
+ *
+ * It takes the `RegisteredOperation` rather than reading the operation id off the
+ * context, and it is bound to that declaration by the route handler exactly as
+ * `authorizeScope` is (`route-handler.ts`). So it publishes
+ * `safeDetails.requiredPermissions` from `operation.permissions`, which makes all
+ * three refusals a POST can produce carry the same shape: the permission denial
+ * from `requirePermissions`, the deferred scope denial from
+ * `requireScopedPermissions`, and this one. A caller cannot tell from the DOCUMENT
+ * which of the three refused it, which is the property that matters — the
+ * alternative, resolving the declaration out of the operation registry inside the
+ * service, would make the response depend on which route modules a process had
+ * loaded.
+ *
+ * The message names the operation, which is public API metadata, and never the
+ * company or the branch, which would echo a guess back. It does not cross the
+ * wire at all — `problemFor` publishes the type, title, status, code,
+ * correlation id and declared safe details, and nothing else.
+ *
+ * ## Granularity comes from the CLAIM, not from a second definition of scope
+ *
+ * A create whose table has no branch column claims a company and is resolved
+ * against `org.legal_companies`; one that claims a pair is resolved against
+ * `org.branches` by the same predicate the reads use. A claim naming no company
+ * has nothing to resolve and returns without a statement, for the reason
+ * `requireScopeTargetInTenant` gives for its own half targets.
+ */
+export async function requireScopeClaimInTenant(
+  db: DbHandle,
+  operation: RegisteredOperation,
+  claim: AuthorizationTarget
+): Promise<void> {
+  if (operation.public) return;
+
+  const companyId = claim.companyId;
+  if (companyId === undefined) return;
+
+  const context: RequestContext = db.context;
+  const branchId = claim.branchId;
+  const visible =
+    branchId === undefined
+      ? await companyVisibleInTenant(db, companyId)
+      : await branchVisibleInTenant(db, companyId, branchId);
+
+  if (visible) return;
+
+  metrics().increment(METRICS.errorCount, { code: 'ERR-IAM-001', operation: operation.id });
+  log.warn('Authorization denied', {
+    ...contextLogFields(context),
+    result: 'denied',
+    errorCode: 'ERR-IAM-001',
+    context: { reason: 'scope-claim-not-visible-in-tenant', declaredScope: operation.scope },
+  });
+
+  throw new AppFailure('ERR-IAM-001', {
+    // `safeDetails` FIRST, for the reason `requireScopeTargetInTenant` states above:
+    // the P1-24 mutation matrix anchors M2 on the two-line sequence
+    // `safeDetails: { requiredPermissions: operation.permissions },` / `});`, which
+    // must match exactly ONE site. Putting the message after it keeps that anchor on
+    // `requirePermissions`, where the mutation is aimed.
+    safeDetails: { requiredPermissions: operation.permissions },
+    // Names the operation, never the company or the branch.
+    message:
+      `Denied ${operation.id}: ` +
+      (branchId === undefined
+        ? 'the named company is not visible '
+        : 'the named company and branch are not visible ') +
+      `to the caller inside its tenant`,
+  });
+}
+
+/**
+ * Whether the (company, branch) pair resolves to a branch row this session can see.
+ *
+ * The same predicate `PricingRepository.branchBelongsToCompany` and the
+ * service-catalogue repository already use, kept identical on purpose: one
+ * statement, the tenant from the CONTEXT rather than from the request, and
+ * `deleted_at IS NULL` so a soft-deleted branch is refused like a missing one.
+ * Shared by the read probe and the write probe so the two cannot drift into two
+ * definitions of the same question.
+ */
+async function branchVisibleInTenant(
+  db: DbHandle,
+  companyId: string,
+  branchId: string
+): Promise<boolean> {
+  const context: RequestContext = db.context;
+  const result = await db.query<{ ok: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM org.branches b
+        WHERE b.tenant_id = $1 AND b.company_id = $2 AND b.id = $3
+          AND b.deleted_at IS NULL
+     ) AS ok`,
+    [context.principal.tenantId, companyId, branchId]
+  );
+  return result.rows[0]?.ok === true;
+}
+
+/**
+ * Whether the company resolves to a row this session can see.
+ *
+ * The company-level counterpart of the branch probe, for the creates whose table
+ * has no branch column at all. `sel_legal_companies_tenant` narrows by the tenant
+ * AND by `iam.allowed_company_ids()`, so this is "reachable by this caller", not
+ * "exists"; `deleted_at IS NULL` keeps a soft-deleted company refused like an
+ * absent one, matching the branch probe.
+ */
+async function companyVisibleInTenant(db: DbHandle, companyId: string): Promise<boolean> {
+  const context: RequestContext = db.context;
+  const result = await db.query<{ ok: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM org.legal_companies c
+        WHERE c.tenant_id = $1 AND c.id = $2
+          AND c.deleted_at IS NULL
+     ) AS ok`,
+    [context.principal.tenantId, companyId]
+  );
+  return result.rows[0]?.ok === true;
 }

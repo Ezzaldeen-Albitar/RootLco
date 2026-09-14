@@ -123,6 +123,31 @@ export const WARRANTY_POLICY_ORDER: OrderingContract = Object.freeze({
   direction: 'desc',
 });
 
+/**
+ * One warranty record's transition ledger, newest first (P1-31 prerequisite P-18).
+ *
+ * The same shape and the same direction as `sal.delivery_status_history:occurred_at_desc`,
+ * because it is the same kind of set read for the same reason: an append-only ledger a
+ * person reads latest-first, whose newest row is the one a screen needs on the first page.
+ *
+ * The sort column is a `timestamptz` and the cursor value is minted by `cursorTimestamp()`
+ * in SQL at MICROSECOND precision. A JS `Date` truncates to milliseconds and then silently
+ * SKIPS every row sharing the boundary row's millisecond (`P1-27-INT-006`) — which is not
+ * hypothetical here, because `occurred_at` defaults to `now()` and every row written inside
+ * one transaction shares it exactly.
+ *
+ * `ix_warranty_status_history_record` is
+ * `(tenant_id, company_id, branch_id, warranty_record_id, occurred_at DESC, seq DESC)`,
+ * which the predicate and this ordering lead on exactly.
+ *
+ * The key is qualified so a cursor minted here cannot be replayed against another list —
+ * including the delivery ledger, whose rows this one's transitions are often caused by.
+ */
+export const WARRANTY_STATUS_HISTORY_ORDER: OrderingContract = Object.freeze({
+  key: 'wty.warranty_status_history:occurred_at_desc',
+  direction: 'desc',
+});
+
 export interface WarrantyPolicyRow {
   readonly id: string;
   readonly companyId: string;
@@ -207,6 +232,34 @@ export interface CoverageResolution {
   /** `delivered_at::date`, as `YYYY-MM-DD`, computed by the database. */
   readonly effectiveOn: string;
   readonly coverage: WarrantyCoverageRow | null;
+}
+
+/**
+ * One row of the append-only warranty transition ledger (P1-31 prerequisite P-18).
+ *
+ * `wty.warranty_status_history` holds SELECT and INSERT grants only — no UPDATE and no
+ * DELETE, for any application role — and `shared.stamp_status_history` is a BEFORE INSERT
+ * trigger that sets `actor_id` and `occurred_at` from the session context. So a row here
+ * is the record of a transition rather than a reconstruction of one: it cannot be
+ * back-dated or re-attributed after the fact, and `actor_id NOT NULL` fails loudly rather
+ * than recording an unattributed row. `actorId` is typed accordingly.
+ *
+ * `fromStatus` is null on exactly one row per record — the genesis row `wty.issue_warranty`
+ * writes in the same statement as the record itself, `NULL -> 'issued'`. That row is the
+ * origin, so no synthetic origin is ever published beside this ledger.
+ *
+ * There is no `correlationId` on the wire. The column exists and is written, but a
+ * correlation id is platform diagnostics rather than a business fact about the warranty,
+ * and the delivery ledger publishes none either.
+ */
+export interface WarrantyStatusHistoryRow {
+  readonly id: string;
+  readonly warrantyRecordId: string;
+  readonly fromStatus: string | null;
+  readonly toStatus: string;
+  readonly reason: string | null;
+  readonly actorId: string;
+  readonly occurredAt: Date;
 }
 
 const POLICY_COLUMNS = `id, company_id, policy_code, name, status, record_version`;
@@ -343,6 +396,29 @@ const toItem = (r: ItemSql): WarrantyRecordItemRow => ({
   sourcePartId: r.source_part_id,
   description: r.description,
   recordVersion: r.record_version,
+});
+
+const STATUS_HISTORY_COLUMNS = `id, warranty_record_id, from_status, to_status, reason,
+  actor_id, occurred_at`;
+
+interface StatusHistorySql {
+  id: string;
+  warranty_record_id: string;
+  from_status: string | null;
+  to_status: string;
+  reason: string | null;
+  actor_id: string;
+  occurred_at: Date;
+}
+
+const toStatusHistory = (r: StatusHistorySql): WarrantyStatusHistoryRow => ({
+  id: r.id,
+  warrantyRecordId: r.warranty_record_id,
+  fromStatus: r.from_status,
+  toStatus: r.to_status,
+  reason: r.reason,
+  actorId: r.actor_id,
+  occurredAt: r.occurred_at,
 });
 
 export class WarrantyRepository extends Repository {
@@ -611,8 +687,14 @@ export class WarrantyRepository extends Repository {
    * A duplicate `policy_code` raises `23505` on `uq_warranty_policies_code`, and a
    * company outside the caller's own tenant raises `23503` on
    * `fk_warranty_policies_company`, whose tenant half comes from the session
-   * context rather than from the request — so the tenant boundary here is the
-   * foreign key, not a predicate this file writes.
+   * context rather than from the request.
+   *
+   * That foreign key is DEFENCE IN DEPTH and is no longer the tenant boundary this
+   * write relies on (CC-56). `WarrantyPolicyService.createPolicy` resolves the
+   * claimed company against `org.legal_companies` under the caller's own row-level
+   * security before calling this, and refuses an invisible one with 403
+   * `ERR-IAM-001`, so a `23503` here means the company went away between the probe
+   * and the insert rather than that the caller named a foreign one.
    */
   public async insertPolicy(
     db: DbHandle,
@@ -1057,6 +1139,98 @@ export class WarrantyRepository extends Repository {
       }),
       request,
       WARRANTY_ORDER
+    );
+  }
+
+  /**
+   * A warranty record's transition ledger, newest first (P1-31 prerequisite P-18).
+   *
+   * ## This one had nothing to publish either
+   *
+   * `wty.warranty_status_history` is written in exactly one place — inside
+   * `wty.issue_warranty`, in the same statement that creates the record — and before
+   * this method nothing anywhere in `apps/api/src` read it (**CC-10**). So, exactly as
+   * with `sal.delivery_status_history` under P-5, there was no existing query to put a
+   * route in front of: this query and `toStatusHistory` are both new. That is recorded
+   * rather than glossed.
+   *
+   * ## What the ledger currently contains, stated plainly
+   *
+   * One row per record: the genesis `NULL -> 'issued'`. Nothing in this repository, and
+   * nothing in this phase, advances `wty.warranty_records.status`, so no second row can
+   * exist yet on a record this application created (see `assertWritableStatus` and the
+   * "no status advance" note in `@/modules/warranty`). This read is nonetheless a list
+   * and not a single row, because the table is an append-only ledger whose row count is
+   * unbounded by the DDL and whose writers are the subject of later work — publishing it
+   * as "the one genesis row" would be a contract that has to break the day a second
+   * transition is written.
+   *
+   * ## The oldest row is already the origin
+   *
+   * `wo.job_status_history` and `wo.work_order_status_history` are written by AFTER
+   * UPDATE triggers, so their oldest row is the first TRANSITION and their readers must
+   * publish a separate `origin` block for the initial state. `wty.warranty_records` has
+   * no such trigger: the genesis row is written explicitly by the primitive, carrying
+   * `from_status = NULL`. So no `origin` block is synthesised here, and inventing one
+   * would publish a second, unsourced claim about the same fact.
+   *
+   * ## Scope and index
+   *
+   * `company_id` and `branch_id` are bound predicates taken from the record this
+   * repository just read — never from caller input — and the caller has already
+   * authorized them. `sel_warranty_status_history_scope` narrows on the
+   * permission-blind `iam.allowed_branch_ids()` union, so the explicit pair is what
+   * keeps a caller holding a grant in another branch from reading across (P1-18-A-01).
+   * `ix_warranty_status_history_record` leads on exactly this predicate and ordering.
+   *
+   * The keyset tie-breaks on `id` rather than the `seq` identity column, because
+   * `keysetFragment` compares `(sort, id)` and `Cursor.i` is validated as an identifier.
+   * `seq` orders identically within one `occurred_at`, so the only cost is that two rows
+   * sharing a microsecond are ordered by uuid instead of by insertion — and
+   * `cursorTimestamp` keeps that pair on the same page rather than skipping one.
+   */
+  public async listStatusHistory(
+    db: DbHandle,
+    scope: { readonly companyId: string; readonly branchId: string },
+    warrantyRecordId: string,
+    request: PageRequest
+  ): Promise<Page<WarrantyStatusHistoryRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      scope.companyId,
+      scope.branchId,
+      warrantyRecordId,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'occurred_at', id: 'id' },
+      WARRANTY_STATUS_HISTORY_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<StatusHistorySql & { sort_value: string }>(
+      db,
+      `SELECT ${STATUS_HISTORY_COLUMNS},
+              ${cursorTimestamp('occurred_at')} AS sort_value
+         FROM wty.warranty_status_history
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+          AND warranty_record_id = $4
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: toStatusHistory(row),
+        // `occurred_at` defaults to `now()`, which is transaction-stable: rows written
+        // by one statement share it to the microsecond, and a millisecond-truncated
+        // cursor would silently SKIP them (`P1-27-INT-006`).
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      WARRANTY_STATUS_HISTORY_ORDER
     );
   }
 

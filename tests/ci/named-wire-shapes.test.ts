@@ -131,8 +131,13 @@ describe('every route body serialises a named type', () => {
     // two writes, every one of them serialising `EmployeeView` or
     // `Page<EmployeeView>` — a NAMED interface either way — so `named` moves by
     // four and `composed` does not.
-    expect(summary.bodies).toBe(411);
-    expect(summary.named).toBe(358);
+    // 412 with the P1-31 warranty status-history read (P-18): ONE GET serialising
+    // `WarrantyStatusHistoryEnvelope`, a NAMED interface — it exists because this
+    // gate refuses an inline return type, and naming it is what let the row shape
+    // be named `WarrantyStatusHistoryEntryView` as well — so `named` moves by one
+    // and `composed` does not.
+    expect(summary.bodies).toBe(412);
+    expect(summary.named).toBe(359);
     expect(summary.composed).toBe(53);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

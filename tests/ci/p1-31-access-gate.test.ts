@@ -148,7 +148,7 @@ export default async function Page({ params }) {
  *
  * Review then found what those numbers were hiding: SEVEN of the seventeen judged
  * pages were `(dashboard)/work-orders/**`, admitted by the resource root of
- * `sal.work-order-delivery-read` — a SUB-resource at `/work-orders/{id}/delivery`
+ * the work-order delivery read — a SUB-resource at `/work-orders/{id}/delivery`
  * — and six of them consume no P1-31 operation at all. They are now DEFERRED to
  * the P1-29 gate, which owns that area and judges them with `judgePage`, the same
  * function this gate imports. So the judged count is 10 and the deferred count 7;

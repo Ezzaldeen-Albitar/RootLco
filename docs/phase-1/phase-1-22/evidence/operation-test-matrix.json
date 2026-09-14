@@ -1,9 +1,9 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 46,
-    "publicApi": 46,
-    "operationDepth": 46,
+    "registered": 47,
+    "publicApi": 47,
+    "operationDepth": 47,
     "invocationOnly": 0,
     "pending": 0,
     "unitOnly": 0,
@@ -1781,6 +1781,40 @@
         "route",
         "service",
         "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "wty.warranty-status-history",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/warranties/{warrantyId}/status-history",
+      "public": false,
+      "files": ["tests/backend/p1-31-warranty-read-seam.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "pagination"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial",
+        "pagination"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
+        "route",
+        "service",
         "success"
       ],
       "missing": [],

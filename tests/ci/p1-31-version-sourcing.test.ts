@@ -130,7 +130,7 @@ describe('the scope is P1-31’s own, and the contract is what checks it', () =>
     // The two lists answer different questions, so the interesting fact is the
     // SIZE of their overlap, and it is pinned rather than narrated: the access
     // list carried three of the eleven when this gate was written and four after
-    // the DO-001 pass claimed `sal.delivery-complete`. Scoping a version gate by
+    // the DO-001 pass claimed the delivery completion. Scoping a version gate by
     // it would exclude the other seven — the writes no screen reaches yet, which
     // are the ones most likely to be got wrong. A change to either list that moves
     // this intersection has to come back and say so here.

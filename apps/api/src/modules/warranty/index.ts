@@ -40,6 +40,12 @@
  *   function of `expiry_date` and `odometer_limit`, which any reader can evaluate,
  *   and voiding is an authority the operation inventory does not include. A status
  *   this phase may not write is refused structurally by `assertWritableStatus`.
+ *   The ledger such a transition would append to is nonetheless READABLE from P1-31
+ *   prerequisite P-18 (`wty.warranty-status-history`), which closes the ledger limb
+ *   of **CC-10**. On every record this application can create it answers with exactly
+ *   one row — the genesis `NULL -> 'issued'` that `wty.issue_warranty` writes — and
+ *   it is a paged list rather than that single row precisely so the contract survives
+ *   the first writer that appends a second.
  * - **No money.** `wty` has 80 columns and not one is monetary — no amount, no
  *   currency, no cap in any unit of account. `WarrantyView` therefore has no money
  *   field, and a "covered value" would be a fabricated business fact.
@@ -60,6 +66,7 @@ export type {
   WarrantyRecordItemRow,
   WarrantyRecordRow,
   WarrantyRecordWithItems,
+  WarrantyStatusHistoryRow,
 } from './data/warranty-repository';
 
 export {
@@ -67,6 +74,7 @@ export {
   MAX_WARRANTIES_PER_DELIVERY,
   WARRANTY_ORDER,
   WARRANTY_POLICY_ORDER,
+  WARRANTY_STATUS_HISTORY_ORDER,
 } from './data/warranty-repository';
 
 export type {
@@ -94,6 +102,8 @@ export type {
   WarrantyItemView,
   WarrantyPolicyView,
   WarrantyRecordListView,
+  WarrantyStatusHistoryEntryView,
+  WarrantyStatusHistoryEnvelope,
   WarrantyView,
 } from './application/warranty-service';
 
@@ -127,11 +137,13 @@ export {
  *
  * TWO services over ONE repository, and the second arrived with P1-31 P-10.
  *
- * `warranties` is warranty GENERATION. Its three methods split by authority at the
- * ROUTE and not by a second class: P-7 minted `wty.warranty.read`, so the two reads
+ * `warranties` is warranty GENERATION. Its four methods split by authority at the
+ * ROUTE and not by a second class: P-7 minted `wty.warranty.read`, so the three reads
  * declare it and `wty.warranty-generate` alone keeps `wty.warranty.issue`, while all
- * three share one repository and one `toView` mapper that separating them would
- * duplicate to no end.
+ * four share one repository and one `toView` mapper that separating them would
+ * duplicate to no end. The fourth is the transition ledger (P-18), added 2026-09-13:
+ * it reads the record first and pages the ledger in the record's own scope, so it
+ * belongs beside the two reads whose 404 convention it shares.
  *
  * `policies` splits on neither direction nor authority — it owns the two
  * CONFIGURATION tables in both, because what they hold is authored long before any

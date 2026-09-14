@@ -63,7 +63,7 @@
  */
 import { AppFailure } from '@/server/errors/app-failure';
 import { appendAudit } from '@/server/audit/audit';
-import { isSqlState, SQLSTATE } from '@/server/db/repository';
+import { isSqlState, SQLSTATE, violatedConstraint } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { pageRequest, type Page, type PageRequest } from '@/server/db/pagination';
@@ -208,13 +208,24 @@ export class ChecklistTemplateService {
   public async createTemplate(
     db: DbHandle,
     input: CreateChecklistTemplateInput,
-    authorizeScope: ScopeAuthorizer
+    authorizeScope: ScopeAuthorizer,
+    requireScopeClaim: ScopeAuthorizer
   ): Promise<ChecklistTemplateDetailView> {
     // The company is a CLAIM about where the row belongs, checked against the
     // caller's own grant scope before anything is written. There is no branch half:
     // the table has no branch column, and `requireScopedPermissions` accepts a
     // company-only target — the shape `iam.company-settings-write` already uses.
     await authorizeScope({ companyId: input.companyId });
+
+    // And then the claim itself, in this order (CC-56). `authorizeScope` answers
+    // "may this caller write in that company"; an unrestricted grant satisfies it
+    // for a company the caller cannot see at all, so the second question — is that
+    // company the caller's to name — is the one this asks. A caller missing the
+    // permission must be told THAT, not told the company is invisible, which is why
+    // the permission decision runs first here as it does for the reads. Both are
+    // injected by the route handler and bound to the same operation, so the two
+    // refusals are the same document.
+    await requireScopeClaim({ companyId: input.companyId });
 
     const duplicates = new Set<string>();
     for (const item of input.items) {
@@ -643,10 +654,28 @@ export class ChecklistTemplateService {
         safeDetails: { violations: [{ path, rule: 'duplicate_code' }] },
       });
     }
-    if (isSqlState(cause, SQLSTATE.foreignKeyViolation)) {
+    if (
+      isSqlState(cause, SQLSTATE.foreignKeyViolation) &&
+      violatedConstraint(cause) === 'fk_delivery_checklist_templates_company'
+    ) {
+      // DEFENCE IN DEPTH, and no longer the answer (CC-56).
+      //
       // `fk_delivery_checklist_templates_company` resolves `(tenant_id, company_id)`
-      // with the tenant from the session context, so this is a company that is not
-      // in the caller's tenant — including one that exists in another tenant.
+      // with the tenant from the session context, so reaching it means the named
+      // company is not in the caller's tenant. That used to be how a foreign company
+      // was refused, as a 422 naming `body.companyId` — the shape CC-14 § 2 rules
+      // out, because the input was well-formed and merely unauthorized.
+      // `requireScopeClaimInTenant` now resolves the claim before the insert and
+      // answers 403 `ERR-IAM-001`, so this arm is unreachable for the scope case and
+      // is kept only for the race in which the company is removed between the probe
+      // and the write.
+      //
+      // The constraint NAME is part of the test because this method serves THREE
+      // call sites: the template insert, the item inserts that ride with it, and
+      // `createItem`. An item's own foreign key is
+      // `fk_delivery_checklist_template_items_template`, and answering that with a
+      // message about `body.companyId` would name a field the item request does not
+      // even carry. Anything else is re-thrown, as every unmapped cause here is.
       throw new AppFailure('ERR-VAL-001', {
         message: 'The named company does not exist in this tenant',
         safeDetails: { violations: [{ path: 'body.companyId', rule: 'unknown_company' }] },
