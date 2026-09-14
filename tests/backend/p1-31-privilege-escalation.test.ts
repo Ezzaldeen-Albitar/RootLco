@@ -482,7 +482,7 @@ const withholdingActorFor = (code: string): Actor => {
  * or whose declaration had drifted away from what the handler asks for, would go on
  * passing every refusal case in this file.
  *
- * Thirteen sets across forty-five operations, so thirteen accounts. Each is
+ * Thirteen sets across forty-six operations, so thirteen accounts. Each is
  * `unrestricted`, because grant SCOPE is a different question and SE-7 owns it.
  */
 const MINIMAL_ACTORS = new Map<string, Actor>(
@@ -1981,7 +1981,7 @@ describe('P1-31-SEC-001 SE-5M — the declared codes are SUFFICIENT, not merely 
         held: [...operation.codes].sort(),
       });
     }
-    // Thirteen distinct sets across the forty-five, so thirteen accounts.
+    // Thirteen distinct sets across the forty-six, so thirteen accounts.
     expect(MINIMAL_ACTORS.size).toBe(13);
 
     // And every code any minimal caller holds is a real catalogue row: a misspelling

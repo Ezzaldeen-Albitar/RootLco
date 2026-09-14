@@ -5,11 +5,11 @@
  * ## Why a generated document rather than a written one
  *
  * `docs/phase-1/phase-1-31/least-privilege-grant-map.md` states, for each of the
- * phase's forty-five operations, the codes it declares, the codes its service enforces
+ * phase's forty-six operations, the codes it declares, the codes its service enforces
  * on top of the declaration, the catalogue row each code comes from, the case that
  * proves a minimal role reaches the operation and the case that proves a lesser one
  * does not. Every one of those is a fact about the repository at a commit. A document
- * of forty-five such rows maintained by hand is a document that is wrong within a
+ * of forty-six such rows maintained by hand is a document that is wrong within a
  * sprint, and worse, wrong silently — which is the failure mode a grant map exists to
  * prevent.
  *

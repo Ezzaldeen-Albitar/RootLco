@@ -6259,7 +6259,7 @@ twenty-fifth privileged write fails the suite that claims to cover it.
 
 ### 68.2 (A) SEC-004 — the audit emission set, derived
 
-`tests/backend/p1-31-audit-emission.test.ts` (new) parses the `defineOperation` literals of the 33
+`tests/backend/p1-31-audit-emission.test.ts` (new) parses the `defineOperation` literals of the 34
 route modules under the eight P1-31 namespaces AS TYPESCRIPT, filters to `auditClass: 'privileged'`,
 and joins each declaration to `AUDIT_ACTIONS` for its entity type. The set is **24**, the parse
 reports **0** unreadable declarations and **0** actions the catalogue does not register as
@@ -6279,6 +6279,13 @@ action before or after.
 `sal.delivery_checklist_template.item_updated` is the one that had none — the action that records
 whether a checklist item became a company-wide gate on every handover.
 
+**The 46th operation did not move this count, and the suite proves that rather than assuming it.**
+`wty.warranty-status-history` (P-18, § 65) is the 34th route file and the 46th operation, and it
+declares `auditClass: 'none'` — it is a read. So the file total and the declaration total both rise
+by one while the privileged total stays at 24, and all three are pinned separately for that reason:
+a WRITE added under a `none` class would move exactly the two that moved here, which is the shape
+this suite exists to catch.
+
 ### 68.3 (B) QA-002 — the error paths, and the matrix
 
 Eleven P1-31 operations declare `versionGuarded: true` and sixteen declare `idempotent: true`. Both
@@ -6290,14 +6297,34 @@ sets are read off the declarations, not listed.
 | 409 `ERR-CON-001`     | 11         | 9              | 11            |
 | replay same-key       | 16         | 15             | 16            |
 | replay different-body | 16         | 3              | 16            |
-| 422 invalid body      | 26         | 20             | 26            |
-| 403 (SE-5)            | 45         | 45             | 45            |
-| cross-tenant (SE-6)   | 40         | 40             | 40            |
-| database isolation    | 45         | 45             | 45            |
+| 422 invalid body      | 27         | 20             | 27            |
+| 403 (SE-5)            | 46         | 46             | 46            |
+| cross-tenant (SE-6)   | 41         | 41             | 41            |
+| database isolation    | 46         | 46             | 46            |
 
 Every case was added to the suite that already owns its operation; no operation with a suite got a
 new file. `docs/phase-1/phase-1-31/error-path-matrix.md` carries the whole table with a file and a
 line in every applicable cell and a stated reason in every inapplicable one.
+
+**The matrix is GENERATED and diffed by a committed test.**
+`tests/ci/p1-31-error-path-matrix.test.ts` renders it — and the isolation matrix — from the parsed
+operation set and from the case TITLES of the suites that own each operation, resolves each title
+against that suite's source at run time, THROWS when a title matches no line or more than one, and
+fails on any difference from the committed copy. `P1_31_MATRIX_WRITE=1` is the only way to rewrite
+either file. _(This paragraph read only that the matrix "carries the whole table with a file and a
+line": true of what the table held, and written before the generator existed — see § 68.9.)_
+
+The four totals reading 46, 46, 41 and 27 include `wty.warranty-status-history`, the 46th operation
+(§ 65). It is a GET, so five of the eight columns are inapplicable to it by declaration; its 422 is
+an oversized page rather than a body, and its cross-tenant refusal is the SE-6 case plus its own
+seam's 404 for a real id and an invented one alike.
+
+**A correction, recorded rather than silently applied.** The first version of this table read
+`cross-tenant 40` while the matrix marked SEVEN operations as having no row to cross with. The
+escalation suite's own reason list names **five** — `sal.delivery-checklist-template-create` and
+`wty.warranty-policy-create` are body-scoped creates and ARE probed, so marking them as
+unreachable was wrong in the matrix and wrong in the count that followed it. Both cells now cite
+SE-6 and the row reads 41, derived from the suite rather than typed.
 
 **The replay different-body row counts OPERATIONS, not assertions.** Three operations already had a
 `ERR-INT-001` fingerprint case and sixteen have one now, which is the 3 → 16 the table states.
@@ -6312,7 +6339,9 @@ make impossible. Every other column in the table counts operations in the same w
 `p1-31-privilege-escalation.test.ts` proved least privilege by refusal alone, and a set of refusals
 is consistent with a gate that refuses everybody. SE-5M adds the other half: **13** minimal actors,
 one per distinct declared-code set, each holding exactly the codes its operations declare and
-nothing else, and each of the 45 operations must be ADMITTED by the gate.
+nothing else, and each of the 46 operations must be ADMITTED by the gate. The 46th declares
+`wty.warranty.read`, which four operations already declared, so the SET count is unmoved at 13 — it
+is a statement about distinct authority and not about the size of the surface.
 
 `rpt.report-run` is the one operation whose real authority exceeds its declaration **that this lane
 found**. The declaration is a literal and the code a run needs depends on the dataset asked for, so
@@ -6361,7 +6390,8 @@ proof. The table count stays at 16 and the Layer 2 count moves 45 → 46.
 
 `docs/phase-1/phase-1-31/isolation-matrix.md` carries both layers: per table the migration and the
 two database proofs, and per operation the application-layer refusal or the stated reason there is
-none.
+none. It is GENERATED and diffed by the same committed test as the error-path matrix, on the same
+terms — see § 68.3 and § 68.9.
 
 ### 68.6 Two records corrected here rather than rewritten
 
@@ -6429,15 +6459,21 @@ before use and matching the 141 migrations this tree tracks. **Never the shared 
 database.** The host, port and database name were printed and re-asserted before each run, and all
 five `DB_*` variables were set explicitly on every command.
 
-| suite                                                                                                                                           | cases                      |
-| ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| `tests/backend/p1-31-privilege-escalation.test.ts`                                                                                              | 267 / 267                  |
-| `tests/backend/p1-31-audit-emission.test.ts`                                                                                                    | 28 / 28                    |
-| `tests/backend/p1-31-delivery-checklist-template-seam.test.ts`, `p1-31-report-configuration-seam.test.ts`, `p1-31-warranty-policy-seam.test.ts` | 104 / 104                  |
-| `tests/backend/p1-22-delivery.test.ts`                                                                                                          | 58 / 58                    |
-| `tests/db/sal-delivery.test.ts`, `wty-warranty.test.ts`, `rpt-reporting.test.ts`                                                                | 23 / 23                    |
-| the whole database tier, once, before the last merge                                                                                            | 1770 / 1770 over 145 files |
-| `tests/ci/p1-31-grant-map.test.ts`, without the write flag                                                                                      | 4 / 4                      |
+**Every row below names the head it was measured at.** A count taken before a pin moved is a true
+statement about that head and a false one about this one, so the head is part of the figure rather
+than context around it.
+
+| suite                                                                                                                                           | cases                      | head                                                                                                           |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `tests/backend/p1-31-privilege-escalation.test.ts`                                                                                              | 267 / 267                  | `deca2666` and again after each later merge                                                                    |
+| the same suite, before the 46th operation's pins                                                                                                | 262 / 262                  | `88d9f133`                                                                                                     |
+| `tests/backend/p1-31-audit-emission.test.ts`                                                                                                    | 28 / 28                    | `88d9f133`, `deca2666` and the merge head                                                                      |
+| `tests/backend/p1-31-delivery-checklist-template-seam.test.ts`, `p1-31-report-configuration-seam.test.ts`, `p1-31-warranty-policy-seam.test.ts` | 104 / 104                  | `deca2666`                                                                                                     |
+| `tests/backend/p1-22-delivery.test.ts`                                                                                                          | 58 / 58                    | `deca2666`                                                                                                     |
+| `tests/db/sal-delivery.test.ts`, `wty-warranty.test.ts`, `rpt-reporting.test.ts`                                                                | 23 / 23                    | `deca2666`                                                                                                     |
+| the whole database tier, once                                                                                                                   | 1770 / 1770 over 145 files | `88d9f133` — **not re-run at a later head**; the three files this lane changed were re-run alone at `deca2666` |
+| `tests/ci/p1-31-grant-map.test.ts`, without the write flag                                                                                      | 4 / 4                      | every head from `88d9f133` on                                                                                  |
+| `tests/ci/p1-31-error-path-matrix.test.ts`, without the write flag                                                                              | 5 / 5                      | the head of this push                                                                                          |
 
 **Static checks.** `typecheck`, `lint`, `format:check`, `check-test-honesty` (415 test files, no
 findings), `validate:operation-coverage`, `validate:authorization-coverage`,
@@ -6454,7 +6490,33 @@ omitted: an earlier root unit tier reported two timeouts in `tests/ci/p1-28-acce
 both at the 30-second limit under contention and neither on an assertion — the file passes 48 / 48
 when run alone, it is not this lane's file, and the recorded unit run above has `0 failed`.
 
-### 68.9 Dispositions
+### 68.9 What `deca2666` claimed that was not in the tree, and how it is closed
+
+Recorded rather than quietly repaired, because a commit message is part of the record and this one
+described two things that did not exist at the commit it described.
+
+- **"a script that resolves every citation by CASE TITLE"** — the script existed and did the work,
+  but it was never committed. It lived in a temporary directory outside the repository, so the two
+  matrices were derived IN FACT and reproducible by nobody: the property the commit message claimed
+  was the property the tree did not have. The generator is now
+  `tests/ci/p1-31-error-path-matrix.test.ts`, in the tests bucket, with no new npm script and no new
+  `scripts/ci` file.
+- **"the correction recorded beside the table"** — the 7 → 5 correction to the cross-tenant count was
+  described in that commit's body and appears in no document in
+  `docs/phase-1/phase-1-31/` at that head. It is now in § 68.3, beside the table it corrects.
+
+**And the defect the uncommitted script left behind, which the committed one caught immediately.**
+Its line-extraction used `split(':')[2]` on a `file:line` string, which has one colon and therefore
+no third field, so **35 citations were written as the literal `:undefined`** — 12 in the error-path
+matrix and 23 in the isolation matrix, including all sixteen Layer-1 structural cells. Those cells
+said "covered" and named no line, which is exactly what the rule at the head of the error-path matrix
+forbids. Both documents are regenerated by the committed test and now carry **zero**; every citation
+in both was re-checked against the file and the line it names.
+
+This is the case for the generator being in the repository rather than beside it: the uncommitted
+script and the committed test implement the same idea, and only the second one could fail.
+
+### 68.10 Dispositions
 
 | id            | finding                                                                                                                                                                                                                                                                                                   | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | owner / slice                                 | state            |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- | ---------------- |
