@@ -856,6 +856,59 @@ describe('the history', () => {
       )
     ).toBeVisible();
   });
+
+  /*
+   * A FURTHER page that fails, in the operator's own language.
+   *
+   * The regression this guards is one the three paged delivery panels shipped with.
+   * `usePagedList` held the failed page's outcome as a bare string and every panel
+   * composed a catalogue key from it — `state.${status}.title`. That is a real key for
+   * four of the five outcomes and NOT a key for `not-found`: the catalogue holds
+   * `state.notFound.title`, and `translate` renders a missing key AS the key, so an
+   * operator whose second page could not be resolved was shown the literal string
+   * `state.not-found.title`. The hook now carries the status and the correlation
+   * reference, and the panels render them through the same shared states the FIRST
+   * page's failure goes through.
+   */
+  it('states a further page that could not be resolved, and never the key for it', async () => {
+    listStatusHistory
+      .mockResolvedValueOnce(
+        okRead({
+          deliveryId: DELIVERY_ID,
+          transitions: page(
+            [
+              {
+                id: 'transition-1',
+                fromStatus: null,
+                toStatus: 'ready',
+                reason: null,
+                actorId: EMPLOYEE_ID,
+                occurredAt: '2026-09-08T08:00:00.000Z',
+              },
+            ],
+            { hasMore: true, nextCursor: 'next-cursor' }
+          ),
+        })
+      )
+      .mockResolvedValueOnce(refusedRead('not-found', 'corr-9'));
+
+    const user = userEvent.setup();
+    renderScreen();
+    await waitFor(() => expect(listStatusHistory).toHaveBeenCalledWith(DELIVERY_ID, null));
+    const region = panel('delivery.history.heading');
+    await user.click(
+      within(region).getByRole('button', { name: EN['delivery.action.loadMore'] as string })
+    );
+    await waitFor(() => expect(listStatusHistory).toHaveBeenCalledWith(DELIVERY_ID, 'next-cursor'));
+
+    expect(
+      await within(region).findByText(EN['state.notFound.title'] as string)
+    ).toBeInTheDocument();
+    // The defect itself: a key composed from a machine value, rendered as a label.
+    expect(within(region).queryByText('state.not-found.title')).toBeNull();
+    // The operator keeps the page they already had.
+    expect(within(region).getByText(/Started at/)).toBeVisible();
+  });
 });
 
 describe('the summary', () => {

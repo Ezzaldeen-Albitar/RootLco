@@ -144,9 +144,13 @@ export function SignaturesPanel({
             ))}
           </ol>
           {page.moreFailed === null ? null : (
-            <p role="alert" className="mt-2 text-body text-error">
-              {translateDynamic(messages, `state.${page.moreFailed}.title`)}
-            </p>
+            <div role="alert" className="mt-2">
+              <PanelFailure
+                messages={messages}
+                status={page.moreFailed.status}
+                correlationId={page.moreFailed.correlationId}
+              />
+            </div>
           )}
           {page.hasMore ? (
             <button

@@ -5,8 +5,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { EmptyState, LoadingState } from '@/components/states/States';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
-import type { ReadState } from '@/lib/api/read-operation';
+import { translate } from '@/i18n/get-messages';
+import type { ReadFailureStatus, ReadState } from '@/lib/api/read-operation';
 import { formatDateTime } from '@/lib/format';
 
 import { readWarrantyStatusHistory } from '../warranty-api';
@@ -54,15 +54,45 @@ import { ReadFailure, Reference, SECONDARY_BUTTON, Section, WarrantyStatusLabel 
  * authority on who did something.
  */
 
+/**
+ * A further page that failed: what happened, and the reference the backend logged.
+ *
+ * The OUTCOME is carried rather than its name, and it is rendered through the same
+ * shared states the first page's failure goes through. Building a catalogue key out of
+ * the status — `state.${status}.title` — is wrong for exactly one of the five:
+ * `not-found` composes `state.not-found.title`, which the catalogue does not hold, and
+ * a missing key renders AS the key, so an operator whose second page could not be
+ * resolved would be shown a dotted internal string. The type is what stops a key being
+ * built from a machine value here.
+ *
+ * The correlation reference travels because it is the only diagnostic an operator ever
+ * sees, and printing it on the first page but not the second would make the same fault
+ * reportable or not depending on when it happened.
+ */
+interface MoreFailure {
+  readonly status: ReadFailureStatus;
+  readonly correlationId: string | null;
+}
+
 /** What one page of the ledger, and the read that fetched it, amount to on screen. */
 interface Ledger {
   /** The FIRST read's whole outcome, `null` while it is still in flight. */
   readonly first: ReadState<WarrantyStatusHistoryEnvelope> | null;
   readonly rows: readonly WarrantyStatusTransition[];
+  /** The server's own signal that another page exists. */
   readonly hasMore: boolean;
+  /**
+   * True only when a further page can actually be ASKED FOR.
+   *
+   * `hasMore` alone is not enough: the next page is addressed by the cursor, so a
+   * response claiming another page while publishing no cursor names a page that cannot
+   * be requested. The control is drawn from this rather than from `hasMore`, because a
+   * button whose only possible outcome is nothing happening is worse than no button.
+   */
+  readonly canLoadMore: boolean;
   readonly loading: boolean;
   /** The outcome of a failed further page, or `null`. */
-  readonly moreFailed: string | null;
+  readonly moreFailed: MoreFailure | null;
   readonly loadMore: () => Promise<void>;
 }
 
@@ -71,7 +101,7 @@ interface Held {
   readonly warrantyId: string;
   readonly first: ReadState<WarrantyStatusHistoryEnvelope>;
   readonly pages: readonly WarrantyPage<WarrantyStatusTransition>[];
-  readonly moreFailed: string | null;
+  readonly moreFailed: MoreFailure | null;
 }
 
 /**
@@ -90,7 +120,13 @@ interface Held {
  * signals; nothing here infers the end from a short page, and no total is requested or
  * invented, because the read publishes none. A failed further page leaves the pages
  * already on screen where they are and reports the failure beside the control that
- * asked for it.
+ * asked for it, in the same shared wording the first page's failure uses.
+ *
+ * The stale-warranty comparison is made TWICE and both are load-bearing. `current`
+ * discards a value held for another warranty on render, and the updater inside
+ * `loadMore` refuses to append a page that was requested for a warranty the panel has
+ * since navigated away from — a read already in flight when the identifier changes
+ * would otherwise land on the new warranty's ledger and be believed.
  */
 function useLedger(warrantyId: string): Ledger {
   const [held, setHeld] = useState<Held | null>(null);
@@ -123,7 +159,12 @@ function useLedger(warrantyId: string): Ledger {
     setLoading(false);
     setHeld((previous) => {
       if (previous === null || previous.warrantyId !== warrantyId) return previous;
-      if (next.status !== 'ok') return { ...previous, moreFailed: next.status };
+      if (next.status !== 'ok') {
+        return {
+          ...previous,
+          moreFailed: { status: next.status, correlationId: next.correlationId },
+        };
+      }
       return {
         ...previous,
         pages: [...previous.pages, next.data.transitions],
@@ -136,6 +177,7 @@ function useLedger(warrantyId: string): Ledger {
     first: current?.first ?? null,
     rows: current === null ? [] : current.pages.flatMap((page) => [...page.items]),
     hasMore: last?.hasMore ?? false,
+    canLoadMore: last !== null && last.hasMore && last.nextCursor !== null,
     loading,
     moreFailed: current?.moreFailed ?? null,
     loadMore,
@@ -212,11 +254,15 @@ export function WarrantyHistoryPanel({
             ))}
           </ol>
           {ledger.moreFailed === null ? null : (
-            <p role="alert" className="mt-2 text-body text-error">
-              {translateDynamic(messages, `state.${ledger.moreFailed}.title`)}
-            </p>
+            <div role="alert" className="mt-2">
+              <ReadFailure
+                messages={messages}
+                status={ledger.moreFailed.status}
+                correlationId={ledger.moreFailed.correlationId}
+              />
+            </div>
           )}
-          {ledger.hasMore ? (
+          {ledger.canLoadMore ? (
             <button
               type="button"
               className={`mt-3 ${SECONDARY_BUTTON}`}
