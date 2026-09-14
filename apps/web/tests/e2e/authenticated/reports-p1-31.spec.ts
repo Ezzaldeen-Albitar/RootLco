@@ -534,9 +534,12 @@ test.describe('export principal (companion)', () => {
    *
    * ## Why the control is asserted and never skipped over
    *
-   * The export control is the frontend consumer of the contract in
-   * `docs/phase-1/phase-1-31/report-export-seam.md`, and it may not be on the checkout under
-   * test. When it is missing this case FAILS, deliberately: a skip would let a closing run
+   * The export control is the frontend consumer of the export contract, whose seam document
+   * lands with the backend export slice (unmerged at the head this case was written on, so it
+   * is not cited by path here — a docblock naming a file that is not on the checkout reads as
+   * a broken reference rather than as a pending merge). The control itself may equally not be
+   * on the checkout under test. When it is missing this case FAILS, deliberately: a skip would
+   * let a closing run
    * report a complete export story with no browser evidence of one, and that is the shape of
    * green tick this phase has already been burned by. The failure names the section, the
    * catalogue entries and the control it looked for, so it is actionable rather than
@@ -553,6 +556,19 @@ test.describe('export principal (companion)', () => {
    *     generated live from the same records on each request, and two disclosures taken
    *     seconds apart may legitimately differ in their `generatedAt`. What is asserted is
    *     that the browser really received a download, and what it was called.
+   *
+   * ## Where the EXACT filename comes from, since an exact assertion needs a source
+   *
+   * The suggested filename is asserted exactly rather than by a regex over "ends with .csv and
+   * contains the code and the bounds", because the format is known rather than guessed:
+   * `ReportExportService.generate` returns
+   * `filename: `${input.reportCode}-${input.from}-${input.to}.csv`` at
+   * `apps/api/src/modules/reporting/application/report-export-service.ts:236` on the export
+   * candidate, read there read-only at commit `0cf1fe5e` and unchanged at the UI source
+   * `c2235b97`. A containment check would pass on a file named for the wrong period as long as
+   * both bounds appeared somewhere in it, which is exactly the defect a download assertion is
+   * for. The companion's own HTTP step asserts the same string on the `file.filename` the
+   * service answered, so the two halves of the proof are held to one format and not two.
    *
    * ## The one condition under which it may skip
    *
