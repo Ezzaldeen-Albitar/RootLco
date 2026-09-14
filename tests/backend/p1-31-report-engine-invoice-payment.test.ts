@@ -3,6 +3,21 @@
  *
  * COVERAGE-EVIDENCE: rpt.report-run
  *
+ * ## The export of this dataset is proved against the database, not only at the adapter
+ *
+ * The CSV generator is shared by every registered dataset and is proved once, in
+ * slice 1's suite. What is NOT shared is the DATASET: the bytes an export of this
+ * report carries are this report’s own documents, its own per-currency totals and
+ * its own zone, and every amount in them is a restricted figure, so a defect in
+ * that projection would appear here and nowhere else. Three cases therefore drive
+ * the real export route over the fixtures below — the bytes, the refusal, and a
+ * selection that matches nothing — through the same published tenant
+ * configuration a caller needs, created per case and retired after it.
+ *
+ * No coverage flag is added for them. The export operation's registered evidence is
+ * declared in slice 1's suite and these cases add dataset-specific proof beside it,
+ * not a second claim on the same operation.
+ *
  * ## What the Owner approved, and what follows from it
  *
  * D-4: the invoice and payment summary, whose amounts are restricted. The report
@@ -62,6 +77,7 @@
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool, PoolClient } from 'pg';
+import { randomUUID } from 'node:crypto';
 import {
   IDENTITY_PROVIDER,
   TENANT_A,
@@ -85,6 +101,8 @@ import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
 import { REPORT_DATASETS, REPORT_DATASET_CODES } from '@/modules/reporting';
 import { GET as RUN } from '@/app/api/v1/reports/[reportCode]/rows/route';
+import { POST as EXPORT_REPORT } from '@/app/api/v1/reports/[reportCode]/route';
+import type { ReportExportView } from '@/modules/reporting';
 
 let admin: Pool;
 let runtime: Pool | undefined;
@@ -114,6 +132,14 @@ const FINANCE_VIEW = 'sal.finance.view';
 /** Widens RLS reach without widening authority. Deliberately not a finance code. */
 const REACH_ONLY = 'org.tenant.read';
 /**
+ * The disclosure code the export route declares and the seeded configuration names.
+ *
+ * Deliberately NOT in the reporting bundle a tenant administrator is provisioned
+ * with, which is why the read principals below do not hold it and the refusal case
+ * needs no principal of its own.
+ */
+const EXPORT_PERMISSION = 'rpt.export';
+/**
  * The CRM read the party NAME is gated on.
  *
  * It is NOT on the dataset's `requiredPermissions`, deliberately: the Owner asked
@@ -134,6 +160,15 @@ const PAYMENT_METHOD_S = 'f1340000-0000-4000-8000-0000000000d1';
 const FROM = '2027-06-14';
 /** First day EXCLUDED — the day after the last one reported. */
 const TO = '2027-06-16';
+
+/**
+ * A period the fixtures place NO document in, for the empty-selection export.
+ *
+ * Two days after the reported period closes, so it is clear of every boundary
+ * fixture: the latest document any case seeds is issued at local midnight on `TO`.
+ */
+const EMPTY_FROM = '2027-06-18';
+const EMPTY_TO = '2027-06-19';
 
 /*
  * The bounds are READ BACK from the database rather than written down here.
@@ -224,6 +259,18 @@ const FIN_TENANT_B: Principal = {
   permissions: [REPORT_READ, FINANCE_VIEW],
 };
 
+/**
+ * `FIN_RPT_FULL`'s authority plus the disclosure code. The only principal that may
+ * export, and the counterfactual of `FIN_RPT_FULL` on one code.
+ */
+const EXPORT_FULL: Principal = {
+  ...FIN_RPT_FULL,
+  roleId: 'f1340000-0000-4000-8000-000000000181',
+  userId: 'f1340000-0000-4000-8000-000000000182',
+  subject: 'fx_p1_31_sal_export_full',
+  permissions: [REPORT_READ, FINANCE_VIEW, EXPORT_PERMISSION],
+};
+
 const PRINCIPALS: readonly Principal[] = [
   FIN_RPT_FULL,
   FIN_RPT_CRM,
@@ -231,6 +278,7 @@ const PRINCIPALS: readonly Principal[] = [
   FINANCE_ONLY,
   FIN_SCOPED_S2,
   FIN_TENANT_B,
+  EXPORT_FULL,
 ];
 
 const REACH_ROLE = 'f1340000-0000-4000-8000-000000000151';
@@ -640,6 +688,52 @@ async function creditNoteAmountOf(creditId: string): Promise<string> {
   return row.rows[0]?.amount ?? '';
 }
 
+/**
+ * A published tenant configuration for this report, naming the disclosure code.
+ *
+ * An export is refused outright without one: the service requires a published
+ * configuration carrying an `export_permission_code`, and the platform baseline
+ * deliberately has neither. The shape is slice 1's, unchanged.
+ */
+async function seedReportConfiguration(input: {
+  readonly id: string;
+  readonly parameterSchema: unknown;
+}): Promise<void> {
+  await admin.query(
+    `INSERT INTO rpt.report_configurations
+       (id, tenant_id, report_code, name, scope_level, export_permission_code,
+        owner_user_id, status, created_by)
+     VALUES ($1,$2,$3,$4,'branch',$5,$6,'published',$6)`,
+    [input.id, TENANT_A, REPORT_CODE, `Configured ${REPORT_CODE}`, EXPORT_PERMISSION, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO rpt.report_configuration_versions
+       (tenant_id, report_configuration_id, version_number, parameter_schema,
+        status, published_at, created_by)
+     VALUES ($1,$2,1,$3::jsonb,'published',now(),$4)`,
+    [TENANT_A, input.id, JSON.stringify(input.parameterSchema), USER_A]
+  );
+}
+
+/** Each case owns a newly generated configuration, never an existing fixture. */
+async function withExplicitReportConfiguration(
+  verify: (configurationId: string) => Promise<void>
+): Promise<void> {
+  const id = randomUUID();
+  try {
+    await seedReportConfiguration({ id, parameterSchema: {} });
+    await verify(id);
+  } finally {
+    // Retire only the header this invocation created. The suite-owned teardown
+    // removes its rows later; no pre-existing fixture is deleted here.
+    await admin.query(
+      `UPDATE rpt.report_configurations SET deleted_at = now(), deleted_by = $3
+        WHERE tenant_id = $1 AND id = $2 AND created_by = $3`,
+      [TENANT_A, id, USER_A]
+    );
+  }
+}
+
 // ---- The selection ----------------------------------------------------------
 
 let invoiceUsd: SeededInvoice;
@@ -963,6 +1057,20 @@ afterAll(async () => {
   __setPrimaryPoolForTests(undefined);
   if (runtime) await runtime.end();
   if (admin) {
+    // Only the configurations of THIS report code, because the shared cleanup does
+    // not reach the rpt tables and another suite's code must survive this one.
+    await admin.query(
+      `DELETE FROM rpt.report_configuration_versions
+        WHERE tenant_id = $1
+          AND report_configuration_id IN (
+            SELECT id FROM rpt.report_configurations
+             WHERE tenant_id = $1 AND report_code = $2)`,
+      [TENANT_A, REPORT_CODE]
+    );
+    await admin.query(
+      `DELETE FROM rpt.report_configurations WHERE tenant_id = $1 AND report_code = $2`,
+      [TENANT_A, REPORT_CODE]
+    );
     await cleanFinanceFixtures();
     await cleanBackendFixtures(admin);
     await admin.end();
@@ -1609,5 +1717,186 @@ describe('branch isolation is the permission evaluation, not an empty result', (
     expect(present).not.toContain(invoiceUsd.invoiceId);
     expect(present).not.toContain(receiptUsd);
     expect(groupFor(view, USD, 'invoice')?.measures.invoiced).toBe('300.0000');
+  });
+});
+
+describe('the export of this dataset carries its own documents and its own totals', () => {
+  /** The canonical export action, over this suite's own branch and period. */
+  function requestExport(overrides: Record<string, unknown> = {}): Promise<Response> {
+    const segment = `${REPORT_CODE}:export`;
+    return EXPORT_REPORT(
+      new Request(`http://localhost/api/v1/reports/${segment}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          companyId: COMPANY_S,
+          branchId: BRANCH_S1,
+          from: FROM,
+          to: TO,
+          reason: 'Backend export acceptance',
+          ...overrides,
+        }),
+      }),
+      { params: Promise.resolve({ reportCode: segment }) }
+    );
+  }
+
+  /**
+   * The record the file carries before any summary and any row, quoted as the
+   * generator quotes.
+   *
+   * Every field after `context` is empty, and that is the point of the record: it
+   * states the scope, the half-open period and the zone the export resolved in, and
+   * it measures nothing. Built from the response's own envelope, so the assertion is
+   * that the FILE agrees with the envelope rather than that both match a number
+   * written here.
+   */
+  function contextRecord(view: ReportExportView): string {
+    const columns = REPORT_DATASETS[REPORT_CODE].columns.length;
+    return [
+      REPORT_CODE,
+      COMPANY_S,
+      BRANCH_S1,
+      view.period.from,
+      view.period.to,
+      BRANCH_TIMEZONE,
+      view.generatedAt,
+      'live',
+      'context',
+      // The group triple, then both halves of every column.
+      ...Array.from({ length: 3 + columns * 2 }, () => ''),
+    ]
+      .map((value) => `"${value}"`)
+      .join(',');
+  }
+
+  function records(view: ReportExportView): readonly string[] {
+    return view.file.content.split('\r\n');
+  }
+
+  it('exports the seven documents of the period, context record first, and records it', async () => {
+    await withExplicitReportConfiguration(async (id) => {
+      authAs(EXPORT_FULL);
+      const response = await requestExport();
+      expect(response.status).toBe(200);
+      const result = (await response.json()) as ReportExportView;
+      expect(result).toMatchObject({
+        reportCode: REPORT_CODE,
+        generated: true,
+        freshness: 'live',
+        // The seven documents of the period, and the five currency/type totals
+        // counted separately from them: a reader who totals the file must not total
+        // the same amount twice.
+        rowCount: 7,
+        summaryCount: 5,
+        period: { from: FROM, to: TO, timezone: BRANCH_TIMEZONE },
+        file: {
+          filename: `${REPORT_CODE}-${FROM}-${TO}.csv`,
+          mediaType: 'text/csv',
+          encoding: 'utf-8',
+        },
+      });
+      // One header, one context record, one per summary, one per row, and the empty
+      // tail the last record's terminator leaves behind.
+      const lines = records(result);
+      expect(lines).toHaveLength(1 + 1 + result.summaryCount + result.rowCount + 1);
+      expect(lines.at(-1)).toBe('');
+      expect(lines[0]).toContain('"recordType"');
+      expect(lines[1]).toBe(contextRecord(result));
+      // These bytes are THIS selection and not a fixture file: all three kinds of
+      // document are in them by id and the invoices by the number a human reads,
+      // and the documents excluded above are absent.
+      for (const included of [
+        invoiceUsd.invoiceId,
+        invoiceCredited.invoiceId,
+        invoiceJod.invoiceId,
+        creditNoteId,
+        receiptUsd,
+        receiptJod,
+        receiptLastSecond,
+        invoiceUsd.invoiceNumber,
+        USD,
+        JOD,
+      ]) {
+        expect(result.file.content).toContain(included);
+      }
+      for (const excluded of [
+        invoiceDraft.invoiceId,
+        invoiceBeforeOpen.invoiceId,
+        invoiceAtClose.invoiceId,
+        invoiceOtherBranch.invoiceId,
+        receiptReversed,
+        receiptOtherBranch,
+      ]) {
+        expect(result.file.content).not.toContain(excluded);
+      }
+      // Every amount in the file is the authority's own string, carried unrounded
+      // and unrecomputed: the invoice's open receivable and the receipt's
+      // unallocated remainder are read from the two functions the report calls.
+      expect(result.file.content).toContain(`"${await openReceivableOf(invoiceUsd.invoiceId)}"`);
+      expect(result.file.content).toContain(`"${await unallocatedOf(receiptUsd)}"`);
+      expect(result.file.content).toContain(`"${await creditNoteAmountOf(creditNoteId)}"`);
+      // The summary records are the groups the run publishes: never merged across a
+      // currency, and the approved credit notes keyed as their own document type.
+      const summaries = lines.slice(2, 2 + result.summaryCount);
+      expect(summaries.some((record) => record.includes(USD))).toBe(true);
+      expect(summaries.some((record) => record.includes(JOD))).toBe(true);
+      expect(summaries.some((record) => record.includes('credit_note'))).toBe(true);
+      const audit = await admin.query<{ actor_id: string; correlation_id: string }>(
+        `SELECT actor_id, correlation_id FROM iam.audit_records
+         WHERE tenant_id = $1 AND entity_id = $2 AND action = 'rpt.report.exported'`,
+        [TENANT_A, id]
+      );
+      expect(audit.rows).toHaveLength(1);
+      expect(audit.rows[0]?.actor_id).toBe(EXPORT_FULL.userId);
+      expect(audit.rows[0]?.correlation_id).toBe(response.headers.get('x-correlation-id'));
+    });
+  });
+
+  it('refuses a caller who may read this report but not disclose it, and records nothing', async () => {
+    await withExplicitReportConfiguration(async (id) => {
+      // `FIN_RPT_FULL` holds every code the RUN needs and not the disclosure code,
+      // so the refusal is that one code and the counterfactual is the case above.
+      authAs(FIN_RPT_FULL);
+      const response = await requestExport();
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({ code: 'ERR-IAM-001' });
+      const audit = await admin.query(
+        `SELECT id FROM iam.audit_records
+          WHERE tenant_id = $1 AND entity_id = $2 AND action = 'rpt.report.exported'`,
+        [TENANT_A, id]
+      );
+      expect(audit.rowCount).toBe(0);
+    });
+  });
+
+  it('exports the context record and no summary for a period holding no document', async () => {
+    await withExplicitReportConfiguration(async (id) => {
+      authAs(EXPORT_FULL);
+      const response = await requestExport({ from: EMPTY_FROM, to: EMPTY_TO });
+      expect(response.status).toBe(200);
+      const result = (await response.json()) as ReportExportView;
+      expect(result).toMatchObject({
+        generated: true,
+        rowCount: 0,
+        summaryCount: 0,
+        period: { from: EMPTY_FROM, to: EMPTY_TO, timezone: BRANCH_TIMEZONE },
+        file: { filename: `${REPORT_CODE}-${EMPTY_FROM}-${EMPTY_TO}.csv`, mediaType: 'text/csv' },
+      });
+      // A header, the context record, and nothing else. An empty selection is a file
+      // stating WHAT WAS SELECTED — never an empty body, and never an error: a
+      // branch that invoiced nothing in a period is an answer, and a zero is not.
+      const lines = records(result);
+      expect(lines).toHaveLength(3);
+      expect(lines[1]).toBe(contextRecord(result));
+      expect(lines.at(-1)).toBe('');
+      const audit = await admin.query(
+        `SELECT id FROM iam.audit_records
+          WHERE tenant_id = $1 AND entity_id = $2 AND action = 'rpt.report.exported'`,
+        [TENANT_A, id]
+      );
+      // The disclosure is recorded for what was asked, not for what came back.
+      expect(audit.rowCount).toBe(1);
+    });
   });
 });
