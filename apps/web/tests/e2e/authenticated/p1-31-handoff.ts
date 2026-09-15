@@ -169,6 +169,38 @@ export interface P131BrowserFixtures {
   readonly checklist: Readonly<Record<string, P131FixtureDelivery>>;
   readonly signature: Readonly<Record<string, P131FixtureDelivery>>;
   readonly release: Readonly<Record<string, P131FixtureDelivery>>;
+  /**
+   * FE-003 — one handover per fixture key whose receiver is NOT yet verified.
+   *
+   * Optional, because a handoff written before the harness published it carries
+   * none; `receiverFixture` below reads it separately so its absence never hides
+   * the three sets above. See `P131ReceiverFixture` for what each must hold.
+   */
+  readonly receiver?: Readonly<Record<string, P131ReceiverFixture>> | null;
+}
+
+/**
+ * The handover the two receiver cases act on, published by the harness BEFORE its
+ * final observation point.
+ *
+ * ## Why the harness makes it and the spec does not
+ *
+ * A spec that opened its own handover would write a work order and a delivery into
+ * the journey branch after the figures `reportRuns` and `overview` were read, and
+ * the report and overview cases pinned to those figures would then fail in the only
+ * environment these cases run in. Made by the harness, the handover is inside what
+ * the final pass observes.
+ *
+ * ## What each must hold
+ *
+ * `customerId` is recorded on the reception visit as the `authorized_receiver`;
+ * `receiverFamilyName` is that customer's family name, unique enough to be found on
+ * the screen's own selector; and the handover answers NO receiver when published.
+ * One per fixture key serves both cases: the refusal case leaves it unverified, and
+ * the success case, which runs after it, verifies it.
+ */
+export interface P131ReceiverFixture extends P131FixtureDelivery {
+  readonly receiverFamilyName: string;
 }
 
 /**
@@ -375,6 +407,32 @@ export function browserFixtures(
     return null;
   }
   return { checklist, signature, release, signaturePngBase64: fixtures.signaturePngBase64 };
+}
+
+/**
+ * The unverified-receiver handover under one fixture KEY, with the image bytes the
+ * harness puts on file, or `null` when this handoff publishes none.
+ *
+ * Separate from `browserFixtures` so a handoff without the `receiver` entry still
+ * answers the three write sets.
+ */
+export function receiverFixture(
+  handoff: P131Handoff | null,
+  key: string
+): { readonly handover: P131ReceiverFixture; readonly pngBase64: string } | null {
+  const fixtures = handoff?.browserFixtures;
+  if (fixtures === undefined || fixtures === null) return null;
+  const handover = fixtures.receiver?.[key];
+  if (handover === undefined) return null;
+  if (typeof handover.deliveryId !== 'string' || handover.deliveryId.length === 0) return null;
+  if (typeof handover.customerId !== 'string' || handover.customerId.length === 0) return null;
+  if (typeof handover.receiverFamilyName !== 'string' || handover.receiverFamilyName.length === 0) {
+    return null;
+  }
+  if (typeof fixtures.signaturePngBase64 !== 'string' || fixtures.signaturePngBase64.length === 0) {
+    return null;
+  }
+  return { handover, pngBase64: fixtures.signaturePngBase64 };
 }
 
 /** The locale a project drives, from its name. The same rule `administration.spec.ts` uses. */

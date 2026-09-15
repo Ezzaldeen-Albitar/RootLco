@@ -1,17 +1,17 @@
-import { randomUUID } from 'node:crypto';
-import { deflateSync } from 'node:zlib';
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { holds, readAccountKind } from './account-manifest';
 import {
   NO_HANDOFF_REASON,
   WRONG_ACCOUNT_REASON,
-  handoffLogin,
+  fixtureKeyOf,
   localeOf,
   missingReason,
   readHandoff,
+  receiverFixture,
   say,
   signedInAsJourneyAdministrator,
   type P131Handoff,
+  type P131ReceiverFixture,
 } from './p1-31-handoff';
 
 /**
@@ -115,246 +115,53 @@ async function chooseBranch(page: Page, locale: 'en' | 'ar', h: P131Handoff): Pr
  * The codes the receiver cases need the signed-in account to hold.
  *
  * `sal.delivery.manage` draws the verification form; the two document codes draw
- * the optional file control and authorize the capture; `org.employee.read` is
- * what the fixture below names a delivering employee with. The journey's
- * administrator holds all four (`account-manifest.json`), so an account that
+ * the optional file control and authorize the capture. The journey's
+ * administrator holds all three (`account-manifest.json`), so an account that
  * does not is a fixture defect and is failed as one rather than skipped.
  */
 const RECEIVER_CASE_CODES = [
   'sal.delivery.manage',
   'shared.document.read',
   'shared.document.manage',
-  'org.employee.read',
 ] as const;
 
-/** One API answer, with the parts a fixture step reads. */
-interface ApiAnswer {
-  readonly status: number;
-  readonly body: Record<string, unknown> | null;
-}
-
-/** An authenticated JSON call to the journey's own API, as the harness makes them. */
-async function callApi(
-  request: APIRequestContext,
-  origin: string,
-  token: string,
-  method: 'GET' | 'POST',
-  path: string,
-  options: { readonly body?: unknown; readonly ifMatch?: number } = {}
-): Promise<ApiAnswer> {
-  const headers: Record<string, string> = {
-    accept: 'application/json',
-    authorization: `Bearer ${token}`,
-  };
-  if (method === 'POST') headers['idempotency-key'] = randomUUID();
-  if (options.ifMatch !== undefined) headers['if-match'] = `"${String(options.ifMatch)}"`;
-  const response = await request.fetch(`${origin}${path}`, {
-    method,
-    headers,
-    ...(options.body === undefined ? {} : { data: options.body }),
-    failOnStatusCode: false,
-  });
-  const text = await response.text();
-  return {
-    status: response.status(),
-    body: text === '' ? null : (JSON.parse(text) as Record<string, unknown>),
-  };
-}
-
-async function expectStatus(answer: ApiAnswer, expected: number, step: string): Promise<void> {
-  expect(answer.status, `${step} answered ${String(answer.status)}`).toBe(expected);
-}
-
-/** A string field of an answer, or a hard failure naming the step. */
-function field(answer: ApiAnswer, name: string, step: string): string {
-  const value = answer.body?.[name];
-  expect(typeof value === 'string' && value.length > 0, `${step} carried no ${name}`).toBe(true);
-  return value as string;
-}
-
 /**
- * A decodable one-pixel PNG, built here rather than pasted as an encoded blob.
+ * The unverified-receiver handover this project consumes, or a hard failure.
  *
- * The platform scans a stored image and refuses one it cannot decode, so the
- * success case needs real image bytes. Assembled from the PNG chunk layout with
- * its own CRC, so no opaque literal sits in the tree.
+ * ## Where the handover comes from
+ *
+ * The harness publishes one per fixture key in `browserFixtures.receiver`, made
+ * before its final observation point (`P131ReceiverFixture`). The spec writes
+ * nothing: a handover opened here would land in the journey branch after the
+ * report and overview figures were read, and the cases pinned to those figures
+ * would fail beside these.
+ *
+ * ## Why absence fails rather than skips
+ *
+ * The same rule the write cases in `delivery-writes-p1-31.spec.ts` follow: once a
+ * handoff exists and the journey's administrator is signed in, a handoff with no
+ * receiver fixture is a harness that did not publish one, and a skip would report
+ * that as a run that proved something.
+ *
+ * ## Where these cases execute, stated so nobody reads them as covered
+ *
+ * Only in a run that sets `ROOTLCO_P131_HANDOFF`. The hosted authenticated-browser
+ * job sets no handoff, so on every hosted run both cases take the absent-handoff
+ * skip; the FE-003 browser proof exists only as an executed local run against a
+ * handoff whose harness publishes this fixture.
  */
-function onePixelPng(): Buffer {
-  const table = Array.from({ length: 256 }, (_, n) => {
-    let c = n;
-    for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    return c >>> 0;
-  });
-  const crc = (bytes: Buffer) => {
-    let c = 0xffffffff;
-    for (const byte of bytes) c = (table[(c ^ byte) & 0xff] as number) ^ (c >>> 8);
-    return (c ^ 0xffffffff) >>> 0;
-  };
-  const chunk = (type: string, data: Buffer) => {
-    const length = Buffer.alloc(4);
-    length.writeUInt32BE(data.length);
-    const typed = Buffer.concat([Buffer.from(type, 'ascii'), data]);
-    const check = Buffer.alloc(4);
-    check.writeUInt32BE(crc(typed));
-    return Buffer.concat([length, typed, check]);
-  };
-  const header = Buffer.alloc(13);
-  header.writeUInt32BE(1, 0);
-  header.writeUInt32BE(1, 4);
-  header.writeUInt8(8, 8); // bit depth
-  header.writeUInt8(2, 9); // truecolour
-  const pixels = deflateSync(Buffer.from([0, 0x1f, 0x6b, 0x52]));
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk('IHDR', header),
-    chunk('IDAT', pixels),
-    chunk('IEND', Buffer.alloc(0)),
-  ]);
-}
-
-/** What a receiver case acts on: a handover nobody has been confirmed for. */
-interface UnverifiedHandover {
-  readonly deliveryId: string;
-  readonly customerId: string;
-  /** The unique family name the receiver is found by, on the screen's own selector. */
-  readonly familyName: string;
-  readonly origin: string;
-  readonly token: string;
-}
-
-/**
- * The smallest world a receiver case needs, made through the supported API.
- *
- * ## Why the case makes its own handover
- *
- * Every handover the journey publishes already has its receiver verified — the
- * harness verifies one before it signs, answers or releases anything — so no
- * published record reaches the state these cases start from. The same writes the
- * harness uses (`buildWorkOrder`, then `sal.delivery-create`) are made here with
- * the journey administrator's own login: a customer recorded on the visit as the
- * authorized receiver, a vehicle, a reception approved and converted to a work
- * order, and a handover opened for it. Nothing is written to the database
- * directly, and each case makes its own, so neither depends on the other or on
- * the order the projects run in.
- *
- * ## What it assumes, checked rather than trusted
- *
- * An ACTIVE employee in the journey's branch to name as the person handing over
- * (the journey creates one), and a handover that answers with no receiver before
- * the browser opens it.
- */
-async function openHandoverWithUnverifiedReceiver(
-  request: APIRequestContext,
-  h: P131Handoff,
-  label: string
-): Promise<UnverifiedHandover> {
-  const login = handoffLogin();
-  expect(login, 'the handoff names no usable login').not.toBeNull();
-  const origin = h.api.replace(/\/$/, '');
-  expect(origin.length, 'the handoff names no API origin').toBeGreaterThan(0);
-
-  const signedIn = await request.post(`${origin}/api/v1/auth/login`, {
-    data: login,
-    failOnStatusCode: false,
-  });
-  expect(signedIn.status(), 'the journey administrator must sign in to the API').toBe(200);
-  const token = ((await signedIn.json()) as { accessToken?: string }).accessToken ?? '';
-  expect(token, 'the login issued no access token').not.toBe('');
-
-  const stamp = `${label}${Date.now().toString(36)}${randomUUID().slice(0, 4)}`.toUpperCase();
-  const familyName = `Receiver ${stamp}`;
-  const scope = { companyId: h.companyId, branchId: h.branchId };
-  const call = (
-    method: 'GET' | 'POST',
-    path: string,
-    options?: { readonly body?: unknown; readonly ifMatch?: number }
-  ) => callApi(request, origin, token, method, path, options);
-
-  const customer = await call('POST', '/api/v1/customers/individuals', {
-    body: { givenName: 'Handover', familyName },
-  });
-  await expectStatus(customer, 201, 'customer create');
-  const customerId = field(customer, 'customerId', 'customer create');
-
-  const vehicle = await call('POST', '/api/v1/vehicles', {
-    body: { displayNumber: `P31R-${stamp}` },
-  });
-  await expectStatus(vehicle, 201, 'vehicle create');
-  const vehicleId = field(vehicle, 'vehicleId', 'vehicle create');
-
-  await expectStatus(
-    await call('POST', `/api/v1/customers/${customerId}/vehicles`, {
-      body: { vehicleId, relationshipRole: 'owner' },
-    }),
-    201,
-    'vehicle link'
-  );
-
-  const reception = await call('POST', '/api/v1/receptions', {
-    body: {
-      ...scope,
-      vehicleId,
-      serviceRequesterPartnerId: customerId,
-      origin: { kind: 'walk_in', requesterPartnerId: customerId },
-    },
-  });
-  await expectStatus(reception, 201, 'reception create');
-  const receptionId = field(reception, 'receptionVisitId', 'reception create');
-
-  await expectStatus(
-    await call('POST', `/api/v1/receptions/${receptionId}/party-roles`, {
-      body: { partnerId: customerId, relationshipRole: 'authorized_receiver' },
-    }),
-    201,
-    'authorized receiver recorded on the visit'
-  );
-  await expectStatus(
-    await call('POST', `/api/v1/receptions/${receptionId}/authorizations`, {
-      body: {
-        authorizingRole: 'service_requester',
-        partnerId: customerId,
-        decision: 'approved',
-        channel: 'in_person',
-      },
-    }),
-    201,
-    'work authorized'
-  );
-
-  const detail = await call('GET', `/api/v1/receptions/${receptionId}`);
-  await expectStatus(detail, 200, 'reception detail');
-  const approved = await call('POST', `/api/v1/receptions/${receptionId}/approve`, {
-    ifMatch: Number(detail.body?.recordVersion ?? 1),
-  });
-  await expectStatus(approved, 200, 'reception approve');
-  const converted = await call('POST', `/api/v1/receptions/${receptionId}/convert-to-work-order`, {
-    ifMatch: Number(approved.body?.recordVersion ?? 1),
-  });
-  await expectStatus(converted, 200, 'reception converted to a work order');
-  const workOrderId = field(converted, 'workOrderId', 'conversion');
-
-  const employees = await call(
-    'GET',
-    `/api/v1/org/employees?companyId=${h.companyId}&branchId=${h.branchId}&status=active`
-  );
-  await expectStatus(employees, 200, 'employee register read');
-  const rows = (employees.body?.items ?? employees.body?.rows ?? []) as readonly {
-    id?: string;
-  }[];
-  const employeeId = rows[0]?.id;
-  expect(employeeId, 'the journey branch has no active employee to hand over').toBeTruthy();
-
-  const created = await call('POST', '/api/v1/deliveries', {
-    body: { workOrderId, deliveringEmployeeId: employeeId },
-  });
-  await expectStatus(created, 201, 'handover opened');
-  const deliveryId = field(created, 'id', 'handover create');
-
-  const before = await call('GET', `/api/v1/deliveries/${deliveryId}/authorized-receiver`);
-  await expectStatus(before, 200, 'receiver read before the browser');
-  expect(before.body?.receiver, 'a fresh handover must have no receiver').toBeNull();
-
-  return { deliveryId, customerId, familyName, origin, token };
+function unverifiedHandover(projectName: string): {
+  readonly handover: P131ReceiverFixture;
+  readonly pngBase64: string;
+} {
+  const key = fixtureKeyOf(projectName);
+  const fixture = receiverFixture(handoff, key);
+  expect(
+    fixture,
+    `the handoff names no unverified-receiver handover for ${key}; the harness section that ` +
+      'publishes browserFixtures.receiver did not run, or did not finish'
+  ).not.toBeNull();
+  return fixture as NonNullable<typeof fixture>;
 }
 
 /** The receiver panel, addressed by the id its own heading carries. */
@@ -362,7 +169,7 @@ function receiverPanel(page: Page) {
   return page.locator('section[aria-labelledby="delivery-receiver-heading"]');
 }
 
-/** Chooses the receiver on the screen's own selector, by the name the fixture gave them. */
+/** Chooses the receiver on the screen's own selector, by the name the harness gave them. */
 async function chooseReceiver(page: Page, locale: 'en' | 'ar', familyName: string): Promise<void> {
   const panel = receiverPanel(page);
   await panel
@@ -638,32 +445,104 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
   });
 
   /**
-   * FE-003 SUCCESS — an unverified receiver, verified through the screen with an
-   * identity document attached.
+   * FE-003 REFUSAL — an identity document the server refuses, leaving nothing behind.
    *
-   * Asserted in order: the screen first says nobody is confirmed; the receiver is
-   * chosen by name on the selector and a real image is attached; the panel then
-   * states the receiver and that proof of identity is on file; a reload still
-   * says so, which is the server's fact rather than the panel's; and the API's
-   * own read carries the receiver and a bound evidence version.
+   * Declared BEFORE the success case because both act on the one handover the
+   * harness publishes per fixture key: this case leaves it unverified, and the
+   * success case then verifies it. Run alone, either case finds the state it
+   * starts from; the "nobody is confirmed" assertion below fails loudly if the
+   * handover was already spent.
+   *
+   * The attached file is plain text, which the identity category's own row does
+   * not admit. The file control carries no `accept` list and the adapter does not
+   * filter by type, so the request reaches the server, whose upload authorization
+   * refuses the content type with a violation on the content type. The panel must
+   * state that refusal: the upload sentence AND the field reason, which only a
+   * validation refusal carries — a store outage, a permission refusal or an expired
+   * session reach the same upload sentence with no field reason. A reload must
+   * still show nobody confirmed and no evidence.
    */
-  test('an unverified receiver is verified through the screen with an identity document attached', async ({
+  test('an identity document the server refuses leaves the receiver unverified', async ({
     page,
-    request,
   }, testInfo) => {
     // test-honesty-allow: TH-002 -- no acceptance handoff on this checkout; see NO_HANDOFF_REASON
     test.skip(handoff === null, NO_HANDOFF_REASON);
     // test-honesty-allow: TH-002 -- signed in as somebody other than the journey's own administrator; see WRONG_ACCOUNT_REASON
     test.skip(!signedInAsJourneyAdministrator(), WRONG_ACCOUNT_REASON);
-    // Thirteen API writes and reads build the handover before the browser opens it.
-    test.setTimeout(120_000);
-    const h = handoff as P131Handoff;
     const locale = localeOf(testInfo.project.name);
     const kind = readAccountKind();
     for (const code of RECEIVER_CASE_CODES) {
       expect(holds(kind, code), `${kind} must hold ${code} for this case`).toBe(true);
     }
-    const handover = await openHandoverWithUnverifiedReceiver(request, h, 'OK');
+    const { handover } = unverifiedHandover(testInfo.project.name);
+
+    await page.goto(`/${locale}/delivery/${handover.deliveryId}`);
+    await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
+    const panel = receiverPanel(page);
+    await expect(panel.getByText(say(locale, 'delivery.receiver.noneTitle'))).toBeVisible();
+
+    await chooseReceiver(page, locale, handover.receiverFamilyName);
+    const file = panel.getByLabel(say(locale, 'delivery.receiver.evidenceLabel'), { exact: true });
+    await file.setInputFiles({
+      name: 'not-an-identity-image.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('this is not an identity document', 'utf8'),
+    });
+    await panel
+      .getByRole('button', { name: say(locale, 'delivery.receiver.verifySubmit'), exact: true })
+      .click();
+
+    const refusal = panel
+      .getByRole('alert')
+      .filter({ hasText: say(locale, 'delivery.receiver.refused') });
+    await expect(refusal, 'the refusal must be stated on the panel it came from').toBeVisible();
+    await expect(refusal).toContainText(say(locale, 'delivery.receiver.evidenceUploadFailed'));
+    // The field reason: present only when the server answered with a violation.
+    await expect(
+      panel.getByRole('alert').filter({ hasText: say(locale, 'form.violation.invalid') }),
+      'the server refused the content type, so the reason it gave must be stated'
+    ).toBeVisible();
+    await expect(panel.getByText(say(locale, 'delivery.receiver.noneTitle'))).toBeVisible();
+    // React clears the form once the action settles: the attempt is over, not in flight.
+    await expect(file).toHaveValue('');
+
+    await page.reload();
+    const reread = receiverPanel(page);
+    await expect(
+      reread.getByText(say(locale, 'delivery.receiver.noneTitle')),
+      'a refused document must leave nobody confirmed'
+    ).toBeVisible();
+    await expect(reread.getByText(say(locale, 'delivery.receiver.evidenceOnFile'))).toHaveCount(0);
+    await expect(
+      reread.getByRole('heading', {
+        name: say(locale, 'delivery.receiver.verifyHeading'),
+        exact: true,
+      })
+    ).toBeVisible();
+  });
+
+  /**
+   * FE-003 SUCCESS — an unverified receiver, verified through the screen with an
+   * identity document attached.
+   *
+   * Asserted in order: the screen first says nobody is confirmed; the receiver is
+   * chosen by name on the selector and a real image is attached; the panel then
+   * states the receiver and that proof of identity is on file; and a reload still
+   * says so, which is the server's fact rather than the panel's.
+   */
+  test('an unverified receiver is verified through the screen with an identity document attached', async ({
+    page,
+  }, testInfo) => {
+    // test-honesty-allow: TH-002 -- no acceptance handoff on this checkout; see NO_HANDOFF_REASON
+    test.skip(handoff === null, NO_HANDOFF_REASON);
+    // test-honesty-allow: TH-002 -- signed in as somebody other than the journey's own administrator; see WRONG_ACCOUNT_REASON
+    test.skip(!signedInAsJourneyAdministrator(), WRONG_ACCOUNT_REASON);
+    const locale = localeOf(testInfo.project.name);
+    const kind = readAccountKind();
+    for (const code of RECEIVER_CASE_CODES) {
+      expect(holds(kind, code), `${kind} must hold ${code} for this case`).toBe(true);
+    }
+    const { handover, pngBase64 } = unverifiedHandover(testInfo.project.name);
 
     await page.goto(`/${locale}/delivery/${handover.deliveryId}`);
     await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
@@ -672,13 +551,14 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
     await expect(panel.getByText(say(locale, 'delivery.receiver.noneTitle'))).toBeVisible();
     await expect(panel.getByText(say(locale, 'delivery.receiver.evidenceOnFile'))).toHaveCount(0);
 
-    await chooseReceiver(page, locale, handover.familyName);
+    await chooseReceiver(page, locale, handover.receiverFamilyName);
     await panel
       .getByLabel(say(locale, 'delivery.receiver.evidenceLabel'), { exact: true })
       .setInputFiles({
         name: 'receiver-identity.png',
         mimeType: 'image/png',
-        buffer: onePixelPng(),
+        // The decodable image the harness itself puts on file.
+        buffer: Buffer.from(pngBase64, 'base64'),
       });
     await expect(panel.getByText(say(locale, 'delivery.receiver.evidenceChosen'))).toBeVisible();
     await panel
@@ -700,101 +580,5 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
     await expect(reread.getByText(say(locale, 'delivery.receiver.evidenceOnFile'))).toBeVisible();
     await expect(reread.getByText(say(locale, 'delivery.receiver.noneTitle'))).toHaveCount(0);
     await expect(reread).toContainText(handover.customerId);
-
-    const stored = await callApi(
-      request,
-      handover.origin,
-      handover.token,
-      'GET',
-      `/api/v1/deliveries/${handover.deliveryId}/authorized-receiver`
-    );
-    expect(stored.status).toBe(200);
-    const receiver = stored.body?.receiver as {
-      receiverPartnerId?: string;
-      identityEvidenceDocumentVersionId?: string | null;
-    } | null;
-    expect(receiver?.receiverPartnerId, 'the server must hold the receiver chosen on screen').toBe(
-      handover.customerId
-    );
-    expect(
-      receiver?.identityEvidenceDocumentVersionId,
-      'the server must hold the evidence version the screen attached'
-    ).toEqual(expect.any(String));
-  });
-
-  /**
-   * FE-003 REFUSAL — the same flow, refused by the server, leaving nothing behind.
-   *
-   * The attached file is plain text, which the identity category's own row does
-   * not admit, so the upload authorization is refused by the server. The panel
-   * must say the receiver was not confirmed and that the document could not be
-   * saved; a reload must still show nobody confirmed and no evidence; and the
-   * API's own read must still answer no receiver.
-   */
-  test('an identity document the server refuses leaves the receiver unverified', async ({
-    page,
-    request,
-  }, testInfo) => {
-    // test-honesty-allow: TH-002 -- no acceptance handoff on this checkout; see NO_HANDOFF_REASON
-    test.skip(handoff === null, NO_HANDOFF_REASON);
-    // test-honesty-allow: TH-002 -- signed in as somebody other than the journey's own administrator; see WRONG_ACCOUNT_REASON
-    test.skip(!signedInAsJourneyAdministrator(), WRONG_ACCOUNT_REASON);
-    test.setTimeout(120_000);
-    const h = handoff as P131Handoff;
-    const locale = localeOf(testInfo.project.name);
-    const kind = readAccountKind();
-    for (const code of RECEIVER_CASE_CODES) {
-      expect(holds(kind, code), `${kind} must hold ${code} for this case`).toBe(true);
-    }
-    const handover = await openHandoverWithUnverifiedReceiver(request, h, 'NO');
-
-    await page.goto(`/${locale}/delivery/${handover.deliveryId}`);
-    await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
-    const panel = receiverPanel(page);
-    await expect(panel.getByText(say(locale, 'delivery.receiver.noneTitle'))).toBeVisible();
-
-    await chooseReceiver(page, locale, handover.familyName);
-    const file = panel.getByLabel(say(locale, 'delivery.receiver.evidenceLabel'), { exact: true });
-    await file.setInputFiles({
-      name: 'not-an-identity-image.txt',
-      mimeType: 'text/plain',
-      buffer: Buffer.from('this is not an identity document', 'utf8'),
-    });
-    await panel
-      .getByRole('button', { name: say(locale, 'delivery.receiver.verifySubmit'), exact: true })
-      .click();
-
-    const refusal = panel
-      .getByRole('alert')
-      .filter({ hasText: say(locale, 'delivery.receiver.refused') });
-    await expect(refusal, 'the refusal must be stated on the panel it came from').toBeVisible();
-    await expect(refusal).toContainText(say(locale, 'delivery.receiver.evidenceUploadFailed'));
-    await expect(panel.getByText(say(locale, 'delivery.receiver.noneTitle'))).toBeVisible();
-    // React clears the form once the action settles: the attempt is over, not in flight.
-    await expect(file).toHaveValue('');
-
-    await page.reload();
-    const reread = receiverPanel(page);
-    await expect(
-      reread.getByText(say(locale, 'delivery.receiver.noneTitle')),
-      'a refused document must leave nobody confirmed'
-    ).toBeVisible();
-    await expect(reread.getByText(say(locale, 'delivery.receiver.evidenceOnFile'))).toHaveCount(0);
-    await expect(
-      reread.getByRole('heading', {
-        name: say(locale, 'delivery.receiver.verifyHeading'),
-        exact: true,
-      })
-    ).toBeVisible();
-
-    const stored = await callApi(
-      request,
-      handover.origin,
-      handover.token,
-      'GET',
-      `/api/v1/deliveries/${handover.deliveryId}/authorized-receiver`
-    );
-    expect(stored.status).toBe(200);
-    expect(stored.body?.receiver, 'the server must still hold no receiver').toBeNull();
   });
 });

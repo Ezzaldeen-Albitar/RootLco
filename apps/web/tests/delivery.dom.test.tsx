@@ -1280,8 +1280,10 @@ describe('optional identity evidence when confirming a receiver', () => {
    *
    * So for these cases only, `FormData` built FROM A FORM carries the files each
    * file control reports, exactly as a browser's would. Nothing else about the
-   * submission is altered, and the browser tier (`delivery-p1-31.spec.ts`)
-   * proves the same flow with a real file.
+   * submission is altered. The real path, a chosen file reaching `FormData`, is
+   * asserted by the browser cases in `delivery-p1-31.spec.ts`, and those execute
+   * only in a run that sets a P1-31 handoff: the hosted authenticated-browser job
+   * sets none, so there they skip and this substitution is not covered by them.
    */
   class BrowserFormData extends FormData {
     constructor(form?: HTMLFormElement, submitter?: HTMLElement | null) {
@@ -1492,6 +1494,61 @@ describe('optional identity evidence when confirming a receiver', () => {
     expect(captureDocument).not.toHaveBeenCalled();
     expect(createDocumentLink).not.toHaveBeenCalled();
     expect(verifyReceiver).not.toHaveBeenCalled();
+  });
+
+  it.each([['unavailable'], ['denied']])(
+    'refuses a chosen document when the category list is %s, and sends nothing',
+    async (readStatus) => {
+      listDocumentCategories.mockResolvedValue(refusedRead(readStatus, 'corr-categories'));
+      const { region, submit } = await prepare({ file: imageFile() });
+      await submit();
+
+      expect(
+        await within(region).findByText(EN['attachments.capture.categoriesUnavailable'] as string)
+      ).toBeVisible();
+      expect(within(region).getByText(EN['delivery.receiver.refused'] as string)).toBeVisible();
+      expect(within(region).getByText('corr-categories')).toBeVisible();
+      expect(captureDocument).not.toHaveBeenCalled();
+      expect(createDocumentLink).not.toHaveBeenCalled();
+      expect(verifyReceiver).not.toHaveBeenCalled();
+      expect(within(region).getByText(EN['delivery.receiver.noneTitle'] as string)).toBeVisible();
+    }
+  );
+
+  it('refuses a named empty file before any request, and says why', async () => {
+    const empty = new File([], 'receiver-id.png', { type: 'image/png' });
+    const { region, submit } = await prepare({ file: empty });
+    await submit();
+
+    expect(
+      await within(region).findByText(EN['attachments.capture.empty'] as string)
+    ).toBeVisible();
+    expect(
+      within(region).getByText(EN['delivery.receiver.evidenceUploadFailed'] as string)
+    ).toBeVisible();
+    expect(listDocumentCategories).not.toHaveBeenCalled();
+    expect(captureDocument).not.toHaveBeenCalled();
+    expect(createDocumentLink).not.toHaveBeenCalled();
+    expect(verifyReceiver).not.toHaveBeenCalled();
+  });
+
+  it('links and binds nothing when the capture answers without a registered version', async () => {
+    captureDocument.mockResolvedValue({
+      status: 'success',
+      correlationId: 'corr-unregistered',
+      attempt: 1,
+    });
+    const { region, submit } = await prepare({ file: imageFile() });
+    await submit();
+
+    expect(
+      await within(region).findByText(EN['delivery.receiver.evidenceUploadFailed'] as string)
+    ).toBeVisible();
+    expect(within(region).getByText('corr-unregistered')).toBeVisible();
+    expect(captureDocument).toHaveBeenCalledTimes(1);
+    expect(createDocumentLink).not.toHaveBeenCalled();
+    expect(verifyReceiver).not.toHaveBeenCalled();
+    expect(within(region).getByText(EN['delivery.receiver.noneTitle'] as string)).toBeVisible();
   });
 
   it.each([

@@ -122,7 +122,12 @@ bound (`apps/web/src/features/delivery/receiver-capture.ts`). Verification witho
 unchanged; a chosen document that fails to upload or link, or that the server refuses, is stated
 on the panel and the receiver stays unverified; no other category is substituted. No separate UI
 prototype exists for this capture; it was built within this section, D-18 and the existing delivery
-panels' patterns. Local branch state, pending #399's merge and the hosted run._
+panels' patterns. Local branch state, pending #399's merge and the hosted run. The two browser cases
+in `apps/web/tests/e2e/authenticated/delivery-p1-31.spec.ts` are NOT executed by the hosted
+authenticated-browser job, which sets no P1-31 handoff, so there they skip; they act on the
+unverified-receiver handover the out-of-repository journey harness must publish as
+`browserFixtures.receiver`, which it does not publish yet. The FE-003 browser proof is therefore
+not executed, and nothing here records it as covered._
 
 `sal.delivery-receiver-verify` accepts an optional `identityEvidenceDocumentVersionId`. This slice
 sends none, and the verification form offers no capture for it.
