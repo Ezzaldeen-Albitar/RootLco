@@ -191,6 +191,12 @@ interface Refusal {
  * The refusals the delivery service answers a bound document with, in the
  * operator's words. Only consulted when a document was part of the request: the
  * same codes on a verification without one are about something else.
+ *
+ * Only `ERR-DOC-001` is about the document alone. The service also answers
+ * `ERR-RES-001` for a receiver or visit that does not exist in scope and for a
+ * delivery the caller cannot see, and `ERR-VAL-001` for other refused details,
+ * so those two sentences name the document as one possible cause, never as the
+ * only one.
  */
 const EVIDENCE_REFUSAL_KEYS: Readonly<Record<string, string>> = {
   'ERR-VAL-001': 'delivery.receiver.evidenceRefusedInvalid',

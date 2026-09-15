@@ -27,10 +27,12 @@ import { RECEIVER_IDENTITY_CATEGORY_CODE } from './delivery-contract';
  * `signature-capture.ts` is the precedent and this follows it step for step:
  * read the categories, pick the approved one by code, capture the document
  * against the reception visit the delivery closes, link it under the category's
- * OWN business-link purpose, then bind the version. The visit is a parameter
- * taken from the delivery record the page read, never a form field, and the
- * delivery service independently checks that the version is live-linked to this
- * delivery's own work order or visit.
+ * OWN business-link purpose, then bind the version. The visit is passed as an
+ * argument taken from the delivery record the page read rather than read from a
+ * form field, but a Server Action argument is still supplied by the client, so
+ * it is not trusted here: the delivery service independently refuses a version
+ * that is not live-linked to this delivery's own work order or visit, and that
+ * check is what keeps evidence filed against another visit from being bound.
  *
  * ## No other category is substituted
  *
