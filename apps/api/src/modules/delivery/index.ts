@@ -158,6 +158,8 @@ export {
   OVERRIDABLE_BLOCKERS,
   RECEIVER_IDENTITY_EVIDENCE_CATEGORY,
   SIGNER_ROLES,
+  isApprovedIdentityEvidenceCategory,
+  type EvidenceCategoryFacts,
   assertChecklistResultShape,
   assertEligible,
   assertSignerRole,

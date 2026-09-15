@@ -32,6 +32,8 @@ import {
 } from './helpers';
 import { BRANCH_B1, COMPANY_B1, PARTNER_A, establishP1_19Fixtures } from './p1-19-helpers';
 import {
+  BRANCH_A9,
+  COMPANY_A9,
   SAL_FULL,
   authAs,
   cleanP1_22Fixtures,
@@ -255,6 +257,123 @@ describe(`${RECEIVER_VERIFY_OPERATION_ID} identity evidence (D-18)`, () => {
     authAs(SAL_FULL);
     await expectFieldRefusal(
       await verifyReceiver(delivery.deliveryId, otherVisitVersion),
+      delivery.deliveryId
+    );
+
+    authAs(SAL_FULL);
+    const accepted = await verifyReceiver(delivery.deliveryId, await identityEvidenceFor(delivery));
+    expect(accepted.status).toBe(201);
+  });
+
+  it('refuses a tenant category that reuses the approved code, because it is not the platform row', async () => {
+    const delivery = await seedReadyDelivery('p131_identity_tenant_override');
+    const overrideId = randomUUID();
+    await admin.query(
+      `INSERT INTO shared.document_categories
+         (id, scope, tenant_id, category_code, name, allowed_content_types, max_size_bytes,
+          default_classification, default_retention_class, created_by, business_link_purpose)
+       VALUES ($1,'tenant',$2,$3,'P1-31 tenant override fixture',ARRAY['image/png']::text[],
+               1048576,'restricted','evidence-audit',$4,'identity_document')`,
+      [overrideId, TENANT_A, RECEIVER_IDENTITY_EVIDENCE_CATEGORY, USER_A]
+    );
+    try {
+      const overrideVersion = await seedEvidenceVersion({
+        tenantId: TENANT_A,
+        companyId: delivery.companyId,
+        branchId: delivery.branchId,
+        categoryId: overrideId,
+        actor: USER_A,
+        linkTo: { entityType: 'rec.reception_visits', entityId: delivery.visitId },
+      });
+
+      authAs(SAL_FULL);
+      await expectFieldRefusal(
+        await verifyReceiver(delivery.deliveryId, overrideVersion),
+        delivery.deliveryId
+      );
+    } finally {
+      // Soft-deleted rather than left live, so no other suite on this database ever sees a
+      // second live category carrying the approved code.
+      await admin.query(`UPDATE shared.document_categories SET deleted_at = now() WHERE id = $1`, [
+        overrideId,
+      ]);
+    }
+
+    authAs(SAL_FULL);
+    const accepted = await verifyReceiver(delivery.deliveryId, await identityEvidenceFor(delivery));
+    expect(accepted.status).toBe(201);
+  });
+
+  it('refuses evidence filed under the approved category while it is disabled', async () => {
+    const delivery = await seedReadyDelivery('p131_identity_disabled_category');
+    const versionId = await identityEvidenceFor(delivery);
+
+    // The seeded platform row is disabled through the admin pool and restored in a finally,
+    // so this suite never leaves shared reference data changed. No grant is widened: the
+    // runtime role still holds no write on the category table.
+    await admin.query(`UPDATE shared.document_categories SET status = 'disabled' WHERE id = $1`, [
+      identityCategoryId,
+    ]);
+    try {
+      authAs(SAL_FULL);
+      await expectFieldRefusal(
+        await verifyReceiver(delivery.deliveryId, versionId),
+        delivery.deliveryId
+      );
+    } finally {
+      await admin.query(`UPDATE shared.document_categories SET status = 'active' WHERE id = $1`, [
+        identityCategoryId,
+      ]);
+    }
+
+    // The SAME version is accepted once the category is active again, so the refusal was
+    // the category's status and nothing else.
+    authAs(SAL_FULL);
+    const accepted = await verifyReceiver(delivery.deliveryId, versionId);
+    expect(accepted.status).toBe(201);
+  });
+
+  it("refuses an identity-evidence document attached only to another delivery's work order", async () => {
+    const delivery = await seedReadyDelivery('p131_identity_this_work_order');
+    const other = await seedReadyDelivery('p131_identity_other_work_order');
+    expect(other.workOrderId).not.toBe(delivery.workOrderId);
+    const otherWorkOrderVersion = await seedEvidenceVersion({
+      tenantId: TENANT_A,
+      companyId: delivery.companyId,
+      branchId: delivery.branchId,
+      categoryId: identityCategoryId,
+      actor: USER_A,
+      linkTo: { entityType: 'wo.work_orders', entityId: other.workOrderId },
+    });
+
+    authAs(SAL_FULL);
+    await expectFieldRefusal(
+      await verifyReceiver(delivery.deliveryId, otherWorkOrderVersion),
+      delivery.deliveryId
+    );
+
+    authAs(SAL_FULL);
+    const accepted = await verifyReceiver(delivery.deliveryId, await identityEvidenceFor(delivery));
+    expect(accepted.status).toBe(201);
+  });
+
+  it('refuses an identity-evidence document of another company and branch in the same tenant', async () => {
+    const delivery = await seedReadyDelivery('p131_identity_other_company');
+    expect(delivery.companyId).not.toBe(COMPANY_A9);
+    // Right category, attached to this delivery's own visit; only its company and branch
+    // differ from the delivery's.
+    const otherCompanyVersion = await seedEvidenceVersion({
+      tenantId: TENANT_A,
+      companyId: COMPANY_A9,
+      branchId: BRANCH_A9,
+      categoryId: identityCategoryId,
+      actor: USER_A,
+      linkTo: { entityType: 'rec.reception_visits', entityId: delivery.visitId },
+    });
+
+    authAs(SAL_FULL);
+    await expectFieldRefusal(
+      await verifyReceiver(delivery.deliveryId, otherCompanyVersion),
       delivery.deliveryId
     );
 

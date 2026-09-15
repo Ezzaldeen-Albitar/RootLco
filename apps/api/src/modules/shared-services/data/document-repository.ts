@@ -74,6 +74,14 @@ export interface VersionRow {
   readonly sha256_hex: string;
 }
 
+/** What `documentCategory` reports about a document's category. */
+export interface DocumentCategoryFacts {
+  readonly code: string;
+  readonly scope: string;
+  readonly status: string;
+  readonly deleted: boolean;
+}
+
 export interface LinkRow {
   readonly id: string;
   readonly document_id: string;
@@ -463,24 +471,36 @@ export class DocumentRepository extends Repository {
   }
 
   /**
-   * The category code a live document is filed under, or null when the document
-   * is not visible to this session.
+   * The facts about the category a live document is filed under — its code, its
+   * scope, its status and whether it is soft-deleted — or null when the document
+   * or its category is not visible to this session.
    *
    * Read under the caller's own RLS: `sel_documents_tenant` narrows the document
    * to the session tenant, and `sel_document_categories_visible` admits the
    * platform row or the session tenant's own override, which is exactly the set
    * `shared.guard_document_category_scope` allows a document to reference.
+   *
+   * It returns facts rather than a verdict, and filters none of them: a tenant
+   * override carrying a platform code, a disabled category and a soft-deleted
+   * one are all reported as what they are, so the consumer that owns the rule
+   * decides what is acceptable instead of this read deciding it silently.
    */
-  async documentCategoryCode(db: DbHandle, documentId: string): Promise<string | null> {
+  async documentCategory(db: DbHandle, documentId: string): Promise<DocumentCategoryFacts | null> {
     const context = this.assertContext(db);
-    const row = await this.runOne<{ category_code: string }>(
+    const row = await this.runOne<{
+      category_code: string;
+      scope: string;
+      status: string;
+      deleted: boolean;
+    }>(
       db,
-      `SELECT c.category_code
+      `SELECT c.category_code, c.scope, c.status, (c.deleted_at IS NOT NULL) AS deleted
          FROM shared.documents d
          JOIN shared.document_categories c ON c.id = d.category_id
         WHERE d.tenant_id = $1 AND d.id = $2 AND d.deleted_at IS NULL`,
       [context.principal.tenantId, documentId]
     );
-    return row?.category_code ?? null;
+    if (!row) return null;
+    return { code: row.category_code, scope: row.scope, status: row.status, deleted: row.deleted };
   }
 }

@@ -42,7 +42,7 @@ import type {
   RegisterVersionInput,
   UploadAuthorization,
 } from '@/server/contracts/file-service';
-import { DocumentRepository } from '../data/document-repository';
+import { DocumentRepository, type DocumentCategoryFacts } from '../data/document-repository';
 import {
   contentTypeAllowed,
   decodeUploadToken,
@@ -943,7 +943,7 @@ export class AttachmentService extends ApplicationService implements FileService
     companyId: string | null;
     branchId: string | null;
     status: string;
-    categoryCode: string | null;
+    category: DocumentCategoryFacts | null;
     linkedToEntity: boolean;
   }> {
     const version = await this.documents.findVersion(db, versionId);
@@ -957,7 +957,7 @@ export class AttachmentService extends ApplicationService implements FileService
       companyId: version.company_id,
       branchId: version.branch_id,
       status: version.status,
-      categoryCode: await this.documents.documentCategoryCode(db, version.document_id),
+      category: await this.documents.documentCategory(db, version.document_id),
       linkedToEntity: links.some(
         (link) => link.entity_type === entityType && link.entity_id === entityId
       ),
