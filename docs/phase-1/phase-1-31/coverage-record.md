@@ -202,6 +202,14 @@ re-read lands, with two DOM cases added for that path. 186 instrumented files; l
 `features/reports` 367/383 (95.82%). No floor moved. The figures in the note above describe the tree
 before that change._
 
+_2026-09-15 head note (QA-001, LOCAL, pending the hosted web-quality run): measured with the same
+command at branch head `8646e31c`, after the receiver form gained a status line that states when no
+document is chosen and the Arabic limits case was tightened. 186 instrumented files; lines 3469/3890
+(89.17%), statements 3819/4406 (86.67%), functions 1058/1159 (91.28%), branches 3243/4007 (80.93%).
+`features/delivery` 642/655 lines (98.02%, 25 files), `features/warranty` 405/444 (91.22%, 9
+files), `features/reports` 367/383 (95.82%, 11 files). No floor moved. These are the figures of that
+head; the notes above describe earlier trees._
+
 ### H-3 — the route tier the P1-31 pages sit in is under its own floor, and exempt from it
 
 The line coverage of the ten P1-31 route pages (two delivery, four warranty, three reports, one
