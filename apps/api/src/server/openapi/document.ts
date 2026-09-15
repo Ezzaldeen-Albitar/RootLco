@@ -193,6 +193,7 @@ function standardFailureResponses(operation: RegisteredOperation): JsonObject {
     responses['401'] = { $ref: '#/components/responses/Problem' };
     responses['403'] = { $ref: '#/components/responses/Problem' };
   }
+  if (operation.answersNotFound) responses['404'] = { $ref: '#/components/responses/Problem' };
   if (operation.idempotent) responses['409'] = { $ref: '#/components/responses/Problem' };
   if (operation.versionGuarded) {
     responses['409'] = { $ref: '#/components/responses/Problem' };
