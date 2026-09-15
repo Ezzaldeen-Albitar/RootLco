@@ -1075,6 +1075,14 @@ defect (D-16)."
   ended "the first holds twice, the second does not, the third has not happened". All were true when
   written. **The second now holds for the P1-31 set**; the third has still not happened.)_
 
+  _(2026-09-15: "Its § 1 verdict is **PARTIAL** (`acceptance-record.md:27`)" was **true when
+  written**, at commit `1e285e3f`, when line 27 of the acceptance record read "**PARTIAL.**". It
+  stopped being true at commit `0e40fd42`, merged with #387 at `fb65b049`, which replaced that § 1:
+  at this head [`acceptance-record.md:27`](./acceptance-record.md) reads, in part, "**Engineering
+  verdict: PASS for the P1-31 acceptance set**", for run `mtzmvemj`. **That is an engineering result
+  for that one run, not the Owner's phase verdict, which remains unrecorded.** The sentence is left
+  as written, and this note issues no verdict.)_
+
 - **Measured fact — the harness is NOT in this repository, and where it is.** The HTTP driver lives
   **outside this repository** at `orchestration/acceptance/p1-31-journey.mjs`, beside the phase
   evidence and outside any git working tree; the screenshot companion `p1-31-screens.mjs` is held in
@@ -1115,6 +1123,15 @@ checklist, final-odometer or signature surfaces in either locale (**CC-52 (c)**)
 this file and claims none. _(This paragraph read "its own verdict is PARTIAL, **two
 browser cases still fail** … What the record moved is twelve **Frontend** rows": true at
 `81b3bce8`.)_
+
+_(2026-09-15: "The record's own § 1 verdict remains **PARTIAL**" was **not true when this paragraph
+was written in this form**. This form was written at commit `2feb3e3d`, the re-measure at
+`fb65b049`, after commit `0e40fd42` had replaced § 1 of the acceptance record; the paragraph's
+earlier form, written at `1e285e3f`, quoted a § 1 that did then read PARTIAL. At this head
+[`acceptance-record.md:27`](./acceptance-record.md) records an engineering verdict of PASS for run
+`mtzmvemj` — **an engineering result for that one run, not the Owner's phase verdict, which remains
+unrecorded.** The closing run `mu2ihptd` of the record's § 10 records measurements and no verdict
+(§ 10.14). The sentence is left as written, and this note issues no verdict.)_
 
 **Open items.**
 
@@ -1617,6 +1634,14 @@ output of a static checker named beside it, or a result quoted from
 [`acceptance-record.md`](./acceptance-record.md) with the section it is stated in — and that
 derivation, not this prose, is the authority. _(The third version's own status block said the same
 of `81b3bce8`, and of twelve Frontend rows.)_
+
+_(2026-09-15: "its own § 1 verdict is **PARTIAL**" was **not true when this block was written in
+this form**, at commits `2feb3e3d` and `4b314e49`, both after commit `0e40fd42` had replaced § 1 of
+the acceptance record; the third version's block, written at `1e285e3f`, quoted a verdict that did
+then read PARTIAL. [`acceptance-record.md:27`](./acceptance-record.md) records an engineering
+verdict of PASS for run `mtzmvemj` — **an engineering result for that one run, not the Owner's phase
+verdict, which remains unrecorded.** The sentence is left as written, and this note issues no
+verdict.)_
 
 _(2026-09-15: § 17 is appended to this version at `c1a2f9fc` without re-deriving it; it moves no
 state, and every figure in it is a static read of `c1a2f9fc` or a result quoted from
