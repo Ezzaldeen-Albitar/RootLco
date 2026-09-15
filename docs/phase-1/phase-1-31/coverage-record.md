@@ -172,6 +172,18 @@ side effect of a QA record. **Recorded, not fixed.**
 **What closes it:** adding the three feature roots to `COVERAGE_INCLUDE` together with the
 re-measurement and the baseline movement that must accompany them, in a commit that says so.
 
+_2026-09-15 note (QA-001, LOCAL, pending the hosted web-quality run): closed on branch
+`feature/p1-31-frontend-closure-completion` over `develop` `c1a2f9fc`. The three roots are now in
+`COVERAGE_INCLUDE`. Measured with `npm run test:ci --workspace @rootlco/web` before and after on that
+base: 141 → 186 instrumented files; lines 2037/2408 (84.59%) → 3419/3867 (88.41%), statements
+82.80% → 86.00%, functions 87.10% → 90.97%, branches 78.89% → 79.98%. Every global floor in
+`coverage-baseline.web.json` (82.48 / 81 / 85 / 77.37) still holds and none moved. The trees
+measured: `features/delivery` 592/632 lines (93.67%, 25 files), `features/warranty` 405/444 (91.22%,
+9 files), `features/reports` 367/383 (95.82%, 11 files), now floored by critical modules at 92.67,
+90.22 and 94.82. No deficit against any floor, so no deficit test was needed; `signature-capture.ts`
+measured 0/25 lines because every suite mocks it, and that is recorded in the baseline's
+`p131CoverageNote`._
+
 ### H-3 — the route tier the P1-31 pages sit in is under its own floor, and exempt from it
 
 The line coverage of the ten P1-31 route pages (two delivery, four warranty, three reports, one
@@ -216,6 +228,15 @@ baseline, so the 60% touched-file floor does **not** apply to any of these pages
 could lose its test and the gate would not say so. The exemption is recorded in the baseline as
 temporary and is not this record's to remove.
 
+_2026-09-15 note (QA-001, LOCAL, pending the hosted web-quality run): closed on branch
+`feature/p1-31-frontend-closure-completion` over `develop` `c1a2f9fc` by the repository's own
+mechanism, without widening or narrowing any exemption. Four critical-module rules cover exactly the
+route directories that hold the ten pages — `delivery` 34/39 lines (87.18%, 2 files, floor 86.18),
+`warranty` 65/70 (92.86%, 4 files, floor 91.86), `reports` 43/46 (93.48%, 3 files, floor 92.48) and
+`administration/audit-log` 13/13 (100%, 1 file, floor 99) — so a page that loses its test now turns
+the gate red. The ten together measured 155/168 lines (92.26%) in that local run; no page fell below
+its enforced figure, so no page test was needed._
+
 ### H-4 — the mount point of the start-a-handover panel is not rendered by any suite
 
 `delivery-start.dom.test.tsx` renders `WorkOrderDeliveryPanel` **directly**. The panel's only
@@ -226,6 +247,14 @@ not.
 
 **What closes it:** a case that renders the work-order record route page with the delivery panel
 mounted, or moving that decision into a covered module.
+
+_2026-09-15 note (QA-001, LOCAL, pending the hosted web-quality run): closed on branch
+`feature/p1-31-frontend-closure-completion` over `develop` `c1a2f9fc` by
+`apps/web/tests/work-order-delivery-mount.dom.test.tsx`, four cases that render the work-order
+record ROUTE PAGE: the handover panel's own content inside the record for a caller holding the
+delivery read, the write authority carried into the mounted panel, the panel absent and unread
+without the delivery read, and the route's permission-denied branch reading neither the record nor a
+handover. All four passed in the local web tier of 144 files and 4097 tests._
 
 ### H-5 — what the suites deliberately do not assert
 
