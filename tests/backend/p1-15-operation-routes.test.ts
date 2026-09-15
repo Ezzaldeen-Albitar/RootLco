@@ -1108,6 +1108,9 @@ describe('shared.attachment-download-authorize', () => {
     const authorization = await authorizeUpload();
     const registered = await registerVersion(authorization);
     await acceptVersion(registered.versionId);
+    // Reachability first (P1-31 CC-63 (c)): upload authorization writes no link, so the
+    // document is attached to nothing until the link operation is called.
+    await createLink(authorization.documentId);
 
     const response = await call<{ url: string; expiresAt: string }>(downloadAuthorizeRoute, {
       path: `/attachments/documents/${authorization.documentId}/download-authorizations`,
@@ -1128,6 +1131,9 @@ describe('shared.attachment-download-authorize', () => {
     asAdminA();
     const authorization = await authorizeUpload();
     const registered = await registerVersion(authorization);
+    // Linked, so the 409 below is the version's STATE and not the uniform not-found an
+    // unreachable document now receives.
+    await createLink(authorization.documentId);
 
     const response = await call<ProblemBody>(downloadAuthorizeRoute, {
       path: `/attachments/documents/${authorization.documentId}/download-authorizations`,
