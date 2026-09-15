@@ -507,16 +507,55 @@ describe('CC-56 scope claim resolved inside the tenant', () => {
     });
   });
 
-  it('resolves a claim that names no company without consulting the database', async () => {
-    await withTransaction(contextFor({ userId: USER_PERMITTED }), async (db) => {
-      // If either of these reached a probe it would refuse: the empty claim has no
-      // company to resolve, and the second names a branch that exists nowhere. Both
-      // resolving is what measures the early return, rather than a lucky verdict.
+  it('resolves an empty claim, and refuses a half claim that names a branch and no company', async () => {
+    /*
+     * CC-56 (c). A claim naming a branch and no company used to return without a
+     * statement — a guard failing OPEN on input it cannot resolve. It is now refused
+     * with the uniform refusal a foreign pair receives.
+     *
+     * The half claim names a REAL branch this caller can see: the full pair it belongs
+     * to resolves one line below. So the refusal is about the missing company, not
+     * about the branch, and a probe that still resolved the branch alone would pass the
+     * positive control and fail here.
+     */
+    const outcomes = await withTransaction(contextFor({ userId: USER_PERMITTED }), async (db) => {
       await expect(requireScopeClaimInTenant(db, COMMAND_OPERATION, {})).resolves.toBeUndefined();
       await expect(
-        requireScopeClaimInTenant(db, COMMAND_OPERATION, { branchId: randomUUID() })
+        requireScopeClaimInTenant(db, COMMAND_OPERATION, {
+          companyId: COMPANY_A1,
+          branchId: BRANCH_A1,
+        })
       ).resolves.toBeUndefined();
+      // Sequential, for the reason the sibling blocks state: one pg client.
+      const half = await requireScopeClaimInTenant(db, COMMAND_OPERATION, {
+        branchId: BRANCH_A1,
+      }).catch((caught: unknown) => caught);
+      const invented = await requireScopeClaimInTenant(db, COMMAND_OPERATION, {
+        branchId: randomUUID(),
+      }).catch((caught: unknown) => caught);
+      const foreignPair = await requireScopeClaimInTenant(db, COMMAND_OPERATION, {
+        companyId: randomUUID(),
+        branchId: randomUUID(),
+      }).catch((caught: unknown) => caught);
+      return { half, invented, foreignPair };
     });
+
+    for (const outcome of [outcomes.half, outcomes.invented, outcomes.foreignPair]) {
+      expect(outcome).toBeInstanceOf(AppFailure);
+      const failure = outcome as AppFailure;
+      expect(failure.code).toBe('ERR-IAM-001');
+      expect(failure.status).toBe(403);
+      expect(failure.safeDetails).toEqual({ requiredPermissions: [COMMAND_PERMISSION] });
+      expect(failure.message).not.toContain(BRANCH_A1);
+    }
+    // The half claim is indistinguishable from a foreign pair: the same message, byte
+    // for byte, so the refusal does not reveal which half was missing.
+    expect((outcomes.half as AppFailure).message).toBe(
+      (outcomes.foreignPair as AppFailure).message
+    );
+    expect((outcomes.invented as AppFailure).message).toBe(
+      (outcomes.foreignPair as AppFailure).message
+    );
   });
 
   it('is reached only after the permission decision, and answers with the same shape', async () => {

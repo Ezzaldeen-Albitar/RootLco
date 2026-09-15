@@ -104,8 +104,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Root unit tier — tests executed             | 3468  | `--record unit`, from the `vitest` JSON report                     |",
-      "value": "3468",
+      "locator": "| Root unit tier — tests executed             | 3475  | `--record unit`, from the `vitest` JSON report                     |",
+      "value": "3475",
       "binding": {
         "kind": "run",
         "tier": "unit",
@@ -118,8 +118,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Root unit tier — files the run reported     | 132   | the same report, cross-checked against the tier's include rule      |",
-      "value": "132",
+      "locator": "| Root unit tier — files the run reported     | 133   | the same report, cross-checked against the tier's include rule      |",
+      "value": "133",
       "binding": {
         "kind": "run",
         "tier": "unit",

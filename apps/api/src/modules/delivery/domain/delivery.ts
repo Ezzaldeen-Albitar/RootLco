@@ -48,6 +48,48 @@ export const CHECKLIST_SATISFYING_OUTCOMES = Object.freeze(['passed', 'waived'] 
 
 /** `ck_delivery_signatures_signer_role`. */
 export const SIGNER_ROLES = Object.freeze(['receiver', 'delivering_employee', 'witness'] as const);
+
+/**
+ * The document category a receiver's identity evidence must be filed under
+ * (P1-31 Owner decision D-18).
+ *
+ * A platform row seeded by `supabase/seeds/05_shared_reference.sql` with the
+ * `identity_document` purpose. Evidence filed under any other category — a
+ * signature, or a reception category that accepts the same media — is refused,
+ * because the decision forbids using an unrelated category in its place.
+ */
+export const RECEIVER_IDENTITY_EVIDENCE_CATEGORY = 'delivery_receiver_identity';
+
+/** The facts about a document's category that the identity-evidence rule reads. */
+export interface EvidenceCategoryFacts {
+  readonly code: string;
+  readonly scope: string;
+  readonly status: string;
+  readonly deleted: boolean;
+}
+
+/**
+ * Whether a document's category is the approved identity-evidence category.
+ *
+ * All four facts are required, and a missing category fails closed:
+ *
+ * - the code is {@link RECEIVER_IDENTITY_EVIDENCE_CATEGORY};
+ * - the scope is `platform`, because a tenant override that reuses the code is a
+ *   category the tenant defined, not the one the Owner approved;
+ * - the status is `active`, because a disabled category accepts no new evidence;
+ * - it is not soft-deleted.
+ */
+export function isApprovedIdentityEvidenceCategory(
+  category: EvidenceCategoryFacts | null
+): boolean {
+  return (
+    category !== null &&
+    category.code === RECEIVER_IDENTITY_EVIDENCE_CATEGORY &&
+    category.scope === 'platform' &&
+    category.status === 'active' &&
+    !category.deleted
+  );
+}
 export type SignerRole = (typeof SIGNER_ROLES)[number];
 
 /**

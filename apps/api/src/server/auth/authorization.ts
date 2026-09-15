@@ -552,9 +552,20 @@ export async function requireScopeTargetInTenant(
  *
  * A create whose table has no branch column claims a company and is resolved
  * against `org.legal_companies`; one that claims a pair is resolved against
- * `org.branches` by the same predicate the reads use. A claim naming no company
- * has nothing to resolve and returns without a statement, for the reason
- * `requireScopeTargetInTenant` gives for its own half targets.
+ * `org.branches` by the same predicate the reads use. An empty claim names no
+ * scope at all and returns without a statement.
+ *
+ * ## A half claim is refused, not resolved (CC-56 (c))
+ *
+ * A claim that names a branch and no company is one this probe cannot resolve:
+ * a branch is only meaningful inside its company, and there is no company to
+ * resolve it against. It used to return without a statement, which is a guard
+ * that fails OPEN on input it does not understand. The read probe's matching
+ * early return is justified by operations that legitimately pass one half; no
+ * write that reaches this probe does — every body-scoped create requires the
+ * company in its schema — so here the half claim is refused with the same
+ * `ERR-IAM-001`, the same safe details and the same message a foreign pair
+ * receives, and no statement is run to decide it.
  */
 export async function requireScopeClaimInTenant(
   db: DbHandle,
@@ -564,14 +575,16 @@ export async function requireScopeClaimInTenant(
   if (operation.public) return;
 
   const companyId = claim.companyId;
-  if (companyId === undefined) return;
+  const branchId = claim.branchId;
+  if (companyId === undefined && branchId === undefined) return;
 
   const context: RequestContext = db.context;
-  const branchId = claim.branchId;
   const visible =
-    branchId === undefined
-      ? await companyVisibleInTenant(db, companyId)
-      : await branchVisibleInTenant(db, companyId, branchId);
+    companyId === undefined
+      ? false
+      : branchId === undefined
+        ? await companyVisibleInTenant(db, companyId)
+        : await branchVisibleInTenant(db, companyId, branchId);
 
   if (visible) return;
 

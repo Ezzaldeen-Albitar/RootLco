@@ -5574,6 +5574,14 @@ Three, set out in § 9.6 of the acceptance record and none of them addressed by 
 | **CC-54 (d)** | **the closure record's Frontend rows are stale against the matrix this slice moves** | [`closure-record.md`](./closure-record.md) quotes the matrix's FE states and its § 8-era figures, and this slice raises three of those rows and adds a second corrected re-run the closure record does not mention                                                                         | **open, and deliberately not edited here.** The closure record is re-derived at one head by the final integration; editing it from a branch would put two derivations of the same totals in the tree. Its FE rows are owed to that integration                                                                                                       | the final integration        | open, recorded   |
 | **CC-54 (e)** | **the queue-1 evidence was taken with the soft expectations still in the harness**   | run `mtzmvemj`, recorded in § 8, and run `mu0diepc`, recorded in § 9.1, both executed a harness carrying twelve `either / or` status expectations. Every one of the twelve answered the value later pinned, in both runs                                                                   | **closed as a recorded limitation, not a retraction.** § 9.4 states which twelve, what each observed, what the product documents and what each is now pinned to. § 8's substantive isolation claim rests on `assertNoRow`, a separate assertion that was never soft. No figure of either earlier run moves                                           | this slice                   | closed, recorded |
 
+_(2026-09-15, closure note beside **CC-54 (b)** above: the row's finding, measurement and state cell
+are retained as written and were true when written. The declaration the document is generated from
+was corrected on `remediation/p1-31-backend-closure-hardening`: the operation declaration gained an
+optional `answersNotFound` field, the delivery record read and the warranty detail read both declare
+it, and `docs/api/openapi.v1.json` and the P1-24 operation register were regenerated from the
+declarations rather than edited. Recorded in § 72.3 under **CC-63**. The row's state moves to closed
+only when that branch merges.)_
+
 ### 64.9 What this slice did NOT do, and what is not claimed
 
 - **It claims no hosted result and no attestation.** Whether the governed `authenticated-browser`
@@ -6117,6 +6125,15 @@ recorded run at the merged head passed that suite inside a clean tier.)_
 | **CC-56 (b)** | **the same defect survives outside this phase's operation set — enumerated, with its two mis-statements corrected, in § 66.9** | **out of scope and deliberately left open at every OPEN site: six of the seven rows § 66.9 tabulates.** The seventh, `org.department-create`, was listed as a defect in error and **already conforms** — it answers 403 `ERR-IAM-001` uniformly, verified at `organization-administration-service.ts`:342. None of the six is changed by this pull request, and that is the Owner's rule applied rather than avoided: each is a decision by cited authority for the lane that owns it, not a code normalised for consistency by a slice passing through _(this row read "the same defect survives outside this phase's operation set: the five P1-30 body-scoped creates, and `org.department-create` in the IAM module … now with both siblings named", and then "out of scope and deliberately left open, at every site". Both were wrong: "both siblings" was FALSE when written, since a read of the IAM module found four more sites; and "at every site" over-counted, since `org.department-create` is not one of them. § 66.9 carries the correction and the reason for each)_                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | the lane that owns P1-30 inventory master data (row 1); the IAM lane (rows 3, 4, 5, 6, 7) | open, recorded   |
 | **CC-56 (c)** | **the claim probe's own guard is shape-dependent rather than fail-closed**                                                     | `apps/api/src/server/auth/authorization.ts`:566-567 returns without a statement when a claim names a `branchId` and no `companyId`, and `tests/backend/authorization.test.ts`:515-518 pins that. **Unreachable today** — all three creates require `companyId` in their zod body, so no route can produce a half claim — which is why it is recorded rather than treated as a live hole. It is still the wrong default: a guard that resolves nothing when it cannot understand its input fails OPEN, and the read probe's identical early return is justified by six operations that legitimately pass one half, of which this write probe has none. **Recommendation: refuse a half claim with the same `ERR-IAM-001` and move the pin**, in the next backend slice. Not done here, because it is a behaviour change no route exercises and this pull request's scope is the three creates                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | the next backend slice                                                                    | open, recorded   |
 | **CC-56 (d)** | **the P1-30 case that crosses the TENANT boundary on a body-scoped create asserts an EITHER/OR outcome**                       | `tests/backend/p1-30-inventory-master-data.test.ts`:685 (MD-X1) asserts `expect([403, 404]).toContain(status)` for `inv.stock-location-create` named into another tenant. Its sibling MD-L3 (`:646-651`) pins `403` exactly, but for a grant-scope boundary inside one tenant, so it does not cover this one. It passes whichever of the two codes the operation gives, so it pins neither — which is how § 66.9 row 1 came to claim a 404 that nothing measures, and why that row now claims nothing. This is the assertion class the Owner named, in the evening message of 2026-09-13, quoted here exactly and with the Owner's own inner quotation marks: "Do not weaken assertions, add blanket skips, or allow arbitrary “either permitted or refused” outcomes." That sentence is section 2 of the message, whose subject is FE-004, FE-005 and FE-006; the register quotes it from the Owner's evening message of 2026-09-13, preserved verbatim outside this repository in `orchestration/evidence/p1-31/closeout-drafts/queue2/owner-decisions-2026-09-13.md`, Appendix A. **It is read here as a standing rule about assertions, not as a ruling about this suite**, which the Owner did not mention _(this cell first paraphrased the sentence inside quotation marks, flattening the Owner's inner quotes to “either-permitted-or-refused” and calling it a “standing instruction” without naming where it was said)_. **Not fixed here**: it is another phase's suite, and deciding what it should pin is the same contract question CC-14 § 7 holds for those five creates — the test and the decision should move together, in that lane | the P1-30 backend area                                                                    | open, recorded   |
+
+_(2026-09-15, closure note beside **CC-56 (c)** above: the row's finding and its state cell are
+retained as written and were true when written. On `remediation/p1-31-backend-closure-hardening` the
+claim probe in `apps/api/src/server/auth/authorization.ts` now refuses a claim that names a branch and
+no company with the same `ERR-IAM-001`, safe details and message a foreign pair receives, without
+running a statement, and the pin in `tests/backend/authorization.test.ts` asserts that refusal against a
+real, visible branch. An empty claim still resolves. All four callers were read and each names a
+company, so no route's behaviour changes. Recorded in § 72.2 under **CC-63**. The row's state moves to
+closed only when that branch merges.)_
 
 ### 66.9 CC-56 (b) enumerated — every site outside this phase that still answers the old way
 
@@ -7855,3 +7872,462 @@ command.
 disposable-database fixture run, no verdict, no pass, no promotion and no certification. The P1-27 run
 cycle is deliberately NOT re-recorded in this change: it is the next task, and it has to come after
 every change here or it expires on the first executable path that moves.
+
+## 72. Backend closure hardening — the claim guard, the published not-found, the refused-download negative and the D-18 category (CC-63)
+
+**Slice:** `remediation/p1-31-backend-closure-hardening`, ownership profile `p1-31-backend`, which
+the `remediation/p1-31-backend-` prefix resolves to in
+`.github/ci-baselines/phase-ownership-profiles.json`. **Baseline:** protected `develop`
+`c1a2f9fc5d43799a4ca4beca9fe4927a777a2632`. `main` is untouched.
+
+**Authority.** The Owner's instruction to finish all authorized engineering before the reduced
+decision packet is presented; this register's own open rows **CC-56 (c)** (§ 66.8) and **CC-54 (b)**
+(§ 64.8), each of which names the next backend slice as its owner; the SEC-002 open item in
+[`security-and-qa-evidence.md`](./security-and-qa-evidence.md) § 2, "The server-side refused-download
+negative does not exist"; and Owner decision **D-18** in
+[`owner-decisions-2026-09-10.md`](./owner-decisions-2026-09-10.md) § 5, whose measured facts say the
+identity-evidence category does not yet exist and leave its code, purpose and seed file to the
+implementing slice.
+
+_(2026-09-15, correction batch: an independent read-only review of the pull request head `da5c8f92`
+found one false statement in § 72.3, a verification rule that read the category code alone, a seed
+comment that overstated the document policies, and two findings classified as decision requests that
+are not. This section was corrected in place on the same branch before merge; the corrections are
+stated where they apply rather than hidden. Nothing is renumbered.)_
+
+### 72.1 Identifier allocation
+
+| identifier                   | meaning                                                                     | state                                                 |
+| ---------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------- |
+| section 72                   | this slice                                                                  | this branch; the lowest free section after § 71       |
+| **CC-63**                    | the four closures below                                                     | this branch                                           |
+| **CC-63 (a)**                | branch scope on the download authorization — documented tenant-scope design | recorded limitation, not a decision request (§ 72.4)  |
+| **CC-63 (b)**                | what identity-evidence binding enforces                                     | closed engineering choice (§ 72.5)                    |
+| **CC-63 (c)**                | the download path does not enforce the written live-link contract           | **open defect**, measured and not changed (§ 72.4.1)  |
+| **CC-56 (c)**, **CC-54 (b)** | closed by this slice                                                        | annotated in place by dated notes; nothing renumbered |
+| § 70 / CC-60                 | closing evidence                                                            | **reserved, and not touched here**                    |
+
+_(2026-09-15, second correction batch: the two state cells above for **CC-63 (a)** and **CC-63 (c)**
+were true when written and are superseded. **CC-63 (c)** is **closed** — the download path now
+enforces the live-link contract (§ 72.4.1, dated note). **CC-63 (a)** is a recorded limitation whose
+fact changed: the permission gate is still tenant-wide, and a caller whose grant is scoped to another
+branch is now refused a document whose only link is to a work order that branch cannot see (§ 72.4,
+dated note). Nothing is renumbered.)_
+
+§ 48.1's rule holds: an identifier is a claim about the register when it was raised and is never
+renumbered. The two closed rows keep their original wording and state cells; a dated italic note
+beside each says where the closure is.
+
+### 72.2 CC-56 (c) — the claim probe now fails closed on a half claim
+
+`requireScopeClaimInTenant` in `apps/api/src/server/auth/authorization.ts` returned without a
+statement when a claim named a branch and no company. It now refuses that claim with the same
+`ERR-IAM-001`, the same `safeDetails.requiredPermissions` and the same message a foreign pair
+receives, and decides it without running a statement. An empty claim, which names no scope, still
+resolves.
+
+**Every caller was read, and none can produce a half claim**, so no route's behaviour changes:
+
+- `apps/api/src/modules/delivery/application/checklist-template-service.ts`:228 and
+  `apps/api/src/modules/warranty/application/warranty-policy-service.ts`:275 pass a company;
+- `apps/api/src/modules/iam/application/employee-administration-service.ts`:210 passes a company and a
+  branch its body schema requires;
+- `apps/api/src/app/api/v1/reports/[reportCode]/route.ts`:127-129 passes a pair whose `ExportBody`
+  requires both.
+
+**The pin moved.** `tests/backend/authorization.test.ts` no longer asserts that a half claim resolves.
+It asserts that the empty claim and a real visible pair resolve, and that the half claim naming that
+same visible branch, a half claim naming an invented branch and an invented pair are all refused with
+one code, one status, the declared safe details and a byte-identical message.
+
+### 72.3 CC-54 (b) — the two reads now publish the 404 they answer
+
+**What was measured.** At the baseline no operation in `docs/api/openapi.v1.json` published a 404.
+`standardFailureResponses` in `apps/api/src/server/openapi/document.ts` derives failure statuses from
+`public`, `idempotent`, `versionGuarded` and `rateLimitPolicy`, and none of them implies a not-found,
+so no declaration was capable of publishing one.
+
+**What changed.** The operation declaration in `apps/api/src/server/auth/operation-registry.ts` gained
+an optional `answersNotFound` field, and the generator emits a `404` problem response when it is set.
+The delivery record read (`apps/api/src/app/api/v1/deliveries/[deliveryId]/route.ts`) and the warranty
+detail read (`apps/api/src/app/api/v1/warranties/[warrantyId]/route.ts`) set it. Both answers were read
+from the code rather than taken from the row: the delivery read service's `requireDelivery` decides
+the uniform not-found before the scope decision, and `readWarranty` at
+`apps/api/src/modules/warranty/application/warranty-service.ts`:562-566 answers `ERR-RES-001` when the
+RLS-narrowed row read finds nothing.
+
+**Regenerated, never edited — and what each regeneration actually changed.**
+`docs/api/openapi.v1.json` was regenerated through the contract test's update switch, and its diff is
+the two `404` entries. `docs/phase-1/phase-1-24/evidence/operation-register.json` was regenerated
+through `scripts/p1-24-operation-register.mjs`, and **its diff is not only those two responses**: it
+also adds two test paths to two operations' evidence file lists —
+`tests/backend/p1-31-receiver-identity-evidence.test.ts` to the receiver verification and
+`tests/backend/p1-31-signature-download-refusal.test.ts` to the download authorization. The P1-19
+inventory and the idempotent-operations manifest were checked and did not change.
+
+_(2026-09-15 correction: this paragraph read "the diff is the two `404` entries" in a position that
+could be read as covering both files. That was false for the register. The register was regenerated
+while the two new suites were already in the working tree, and the resulting entries were committed
+in `58eaad3c`, **before** the suites themselves landed in `caa769e0` and `5aef62c1`. So `58eaad3c` is
+not self-consistent on its own — its register names two files its own tree does not contain, and the
+register check would fail at that commit — while the branch head is self-consistent and the check
+passes there. History is not rewritten to repair it.)_
+
+**Not done.** Other operations that answer a not-found were not surveyed and do not declare the field.
+It is available to the lanes that own them; this slice changes the two reads the row names.
+
+### 72.4 SEC-002 — the server-side refused-download negative
+
+**The path, read from the code.** The delivery module ships no signature retrieval; its signatures
+route defers retrieval to the shared attachment path. That path is the download authorization
+command under `/attachments/documents/{documentId}/download-authorizations`: it declares
+`shared.document.manage` at `tenant` scope, and `AttachmentService.requestDownload` reads the version
+under the caller's RLS, refuses anything not `accepted`, and only then signs a short-lived URL and
+appends `shared.document.download_authorized`. A URL is the only thing that could carry bytes out.
+
+**The negative.** `tests/backend/p1-31-signature-download-refusal.test.ts` binds an accepted signature
+document to a real delivery through the attach route, confirms it through the signature list, and
+asserts, in four cases:
+
+- the declaration names the file-access permission;
+- **control:** a holder of that permission is issued a URL the storage provider verifies, with one
+  signing request and one audit record, so the refusals below are not the path refusing everything;
+- a caller that can read the signature ledger, and so holds the reference, but lacks the file-access
+  permission is answered `403 ERR-IAM-001` naming the required permission, as a problem document with
+  no URL, no expiry, no storage key and no document or version identifier, the storage provider is
+  never asked to sign and no download audit record is written;
+- a caller from another tenant holding the permission in its own tenant is answered `404 ERR-RES-001`
+  with the same non-disclosure, and that answer matches the one for a document that exists nowhere in
+  status, code, title and fields.
+
+**CC-63 (a) — branch scope is not refused, and that is the documented, intended tenant-scope design.**
+A throwaway local probe, run once on the disposable database and not committed, gave a tenant-A caller
+whose only grant of `shared.document.manage` is scoped to a different branch a request for an accepted
+branch-A1 version. It was answered **200 with a signed URL**. That is what the design says:
+
+- [`api-catalog.md`](../phase-1-15/api-catalog.md) line 90 lists the download authorization at
+  `tenant` scope;
+- [`attachment-lifecycle.md`](../phase-1-15/attachment-lifecycle.md) lines 96-99 list it and state that
+  every one of the six attachment operations declares `scope: 'tenant'`;
+- [`iam-helper-usage-guide.md`](../../database/iam-helper-usage-guide.md) line 28 defines
+  `iam.has_permission`, which a tenant-scoped declaration is evaluated by, as the "tenant-wide
+  permission check";
+- Owner requirement H-13's normalised behaviour
+  ([`owner-requirements-2026-09-06.md`](../../product/owner-requirements-2026-09-06.md) line 2069)
+  asks for media "stored and served only within the tenant" through "a permission-gated, short-lived
+  signed URL", and says nothing of branch.
+
+No canonical or decision text read for this slice requires branch scoping of a download, and no P1-31
+record claims a branch-scoped refusal — a search of `docs/phase-1/phase-1-31` and `docs/product` for
+a download claim naming a branch found none. So **CC-63 (a) is not a defect and not a decision
+request**: it is carried as a limitation of the tenant-scope design, recorded here with its
+measurement for the security certifier to weigh.
+
+_(2026-09-15 correction: this finding was first recorded as "needs that decision first". That
+classification was wrong and is withdrawn; the measurement stands.)_
+
+_(2026-09-15, second correction batch: the probe's 200 was true when measured and is no longer the
+behaviour, because CC-63 (c) closed under it (§ 72.4.1, dated note). The exact current fact, and
+nothing more: **the permission gate is unchanged** — the operation is still declared at `tenant`
+scope and a branch-scoped grant of `shared.document.manage` still passes it; **reachability now
+depends on the linked entity's own visibility**. What the committed tests prove about branch scope is
+one case: in `tests/backend/p1-31-signature-download-refusal.test.ts`, a caller whose only grant is
+scoped to another branch is refused `404 ERR-RES-001` for the accepted signature document, whose
+only link is to a work order in the delivery's branch that `sel_work_orders_scope` hides from that
+grant, with nothing signed and nothing audited; the same caller is issued a URL for a document linked
+to a business partner, whose policy is tenant-only, which shows the refusal was visibility and not
+the permission. **No test proves a branch-scoped refusal for any other entity type**, and a document
+linked to a tenant-only entity — a business partner, a damage-map template or a vehicle — remains
+downloadable by any holder of the permission in the tenant. CC-63 (a) stays a recorded limitation of
+the tenant-scope design, with that fact.)_
+
+### 72.4.1 CC-63 (c) — the download path does not enforce the written live-link contract
+
+**The written contract.**
+
+- [`document-access-and-file-security.md`](../phase-1-5/document-access-and-file-security.md) § 3,
+  lines 47-50: "A document is reachable through a **live link to an entity the principal may see** —
+  never by merely knowing an identifier."
+- H-13's normalised behaviour (`owner-requirements-2026-09-06.md` line 2069): a file is retrievable
+  only through a permission-gated short-lived signed URL "for an accepted version reachable via a live
+  link".
+- [`attachment-lifecycle.md`](../phase-1-15/attachment-lifecycle.md) lines 338-340 states that
+  possessing a document identifier grants no access "and the download path enforces it".
+
+**The code.** `AttachmentService.requestDownload`
+(`apps/api/src/modules/shared-services/application/attachment-service.ts` lines 700-762) resolves the
+version under the tenant-only document policies, checks its state and the storage-key prefix, and
+signs. **It reads no link.** A tenant member holding `shared.document.manage` and a document
+identifier is issued a URL for an accepted version that is linked to nothing.
+
+**Measured first, and the change was stopped.** The correction batch set two stop conditions before
+any change: a production flow that downloads a document with no live link, or more than five existing
+tests that depend on doing so.
+
+- **Production callers: none.** The only caller is the route that publishes the operation. The web
+  registers it in `apps/web/src/lib/api/idempotent-operations.ts` (lines 265-267) and names it in two
+  docblocks that explain why no download control is rendered
+  (`apps/web/src/features/vehicles/components/VehicleDocumentsSection.tsx` line 94,
+  `apps/web/src/features/vehicles/documents-contract.ts` line 43); no screen calls it, and no script
+  calls it.
+- **Existing tests that depend on downloading an unlinked document: seven, above the threshold.**
+  Upload authorization writes no link — it validates `entityType` and records it in the audit detail
+  only — so every P1-15 download fixture is unlinked. The refusal must answer exactly as for an
+  invented document, so the link check has to run **before** the state check; every test that
+  expects a state refusal on an unlinked document therefore depends on the gap as much as the success
+  cases do:
+  - `tests/backend/p1-15-attachments-notifications.test.ts` lines 663 (success) and 675 (pending
+    refused with the state code);
+  - `tests/backend/p1-15-evidence-foundation.test.ts` lines 654 (quarantined), 693 (rejected) and 746
+    (a short-lived URL is issued);
+  - `tests/backend/p1-15-operation-routes.test.ts` lines 1106 (success) and 1127 (pending refused).
+
+  Unaffected: the permission-gate refusal and the three cross-tenant refusals, and
+  `tests/backend/p1-31-signature-download-refusal.test.ts`, whose document is linked.
+
+**So CC-63 (c) is recorded as an open defect against the written contract and is not changed here.**
+Two facts the fix will need are recorded with it: each linkable entity type in `LINKABLE_ENTITY_TYPES`
+names its own table, whose SELECT policies differ (tenant-only for business partners, damage-map
+templates and vehicles; company-narrowed for appointments, legal companies and reception visits;
+company- and branch-narrowed for quotations, invoices and work orders); and the vehicle module passes
+the token `veh.vehicle` where the link write accepts only `veh.vehicles` (RMC-04), so a lookup keyed on
+the token must account for both. `attachment-lifecycle.md` is not annotated by this slice, because
+its sentence is annotated when the path is corrected.
+
+_(2026-09-15, second correction batch: **CC-63 (c) is closed.** The coordinator ruled that a count of
+affected tests is not an Owner decision and, with no production caller, the seven are fixtures to
+repair. Everything above was true when written, with one exception corrected here.)_
+
+_**The fix**, commit `P1-31-SEC-002-010` on this branch. `requestDownload` now calls
+`requireReachableByLiveLink` after resolving the version and **before** the state check and any
+signing call. It reads the document's live links (`deleted_at` null) and, for each entity type they
+name, selects the linked row's key **under the caller's own transaction**, so that table's own SELECT
+policy decides visibility and no permission code is consulted. One live, visible link suffices.
+Otherwise it throws the same `ERR-RES-001` with no safe details that an invented identifier receives,
+so the refusal discloses nothing, and nothing is signed or audited because both happen later. No SQL
+helper and no migration: the queries run application-side. The link-create path has **no** check
+that a target exists or is visible (it validates the token and purpose and reads the document), so
+there was nothing to reuse. The relation is derived from the allow-listed token itself by
+`linkedEntityRelation` in `attachment-policy.ts`, fail-closed on a token outside the list, rather than
+from a second hand-written map. **RMC-04**: `veh.vehicles` is the only vehicle token a link can carry
+and it is the one resolved; `veh.vehicle` is not in the allow-list, no link can hold it, and which
+tokens link-create accepts is unchanged, so nothing had to be added for it._
+
+_**The proof**, `tests/backend/p1-31-signature-download-refusal.test.ts`, six new cases beside the
+original four: every allow-listed token names a table keyed by a single `uuid` column called `id`,
+read from the catalog; an accepted version of an unlinked document is refused exactly as an invented
+id (status, code, title and field set); a document whose only link was withdrawn is refused after the
+same request succeeded while it was live; a document with one withdrawn link and one live, visible
+link is issued a URL; a caller whose grant is scoped to another branch is refused (§ 72.4, dated
+note); and a pending version of a reachable document is still refused `409 ERR-DOC-001`. Every
+refusal asserts no signing request and no audit record as deltas. With the link check removed, the
+three refusal cases fail; with it replaced by an unconditional refusal, the control, the two
+issuance cases and the state case fail. Both mutations were local, uncommitted, and reverted._
+
+_**The seven fixtures**, each now creating its link through the supported link operation before it
+downloads, with no assertion changed: `p1-15-attachments-notifications.test.ts` (success, pending
+refused), `p1-15-evidence-foundation.test.ts` (quarantined, rejected, short-lived URL) and
+`p1-15-operation-routes.test.ts` (success, pending refused). None of them exercised a supported
+behaviour the contract forbids. No acceptance instrument outside the repository calls the download
+path._
+
+_**Corrected: the policy classification above.** Measured on the disposable database from
+`pg_policies`, `apt.appointments` and `rec.reception_visits` narrow on company **and** branch, not
+company alone. The accurate grouping is: tenant-only for business partners, damage-map templates and
+vehicles; company-narrowed for legal companies; company- and branch-narrowed for appointments,
+quotations, reception visits, invoices and work orders. No linked-entity SELECT policy consults a
+permission code._
+
+### 72.5 D-18 — the approved optional identity-evidence category
+
+**The engineering choices.**
+
+| choice                | value                                                                                                 | why                                                                                                                               |
+| --------------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| category code         | `delivery_receiver_identity`                                                                          | names the handover and the person, and is not a `reception_*` code, so no reception category is reused                            |
+| business-link purpose | `identity_document`                                                                                   | already admitted by `ck_document_categories_link_purpose` and already in `LINK_PURPOSES`, so no purpose is added                  |
+| posture               | `restricted`, `evidence-audit`, 10485760 bytes, JPEG, PNG and WebP, device capture timestamp required | identical to the existing identity-purpose row, so the category inherits the posture the system already enforces and invents none |
+| scope and identifier  | platform, `d1500000-0000-4000-8000-000000000008`                                                      | the next identifier in the platform evidence-category block                                                                       |
+| seed file             | `supabase/seeds/05_shared_reference.sql`                                                              | the file that owns the platform document categories, already declared in `supabase/config.toml` under `[db.seed] sql_paths`       |
+
+**No migration, and why none is owed.** The purpose is already admitted by the existing check, and rows
+do not live in migrations here: the reception evidence foundation's header records that the
+migration-replay gate refused a migration that inserted its categories, and
+`scripts/ci/migration-replay-checks.mjs` refuses a top-level insert into any module schema. So no
+migration file, registry or pin moves.
+
+**How the row reaches a database that already has data.** [`operator-runbook.md`](./operator-runbook.md)
+**§ 10, act 5**, carries the act in that runbook's own format — preconditions, command, verification
+query, rollback criterion and what done looks like — following § 3, which applies seed 04. The seed
+file is applied **as it stands** with `psql -f` and `ON_ERROR_STOP=1`, never by `supabase db reset`
+and never transcribed by hand. Every one of its three statements ends in `ON CONFLICT … DO NOTHING`,
+so **it inserts only the rows that are missing and updates none**. On the shared local acceptance
+database that is exactly the one D-18 row. **The act has NOT been performed there.**
+
+**Rehearsed on a disposable database only.** Applied twice to `rootlco_p131_backend_20260914`: the
+first application inserted one row and the second inserted none; platform categories went from seven
+to eight. The shared `postgres` database was read once and holds no row of this code; nothing was
+applied to it.
+
+_(2026-09-15 correction: the seed's comment said documents filed under the category are governed by
+"tenant-isolated, permission-scoped" policies. Reads are tenant-scoped and writes are
+permission-scoped; the comment now says exactly that.)_
+
+**Proof of the row.** `tests/db/shared-delivery-receiver-identity-category.test.ts`, six cases: the row
+exists once, active, platform-scoped, with the identity purpose and the posture above; it is a
+different row from the reception identity-purpose row; every tenant can read it; the runtime role
+cannot create, change or remove it; a session holding no grant is refused filing a document under it
+by `ins_documents_scoped`; and a document filed under it is invisible to another tenant.
+
+**The binding gap closed with it.** Receiver verification accepted an optional identity-evidence
+document version and held it to tenant visibility, the delivery's company and branch, the refused
+review states and provenance through the work order or the reception visit — and to nothing about the
+category (`requireUsableDocumentVersion` in
+`apps/api/src/modules/delivery/application/delivery-service.ts`). A signature document, or a
+reception category carrying the identity purpose, satisfied it, which is the substitution D-18
+forbids.
+
+It now requires the **approved** category, decided by `isApprovedIdentityEvidenceCategory` in
+`apps/api/src/modules/delivery/domain/delivery.ts`: the code `delivery_receiver_identity`, **platform**
+scope, **active** status and **not soft-deleted**, and a category that is not visible at all fails
+closed. `verifyEvidenceVersion` reports those four facts through a new RLS-narrowed `documentCategory`
+read that filters none of them, so the rule lives with the consumer that owns it. Any other answer is
+refused with the service's existing `ERR-VAL-001` on the evidence field.
+
+_(2026-09-15 correction: the rule first compared the code alone, so a tenant category reusing the code,
+a disabled category and a soft-deleted one would all have passed. The four facts are now required.)_
+
+- `tests/backend/p1-31-receiver-identity-evidence.test.ts`, **eight cases**: a correctly filed
+  document attached to the delivery's own visit is accepted; refused, each with nothing recorded and
+  each followed by an acceptance on the same delivery, are a document under the reception identity
+  category, a foreign tenant's identity document (`404 ERR-RES-001`), an identity document attached to
+  another visit, **a tenant category that reuses the approved code**, **the approved category while it
+  is disabled** (disabled through the admin pool and restored in a `finally`, then the same version
+  accepted), **a document attached only to another delivery's work order**, and **a document of
+  another company and branch in the same tenant**.
+- `tests/unit/p1-31-identity-evidence-category.test.ts`, **seven cases**, DB-free: the approved facts
+  pass; `null` fails closed — the branch no database can reach without bypassing
+  `shared.guard_document_category_scope`; another code, a tenant scope, a disabled status and a
+  soft-deleted category each fail, each differing from the approved facts in one field; and the code
+  is the one the seed ships as a platform identity-purpose row.
+- The delivery read-seam fixture, which had bound the signature document as identity evidence, now
+  binds an identity-category document.
+
+**CC-63 (b) — what identity-evidence binding enforces, recorded as an engineering choice and closed.**
+The rule is the one a signature is held to, which is what D-18's "existing scoped file-access rules"
+means on this path:
+
+- **accepted:** evidence linked to this delivery's **own** work order or its **own** reception visit;
+- **refused:** evidence linked only to **another** delivery's work order or visit — both proved above;
+- a **tenant-wide** document (no company and no branch) passes the company-and-branch step, because
+  that step refuses only a document that names a different company or branch;
+- binding requires no `shared.document.manage`, exactly as for a signature.
+
+_(2026-09-15 correction: this was first recorded as open and as a product decision. It is neither: it
+is the signature precedent applied under D-18, and it is closed as an engineering choice.)_
+
+_(2026-09-15, second correction batch: the binding check was re-read as commit
+`P1-31-SEC-002-006` left it, and no rule was changed. **Authority** to bind identity evidence is the
+caller's delivery-verification permission, which the operation declares, plus reachability of the
+evidence under the caller's own RLS — the version must be visible to the caller, and its document must
+be live-linked to this delivery's own work order or own reception visit, both read in the caller's
+transaction and never by a service role. No separate file-access permission is required to bind,
+matching the signature precedent. Each rule is enforced, fail-closed, with the service's existing
+codes: an invisible version `404 ERR-RES-001`; a category that is not the platform, active,
+non-deleted `delivery_receiver_identity` row, or no category at all, `ERR-VAL-001`; a `rejected` or
+`quarantined` version `409 ERR-DOC-001`; a document not live-linked to this delivery's own parents,
+including one linked only to another delivery's, `ERR-VAL-001`. **The bindable states match the
+signature precedent exactly and do not exceed it**: `pending` and `scanning` may be bound, because
+`EVIDENCE_REFUSED_STATES` in `attachment-policy.ts` records that refusing `pending` at capture would
+lose evidence on scan latency and says that gap must not be closed; the bytes still cannot be
+downloaded until the version is `accepted`. The receiver identity-evidence suite now holds **ten
+cases**, adding a document whose only link was withdrawn (`ERR-VAL-001`) and a rejected version
+(`409 ERR-DOC-001`), each followed by an acceptance on the same delivery. The null-category branch is
+proved in the unit suite, because no database path reaches it without bypassing
+`shared.guard_document_category_scope`; the disabled category and the foreign company and branch in
+the same tenant were already proved.)_
+
+### 72.6 Dispositions
+
+| id            | finding                                                                                                     | measured                                                                                                                                                               | disposition                                                                                                                                                                               | owner                                               | state                              |
+| ------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | ---------------------------------- |
+| **CC-63**     | **four authorized closures: CC-56 (c), CC-54 (b), the SEC-002 server negative and the D-18 category**       | §§ 72.2–72.5                                                                                                                                                           | implemented on this branch with the tests named above; the category row reaches the shared acceptance database only through `operator-runbook.md` § 10                                    | this slice                                          | done on this branch, pending merge |
+| **CC-63 (a)** | **the download authorization does not refuse a caller whose file-access grant is scoped to another branch** | one local probe on the disposable database: 200 with a signed URL; the operation is documented at `tenant` scope and evaluated by the tenant-wide `iam.has_permission` | **recorded limitation of the documented tenant-scope design**; no canonical, decision or P1-31 text requires or claims branch scoping; carried for the security certifier to weigh        | security certification review                       | recorded limitation                |
+| **CC-63 (b)** | **what identity-evidence binding enforces**                                                                 | own work order or own visit accepted; another delivery's parents refused; tenant-wide document passes the company-and-branch step; no file-access permission required  | **closed as an engineering choice**: the signature precedent under D-18's existing scoped file-access rules                                                                               | this slice                                          | closed                             |
+| **CC-63 (c)** | **the download path does not enforce the written live-link contract**                                       | `requestDownload` reads no link; no production caller; seven existing tests download unlinked documents, above the stop threshold of five                              | **recorded as an open defect, not changed**: the fix must refuse an unlinked document exactly as an invented one, before the state check, and move the seven P1-15 fixtures to link first | the backend lane owning shared-services attachments | **open defect**                    |
+
+_(2026-09-15, second correction batch: the **CC-63 (a)** and **CC-63 (c)** rows above were true when
+written and are superseded by these cells. Retained unchanged; nothing renumbered.)_
+
+- _**CC-63 (a)**, measured: the permission gate is unchanged — `tenant` scope, evaluated by the
+  tenant-wide `iam.has_permission`, so a branch-scoped grant passes it; reachability now depends on
+  the linked entity's own SELECT policy. One committed case proves a branch-scoped refusal: a caller
+  scoped to another branch is refused `404 ERR-RES-001` for a document whose only link is to a work
+  order that branch cannot see, and the same caller is issued a URL for a document linked to a
+  tenant-only business partner. No test proves branch scoping for any other entity type. Disposition:
+  recorded limitation of the tenant-scope design, with that fact (§ 72.4, dated note). Owner: security
+  certification review. State: **recorded limitation**._
+- _**CC-63 (c)**, measured: `requestDownload` now requires a live link to a visible entity before the
+  state check; the seven P1-15 fixtures link first; no production caller and no acceptance instrument
+  downloads. Disposition: **fixed** by commit `P1-31-SEC-002-010`, proved by six new cases in
+  `tests/backend/p1-31-signature-download-refusal.test.ts` (§ 72.4.1, dated note). Owner: this slice.
+  State: **closed**._
+
+### 72.7 Local measurements — LOCAL, pending hosted attestation
+
+Focused suites at the corrected tree, run against the disposable database
+`rootlco_p131_backend_20260914` and never against the shared database, each passing every case:
+
+| suite                                                         | cases | why it was run                                                   |
+| ------------------------------------------------------------- | ----- | ---------------------------------------------------------------- |
+| `tests/backend/p1-31-receiver-identity-evidence.test.ts`      | 8     | touched — the D-18 binding rule                                  |
+| `tests/backend/p1-31-delivery-read-seam.test.ts`              | 26    | touched — its receiver fixture                                   |
+| `tests/backend/p1-31-signature-download-refusal.test.ts`      | 4     | touched — the SEC-002 negative                                   |
+| `tests/backend/authorization.test.ts`                         | 20    | touched — the CC-56 (c) pin                                      |
+| `tests/db/shared-delivery-receiver-identity-category.test.ts` | 6     | touched — the D-18 row                                           |
+| `tests/backend/p1-15-attachments-notifications.test.ts`       | 32    | exercises download, and the changed evidence-verification return |
+| `tests/backend/p1-15-evidence-foundation.test.ts`             | 24    | exercises download and the storage provider                      |
+| `tests/backend/p1-15-operation-routes.test.ts`                | 101   | exercises the download route                                     |
+| `tests/backend/p1-31-privilege-escalation.test.ts`            | 276   | regression for the claim probe                                   |
+| `tests/backend/p1-22-delivery.test.ts`                        | 58    | regression for the delivery service                              |
+| `tests/backend/p1-20-quotation.test.ts`                       | 70    | regression — the other consumer of evidence verification         |
+| `tests/backend/p1-20-additional-work-link.test.ts`            | 12    | regression — evidence verification                               |
+| `tests/backend/p1-30-a2-published-reads.test.ts`              | 41    | regression — evidence verification                               |
+
+`tests/unit/p1-31-identity-evidence-category.test.ts` (7 cases) is DB-free and runs in the unit tier.
+Seed 05 was re-applied to the disposable database after its comment changed; it inserted nothing.
+
+The static gates and the P1-27 record cycle taken for this head are listed with their exit codes in
+the pull request, labelled local. **None of it is a hosted result.** The required hosted checks on the
+pull request's own head are the binding proof.
+
+_(2026-09-15, second correction batch: the table above was true for its tree. At commit
+`P1-31-SEC-002-012` and after, against the same disposable database and never the shared one, every
+case passing: `p1-31-signature-download-refusal.test.ts` **10** (was 4),
+`p1-31-receiver-identity-evidence.test.ts` **10** (was 8),
+`p1-15-attachments-notifications.test.ts` 32, `p1-15-evidence-foundation.test.ts` 24,
+`p1-15-operation-routes.test.ts` 101, `p1-15-dispatch-and-health.test.ts` 17,
+`p1-15-templates-transitions-export.test.ts` 55, `p1-31-privilege-escalation.test.ts` 276,
+`p1-22-delivery.test.ts` 58 and `p1-31-delivery-read-seam.test.ts` 26 — 609 cases in ten files in one
+serial run — and `tests/db/shared-delivery-receiver-identity-category.test.ts` 6 under
+`vitest.config.db.ts`. The three P1-15 files carrying the seven repaired fixtures kept their counts.
+The unit tier ran 3475 cases in 133 files. The P1-27 record cycle was not re-run for this batch.
+Seed 05 was not re-applied, because no case needed a row it lacked. LOCAL; not a hosted result.)_
+
+### 72.8 What this slice did NOT do
+
+- It applied nothing to the shared acceptance database, ran no `supabase db reset` and stopped no
+  stack.
+- It built no user interface; the optional capture screen is a separate frontend change.
+- It did not change the download path for CC-63 (a) or CC-63 (c), and it did not survey other
+  operations for an undeclared not-found.
+- It did not edit `security-and-qa-evidence.md`, `closure-record.md` or `attachment-lifecycle.md`; the
+  negative, the act and the defect are recorded here and in `operator-runbook.md` § 10, and the
+  closing records move them.
+
+_(2026-09-15, second correction batch: two of these bullets were true when written and are superseded.
+The download path **was** changed, for CC-63 (c), by commit `P1-31-SEC-002-010`; CC-63 (a)'s gate was
+not changed, only the reachability beneath it. `attachment-lifecycle.md` **was** annotated, with a
+dated note beside its enforcement claim, because that claim is now true. `security-and-qa-evidence.md`
+and `closure-record.md` remain unedited, and the survey of other operations for an undeclared
+not-found remains undone.)_
