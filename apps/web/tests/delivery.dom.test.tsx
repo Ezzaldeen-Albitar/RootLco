@@ -1324,8 +1324,8 @@ describe('optional identity evidence when confirming a receiver', () => {
    * sets none, so there they skip and this substitution is not covered by them.
    */
   class BrowserFormData extends FormData {
-    constructor(form?: HTMLFormElement, submitter?: HTMLElement | null) {
-      super(form, submitter);
+    constructor(form?: HTMLFormElement) {
+      super(form);
       if (form === undefined) return;
       for (const input of Array.from(
         form.querySelectorAll<HTMLInputElement>('input[type="file"]')
