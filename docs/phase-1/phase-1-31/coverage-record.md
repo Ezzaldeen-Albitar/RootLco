@@ -194,6 +194,14 @@ no longer holds: it now measures 25/25 lines. A describe block in
 `apps/web/tests/delivery.dom.test.tsx` imports the real Server Action past its mock, and only the
 adapters it calls are mocked._
 
+_2026-09-15 further note (QA-001, LOCAL, pending the hosted web-quality run): re-measured with the
+same command after the receiver panel was changed to keep its verification form mounted while a
+re-read lands, with two DOM cases added for that path. 186 instrumented files; lines 3469/3890
+(89.17%), statements 3819/4406 (86.67%), functions 1058/1159 (91.28%), branches 3241/4005 (80.92%).
+`features/delivery` 642/655 lines (98.02%, 25 files), `features/warranty` 405/444 (91.22%),
+`features/reports` 367/383 (95.82%). No floor moved. The figures in the note above describe the tree
+before that change._
+
 ### H-3 — the route tier the P1-31 pages sit in is under its own floor, and exempt from it
 
 The line coverage of the ten P1-31 route pages (two delivery, four warranty, three reports, one
@@ -269,6 +277,10 @@ handover. All four passed in the local web tier of 144 files and 4101 tests._
 _2026-09-15 later note (QA-001, LOCAL, pending the hosted web-quality run): after this branch merged
 `develop` `c7298c09` and added the FE-003 phase-2 cases, the same four passed again in a local web
 tier of 144 files and 4122 tests._
+
+_2026-09-15 further note (QA-001, LOCAL, pending the hosted web-quality run): after two FE-003
+receiver-panel cases were added, the same four passed again in a local web tier of 144 files and
+4124 tests._
 
 ### H-5 — what the suites deliberately do not assert
 
