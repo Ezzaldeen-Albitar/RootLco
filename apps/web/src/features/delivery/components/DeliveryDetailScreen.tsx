@@ -89,6 +89,7 @@ export function DeliveryDetailScreen({
   canReadFinance,
   canComplete,
   canManage = false,
+  canAttachEvidence = false,
   canIssueWarranty = false,
   canReadWarrantyPolicies = false,
   canReadWorkOrder = false,
@@ -102,6 +103,12 @@ export function DeliveryDetailScreen({
   readonly canComplete: boolean;
   /** Whether the caller holds the write code the preparation acts declare. */
   readonly canManage?: boolean;
+  /**
+   * Whether the caller holds both codes attaching identity evidence needs
+   * (`RECEIVER_EVIDENCE_PERMISSIONS`). Without them the receiver may still be
+   * verified, and the optional document control is withheld.
+   */
+  readonly canAttachEvidence?: boolean;
   /**
    * Whether the caller holds `wty.warranty.issue`.
    *
@@ -237,7 +244,9 @@ export function DeliveryDetailScreen({
         locale={locale}
         messages={messages}
         deliveryId={delivery.id}
+        receptionVisitId={delivery.receptionVisitId}
         canManage={canManage}
+        canAttachEvidence={canAttachEvidence}
         revision={revision}
         onDone={refresh}
       />

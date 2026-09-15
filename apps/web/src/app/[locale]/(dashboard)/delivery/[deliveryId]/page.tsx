@@ -14,7 +14,10 @@ import { readDelivery } from '@/features/delivery/api';
 import { listOdometerReadings } from '@/features/vehicles/history-api';
 import type { OdometerReadingEntry } from '@/features/vehicles/history-contract';
 import { DeliveryDetailScreen } from '@/features/delivery/components/DeliveryDetailScreen';
-import { DELIVERY_PERMISSIONS } from '@/features/delivery/delivery-contract';
+import {
+  DELIVERY_PERMISSIONS,
+  RECEIVER_EVIDENCE_PERMISSIONS,
+} from '@/features/delivery/delivery-contract';
 import { WARRANTY_PERMISSIONS } from '@/features/warranty/warranty-contract';
 import { WORK_ORDER_PERMISSIONS } from '@/features/work-orders/work-orders-contract';
 import { isLocale } from '@/i18n/config';
@@ -214,6 +217,10 @@ export default async function DeliveryDetailPage({
       canReadFinance={holds(session.permissions, DELIVERY_PERMISSIONS.financeView)}
       canComplete={holds(session.permissions, DELIVERY_PERMISSIONS.complete)}
       canManage={holds(session.permissions, DELIVERY_PERMISSIONS.manage)}
+      canAttachEvidence={
+        holds(session.permissions, RECEIVER_EVIDENCE_PERMISSIONS.categoryRead) &&
+        holds(session.permissions, RECEIVER_EVIDENCE_PERMISSIONS.documentManage)
+      }
       canIssueWarranty={holds(session.permissions, WARRANTY_PERMISSIONS.issue)}
       canReadWarrantyPolicies={holds(session.permissions, WARRANTY_PERMISSIONS.read)}
       canReadWorkOrder={holds(session.permissions, WORK_ORDER_PERMISSIONS.read)}

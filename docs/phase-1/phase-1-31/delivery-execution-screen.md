@@ -112,6 +112,18 @@ The phase matrix must distinguish the existing-record actions from withheld empl
 
 ## 5. The receiver's identity evidence — a named prerequisite, not built
 
+_2026-09-15 note (FE-003, Owner decision D-18): this section describes the state before the
+approved category existed and is kept as written. On branch
+`feature/p1-31-frontend-closure-completion` the verification form now offers ONE optional identity
+document under the `delivery_receiver_identity` category that backend PR #399 seeds. It follows
+the signature capture's order — category read by code, capture against this delivery's reception
+visit, link under the category's own business-link purpose, then verification with the version
+bound (`apps/web/src/features/delivery/receiver-capture.ts`). Verification without a document is
+unchanged; a chosen document that fails to upload or link, or that the server refuses, is stated
+on the panel and the receiver stays unverified; no other category is substituted. No separate UI
+prototype exists for this capture; it was built within this section, D-18 and the existing delivery
+panels' patterns. Local branch state, pending #399's merge and the hosted run._
+
 `sal.delivery-receiver-verify` accepts an optional `identityEvidenceDocumentVersionId`. This slice
 sends none, and the verification form offers no capture for it.
 
