@@ -2037,10 +2037,18 @@ describe('optional identity evidence when confirming a receiver', () => {
     expect(document.documentElement.dir).toBe('rtl');
     expect(within(region).getByText(AR['delivery.receiver.evidenceHint'] as string)).toBeVisible();
     const limits = limitsOf(fileControl(region, AR));
+    /*
+     * Exactly as rendered for `ar-JO-u-nu-latn`: Intl.ListFormat joins the type
+     * names with the Arabic conjunction attached to the next name, and
+     * Intl.NumberFormat states the ceiling in Latin digits with the Arabic
+     * megabyte abbreviation.
+     */
     await waitFor(() =>
-      expect(limits).toHaveTextContent(AR['delivery.receiver.evidenceMaxSize'] as string)
+      expect(limits.textContent).toBe(
+        `${AR['delivery.receiver.evidenceTypes'] as string} JPEG وPNG وWEBP. ` +
+          `${AR['delivery.receiver.evidenceMaxSize'] as string} 10 م.ب.`
+      )
     );
-    expect(limits).toHaveTextContent(AR['delivery.receiver.evidenceTypes'] as string);
     expect(limits.textContent).not.toContain(EN['delivery.receiver.evidenceMaxSize'] as string);
     await submit();
     expect(
