@@ -77,6 +77,11 @@ Two further limits on the one run that did happen:
 | 2   | apply the three migrations                                                      | the delivering-employee command refuses with exit code 5 if `fk_delivery_records_delivering_employee` does not exist   |
 | 3   | `backfill-delivering-employee-identity.mjs`, dry run then real run              | it mints the `org.employees` rows; nothing downstream can reference an employee that does not exist                    |
 | 4   | `backfill-tenant-administrator-bundle.mjs`, dry run then real run — **ONE run** | it maps catalogue rows onto roles, so both the catalogue (act 1) and any code the phase minted must already be present |
+| 5   | apply `supabase/seeds/05_shared_reference.sql` (§ 10)                           | independent of acts 1 to 4; receiver verification refuses identity evidence until the D-18 category row is present     |
+
+_(2026-09-15: row 5 and § 10 were added by `remediation/p1-31-backend-closure-hardening`. Rows 1
+to 4, the header's count of acts and every statement about "four acts" in § 2.1 are unchanged and
+were true when written; § 10 is outside that count.)_
 
 Acts 1 and 2 are independent of each other and may be done in either order. **Act 1 must precede
 act 4, and act 2 must precede act 3.** Every act is idempotent; re-running a completed act is safe
@@ -537,3 +542,101 @@ The [monitoring runbook](./monitoring-runbook.md) documents the P1-31 local aler
 its environment and file-access prerequisites, bounded output, reviewer routing, failure handling,
 rollback and reproducible exception-capture rehearsal. Its queue is local; external delivery and
 the separate D-10 event-consumption decision are not established by running it.
+
+---
+
+## 10. Act 5 — the D-18 identity-evidence category seed
+
+Added by `remediation/p1-31-backend-closure-hardening` (register § 72, **CC-63**). Owner decision
+**D-18** approves an optional identity-evidence document category for the receiver at a delivery
+handover; the row is `delivery_receiver_identity` in `supabase/seeds/05_shared_reference.sql`. A
+database that was seeded before that branch does not hold it, and receiver verification refuses
+identity evidence filed under any other category, so this act must reach every database that should
+accept that evidence.
+
+**Not performed on any shared environment.** It was rehearsed twice on one disposable local
+database only (§ 72.5 of the register); the shared local acceptance database has not received it.
+§ 1's scope statement applies to it exactly as to the acts above.
+
+### Preconditions
+
+- **Independent of acts 1 to 4**, which it neither needs nor affects. It may be done in any order
+  relative to them.
+- **No migration is required.** The `identity_document` purpose is already admitted by
+  `ck_document_categories_link_purpose`
+  (`supabase/migrations/20260815090000_shared_reception_evidence_foundation.sql`, line 35), and rows
+  are not shipped by migrations in this repository.
+- `supabase/seeds/05_shared_reference.sql` is registered in `supabase/config.toml` under
+  `[db.seed] sql_paths` (line 75). It holds three `INSERT` statements and **every one of them ends in
+  `ON CONFLICT … DO NOTHING`**: the five retention classes on `(class_code)`, the seven reception
+  evidence categories and the one D-18 category on any conflict. **So applying it inserts only the
+  rows that are missing and updates none.**
+- **`supabase db reset` MUST NOT be used** on a database that holds anything you intend to keep, for
+  the reason § 3 gives.
+
+### Command
+
+The seed file is applied **as it stands**, exactly as § 3 applies seed 04, with no hand-written
+insert. Against a containerised local database:
+
+```bash
+docker cp supabase/seeds/05_shared_reference.sql <container>:/tmp/05_shared_reference.sql
+docker exec <container> psql -U "$DB_USER" -d "$DB_NAME" \
+  -v ON_ERROR_STOP=1 --echo-errors -f /tmp/05_shared_reference.sql
+```
+
+From Git Bash on Windows, `export MSYS_NO_PATHCONV=1` first: without it the shell rewrites the
+container path and `psql` reports the file missing. Against a database reached over the network, the
+same file through `psql -f` with `ON_ERROR_STOP=1`.
+
+**Derive the target on the tree you hold.** The file is the authority:
+
+```bash
+grep -c "'platform',NULL," supabase/seeds/05_shared_reference.sql
+git rev-parse --short HEAD
+```
+
+On the branch that added this act it printed **8** platform category rows. If your tree prints a
+different number, your tree is right and this sentence is stale.
+
+### Verification query — proves the step took effect
+
+```sql
+-- 0. take both digests BEFORE the command, and again after it.
+SELECT count(*) AS platform_categories,
+       md5(string_agg(id::text || ':' || category_code || ':' || status || ':' || record_version,
+                      ',' ORDER BY id)) AS digest
+  FROM shared.document_categories
+ WHERE scope = 'platform';
+
+SELECT count(*) AS retention_classes,
+       md5(string_agg(class_code || ':' || coalesce(min_retention_days::text, '-') || ':'
+                      || allows_deletion, ',' ORDER BY class_code)) AS digest
+  FROM shared.retention_classes;
+
+-- 1. the row this act exists for.
+SELECT id, category_code, business_link_purpose, default_classification,
+       default_retention_class, status
+  FROM shared.document_categories
+ WHERE scope = 'platform' AND category_code = 'delivery_receiver_identity' AND deleted_at IS NULL;
+-- expect: one row, id d1500000-0000-4000-8000-000000000008, purpose identity_document,
+--         restricted, evidence-audit, active.
+```
+
+**Check the identifier, not only the code.** `ON CONFLICT DO NOTHING` also swallows a conflict with
+a platform row that already carries the code under a different identifier; the command then reports
+success and inserts nothing. The `id` in query 1 is what tells the two apart.
+
+### Rollback criterion
+
+**Roll back if the run reported an error, or if any pre-existing row changed**: the retention-class
+digest must be identical, and the platform-category digest taken after must equal the one taken
+before once the rows the command inserted are excluded. The seed is additive, so the only honest
+rollback is to delete the rows it inserted, and the D-18 row **only while no `shared.documents` row
+references it**. Once a document is filed under it, deleting it is no longer a rollback of this act.
+
+### Done looks like
+
+Query 1 returns the one row with the identifier above; the platform-category count rose by exactly
+the number of rows that were missing (one, on a database seeded before this branch; zero on a
+database that already held it); and every pre-existing row is unchanged.
