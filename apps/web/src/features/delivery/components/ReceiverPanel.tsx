@@ -72,7 +72,12 @@ import {
  * evidence. With one, a failed capture, a failed link or a refused verification
  * is stated on the panel, the receiver stays unverified, and the document stays
  * chosen: a further Confirm sends it again, and verifying without it takes the
- * operator's explicit Remove. No other category is ever used in its place. The
+ * operator's explicit Remove. A successful write on another panel re-reads this
+ * one without unmounting the form, so that write does not drop the document
+ * either. One path is the browser's own: reopening the native picker and
+ * cancelling it empties the control in Chromium, which the control then shows
+ * as no file chosen and the Remove row leaves with it; nothing on the panel can
+ * keep a file the browser itself let go. No other category is ever used in its place. The
  * file control's accepted types and the stated size ceiling are read from the
  * identity category's published row; nothing on the panel filters a file, so a
  * file the row does not admit is refused by the server's upload authorization.
@@ -105,25 +110,50 @@ export function ReceiverPanel({
 }) {
   const [held, setHeld] = useState<{
     readonly key: string;
+    readonly deliveryId: string;
     readonly read: ReadState<DeliveryReceiverEnvelope>;
+    /** The last answer that succeeded for `deliveryId`, kept across a failed re-read. */
+    readonly lastOk: DeliveryReceiverEnvelope | null;
   } | null>(null);
   const key = `${deliveryId}#${String(revision)}`;
 
   useEffect(() => {
     let cancelled = false;
     void readReceiver(deliveryId).then((read) => {
-      if (!cancelled) setHeld({ key, read });
+      if (cancelled) return;
+      setHeld((previous) => ({
+        key,
+        deliveryId,
+        read,
+        lastOk:
+          read.status === 'ok'
+            ? read.data
+            : previous !== null && previous.deliveryId === deliveryId
+              ? previous.lastOk
+              : null,
+      }));
     });
     return () => {
       cancelled = true;
     };
   }, [deliveryId, key]);
 
-  // What was read for ANOTHER delivery, or before the last write, is absent
-  // rather than stale-but-shown. Clearing state as the effect starts would do
-  // the same job with a window in which one delivery's receiver sat under
-  // another delivery's heading.
-  const state = held !== null && held.key === key ? held.read : null;
+  // What was read for ANOTHER delivery is absent rather than stale-but-shown.
+  // Clearing state as the effect starts would do the same job with a window in
+  // which one delivery's receiver sat under another delivery's heading.
+  //
+  // A re-read of the SAME delivery after another panel's write is different,
+  // and deliberately so. Swapping the panel for its loading state would unmount
+  // the verification form, and with it the document the operator chose, the
+  // partner and the refusal that said the document is still chosen: the next
+  // Confirm would then verify WITHOUT the document and without any Remove. So
+  // the last successful answer for this delivery stays drawn while the re-read
+  // lands, and a failed re-read is stated above it rather than in its place.
+  // Nothing another panel writes changes who received the vehicle, and a
+  // verification the form sends is decided by the server, not by this read.
+  const current = held !== null && held.key === key ? held.read : null;
+  const known = held !== null && held.deliveryId === deliveryId ? held.lastOk : null;
+  const failure = current !== null && current.status !== 'ok' ? current : null;
 
   return (
     <Panel
@@ -131,15 +161,18 @@ export function ReceiverPanel({
       titleKey="delivery.receiver.heading"
       messages={messages}
     >
-      {state === null ? (
-        <PanelLoading messages={messages} />
-      ) : state.status !== 'ok' ? (
+      {failure === null ? null : (
         <PanelFailure
           messages={messages}
-          status={state.status}
-          correlationId={state.correlationId}
+          status={failure.status}
+          correlationId={failure.correlationId}
         />
-      ) : state.data.receiver === null ? (
+      )}
+      {known === null ? (
+        failure === null ? (
+          <PanelLoading messages={messages} />
+        ) : null
+      ) : known.receiver === null ? (
         <div className="flex flex-col gap-4">
           <EmptyState
             messages={messages}
@@ -161,19 +194,19 @@ export function ReceiverPanel({
         <div className="flex flex-col gap-3">
           <Reference
             label={translate(messages, 'delivery.receiver.partner')}
-            value={state.data.receiver.receiverPartnerId}
+            value={known.receiver.receiverPartnerId}
           />
           <Reference
             label={translate(messages, 'delivery.receiver.verifiedBy')}
-            value={state.data.receiver.verifiedBy}
+            value={known.receiver.verifiedBy}
           />
           <Fact label={translate(messages, 'delivery.receiver.verifiedAt')}>
-            {formatDateTime(state.data.receiver.verifiedAt, locale)}
+            {formatDateTime(known.receiver.verifiedAt, locale)}
           </Fact>
           <p className="text-caption text-text-secondary">
             {translate(
               messages,
-              state.data.receiver.identityEvidenceDocumentVersionId === null
+              known.receiver.identityEvidenceDocumentVersionId === null
                 ? 'delivery.receiver.evidenceAbsent'
                 : 'delivery.receiver.evidenceOnFile'
             )}

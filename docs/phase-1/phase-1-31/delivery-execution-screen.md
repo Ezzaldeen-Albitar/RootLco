@@ -69,6 +69,9 @@ Two consequences are implemented rather than merely stated:
 - The screen counts successful writes and folds that count into the key of everything each panel
   holds. A write therefore makes every stale answer **absent** rather than merely old: the panels
   show their loading state while fresh reads land, instead of showing a decision that has changed.
+  The receiver panel is the one exception: while its re-read lands it keeps the last answer it read
+  for the same delivery, and states a failed re-read above that answer, because swapping in the
+  loading state would unmount the verification form and drop a document the operator had chosen.
 
 The one retry is deliberate and bounded. A record-version conflict is re-attempted **once**, against
 a version that was read again rather than derived by adding one — the record may have moved more

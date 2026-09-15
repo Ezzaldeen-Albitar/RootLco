@@ -54,7 +54,10 @@ import { useEligibility } from './use-eligibility';
  * `revision` counts successful writes and is passed to every panel. Each panel
  * folds it into the key of what it holds, so a write makes every stale answer
  * ABSENT rather than merely old — the panels show their loading state while the
- * fresh reads land, instead of showing a decision that has since changed. Every
+ * fresh reads land, instead of showing a decision that has since changed. The
+ * receiver panel is the one exception: it keeps its last answer for the same
+ * delivery drawn while its re-read lands, because unmounting its verification
+ * form would drop a document the operator chose (`ReceiverPanel` says why). Every
  * preparation step moves the delivery version, so a screen that did not re-read
  * would send a version guaranteed to be refused.
  *

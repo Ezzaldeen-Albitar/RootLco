@@ -1752,6 +1752,78 @@ describe('optional identity evidence when confirming a receiver', () => {
     expect(captureDocument).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    ['lands', () => okRead({ deliveryId: DELIVERY_ID, receiver: null })],
+    ['fails', () => refusedRead('unavailable', 'corr-receiver-reread')],
+  ])(
+    "keeps a refused document chosen through another panel's write whose re-read %s, and the next Confirm carries it",
+    async (outcome, reread) => {
+      captureDocument
+        .mockResolvedValueOnce(registered(VERSION_ID))
+        .mockResolvedValueOnce(registered(SECOND_VERSION_ID));
+      verifyReceiver.mockResolvedValueOnce(refusedWrite('conflict', 'ERR-DOC-001'));
+      const { region, user, submit } = await prepare({ file: imageFile() });
+      await submit();
+      expect(
+        await within(region).findByText(EN['delivery.receiver.evidenceRefusedReview'] as string)
+      ).toBeVisible();
+
+      // The re-read another panel's write causes is held open, so the panel is
+      // measured WHILE it is on its way, not only after it lands.
+      let land: (value: unknown) => void = () => undefined;
+      readReceiver.mockReturnValueOnce(new Promise((resolve) => (land = resolve)));
+      const checklist = screen.getByRole('region', {
+        name: EN['delivery.checklist.heading'] as string,
+      });
+      await within(checklist).findByText('Fuel level agreed');
+      const row = checklist.querySelector('[data-item-code="FUEL"]');
+      expect(row).not.toBeNull();
+      await user.click(
+        within(row as HTMLElement).getByRole('button', {
+          name: EN['delivery.checklist.record'] as string,
+        })
+      );
+      await waitFor(() => expect(recordChecklistResult).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(readReceiver).toHaveBeenCalledTimes(2));
+
+      const stillChosen = () => {
+        expect(
+          within(region).getByText(EN['delivery.receiver.evidenceChosen'] as string)
+        ).toBeVisible();
+        expect(
+          within(region).getByText(EN['delivery.receiver.evidenceStillChosen'] as string)
+        ).toBeVisible();
+        expect(fileControl(region).files?.[0]?.name).toBe('receiver-id.png');
+        // The partner is kept too: the Confirm below reaches the server, which a
+        // form that lost its partner refuses before any request.
+      };
+      stillChosen();
+
+      land(reread());
+      if (outcome === 'fails') {
+        expect(await within(region).findByText('corr-receiver-reread')).toBeVisible();
+      } else {
+        await waitFor(() =>
+          expect(
+            within(region).getByText(EN['delivery.receiver.noneTitle'] as string)
+          ).toBeVisible()
+        );
+      }
+      stillChosen();
+
+      await submit();
+      await waitFor(() => expect(verifyReceiver).toHaveBeenCalledTimes(2));
+      expect(verifyReceiver.mock.calls[1]).toStrictEqual([
+        DELIVERY_ID,
+        { receiverPartnerId: PARTNER_ID, identityEvidenceDocumentVersionId: SECOND_VERSION_ID },
+      ]);
+      for (const [, body] of verifyReceiver.mock.calls) {
+        expect(body).toHaveProperty('identityEvidenceDocumentVersionId');
+      }
+      expect(captureDocument).toHaveBeenCalledTimes(2);
+    }
+  );
+
   it('verifies without evidence once a chosen document is removed', async () => {
     const { region, user, submit } = await prepare({ file: imageFile() });
     expect(
