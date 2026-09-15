@@ -210,13 +210,15 @@ export type P131ReceiverCase = keyof P131ReceiverFixturePair;
  * ## What each must hold
  *
  * `customerId` is recorded on the reception visit as the `authorized_receiver`;
- * `receiverFamilyName` is that customer's family name, unique enough to be found on
- * the screen's own selector; and the handover answers NO receiver when published,
- * which the harness guards through the release checks' `receiver_not_verified`
- * reason before it publishes the handover.
+ * `receiverDisplayName` is that customer's name exactly as the server's customer
+ * search answers it. The screen's selector matches the START of a customer's name,
+ * so a family name alone finds nobody: the harness searches with this name itself
+ * and publishes the handover only when that search finds exactly this one customer.
+ * The handover answers NO receiver when published, which the harness guards through
+ * the release checks' `receiver_not_verified` reason before it publishes it.
  */
 export interface P131ReceiverFixture extends P131FixtureDelivery {
-  readonly receiverFamilyName: string;
+  readonly receiverDisplayName: string;
 }
 
 /**
@@ -450,7 +452,10 @@ export function receiverFixture(
   if (other !== undefined && other.deliveryId === handover.deliveryId) return null;
   if (typeof handover.deliveryId !== 'string' || handover.deliveryId.length === 0) return null;
   if (typeof handover.customerId !== 'string' || handover.customerId.length === 0) return null;
-  if (typeof handover.receiverFamilyName !== 'string' || handover.receiverFamilyName.length === 0) {
+  if (
+    typeof handover.receiverDisplayName !== 'string' ||
+    handover.receiverDisplayName.length === 0
+  ) {
     return null;
   }
   if (typeof fixtures.signaturePngBase64 !== 'string' || fixtures.signaturePngBase64.length === 0) {

@@ -175,16 +175,23 @@ function receiverPanel(page: Page) {
   return page.locator('section[aria-labelledby="delivery-receiver-heading"]');
 }
 
-/** Chooses the receiver on the screen's own selector, by the name the harness gave them. */
-async function chooseReceiver(page: Page, locale: 'en' | 'ar', familyName: string): Promise<void> {
+/**
+ * Chooses the receiver on the screen's own selector, by the name the server's customer
+ * search answers for them.
+ *
+ * The selector matches the START of a customer's name, the way an operator types it, so
+ * the case types the whole name and not a family name. The harness searched with this
+ * same name and published the handover only when exactly this customer came back.
+ */
+async function chooseReceiver(page: Page, locale: 'en' | 'ar', displayName: string): Promise<void> {
   const panel = receiverPanel(page);
   await panel
     .getByRole('textbox', { name: say(locale, 'crm.customers.column.name'), exact: true })
-    .fill(familyName);
+    .fill(displayName);
   await panel
     .getByRole('button', { name: say(locale, 'customerSelector.search'), exact: true })
     .click();
-  await panel.getByRole('button', { name: new RegExp(escapeForRegExp(familyName)) }).click();
+  await panel.getByRole('button', { name: new RegExp(escapeForRegExp(displayName)) }).click();
 }
 
 test.describe('P1-31 delivery screens, over the acceptance journey records', () => {
@@ -487,7 +494,7 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
     const panel = receiverPanel(page);
     await expect(panel.getByText(say(locale, 'delivery.receiver.noneTitle'))).toBeVisible();
 
-    await chooseReceiver(page, locale, handover.receiverFamilyName);
+    await chooseReceiver(page, locale, handover.receiverDisplayName);
     const file = panel.getByLabel(say(locale, 'delivery.receiver.evidenceLabel'), { exact: true });
     await file.setInputFiles({
       name: 'not-an-identity-image.txt',
@@ -563,7 +570,7 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
     await expect(panel.getByText(say(locale, 'delivery.receiver.noneTitle'))).toBeVisible();
     await expect(panel.getByText(say(locale, 'delivery.receiver.evidenceOnFile'))).toHaveCount(0);
 
-    await chooseReceiver(page, locale, handover.receiverFamilyName);
+    await chooseReceiver(page, locale, handover.receiverDisplayName);
     await panel
       .getByLabel(say(locale, 'delivery.receiver.evidenceLabel'), { exact: true })
       .setInputFiles({
