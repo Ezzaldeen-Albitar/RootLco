@@ -184,6 +184,16 @@ measured: `features/delivery` 596/632 lines (94.30%, 25 files; 592/632, 93.67%, 
 measured 0/25 lines because every suite mocks it, and that is recorded in the baseline's
 `p131CoverageNote`._
 
+_2026-09-15 later note (QA-001, LOCAL, pending the hosted web-quality run): re-measured with the same
+command after this branch merged `develop` `c7298c09`, with the phase-2 FE-003 changes in place.
+186 instrumented files; lines 3466/3887 (89.16%), statements 3816/4402 (86.68%), functions
+1056/1158 (91.19%), branches 3226/3989 (80.87%). `features/delivery` 639/652 lines (98.01%, 25
+files), `features/warranty` 405/444 (91.22%), `features/reports` 367/383 (95.82%). The coverage gate
+passed against the unchanged baseline, and no floor moved. The `signature-capture.ts` figure above
+no longer holds: it now measures 25/25 lines. A describe block in
+`apps/web/tests/delivery.dom.test.tsx` imports the real Server Action past its mock, and only the
+adapters it calls are mocked._
+
 ### H-3 — the route tier the P1-31 pages sit in is under its own floor, and exempt from it
 
 The line coverage of the ten P1-31 route pages (two delivery, four warranty, three reports, one
@@ -255,6 +265,10 @@ record ROUTE PAGE: the handover panel's own content inside the record for a call
 delivery read, the write authority carried into the mounted panel, the panel absent and unread
 without the delivery read, and the route's permission-denied branch reading neither the record nor a
 handover. All four passed in the local web tier of 144 files and 4101 tests._
+
+_2026-09-15 later note (QA-001, LOCAL, pending the hosted web-quality run): after this branch merged
+`develop` `c7298c09` and added the FE-003 phase-2 cases, the same four passed again in a local web
+tier of 144 files and 4122 tests._
 
 ### H-5 — what the suites deliberately do not assert
 
