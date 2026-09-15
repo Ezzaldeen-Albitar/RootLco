@@ -170,17 +170,33 @@ export interface P131BrowserFixtures {
   readonly signature: Readonly<Record<string, P131FixtureDelivery>>;
   readonly release: Readonly<Record<string, P131FixtureDelivery>>;
   /**
-   * FE-003 — one handover per fixture key whose receiver is NOT yet verified.
+   * FE-003 — TWO handovers per fixture key whose receiver is NOT yet verified: one
+   * for the refusal case and one for the success case.
    *
    * Optional, because a handoff written before the harness published it carries
    * none; `receiverFixture` below reads it separately so its absence never hides
    * the three sets above. See `P131ReceiverFixture` for what each must hold.
    */
-  readonly receiver?: Readonly<Record<string, P131ReceiverFixture>> | null;
+  readonly receiver?: Readonly<Record<string, P131ReceiverFixturePair>> | null;
 }
 
 /**
- * The handover the two receiver cases act on, published by the harness BEFORE its
+ * The two receiver cases' handovers under one fixture key, one each.
+ *
+ * Two and not one, so neither case depends on declaration order or on the other
+ * having run: the refusal case leaves its handover unverified and the success case
+ * verifies its own, and either can run alone against the state it was built in.
+ */
+export interface P131ReceiverFixturePair {
+  readonly refusal: P131ReceiverFixture;
+  readonly success: P131ReceiverFixture;
+}
+
+/** Which receiver case a handover belongs to. */
+export type P131ReceiverCase = keyof P131ReceiverFixturePair;
+
+/**
+ * A handover a receiver case acts on, published by the harness BEFORE its
  * final observation point.
  *
  * ## Why the harness makes it and the spec does not
@@ -195,9 +211,9 @@ export interface P131BrowserFixtures {
  *
  * `customerId` is recorded on the reception visit as the `authorized_receiver`;
  * `receiverFamilyName` is that customer's family name, unique enough to be found on
- * the screen's own selector; and the handover answers NO receiver when published.
- * One per fixture key serves both cases: the refusal case leaves it unverified, and
- * the success case, which runs after it, verifies it.
+ * the screen's own selector; and the handover answers NO receiver when published,
+ * which the harness guards through the release checks' `receiver_not_verified`
+ * reason before it publishes the handover.
  */
 export interface P131ReceiverFixture extends P131FixtureDelivery {
   readonly receiverFamilyName: string;
@@ -410,20 +426,28 @@ export function browserFixtures(
 }
 
 /**
- * The unverified-receiver handover under one fixture KEY, with the image bytes the
- * harness puts on file, or `null` when this handoff publishes none.
+ * The unverified-receiver handover ONE receiver case acts on under one fixture KEY,
+ * with the image bytes the harness puts on file, or `null` when this handoff
+ * publishes none.
  *
  * Separate from `browserFixtures` so a handoff without the `receiver` entry still
- * answers the three write sets.
+ * answers the three write sets. A pair whose two cases name the same delivery is
+ * refused as no fixture at all: the cases would then depend on each other again,
+ * which is what publishing two exists to prevent.
  */
 export function receiverFixture(
   handoff: P131Handoff | null,
-  key: string
+  key: string,
+  which: P131ReceiverCase
 ): { readonly handover: P131ReceiverFixture; readonly pngBase64: string } | null {
   const fixtures = handoff?.browserFixtures;
   if (fixtures === undefined || fixtures === null) return null;
-  const handover = fixtures.receiver?.[key];
+  const pair: Partial<P131ReceiverFixturePair> | null | undefined = fixtures.receiver?.[key];
+  if (pair === undefined || pair === null) return null;
+  const handover = pair[which];
   if (handover === undefined) return null;
+  const other = pair[which === 'refusal' ? 'success' : 'refusal'];
+  if (other !== undefined && other.deliveryId === handover.deliveryId) return null;
   if (typeof handover.deliveryId !== 'string' || handover.deliveryId.length === 0) return null;
   if (typeof handover.customerId !== 'string' || handover.customerId.length === 0) return null;
   if (typeof handover.receiverFamilyName !== 'string' || handover.receiverFamilyName.length === 0) {

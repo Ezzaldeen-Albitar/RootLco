@@ -11,6 +11,7 @@ import {
   say,
   signedInAsJourneyAdministrator,
   type P131Handoff,
+  type P131ReceiverCase,
   type P131ReceiverFixture,
 } from './p1-31-handoff';
 
@@ -130,8 +131,10 @@ const RECEIVER_CASE_CODES = [
  *
  * ## Where the handover comes from
  *
- * The harness publishes one per fixture key in `browserFixtures.receiver`, made
- * before its final observation point (`P131ReceiverFixture`). The spec writes
+ * The harness publishes TWO per fixture key in `browserFixtures.receiver` — `refusal`
+ * and `success`, one per case, so neither case depends on declaration order or on the
+ * other having run — made before its final observation point (`P131ReceiverFixture`).
+ * The spec writes
  * nothing: a handover opened here would land in the journey branch after the
  * report and overview figures were read, and the cases pinned to those figures
  * would fail beside these.
@@ -150,16 +153,19 @@ const RECEIVER_CASE_CODES = [
  * skip; the FE-003 browser proof exists only as an executed local run against a
  * handoff whose harness publishes this fixture.
  */
-function unverifiedHandover(projectName: string): {
+function unverifiedHandover(
+  projectName: string,
+  which: P131ReceiverCase
+): {
   readonly handover: P131ReceiverFixture;
   readonly pngBase64: string;
 } {
   const key = fixtureKeyOf(projectName);
-  const fixture = receiverFixture(handoff, key);
+  const fixture = receiverFixture(handoff, key, which);
   expect(
     fixture,
-    `the handoff names no unverified-receiver handover for ${key}; the harness section that ` +
-      'publishes browserFixtures.receiver did not run, or did not finish'
+    `the handoff names no unverified-receiver ${which} handover for ${key}; the harness ` +
+      'section that publishes browserFixtures.receiver did not run, or did not finish'
   ).not.toBeNull();
   return fixture as NonNullable<typeof fixture>;
 }
@@ -447,20 +453,20 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
   /**
    * FE-003 REFUSAL — an identity document the server refuses, leaving nothing behind.
    *
-   * Declared BEFORE the success case because both act on the one handover the
-   * harness publishes per fixture key: this case leaves it unverified, and the
-   * success case then verifies it. Run alone, either case finds the state it
-   * starts from; the "nobody is confirmed" assertion below fails loudly if the
-   * handover was already spent.
+   * It acts on its OWN handover (`browserFixtures.receiver.<key>.refusal`), so it
+   * depends neither on declaration order nor on the success case; the "nobody is
+   * confirmed" assertion below fails loudly if that handover was already spent.
    *
    * The attached file is plain text, which the identity category's own row does
-   * not admit. The file control carries no `accept` list and the adapter does not
-   * filter by type, so the request reaches the server, whose upload authorization
-   * refuses the content type with a violation on the content type. The panel must
-   * state that refusal: the upload sentence AND the field reason, which only a
-   * validation refusal carries — a store outage, a permission refusal or an expired
-   * session reach the same upload sentence with no field reason. A reload must
-   * still show nobody confirmed and no evidence.
+   * not admit. The file control's `accept` list comes from that row, but it is a
+   * hint to the browser's picker that `setInputFiles` does not consult, and neither
+   * the panel nor the adapter filters by type — so the request reaches the server,
+   * whose upload authorization refuses the content type with a violation on the
+   * content type. The panel must state that refusal: the upload sentence AND the
+   * field reason, which only a validation refusal carries — a store outage, a
+   * permission refusal or an expired session reach the same upload sentence with no
+   * field reason. The chosen document must still be chosen afterwards, and a reload
+   * must still show nobody confirmed and no evidence.
    */
   test('an identity document the server refuses leaves the receiver unverified', async ({
     page,
@@ -474,7 +480,7 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
     for (const code of RECEIVER_CASE_CODES) {
       expect(holds(kind, code), `${kind} must hold ${code} for this case`).toBe(true);
     }
-    const { handover } = unverifiedHandover(testInfo.project.name);
+    const { handover } = unverifiedHandover(testInfo.project.name, 'refusal');
 
     await page.goto(`/${locale}/delivery/${handover.deliveryId}`);
     await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
@@ -503,8 +509,14 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
       'the server refused the content type, so the reason it gave must be stated'
     ).toBeVisible();
     await expect(panel.getByText(say(locale, 'delivery.receiver.noneTitle'))).toBeVisible();
-    // React clears the form once the action settles: the attempt is over, not in flight.
-    await expect(file).toHaveValue('');
+    // The document the operator chose is still chosen: a further Confirm would send it
+    // again, and verifying without it would take the explicit Remove.
+    await expect(file).not.toHaveValue('');
+    await expect(panel.getByText(say(locale, 'delivery.receiver.evidenceChosen'))).toBeVisible();
+    await expect(refusal).toContainText(say(locale, 'delivery.receiver.evidenceStillChosen'));
+    // The control declares what the identity category's row admits, and that did not
+    // stop the request: the refusal above is the server's.
+    await expect(file).toHaveAttribute('accept', 'image/jpeg,image/png,image/webp');
 
     await page.reload();
     const reread = receiverPanel(page);
@@ -542,7 +554,7 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
     for (const code of RECEIVER_CASE_CODES) {
       expect(holds(kind, code), `${kind} must hold ${code} for this case`).toBe(true);
     }
-    const { handover, pngBase64 } = unverifiedHandover(testInfo.project.name);
+    const { handover, pngBase64 } = unverifiedHandover(testInfo.project.name, 'success');
 
     await page.goto(`/${locale}/delivery/${handover.deliveryId}`);
     await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
