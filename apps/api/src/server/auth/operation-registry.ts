@@ -95,6 +95,18 @@ export interface OperationDeclaration {
    * the two disagree, so this field is checked rather than trusted.
    */
   readonly successStatus?: 200 | 201 | 202 | 204;
+  /**
+   * Whether the operation answers `404 ERR-RES-001` for a resource it addresses
+   * that is absent or not visible to the caller, so the published contract lists
+   * that response. Defaults to false.
+   *
+   * It exists because the contract derived every failure status from the other
+   * declarations and none of them implies a not-found, so reads that do answer
+   * one published no 404 at all (P1-31 CC-54 (b)). Declared per operation rather
+   * than inferred from a path parameter, because a parameterised operation may
+   * legitimately refuse instead — a uniform 403, or a 200 with an empty body.
+   */
+  readonly answersNotFound?: boolean;
   /** Optional JSON Schemas supplied by the operation's runtime validators. */
   readonly requestBodySchema?: Readonly<Record<string, unknown>>;
   readonly successBodySchema?: Readonly<Record<string, unknown>>;

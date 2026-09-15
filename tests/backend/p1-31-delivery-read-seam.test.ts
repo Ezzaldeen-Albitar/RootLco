@@ -93,6 +93,7 @@ import {
 } from './p1-22-helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
+import { RECEIVER_IDENTITY_EVIDENCE_CATEGORY } from '@/modules/delivery';
 import { POST as CREATE_DELIVERY } from '@/app/api/v1/deliveries/route';
 import {
   DELIVERY_READ_OPERATION,
@@ -310,15 +311,16 @@ const createDelivery = (workOrderId: string, deliveringEmployeeId: string): Prom
     })
   );
 
-const verifyReceiver = (deliveryId: string, receiverPartnerId: string): Promise<Response> =>
+const verifyReceiver = (
+  deliveryId: string,
+  receiverPartnerId: string,
+  identityEvidenceDocumentVersionId: string
+): Promise<Response> =>
   VERIFY_RECEIVER(
     new Request(`http://localhost/api/v1/deliveries/${deliveryId}/authorized-receiver`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'idempotency-key': randomUUID() },
-      body: JSON.stringify({
-        receiverPartnerId,
-        identityEvidenceDocumentVersionId: SIGNATURE_DOCUMENT_VERSION,
-      }),
+      body: JSON.stringify({ receiverPartnerId, identityEvidenceDocumentVersionId }),
     }),
     { params: Promise.resolve({ deliveryId }) }
   );
@@ -501,13 +503,59 @@ interface ArrangedDelivery {
   readonly chain: WorkOrderChain;
   readonly deliveryId: string;
   readonly receiverId: string;
+  readonly identityEvidenceVersionId: string;
   readonly checklistResultIds: readonly string[];
   readonly signatureIds: readonly string[];
+}
+
+/**
+ * The receiver's identity evidence: a version filed under the approved D-18
+ * identity-evidence category and attached to the chain's reception visit.
+ *
+ * It used to be the P1-22 SIGNATURE document, which the receiver path accepted because
+ * it checked nothing about the category. It no longer does, so the evidence here is the
+ * kind of document the decision approves. Admin SQL, for the reason the signature
+ * fixture gives: a real upload needs a written object.
+ */
+async function seedIdentityEvidenceVersion(chain: WorkOrderChain): Promise<string> {
+  const category = await admin.query<{ id: string }>(
+    `SELECT id FROM shared.document_categories
+      WHERE scope = 'platform' AND category_code = $1 AND deleted_at IS NULL`,
+    [RECEIVER_IDENTITY_EVIDENCE_CATEGORY]
+  );
+  const categoryId = category.rows[0]?.id;
+  if (categoryId === undefined) {
+    throw new Error('the identity-evidence platform category is absent: seed 05 was not applied');
+  }
+  const documentId = randomUUID();
+  const versionId = randomUUID();
+  await admin.query(
+    `INSERT INTO shared.documents
+       (id, tenant_id, company_id, branch_id, category_id, title, classification,
+        retention_class, created_by)
+     VALUES ($1,$2,$3,$4,$5,'P1-31 receiver identity evidence','restricted','evidence-audit',$6)`,
+    [documentId, TENANT_A, chain.companyId, chain.branchId, categoryId, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO shared.document_versions
+       (id, tenant_id, document_id, version_number, storage_key, content_type, size_bytes,
+        sha256, uploaded_by, created_by)
+     VALUES ($1,$2,$3,1,$4,'image/png',2048,decode(repeat('7b',32),'hex'),$5,$5)`,
+    [versionId, TENANT_A, documentId, `p131/identity/${versionId}.png`, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO shared.document_links
+       (tenant_id, document_id, entity_type, entity_id, link_purpose, linked_by, created_by)
+     VALUES ($1,$2,'rec.reception_visits',$3,'identity_document',$4,$4)`,
+    [TENANT_A, documentId, chain.visitId, USER_A]
+  );
+  return versionId;
 }
 
 async function arrangeDelivery(tag: string): Promise<ArrangedDelivery> {
   const chain = await seedWorkOrderChain(tag);
   await linkSignatureDocumentToWorkOrder(chain.workOrderId);
+  const identityEvidenceVersionId = await seedIdentityEvidenceVersion(chain);
   authAs(SAL_FULL);
 
   const created = await createDelivery(
@@ -517,7 +565,7 @@ async function arrangeDelivery(tag: string): Promise<ArrangedDelivery> {
   expect(created.status).toBe(201);
   const deliveryId = (await bodyOf<{ id: string }>(created)).id;
 
-  const verified = await verifyReceiver(deliveryId, PARTNER_A);
+  const verified = await verifyReceiver(deliveryId, PARTNER_A, identityEvidenceVersionId);
   expect(verified.status).toBe(201);
   const receiverId = (await bodyOf<{ id: string }>(verified)).id;
 
@@ -544,7 +592,14 @@ async function arrangeDelivery(tag: string): Promise<ArrangedDelivery> {
   // The creating session ENDS here. Every recovery assertion below re-authenticates.
   __resetAuthenticatorForTests();
 
-  return { chain, deliveryId, receiverId, checklistResultIds, signatureIds };
+  return {
+    chain,
+    deliveryId,
+    receiverId,
+    identityEvidenceVersionId,
+    checklistResultIds,
+    signatureIds,
+  };
 }
 
 /**
@@ -794,7 +849,9 @@ describe('P-4 and P-5 the subresource reads', () => {
     // latter.
     expect(body.receiver?.id).toBe(RECOVERED.receiverId);
     expect(body.receiver?.receiverPartnerId).toBe(PARTNER_A);
-    expect(body.receiver?.identityEvidenceDocumentVersionId).toBe(SIGNATURE_DOCUMENT_VERSION);
+    expect(body.receiver?.identityEvidenceDocumentVersionId).toBe(
+      RECOVERED.identityEvidenceVersionId
+    );
     expect(typeof body.receiver?.verifiedBy).toBe('string');
     expect(typeof body.receiver?.verifiedAt).toBe('string');
   });
