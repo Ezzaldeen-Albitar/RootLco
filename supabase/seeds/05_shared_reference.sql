@@ -60,9 +60,9 @@ ON CONFLICT DO NOTHING;
 -- classification, evidence-audit retention class, size ceiling and image content
 -- types as the existing identity-purpose row, so it inherits the posture the
 -- category system already enforces and widens nobody's access: documents filed
--- under it are governed by the same tenant-isolated, permission-scoped document
--- policies as every other category. Platform scope only; structural reference,
--- not tenant or business data.
+-- under it are READ under the same tenant-scoped document policies, and WRITTEN
+-- under the same permission-scoped ones, as every other category. Platform scope
+-- only; structural reference, not tenant or business data.
 --
 -- A populated database receives this row by applying this file as it stands
 -- (idempotent through ON CONFLICT DO NOTHING); see the P1-31 change-control
