@@ -602,7 +602,15 @@ different number, your tree is right and this sentence is stale.
 ### Verification query — proves the step took effect
 
 ```sql
--- 0. take both digests BEFORE the command, and again after it.
+-- 0. take the before-state BEFORE the command, and take it again after it.
+--    The list is part of the measurement, not decoration: the count alone cannot
+--    tell you WHICH row arrived, and the digest alone cannot tell you which row
+--    changed. Keep the output of all three.
+SELECT category_code, id, status
+  FROM shared.document_categories
+ WHERE scope = 'platform'
+ ORDER BY category_code;
+
 SELECT count(*) AS platform_categories,
        md5(string_agg(id::text || ':' || category_code || ':' || status || ':' || record_version,
                       ',' ORDER BY id)) AS digest
@@ -639,4 +647,5 @@ references it**. Once a document is filed under it, deleting it is no longer a r
 
 Query 1 returns the one row with the identifier above; the platform-category count rose by exactly
 the number of rows that were missing (one, on a database seeded before this branch; zero on a
-database that already held it); and every pre-existing row is unchanged.
+database that already held it); the after list equals the before list plus exactly those rows; and
+every pre-existing row is unchanged.
