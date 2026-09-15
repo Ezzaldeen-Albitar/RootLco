@@ -649,3 +649,142 @@ Query 1 returns the one row with the identifier above; the platform-category cou
 the number of rows that were missing (one, on a database seeded before this branch; zero on a
 database that already held it); the after list equals the before list plus exactly those rows; and
 every pre-existing row is unchanged.
+
+---
+
+## 11. The three P1-31 gates — running them, reading a red, and what an operator may do about it
+
+Added by `feature/p1-31-frontend-closure-completion` (**DO-001**). The task's criterion names
+rollback criteria and a recorded operator runbook for the three P1-31 gates; until this section the
+[developer guidance](./developer-guidance.md) listed their commands and nothing else.
+
+**These are not database acts.** Each gate is a static Node checker over the files in the working
+tree. None of them opens a database connection, calls the network or reads a credential, and none
+of them writes to the repository. Every statement below was checked against the three scripts at
+this branch's base, `develop` `c1a2f9fc`; **if a script and this section disagree, the script is
+right and this section is stale.**
+
+| npm script                        | script                                        | what it reads                                                                                                                                                                                                                                                                                                                                         | what it judges                                                                                                                                                                                                   |
+| --------------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `validate:p1-31-access`           | `scripts/ci/check-p1-31-access.mjs`           | the operation register `docs/phase-1/phase-1-24/evidence/operation-register.json`, and every route page under `apps/web/src/app` that lives under a segment it owns (the resource roots of `P1_31_OPERATION_IDS`, plus the areas in `P1_31_AREAS`)                                                                                                    | **gate-before-read**: a page denies and returns on a permission before it awaits anything that costs a request. Pages it defers to the P1-29 gate must be pages that gate actually judges                        |
+| `validate:p1-31-write-shape`      | `scripts/ci/check-p1-31-write-shape.mjs`      | the same operation register; the request schemas of the in-scope `wty` and `rpt` writes, extracted by running `tests/ci/p1-31-write-shape-extraction.test.ts` under Vitest into a temporary directory; and the two hand-written mirrors `apps/web/src/features/warranty/warranty-contract.ts` and `apps/web/src/features/reports/reports-contract.ts` | that each mirrored request body matches the API's own schema, and that every declared exception (`BODYLESS`, `PENDING_MIRRORS`, `SHARED_MIRRORS`) is still true                                                  |
+| `validate:p1-31-version-sourcing` | `scripts/ci/check-p1-31-version-sourcing.mjs` | the published contract `docs/api/openapi.v1.json` (which operations carry the `IfMatch` parameter), and every `.send(…)` in `apps/web/src`                                                                                                                                                                                                            | that each of the eleven version-guarded P1-31 operations sources its `If-Match` from a read or the prior command response and renews it after a conflict, and that every `PENDING_CONSUMERS` entry is still true |
+
+**How continuous integration reaches them.** All three are inside `verify:policies` in
+`package.json`, which `verify:workspaces` runs in the clean-room job
+(`.github/workflows/_reusable-clean-room.yml`, step "The full workspace aggregate").
+`validate:p1-31-version-sourcing` additionally runs on its own in the web-quality task of
+`.github/workflows/_reusable-node-quality.yml`. A result on a pull request is the hosted run on that
+pull request's own head; a local run is evidence about the tree it ran on and nothing more.
+
+### Preconditions
+
+- The repository root is the working directory, and the dependencies are installed. The
+  write-shape and version gates import the `typescript` package directly, and the write-shape gate
+  starts Vitest as a child process.
+- The working tree holds exactly the change being judged. The gates read files on disk, not a
+  commit, so an unstaged edit is judged as though it were committed.
+- No database, stack, network access or credential is needed, and none should be started for this.
+
+### Command
+
+```text
+npm run validate:p1-31-access
+npm run validate:p1-31-write-shape
+npm run validate:p1-31-version-sourcing
+```
+
+For a machine-readable report of the version gate, `node scripts/ci/check-p1-31-version-sourcing.mjs --json`.
+To run them the way continuous integration does, inside every other policy gate, `npm run verify:policies`.
+
+The optional arguments — `--app-root` and `--min-pages` (access), `--schemas` and `--mirror-root`
+(write shape), `--web-root` (version sourcing) — exist so the gates' own suites can point them at a
+scratch tree and prove the red branch fires. **They are not operator controls.** Continuous
+integration passes none of them, and a result obtained with one is not a result about the
+repository.
+
+### Verification — proves the gate examined something
+
+A green is only worth reading if the gate says what it examined. Each prints a summary line, and each
+refuses to pass over an empty set:
+
+- **Access** prints `P1-31 gate-before-read: N route page(s) examined across M owned segment(s) (…);
+K deferred to the P1-29 gate` and then `0 violation(s).` It fails when the segment derivation is
+  empty or when fewer route pages than the floor (one, over the repository's own application root)
+  are found. Measured locally at this branch: 10 pages, 12 segments, 7 deferred.
+- **Write shape** prints `P1-31 write shape [wty, rpt]: … compared against … mirror interface(s)`
+  and then `0 problem(s).` It fails when it extracted no request body, when the mirrors declare no
+  interface, or when every in-scope write is declared pending so nothing was compared. Measured
+  locally at this branch: 22 operations in scope, 12 writes, 11 with a body, 1 bodyless, 4 pending, 7
+  compared against 35 mirror interfaces and 5 resolved aliases.
+- **Version sourcing** prints `P1-31 version sourcing: 11 guarded operation(s) in scope …` and then
+  `OK: …`. It fails when no file was scanned, no versioned send was found, or no operation was
+  compared. Measured locally at this branch: 11 in scope, 4 with a consumer, 7 pending one, 5 in-scope
+  sends.
+- The rules themselves are proved by `tests/ci/p1-31-access-gate.test.ts`,
+  `tests/ci/p1-31-write-shape.test.ts`, `tests/ci/p1-31-write-shape-extraction.test.ts` and
+  `tests/ci/p1-31-version-sourcing.test.ts`, which run in `npm run test:unit`.
+
+The figures above are local measurements at one head, not constants; a later tree may carry more
+pages, writes or sends, and the summary line on that tree is what counts.
+
+**Exit codes.** Access exits `0` when clean and `1` on any violation. Write shape exits `0` when
+clean, `1` on any problem and `2` when the operation register is absent. Version sourcing exits `0`
+when clean, `1` on any violation and `2` when the check could not run. An input that cannot be read
+at all also stops a gate with a non-zero exit. **Any non-zero exit is a red.**
+
+### Reading a red
+
+Access and write shape print each finding as an `::error::` line; version sourcing prints
+`N violation(s):` followed by one line per finding. A finding is one of three kinds, and the kind
+decides everything that follows:
+
+1. **A true finding about the change.** The line names code the change introduced or modified, and
+   what it says is true of that code: a page awaits a request before it denies; a mirror interface
+   no longer matches the request schema the API parses; an `If-Match` computed by arithmetic or
+   carried over from a cached value; a consumer now sends a write that is still declared pending.
+2. **A false finding.** The line names code that does what the rule requires, and the gate misreads
+   it — a construct the rule allows that the gate's reader does not recognise.
+3. **The gate could not judge.** Exit `2`, or a finding about the gate's own inputs: the register or
+   the contract is missing or unreadable, the schema extraction failed, a declared list names an
+   operation that no longer exists.
+
+### Rollback criterion
+
+**Revert the change that made the gate red** when the finding is of kind 1 and the change cannot be
+corrected in the same pull request — above all when the red appears on a protected branch after a
+merge. A revert is an ordinary reviewed pull request that restores the previous behaviour; it is
+never a force-push, and the gate must be green on the revert's own head.
+
+**Correct the change instead** when the finding is of kind 1 and the fix is small and in scope: move
+the permission check above the read, align the mirror with the schema, source the version from the
+read or the response, or delete the pending entry in the same change that adds its consumer. That
+is not a rollback; it is the change being finished.
+
+**Correct the gate, through a reviewed change,** only when the finding is of kind 2 or a kind-3
+declared list is legitimately stale because a reviewed product change moved it. The correction is a
+change to a file under `scripts/ci/`, which is owner-reviewed, and it must carry its proof in the
+gate's own suite: a planted sample of the construct that must now pass, and the existing planted
+violation still failing. A gate correction and the change it unblocks are reviewed as two decisions,
+even when they travel together.
+
+**Restore the input, not the gate,** when the finding is of kind 3 because an input is missing or
+broken: regenerate a generated file with its own generator, reinstall the dependencies, or repair
+the extraction. Nothing in the gate is edited to get past a missing input.
+
+**Never an operator act.** Disabling, skipping, bypassing or weakening a required gate is not
+something an operator does in response to a red, under any urgency. That includes removing it from
+`verify:policies` or from a workflow, marking a required check as not required, adding an entry to a
+declared list to silence a true finding, wrapping the command so its exit code is discarded, and
+adding an environment switch, flag or allow entry that makes it pass. None of the three scripts
+reads an environment variable to decide whether to judge, and none should be given one. Any such
+change is a change to the gate and goes through change control, with its reason recorded, like
+every other reviewed change.
+
+### Done looks like
+
+All three commands exit `0` on the head being judged; each summary line reports a non-empty
+examined set; the unit tier that proves their rules passes; and the hosted clean-room aggregate — and,
+for version sourcing, the web-quality task — is green on the pull request's own head. A revert or a
+gate correction is done when that same set is green on its own head and its reason is recorded in
+the pull request that carried it.

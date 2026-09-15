@@ -169,6 +169,56 @@ export interface P131BrowserFixtures {
   readonly checklist: Readonly<Record<string, P131FixtureDelivery>>;
   readonly signature: Readonly<Record<string, P131FixtureDelivery>>;
   readonly release: Readonly<Record<string, P131FixtureDelivery>>;
+  /**
+   * FE-003 — TWO handovers per fixture key whose receiver is NOT yet verified: one
+   * for the refusal case and one for the success case.
+   *
+   * Optional, because a handoff written before the harness published it carries
+   * none; `receiverFixture` below reads it separately so its absence never hides
+   * the three sets above. See `P131ReceiverFixture` for what each must hold.
+   */
+  readonly receiver?: Readonly<Record<string, P131ReceiverFixturePair>> | null;
+}
+
+/**
+ * The two receiver cases' handovers under one fixture key, one each.
+ *
+ * Two and not one, so neither case depends on declaration order or on the other
+ * having run: the refusal case leaves its handover unverified and the success case
+ * verifies its own, and either can run alone against the state it was built in.
+ */
+export interface P131ReceiverFixturePair {
+  readonly refusal: P131ReceiverFixture;
+  readonly success: P131ReceiverFixture;
+}
+
+/** Which receiver case a handover belongs to. */
+export type P131ReceiverCase = keyof P131ReceiverFixturePair;
+
+/**
+ * A handover a receiver case acts on, published by the harness BEFORE its
+ * final observation point.
+ *
+ * ## Why the harness makes it and the spec does not
+ *
+ * A spec that opened its own handover would write a work order and a delivery into
+ * the journey branch after the figures `reportRuns` and `overview` were read, and
+ * the report and overview cases pinned to those figures would then fail in the only
+ * environment these cases run in. Made by the harness, the handover is inside what
+ * the final pass observes.
+ *
+ * ## What each must hold
+ *
+ * `customerId` is recorded on the reception visit as the `authorized_receiver`;
+ * `receiverDisplayName` is that customer's name exactly as the server's customer
+ * search answers it. The screen's selector matches the START of a customer's name,
+ * so a family name alone finds nobody: the harness searches with this name itself
+ * and publishes the handover only when that search finds exactly this one customer.
+ * The handover answers NO receiver when published, which the harness guards through
+ * the release checks' `receiver_not_verified` reason before it publishes it.
+ */
+export interface P131ReceiverFixture extends P131FixtureDelivery {
+  readonly receiverDisplayName: string;
 }
 
 /**
@@ -375,6 +425,43 @@ export function browserFixtures(
     return null;
   }
   return { checklist, signature, release, signaturePngBase64: fixtures.signaturePngBase64 };
+}
+
+/**
+ * The unverified-receiver handover ONE receiver case acts on under one fixture KEY,
+ * with the image bytes the harness puts on file, or `null` when this handoff
+ * publishes none.
+ *
+ * Separate from `browserFixtures` so a handoff without the `receiver` entry still
+ * answers the three write sets. A pair whose two cases name the same delivery is
+ * refused as no fixture at all: the cases would then depend on each other again,
+ * which is what publishing two exists to prevent.
+ */
+export function receiverFixture(
+  handoff: P131Handoff | null,
+  key: string,
+  which: P131ReceiverCase
+): { readonly handover: P131ReceiverFixture; readonly pngBase64: string } | null {
+  const fixtures = handoff?.browserFixtures;
+  if (fixtures === undefined || fixtures === null) return null;
+  const pair: Partial<P131ReceiverFixturePair> | null | undefined = fixtures.receiver?.[key];
+  if (pair === undefined || pair === null) return null;
+  const handover = pair[which];
+  if (handover === undefined) return null;
+  const other = pair[which === 'refusal' ? 'success' : 'refusal'];
+  if (other !== undefined && other.deliveryId === handover.deliveryId) return null;
+  if (typeof handover.deliveryId !== 'string' || handover.deliveryId.length === 0) return null;
+  if (typeof handover.customerId !== 'string' || handover.customerId.length === 0) return null;
+  if (
+    typeof handover.receiverDisplayName !== 'string' ||
+    handover.receiverDisplayName.length === 0
+  ) {
+    return null;
+  }
+  if (typeof fixtures.signaturePngBase64 !== 'string' || fixtures.signaturePngBase64.length === 0) {
+    return null;
+  }
+  return { handover, pngBase64: fixtures.signaturePngBase64 };
 }
 
 /** The locale a project drives, from its name. The same rule `administration.spec.ts` uses. */
