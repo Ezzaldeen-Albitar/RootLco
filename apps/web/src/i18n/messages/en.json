@@ -3618,6 +3618,7 @@
   "delivery.receiver.evidenceLimitsLoading": "Checking which files can be accepted…",
   "delivery.receiver.evidenceLimitsUnavailable": "The accepted file types and size could not be shown. The document is still checked when you confirm.",
   "delivery.receiver.evidenceChosen": "A document is chosen. It will be saved and attached to this visit before the receiver is confirmed.",
+  "delivery.receiver.evidenceNoneChosen": "No document is chosen. The receiver will be confirmed without a proof of identity document.",
   "delivery.receiver.evidenceRemove": "Remove the chosen document",
   "delivery.receiver.evidenceNotPermitted": "You can confirm the receiver, but you do not have permission to attach a proof of identity document.",
   "delivery.receiver.verifying": "Confirming the receiver…",

@@ -1850,6 +1850,40 @@ describe('optional identity evidence when confirming a receiver', () => {
     expect(createDocumentLink).not.toHaveBeenCalled();
   });
 
+  it('states no document once the browser empties the control, and then verifies without one', async () => {
+    const { region, user, submit } = await prepare({ file: imageFile() });
+    const announced = within(region).getByText(EN['delivery.receiver.evidenceChosen'] as string);
+    expect(announced).toHaveAttribute('role', 'status');
+    const file = fileControl(region);
+    expect(file.files).toHaveLength(1);
+
+    // Chromium: reopening the native picker and cancelling it empties the
+    // control and fires a change event. Remove is never pressed here.
+    await user.upload(file, []);
+    expect(file.files).toHaveLength(0);
+    expect(file).toHaveValue('');
+
+    expect(within(region).queryByText(EN['delivery.receiver.evidenceChosen'] as string)).toBeNull();
+    const none = within(region).getByText(EN['delivery.receiver.evidenceNoneChosen'] as string);
+    expect(none).toBeVisible();
+    // The same live region now says so, which is what makes the change announced.
+    expect(none).toBe(announced);
+    expect(
+      within(region).queryByRole('button', {
+        name: EN['delivery.receiver.evidenceRemove'] as string,
+      })
+    ).toBeNull();
+
+    await submit();
+    await waitFor(() => expect(verifyReceiver).toHaveBeenCalledTimes(1));
+    expect(verifyReceiver.mock.calls[0]).toStrictEqual([
+      DELIVERY_ID,
+      { receiverPartnerId: PARTNER_ID },
+    ]);
+    expect(captureDocument).not.toHaveBeenCalled();
+    expect(createDocumentLink).not.toHaveBeenCalled();
+  });
+
   it("declares the identity row's content types on the control and states its size ceiling from that row", async () => {
     const { region } = await prepare();
     const file = fileControl(region);

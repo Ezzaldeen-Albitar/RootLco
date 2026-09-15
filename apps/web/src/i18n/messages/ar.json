@@ -3618,6 +3618,7 @@
   "delivery.receiver.evidenceLimitsLoading": "جارٍ التحقق من الملفات التي يمكن قبولها…",
   "delivery.receiver.evidenceLimitsUnavailable": "تعذّر عرض أنواع الملفات وحجمها المقبول. سيُفحص المستند مع ذلك عند الاعتماد.",
   "delivery.receiver.evidenceChosen": "تم اختيار مستند. سيُحفظ ويُرفق بهذه الزيارة قبل اعتماد المستلِم.",
+  "delivery.receiver.evidenceNoneChosen": "لم يُختر أي مستند. سيُعتمد المستلِم من دون مستند إثبات الهوية.",
   "delivery.receiver.evidenceRemove": "إزالة المستند المختار",
   "delivery.receiver.evidenceNotPermitted": "يمكنك اعتماد المستلِم، لكن ليست لديك صلاحية إرفاق مستند إثبات الهوية.",
   "delivery.receiver.verifying": "جارٍ اعتماد المستلِم…",

@@ -75,9 +75,12 @@ import {
  * operator's explicit Remove. A successful write on another panel re-reads this
  * one without unmounting the form, so that write does not drop the document
  * either. One path is the browser's own: reopening the native picker and
- * cancelling it empties the control in Chromium, which the control then shows
- * as no file chosen and the Remove row leaves with it; nothing on the panel can
- * keep a file the browser itself let go. No other category is ever used in its place. The
+ * cancelling it empties the control in Chromium, and nothing on the panel can
+ * keep a file the browser itself let go. That path is not silent: the panel's
+ * own status line, announced to assistive technology, changes from the
+ * document-chosen sentence to one saying no document is chosen and the receiver
+ * will be confirmed without one, and the Remove control leaves with the choice,
+ * all before Confirm is pressed. No other category is ever used in its place. The
  * file control's accepted types and the stated size ceiling are read from the
  * identity category's published row; nothing on the panel filters a file, so a
  * file the row does not admit is refused by the server's upload authorization.
@@ -497,11 +500,20 @@ function VerifyForm({
                     locale
                   )}.`}
           </p>
-          {chosen ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-caption text-text-secondary">
-                {translate(messages, 'delivery.receiver.evidenceChosen')}
-              </p>
+          {/*
+           * Always drawn, and a live region: whether a document is chosen is
+           * stated in words, so a control the browser emptied (a cancelled
+           * picker) is announced as no document before Confirm, not discovered
+           * after it.
+           */}
+          <div className="flex flex-wrap items-center gap-2">
+            <p role="status" className="text-caption text-text-secondary">
+              {translate(
+                messages,
+                chosen ? 'delivery.receiver.evidenceChosen' : 'delivery.receiver.evidenceNoneChosen'
+              )}
+            </p>
+            {chosen ? (
               <button
                 type="button"
                 className={SECONDARY_BUTTON}
@@ -510,8 +522,8 @@ function VerifyForm({
               >
                 {translate(messages, 'delivery.receiver.evidenceRemove')}
               </button>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
         </div>
       ) : (
         <p className="text-caption text-text-muted">
