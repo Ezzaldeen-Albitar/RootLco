@@ -399,7 +399,9 @@ describe('a refused signature ledger on the handover screen', () => {
     expect(
       within(region).getByText(EN['delivery.signatures.captureHeading'] as string)
     ).toBeVisible();
-    expect(within(region).getByText(EN['state.denied.title'] as string)).toBeVisible();
+    // Found, not got: the refusal renders after the read settles, and the wait
+    // above only proves the read was asked for.
+    expect(await within(region).findByText(EN['state.denied.title'] as string)).toBeVisible();
     expectNothingWritten();
   });
 
