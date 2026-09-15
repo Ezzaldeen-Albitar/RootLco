@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
+import type { captureDeliverySignature as RealCaptureDeliverySignature } from '@/features/delivery/signature-capture';
 import { renderLtr, renderRtl } from './render';
 
 /**
@@ -59,7 +60,9 @@ const createDelivery = vi.fn();
 const verifyReceiver = vi.fn();
 const recordChecklistResult = vi.fn();
 const completeDelivery = vi.fn();
+const attachSignature = vi.fn();
 vi.mock('@/features/delivery/api', () => ({
+  attachSignature: (...args: unknown[]) => attachSignature(...args),
   readDelivery: (...args: unknown[]) => readDelivery(...args),
   readEligibility: (...args: unknown[]) => readEligibility(...args),
   readReceiver: (...args: unknown[]) => readReceiver(...args),
@@ -471,6 +474,8 @@ beforeEach(() => {
   readDelivery.mockResolvedValue(okRead(delivery));
   readEligibility.mockResolvedValue(okRead(eligibility));
   readReceiver.mockResolvedValue(okRead({ deliveryId: DELIVERY_ID, receiver: null }));
+  // The verification form reads the category list when it may offer a document.
+  listDocumentCategories.mockResolvedValue(okRead({ items: [], nextCursor: null, hasMore: false }));
   listSignatures.mockResolvedValue(okRead({ deliveryId: DELIVERY_ID, signatures: page([]) }));
   listChecklistResults.mockResolvedValue(okRead({ deliveryId: DELIVERY_ID, results: page([]) }));
   listStatusHistory.mockResolvedValue(okRead({ deliveryId: DELIVERY_ID, transitions: page([]) }));
@@ -683,7 +688,10 @@ describe('the confirmed receiver', () => {
     });
     const file = within(form).getByLabelText(EN['delivery.receiver.evidenceLabel'] as string);
     expect(file).not.toBeRequired();
-    expect(file).toHaveAccessibleDescription(EN['delivery.receiver.evidenceHint'] as string);
+    // The hint first; the sentence stating what the category row admits follows it.
+    expect(file).toHaveAccessibleDescription(
+      new RegExp(`^${escape(EN['delivery.receiver.evidenceHint'] as string)}`)
+    );
   });
 
   it('renders a refusal of the receiver as a refusal', async () => {
@@ -1229,32 +1237,62 @@ describe('confirming who may receive the vehicle', () => {
  * behaviour regressed: a verification that stopped being possible without a
  * document, a document captured under another category or linked under a
  * purpose this tier invented, a verification sent after a failed capture or
- * link, a second verification sent without the document, or a refusal that
- * leaves the panel looking as though nothing was attempted.
+ * link, a chosen document that silently left the form after a failure so the
+ * next Confirm verified without it, a file filtered in the browser instead of
+ * refused by the server, or a refusal that leaves the panel looking as though
+ * nothing was attempted.
  */
 describe('optional identity evidence when confirming a receiver', () => {
   const DOCUMENT_ID = 'abababab-abab-4bab-8bab-abababababab';
   const VERSION_ID = 'cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd';
+  const SECOND_VERSION_ID = 'efefefef-efef-4fef-8fef-efefefefefef';
+  /** The file's own last-modified instant, which the capture sends as the device capture time. */
+  const CAPTURED_AT_MS = Date.UTC(2026, 8, 15, 9, 30, 0);
   /*
-   * The purpose is deliberately NOT the platform's seeded value. The case must
-   * fail if the link purpose were written in the adapter rather than read from
-   * the category row, and a mock carrying the real value could not tell the two
-   * apart.
+   * A purpose that is NOT the platform's seeded value, for the one case that must
+   * fail if the link purpose were written in the adapter rather than read from the
+   * category row: a mock carrying the real value could not tell the two apart.
    */
   const OWN_PURPOSE = 'receiver_identity_row_purpose';
 
-  const category = (categoryCode: string, businessLinkPurpose: string) => ({
+  /*
+   * The identity category as the platform seeds it (D-18,
+   * `supabase/seeds/05_shared_reference.sql`): three image types, a ten-megabyte
+   * ceiling, the identity-document purpose, and a device capture time required.
+   */
+  const category = (
+    categoryCode: string,
+    businessLinkPurpose: string,
+    over: Record<string, unknown> = {}
+  ) => ({
     categoryCode,
-    allowedContentTypes: ['image/png', 'image/jpeg'],
+    allowedContentTypes: ['image/jpeg', 'image/png', 'image/webp'],
     maxBytes: 10_485_760,
     retentionClass: 'evidence-audit',
     classification: 'restricted',
     businessLinkPurpose,
-    deviceCaptureTimestampRequired: false,
+    deviceCaptureTimestampRequired: true,
+    ...over,
   });
-  const IDENTITY = category('delivery_receiver_identity', OWN_PURPOSE);
+  const IDENTITY = category('delivery_receiver_identity', 'identity_document');
   // Another row whose purpose is ALSO an identity document. It must never be used instead.
   const VEHICLE_EVIDENCE = category('reception_vin', 'identity_document');
+
+  const categoriesOf = (...items: readonly unknown[]) =>
+    okRead({ items: [...items], nextCursor: null, hasMore: false });
+
+  const registered = (versionId: string) => ({
+    status: 'success',
+    correlationId: 'corr-capture',
+    attempt: 1,
+    registered: {
+      documentId: DOCUMENT_ID,
+      versionId,
+      versionNumber: 1,
+      status: 'pending',
+      scannerAvailable: false,
+    },
+  });
 
   /*
    * jsdom's `File` has no `arrayBuffer()`, which every browser's has and which
@@ -1262,13 +1300,13 @@ describe('optional identity evidence when confirming a receiver', () => {
    * own file object, returning that object's own bytes, so the capture receives
    * what a browser would have sent.
    */
-  const imageFile = () => {
-    const content = 'identity-image';
-    const file = new File([content], 'receiver-id.png', { type: 'image/png' });
+  const fileOf = (name: string, type: string, content: string) => {
+    const file = new File([content], name, { type, lastModified: CAPTURED_AT_MS });
     return Object.assign(file, {
       arrayBuffer: async () => new TextEncoder().encode(content).buffer,
     });
   };
+  const imageFile = () => fileOf('receiver-id.png', 'image/png', 'identity-image');
 
   /*
    * A browser builds a submitted form's `FormData` from the files the operator
@@ -1306,21 +1344,8 @@ describe('optional identity evidence when confirming a receiver', () => {
 
   beforeEach(() => {
     vi.stubGlobal('FormData', BrowserFormData);
-    listDocumentCategories.mockResolvedValue(
-      okRead({ items: [VEHICLE_EVIDENCE, IDENTITY], nextCursor: null, hasMore: false })
-    );
-    captureDocument.mockResolvedValue({
-      status: 'success',
-      correlationId: 'corr-capture',
-      attempt: 1,
-      registered: {
-        documentId: DOCUMENT_ID,
-        versionId: VERSION_ID,
-        versionNumber: 1,
-        status: 'pending',
-        scannerAvailable: false,
-      },
-    });
+    listDocumentCategories.mockResolvedValue(categoriesOf(VEHICLE_EVIDENCE, IDENTITY));
+    captureDocument.mockResolvedValue(registered(VERSION_ID));
     createDocumentLink.mockResolvedValue({
       status: 'success',
       correlationId: 'corr-link',
@@ -1329,11 +1354,30 @@ describe('optional identity evidence when confirming a receiver', () => {
     });
   });
 
+  /** The document control, by its label. */
+  const fileControl = (region: HTMLElement, text: Record<string, string> = EN) =>
+    within(region).getByLabelText(
+      text['delivery.receiver.evidenceLabel'] as string
+    ) as HTMLInputElement;
+
+  /** The sentence that states what the category row admits, found through the control's description. */
+  const limitsOf = (control: HTMLElement) => {
+    const ids = (control.getAttribute('aria-describedby') ?? '').split(' ');
+    const limits = document.getElementById(ids[1] ?? '');
+    expect(limits, 'the control must be described by the limits sentence').not.toBeNull();
+    return limits as HTMLElement;
+  };
+
   /** Opens the form, chooses the receiver by name and, optionally, a document. */
   async function prepare(
-    options: { file?: File; locale?: 'en' | 'ar'; canAttachEvidence?: boolean } = {}
+    options: {
+      file?: File;
+      locale?: 'en' | 'ar';
+      canAttachEvidence?: boolean;
+      applyAccept?: boolean;
+    } = {}
   ) {
-    const user = userEvent.setup();
+    const user = userEvent.setup(options.applyAccept === false ? { applyAccept: false } : {});
     const locale = options.locale ?? 'en';
     const text = locale === 'en' ? EN : AR;
     const render = locale === 'en' ? renderLtr : renderRtl;
@@ -1364,10 +1408,7 @@ describe('optional identity evidence when confirming a receiver', () => {
     );
     await user.click(await within(region).findByRole('button', { name: /Layla Haddad/ }));
     if (options.file !== undefined) {
-      await user.upload(
-        within(region).getByLabelText(text['delivery.receiver.evidenceLabel'] as string),
-        options.file
-      );
+      await user.upload(fileControl(region, text), options.file);
     }
     const submit = () =>
       user.click(
@@ -1379,11 +1420,19 @@ describe('optional identity evidence when confirming a receiver', () => {
   }
 
   it('captures the chosen document under the identity category, links it to the visit, and binds the version', async () => {
+    // Counted when the verification is SENT, before a success re-reads the panel.
+    let readsWhenSent = -1;
+    verifyReceiver.mockImplementation(async () => {
+      readsWhenSent = listDocumentCategories.mock.calls.length;
+      return succeeded('delivery.receiver.verified');
+    });
     const { region, submit } = await prepare({ file: imageFile() });
     await submit();
 
     await waitFor(() => expect(verifyReceiver).toHaveBeenCalledTimes(1));
-    expect(listDocumentCategories).toHaveBeenCalledTimes(1);
+    // Once when the form opened, for the row's limits, and once by the capture,
+    // whose own read is the one that decides.
+    expect(readsWhenSent).toBe(2);
     expect(captureDocument).toHaveBeenCalledTimes(1);
     expect(captureDocument.mock.calls[0]?.[0]).toMatchObject({
       categoryCode: 'delivery_receiver_identity',
@@ -1391,11 +1440,13 @@ describe('optional identity evidence when confirming a receiver', () => {
       entityId: VISIT_ID,
       fileName: 'receiver-id.png',
       contentType: 'image/png',
+      // The identity row requires a device capture time; the file's own instant is sent.
+      capturedAt: new Date(CAPTURED_AT_MS).toISOString(),
     });
     expect(createDocumentLink).toHaveBeenCalledWith(DOCUMENT_ID, {
       entityType: 'rec.reception_visits',
       entityId: VISIT_ID,
-      linkPurpose: OWN_PURPOSE,
+      linkPurpose: 'identity_document',
     });
     expect(verifyReceiver.mock.calls[0]).toStrictEqual([
       DELIVERY_ID,
@@ -1413,7 +1464,29 @@ describe('optional identity evidence when confirming a receiver', () => {
     expect(within(region).queryByText(EN['delivery.receiver.refused'] as string)).toBeNull();
   });
 
+  it('links under the purpose the published row declares, never one written in the adapter', async () => {
+    listDocumentCategories.mockResolvedValue(
+      categoriesOf(VEHICLE_EVIDENCE, category('delivery_receiver_identity', OWN_PURPOSE))
+    );
+    const { submit } = await prepare({ file: imageFile() });
+    await submit();
+
+    await waitFor(() => expect(verifyReceiver).toHaveBeenCalledTimes(1));
+    expect(createDocumentLink).toHaveBeenCalledWith(DOCUMENT_ID, {
+      entityType: 'rec.reception_visits',
+      entityId: VISIT_ID,
+      linkPurpose: OWN_PURPOSE,
+    });
+  });
+
   it('verifies without a document when none is chosen, and spends nothing on the evidence chain', async () => {
+    // Counted when the verification is SENT: a success re-reads the panel, and the
+    // form it draws again reads the row again, which is not the submission's doing.
+    let readsWhenSent = -1;
+    verifyReceiver.mockImplementation(async () => {
+      readsWhenSent = listDocumentCategories.mock.calls.length;
+      return succeeded('delivery.receiver.verified');
+    });
     const { submit } = await prepare();
     await submit();
 
@@ -1422,7 +1495,8 @@ describe('optional identity evidence when confirming a receiver', () => {
       DELIVERY_ID,
       { receiverPartnerId: PARTNER_ID },
     ]);
-    expect(listDocumentCategories).not.toHaveBeenCalled();
+    // Only the form's own read of the row, made when it opened; the submission read nothing.
+    expect(readsWhenSent).toBe(1);
     expect(captureDocument).not.toHaveBeenCalled();
     expect(createDocumentLink).not.toHaveBeenCalled();
   });
@@ -1464,9 +1538,14 @@ describe('optional identity evidence when confirming a receiver', () => {
       const alert = await within(region).findByText(EN['delivery.receiver.refused'] as string);
       expect(alert).toBeVisible();
       expect(within(region).getByText(EN[sentenceKey] as string)).toBeVisible();
+      // The document the operator chose is still chosen, and the panel says so.
       expect(
-        within(region).getByText(EN['delivery.receiver.evidenceChooseAgain'] as string)
+        within(region).getByText(EN['delivery.receiver.evidenceStillChosen'] as string)
       ).toBeVisible();
+      expect(
+        within(region).getByText(EN['delivery.receiver.evidenceChosen'] as string)
+      ).toBeVisible();
+      expect(fileControl(region).files?.[0]?.name).toBe('receiver-id.png');
       expect(within(region).getByText(reference)).toBeVisible();
       expect(verifyReceiver).not.toHaveBeenCalled();
       expect(createDocumentLink).toHaveBeenCalledTimes(linkAttempted ? 1 : 0);
@@ -1480,17 +1559,19 @@ describe('optional identity evidence when confirming a receiver', () => {
     ['no identity category is published at all', [] as const],
     ['only another identity-purpose category is published', [VEHICLE_EVIDENCE]],
   ])('refuses a chosen document when %s, and substitutes nothing', async (_state, items) => {
-    listDocumentCategories.mockResolvedValue(
-      okRead({ items: [...items], nextCursor: null, hasMore: false })
-    );
+    listDocumentCategories.mockResolvedValue(categoriesOf(...items));
     const { region, submit } = await prepare({ file: imageFile() });
+    expect(
+      await within(region).findByText(EN['delivery.receiver.evidenceLimitsUnavailable'] as string)
+    ).toBeVisible();
     await submit();
 
     expect(
       await within(region).findByText(EN['delivery.receiver.evidenceCategoryMissing'] as string)
     ).toBeVisible();
     expect(within(region).getByText(EN['delivery.receiver.refused'] as string)).toBeVisible();
-    expect(listDocumentCategories).toHaveBeenCalledTimes(1);
+    // The form's read and the capture's; neither asked for anything else.
+    expect(listDocumentCategories).toHaveBeenCalledTimes(2);
     expect(captureDocument).not.toHaveBeenCalled();
     expect(createDocumentLink).not.toHaveBeenCalled();
     expect(verifyReceiver).not.toHaveBeenCalled();
@@ -1501,6 +1582,9 @@ describe('optional identity evidence when confirming a receiver', () => {
     async (readStatus) => {
       listDocumentCategories.mockResolvedValue(refusedRead(readStatus, 'corr-categories'));
       const { region, submit } = await prepare({ file: imageFile() });
+      expect(
+        await within(region).findByText(EN['delivery.receiver.evidenceLimitsUnavailable'] as string)
+      ).toBeVisible();
       await submit();
 
       expect(
@@ -1526,7 +1610,8 @@ describe('optional identity evidence when confirming a receiver', () => {
     expect(
       within(region).getByText(EN['delivery.receiver.evidenceUploadFailed'] as string)
     ).toBeVisible();
-    expect(listDocumentCategories).not.toHaveBeenCalled();
+    // Only the form's own read of the row; the submission spent nothing.
+    expect(listDocumentCategories).toHaveBeenCalledTimes(1);
     expect(captureDocument).not.toHaveBeenCalled();
     expect(createDocumentLink).not.toHaveBeenCalled();
     expect(verifyReceiver).not.toHaveBeenCalled();
@@ -1564,6 +1649,9 @@ describe('optional identity evidence when confirming a receiver', () => {
 
       expect(await within(region).findByText(EN[sentenceKey] as string)).toBeVisible();
       expect(within(region).getByText(EN['delivery.receiver.refused'] as string)).toBeVisible();
+      expect(
+        within(region).getByText(EN['delivery.receiver.evidenceStillChosen'] as string)
+      ).toBeVisible();
       expect(verifyReceiver).toHaveBeenCalledTimes(1);
       expect(verifyReceiver.mock.calls[0]?.[1]).toStrictEqual({
         receiverPartnerId: PARTNER_ID,
@@ -1576,6 +1664,94 @@ describe('optional identity evidence when confirming a receiver', () => {
     }
   );
 
+  it('keeps the chosen document after a failed upload, and the next Confirm captures that same document again', async () => {
+    captureDocument.mockResolvedValueOnce({
+      status: 'unavailable',
+      messageKey: 'attachments.capture.storeUnavailable',
+      correlationId: 'corr-store',
+      attempt: 1,
+    });
+    const { region, submit } = await prepare({ file: imageFile() });
+    await submit();
+
+    expect(
+      await within(region).findByText(EN['delivery.receiver.evidenceUploadFailed'] as string)
+    ).toBeVisible();
+    expect(verifyReceiver).not.toHaveBeenCalled();
+    expect(
+      within(region).getByText(EN['delivery.receiver.evidenceChosen'] as string)
+    ).toBeVisible();
+    expect(fileControl(region).files?.[0]?.name).toBe('receiver-id.png');
+
+    await submit();
+    await waitFor(() => expect(verifyReceiver).toHaveBeenCalledTimes(1));
+    expect(captureDocument).toHaveBeenCalledTimes(2);
+    for (const [input] of captureDocument.mock.calls) {
+      expect(input).toMatchObject({ fileName: 'receiver-id.png', contentType: 'image/png' });
+    }
+    expect(verifyReceiver.mock.calls[0]).toStrictEqual([
+      DELIVERY_ID,
+      { receiverPartnerId: PARTNER_ID, identityEvidenceDocumentVersionId: VERSION_ID },
+    ]);
+  });
+
+  it('keeps the chosen document after the server refuses it, and never verifies without it while it stays chosen', async () => {
+    captureDocument
+      .mockResolvedValueOnce(registered(VERSION_ID))
+      .mockResolvedValueOnce(registered(SECOND_VERSION_ID));
+    verifyReceiver.mockResolvedValueOnce(refusedWrite('conflict', 'ERR-DOC-001'));
+    const { region, submit } = await prepare({ file: imageFile() });
+    await submit();
+
+    expect(
+      await within(region).findByText(EN['delivery.receiver.evidenceRefusedReview'] as string)
+    ).toBeVisible();
+    expect(
+      within(region).getByText(EN['delivery.receiver.evidenceChosen'] as string)
+    ).toBeVisible();
+
+    await submit();
+    await waitFor(() => expect(verifyReceiver).toHaveBeenCalledTimes(2));
+    expect(verifyReceiver.mock.calls[1]).toStrictEqual([
+      DELIVERY_ID,
+      { receiverPartnerId: PARTNER_ID, identityEvidenceDocumentVersionId: SECOND_VERSION_ID },
+    ]);
+    // Every verification sent while the document was chosen carried a version.
+    for (const [, body] of verifyReceiver.mock.calls) {
+      expect(body).toHaveProperty('identityEvidenceDocumentVersionId');
+    }
+    expect(captureDocument).toHaveBeenCalledTimes(2);
+  });
+
+  it('verifies without evidence only after the operator removes the document following a refusal', async () => {
+    verifyReceiver.mockResolvedValueOnce(refusedWrite('invalid', 'ERR-VAL-001'));
+    const { region, user, submit } = await prepare({ file: imageFile() });
+    await submit();
+    expect(
+      await within(region).findByText(EN['delivery.receiver.evidenceRefusedInvalid'] as string)
+    ).toBeVisible();
+
+    await user.click(
+      within(region).getByRole('button', {
+        name: EN['delivery.receiver.evidenceRemove'] as string,
+      })
+    );
+    expect(within(region).queryByText(EN['delivery.receiver.evidenceChosen'] as string)).toBeNull();
+    expect(fileControl(region)).toHaveValue('');
+
+    await submit();
+    await waitFor(() => expect(verifyReceiver).toHaveBeenCalledTimes(2));
+    expect(verifyReceiver.mock.calls[0]?.[1]).toStrictEqual({
+      receiverPartnerId: PARTNER_ID,
+      identityEvidenceDocumentVersionId: VERSION_ID,
+    });
+    expect(verifyReceiver.mock.calls[1]).toStrictEqual([
+      DELIVERY_ID,
+      { receiverPartnerId: PARTNER_ID },
+    ]);
+    expect(captureDocument).toHaveBeenCalledTimes(1);
+  });
+
   it('verifies without evidence once a chosen document is removed', async () => {
     const { region, user, submit } = await prepare({ file: imageFile() });
     expect(
@@ -1587,7 +1763,7 @@ describe('optional identity evidence when confirming a receiver', () => {
       })
     );
     expect(within(region).queryByText(EN['delivery.receiver.evidenceChosen'] as string)).toBeNull();
-    const file = within(region).getByLabelText(EN['delivery.receiver.evidenceLabel'] as string);
+    const file = fileControl(region);
     expect(file).toHaveValue('');
     // Focus returns to the control the operator was working with.
     expect(file).toHaveFocus();
@@ -1600,6 +1776,115 @@ describe('optional identity evidence when confirming a receiver', () => {
     ]);
     expect(captureDocument).not.toHaveBeenCalled();
     expect(createDocumentLink).not.toHaveBeenCalled();
+  });
+
+  it("declares the identity row's content types on the control and states its size ceiling from that row", async () => {
+    const { region } = await prepare();
+    const file = fileControl(region);
+    await waitFor(() => expect(file).toHaveAttribute('accept', 'image/jpeg,image/png,image/webp'));
+    const stated =
+      `${EN['delivery.receiver.evidenceTypes'] as string} JPEG, PNG and WEBP. ` +
+      `${EN['delivery.receiver.evidenceMaxSize'] as string} 10 MB.`;
+    expect(limitsOf(file)).toHaveTextContent(stated);
+    expect(file).toHaveAccessibleDescription(
+      `${EN['delivery.receiver.evidenceHint'] as string} ${stated}`
+    );
+  });
+
+  it('states whatever a different row publishes, so nothing about the limits is written in the panel', async () => {
+    listDocumentCategories.mockResolvedValue(
+      categoriesOf(
+        category('delivery_receiver_identity', 'identity_document', {
+          allowedContentTypes: ['image/png'],
+          maxBytes: 5_242_880,
+        })
+      )
+    );
+    const { region } = await prepare();
+    const file = fileControl(region);
+    await waitFor(() => expect(file).toHaveAttribute('accept', 'image/png'));
+    expect(limitsOf(file)).toHaveTextContent(
+      `${EN['delivery.receiver.evidenceTypes'] as string} PNG. ` +
+        `${EN['delivery.receiver.evidenceMaxSize'] as string} 5 MB.`
+    );
+  });
+
+  it('says it is reading the limits while the row is on its way, and offers the control meanwhile', async () => {
+    listDocumentCategories.mockReturnValue(new Promise(() => undefined));
+    const { region } = await prepare();
+    const file = fileControl(region);
+    expect(limitsOf(file)).toHaveTextContent(
+      EN['delivery.receiver.evidenceLimitsLoading'] as string
+    );
+    expect(file).not.toHaveAttribute('accept');
+    expect(file).toBeEnabled();
+  });
+
+  it('sends a file the row does not admit to the server rather than filtering it in the browser', async () => {
+    // What the upload authorization answers a content type the row does not list.
+    captureDocument.mockResolvedValue({
+      status: 'invalid',
+      fieldErrors: { contentType: 'form.violation.invalid' },
+      attempt: 1,
+    });
+    const { region, submit } = await prepare({
+      // A browser automation sets the files directly and never consults `accept`.
+      file: fileOf('not-an-identity-image.txt', 'text/plain', 'plain text'),
+      applyAccept: false,
+    });
+    await waitFor(() =>
+      expect(fileControl(region)).toHaveAttribute('accept', 'image/jpeg,image/png,image/webp')
+    );
+    await submit();
+
+    expect(
+      await within(region).findByText(EN['delivery.receiver.evidenceUploadFailed'] as string)
+    ).toBeVisible();
+    expect(within(region).getByText(EN['form.violation.invalid'] as string)).toBeVisible();
+    expect(captureDocument).toHaveBeenCalledTimes(1);
+    expect(captureDocument.mock.calls[0]?.[0]).toMatchObject({
+      fileName: 'not-an-identity-image.txt',
+      contentType: 'text/plain',
+    });
+    expect(verifyReceiver).not.toHaveBeenCalled();
+    expect(within(region).getByText(EN['delivery.receiver.noneTitle'] as string)).toBeVisible();
+  });
+
+  it('is operable from the keyboard: the document control is reached, the choice removed and the receiver confirmed', async () => {
+    const { region, user } = await prepare();
+    /** Moves focus with Tab alone until it lands on the element, within a bound. */
+    const reach = async (element: HTMLElement) => {
+      for (let step = 0; step < 40 && document.activeElement !== element; step += 1) {
+        await user.tab();
+      }
+      expect(element).toHaveFocus();
+    };
+
+    const file = fileControl(region);
+    await reach(file);
+    // The picker is the browser's own dialog; the choice lands on the focused control.
+    await user.upload(file, imageFile());
+    const remove = within(region).getByRole('button', {
+      name: EN['delivery.receiver.evidenceRemove'] as string,
+    });
+    await reach(remove);
+    await user.keyboard('{Enter}');
+    expect(within(region).queryByText(EN['delivery.receiver.evidenceChosen'] as string)).toBeNull();
+    const fresh = fileControl(region);
+    expect(fresh).toHaveFocus();
+    expect(fresh).toHaveValue('');
+
+    await user.upload(fresh, imageFile());
+    const confirm = within(region).getByRole('button', {
+      name: EN['delivery.receiver.verifySubmit'] as string,
+    });
+    await reach(confirm);
+    await user.keyboard(' ');
+    await waitFor(() => expect(verifyReceiver).toHaveBeenCalledTimes(1));
+    expect(verifyReceiver.mock.calls[0]).toStrictEqual([
+      DELIVERY_ID,
+      { receiverPartnerId: PARTNER_ID, identityEvidenceDocumentVersionId: VERSION_ID },
+    ]);
   });
 
   it('says the confirmation is under way and holds the controls while it is', async () => {
@@ -1645,13 +1930,262 @@ describe('optional identity evidence when confirming a receiver', () => {
     const { region, submit } = await prepare({ file: imageFile(), locale: 'ar' });
     expect(document.documentElement.dir).toBe('rtl');
     expect(within(region).getByText(AR['delivery.receiver.evidenceHint'] as string)).toBeVisible();
+    const limits = limitsOf(fileControl(region, AR));
+    await waitFor(() =>
+      expect(limits).toHaveTextContent(AR['delivery.receiver.evidenceMaxSize'] as string)
+    );
+    expect(limits).toHaveTextContent(AR['delivery.receiver.evidenceTypes'] as string);
+    expect(limits.textContent).not.toContain(EN['delivery.receiver.evidenceMaxSize'] as string);
     await submit();
     expect(
       await within(region).findByText(AR['delivery.receiver.evidenceUploadFailed'] as string)
     ).toBeVisible();
     expect(within(region).getByText(AR['delivery.receiver.refused'] as string)).toBeVisible();
+    expect(
+      within(region).getByText(AR['delivery.receiver.evidenceStillChosen'] as string)
+    ).toBeVisible();
     expect(within(region).queryByText(EN['delivery.receiver.refused'] as string)).toBeNull();
     expect(verifyReceiver).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The handover signature capture, run for real (FE-006).
+ *
+ * `signature-capture.ts` is replaced by a mock everywhere the screen renders it,
+ * so its own order was measured by nothing. Here the Server Action itself runs,
+ * imported past that mock, and only the adapters it calls — the shared evidence
+ * chain and the delivery write — are mocked. Each case fails if the order, the
+ * category, the purpose, the capture time or an early refusal regressed.
+ */
+describe('the signature capture Server Action, run for real under the adapters it calls', () => {
+  const DOCUMENT_ID = 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1';
+  const VERSION_ID = 'b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2';
+  const CAPTURED_AT_MS = Date.UTC(2026, 8, 15, 10, 0, 0);
+  // Not the seeded purpose, so a purpose written in the action would be caught.
+  const ROW_PURPOSE = 'signature_row_purpose';
+
+  const row = (categoryCode: string) => ({
+    categoryCode,
+    allowedContentTypes: ['image/png'],
+    maxBytes: 10_485_760,
+    retentionClass: 'evidence-audit',
+    classification: 'restricted',
+    businessLinkPurpose: ROW_PURPOSE,
+    deviceCaptureTimestampRequired: false,
+  });
+
+  const signatureFile = (content = 'signature-image') => {
+    const file = new File([content], 'signature.png', {
+      type: 'image/png',
+      lastModified: CAPTURED_AT_MS,
+    });
+    return Object.assign(file, {
+      arrayBuffer: async () => new TextEncoder().encode(content).buffer,
+    });
+  };
+
+  const formWith = (signerRole: string, file?: File) => {
+    const form = new FormData();
+    form.set('signerRole', signerRole);
+    if (file !== undefined) form.set('signatureFile', file);
+    return form;
+  };
+
+  const realCapture = async () =>
+    (
+      await vi.importActual<{ captureDeliverySignature: typeof RealCaptureDeliverySignature }>(
+        '@/features/delivery/signature-capture'
+      )
+    ).captureDeliverySignature;
+
+  beforeEach(() => {
+    listDocumentCategories.mockResolvedValue(
+      okRead({
+        items: [row('reception_vin'), row('reception_signature')],
+        nextCursor: null,
+        hasMore: false,
+      })
+    );
+    captureDocument.mockResolvedValue({
+      status: 'success',
+      correlationId: 'corr-capture',
+      attempt: 1,
+      registered: {
+        documentId: DOCUMENT_ID,
+        versionId: VERSION_ID,
+        versionNumber: 1,
+        status: 'pending',
+        scannerAvailable: false,
+      },
+    });
+    createDocumentLink.mockResolvedValue({
+      status: 'success',
+      correlationId: 'corr-link',
+      attempt: 1,
+      linkId: 'link-9',
+    });
+    attachSignature.mockResolvedValue(succeeded('delivery.signature.attached'));
+  });
+
+  it("captures, links under the row's own purpose, then binds — in that order, with the file's capture time", async () => {
+    const capture = await realCapture();
+    const outcome = await capture(DELIVERY_ID, VISIT_ID, formWith('receiver', signatureFile()));
+
+    expect(captureDocument).toHaveBeenCalledTimes(1);
+    expect(captureDocument.mock.calls[0]?.[0]).toMatchObject({
+      categoryCode: 'reception_signature',
+      entityType: 'rec.reception_visits',
+      entityId: VISIT_ID,
+      fileName: 'signature.png',
+      contentType: 'image/png',
+      capturedAt: new Date(CAPTURED_AT_MS).toISOString(),
+    });
+    expect(createDocumentLink).toHaveBeenCalledWith(DOCUMENT_ID, {
+      entityType: 'rec.reception_visits',
+      entityId: VISIT_ID,
+      linkPurpose: ROW_PURPOSE,
+    });
+    expect(attachSignature).toHaveBeenCalledWith(DELIVERY_ID, {
+      signerRole: 'receiver',
+      signatureDocumentVersionId: VERSION_ID,
+    });
+    const [captured] = captureDocument.mock.invocationCallOrder;
+    const [linked] = createDocumentLink.mock.invocationCallOrder;
+    const [bound] = attachSignature.mock.invocationCallOrder;
+    expect(captured).toBeLessThan(linked as number);
+    expect(linked).toBeLessThan(bound as number);
+    expect(outcome).toMatchObject({
+      status: 'success',
+      stage: 'bound',
+      documentId: DOCUMENT_ID,
+      versionId: VERSION_ID,
+      versionStatus: 'pending',
+      scannerAvailable: false,
+    });
+  });
+
+  it('sends no capture time when the file carries no usable instant', async () => {
+    const file = signatureFile();
+    Object.defineProperty(file, 'lastModified', { value: Number.NaN });
+    const capture = await realCapture();
+    await capture(DELIVERY_ID, VISIT_ID, formWith('witness', file));
+
+    expect(captureDocument.mock.calls[0]?.[0]).toMatchObject({ capturedAt: null });
+  });
+
+  it.each([[''], ['customer']])(
+    'refuses the signer role %j before any request is spent',
+    async (role) => {
+      const capture = await realCapture();
+      const outcome = await capture(DELIVERY_ID, VISIT_ID, formWith(role, signatureFile()));
+
+      expect(outcome).toStrictEqual({
+        status: 'invalid',
+        fieldErrors: { signerRole: 'form.required' },
+        attempt: 1,
+      });
+      expect(listDocumentCategories).not.toHaveBeenCalled();
+      expect(captureDocument).not.toHaveBeenCalled();
+      expect(attachSignature).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    ['no file at all', undefined],
+    ['an empty file', new File([], 'signature.png', { type: 'image/png' })],
+  ])('refuses %s before any request is spent', async (_what, file) => {
+    const capture = await realCapture();
+    const outcome = await capture(DELIVERY_ID, VISIT_ID, formWith('receiver', file));
+
+    expect(outcome).toStrictEqual({
+      status: 'invalid',
+      fieldErrors: { signatureFile: 'attachments.capture.empty' },
+      attempt: 1,
+    });
+    expect(listDocumentCategories).not.toHaveBeenCalled();
+    expect(captureDocument).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['unavailable', 'error'],
+    ['denied', 'denied'],
+  ])('reports a category list that is %s and captures nothing', async (readStatus, status) => {
+    listDocumentCategories.mockResolvedValue(refusedRead(readStatus, 'corr-categories'));
+    const capture = await realCapture();
+    const outcome = await capture(DELIVERY_ID, VISIT_ID, formWith('receiver', signatureFile()));
+
+    expect(outcome).toStrictEqual({
+      status,
+      messageKey: 'attachments.capture.categoriesUnavailable',
+      correlationId: 'corr-categories',
+      attempt: 1,
+    });
+    expect(captureDocument).not.toHaveBeenCalled();
+  });
+
+  it('reports a missing signature category rather than filing the image under another', async () => {
+    listDocumentCategories.mockResolvedValue(
+      okRead({ items: [row('reception_vin')], nextCursor: null, hasMore: false })
+    );
+    const capture = await realCapture();
+    const outcome = await capture(DELIVERY_ID, VISIT_ID, formWith('receiver', signatureFile()));
+
+    expect(outcome).toMatchObject({
+      status: 'error',
+      messageKey: 'attachments.capture.categoryMissing',
+    });
+    expect(captureDocument).not.toHaveBeenCalled();
+    expect(createDocumentLink).not.toHaveBeenCalled();
+  });
+
+  it('returns a failed capture as it arrived, and links and binds nothing', async () => {
+    const failed = {
+      status: 'unavailable',
+      messageKey: 'attachments.capture.storeUnavailable',
+      correlationId: 'corr-store',
+      attempt: 1,
+    };
+    captureDocument.mockResolvedValue(failed);
+    const capture = await realCapture();
+    const outcome = await capture(DELIVERY_ID, VISIT_ID, formWith('receiver', signatureFile()));
+
+    expect(outcome).toStrictEqual(failed);
+    expect(createDocumentLink).not.toHaveBeenCalled();
+    expect(attachSignature).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed link as captured-but-not-bound, and binds nothing', async () => {
+    createDocumentLink.mockResolvedValue({
+      status: 'denied',
+      messageKey: 'state.denied.title',
+      correlationId: 'corr-link-refused',
+      attempt: 1,
+    });
+    const capture = await realCapture();
+    const outcome = await capture(DELIVERY_ID, VISIT_ID, formWith('receiver', signatureFile()));
+
+    expect(outcome).toMatchObject({
+      status: 'denied',
+      stage: 'captured',
+      documentId: DOCUMENT_ID,
+      versionId: VERSION_ID,
+    });
+    expect(attachSignature).not.toHaveBeenCalled();
+  });
+
+  it('reports a refused bind as captured-but-not-bound, with the refusal it received', async () => {
+    attachSignature.mockResolvedValue(refusedWrite('conflict', 'ERR-DOC-001'));
+    const capture = await realCapture();
+    const outcome = await capture(DELIVERY_ID, VISIT_ID, formWith('receiver', signatureFile()));
+
+    expect(outcome).toMatchObject({
+      status: 'conflict',
+      code: 'ERR-DOC-001',
+      stage: 'captured',
+      documentId: DOCUMENT_ID,
+      versionId: VERSION_ID,
+    });
   });
 });
 

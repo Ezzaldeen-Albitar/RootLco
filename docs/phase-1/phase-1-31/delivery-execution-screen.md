@@ -129,6 +129,18 @@ unverified-receiver handover the out-of-repository journey harness must publish 
 `browserFixtures.receiver`, which it does not publish yet. The FE-003 browser proof is therefore
 not executed, and nothing here records it as covered._
 
+_2026-09-15 correction to the note above: "pending #399's merge" no longer holds. PR #399 merged
+into `develop` as `c7298c09`, and this branch merged that head, so the `delivery_receiver_identity`
+category and the evidence binding it relies on are now on `develop`. The correction also changes
+three statements. First, a chosen document stays chosen after a failed upload, a failed link or a
+refusal: a further Confirm sends it again, and verifying without it takes the explicit Remove.
+Second, the file control's accepted types and the stated size ceiling are read from the
+category's published row. Third, the journey harness now publishes two unverified-receiver
+handovers per fixture key as `browserFixtures.receiver.<key>.refusal` and `.success`, one per
+browser case. Local branch state and the hosted run are still pending. The two browser cases
+still skip in the hosted authenticated-browser job, which sets no P1-31 handoff. They are not
+executed until a run that sets one, so nothing here records the browser proof as covered._
+
 `sal.delivery-receiver-verify` accepts an optional `identityEvidenceDocumentVersionId`. This slice
 sends none, and the verification form offers no capture for it.
 

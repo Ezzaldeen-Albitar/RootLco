@@ -20,7 +20,13 @@ import { RECEIVER_IDENTITY_CATEGORY_CODE } from './delivery-contract';
  * chosen, the document is part of the act. It must be captured and linked
  * before the verification is sent, and a failure at either step ends the act
  * there — the verification is never sent without the document the operator
- * chose, and never retried without it.
+ * chose, and never retried without it. The panel keeps the document chosen after
+ * a failure, so a further attempt arrives here WITH the file and runs the whole
+ * chain again.
+ *
+ * The capture sends the file's own last-modified instant as the device capture
+ * time, exactly as the signature capture does: the identity category's row
+ * requires one, and the version registration is refused without it.
  *
  * ## The order is the signature capture's order
  *
