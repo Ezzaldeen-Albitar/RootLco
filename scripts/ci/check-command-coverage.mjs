@@ -572,6 +572,12 @@ export const REGISTER = Object.freeze([
     why: 'no technical vocabulary in a message a workshop employee reads',
   },
   { name: 'dev:all', owner: ROOT, tier: 'interactive', why: 'owner-visible local stack launcher' },
+  {
+    name: 'monitor:p1-31',
+    owner: ROOT,
+    tier: 'interactive',
+    why: 'routes an explicitly selected local/test log file to a new local reviewer queue; parser and CLI refusals run in the required unit tier',
+  },
   { name: 'dev:status', owner: ROOT, tier: 'interactive', why: 'reports the live local stack' },
   { name: 'dev:stop', owner: ROOT, tier: 'interactive', why: 'stops only launcher-owned PIDs' },
   {
@@ -602,6 +608,18 @@ export const REGISTER = Object.freeze([
     owner: ROOT,
     tier: 'interactive',
     why: 'creates the local-only Owner acceptance account and all three synthetic tenants',
+  },
+  {
+    name: 'acceptance:export-fixture',
+    owner: ROOT,
+    tier: 'interactive',
+    // `interactive` for the same reason the rest of this group is, and one reason
+    // more: it refuses every target but a loopback database on 54322 with
+    // `ROOTLCO_ENV=local-acceptance` and `ROOTLCO_ACCEPTANCE_CONFIRM=p1-31`, and
+    // it only accepts identifiers an acceptance run created minutes earlier. A
+    // hosted runner holds none of those, so requiring it in CI would mean
+    // requiring CI to hold an acceptance run.
+    why: 'installs the one scoped, expiring local export role the P1-31 export companion needs',
   },
   {
     name: 'acceptance:provision-fixtures',
@@ -952,6 +970,27 @@ export const REGISTER = Object.freeze([
   },
   { name: 'test:backend', owner: ROOT, tier: 'environment', why: 'needs PostgreSQL' },
   { name: 'test:db', owner: ROOT, tier: 'environment', why: 'needs PostgreSQL' },
+  {
+    name: 'test:db-fixture',
+    owner: ROOT,
+    tier: 'environment',
+    // The one database file that must NOT run against the database the rest of
+    // the tier runs against. It installs privileged role grants on a real
+    // principal and refuses to start when `current_database()` is `postgres` —
+    // which is what `tests/db/helpers.ts` defaults to and what every hosted
+    // database job supplies. So it is excluded from `vitest.config.db.ts` by name
+    // and carries its own runner, `vitest.config.db-fixture.ts`.
+    //
+    // `environment` with the cost stated plainly, in the spirit of the
+    // `verify:database` entry above: NO hosted job invokes this command, because
+    // no hosted job has a disposable database to give it. It is an explicit
+    // operator step against a database named at the run, and the acceptance
+    // procedure names the command and the database so it is taken deliberately
+    // rather than assumed. Registering it `required` or `ci-only` would be a
+    // declaration this repository cannot honour; leaving it unregistered would be
+    // exactly the unclassified command this gate exists to refuse.
+    why: 'the privileged export-fixture writer, executed against a DISPOSABLE PostgreSQL database named by DB_NAME — it refuses the shared one by design, so no hosted job runs it',
+  },
   { name: 'test:integration', owner: ROOT, tier: 'environment', why: 'needs PostgreSQL' },
   {
     name: 'test:coverage',

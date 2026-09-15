@@ -7,13 +7,15 @@
  * | `rpt.report-catalogue` | GET   | `/reports`                      | `rpt.report.read`      |
  * | `rpt.report-read`      | GET   | `/reports/{reportCode}`         | `rpt.report.read`      |
  * | `rpt.report-run`       | GET   | `/reports/{reportCode}/rows`    | `rpt.report.read` plus the dataset's own codes, evaluated server-side |
+ * | `rpt.report-export`    | POST  | `/reports/{reportCode}:export`  | `rpt.export`, report read, dataset and configured export permissions at the selected branch |
  *
  * Typed from the three routes that own the shapes —
  * `apps/api/src/app/api/v1/reports/route.ts`,
  * `reports/[reportCode]/route.ts` and `reports/[reportCode]/rows/route.ts` —
  * and from `ReportDefinitionView` in
  * `apps/api/src/modules/reporting/application/report-catalogue-service.ts` and
- * `ReportRunView` in `.../report-run-service.ts`.
+ * `ReportRunView` in `.../report-run-service.ts` and `ReportExportView` in
+ * `.../report-export-service.ts`. The export body is a consumed request mirror.
  *
  * ## One screen for every report code, because the catalogue decides the set
  *
@@ -28,8 +30,8 @@
  *
  * ## Two envelope shapes, and both must be tolerated
  *
- * `develop` publishes `countsByState` and no `groups`. The dataset slice that
- * adds the other three reports publishes `groups`, `filters` and `branch` as
+ * The older envelope published `countsByState` and no `groups`. The dataset slice
+ * added the other three reports and publishes `groups`, `filters` and `branch` as
  * well, and deprecates `countsByState`. A client that required either shape
  * would break against the other, so `groups`, `filters` and `branch` are
  * OPTIONAL here and the screen reads whichever it was given. `countsByState` is
@@ -50,6 +52,7 @@
  * sent. That is recorded in `docs/phase-1/phase-1-31/report-screens.md`.
  */
 import type { CursorPage } from '@/lib/api/read-operation';
+import type { ActionState } from '@/lib/forms/action-result';
 
 /**
  * The one code every report operation declares.
@@ -63,6 +66,7 @@ import type { CursorPage } from '@/lib/api/read-operation';
  */
 export const REPORT_PERMISSIONS = {
   read: 'rpt.report.read',
+  export: 'rpt.export',
 } as const;
 
 /**
@@ -488,4 +492,65 @@ export function reportGroups(run: ReportRun): readonly ReportGroup[] {
     // the envelope typed as a number, not arithmetic on it.
     measures: { count: String(entry.count) },
   }));
+}
+
+export interface ReportExportBody {
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly from: string;
+  readonly to: string;
+  readonly reason: string;
+}
+
+export interface ReportExportResult {
+  readonly reportCode: string;
+  readonly generated: true;
+  readonly freshness: 'live';
+  readonly generatedAt: string;
+  readonly filters: { readonly companyId: string; readonly branchId: string };
+  readonly period: { readonly from: string; readonly to: string; readonly timezone: string };
+  readonly rowCount: number;
+  readonly summaryCount: number;
+  readonly file: {
+    readonly filename: string;
+    readonly mediaType: 'text/csv';
+    readonly encoding: 'utf-8';
+    readonly content: string;
+  };
+}
+
+export interface ReportExportState extends ActionState {
+  readonly exported?: ReportExportResult;
+}
+
+/** Checks the selected context and the downloadable wire shape before creating a Blob. */
+export function isSelectedReportExport(
+  value: unknown,
+  code: string,
+  body: ReportExportBody
+): value is ReportExportResult {
+  if (!value || typeof value !== 'object') return false;
+  const result = value as Partial<ReportExportResult>;
+  return (
+    result.reportCode === code &&
+    result.generated === true &&
+    result.freshness === 'live' &&
+    typeof result.generatedAt === 'string' &&
+    Number.isFinite(Date.parse(result.generatedAt)) &&
+    result.filters?.companyId === body.companyId &&
+    result.filters?.branchId === body.branchId &&
+    result.period?.from === body.from &&
+    result.period?.to === body.to &&
+    typeof result.period?.timezone === 'string' &&
+    result.period.timezone.length > 0 &&
+    Number.isSafeInteger(result.rowCount) &&
+    (result.rowCount ?? -1) >= 0 &&
+    Number.isSafeInteger(result.summaryCount) &&
+    (result.summaryCount ?? -1) >= 0 &&
+    result.file?.mediaType === 'text/csv' &&
+    result.file.encoding === 'utf-8' &&
+    typeof result.file.content === 'string' &&
+    typeof result.file.filename === 'string' &&
+    result.file.filename === `${code}-${body.from}-${body.to}.csv`
+  );
 }

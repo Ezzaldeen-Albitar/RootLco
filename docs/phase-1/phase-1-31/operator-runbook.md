@@ -530,3 +530,10 @@ on the environments they are about, and § 1 says exactly how few of those there
 
 The register's allocation for this slice is **§ 57** and **CC-47**. Under § 48.1's never-renumber
 rule no existing identifier moves to accommodate it.
+
+## 9. Local fault monitoring
+
+The [monitoring runbook](./monitoring-runbook.md) documents the P1-31 local alert router,
+its environment and file-access prerequisites, bounded output, reviewer routing, failure handling,
+rollback and reproducible exception-capture rehearsal. Its queue is local; external delivery and
+the separate D-10 event-consumption decision are not established by running it.

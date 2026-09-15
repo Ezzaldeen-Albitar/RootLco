@@ -40,12 +40,15 @@ const listReportCatalogue = vi.fn();
 const readReport = vi.fn();
 const readReportScopes = vi.fn();
 const runReport = vi.fn();
+const exportReport = vi.fn();
 vi.mock('@/features/reports/reports-api', () => ({
   listReportCatalogue: (...args: unknown[]) => listReportCatalogue(...args),
   readReport: (...args: unknown[]) => readReport(...args),
   readReportScopes: (...args: unknown[]) => readReportScopes(...args),
   runReport: (...args: unknown[]) => runReport(...args),
+  exportReport: (...args: unknown[]) => exportReport(...args),
 }));
+vi.mock('@/components/notifications/action-notifications', () => ({ notifyActionResult: vi.fn() }));
 
 let PERMISSIONS: readonly string[] = [];
 vi.mock('@/features/authentication/api/session', () => ({
@@ -196,6 +199,8 @@ beforeEach(() => {
   readReport.mockReset();
   readReportScopes.mockReset();
   runReport.mockReset();
+  exportReport.mockReset();
+  exportReport.mockResolvedValue({ status: 'denied', correlationId: 'export-reference' });
   PERMISSIONS = [READ];
   listReportCatalogue.mockResolvedValue(cataloguePage([BASELINE, UNRUNNABLE]));
   readReport.mockResolvedValue({ status: 'ok', data: BASELINE, correlationId: null });
@@ -328,7 +333,7 @@ describe('the catalogue renders what the operation returned, and decides nothing
     );
   });
 
-  it('offers no download anywhere, because there is no operation to offer', async () => {
+  it('offers no download on the catalogue, because export lives on the report screen', async () => {
     await renderCataloguePage();
     expect(await screen.findByText(EN['reports.catalogue.noDownload'] as string)).toBeVisible();
     expect(screen.queryByRole('link', { name: /download/i })).toBeNull();
@@ -766,5 +771,58 @@ describe('the screens read in Arabic as Arabic', () => {
       <ReportScreen locale="ar" messages={ar} definition={BASELINE} scopeOptions={SCOPES} />
     );
     expect(screen.getByText(AR['reports.run.show'] as string)).toBeVisible();
+  });
+});
+
+describe('export uses the displayed report selection', () => {
+  it('does not export an edited period until that period is submitted as a report', async () => {
+    PERMISSIONS = [READ, 'rpt.export'];
+    readReport.mockResolvedValue({
+      status: 'ok',
+      data: { ...BASELINE, exportPermissionCode: 'rpt.export', source: 'tenant', versionNumber: 1 },
+      correlationId: null,
+    });
+    await showReport();
+    const user = userEvent.setup();
+    const from = screen.getByLabelText(labelled('reports.run.from'));
+    await user.clear(from);
+    await user.type(from, '2026-09-02');
+    await user.type(
+      screen.getByRole('textbox', { name: labelled('reports.export.reason') }),
+      'Export displayed period'
+    );
+    await user.click(screen.getByRole('button', { name: EN['reports.export.download'] as string }));
+    await waitFor(() =>
+      expect(exportReport).toHaveBeenCalledExactlyOnceWith(CODE, {
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        from: '2026-09-01',
+        to: '2026-09-08',
+        reason: 'Export displayed period',
+      })
+    );
+    expect(runReport).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a configured report withheld when the session lacks export permission', async () => {
+    readReport.mockResolvedValue({
+      status: 'ok',
+      data: { ...BASELINE, exportPermissionCode: 'rpt.export' },
+      correlationId: null,
+    });
+    await showReport();
+    expect(screen.getByText(EN['reports.export.withheld'] as string)).toBeVisible();
+    expect(
+      screen.queryByRole('button', { name: EN['reports.export.download'] as string })
+    ).toBeNull();
+  });
+
+  it('keeps a baseline withheld even when the session holds export permission', async () => {
+    PERMISSIONS = [READ, 'rpt.export'];
+    await showReport();
+    expect(screen.getByText(EN['reports.export.withheld'] as string)).toBeVisible();
+    expect(
+      screen.queryByRole('button', { name: EN['reports.export.download'] as string })
+    ).toBeNull();
   });
 });

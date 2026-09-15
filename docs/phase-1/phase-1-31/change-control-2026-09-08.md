@@ -7522,13 +7522,13 @@ by this note: no full backend tier, no hosted job and no approval.)_
 
 ### 69.13.3 Dispositions — CC-61
 
-| id            | finding                                                                                                    | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | disposition                                                                                                                                                                                                                                                                                                    | owner / slice                                     | state                                                                                                                                                                                                                                                                                                                    |
-| ------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **CC-61**     | **P-12: the D-6 report-export contract is published as an explicitly authorized, audited operation**       | `POST /api/v1/reports/{reportCode}:export` declares `rpt.export` with the report and dataset reads and the published tenant configuration's own export permission, `auditClass: 'export'` and the action `rpt.report.exported`. The phase census at this head is **47 operations over 34 route files**, **13** distinct permission codes, **14** distinct declared-code sets, **24 privileged / 22 none / 1 export**, and `reports (3, 4)`; the platform register holds 413 operations, 413 Covered | **recorded as landed in source, and NOT recorded as closed.** No baseline export entitlement, role grant or bootstrap widening is introduced and `rpt.export` stays withheld from the administrator bundle under CC-04. The rows below are the conditions this identifier still carries                        | this slice, then the integration that consumes it | **open, recorded — the sub-rows below are what it closes on**                                                                                                                                                                                                                                                            |
-| **CC-61 (a)** | **the backend prerequisite is published before any frontend consumer, so the write-shape gate is widened** | `PENDING_MIRRORS` in `scripts/ci/check-p1-31-write-shape.mjs:171` carries `rpt.report-export` with the sentence that the next P1-31 frontend integration owes the consumed `ReportExportBody` mirror. The same file's lifecycle docblock binds the entry: the moment the mirror declares the interface the entry is STALE and the gate fails until it is deleted                                                                                                                                    | **recorded as a temporary widening with a named remover, not as a waiver.** It **must be removed in the same frontend change that adds the consumed mirror**, which is the lifecycle the gate already enforces on itself. Backend publication is not frontend completion and is not described as one           | the next P1-31 frontend integration               | **open until the consumed mirror lands and the entry is deleted in that change**                                                                                                                                                                                                                                         |
-| **CC-61 (b)** | **the export has no separate daily allowance — only the shared expensive-read policy and a size bound**    | `report-export-seam.md:79-80` states the `expensive-read` rate policy and the 8 MiB response bound apply and that there is no separate daily export allowance. Both check out: the operation declares `rateLimitPolicy: 'expensive-read'` at `apps/api/src/app/api/v1/reports/[reportCode]/route.ts:100`, and `MAX_FILE_BYTES = 8 * 1024 * 1024` is `report-export-service.ts:37`; `export-policy.ts:74` is where the shared `rpt.export` permission itself comes from                              | **recorded as a product limitation rather than repaired here.** A dedicated disclosure allowance is a policy decision with an Owner input, not a correction this slice may make, so the limit the operation actually enforces is written down instead of implied                                               | a future policy decision                          | **open, recorded as a limitation**                                                                                                                                                                                                                                                                                       |
-| **CC-61 (c)** | **the disclosure audit cannot identify the exact bytes that were downloaded**                              | `report-export-seam.md:80-82` states the audit records the selection and the counts, not a digest or a byte length of the file, so it cannot identify the exact downloaded bytes later. `report-export-service.ts:210-225` appends `rpt.report.exported` inside the request transaction before the result is returned at `:226`, and its `details` carry the report code, the scope, the period, the timezone, the row and summary counts and the reason — no digest and no byte length             | **recorded as a limitation, and the audit is deliberately not described as durable-file provenance.** The append-only disclosure record proves that a disclosure happened, who made it and what was selected; it does not prove which bytes left. Adding a digest is a contract change and is not claimed here | a future contract change                          | **open, recorded as a limitation**                                                                                                                                                                                                                                                                                       |
-| **CC-61 (d)** | **no hosted job has run at any head of this candidate**                                                    | Every measurement recorded for this slice is LOCAL. The full local backend tier is recorded with its one failure and its correction, and the disposable-database runs are named with their database                                                                                                                                                                                                                                                                                                 | **a passing full HOSTED backend integration job at the actual pull-request head is required before merge.** Until that job is recorded, no full backend pass is claimed, and neither the local records nor any engineering review supplies it                                                                  | the pull request, before any protected merge      | **open — the condition is required before merge and is not satisfied by this head** — _retained as written and true when written; 2026-09-14: **the required hosted job has since run and passed at head `b62ad310`**, so the condition this row carries is discharged at that head — see the addendum below this table_ |
+| id            | finding                                                                                                    | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | disposition                                                                                                                                                                                                                                                                                                    | owner / slice                                     | state                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **CC-61**     | **P-12: the D-6 report-export contract is published as an explicitly authorized, audited operation**       | `POST /api/v1/reports/{reportCode}:export` declares `rpt.export` with the report and dataset reads and the published tenant configuration's own export permission, `auditClass: 'export'` and the action `rpt.report.exported`. The phase census at this head is **47 operations over 34 route files**, **13** distinct permission codes, **14** distinct declared-code sets, **24 privileged / 22 none / 1 export**, and `reports (3, 4)`; the platform register holds 413 operations, 413 Covered | **recorded as landed in source, and NOT recorded as closed.** No baseline export entitlement, role grant or bootstrap widening is introduced and `rpt.export` stays withheld from the administrator bundle under CC-04. The rows below are the conditions this identifier still carries                        | this slice, then the integration that consumes it | **open, recorded — the sub-rows below are what it closes on**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| **CC-61 (a)** | **the backend prerequisite is published before any frontend consumer, so the write-shape gate is widened** | `PENDING_MIRRORS` in `scripts/ci/check-p1-31-write-shape.mjs:171` carries `rpt.report-export` with the sentence that the next P1-31 frontend integration owes the consumed `ReportExportBody` mirror. The same file's lifecycle docblock binds the entry: the moment the mirror declares the interface the entry is STALE and the gate fails until it is deleted                                                                                                                                    | **recorded as a temporary widening with a named remover, not as a waiver.** It **must be removed in the same frontend change that adds the consumed mirror**, which is the lifecycle the gate already enforces on itself. Backend publication is not frontend completion and is not described as one           | the next P1-31 frontend integration               | **open until the consumed mirror lands and the entry is deleted in that change** — _retained as written, and true when written; 2026-09-14: **both halves have since happened, and they happened in this integration.** `apps/web/src/features/reports/reports-contract.ts` declares `ReportExportBody`, `reports-api.ts` sends it, and `ReportExportPanel.tsx` is the control that consumes it; the export entry is GONE from `PENDING_MIRRORS`, which now begins at `scripts/ci/check-p1-31-write-shape.mjs:168` and carries only the four `rpt.report-configuration-*` writes CC-37(b) accounts for. A real run at this head reports 22 operations in scope, 12 writes, 11 with a body, 1 declared bodyless, **4 pending a consumer**, 7 compared against 35 mirror interfaces, 0 problems. The measured cell's `:171` citation is superseded by that line and is left as written rather than re-based by offset. This row is therefore **closed by this integration**; the sentence ordering the removal is kept because it is what made the removal a lifecycle the gate enforces on itself rather than a favour somebody remembered_ |
+| **CC-61 (b)** | **the export has no separate daily allowance — only the shared expensive-read policy and a size bound**    | `report-export-seam.md:79-80` states the `expensive-read` rate policy and the 8 MiB response bound apply and that there is no separate daily export allowance. Both check out: the operation declares `rateLimitPolicy: 'expensive-read'` at `apps/api/src/app/api/v1/reports/[reportCode]/route.ts:100`, and `MAX_FILE_BYTES = 8 * 1024 * 1024` is `report-export-service.ts:37`; `export-policy.ts:74` is where the shared `rpt.export` permission itself comes from                              | **recorded as a product limitation rather than repaired here.** A dedicated disclosure allowance is a policy decision with an Owner input, not a correction this slice may make, so the limit the operation actually enforces is written down instead of implied                                               | a future policy decision                          | **open, recorded as a limitation**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| **CC-61 (c)** | **the disclosure audit cannot identify the exact bytes that were downloaded**                              | `report-export-seam.md:80-82` states the audit records the selection and the counts, not a digest or a byte length of the file, so it cannot identify the exact downloaded bytes later. `report-export-service.ts:210-225` appends `rpt.report.exported` inside the request transaction before the result is returned at `:226`, and its `details` carry the report code, the scope, the period, the timezone, the row and summary counts and the reason — no digest and no byte length             | **recorded as a limitation, and the audit is deliberately not described as durable-file provenance.** The append-only disclosure record proves that a disclosure happened, who made it and what was selected; it does not prove which bytes left. Adding a digest is a contract change and is not claimed here | a future contract change                          | **open, recorded as a limitation**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| **CC-61 (d)** | **no hosted job has run at any head of this candidate**                                                    | Every measurement recorded for this slice is LOCAL. The full local backend tier is recorded with its one failure and its correction, and the disposable-database runs are named with their database                                                                                                                                                                                                                                                                                                 | **a passing full HOSTED backend integration job at the actual pull-request head is required before merge.** Until that job is recorded, no full backend pass is claimed, and neither the local records nor any engineering review supplies it                                                                  | the pull request, before any protected merge      | **open — the condition is required before merge and is not satisfied by this head** — _retained as written and true when written; 2026-09-14: **the required hosted job has since run and passed at head `b62ad310`**, so the condition this row carries is discharged at that head — see the addendum below this table_                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 _(2026-09-14, P-12 addendum to CC-61 (d): the finding sentence "no hosted job has run at any head of this
 candidate" and the original wording of its state cell are retained above and were true when written. A
@@ -7544,3 +7544,314 @@ success, completed 2026-09-14T15:29:24Z**, job
 pull-request head — is therefore satisfied at `b62ad310`. Nothing beyond those job conclusions is
 claimed here: no phase verdict, no human certification, no promotion and no merge. The observation is bound
 to that head, and a later commit on this branch does not inherit it.)_
+
+## 69.14 Report download, local monitoring and developer guidance
+
+LOCAL implementation source: `c2235b974144f68d07975ce768cabd853186a8ea`, based on backend
+candidate `d325741675536032a07cc8e2881c6d41c47bb4ad` and Fable tablet instrument
+`7d944e05ad77177740b2281c927219db7218af2e` integrated by normal merge. This record does not
+claim either candidate is on protected develop. Section 70 remains reserved for closing evidence.
+
+The report detail now offers a translated reason-and-download control after a successful run.
+It uses the displayed run's scope and period, not later unsubmitted form edits. Page gates require
+rpt.export and configured export authority; the backend remains authoritative for dataset,
+configured permission, scope and audit checks. The typed adapter submits five closed body fields,
+validates returned context and file metadata, and the component prevents duplicate submissions,
+ignores stale responses and cleans up its download URL. The consumed request mirror replaces the
+backend candidate's pending-consumer entry. Four report codes use the same path.
+
+The new monitoring command reads bounded local/test JSON logs and produces an exclusive local
+queue containing only validated operation, error, correlation, timestamp and reviewer-route fields.
+It makes no network connection. Report export and security faults route to the existing security
+reviewer as well as the technical reviewer. It does not infer an audit failure from every export
+fault, claim an external notification, or resolve D-10 event consumption. The operator runbook links
+the new monitoring guide; developer guidance covers contract authority, scope/version behavior,
+export semantics, meaningful verification and evidence recording.
+
+Verification to date is LOCAL and focused:
+
+- UI/adapter suite: 142 passed across four files, including eight export DOM cases in English/Arabic.
+- Monitoring suite: eight passed, including actual captureException through RecordingErrorMonitor
+  and the JSON logger, sanitized routing, malformed identifiers, bounds, duplicates, CLI completion
+  and refusal, and exclusive output preservation.
+- Root/web types and changed lint passed. Changed-file formatting and diff whitespace checks passed.
+- Retained monitoring rehearsal measured 2026-09-14T11:10:16Z at c2235b97: CLI exit zero,
+  complete=true, 460 input bytes, one record read and one routed, zero malformed/ignored/duplicates.
+  The injected secret canary is absent from the queue. Queue SHA-256:
+  `a1b8757f42bb89cb2d7573005a969b1b01d89227ef1cf16c517bb7b486462e66`.
+  Raw capture, in-memory result, CLI output/counts and digests are retained externally under
+  `orchestration/evidence/p1-31/astra-fe009-20260914/monitor-rehearsal-c2235b97/`.
+
+The rehearsal is an injected test fault, not a business acceptance run or human certification.
+The full-tier ledger still describes its earlier measured backend source; it will be refreshed
+once the frontend and assigned export acceptance instruments are consolidated. _(2026-09-14: the
+sentence above is retained and is still true, and it understated the SCOPE of what that one refresh
+owes. `validate:p1-27-closing-values` reports **four** problems at this head, in **two** classes and
+not one. The first class is staleness, and it is on BOTH controlled tiers rather than on the unit
+tier alone: `RUN_RECORD_STALE` for `unit` and `RUN_RECORD_STALE` for `web`, both records taken at
+`59b9c6e4` with **40** executable paths changed since. The second class is a count disagreement, and
+it is on BOTH tiers as well: `RUN_RECORD_FILE_COUNT_DISAGREES` reports the `unit` record at **129**
+files against **132** in the tree, and the `web` record at **142** against **143**. The second class
+is not a symptom of the first — a record can be stale with its file count still correct,
+and a count can disagree because files were added rather than because time passed — so a
+reader who takes the refresh as "the unit tier is stale" would re-record less than is owed. The
+single deferred re-record therefore covers both tiers and both classes, and it has to be taken at the
+head that carries every change in this batch rather than part-way through it, because the record
+expires on the next executable path that moves. Nothing in this note claims either tier has passed.)_ Browser export,
+protected integration and final acceptance remain pending. No old full-tier result is relabelled.
+
+The [reference-location record](./canonical-reference-map.md) resolves the external Markdown
+references previously searched only inside Git and records their actual placeholder status.
+Canonical Word authority is preserved. External acceptance packaging and final source
+synchronization remain separate work; this reference map is not a passing criterion record.
+
+## 71. The export-surface rule narrowed, and the unrun baseline corrected (CC-62)
+
+A consolidated pre-pull-request review of the combined candidate raised six findings, two of them
+blocking. One of the two changes the rule a gate enforces, so it is recorded here rather than carried
+in a commit message: a rule that is narrowed silently is indistinguishable from a rule that was
+switched off.
+
+### 71.1 Identifier allocation
+
+| identifier   | meaning                                                             | state                                             |
+| ------------ | ------------------------------------------------------------------- | ------------------------------------------------- |
+| section 71   | this review closure                                                 | this branch; the lowest free section              |
+| **CC-62**    | the `no-export-surface` premise, narrowed to the authorized surface | this branch                                       |
+| § 70 / CC-60 | closing evidence                                                    | **reserved, and not touched here** (§ 69.13.1)    |
+| **CC-61**    | P-12's backend half — the report export contract                    | § 69.13; sub-row (a) is annotated by this closure |
+
+§ 48.1's rule holds: an identifier is a claim about the register at the moment it was raised and is
+never renumbered. Nothing above is renumbered, reused or reconciled, and § 71 sits after § 69.14
+because § 70 is reserved and stays empty.
+
+### 71.2 What the rule asserted, and why it stopped being true
+
+`scripts/ci/check-p1-27-frontend.mjs` carries nine rules; the seventh is `no-export-surface`, and its
+premise was written as an absolute: **"P1-27 publishes no export surface."** The authority for it is
+P1-27's own `canonical-plan.md` § 6, which names the operation behind each of that phase's 29
+Frontend tasks and names no export among them; `tests/ci/p1-27-frontend-gate.test.ts` re-reads that
+table on every run rather than restating it, so the rule's premise is derived from a document instead
+of asserted in a comment.
+
+That premise is still true **of P1-27**. It is no longer true **of the platform**, and the review's
+reading of it is accepted rather than argued with: the premise was correct to have had and is now
+outdated. What changed it is in this register already. **P-12** publishes
+`POST /api/v1/reports/{reportCode}:export` as an explicitly authorized, audited operation (§ 69.13,
+**CC-61**), and § 69.14 records the screen half consuming it. The Owner authorized that contract:
+**D-6**, quoted in [`security-and-qa-evidence.md`](./security-and-qa-evidence.md) § 2 from
+`owner-decisions-2026-09-09.md:89-100`, completes P-12's report-export contract "with explicit
+authorization and explicit auditability", and requires that "any scope in which audit data may be
+exported stays **explicit** — named, granted deliberately, and recorded." That quotation is cited from
+the record that already holds it rather than paraphrased here.
+
+The collision is one of geography. `PLAN_ROOTS` holds three trees because P1-27's plan names three,
+and the third is `apps/web/src/app/[locale]/(dashboard)` — which is where the report screen lives. So
+the authorized surface and the surface the rule exists to refuse now share a scanned tree, and the
+gate reported one failure at `apps/web/src/app/[locale]/(dashboard)/reports/[reportCode]/page.tsx`
+against the `export-caller` construct, on the `definition.data.exportPermissionCode` read the
+`canExport` prop is computed from. `validate:p1-27-frontend` runs inside `verify:policies` and is
+named directly by the hosted quality job, is not tolerated there, and protected `develop` `9729b2b5`
+is clean of it — so the red is this candidate's own.
+
+### 71.3 How the recognition is scoped, and what it still refuses
+
+**No allow-list entry was added, and `allow` on this rule is still `[]`.** That is asserted
+mechanically, not stated: a case in the gate suite reads the rule's `allow` and its `roots` back and
+fails if either has grown. An `allow` entry would have exempted the report screen from the WHOLE
+rule — leaving it free to mint an object URL, assemble a CSV, set a `Content-Disposition` or call
+`shared.export-authorize`, none of which anybody authorized — and it is the mechanism this gate has
+already lost a rule to once. A `roots` narrowing would have been wrong for the opposite reason: the
+premise does not fail over a TREE, it fails over one contract, and the rest of that tree must still
+be refused an export it was never given.
+
+So the rule keeps its construct sweep and gains a positional question, in the shape the file already
+uses for `no-client-asserted-scope`: a `detect` function, `unauthorizedExports()`, beside two frozen
+tables. Two conditions must BOTH hold before a single match is recognized.
+
+| condition                                                                                                    | how it is expressed                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1. the source anchors itself to the authorized contract**, by naming something registered elsewhere for it | `EXPORT_SURFACE_ANCHORS` — three entries: the declared permission code (`rpt.export`, and the `REPORT_PERMISSIONS.export` constant that spells it), the registered operation id, and `ReportExportPanel`, the control `check-p1-31-write-shape.mjs` pairs with its `ReportExportBody` mirror. A file that names none of the three is judged exactly as it was before this change |
+| **2. even then, only two REFERENCES are recognized, per match rather than per file**                         | `AUTHORIZED_EXPORT_REFERENCES` — the catalogue field `exportPermissionCode`, and the registered operation id. Every other export or download construct still fails, in the anchored file as much as anywhere else                                                                                                                                                                |
+
+The anchors are chosen because each is load-bearing somewhere else and cannot be renamed quietly. The
+permission code is the one candidate CC-04 withholds from the administrator bundle, so naming it is a
+statement about a capability that has to be granted rather than one everybody holds. The operation id
+is what the P1-24 register and the generated manifest hold. The component is what CC-61 (a)'s mirror
+lifecycle pairs against the operation, which is why that sub-row's state cell is annotated by this
+closure.
+
+**Falsifiability, in the file the repository already tests its checkers in.**
+`tests/ci/p1-27-frontend-gate.test.ts` gains a describe block of ten cases. They are the reason this
+is a narrowing rather than an assertion that it is one:
+
+- the authorized reference **still fails** in a file that anchors to nothing;
+- **every one of the eleven construct samples still fails INSIDE an anchored file** — a blob, an
+  object URL, a `download=` attribute, a CSV or PDF assembly, a `Content-Disposition`, an attachment
+  download authorization, the platform's two generic export operations and a named export caller;
+- an anchored file that names the recognized reference **and** builds an object URL is reported for
+  the object URL and fails;
+- an anchor written in a comment authorizes nothing, because comments are stripped first;
+- the real screen is read from disk, is confirmed collected by the gate's own `collects()`, reports
+  nothing — and then, **mutated** so it anchors differently, reports the `export-caller` construct
+  again, which is what proves the recognition is what clears it;
+- every anchor and every reference is run against the file it claims registration in, so the tables
+  cannot decay into a list of words: renaming the component, retiring the permission code or dropping
+  the operation from the manifest fails here;
+- the export permission is asserted to be **absent** from the bootstrap bundle, so the anchor's own
+  argument goes red if the withholding is ever reversed;
+- the export operation is asserted **not** to be in the write-shape gate's `PENDING_MIRRORS`, so the
+  paired-component anchor cannot claim a pairing that does not exist.
+
+Nothing was disabled, skipped, suppressed or widened; no gate, lint or type suppression was written;
+the developer guide's sentence for the rule is amended to say what the rule now enforces while
+keeping the wording `check-p1-27-doc-counts.mjs` requires of it.
+
+### 71.4 The unrun baseline — a stale collection and an emptiness that was not one
+
+`.github/ci-baselines/unrun-test-tiers.json` carried two untrue statements.
+
+**The collection was stale.** Its current-collection sentence named 445 tests in 14 files, 177 / 177
+/ 90 across the three authenticated projects, a P1-31 subset of 25 in every project and 7 from the
+reporting specification. Re-measured with
+`ROOTLCO_E2E_AUTH=1 npx playwright test --project=authenticated-en --project=authenticated-ar --project=authenticated-tablet --list`
+at this branch's head `e906f55b`, **twice, independently, with identical output**: **448 tests in 14
+files — 178 `authenticated-en`, 178 `authenticated-ar`, 91 `authenticated-tablet` and the
+`auth-setup` sign-in; the P1-31 subset is 26 in every project, 8 of them from `reports-p1-31`**. The
+three cases between 445 and 448 are this branch's own report-export case, one per project. The 445
+figures are kept in the past tense rather than deleted, and the field now records that it went on
+calling them current after they had stopped being so. **A `--list` is a plan and never a pass**: no
+run is claimed at this head, in either place.
+
+**The emptiness was a statement about one tier, phrased as one about the repository.** `unrun` is
+empty because the authenticated browser tier is governed, and that is true. But
+`tests/db/p1-31-export-fixture.test.ts` is executed by no hosted job and by no local aggregate,
+deliberately — it installs privileged expiring grants and refuses the shared acceptance database, so
+it needs a disposable one no runner has — and the file said nothing about it, which read as an
+absence.
+
+It is declared, in a **second register** rather than in `unrun`, and the reason is that the
+alternative would have weakened a check. `unrun` is a browser register in every respect that matters:
+its `executedBy` must name the authenticated-browser job, its `remainingDebt` must speak of a gate's
+`needs`, the job summary renders it as a table of specs, and an inversion guard refuses any entry
+whose path is outside `/authenticated/` — because a declaration that could name a spec the gate DOES
+run would be a way to mark any inconvenient tier as expected-not-to-run and have a gate agree.
+Admitting a database path would have meant relaxing that guard, so `unrunNonBrowser` is added beside
+it, the guard is untouched, and `tests/ci/e2e-tier-coverage.test.ts` holds the new register to
+obligations of the same weight in the shape its own facts have:
+
+- the set of declared paths is **derived in both directions** from `vitest.config.db-fixture.ts`'s
+  own include list, so the register cannot fall behind the configuration or outlive it;
+- every field is required and non-trivial, including which command runs the file and that no hosted
+  job does;
+- the command must be a script this repository really declares;
+- **"no hosted job runs it" is measured**: no workflow under `.github/workflows` may name the command
+  or the path;
+- **"no local aggregate runs it" is measured**: no other package script may name the command;
+- the entry must not be a browser spec and must not be declared in both registers;
+- the review date must not have passed, and the document's own `description` and `policy` must
+  mention the register, so it cannot be a block nothing points at.
+
+Mutation-proved rather than asserted: with the entry removed, the derivation case fails by name; the
+entry was restored by file copy.
+
+### 71.5 The three remaining findings
+
+| finding                                                                                 | what was done                                                                                                                                                                                                                                                                                                                                                                                                              |
+| --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CC-61 (a)'s state cell still ordered work that is done**                              | the state cell is annotated with a dated italic note and the original wording retained. A reader consults the dispositions table, not prose elsewhere, and that cell said the row was open until the mirror landed and the entry was deleted — both of which happened in this integration                                                                                                                                  |
+| **the deferred re-record was described as narrower than it is**                         | `validate:p1-27-closing-values` reports **four** problems in **two** classes, not one: `RUN_RECORD_STALE` on BOTH controlled tiers after 40 changed executable paths, and `RUN_RECORD_FILE_COUNT_DISAGREES` on BOTH as well — unit **129** against **132**, web **142** against **143**. § 69.14's deferral sentence is retained and annotated with that scope, because a count disagreement is not a symptom of staleness |
+| **the operation register undercounts this operation's database-backed export evidence** | recorded beside the export evidence itself, in `security-and-qa-evidence.md`. The register credits one of the four report-engine suites because it matches references by raw substring and the three later suites address the route by report code and action. **The identifier was deliberately NOT inserted to satisfy the matcher**; the direction of the error is the safe one and is stated as an undercount          |
+| **script ordering**                                                                     | the monitoring command is moved from between two lint entries to its alphabetical place in `package.json`                                                                                                                                                                                                                                                                                                                  |
+
+### 71.6 Dispositions — CC-62
+
+| id            | finding                                                                                                             | measured                                                                                                                                                                                                                                                                                        | disposition                                                                                                                                                                                                                                                                                                                                                                                                       | owner / slice          | state                                                                           |
+| ------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------- |
+| **CC-62**     | **a P1-27-era gate rule forbade the export surface this phase publishes, and the base branch was clean of the red** | `validate:p1-27-frontend` exited 1 with `no-export-surface` against the report screen, on the `exportPermissionCode` read behind the `canExport` prop. The gate runs inside `verify:policies` and is named by the hosted quality job; protected `develop` `9729b2b5` does not carry the failure | **the premise is narrowed, not exempted.** Recognition is scoped to one contract by three anchors registered elsewhere and two references, decided per match; ten cases prove the rule still refuses every other export and download construct, including inside the anchored file. `allow` is still `[]`, asserted mechanically. No suppression, no skip, no widened list                                        | this review closure    | **closed by this change**                                                       |
+| **CC-62 (a)** | **the unrun baseline named a stale collection and called an emptiness a statement**                                 | 445 / 177 / 177 / 90, subset 25, 7 from the reporting specification. Measured twice at `e906f55b`: **448 / 178 / 178 / 91, subset 26, 8**. Separately `tests/db/p1-31-export-fixture.test.ts` was executed by nothing and declared nowhere                                                      | **figures corrected with the superseded ones retained, and the undeclared tier declared in a second register.** `unrunNonBrowser` is added rather than `unrun` widened, so the inversion guard that refuses a declaration outside the gated browser directory is untouched; both negative claims in the entry are measured by the validator rather than accepted as prose                                         | this review closure    | **closed by this change**                                                       |
+| **CC-62 (b)** | **no hosted run, and no execution of the declared fixture command, is recorded at this head**                       | Every figure in § 71.4 is a static collection or a local checker result. The browser collection is a `--list`. The fixture command was NOT run: it needs a disposable database, and none was stood up for this closure                                                                          | **recorded as unpaid rather than rounded away.** A collection is not a pass; a declaration is not an execution. The browser run is owed as run (8) of the baseline's own observation log, and the fixture proof is owed as the operator step its entry names                                                                                                                                                      | the pull request       | **open — no hosted job and no disposable-database run is claimed at this head** |
+| **CC-62 (c)** | **the hosted job summary renders one register or the other, not both**                                              | `.github/workflows/_reusable-node-quality.yml` branches on `unrun` being non-empty and renders the governed table only in the empty branch. `unrun` is still empty, so the governed table still renders and `unrunNonBrowser` is rendered by nothing                                            | **recorded and deliberately not changed here.** `.github/workflows/` is owner-protected and this closure was not authorized to edit it, so the second register is readable in the committed document and in its validator and not in the job summary. The step's own comment that "`unrun` is empty" remains accurate and is left alone. Rendering the second register belongs to the lane that owns the workflow | the CI-automation lane | **open, recorded**                                                              |
+
+### 71.7 Handoff — what was closed, how the gate change is scoped, and every exit code
+
+Recorded here rather than in a commit message so that the next reader of the register finds it.
+Two commits on `feature/p1-31-export-monitoring-integration`, from `e906f55b`: **`f9eceb2b`** the two
+blockers and the checker suites, **`72d29647`** the register and the three record corrections. This
+subsection is documentation only and carries no code.
+
+| review finding                                                                     | disposition                                                                                                                                                                                                                                                                     |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1 (blocker)** a P1-27-era rule forbade the export surface this phase publishes   | closed. `no-export-surface` narrowed; **CC-62**; § 71.2 and § 71.3                                                                                                                                                                                                              |
+| **2 (blocker)** the unrun baseline stated a stale collection and a false emptiness | closed. Collection re-measured twice at `e906f55b`; `unrunNonBrowser` added with its own validated fields; **CC-62 (a)**; § 71.4. Two residuals recorded rather than closed: **CC-62 (b)** no run at this head, **CC-62 (c)** the job summary renders one register or the other |
+| **3 (major)** CC-61 (a)'s state cell still ordered work that is done               | closed. Dated note beside the retained wording; § 69.13.3                                                                                                                                                                                                                       |
+| **4 (major)** the records understated what is stale                                | closed. § 69.14's deferral sentence annotated with both tiers and both classes                                                                                                                                                                                                  |
+| **5 (minor)** the operation register undercounts this operation's evidence         | closed. Note beside the export evidence in `security-and-qa-evidence.md`; the identifier was not inserted                                                                                                                                                                       |
+| **6 (minor)** script ordering                                                      | closed. `monitor:p1-31` moved to its alphabetical place                                                                                                                                                                                                                         |
+
+**The gate change, and exactly how it is scoped.** `scripts/ci/check-p1-27-frontend.mjs` keeps the
+eleven-construct sweep as `pattern` and gains `detect: unauthorizedExports`. A construct match is
+recognized only when the source names one of **three anchors** — `rpt.export` or
+`REPORT_PERMISSIONS.export`; the registered export operation id; `ReportExportPanel` — **and** the
+match is wholly covered by one of **two references**: the catalogue's `exportPermissionCode` field, or
+the operation id. `allow` is `[]` and `roots` is unset, both asserted by a case. Anchors are chosen
+for being load-bearing elsewhere: the permission code is what **CC-04** withholds from the
+administrator bundle, the operation id is what the P1-24 register and the generated manifest hold, and
+the component is what **CC-61 (a)**'s mirror lifecycle pairs against the operation.
+
+**The falsifiability test** is a ten-case describe block in `tests/ci/p1-27-frontend-gate.test.ts`,
+the file this repository already tests that checker in. It fails if the rule stops refusing an
+unauthorized export or download path — including inside an anchored file, for all eleven construct
+samples — if a comment can anchor recognition, if the real screen stops being collected, if a mutation
+of the real screen's anchor stops making it fail, if any anchor or reference is no longer registered in
+the file it names, if the export permission is granted to the bootstrap bundle, or if the write-shape
+gate declares the export operation pending again. Mutation-checked here: emptying `unrunNonBrowser`
+fails the derivation case by name; the entry was restored by file copy.
+
+**The corrected baseline figures**, at `e906f55b`, from
+`ROOTLCO_E2E_AUTH=1 npx playwright test --project=authenticated-en --project=authenticated-ar --project=authenticated-tablet --list`,
+taken twice with identical output. A COLLECTION, not a pass.
+
+| figure                    | was      | is at this head                                                                            |
+| ------------------------- | -------- | ------------------------------------------------------------------------------------------ |
+| tests / files             | 445 / 14 | **448 / 14**                                                                               |
+| `authenticated-en`        | 177      | **178**                                                                                    |
+| `authenticated-ar`        | 177      | **178**                                                                                    |
+| `authenticated-tablet`    | 90       | **91** (26 P1-31 + 47 appointments + 18 administration)                                    |
+| `auth-setup`              | 1        | 1                                                                                          |
+| P1-31 subset, per project | 25       | **26** (2 audit-log, 4 delivery, 4 delivery-writes, 3 overview, **8** reports, 5 warranty) |
+
+**Exit codes, measured on this branch, locally.** Commands run from the repository root at the head
+recorded beside them; nothing hosted, no build, no browser execution, no database tier and no fixture
+command.
+
+| command                                                                                         | exit                                                                                                                                                                                                                                                      |
+| ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `validate:p1-27-frontend`                                                                       | **0** (was 1 at `e906f55b`) — 156 files across 5 trees, 9 rules, 18 imported modules, 0 failures                                                                                                                                                          |
+| `verify:policies`                                                                               | **1** — and its only four problems are the deferred closing-values re-record, the last member of the aggregate; the other 33 members passed. It runs no build and no browser                                                                              |
+| `validate:p1-27-doc-counts`                                                                     | **0** — 151 derived claims across 32 documents, 0 disagreements                                                                                                                                                                                           |
+| `validate:p1-27-evidence`                                                                       | **0** — 41 documents in sync                                                                                                                                                                                                                              |
+| `validate:p1-27-lifecycle`                                                                      | **0**                                                                                                                                                                                                                                                     |
+| `validate:p1-27-matrix`                                                                         | **0** — 42 tasks                                                                                                                                                                                                                                          |
+| `validate:p1-24-register`                                                                       | **0**                                                                                                                                                                                                                                                     |
+| `validate:p1-19-inventory`                                                                      | **0**                                                                                                                                                                                                                                                     |
+| `validate:p1-31-write-shape`                                                                    | **0** — 12 writes, 4 pending a consumer, 7 compared, 0 problems                                                                                                                                                                                           |
+| `validate:p1-31-access`                                                                         | **0**                                                                                                                                                                                                                                                     |
+| `node scripts/ci/check-test-honesty.mjs`                                                        | **0** — 422 test files, 4 runner configs, 135 scripts, no findings                                                                                                                                                                                        |
+| `validate:generated-artifacts`                                                                  | **0**                                                                                                                                                                                                                                                     |
+| `validate:command-coverage`                                                                     | **0**                                                                                                                                                                                                                                                     |
+| `validate:encoding`                                                                             | **0**                                                                                                                                                                                                                                                     |
+| `format:check:all`                                                                              | **0**                                                                                                                                                                                                                                                     |
+| `typecheck` (root)                                                                              | **0**                                                                                                                                                                                                                                                     |
+| `typecheck:web`                                                                                 | **0**                                                                                                                                                                                                                                                     |
+| `lint` (root)                                                                                   | **0**                                                                                                                                                                                                                                                     |
+| `security:all`                                                                                  | **0**                                                                                                                                                                                                                                                     |
+| `check-phase-ownership p1-31-frontend origin/develop`                                           | **0** — 59 changed files at the closing head, 0 violations (web 18 · docs 19 · tooling 9 · tests 10 · rootConfig 3)                                                                                                                                       |
+| citation suite (`p1-27-matrix-citations`, `p1-27-citation-anchor-repairs`, `p1-27-task-matrix`) | **0** — 24 cases                                                                                                                                                                                                                                          |
+| the two checker suites (`p1-27-frontend-gate`, `e2e-tier-coverage`)                             | **0** — 216 cases                                                                                                                                                                                                                                         |
+| `test:unit`                                                                                     | **1** — **one** failure, and it is the derived web-count claim the deferred re-record owns: `tests/ci/p1-27-doc-counts.test.ts:603` expects the recorded web file count to equal the tree's, 142 against 143. 3467 passed, 132 files. Nothing else failed |
+
+**What is NOT claimed here.** No hosted job, no browser execution, no database tier, no build, no
+disposable-database fixture run, no verdict, no pass, no promotion and no certification. The P1-27 run
+cycle is deliberately NOT re-recorded in this change: it is the next task, and it has to come after
+every change here or it expires on the first executable path that moves.

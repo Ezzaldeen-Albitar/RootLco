@@ -1,5 +1,13 @@
 # P1-31 — Owner decision packet
 
+_(2026-09-14, correction to A-2/A-3: do not use the proposed appointment wording below.
+Eng. Ezzaldeen Al-Bitar already holds the QA and security review roles under the owner-approved
+[solo-developer review policy](../../governance/solo-developer-review-policy.md). The concrete
+remaining acts are review of the completed evidence and actual QA certification/security clearance
+by that assigned owner. A new appointment is not requested. Historical absence/appointment wording
+is retained for traceability but is superseded by this correction; no signature or clearance is
+inferred. The final packet must be reconciled to the closing evidence before it is presented.)_
+
 **Status:** OPEN, routed. **Nothing in this document is a decision, a verdict, an approval, a
 certification or a clearance**, and nothing in it asserts that any gate ran, that any environment
 exists, or that any approval was granted. It is the list of acts only the Owner can supply.

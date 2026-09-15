@@ -125,15 +125,19 @@ export interface P131FixtureDelivery {
 }
 
 /**
- * The records the three delivery WRITE cases act on, one set per locale project.
+ * The records the three delivery WRITE cases act on, one set per PROJECT that runs them.
  *
- * ## Why one set per locale, and one handover per act
+ * ## Why one set per project, and one handover per act
  *
- * `apps/web/playwright.config.ts` pins `workers: 1`, and `authenticated-en` runs
- * before `authenticated-ar` over the same database. A case that records a checklist
- * result CONSUMES the gap it acted on, so a shared fixture would be spent by
- * whichever locale ran first and the second would assert on a record that no longer
- * looks the way its case describes.
+ * `apps/web/playwright.config.ts` pins `workers: 1`, and `authenticated-en`,
+ * `authenticated-ar` and `authenticated-tablet` run in that order over the same
+ * database. A case that records a checklist result CONSUMES the gap it acted on, so a
+ * shared fixture would be spent by whichever project ran first and the next would
+ * assert on a record that no longer looks the way its case describes.
+ *
+ * So the sets are keyed by FIXTURE KEY, not by locale: `'en'`, `'ar'` and `'tablet'`.
+ * The tablet project renders in English and asserts English text, and it still needs
+ * its own records — `fixtureKeyOf` is where those two facts are separated.
  *
  * Each handover carries exactly ONE gap, which is what lets its case prove the gap
  * closing:
@@ -337,7 +341,12 @@ export function signedInAsJourneyAdministrator(): boolean {
 }
 
 /**
- * The three fixture handovers for one locale, or `null` when this handoff has none.
+ * The three fixture handovers under one fixture KEY, or `null` when this handoff has
+ * none. `fixtureKeyOf` below is what a case reads the key with; the key is a locale
+ * for the two locale projects and `'tablet'` for the tablet one, which is why the
+ * parameter is a plain string rather than the locale union — the three maps on
+ * `P131BrowserFixtures` have always been string-keyed, and an unknown key answers
+ * `null` here exactly as a missing one always did.
  *
  * Validated here rather than at three call sites: a fixture document that names no
  * delivery is not a fixture, and a case that read one field and trusted the rest
@@ -346,7 +355,7 @@ export function signedInAsJourneyAdministrator(): boolean {
  */
 export function browserFixtures(
   handoff: P131Handoff | null,
-  locale: 'en' | 'ar'
+  key: string
 ): {
   readonly checklist: P131FixtureDelivery;
   readonly signature: P131FixtureDelivery;
@@ -355,9 +364,9 @@ export function browserFixtures(
 } | null {
   const fixtures = handoff?.browserFixtures;
   if (fixtures === undefined || fixtures === null) return null;
-  const checklist = fixtures.checklist[locale];
-  const signature = fixtures.signature[locale];
-  const release = fixtures.release[locale];
+  const checklist = fixtures.checklist[key];
+  const signature = fixtures.signature[key];
+  const release = fixtures.release[key];
   if (checklist === undefined || signature === undefined || release === undefined) return null;
   for (const fixture of [checklist, signature, release]) {
     if (typeof fixture.deliveryId !== 'string' || fixture.deliveryId.length === 0) return null;
@@ -371,6 +380,31 @@ export function browserFixtures(
 /** The locale a project drives, from its name. The same rule `administration.spec.ts` uses. */
 export function localeOf(projectName: string): 'en' | 'ar' {
   return projectName.endsWith('-ar') ? 'ar' : 'en';
+}
+
+/**
+ * WHICH FIXTURE SET a project consumes, from its name — a different question from
+ * which locale it renders in, and the reason both functions exist.
+ *
+ * `authenticated-tablet` renders in English, so `localeOf` answers `'en'` for it and
+ * every text assertion is right to ask that. But the handover fixtures are SINGLE
+ * USE: a mandatory checklist item cannot be answered twice, a vehicle cannot be
+ * released twice. `playwright.config.ts` pins `workers: 1` and runs the projects in
+ * order, so by the time the tablet project reaches a write case, the `'en'` set is
+ * already spent by `authenticated-en` and the case would act on a handover that no
+ * longer carries the gap it was built with.
+ *
+ * So the harness publishes a THIRD set under the key `'tablet'`, and this is the
+ * function that picks it. Content locale is decided by the locale suffix; fixture
+ * identity is decided by the PROJECT, because the project is what consumes.
+ *
+ * Stated as a suffix rule rather than a list of project names for the reason
+ * `localeOf` is: a new tablet project would be `<something>-tablet` and would need
+ * its own set on the same argument, and a name this rule does not recognise falls
+ * back to its content locale, which is the behaviour every read-only case wants.
+ */
+export function fixtureKeyOf(projectName: string): string {
+  return projectName.endsWith('-tablet') ? 'tablet' : localeOf(projectName);
 }
 
 /**
@@ -423,4 +457,99 @@ export function missingReason(what: string): string {
     'journey records why; this browser case asserts nothing rather than asserting something ' +
     'weaker.'
   );
+}
+
+/* ================================================================== *
+ * The export COMPANION handoff — a second document, read separately
+ * ================================================================== */
+
+/**
+ * What the export companion hands the browser half, and why it is not the same file.
+ *
+ * `orchestration/acceptance/p1-31-export-companion.mjs` runs AFTER the journey and
+ * beside it. The journey's own handoff is written by the journey and describes a run
+ * that made every record over HTTP; the export principal is a different identity
+ * altogether — created over HTTP with NO roles, then entitled by an explicitly recorded
+ * privileged LOCAL test fixture, which is why its proof is a separately labelled run and
+ * not a section of the journey.
+ *
+ * So it arrives as its own document under its own variable. Nothing here touches
+ * `P131Handoff.login`: that credential belongs to the organisation administrator the
+ * journey created, `auth.setup.ts` may sign in with it, and a reader that could return
+ * one where the other was expected is a reader that can hand a case the wrong principal.
+ */
+export interface P131ExportPrincipal {
+  readonly email: string;
+  readonly password: string;
+}
+
+/**
+ * Whether the privileged fixture the principal's entitlement depends on really ran.
+ *
+ * Carried so a browser case can say WHY an export control is missing — a setup that
+ * failed and a control that was never built are different facts, and the companion
+ * records the first with the marker `EXPORT_SETUP_FAILED`.
+ */
+export interface P131ExportSetup {
+  readonly ran: boolean;
+  readonly exitCode: number | null;
+  readonly marker: string | null;
+}
+
+export interface P131ExportHandoff {
+  readonly api: string;
+  readonly exportPrincipal: P131ExportPrincipal;
+  readonly companyId: string;
+  readonly branchId: string;
+  /** The dataset the companion exported over HTTP, so the browser opens the same one. */
+  readonly reportCode: string;
+  readonly reportPeriod: { readonly from: string; readonly to: string };
+  readonly setup?: P131ExportSetup | null;
+}
+
+/** The environment variable the companion prints and the export case reads. */
+export const EXPORT_HANDOFF_ENV = 'ROOTLCO_P131_EXPORT_HANDOFF';
+
+/**
+ * The reason the export case states when no companion has run on this checkout.
+ *
+ * The ONLY condition under which that case may skip. Once the document is there the
+ * case asserts, and a missing export control is a failure rather than another skip:
+ * the positive export evidence is required, and a suite that skipped its way past a
+ * missing control would let a closing run look complete without it.
+ */
+export const NO_EXPORT_HANDOFF_REASON =
+  `no P1-31 export companion handoff: set ${EXPORT_HANDOFF_ENV} to the export-handoff.json ` +
+  'that orchestration/acceptance/p1-31-export-companion.mjs wrote. That run creates the ' +
+  'principal and records the fixture its entitlement comes from, so without it there is no ' +
+  'holder of rpt.export to sign in as and nothing is claimed.';
+
+/**
+ * The companion's handoff, validated, or `null`.
+ *
+ * Every field the export case needs is checked here rather than at the point of use, for
+ * the reason `browserFixtures` states: a document that names half a principal is not a
+ * principal, and a case that trusted the rest would fail deep inside a form with a
+ * message about an element instead of about a missing record.
+ */
+export function readExportHandoff(): P131ExportHandoff | null {
+  const path = process.env[EXPORT_HANDOFF_ENV];
+  if (path === undefined || path === '') return null;
+  if (!existsSync(path)) return null;
+  const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  const handoff = parsed as P131ExportHandoff;
+  const principal: unknown = handoff.exportPrincipal;
+  if (typeof principal !== 'object' || principal === null) return null;
+  const { email, password } = principal as { email?: unknown; password?: unknown };
+  if (typeof email !== 'string' || email.length === 0) return null;
+  if (typeof password !== 'string' || password.length === 0) return null;
+  if (typeof handoff.companyId !== 'string' || handoff.companyId.length === 0) return null;
+  if (typeof handoff.branchId !== 'string' || handoff.branchId.length === 0) return null;
+  if (typeof handoff.reportCode !== 'string' || handoff.reportCode.length === 0) return null;
+  const period: unknown = handoff.reportPeriod;
+  if (typeof period !== 'object' || period === null) return null;
+  const { from, to } = period as { from?: unknown; to?: unknown };
+  if (typeof from !== 'string' || typeof to !== 'string') return null;
+  return handoff;
 }

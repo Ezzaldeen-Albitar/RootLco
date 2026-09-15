@@ -233,33 +233,66 @@ the P1-31 read seams inherit."
   `tests/backend/p1-31-tenant-administrator-bundle-backfill.test.ts` (**12 cases**), both counted
   statically; the first asserts the delta is exactly the declared additions and that nothing else
   moved.
-- **Measured fact.** The permission proofs are the **seventeen** `tests/backend/p1-31-*.test.ts`
-  suites on this tree — **371 cases counted statically**, with `it.each` tables in **two** of them
-  (`p1-31-privilege-escalation.test.ts` six, `p1-31-report-engine-work-orders.test.ts` one), so 371
-  is a floor. _(This read "the fifteen … **350 cases** … one `it.each` table in the whole set": true
-  at `81b3bce8`. #386 added the last two rows of the table below — 16 + 5 = 21 — and 350 + 21 = 371,
-  so the earlier figure is superseded by addition and not by re-derivation of anything already
-  counted.)_
+- **Measured fact.** The permission proofs are the **eighteen** `tests/backend/p1-31-*.test.ts`
+  suites on this tree — **421 cases counted statically**, with `it.each` tables in **three** of
+  them (`p1-31-privilege-escalation.test.ts` nine, `p1-31-report-engine-work-orders.test.ts` two,
+  `p1-31-audit-emission.test.ts` one), so 421 is a floor: a table collects one case per row and a
+  static count sees the one line that declares it. _(Re-derived at the integrated head. Two earlier
+  readings stood here. The first read "the fifteen … **350 cases** … one `it.each` table in the
+  whole set", true at `81b3bce8`; the second read "the seventeen … **371 cases** … `it.each`
+  tables in two of them", which was 350 plus the 21 cases of the two rows #386 added. The table
+  below was not re-counted when the second figure was written, and nine of its rows have since
+  moved: six as later slices merged into this candidate — +7 delivery checklist template, +10
+  warranty read, +5 warranty policy, +4 report configuration, +6 report engine work orders, +4
+  privilege escalation, 36 in all — and three in this change, +3 on each of the other report
+  datasets, 9 in all. The eighteenth suite, `p1-31-audit-emission.test.ts`, was listed by neither
+  earlier reading and carries 5. 371 + 36 + 9 + 5 = 421, so the arithmetic reconciles to the
+  superseded figure and this reading re-counts every row rather than adding to it. The rule is the
+  one both earlier readings used and it reproduces them at `81b3bce8`: every line of a suite whose
+  first token is `it(`, `it.each` or `it<`.)_
+
+  The three report-engine rows moved because each of the three datasets that had no
+  database-backed export evidence gained three cases against the real export route: the bytes of a
+  permitted export, the refusal of a caller holding every read code and not the disclosure code,
+  and a selection matching no rows. The fourth dataset already carried its own.
+
+  **The P1-24 operation register credits ONE of the four, and it undercounts rather than
+  overclaims** — stated here because a reader of that register would otherwise
+  conclude that three of these suites do not exist. Its `tests` array for the export operation
+  names `tests/backend/p1-31-report-engine-work-orders.test.ts` and does not name
+  `p1-31-report-engine-invoice-payment.test.ts`, `p1-31-report-engine-inventory-movements.test.ts`
+  or `p1-31-report-engine-technician-labor.test.ts`. The reason is mechanical and is a property of
+  the generator, not of the suites: `scripts/p1-24-operation-register.mjs` credits a file by RAW
+  SUBSTRING of the operation identifier, and the three later suites address the route by the report
+  code and the action rather than by the identifier, so the substring is absent from all three. The
+  identifier is deliberately NOT inserted to satisfy the matcher: a reference written to be counted
+  is a reference that proves nothing about the request the suite issues, and the register's own
+  distinction between a raw reference and a reviewed coverage flag exists precisely so that a
+  mention is never mistaken for a proof. The direction of the error is the safe one — the
+  register claims less database-backed export evidence than this candidate holds, and the three
+  suites are named here as that evidence. No coverage flag is claimed for them and the registered
+  evidence set for the operation is unchanged.
 
   | file (`tests/backend/`)                              | cases |
   | ---------------------------------------------------- | ----- |
   | `p1-31-delivery-read-seam.test.ts`                   | 26    |
   | `p1-31-delivery-list-seam.test.ts`                   | 17    |
   | `p1-31-delivery-readiness-seam.test.ts`              | 25    |
-  | `p1-31-delivery-checklist-template-seam.test.ts`     | 28    |
-  | `p1-31-warranty-read-seam.test.ts`                   | 23    |
-  | `p1-31-warranty-policy-seam.test.ts`                 | 31    |
-  | `p1-31-report-configuration-seam.test.ts`            | 29    |
-  | `p1-31-report-engine-work-orders.test.ts`            | 28    |
-  | `p1-31-report-engine-technician-labor.test.ts`       | 25    |
-  | `p1-31-report-engine-inventory-movements.test.ts`    | 25    |
-  | `p1-31-report-engine-invoice-payment.test.ts`        | 31    |
+  | `p1-31-delivery-checklist-template-seam.test.ts`     | 35    |
+  | `p1-31-warranty-read-seam.test.ts`                   | 33    |
+  | `p1-31-warranty-policy-seam.test.ts`                 | 36    |
+  | `p1-31-report-configuration-seam.test.ts`            | 33    |
+  | `p1-31-report-engine-work-orders.test.ts`            | 34    |
+  | `p1-31-report-engine-technician-labor.test.ts`       | 28    |
+  | `p1-31-report-engine-inventory-movements.test.ts`    | 28    |
+  | `p1-31-report-engine-invoice-payment.test.ts`        | 34    |
   | `p1-31-delivering-employee-seam.test.ts`             | 31    |
   | `p1-31-delivering-employee-backfill.test.ts`         | 11    |
   | `p1-31-provisioning-bundle.test.ts`                  | 8     |
   | `p1-31-tenant-administrator-bundle-backfill.test.ts` | 12    |
-  | `p1-31-privilege-escalation.test.ts`                 | 16    |
+  | `p1-31-privilege-escalation.test.ts`                 | 20    |
   | `p1-31-concurrency-and-versioning.test.ts`           | 5     |
+  | `p1-31-audit-emission.test.ts`                       | 5     |
 
 - **Measured fact.** Resolved scope is declared on the route rather than asserted by a caller. The
   three-code declarations are `delivery-readiness/route.ts` (`sal.delivery.view`,

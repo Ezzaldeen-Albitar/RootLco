@@ -17,9 +17,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * attempted; and every refusal arrives as a refusal rather than as an empty
  * report — which an operator reads as "there was no work in that period".
  *
- * It also pins that this feature has NO write adapter. Reports are read. An
- * operation that authored or exported one would be a different surface with a
- * different authority, and neither exists here.
+ * The export adapter consumes the separately authorized P-12 contract. Reads
+ * stay read-only; export sends a closed, scoped request and validates its result.
  */
 
 const get = vi.fn();
@@ -32,7 +31,7 @@ vi.mock('@/lib/api/server-client', () => ({
 }));
 
 const adapters = await import('@/features/reports/reports-api');
-const { listReportCatalogue, readReport, readReportScopes, runReport } = adapters;
+const { listReportCatalogue, readReport, readReportScopes, runReport, exportReport } = adapters;
 const contract = await import('@/features/reports/reports-contract');
 const { MAX_REPORT_PAGE_SIZE, REPORT_PAGE_SIZE, reportPageSize } = contract;
 
@@ -344,12 +343,10 @@ describe('a refusal arrives as a refusal, never as an empty report', () => {
   });
 });
 
-describe('this feature reads, and has no write path at all', () => {
-  it('publishes exactly four reads and nothing that sends', () => {
-    // Reports are read. Authoring a definition is a separate surface with its
-    // own authority, and there is no export operation to call — so an adapter
-    // that sent anything from here would be reaching for neither.
+describe('the report adapter boundary', () => {
+  it('publishes four reads and the explicit export action', () => {
     expect(Object.keys(adapters).sort()).toEqual([
+      'exportReport',
       'listReportCatalogue',
       'readReport',
       'readReportScopes',
@@ -357,7 +354,7 @@ describe('this feature reads, and has no write path at all', () => {
     ]);
   });
 
-  it('never uses the transport’s sending half', async () => {
+  it('keeps the four read adapters off the transport’s sending half', async () => {
     transport(() => ok(RUN));
     await listReportCatalogue({ cursor: null, limit: REPORT_PAGE_SIZE });
     await readReport(CODE);
@@ -451,5 +448,96 @@ describe('the contract mirrors what the operations publish', () => {
       ],
     };
     expect(contract.drillThroughTemplate(column, unknown)).toBeNull();
+  });
+});
+
+const EXPORT_BODY = {
+  companyId: COMPANY_ID,
+  branchId: BRANCH_ID,
+  from: RUN.period.from,
+  to: RUN.period.to,
+  reason: 'Scoped operational review',
+};
+function exportResult(code = CODE) {
+  return {
+    reportCode: code,
+    generated: true,
+    freshness: 'live',
+    generatedAt: RUN.generatedAt,
+    filters: { companyId: COMPANY_ID, branchId: BRANCH_ID },
+    period: RUN.period,
+    rowCount: 0,
+    summaryCount: 0,
+    file: {
+      filename: `${code}-${EXPORT_BODY.from}-${EXPORT_BODY.to}.csv`,
+      mediaType: 'text/csv',
+      encoding: 'utf-8',
+      content: '"recordType"\r\n"context"\r\n',
+    },
+  };
+}
+
+describe('explicit scoped report export', () => {
+  it.each([
+    'work_orders_by_status',
+    'technician_labor_time',
+    'inventory_movements',
+    'invoice_payment_summary',
+  ])('sends a closed body and validates the %s file context', async (code) => {
+    transport(() => ok(RUN));
+    send.mockResolvedValue(ok(exportResult(code)));
+    const result = await exportReport(code, {
+      ...EXPORT_BODY,
+      reason: '  Scoped operational review  ',
+      extra: 'not sent',
+    } as typeof EXPORT_BODY);
+    expect(result.status).toBe('success');
+    expect(send).toHaveBeenCalledExactlyOnceWith(
+      'POST',
+      `/api/v1/reports/${code}:export`,
+      EXPORT_BODY
+    );
+    expect(result.exported?.file.content).toContain('"context"');
+  });
+  it.each([
+    ['empty', ''],
+    ['whitespace', '  '],
+    ['overlong', 'x'.repeat(501)],
+  ])('refuses a %s reason before spending a request', async (_label, reason) => {
+    expect((await exportReport(CODE, { ...EXPORT_BODY, reason })).status).toBe('invalid');
+    expect(get).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+  it('refuses an empty period or an unauthorized branch before export', async () => {
+    transport(() => ok(RUN));
+    expect((await exportReport(CODE, { ...EXPORT_BODY, to: EXPORT_BODY.from })).status).toBe(
+      'invalid'
+    );
+    expect((await exportReport(CODE, { ...EXPORT_BODY, branchId: OTHER_BRANCH_ID })).status).toBe(
+      'denied'
+    );
+    expect(send).not.toHaveBeenCalled();
+  });
+  it('preserves backend refusal and its correlation reference', async () => {
+    transport(() => ok(RUN));
+    send.mockResolvedValue(failure('forbidden'));
+    expect(await exportReport(CODE, EXPORT_BODY)).toMatchObject({
+      status: 'denied',
+      correlationId: 'corr-9',
+    });
+  });
+  it('does not return a download for a mismatched context or malformed file', async () => {
+    transport(() => ok(RUN));
+    for (const data of [
+      null,
+      {},
+      { ...exportResult(), filters: { companyId: COMPANY_ID, branchId: OTHER_BRANCH_ID } },
+      { ...exportResult(), file: { ...exportResult().file, filename: '../other.csv' } },
+    ]) {
+      send.mockResolvedValue(ok(data));
+      const result = await exportReport(CODE, EXPORT_BODY);
+      expect(result.status).toBe('error');
+      expect(result.exported).toBeUndefined();
+    }
   });
 });
