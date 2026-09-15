@@ -417,7 +417,7 @@ and borrowing its credibility. It drifted exactly as the finding predicted: the
 paragraphs below this heading still said `66` and `1231` while the heading beside
 them said `70` and `1493` — `E-02` returning, in the section written to close it.
 
-`143` is recomputed from the tree on every run, here and in §3, and
+`144` is recomputed from the tree on every run, here and in §3, and
 `p1-27-doc-reconciliation.test.ts` fails if either statement of it disagrees with
 `apps/web/tests`.
 
@@ -982,7 +982,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      an earlier revision put them in the label column and broke two other gates
      whose regexes read the label and the number as adjacent cells. -->
 
-<!-- derived: files apps/web/tests = 143 -->
+<!-- derived: files apps/web/tests = 144 -->
 <!-- derived: files tests/ci = 76 -->
 <!-- derived: files scripts/ci = 66 -->
 <!-- derived: files apps/web/scripts = 4 -->

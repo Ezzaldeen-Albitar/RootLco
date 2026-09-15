@@ -175,10 +175,10 @@ re-measurement and the baseline movement that must accompany them, in a commit t
 _2026-09-15 note (QA-001, LOCAL, pending the hosted web-quality run): closed on branch
 `feature/p1-31-frontend-closure-completion` over `develop` `c1a2f9fc`. The three roots are now in
 `COVERAGE_INCLUDE`. Measured with `npm run test:ci --workspace @rootlco/web` before and after on that
-base: 141 → 186 instrumented files; lines 2037/2408 (84.59%) → 3419/3867 (88.41%), statements
-82.80% → 86.00%, functions 87.10% → 90.97%, branches 78.89% → 79.98%. Every global floor in
+base: 141 → 186 instrumented files; lines 2037/2408 (84.59%) → 3423/3867 (88.51%), statements
+82.80% → 86.09%, functions 87.10% → 90.97%, branches 78.89% → 80.23%. Every global floor in
 `coverage-baseline.web.json` (82.48 / 81 / 85 / 77.37) still holds and none moved. The trees
-measured: `features/delivery` 592/632 lines (93.67%, 25 files), `features/warranty` 405/444 (91.22%,
+measured: `features/delivery` 596/632 lines (94.30%, 25 files; 592/632, 93.67%, when its floor was set), `features/warranty` 405/444 (91.22%,
 9 files), `features/reports` 367/383 (95.82%, 11 files), now floored by critical modules at 92.67,
 90.22 and 94.82. No deficit against any floor, so no deficit test was needed; `signature-capture.ts`
 measured 0/25 lines because every suite mocks it, and that is recorded in the baseline's
@@ -254,7 +254,7 @@ _2026-09-15 note (QA-001, LOCAL, pending the hosted web-quality run): closed on 
 record ROUTE PAGE: the handover panel's own content inside the record for a caller holding the
 delivery read, the write authority carried into the mounted panel, the panel absent and unread
 without the delivery read, and the route's permission-denied branch reading neither the record nor a
-handover. All four passed in the local web tier of 144 files and 4097 tests._
+handover. All four passed in the local web tier of 144 files and 4101 tests._
 
 ### H-5 — what the suites deliberately do not assert
 
