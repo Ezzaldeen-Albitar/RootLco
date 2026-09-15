@@ -357,6 +357,53 @@ describe(`${RECEIVER_VERIFY_OPERATION_ID} identity evidence (D-18)`, () => {
     expect(accepted.status).toBe(201);
   });
 
+  it('refuses identity evidence whose only link to this delivery has been withdrawn', async () => {
+    const delivery = await seedReadyDelivery('p131_identity_withdrawn_link');
+    const versionId = await identityEvidenceFor(delivery);
+
+    // Withdrawn the way the product withdraws it — `deleted_at`, never a delete — so the
+    // row is still there and only reachability ends.
+    const withdrawn = await admin.query(
+      `UPDATE shared.document_links SET deleted_at = now()
+        WHERE tenant_id = $1
+          AND document_id = (SELECT document_id FROM shared.document_versions WHERE id = $2)`,
+      [TENANT_A, versionId]
+    );
+    expect(withdrawn.rowCount).toBe(1);
+
+    authAs(SAL_FULL);
+    await expectFieldRefusal(
+      await verifyReceiver(delivery.deliveryId, versionId),
+      delivery.deliveryId
+    );
+
+    authAs(SAL_FULL);
+    const accepted = await verifyReceiver(delivery.deliveryId, await identityEvidenceFor(delivery));
+    expect(accepted.status).toBe(201);
+  });
+
+  it('refuses identity evidence whose version was refused by review', async () => {
+    const delivery = await seedReadyDelivery('p131_identity_refused_version');
+    const versionId = await identityEvidenceFor(delivery);
+    // `pending -> rejected` is the one transition the guard allows from here, and a
+    // rejected version is terminal, so this is a state that can never be bound.
+    await admin.query(`UPDATE shared.document_versions SET status = 'rejected' WHERE id = $1`, [
+      versionId,
+    ]);
+
+    authAs(SAL_FULL);
+    // The refusal is the state code, not the field-validation code: the document is the
+    // right category, in scope and attached to this delivery, and only its state is wrong.
+    const response = await verifyReceiver(delivery.deliveryId, versionId);
+    expect(response.status).toBe(409);
+    expect((await bodyOf<ProblemBody>(response)).code).toBe('ERR-DOC-001');
+    expect(await receiverRows(delivery.deliveryId)).toBe(0);
+
+    authAs(SAL_FULL);
+    const accepted = await verifyReceiver(delivery.deliveryId, await identityEvidenceFor(delivery));
+    expect(accepted.status).toBe(201);
+  });
+
   it('refuses an identity-evidence document of another company and branch in the same tenant', async () => {
     const delivery = await seedReadyDelivery('p131_identity_other_company');
     expect(delivery.companyId).not.toBe(COMPANY_A9);
