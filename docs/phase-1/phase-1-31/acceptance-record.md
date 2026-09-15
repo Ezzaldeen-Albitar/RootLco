@@ -658,6 +658,12 @@ permission negative is asserted here and none was invented.** What the cases kee
 screens' own standing statement that no download is offered, recorded as the contract it is rather
 than as evidence about a withheld code.
 
+_(2026-09-15: "no export operation for a report or for an audit record is published at all" was true
+when written and is no longer true for reports. A report export is published at protected `develop`
+`c1a2f9fc`, and § 10.5 records the closing run's four exports and the default administrator's
+refusal of each. No export for an audit record is published. The paragraph above is left as
+written.)_
+
 **Class C — the two Arabic report-title cases. Rewritten.** A published tenant report configuration
 carries no translation key, so `reportTitle` shows the operator's own label as written, in both
 languages. That is §6's observation **O-4** and it is correct behaviour. The catalogue case now finds
@@ -2069,3 +2075,412 @@ beyond the fact that thirty shot records were taken and twenty-eight of them wro
 establish, and none of the ledger tiers was re-recorded in the turn that wrote this section. And
 any claim about the two runs' report figures beyond what §9.1 (c) and §9.2 state — `mu0diepc`'s are
 readings of empty result sets and are not counted as report proofs.
+
+## 10. The closing acceptance run, 2026-09-15 (run `mu2ihptd`)
+
+**What this section is.** The closing acceptance run of this phase, taken against protected
+`develop` after the report-export and monitoring integration merged, performed by one invocation of
+a runner script, and recorded here as the run of record of the closing run's third attempt. § 8 and
+§ 9 were taken at branch heads (§ 8.1, § 9.1, § 9.2); this run is taken at protected `develop`
+`c1a2f9fc`, carries a separately labelled report-export companion, and runs the tablet project
+beside the two locale projects. **It records measurements. It is not an Owner verdict, not a phase
+Pass, not a promotion and not a human certification, and it does not say the phase is complete**
+(§ 10.14).
+
+**It supersedes nothing above it.** §§ 2–6 remain the record of `mtz2geo1`, § 7.1 of `mtz5ppq8`,
+§ 8 of `mtzmvemj`, § 9.1 of `mu0diepc` and § 9.2 of `mu0g1b1a`. Those runs stand for their own
+recorded scope and none of them was repeated to produce this one. The two earlier attempts of this
+closing run are kept in § 10.11.
+
+Evidence directory, outside every git working tree, nothing of it committed:
+
+- `orchestration\evidence\p1-31\acceptance-20260915-1009\` — 68 files, run `mu2ihptd`
+
+Every figure below is read from that directory, or from the closure facts compiled and re-derived
+from it on 2026-09-15
+(`orchestration/evidence/p1-31/closeout-drafts/queue3/closure-facts-20260915.md`, also outside the
+repository). A file this section names without a directory is in the evidence directory.
+
+### 10.1 The head under test, and the proof it was that head
+
+| fact                  | value                                                                                                                                                                                                                              |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| protected `develop`   | `c1a2f9fc5d43799a4ca4beca9fe4927a777a2632`, tree `1a0cd7fc0a1e75a131b548dee0a63eccb7371f45`                                                                                                                                        |
+| its merge             | PR #398, `feature/p1-31-export-monitoring-integration`; first parent `9729b2b5341a9f193305955b81608753e6bb271f`, second parent `e855ef0a8651afbf072c9d8334b3c2f4c85c8ae1`                                                          |
+| the merge before it   | `9729b2b5`, PR #397, `remediation/p1-31-backend-report-export`; first parent `32c797546f39bc9033dda95181571ce38b2f11cc`, second parent `5a75322009bc05af248b34c85c8abb3f26df21ec`, tree `2e11c3797fd0bebfaec18ec827a3064b915a5f6d` |
+| hosted checks of #398 | 21 of 21 `success` on `e855ef0a`, the five required contexts of the `Protect develop` ruleset among them; the post-merge protected run on `c1a2f9fc` 19 of 19 `success`, latest `completed_at` 2026-09-15T06:32:13Z                |
+| hosted checks of #397 | 21 of 21 `success` on `5a753220`; the post-merge protected run on `9729b2b5` 19 of 19 `success`                                                                                                                                    |
+| `main`                | `1262de74560e57a2874596c210a49fda10a3795b`, unchanged; P1-31 is not promoted                                                                                                                                                       |
+| checkout              | `wt-p12`; the runner's identity step read `HEAD` `c1a2f9fc…`, matching its pin, and a clean tracked tree (`runner.log`)                                                                                                            |
+| run                   | `mu2ihptd`; organisations `p31_journey_a_mu2ihptd` and `p31_journey_b_mu2ihptd` (`summary.json`)                                                                                                                                   |
+| window                | reserved 2026-09-15T10:09:46Z, released 10:19:56Z; the runner's first step began 10:10:12.700Z and its last ended 10:17:30.208Z (`run-steps.tsv`)                                                                                  |
+
+The required contexts of `Protect develop`, read from the API, are: Docker build validation; Secret
+and sensitive-file scan; Lint, types, tests, build; Database migrations and RLS tests; ci-gate. **The
+hosted checks are a read of the check-run lists of the SHAs named above and are evidence about the
+source. None of them executed this acceptance, and none is claimed to.**
+
+### 10.2 The instruments, and their provenance
+
+Every instrument the run used lives outside this repository, in `orchestration/acceptance/`, and is
+unversioned. **Its identity is established only by the digests recorded below.** A file outside the
+repository is not reviewed by CODEOWNERS, not covered by the repository gates and not versioned with
+the code it drives.
+
+| instrument                                                        | sha256                                                             | bytes  |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------ | ------ |
+| journey `p1-31-journey.mjs`                                       | `a9d4ca0ef7f9be8a619c33581260fa06291e2b65e5c491668e69b81f2296b8b8` | 210687 |
+| export companion `p1-31-export-companion.mjs`                     | `09d75d886def13ed193710c4120e2f92e91e997163b2f753d685ffec8ff56d7b` | 108070 |
+| screens `p1-31-screens.mjs`                                       | `d91f213afba9bf1cdf319421e447e6076043999e54e94c3304c8fd98667055cc` | 9235   |
+| runner `p1-31-closing-run.sh`                                     | `4441a67b7f33ae532008f85fc85482fc9a385aa05ac1930bf21bb03bbe4ae84a` | 57172  |
+| plan `closing-run-plan-20260914.md`, as the run of record used it | `c1f8c2c28419e156082436311d1ee10abee2f44a991882ca7c0ccaf735536f7f` | 111201 |
+
+The runner's identity step compared the journey, the companion, the screens script and the checkout
+with their pins before anything else ran, and all four matched (`runner.log`); the runner's own
+digest is recorded in `runner.sha256`. The journey digest is not one of the four § 9.3 records. The
+companion that attempt 1 used is kept beside the current one as `p1-31-export-companion.mjs.fcc4ce77`
+(§ 10.11). The export fixture's result contract is in the repository at the SHA under test; its
+digest `478c93f8…` is carried from the closure facts and was not re-derived for this section.
+
+**The plan was corrected after the run.** Its interpretation paragraph attributed two Owner
+sentences to 2026-09-15; they come from the Owner's instruction of 2026-09-14 (§ 10.3). A dated
+correction was added beside that paragraph on 2026-09-15, which moved the plan to sha256
+`3ad698b38458da07e375d766fc240da9dc98a4ecab46b2b08ed334f4b200e6fc`, 111672 bytes. **The run of
+record used `c1f8c2c2…`**, and the correction changes nothing the plan governs.
+
+### 10.3 How it was driven
+
+**One runner invocation**, which exited 0 with all 28 recorded steps exiting 0 (`run-steps.tsv`,
+`runner.log`). Times are 2026-09-15, UTC.
+
+| #   | step                       | start         | end           | exit |
+| --- | -------------------------- | ------------- | ------------- | ---- |
+| 1   | `identity`                 | 10:10:12.700Z | 10:10:13.825Z | 0    |
+| 2   | `ports-free`               | 10:10:13.940Z | 10:10:14.386Z | 0    |
+| 3   | `launcher-lock-free`       | 10:10:14.464Z | 10:10:14.850Z | 0    |
+| 4   | `stack-start`              | 10:10:14.939Z | 10:10:15.189Z | 0    |
+| 5   | `stack-ready`              | 10:10:15.284Z | 10:11:06.075Z | 0    |
+| 6   | `stack-ownership`          | 10:11:06.161Z | 10:11:07.084Z | 0    |
+| 7   | `journey`                  | 10:11:07.167Z | 10:11:43.583Z | 0    |
+| 8   | `prepare-tier1`            | 10:11:43.676Z | 10:11:43.980Z | 0    |
+| 9   | `browser-tier1`            | 10:11:44.066Z | 10:14:28.491Z | 0    |
+| 10  | `account-kind-tier1`       | 10:14:28.619Z | 10:14:29.188Z | 0    |
+| 11  | `results-tier1`            | 10:14:29.297Z | 10:14:30.593Z | 0    |
+| 12  | `screens`                  | 10:14:30.707Z | 10:15:37.004Z | 0    |
+| 13  | `companion-a1`             | 10:15:37.080Z | 10:15:46.745Z | 0    |
+| 14  | `login-window-pause`       | 10:15:46.827Z | 10:16:52.005Z | 0    |
+| 15  | `export-handoff-present`   | 10:16:52.112Z | 10:16:52.307Z | 0    |
+| 16  | `prepare-tier2`            | 10:16:52.427Z | 10:16:52.750Z | 0    |
+| 17  | `browser-tier2`            | 10:16:52.836Z | 10:17:15.025Z | 0    |
+| 18  | `account-kind-tier2`       | 10:17:15.127Z | 10:17:15.581Z | 0    |
+| 19  | `results-tier2`            | 10:17:15.692Z | 10:17:16.740Z | 0    |
+| 20  | `monitoring-extract`       | 10:17:16.848Z | 10:17:17.663Z | 0    |
+| 21  | `monitoring-command`       | 10:17:17.758Z | 10:17:18.450Z | 0    |
+| 22  | `dev-stop`                 | 10:17:18.535Z | 10:17:24.148Z | 0    |
+| 23  | `serve-exit`               | 10:17:24.249Z | 10:17:24.399Z | 0    |
+| 24  | `credential-scan`          | 10:17:24.515Z | 10:17:25.027Z | 0    |
+| 25  | `remove-handoff-companion` | 10:17:25.111Z | 10:17:27.003Z | 0    |
+| 26  | `remove-handoff-journey`   | 10:17:27.094Z | 10:17:29.086Z | 0    |
+| 27  | `handoff-check`            | 10:17:29.177Z | 10:17:29.495Z | 0    |
+| 28  | `ports-after-stop`         | 10:17:29.590Z | 10:17:30.208Z | 0    |
+
+Step 23's `0` is the runner's own recording and not the stack's exit; § 10.13 item 10 states that
+limitation.
+
+**Why the browser tier is split around the companion.** In attempt 2 (§ 10.11) the catalogue case
+compared its rows against the provenance the journey captured before the companion published
+workshop configurations for three report codes. The product displayed the truth; the expectation
+had been captured before a later write. The catalogue observation and the export observation need
+opposite states of the same tenant, so the browser tier is split: **tier 1** runs before any
+companion write, with the export handoff absent, and **tier 2** runs after the companion, with both
+handoffs, and executes only the export case.
+
+**The interpretation applied — recorded as the interpretation, not as an Owner decision.** The
+Owner's instruction of **2026-09-14** to the coordinating session lists, among what must be
+preserved, "report observations after the relevant fixture writes" (a partial quotation: one item
+of that list, without its list marker and closing semicolon). The same instruction says, in a
+partial quotation that is the second sentence of its paragraph:
+
+> Run the distinct export companion with real HTTP, browser download and audit evidence, while
+> retaining the default administrator's refusal.
+
+The closing run applies the first rule **per observation**. The catalogue observation is taken
+after every fixture write relevant to it — the journey's, after which the journey captured the
+catalogue expectation. The companion's later writes are relevant only to the export observation,
+which runs after them. The alternative would have been to re-capture the catalogue expectation after
+the companion, which is an instrument change. **This reading is the closing-run plan's. It is not an
+Owner decision and is not recorded as one.**
+
+**Runner design.**
+
+- A case-insensitive scrub of project-relevant environment variables at start — it removed none on
+  this run (`environment-scrub.txt`) — and every launch sets its variables by exact name after
+  removing letter-case variants.
+- Stack ownership from the launcher's own lock and state files plus a recorded start instant. That
+  was proven once on a real stack before this run (ready after 53 seconds, ownership confirmed, stop
+  clean), and on this run every ownership check read `ok` (`stack-ownership.txt`).
+- An in-runner credential scan and redaction before handoff removal on every exit path; an
+  in-progress marker; fail-closed port checks, which found nothing listening on 3000, 3100 and 3210
+  before the stack started (`runner.log`); a selection guard on tier 2; and a tier 2 re-run only on a
+  detected sign-in rate-limit refusal, at most once. **No re-run was taken**
+  (`browser/test-results-tier2-rerun` is empty).
+
+### 10.4 The HTTP journey
+
+**532 steps, 532 ok, 0 not ok, 0 findings.** The harness's own summary field `verdict` reads `PASS`;
+that is an output of the instrument and not a verdict of this record. `steps.json` is numbered 1 to
+532 without a gap and every `ok` is `true`. Started 2026-09-15T10:11:12.241Z, finished
+10:11:43.507Z (`summary.json`, sha256 `afc5284a…`). Report period `2026-09-14` to `2026-09-16`, time
+zone `Asia/Amman`. The harness's five notes are the five § 9.2 quotes, word for word.
+
+The journey's step-by-step table is `steps.md` in the evidence directory; it is not reproduced in
+this section.
+
+### 10.5 The export companion — separately labelled
+
+**A separate instrument with its own ledger**: 45 steps, 45 ok, 0 findings, and its own summary
+field `verdict` reads `PASS`. Started 10:15:41.527Z, finished 10:15:46.670Z
+(`export-companion.a1.json`, sha256 `cf6989ce…`). Its steps are not part of the journey's 532 and
+are never added to them.
+
+**The principal.** Invited over HTTP by the journey's administrator with **no roles**, its
+credential set through the product's own recovery link read out of the local mailbox, and activated
+by the administrator (companion ledger steps 2–6).
+
+**Configurations.** `work_orders_by_status` already carried the journey's published configuration
+and was reused; the companion created and published workshop configurations for the other three
+report codes (steps 7–23), because an export is refused without a published configuration. Those
+three publications are the writes § 10.3's split exists for.
+
+**The privileged fixture — limited, and an operator act.** A rehearsal inside a transaction that was
+rolled back, then the real pass; both exited 0 (steps 24–25). The fixture recorded
+(`export-companion.a1.json`, `setup.fixture`): the lease acquired; a privileged `postgres`
+connection to the local database on `127.0.0.1:54322`; a role carrying **nine permissions**; one
+grant at **branch** scope; `validTo` exactly **two hours** after it was written; `approvalRef`
+`null`; the audit action `iam.grant.issued`. **The fixture is limited to the single synthetic
+principal the companion created, one branch, that fixed permission set and the two-hour expiry.**
+It is not an HTTP delegation of `rpt.export`, not a change to any role bundle and not a human
+approval. The Owner's instruction of **2026-09-15**:
+
+> Keep the privileged setup limited to the approved synthetic principal, branch, permission set and
+> expiry.
+
+**The four exports and the empty selection** (steps 26–36), over the journey's period `2026-09-14` to
+`2026-09-16` unless the row names another:
+
+| report code                                                            | status | media type | filename                                            | rows | content sha256 | context record | correlated `rpt.report.exported` rows |
+| ---------------------------------------------------------------------- | ------ | ---------- | --------------------------------------------------- | ---- | -------------- | -------------- | ------------------------------------- |
+| `work_orders_by_status`                                                | 200    | `text/csv` | `work_orders_by_status-2026-09-14-2026-09-16.csv`   | 11   | `d82687e9…`    | first record   | exactly 1                             |
+| `technician_labor_time`                                                | 200    | `text/csv` | `technician_labor_time-2026-09-14-2026-09-16.csv`   | 1    | `89666a98…`    | first record   | exactly 1                             |
+| `inventory_movements`                                                  | 200    | `text/csv` | `inventory_movements-2026-09-14-2026-09-16.csv`     | 1    | `0a070b02…`    | first record   | exactly 1                             |
+| `invoice_payment_summary`                                              | 200    | `text/csv` | `invoice_payment_summary-2026-09-14-2026-09-16.csv` | 2    | `9ea22a9b…`    | first record   | exactly 1                             |
+| `work_orders_by_status`, empty selection, `2000-01-01` to `2000-01-02` | 200    | `text/csv` | `work_orders_by_status-2000-01-01-2000-01-02.csv`   | 0    | `2a0bbcf0…`    | present, first | exactly 1                             |
+
+Statuses, media types and filenames are the companion ledger's (steps 27–36); row counts and content
+digests are its `exports` block and ledger.
+
+**Audit correlation.** The companion read the audit log for `rpt.report.exported` and found five
+events in its window, **exactly one for each export's correlation id** (steps 37–41). A read-only
+database query confirmed it independently: exactly one `rpt.report.exported` row per correlation id
+for the run's tenant.
+
+**The default administrator's refusal, retained.** The journey's administrator, who holds the
+tenant-administrator bundle and therefore not `rpt.export` (CC-04), was refused the export of all
+four report codes with **403 `ERR-IAM-001`** (steps 42–45).
+
+### 10.6 The grant anomaly, resolved
+
+The companion's setup summary records `committed: false` beside `exitCode: 0` and a fixture status
+of `applied`. **The field name misleads.** Read from the source, it means "committed and then failed
+after commit" — the exit-11 path the fixture writer's docblock describes
+(`scripts/dev/owner-acceptance/export-fixture-setup.mjs:157-158`) — and it is `false` on every
+successful pass. Read-only database queries confirmed that the grant was installed: the fixture
+role, its nine permissions, the branch-scoped grant, its scope row and its `iam.grant.issued` audit
+row exist, and the rehearsal's rows do not. It is carried as an instrument labelling minor
+(§ 10.13).
+
+### 10.7 The browser half, in two tiers
+
+**Tier 1 — before the companion, with the export handoff absent.** Runner step `browser-tier1`.
+Report `browser/playwright-report.tier1.json`, sha256 `979beb9f…`:
+
+| project                | collected | passed | skipped | failed | P1-31 cases executed |
+| ---------------------- | --------- | ------ | ------- | ------ | -------------------- |
+| sign-in setup          | 1         | 1      | 0       | 0      | —                    |
+| `authenticated-en`     | 178       | 25     | 153     | 0      | 25 of 26 collected   |
+| `authenticated-ar`     | 178       | 25     | 153     | 0      | 25 of 26 collected   |
+| `authenticated-tablet` | 91        | 25     | 66      | 0      | 25 of 26 collected   |
+
+0 flaky and 0 retried. The skips have **exactly two reasons**, read from the report's own
+annotations:
+
+- **369** in specifications that predate this phase, every one "requires the owner-acceptance
+  account; signed in as org-administrator": `accessibility` 54, `administration` 54,
+  `appointments-and-receptions` 141, `crm-and-vehicles` 24, `drawer-and-restore` 14, `isolation` 36,
+  `shared-ux` 46. They did not run here; they are outside P1-31 and are not P1-31 failures. § 8.6
+  records why a handoff-driven run skips them.
+- **3** of the P1-31 export case, `reports-p1-31.spec.ts:586`, one per project, because the export
+  companion's handoff was absent at tier 1 by design. **These three skips are not a result.** They
+  are neither a pass nor a failure of the export case; the export case's result is its tier 2
+  execution.
+
+Per project, tier 1 executed `audit-log` 2, `delivery` 4, `delivery-writes` 4, `overview` 3,
+`reports` 7 and `warranty` 5 P1-31 cases, and skipped the eighth `reports` case, which is the export
+case.
+
+**Tier 2 — after the companion, with both handoffs, the export case only.** Runner step
+`browser-tier2`, after the runner's sign-in window pause. The selection guard found the export case
+in all three projects (`browser/tier2-selection.tier2.txt`). Report
+`browser/playwright-report.tier2.json`, sha256 `b62a0f1b…`: **4 selected, 4 passed** — the sign-in
+setup, and the export case in `authenticated-en`, `authenticated-ar` and `authenticated-tablet`, each
+on its first try. No re-run.
+
+**Which account.** Both tiers signed in as `org-administrator`, from the journey handoff, and each
+tier's account-kind file was written after that tier started (`browser/account-kind.tier1.json`,
+`browser/account-kind.tier2.json`, `browser/tier-starts.txt`).
+
+**The P1-31 case total, derived from both reports together.** Each project collects **26** P1-31
+cases: `audit-log` 2, `delivery` 4, `delivery-writes` 4, `overview` 3, `reports` 8, `warranty` 5.
+Tier 1 executed 25 per project, 75 in all; tier 2 executed the one remaining case, the export case,
+once per project, 3 in all. **75 + 3 = 78 executed, 0 failed.** Each case is counted once, in the
+tier that executed it, and tier 1's three skipped entries are not counted. **Neither report alone
+carries 78.** The collection figure across the three projects is also 78; the two coincide only
+because every collected case executed in exactly one tier, and **a collection count is not an
+execution count**.
+
+**The browser download** exercised `work_orders_by_status` in all three projects. The other three
+report codes were proven by real HTTP export (§ 10.5), **not** by browser download.
+
+**Traces.** For each tier the runner found no `trace.zip` to delete, and none remains in the
+checkout or in the evidence (`runner.log`).
+
+### 10.8 Screens
+
+**30 shot records, all `ok`; 28 PNG files** (`screens/screens.json`). The two sign-in shots produce
+no image. The keys and file names are the same 30 and 28 as attempt 2's. The pass ran between
+tier 1 and the companion.
+
+### 10.9 Monitoring
+
+The run's API log was captured and read by the repository's local monitoring command,
+`scripts/ops/p1-31-monitor-alerts.mjs`:
+
+| figure                                    | value                                                                             |
+| ----------------------------------------- | --------------------------------------------------------------------------------- |
+| input                                     | 697581 bytes of captured API application log (`monitoring/api-application.jsonl`) |
+| read / ignored / routed / malformed / dup | 1799 / 1799 / 0 / 0 / 0, `complete: true` (`monitoring/monitor.log`)              |
+| alert queue                               | `monitoring/alerts-local.jsonl`, empty                                            |
+
+No failure record at error or fatal severity existed in the capture, so nothing was routed. **What
+this measures is the command completing over this run's real log; it does not show an alert being
+routed.** **Monitoring here is a local sanitized alert queue. No external delivery exists or is
+claimed, and D-10 is unresolved.** The Owner's instruction of **2026-09-15**:
+
+> Verify monitoring according to its actual implementation: a local sanitized alert queue. Do not
+> claim external delivery or resolution of D-10.
+
+### 10.10 Credential hygiene, and the shared database
+
+- **The in-runner scan**, before the handoffs were removed: 3 handoffs read, 3 distinct credential
+  values searched for, 66 files scanned with the handoffs excluded, 0 redactions, result complete
+  (`credential-scan.txt`).
+- **An independent credential-shape scan** of the evidence found no authorization header, bearer
+  token, cookie, JWT or password value.
+- **Both instruments removed their handoffs**, and the check afterwards found none remaining
+  (`remove-handoff.log`, `handoff-check.txt`). No trace and no in-progress marker remains, and
+  Playwright's saved sign-in state was deleted after the run.
+
+The shared acceptance database, read-only:
+
+| figure             | before | after                                 |
+| ------------------ | ------ | ------------------------------------- |
+| `org.tenants`      | 49     | 51 — this run's pair of organisations |
+| `iam.permissions`  | 121    | 121                                   |
+| migrations applied | 141    | 141                                   |
+
+The disposable databases were not touched by this run.
+
+### 10.11 Run history — attempts 1 and 2
+
+Two attempts preceded this run. **Both are preserved in their own evidence directories, and neither
+is the run of record.** Each cause was fixed before the next attempt.
+
+| attempt | evidence                   | outcome                                                                                                                                                      | cause                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1       | `acceptance-20260915-0638` | PARTIAL. Journey 532/532; browser 25 passed and 1 failed per authenticated project; screens 28 images; export witness **UNMET**                              | INSTRUMENT: the companion read the configuration list from a flat field while the API answers `{configurations: {items}}`, treated the unrecognised shape as an empty list, and stopped on a 409. A full inventory then found two more read mismatches, in invitation creation and activation; all were fixed and a fail-closed shape guard added (companion `fcc4ce77` → `09d75d88`) |
+| 2       | `acceptance-20260915-0730` | PARTIAL. Journey 532/532; companion 45/45 with all four exports, audit rows and administrator refusals; browser export download passed in all three projects | INSTRUMENT (ordering): the catalogue case compared rows against provenance the journey captured before the companion published workshop configurations for three codes; the product displayed the truth. Fixed procedurally by splitting the browser tier around the companion                                                                                                        |
+
+Both directories are under `orchestration\evidence\p1-31\`. Their outcomes are recorded as they
+happened and are not counted toward this run's figures.
+
+### 10.12 The dedicated privileged-fixture database proof
+
+Not part of run `mu2ihptd`, and recorded here because the export companion's fixture rests on it.
+
+- The committed suite `tests/db/p1-31-export-fixture.test.ts`, run through its own configuration
+  `vitest.config.db-fixture.ts` via `npm run test:db-fixture`, at source `e855ef0a` (contained in
+  protected `develop` `c1a2f9fc`), against the disposable database `rootlco_p131_fixture_20260914`
+  on `127.0.0.1:54322` (141 migrations, seven seeds, empty before and after): **12 of 12 passed**,
+  2026-09-15T06:09:33Z to 06:09:49Z. Evidence
+  `orchestration/evidence/p1-31/fixture-db-proofs-20260915/`.
+- Per-case pass is inferred from totals: the reporter printed totals only, the file declares
+  exactly twelve cases with no skip or `only` marker, and the run reported 12 passed, 0 skipped.
+- **No hosted job executes it.** It is excluded by name from the shared database runner, declared in
+  `.github/ci-baselines/unrun-test-tiers.json` under `unrunNonBrowser`, and recorded as CC-62.
+- **The falsifiability control for its deferred-constraint case** — restoring the scope row makes the
+  negative fail — **was taken once, by hand, on 2026-09-14, in an uncommitted scratch copy.** It is
+  not an automated regression carried by the suite.
+
+### 10.13 Limitations carried with this run
+
+Each is carried as it stands. **This record turns none of them into a blocker and accepts none of
+them.** The Owner's instruction of **2026-09-15**, quoted partially (the first sentence of its
+paragraph):
+
+> Do not automatically turn every limitation into a phase blocker, and do not automatically accept
+> it.
+
+1. The privileged-fixture proof is absent from hosted execution (§ 10.12).
+2. Its deferred-constraint falsifiability control is an uncommitted, hand-taken measurement
+   (§ 10.12).
+3. The runner, plan, journey, companion and screens instruments live outside the repository,
+   unversioned, identified only by digests (§ 10.2).
+4. The P1-24 operation register credits only one suite for the export operation, because it matches
+   references by raw substring and three further database-backed suites spell the report code and
+   the action instead. The register undercounts rather than overclaims
+   ([`security-and-qa-evidence.md`](./security-and-qa-evidence.md) § 1).
+5. The continuous-integration job summary renders only one of the two unrun registers (CC-62 (c)).
+6. The export audit records selection and counts, not a byte length or content digest, so it cannot
+   later identify the exact bytes disclosed; the export uses the existing `expensive-read` rate
+   policy with an 8 MiB response bound and no daily allowance
+   ([`report-export-seam.md`](./report-export-seam.md)).
+7. Monitoring is a local sanitized alert queue only; no external notification exists; the
+   polling-versus-push decision D-10 is unresolved (§ 10.9).
+8. The browser download was exercised for one report code; the other three were proven over real
+   HTTP (§ 10.7).
+9. 369 browser cases in earlier-phase specifications require the owner-acceptance account and did
+   not run in this acceptance; they are outside P1-31's scope and are not P1-31 failures (§ 10.7).
+10. Instrument labelling and recording minors: the companion's `committed` field name misleads
+    (§ 10.6); the runner records the stack's own exit as 0 whatever it was — on this run
+    `runner.log` reads `acceptance:serve exited 1` beside step 23's `0`; the companion's reuse rule
+    is stricter than the export's own checks; an unexpected mailbox item shape is labelled absent
+    rather than unrecognised; and a seconds-long window exists in which a foreign stack started in
+    the same checkout could be stopped.
+
+### 10.14 What this section does not claim
+
+- **No Owner verdict, no phase Pass, no promotion and no human certification**, and no claim that
+  the phase is complete. § 1's sentence stands as written: "**The Owner verdict has not been
+  given.**" The `verdict` fields of the journey and the companion are instrument outputs.
+- **No hosted execution of this acceptance or of the fixture proof.** The hosted checks of § 10.1
+  are evidence about the source.
+- **No claim beyond the earlier runs' own scope.** `mtzmvemj` (§ 8) and `mu0diepc` and `mu0g1b1a`
+  (§ 9) stand for what they recorded, and nothing here re-states or extends them.
+- **Nothing about the 369 earlier-phase browser skips** except that they did not run here; they
+  are outside P1-31 and are not P1-31 failures.
+- **No collection figure as an execution figure.** The Owner's instruction of **2026-09-15**:
+
+  > Do not equate a merged PR, collection count, index or browser smoke with full phase acceptance.
+
+- **No row of [`task-matrix.md`](./task-matrix.md) moves in this section.** A state change belongs
+  to the matrix, under its own rule.
