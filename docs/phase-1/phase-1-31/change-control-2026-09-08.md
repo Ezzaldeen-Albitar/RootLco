@@ -5574,6 +5574,14 @@ Three, set out in § 9.6 of the acceptance record and none of them addressed by 
 | **CC-54 (d)** | **the closure record's Frontend rows are stale against the matrix this slice moves** | [`closure-record.md`](./closure-record.md) quotes the matrix's FE states and its § 8-era figures, and this slice raises three of those rows and adds a second corrected re-run the closure record does not mention                                                                         | **open, and deliberately not edited here.** The closure record is re-derived at one head by the final integration; editing it from a branch would put two derivations of the same totals in the tree. Its FE rows are owed to that integration                                                                                                       | the final integration        | open, recorded   |
 | **CC-54 (e)** | **the queue-1 evidence was taken with the soft expectations still in the harness**   | run `mtzmvemj`, recorded in § 8, and run `mu0diepc`, recorded in § 9.1, both executed a harness carrying twelve `either / or` status expectations. Every one of the twelve answered the value later pinned, in both runs                                                                   | **closed as a recorded limitation, not a retraction.** § 9.4 states which twelve, what each observed, what the product documents and what each is now pinned to. § 8's substantive isolation claim rests on `assertNoRow`, a separate assertion that was never soft. No figure of either earlier run moves                                           | this slice                   | closed, recorded |
 
+_(2026-09-15, closure note beside **CC-54 (b)** above: the row's finding, measurement and state cell
+are retained as written and were true when written. The declaration the document is generated from
+was corrected on `remediation/p1-31-backend-closure-hardening`: the operation declaration gained an
+optional `answersNotFound` field, the delivery record read and the warranty detail read both declare
+it, and `docs/api/openapi.v1.json` and the P1-24 operation register were regenerated from the
+declarations rather than edited. Recorded in § 72.3 under **CC-63**. The row's state moves to closed
+only when that branch merges.)_
+
 ### 64.9 What this slice did NOT do, and what is not claimed
 
 - **It claims no hosted result and no attestation.** Whether the governed `authenticated-browser`
@@ -6117,6 +6125,15 @@ recorded run at the merged head passed that suite inside a clean tier.)_
 | **CC-56 (b)** | **the same defect survives outside this phase's operation set — enumerated, with its two mis-statements corrected, in § 66.9** | **out of scope and deliberately left open at every OPEN site: six of the seven rows § 66.9 tabulates.** The seventh, `org.department-create`, was listed as a defect in error and **already conforms** — it answers 403 `ERR-IAM-001` uniformly, verified at `organization-administration-service.ts`:342. None of the six is changed by this pull request, and that is the Owner's rule applied rather than avoided: each is a decision by cited authority for the lane that owns it, not a code normalised for consistency by a slice passing through _(this row read "the same defect survives outside this phase's operation set: the five P1-30 body-scoped creates, and `org.department-create` in the IAM module … now with both siblings named", and then "out of scope and deliberately left open, at every site". Both were wrong: "both siblings" was FALSE when written, since a read of the IAM module found four more sites; and "at every site" over-counted, since `org.department-create` is not one of them. § 66.9 carries the correction and the reason for each)_                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | the lane that owns P1-30 inventory master data (row 1); the IAM lane (rows 3, 4, 5, 6, 7) | open, recorded   |
 | **CC-56 (c)** | **the claim probe's own guard is shape-dependent rather than fail-closed**                                                     | `apps/api/src/server/auth/authorization.ts`:566-567 returns without a statement when a claim names a `branchId` and no `companyId`, and `tests/backend/authorization.test.ts`:515-518 pins that. **Unreachable today** — all three creates require `companyId` in their zod body, so no route can produce a half claim — which is why it is recorded rather than treated as a live hole. It is still the wrong default: a guard that resolves nothing when it cannot understand its input fails OPEN, and the read probe's identical early return is justified by six operations that legitimately pass one half, of which this write probe has none. **Recommendation: refuse a half claim with the same `ERR-IAM-001` and move the pin**, in the next backend slice. Not done here, because it is a behaviour change no route exercises and this pull request's scope is the three creates                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | the next backend slice                                                                    | open, recorded   |
 | **CC-56 (d)** | **the P1-30 case that crosses the TENANT boundary on a body-scoped create asserts an EITHER/OR outcome**                       | `tests/backend/p1-30-inventory-master-data.test.ts`:685 (MD-X1) asserts `expect([403, 404]).toContain(status)` for `inv.stock-location-create` named into another tenant. Its sibling MD-L3 (`:646-651`) pins `403` exactly, but for a grant-scope boundary inside one tenant, so it does not cover this one. It passes whichever of the two codes the operation gives, so it pins neither — which is how § 66.9 row 1 came to claim a 404 that nothing measures, and why that row now claims nothing. This is the assertion class the Owner named, in the evening message of 2026-09-13, quoted here exactly and with the Owner's own inner quotation marks: "Do not weaken assertions, add blanket skips, or allow arbitrary “either permitted or refused” outcomes." That sentence is section 2 of the message, whose subject is FE-004, FE-005 and FE-006; the register quotes it from the Owner's evening message of 2026-09-13, preserved verbatim outside this repository in `orchestration/evidence/p1-31/closeout-drafts/queue2/owner-decisions-2026-09-13.md`, Appendix A. **It is read here as a standing rule about assertions, not as a ruling about this suite**, which the Owner did not mention _(this cell first paraphrased the sentence inside quotation marks, flattening the Owner's inner quotes to “either-permitted-or-refused” and calling it a “standing instruction” without naming where it was said)_. **Not fixed here**: it is another phase's suite, and deciding what it should pin is the same contract question CC-14 § 7 holds for those five creates — the test and the decision should move together, in that lane | the P1-30 backend area                                                                    | open, recorded   |
+
+_(2026-09-15, closure note beside **CC-56 (c)** above: the row's finding and its state cell are
+retained as written and were true when written. On `remediation/p1-31-backend-closure-hardening` the
+claim probe in `apps/api/src/server/auth/authorization.ts` now refuses a claim that names a branch and
+no company with the same `ERR-IAM-001`, safe details and message a foreign pair receives, without
+running a statement, and the pin in `tests/backend/authorization.test.ts` asserts that refusal against a
+real, visible branch. An empty claim still resolves. All four callers were read and each names a
+company, so no route's behaviour changes. Recorded in § 72.2 under **CC-63**. The row's state moves to
+closed only when that branch merges.)_
 
 ### 66.9 CC-56 (b) enumerated — every site outside this phase that still answers the old way
 
@@ -7855,3 +7872,218 @@ command.
 disposable-database fixture run, no verdict, no pass, no promotion and no certification. The P1-27 run
 cycle is deliberately NOT re-recorded in this change: it is the next task, and it has to come after
 every change here or it expires on the first executable path that moves.
+
+## 72. Backend closure hardening — the claim guard, the published not-found, the refused-download negative and the D-18 category (CC-63)
+
+**Slice:** `remediation/p1-31-backend-closure-hardening`, ownership profile `p1-31-backend`, which
+the `remediation/p1-31-backend-` prefix resolves to in
+`.github/ci-baselines/phase-ownership-profiles.json`. **Baseline:** protected `develop`
+`c1a2f9fc5d43799a4ca4beca9fe4927a777a2632`. `main` is untouched.
+
+**Authority.** The Owner's instruction to finish all authorized engineering before the reduced
+decision packet is presented; this register's own open rows **CC-56 (c)** (§ 66.8) and **CC-54 (b)**
+(§ 64.8), each of which names the next backend slice as its owner; the SEC-002 open item in
+[`security-and-qa-evidence.md`](./security-and-qa-evidence.md) § 2, "The server-side refused-download
+negative does not exist"; and Owner decision **D-18** in
+[`owner-decisions-2026-09-10.md`](./owner-decisions-2026-09-10.md) § 5, whose measured facts say the
+identity-evidence category does not yet exist and leave its code, purpose and seed file to the
+implementing slice.
+
+### 72.1 Identifier allocation
+
+| identifier                   | meaning                                            | state                                                 |
+| ---------------------------- | -------------------------------------------------- | ----------------------------------------------------- |
+| section 72                   | this slice                                         | this branch; the lowest free section after § 71       |
+| **CC-63**                    | the four closures below                            | this branch                                           |
+| **CC-63 (a)**, **(b)**       | two findings this slice measured and did not close | this branch                                           |
+| **CC-56 (c)**, **CC-54 (b)** | closed by this slice                               | annotated in place by dated notes; nothing renumbered |
+| § 70 / CC-60                 | closing evidence                                   | **reserved, and not touched here**                    |
+
+§ 48.1's rule holds: an identifier is a claim about the register when it was raised and is never
+renumbered. The two closed rows keep their original wording and state cells; a dated italic note
+beside each says where the closure is.
+
+### 72.2 CC-56 (c) — the claim probe now fails closed on a half claim
+
+`requireScopeClaimInTenant` in `apps/api/src/server/auth/authorization.ts` returned without a
+statement when a claim named a branch and no company. It now refuses that claim with the same
+`ERR-IAM-001`, the same `safeDetails.requiredPermissions` and the same message a foreign pair
+receives, and decides it without running a statement. An empty claim, which names no scope, still
+resolves.
+
+**Every caller was read, and none can produce a half claim**, so no route's behaviour changes:
+
+- `apps/api/src/modules/delivery/application/checklist-template-service.ts`:228 and
+  `apps/api/src/modules/warranty/application/warranty-policy-service.ts`:275 pass a company;
+- `apps/api/src/modules/iam/application/employee-administration-service.ts`:210 passes a company and a
+  branch its body schema requires;
+- `apps/api/src/app/api/v1/reports/[reportCode]/route.ts`:127-129 passes a pair whose `ExportBody`
+  requires both.
+
+**The pin moved.** `tests/backend/authorization.test.ts` no longer asserts that a half claim resolves.
+It asserts that the empty claim and a real visible pair resolve, and that the half claim naming that
+same visible branch, a half claim naming an invented branch and an invented pair are all refused with
+one code, one status, the declared safe details and a byte-identical message.
+
+### 72.3 CC-54 (b) — the two reads now publish the 404 they answer
+
+**What was measured.** At the baseline no operation in `docs/api/openapi.v1.json` published a 404.
+`standardFailureResponses` in `apps/api/src/server/openapi/document.ts` derives failure statuses from
+`public`, `idempotent`, `versionGuarded` and `rateLimitPolicy`, and none of them implies a not-found,
+so no declaration was capable of publishing one.
+
+**What changed.** The operation declaration in `apps/api/src/server/auth/operation-registry.ts` gained
+an optional `answersNotFound` field, and the generator emits a `404` problem response when it is set.
+The delivery record read (`apps/api/src/app/api/v1/deliveries/[deliveryId]/route.ts`) and the warranty
+detail read (`apps/api/src/app/api/v1/warranties/[warrantyId]/route.ts`) set it. Both answers were read
+from the code rather than taken from the row: the delivery read service's `requireDelivery` decides
+the uniform not-found before the scope decision, and `readWarranty` at
+`apps/api/src/modules/warranty/application/warranty-service.ts`:562-566 answers `ERR-RES-001` when the
+RLS-narrowed row read finds nothing.
+
+**Regenerated, never edited.** `docs/api/openapi.v1.json` through the contract test's update switch
+(the diff is the two `404` entries) and `docs/phase-1/phase-1-24/evidence/operation-register.json`
+through `scripts/p1-24-operation-register.mjs`. The P1-19 inventory and the idempotent-operations
+manifest were checked and did not change.
+
+**Not done.** Other operations that answer a not-found were not surveyed and do not declare the field.
+It is available to the lanes that own them; this slice changes the two reads the row names.
+
+### 72.4 SEC-002 — the server-side refused-download negative
+
+**The path, read from the code.** The delivery module ships no signature retrieval; its signatures
+route defers retrieval to the shared attachment path. That path is the download authorization
+command under `/attachments/documents/{documentId}/download-authorizations`: it declares
+`shared.document.manage` at `tenant` scope, and `AttachmentService.requestDownload` reads the version
+under the caller's RLS, refuses anything not `accepted`, and only then signs a short-lived URL and
+appends `shared.document.download_authorized`. A URL is the only thing that could carry bytes out.
+
+**The negative.** `tests/backend/p1-31-signature-download-refusal.test.ts` binds an accepted signature
+document to a real delivery through the attach route, confirms it through the signature list, and
+asserts, in four cases:
+
+- the declaration names the file-access permission;
+- **control:** a holder of that permission is issued a URL the storage provider verifies, with one
+  signing request and one audit record, so the refusals below are not the path refusing everything;
+- a caller that can read the signature ledger, and so holds the reference, but lacks the file-access
+  permission is answered `403 ERR-IAM-001` naming the required permission, as a problem document with
+  no URL, no expiry, no storage key and no document or version identifier, the storage provider is
+  never asked to sign and no download audit record is written;
+- a caller from another tenant holding the permission in its own tenant is answered `404 ERR-RES-001`
+  with the same non-disclosure, and that answer matches the one for a document that exists nowhere in
+  status, code, title and fields.
+
+**Measured, and NOT closed: an out-of-scope branch is not refused.** A throwaway local probe, run once
+on the disposable database and not committed, gave a tenant-A caller whose only grant of
+`shared.document.manage` is scoped to a different branch a request for an accepted branch-A1 version.
+It was answered **200 with a signed URL**. The cause is in the code: the tenant-scoped declaration is
+evaluated by `iam.has_permission`, which reads no grant scope; `sel_documents_tenant` and
+`sel_document_versions_tenant` narrow by tenant only; and `requestDownload` makes no scope decision
+against the document's own company and branch. Raised as **CC-63 (a)**. It is not fixed here, because
+refusing it changes who may download from a shared operation, which is a decision about that
+operation's authorization contract rather than a test.
+
+### 72.5 D-18 — the approved optional identity-evidence category
+
+**The engineering choices.**
+
+| choice                | value                                                                                                 | why                                                                                                                               |
+| --------------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| category code         | `delivery_receiver_identity`                                                                          | names the handover and the person, and is not a `reception_*` code, so no reception category is reused                            |
+| business-link purpose | `identity_document`                                                                                   | already admitted by `ck_document_categories_link_purpose` and already in `LINK_PURPOSES`, so no purpose is added                  |
+| posture               | `restricted`, `evidence-audit`, 10485760 bytes, JPEG, PNG and WebP, device capture timestamp required | identical to the existing identity-purpose row, so the category inherits the posture the system already enforces and invents none |
+| scope and identifier  | platform, `d1500000-0000-4000-8000-000000000008`                                                      | the next identifier in the platform evidence-category block                                                                       |
+| seed file             | `supabase/seeds/05_shared_reference.sql`                                                              | the file that owns the platform document categories, already declared in `supabase/config.toml` under `[db.seed] sql_paths`       |
+
+**No migration, and why none is owed.** The purpose is already admitted by the existing check, and rows
+do not live in migrations here: the reception evidence foundation's header records that the
+migration-replay gate refused a migration that inserted its categories, and
+`scripts/ci/migration-replay-checks.mjs` refuses a top-level insert into any module schema. So no
+migration file, registry or pin moves.
+
+**How the row reaches a database that already has data — the precedent followed.**
+[`operator-runbook.md`](./operator-runbook.md) § 3 is this phase's precedent for reference rows on a
+populated database: the declared seed file is applied **as it stands** with `psql -f` and
+`ON_ERROR_STOP=1`, never by `supabase db reset`, and never transcribed by hand. The new insert ends
+`ON CONFLICT DO NOTHING`, and the file's other two statements already do, so the act is additive and
+repeatable.
+
+**The exact act for the shared local acceptance database. It has NOT been performed.**
+
+```bash
+docker cp supabase/seeds/05_shared_reference.sql <container>:/tmp/05_shared_reference.sql
+docker exec <container> psql -U "$DB_USER" -d "$DB_NAME" \
+  -v ON_ERROR_STOP=1 --echo-errors -f /tmp/05_shared_reference.sql
+```
+
+From Git Bash on Windows, set `MSYS_NO_PATHCONV=1` first: without it the shell rewrites the container
+path and `psql` reports the file missing, which is what happened on the first attempt at the rehearsal
+below. **Verification:** `SELECT category_code, business_link_purpose, default_classification,
+default_retention_class, status FROM shared.document_categories WHERE scope = 'platform' AND
+category_code = 'delivery_receiver_identity';` returns one row, and the platform category count rises
+by exactly one. **Rollback criterion:** delete the row only while no `shared.documents` row references
+it; once a document is filed under it, removal is no longer a rollback of this act.
+
+**Rehearsed on a disposable database only.** Applied twice to `rootlco_p131_backend_20260914`: the
+first application inserted one row and the second inserted none; platform categories went from seven
+to eight. The shared `postgres` database was read once and holds no row of this code; nothing was
+applied to it.
+
+**Proof.** `tests/db/shared-delivery-receiver-identity-category.test.ts`, six cases: the row exists
+once, active, platform-scoped, with the identity purpose and the posture above; it is a different row
+from the reception identity-purpose row; every tenant can read it; the runtime role cannot create,
+change or remove it; a session holding no grant is refused filing a document under it by
+`ins_documents_scoped`; and a document filed under it is invisible to another tenant.
+
+**The binding gap closed with it.** Receiver verification accepted an optional identity-evidence
+document version and held it to tenant visibility, the delivery's company and branch, the refused
+review states and provenance through the work order or the reception visit — and to nothing about the
+category (`requireUsableDocumentVersion` in
+`apps/api/src/modules/delivery/application/delivery-service.ts`). A signature document, or a
+reception category carrying the identity purpose, satisfied it, which is the substitution D-18
+forbids. It now requires `delivery_receiver_identity`, which `verifyEvidenceVersion` returns through a
+new RLS-narrowed `documentCategoryCode` read, and refuses any other category with the service's
+existing `ERR-VAL-001` on the evidence field. `tests/backend/p1-31-receiver-identity-evidence.test.ts`
+proves four cases: a correctly filed document attached to the delivery's own visit is accepted; a
+document under the reception identity category, a foreign tenant's identity document (`404
+ERR-RES-001`) and an identity document attached to another visit are each refused with nothing
+recorded, and each refusal is followed by an acceptance on the same delivery. The delivery read-seam
+fixture, which had bound the signature document as identity evidence, now binds an identity-category
+document.
+
+**What that check does not add, recorded as CC-63 (b).** Provenance still accepts either the work
+order or the reception visit, the rule a signature shares and whose reason the method's docblock
+gives; a visit-only rule for identity evidence was not introduced. And binding requires no
+`shared.document.manage` in the delivery's scope: on this path a document's visibility is the tenant
+policy plus the company and branch match, exactly as for a signature. Requiring the file-access
+permission to bind would change who may verify a receiver.
+
+### 72.6 Dispositions
+
+| id            | finding                                                                                                     | measured                                                                                                                                                                                        | disposition                                                                                                                                   | owner                                                 | state                              |
+| ------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- | ---------------------------------- |
+| **CC-63**     | **four authorized closures: CC-56 (c), CC-54 (b), the SEC-002 server negative and the D-18 category**       | §§ 72.2–72.5                                                                                                                                                                                    | implemented on this branch with the tests named above; the category row reaches the shared acceptance database only through the act in § 72.5 | this slice                                            | done on this branch, pending merge |
+| **CC-63 (a)** | **the download authorization does not refuse a caller whose file-access grant is scoped to another branch** | one local probe on the disposable database: 200 with a signed URL; tenant-scoped declaration evaluated by `iam.has_permission`, tenant-only document policies, no scope decision in the service | **recorded, not fixed.** Refusing it changes the authorization contract of a shared operation and needs that decision first                   | the backend lane owning shared-services authorization | **open**                           |
+| **CC-63 (b)** | **identity-evidence binding accepts either delivery parent and requires no file-access permission**         | `requireUsableDocumentVersion` provenance and visibility rules, shared with signatures                                                                                                          | **recorded.** Narrowing either changes who may verify a receiver or with what, which is a product decision rather than an engineering default | the delivery backend lane                             | open, recorded                     |
+
+### 72.7 Local measurements — LOCAL, pending hosted attestation
+
+Focused suites, run against the disposable database `rootlco_p131_backend_20260914` and never against
+the shared database: `tests/backend/authorization.test.ts` 20 cases,
+`tests/backend/p1-31-signature-download-refusal.test.ts` 4, `tests/backend/p1-31-receiver-identity-evidence.test.ts`
+4, `tests/backend/p1-31-delivery-read-seam.test.ts` 26, and as regressions for the two changed
+services `tests/backend/p1-22-delivery.test.ts` 58 and `tests/backend/p1-31-privilege-escalation.test.ts`
+276; `tests/db/shared-delivery-receiver-identity-category.test.ts` 6. The static gates and the P1-27
+record cycle taken for this head are listed with their exit codes in the pull request, labelled local.
+**None of it is a hosted result.** The required hosted checks on the pull request's own head are the
+binding proof.
+
+### 72.8 What this slice did NOT do
+
+- It applied nothing to the shared acceptance database, ran no `supabase db reset` and stopped no
+  stack.
+- It built no user interface; the optional capture screen is a separate frontend change.
+- It did not close CC-63 (a) or CC-63 (b), and it did not survey other operations for an undeclared
+  not-found.
+- It did not update `operator-runbook.md` or `security-and-qa-evidence.md`; the act and the negative
+  are recorded here, and those records move in their own lanes.
