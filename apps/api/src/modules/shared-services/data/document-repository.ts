@@ -461,4 +461,26 @@ export class DocumentRepository extends Repository {
     );
     return result.rows;
   }
+
+  /**
+   * The category code a live document is filed under, or null when the document
+   * is not visible to this session.
+   *
+   * Read under the caller's own RLS: `sel_documents_tenant` narrows the document
+   * to the session tenant, and `sel_document_categories_visible` admits the
+   * platform row or the session tenant's own override, which is exactly the set
+   * `shared.guard_document_category_scope` allows a document to reference.
+   */
+  async documentCategoryCode(db: DbHandle, documentId: string): Promise<string | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ category_code: string }>(
+      db,
+      `SELECT c.category_code
+         FROM shared.documents d
+         JOIN shared.document_categories c ON c.id = d.category_id
+        WHERE d.tenant_id = $1 AND d.id = $2 AND d.deleted_at IS NULL`,
+      [context.principal.tenantId, documentId]
+    );
+    return row?.category_code ?? null;
+  }
 }

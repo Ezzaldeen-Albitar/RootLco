@@ -48,6 +48,17 @@ export const CHECKLIST_SATISFYING_OUTCOMES = Object.freeze(['passed', 'waived'] 
 
 /** `ck_delivery_signatures_signer_role`. */
 export const SIGNER_ROLES = Object.freeze(['receiver', 'delivering_employee', 'witness'] as const);
+
+/**
+ * The document category a receiver's identity evidence must be filed under
+ * (P1-31 Owner decision D-18).
+ *
+ * A platform row seeded by `supabase/seeds/05_shared_reference.sql` with the
+ * `identity_document` purpose. Evidence filed under any other category — a
+ * signature, or a reception category that accepts the same media — is refused,
+ * because the decision forbids using an unrelated category in its place.
+ */
+export const RECEIVER_IDENTITY_EVIDENCE_CATEGORY = 'delivery_receiver_identity';
 export type SignerRole = (typeof SIGNER_ROLES)[number];
 
 /**

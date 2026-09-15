@@ -69,6 +69,7 @@ import { iamRegistryModule } from '@/modules/iam';
 import {
   DeliveryRuleError,
   MAX_REASON,
+  RECEIVER_IDENTITY_EVIDENCE_CATEGORY,
   assertChecklistResultShape,
   assertEligible,
   assertSignerRole,
@@ -618,11 +619,15 @@ export class DeliveryService {
     }
 
     if (input.identityEvidenceDocumentVersionId !== undefined) {
+      // D-18: identity evidence must be filed under the approved identity-evidence
+      // category. Every other rule — tenant visibility, company and branch, refused
+      // states, provenance — is the same one a signature is held to.
       await this.requireUsableDocumentVersion(
         db,
         delivery,
         input.identityEvidenceDocumentVersionId,
-        'body.identityEvidenceDocumentVersionId'
+        'body.identityEvidenceDocumentVersionId',
+        RECEIVER_IDENTITY_EVIDENCE_CATEGORY
       );
     }
 
@@ -1310,7 +1315,13 @@ export class DeliveryService {
     db: DbHandle,
     delivery: DeliveryRecordRow,
     versionId: string,
-    path: string
+    path: string,
+    /**
+     * The category the document must be filed under, when the evidence has a governed
+     * one. Checked with the other facts about the document itself, before provenance,
+     * and refused with the same `ERR-VAL-001` a mis-scoped or unlinked document gets.
+     */
+    requiredCategoryCode?: string
   ): Promise<void> {
     const version = await sharedServicesModule().attachments.verifyEvidenceVersion(
       db,
@@ -1332,6 +1343,12 @@ export class DeliveryService {
     if (EVIDENCE_REFUSED_STATES.includes(version.status)) {
       throw new AppFailure('ERR-DOC-001', {
         message: 'The document version was refused by review or quarantine and cannot be bound.',
+      });
+    }
+    if (requiredCategoryCode !== undefined && version.categoryCode !== requiredCategoryCode) {
+      throw new AppFailure('ERR-VAL-001', {
+        message: 'The document is not filed under the category this evidence requires.',
+        safeDetails: { violations: [{ path, rule: 'custom' }] },
       });
     }
 

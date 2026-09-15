@@ -924,6 +924,10 @@ export class AttachmentService extends ApplicationService implements FileService
    *     caller can see could be attached as evidence for any record — the
    *     "forged attachment" case. The link must be live and name this exact
    *     `(entityType, entityId)`.
+   *  4. **Which category is the document filed under?** Returned so a consumer
+   *     whose evidence has a governed category — the receiver's identity evidence
+   *     at a delivery handover (P1-31 D-18) — can refuse a document filed under an
+   *     unrelated one rather than accept whatever happens to be linked.
    *
    * A caller passes a `versionId`, never a storage key. Storage keys are not
    * accepted anywhere on this surface, so a client cannot name raw object storage.
@@ -939,6 +943,7 @@ export class AttachmentService extends ApplicationService implements FileService
     companyId: string | null;
     branchId: string | null;
     status: string;
+    categoryCode: string | null;
     linkedToEntity: boolean;
   }> {
     const version = await this.documents.findVersion(db, versionId);
@@ -952,6 +957,7 @@ export class AttachmentService extends ApplicationService implements FileService
       companyId: version.company_id,
       branchId: version.branch_id,
       status: version.status,
+      categoryCode: await this.documents.documentCategoryCode(db, version.document_id),
       linkedToEntity: links.some(
         (link) => link.entity_type === entityType && link.entity_id === entityId
       ),
