@@ -54,6 +54,14 @@ record’s measurement and are cited by section rather than re-taken. Nothing is
 without re-measurement, and where a figure did not reproduce it is corrected in place rather than
 restated.
 
+_(2026-09-15: the body of this version is measured at `fb65b049` and is **not** re-derived at
+protected `develop` `c1a2f9fc5d43799a4ca4beca9fe4927a777a2632`, where #397 and #398 have merged. § 17
+records the security- and QA-relevant evidence that exists at `c1a2f9fc` — the closing acceptance run
+of [`acceptance-record.md`](./acceptance-record.md) § 10, the dedicated privileged-fixture database
+proof and the local monitoring command — and each sentence below that this evidence makes false
+carries a dated note beside it and is otherwise left as written. The full re-derivation at one head
+remains due.)_
+
 ## Why this record transposes its definitions
 
 The P1-31 chapter names these thirteen tasks and defines none of them. Each of the four chains
@@ -452,6 +460,15 @@ for a report or for an audit record is published at all", and its browser cases 
 screens' own standing statement that no download is offered rather than a withheld-code negative
 (`acceptance-record.md:624-629`).
 
+_(2026-09-15: "the phase exports nothing", and the quoted "no export operation for a report or for an
+audit record is published at all", were true when written and are no longer true for reports. At
+`c1a2f9fc` a report export is published under `rpt.export` and `rpt.report.read` (register § 69.13,
+CC-61), and the closing acceptance run exported all four report codes over real HTTP, each with one
+correlated `rpt.report.exported` audit row, while the default administrator was refused all four
+with `403 ERR-IAM-001` (§ 17.1, § 17.2). What still holds: `rpt.export` is withheld from the
+tenant-administrator bundle (CC-04), no export for an audit record is published, and the export
+resource registry still admits no P1-31 resource.)_
+
 **The file-access half: a component negative now exists, and it is not the whole half.** The
 obligation is one negative — a signature-document download **refused** from a P1-31 screen, proving
 that the `ERR-DOC-001` refusal above is what a P1-31 operator actually meets rather than what the
@@ -480,6 +497,10 @@ that would need an acceptance record.
 - **P-12 has not started.** No export route exists for any P1-31 resource and no entry for one
   exists in the resource registry. The posture is decided (§ 2.1); the implementation D-6 approved
   is not begun, and an approved withholding is a decided posture, not a delivered contract.
+  _(2026-09-15: true when written, false at `c1a2f9fc`. P-12's backend half is register § 69.13 /
+  CC-61: one report export operation on the existing report route, requiring `rpt.export` and
+  `rpt.report.read`, audited as `rpt.report.exported`. The closing acceptance run exercised it
+  (§ 17.1). The sentence's resource-registry half still holds.)_
 - **The server-side refused-download negative does not exist.** The component negative is on the
   tree; nothing asserts the API's own refusal to an actor lacking the code, and the corrected
   acceptance re-run of `acceptance-record.md` § 8 exercises no download refusal either.
@@ -691,6 +712,10 @@ gate condition 3 asks for a named Security reviewer's, which no person has given
   record on this tree": true at `81b3bce8`.)_
 - Field 26's requirement that exports be themselves audited cannot be discharged, because no P1-31
   export operation exists (§ 2).
+  _(2026-09-15: true when written, false at `c1a2f9fc`. The report export declares the `export` audit
+  class with the action `rpt.report.exported` (`apps/api/src/app/api/v1/reports/[reportCode]/route.ts:98-99`),
+  and the closing acceptance run found exactly one correlated audit row for each of its five exports
+  (§ 17.2). What that row cannot identify is § 17.2's limitation.)_
 - **The gate covers requests and not responses**, and it compares no length, pattern or
   array-cardinality facet, because a TypeScript interface cannot carry one. That is a stated limit
   of the instrument, not a finding against it.
@@ -831,6 +856,10 @@ than a P1-31 defect."
    be written, let alone proved. D-6 approved the contract; nothing has implemented it. **The
    acceptance record does not close this** — it could not drive an operation that is not published,
    and its § 6 makes no claim about one.
+   _(2026-09-15: true when written, false at `c1a2f9fc`: the contract exists (register § 69.13,
+   CC-61), and the closing acceptance run drove its success path over four report codes, its empty
+   selection and the default administrator's refusal (§ 17.1). Whether its error paths meet the
+   per-operation matrix the transposed definition asks for is not re-measured here.)_
 2. **The OpenAPI shortfall, re-measured here rather than carried forward.** The second version
    declined to re-measure it and cited register § 41 for `sal.delivery-*`. Measured on this head
    against `docs/api/openapi.v1.json`: **all 45 P1-31 operations publish a success response schema of
@@ -1235,6 +1264,10 @@ monitoring half does not exist.)_
 - **Monitoring and alert routing: nothing exists for this phase, and nothing is claimed.** No
   artefact, no configuration and no decision. This is the half that keeps DO-002 short of its own
   definition, and no lane owns it at this head.
+  _(2026-09-15: true when written, false at `c1a2f9fc`. A local monitoring command exists,
+  `monitor:p1-31` (`package.json:52`), recorded in register § 69.14, and the closing acceptance run
+  executed it over its captured API log (§ 17.6). It writes a local sanitized alert queue only; no
+  external notification exists and none is claimed, and D-10 is unresolved.)_
 
 ## 12. DOC-001 — contract, catalog and traceability synchronisation
 
@@ -1285,6 +1318,10 @@ three of A0's four named corrections have now landed, and the canonical task is 
 the phase's contract and catalog **as a whole**, which is not done: the fourth correction is the
 Owner's act, Field 34's tree does not exist here, and the matrix's stated dependency — the phase's
 operation set settling — is unmet, because 45 operations exist and P-12 has not started.
+
+_(2026-09-15: "P-12 has not started" was true when written and is false at `c1a2f9fc` (register
+§ 69.13, CC-61). The operation count in the same sentence is not re-derived here; the 2026-09-14
+correction beneath the surface headline records the census the export moved.)_
 
 **Open items.**
 
@@ -1440,6 +1477,133 @@ claim about the register at the moment it was raised and is never renumbered.
 | **CC-52 (a)** | the register's own shape makes its state unreadable in four places                                     | **recorded, not fixed** — three disposition tables carry no `state` column and one section carries no disposition table, so CC-48 has no state cell anywhere. The remedy is a register-hygiene slice, not an edit to four other lanes' sections                                                                                           | a later documentation slice | open, recorded   |
 | **CC-52 (b)** | a gate accepts a provenance word without reading the ledger behind it                                  | **recorded, and deliberately not worked around** — `tests/ci/p1-27-doc-counts.test.ts:613` accepts `local` or `HOSTED` without checking the run ledger. Nothing in P1-31 relies on the weakness and no marker in this pull request claims a provenance it does not have                                                                   | the CI-automation lane      | open, recorded   |
 
+## 17. The closing acceptance run and the fixture proof, at `c1a2f9fc` (2026-09-15)
+
+**What this section is.** The security- and QA-relevant evidence that exists at protected `develop`
+`c1a2f9fc5d43799a4ca4beca9fe4927a777a2632`, the PR #398 merge, and that the body of this file,
+measured at `fb65b049`, predates. **It is not the full re-derivation rule 5 asks for**, which remains
+due; it records the new evidence, and each sentence of the body that the evidence makes false carries
+a dated note beside it. It obeys rules 3 and 4: every run result is **quoted from
+[`acceptance-record.md`](./acceptance-record.md) § 10** and is that record's measurement, not this
+file's, and every **measured fact** below was read on the tree at `c1a2f9fc` with its path given. It
+takes no change-control allocation — the register's closing-evidence pair, § 70 with CC-60, is
+reserved (register § 71.1) and is not written here — and **it moves no state** (rules 1 and 2).
+
+### 17.1 SEC-001 and SEC-002 — the export split, driven against a running system
+
+- **Quoted from the acceptance record (§ 10.5).** The default administrator — the journey's first
+  administrator, holding the tenant-administrator bundle — was refused the export of all four report
+  codes with `403 ERR-IAM-001`. The exports were taken by a principal invited over HTTP with no
+  roles, whose entitlement came from a privileged local fixture limited to that one synthetic
+  principal, one branch, a fixed set of nine permissions and a two-hour expiry, with `approvalRef`
+  `null`. The record states that the fixture is an operator act: not an HTTP delegation of
+  `rpt.export`, not a change to any role bundle and not a human approval.
+- **Measured fact.** The export operation is declared in
+  `apps/api/src/app/api/v1/reports/[reportCode]/route.ts` with the permissions `rpt.export` and
+  `rpt.report.read`, branch scope, the `export` audit class, the audit action
+  `rpt.report.exported` and the `expensive-read` rate policy (`:96-100`).
+  `apps/api/src/server/auth/audit-actions.ts` declares `rpt.report.exported` with class `export`
+  (`:1802-1803`), and `apps/api/src/modules/reporting/application/report-export-service.ts:37` bounds
+  a file at `8 * 1024 * 1024` bytes.
+- **Measured fact.** `rpt.export` appears in `apps/api/src/modules/iam/domain/bootstrap-roles.ts`
+  only in comments recording its exclusion, so the tenant-administrator bundle still withholds it
+  (CC-04). The export resource registry,
+  `apps/api/src/modules/shared-services/domain/export-policy.ts`, still registers `documents`,
+  `outbound_messages` and `branches` and no P1-31 resource: the report export is its own operation
+  and not a registry entry.
+
+### 17.2 SEC-004 — the export audit, correlated
+
+- **Quoted from the acceptance record (§ 10.5).** Each of the five exports the run took — the four
+  report codes and one empty selection — has **exactly one** correlated `rpt.report.exported` audit
+  row. The companion found it by reading the audit log, and a read-only database query confirmed it
+  independently for the run's tenant.
+- **What that audit row cannot do.** It records selection and counts, not a byte length or a content
+  digest, so it cannot later identify the exact bytes disclosed; the export uses the existing
+  `expensive-read` rate policy with an 8 MiB response bound and no daily allowance
+  (`report-export-seam.md:79-80`). Recorded as a limitation and not dispositioned here.
+
+### 17.3 Credential hygiene of the run
+
+- **Quoted from the acceptance record (§ 10.10).** The in-runner scan read 3 handoffs, searched 66
+  files for their 3 credential values and redacted nothing; an independent credential-shape scan
+  found no authorization header, bearer token, cookie, JWT or password value; no handoff, trace or
+  in-progress marker remains; and Playwright's saved sign-in state was deleted after the run.
+
+### 17.4 QA-005 — what the run's figures are, and are not
+
+- **Quoted from the acceptance record (§ 10.4, § 10.5, § 10.7, § 10.8).** The HTTP journey: 532
+  steps, 532 ok, 0 findings. The export companion, separately labelled: 45 steps, 45 ok. The browser
+  half, in two tiers: **78 P1-31 cases executed, 0 failed**, derived from both reports together — 75
+  executed by tier 1 across `authenticated-en`, `authenticated-ar` and `authenticated-tablet`, plus
+  the export case executed once per project by tier 2. **Tier 1's three export-case skips are not a
+  result**; the export case's result is its tier 2 execution in all three projects. 369 earlier-phase
+  cases skipped for want of the account they require; they are outside P1-31 and are not P1-31
+  failures. Screens: 30 shot records, 28 images.
+- **The reporter documents.** This run's evidence holds one Playwright report per tier (sha256
+  `979beb9f…` and `b62a0f1b…`), so its browser figures are read from reports rather than from a
+  console. They are outside this repository, so the immutable-evidence half § 9 names stays unmet:
+  nothing of the run is committed except the record.
+- **A collection count is not an execution count.** The 78 executed equals the 78 collected only
+  because every collected case executed in exactly one tier. The Owner's instruction of 2026-09-15:
+  "Do not equate a merged PR, collection count, index or browser smoke with full phase acceptance."
+
+### 17.5 The dedicated privileged-fixture database proof
+
+- **Measured fact.** `tests/db/p1-31-export-fixture.test.ts` declares **12** `it(` cases and carries
+  no `.skip`, `.only`, `.todo`, `.skipIf` or `.runIf` marker, counted at `c1a2f9fc`. Its runner is
+  `vitest.config.db-fixture.ts`, reached through `test:db-fixture` (`package.json:72`), and
+  `.github/ci-baselines/unrun-test-tiers.json` declares it under `unrunNonBrowser` as
+  `DB-FIXTURE-01`.
+- **Quoted from the acceptance record (§ 10.12).** Run once through that runner at source `e855ef0a`,
+  contained in `c1a2f9fc`, against the disposable database `rootlco_p131_fixture_20260914`: **12 of
+  12 passed**, per-case pass inferred from the totals.
+- **Its hosted-execution limitation.** **No hosted job executes it**, and that is recorded as CC-62.
+  Its deferred-constraint falsifiability control was **taken once, by hand, on 2026-09-14, in an
+  uncommitted scratch copy** and is not an automated regression the suite carries.
+
+### 17.6 DO-002 — monitoring, measured by its implementation
+
+- **Measured fact.** `monitor:p1-31` runs `node scripts/ops/p1-31-monitor-alerts.mjs`
+  (`package.json:52`); register § 69.14 records the command.
+- **Quoted from the acceptance record (§ 10.9).** Over 697581 bytes of the run's captured API log:
+  1799 records read, 1799 ignored, 0 routed, 0 malformed; the alert queue is empty. No failure record
+  at error or fatal severity existed in the capture. That shows the command completing over a real
+  run's log and **does not show an alert being routed**; the routing rehearsal with an injected fault
+  is § 69.14's.
+- **Monitoring is a local sanitized alert queue only.** No external notification exists and none is
+  claimed; D-10 is unresolved.
+
+### 17.7 Residual limitations that bear on security and QA
+
+Carried as they stand, and neither turned into blockers nor accepted here:
+
+1. The privileged-fixture proof is absent from hosted execution (§ 17.5).
+2. Its falsifiability control is an uncommitted, hand-taken measurement (§ 17.5).
+3. The runner, plan, journey, companion and screens instruments are outside the repository,
+   unversioned and identified only by digests (`acceptance-record.md` § 10.2) — the cost § 9
+   records for the journey harness, now carried by five instruments.
+4. The P1-24 operation register undercounts the export operation's database-backed suites; § 1
+   records why, and it is not repeated here.
+5. The continuous-integration job summary renders only one of the two unrun registers
+   (CC-62 (c)).
+6. The export audit cannot identify the bytes disclosed, and the export has no daily allowance
+   (§ 17.2).
+7. Monitoring is local only, and D-10 is unresolved (§ 17.6).
+8. The browser download was exercised for `work_orders_by_status` alone; the other three report
+   codes were proven over real HTTP.
+9. 369 earlier-phase browser cases did not run in this acceptance; they are outside P1-31's scope.
+10. Instrument labelling and recording minors, listed in `acceptance-record.md` § 10.13 item 10.
+
+### 17.8 What this section does not claim
+
+- **No state moves.** The index is the matrix's (rule 1), and nothing here rises past
+  `phase-level incomplete` (rule 2).
+- **No Owner verdict, no phase Pass, no promotion and no human certification**, and no security or
+  QA clearance, recorded or implied.
+- **No hosted run** of the acceptance or of the fixture proof. The measured facts above are reads of
+  the tree, not reviews of it.
+
 ## Status
 
 **Fourth version, unmerged at the time of writing, on a `feature/` branch.** It is to be updated as
@@ -1453,3 +1617,7 @@ output of a static checker named beside it, or a result quoted from
 [`acceptance-record.md`](./acceptance-record.md) with the section it is stated in — and that
 derivation, not this prose, is the authority. _(The third version's own status block said the same
 of `81b3bce8`, and of twelve Frontend rows.)_
+
+_(2026-09-15: § 17 is appended to this version at `c1a2f9fc` without re-deriving it; it moves no
+state, and every figure in it is a static read of `c1a2f9fc` or a result quoted from
+[`acceptance-record.md`](./acceptance-record.md) § 10.)_
