@@ -210,7 +210,9 @@ recorded at § 10.12** of the same record and is unchanged by this run.
 
 Each is carried as it stands. **Nothing here turns a limitation into a blocker and nothing here
 accepts one.** The Owner's instruction of **2026-09-15**, quoted from
-[`acceptance-record.md`](./acceptance-record.md) § 11.12:
+[`acceptance-record.md`](./acceptance-record.md) § 11.12 and **quoted partially** — it is the first
+sentence of a two-sentence paragraph, whose second sentence directs that the canonical criteria and
+existing decisions be applied, and nothing below stands for that second sentence:
 
 > Do not automatically turn every limitation into a phase blocker, and do not automatically accept
 > it.

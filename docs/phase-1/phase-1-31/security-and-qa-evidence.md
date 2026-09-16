@@ -1661,9 +1661,12 @@ sentence above keeps its words.)_
 | export row counts 11 / 1 / 1 / 2                          | **17 / 1 / 1 / 2**, over this run's own period, plus an empty selection of 0 rows (§ 11.5)                                    |
 
 **The three unchanged conclusions.** The default administrator was again refused all four report codes
-with `403 ERR-IAM-001`; each of the five exports again carries **exactly one** correlated audit row;
-and the credential scan again read 3 handoffs, searched 66 files and **redacted nothing**, with 0
-handoffs remaining afterwards.
+with `403 ERR-IAM-001`; each of the five exports again carries **exactly one** correlated audit row,
+**four of the five asserted by ledger steps of their own — steps 38 to 41, one per report code — and
+the fifth, the empty selection's, measured from the window read rather than from an assertion of its
+own**, that read finding five events in the window with the correlation ids seen (§ 11.5); and the
+credential scan again read 3 handoffs, searched 66 files and **redacted nothing**, with 0 handoffs
+remaining afterwards.
 
 ### 18.2 SEC-002 — the server-side refused-download negative now EXISTS
 
