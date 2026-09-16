@@ -130,6 +130,6 @@ rather than showing a picture of something else.
 
 ## Rebuilding the printed manual
 
-`build/build-pdf.mjs` renders these files into one HTML document and prints it to PDF with the
-Chromium that Playwright installs. See [`build/README.md`](build/README.md) for how to run it and
+`tools/build-pdf.mjs` renders these files into one HTML document and prints it to PDF with the
+Chromium that Playwright installs. See [`tools/README.md`](tools/README.md) for how to run it and
 where the output goes. The PDFs are not stored in this repository.
