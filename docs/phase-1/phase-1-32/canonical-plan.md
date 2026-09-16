@@ -433,14 +433,22 @@ frontend module** — so the breadth requirement is the gate's own wording, not 
 
 ## Non-authoritative copies of this chapter
 
-The extraction above was taken from the document named under **Source**. Four faithful copies exist
-and were sampled; none is authoritative and none was used to resolve a disagreement, because none
-arose.
+The extraction above was taken from the document named under **Source**. Four copies exist and were
+sampled; each was faithful on every cell sampled bar one, none is authoritative, and none was used
+to resolve a disagreement. One divergence was found: the three markdown copies render Field 7's
+product-name bullet as
+
+> Product name remains `[SYSTEM NAME]` / pending approval; RootLco is not used as the product name.
+
+where the authoritative document reads the wording quoted in Field 7 above. The extraction followed
+the authoritative document.
 
 - `phase-1/05-phase-1-frontend-plan.md:1701-1916` — the working markdown mirror, and the line
-  reference used elsewhere in this phase's records beside the paragraph number.
-- `phase-1/_archive/interruption-recovery-2026-07-15T1500/05-phase-1-frontend-plan.md:1697+`
-- `phase-1/_archive/recovered-drafts-2026-07-15/05-p32.md:1`
+  reference used elsewhere in this phase's records beside the paragraph number. Its Field 7
+  product-name bullet is at `:1745`.
+- `phase-1/_archive/interruption-recovery-2026-07-15T1500/05-phase-1-frontend-plan.md:1697+` — the
+  same bullet at `:1742`.
+- `phase-1/_archive/recovered-drafts-2026-07-15/05-p32.md:1` — the same bullet at `:46`.
 - The non-recovered `.docx` and the `.pdf`, neither opened. P1-31's extraction chose the recovered
   document and this one follows it.
 
