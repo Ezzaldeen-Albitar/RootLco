@@ -801,7 +801,15 @@ record and no tier total is claimed.
   counts (H-2) and the dashboard route tier measurement (H-3) — because no hosted job uploads
   `apps/web/coverage/web/coverage-summary.json` or `coverage-gate-web.json`. _(This item read "**No
   phase-level coverage record exists** … the cross-screen artefact the task names does not exist":
-  true at `81b3bce8`; the record merged as #385 at `474d89ef`.)_
+  true at `81b3bce8`; the record merged as #385 at `474d89ef`.)_ _(2026-09-16 — **the attribution is
+  corrected and this item keeps its words.** **CC-50 (a) is CLOSED**, determined at change control
+  § 74.2 from the row's own content at § 60.5 against the fill: its stated remedy landed with pull
+  request **#389**, hosted run `34778434228` carried both files, and § 63.10 filled the **H-2 and H-3
+  figures** from it. **The two holes themselves stay open** — that is what this item names, and it is
+  not discharged here — and the later fact that the figures in the coverage record were re-measured
+  **locally** once three feature roots entered `COVERAGE_INCLUDE`, with no hosted run read for them, is
+  **CC-64 (b)** on its own content. **No figure becomes a hosted measurement on this note, and no task
+  state moves.**)_
 - The checklist-template administration surface (FE-004's remaining half) has no screen and
   therefore no component coverage — the same five PENDING mirrors § 4 names.
 - **#378 and #372 have both merged.** #378 added the `*-p1-31.spec.ts` Playwright specs and their

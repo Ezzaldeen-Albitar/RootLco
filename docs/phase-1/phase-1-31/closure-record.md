@@ -62,7 +62,18 @@ contribution**: P-1 (#347), P-2 … P-5 (#348), P-6 and P-7 (#349), P-8 (#353), 
 (#363), P-10 (#356), P-11 (#361 writer, #364 engine at `c1b1a8cd`, #374 datasets at `6b3c6c45`),
 P-2b (#358), P-13 and P-14 (#354), P-15 (#346), P-16 (#357), P-17 (#370 at `811e9891`). **P-12, the
 report export operation, is not started**, and `rpt.export` is withheld from the provisioning bundle
-by explicit Owner decision (**CC-04**). _(This paragraph read "eighteen of the nineteen" with P-11
+by explicit Owner decision (**CC-04**). _(2026-09-16: **"P-12 … is not started" is false at this
+head and is left as written**, because it was true of `849a8e9a` when the paragraph was measured
+there — and it is corrected here rather than rewritten. **The backend report export remediation
+merged as pull request #397** at `develop` `9729b2b5`, recorded at change control § 70.2, and its
+screen half with **#398** at `c1a2f9fc`. Its HTTP witness is
+[`acceptance-record.md`](./acceptance-record.md) § 11.5 — **five exports, each carrying exactly one
+correlated `rpt.report.exported` audit row**, and the default administrator refused on all four
+report codes with `403 ERR-IAM-001`. **So nineteen of the nineteen prerequisite entries now have a
+merged contribution**, and [`task-matrix.md`](./task-matrix.md)'s rule 1 already carries the same
+correction. **Rule 1 is unchanged and nothing moves on this note**: a prerequisite closes no
+canonical task, and the withholding of `rpt.export` from the provisioning bundle under **CC-04**
+stands exactly as stated.)_ _(This paragraph read "eighteen of the nineteen" with P-11
 carried as "#364 and #374 engine" and P-17 as merged; the two merge commits are now named, and
 [`task-matrix.md`](./task-matrix.md)'s prerequisite table, which read P-11 as "in open PR (engine)"
 and P-17 as "implemented, not merged", is corrected in the same pull request.)_
@@ -128,6 +139,24 @@ named anywhere in the chapter**.
 | **FE-015** | audit report (`canonical-plan.md:244`)                              | #360 (`f8958e77`)                                                  | `acceptance-record.md` § 7.1, HTTP steps 134–135; register § 36                                                                   | none                                                                                                                                                                                                                                                                                                                    | Owner (lane merged)                                                                                                  | verdict                                                                                        |
 | **FE-016** | branch pilot summary (`canonical-plan.md:245`)                      | #376 (`72782f48`) — the same screen, branch fixed by the address   | `acceptance-record.md` § 8.3 steps 185, 187, 189, 191, 193, 194 and § 8.5                                                         | none                                                                                                                                                                                                                                                                                                                    | Owner (lane merged)                                                                                                  | verdict                                                                                        |
 
+_(2026-09-16, beside the **FE-004** row above, which keeps its words. **A limb of this row
+disappeared from the later re-derivations without ever being adjudicated, and it is recorded here
+rather than quietly dropped.** This subsection named two things owed and two owners: the browser case
+(**CC-52 (c)**, since delivered and executed) and, separately, a **scope decision** — the cell's
+responsible-owner column reads "Owner for whether template administration is inside FE-004 or a later
+phase", and its completion condition reads "plus that scope decision". **§ 2.10's FE-004 row, § 2.11's
+four genuine-Owner-decision rows and the reduced Owner decision packet of 2026-09-16 all omit it**:
+§ 2.10 classifies what remains on FE-004 as **remaining engineering** only, and the packet asks no
+question about it. **What became of it: nothing. It is still owed, and it is still the Owner's.** No
+record closes it, no decision answers it, and no authority cited anywhere in this phase settles it.
+**It is not closed by the row reaching `end-to-end verified`**, because that state was reached on the
+delivery-checklist surface the canonical row names and not on a template-administration surface, and
+it is **not** closed by the ruling that a template administration screen is **not automatically
+required** by the canonical delivery-checklist row — that ruling is precisely why the allocation is a
+question rather than a defect. **It is routed to the Owner as item O-20** of
+[`owner-decision-packet-2026-09-16.md`](./owner-decision-packet-2026-09-16.md), unanswered. **FE-004's
+state does not move on this note**, and nothing here answers the question.)_
+
 ### 2.2 Field 15 — Security (4 tasks)
 
 **Chapter obligation, identical for all four** (`canonical-plan.md:260-263`, described at
@@ -158,6 +187,48 @@ failure, and recovery coverage appropriate to the affected workflow."
 | **QA-004** | concurrency and idempotency (`canonical-plan.md:279`; § 8)         | #386 (`e2908f06`) — `tests/backend/p1-31-concurrency-and-versioning.test.ts`, C17-0 … C17-4                                                         | `security-and-qa-evidence.md` § 8; register § 59 (**CC-49**); acceptance steps 47, 103–104, 105, 116                                                                                                              | **decision** — whether P1-31 owes a **sibling version-sourcing gate** over its own version-guarded operations, or a recorded waiver, is undecided; **no P1-31 version-sourcing gate exists**. And no acceptance record exercises the non-delivery guarded operations                                                                                                                                                                                                                                                                                                                                                                                  | **Owner** (packet **F-5**), then the QA lane                                       | the Owner chooses a gate or a waiver; if a gate, it lands green over the guarded set                                           |
 | **QA-005** | regression and evidence packaging (`canonical-plan.md:280`; § 9)   | harness #378 (`6005cfa4`), record #380 (`81b3bce8`), corrected re-run #387 (`fb65b049`)                                                             | `acceptance-record.md` § 8 — **194 HTTP steps, 0 findings**, 40 of 40 P1-31 browser cases, 28 screenshots, 0 shot failures; register § 61 (**CC-51**)                                                             | **proof + decision** — the run is an **engineering** PASS and the record's own § 1 verdict stays **PARTIAL** _(2026-09-15: not true when written — this cell was written after commit `0e40fd42` replaced that verdict, and `acceptance-record.md:27` records an engineering verdict of PASS for run `mtzmvemj`, an engineering result for that one run and not the Owner's phase verdict, which remains unrecorded)_; the **evidence-packaging half is unmet** because nothing of the run is committed except the record; a locally driven run leaves no Playwright reporter document at all (§ 61.6); and D-16's packaging convention is unresolved | the QA lane for packaging; **Owner** for the verdict and for D-16                  | the run's artefacts are packaged and digest-checked into a committed ledger, D-16 is answered, and the Owner records a verdict |
 
+_(2026-09-16, beside the **QA-001** row above, which keeps its words — **the attribution in it is
+corrected, and nothing in it is weakened.** The cell reads, in part, "**CC-50 (a)** is open: the
+per-tree instrumented-file counts (H-2) and the dashboard route tier measurement (H-3) can be filled
+from no hosted artefact, because no job uploads the per-file web coverage summary". **CC-50 (a) is
+CLOSED, not open**, determined at change control § 74.2 by reading the row's own content at § 60.5
+against the fill: the remedy that cell itself states — adding
+`apps/web/coverage/web/coverage-summary.json` and `coverage-gate-web.json` to the
+`evidence-web-quality` upload list — landed with pull request **#389**, hosted run `34778434228`
+carried both files, and § 63.10 filled the **H-2 and H-3 figures** from it; § 63.8's dated note,
+§ 62.6's index row and § 70.7's exclusion list all read it closed. **What the rest of this cell says
+stands and is not discharged here**: H-2 and H-3 as coverage **holes** are not closed by that fill,
+coverage across the phase screens is still partial, and the statement that no P1-31 feature code was
+inside the coverage instrument was true of the head this cell was written at. **The later fact is a
+different one**: the coverage record's figures were re-measured **locally** once three feature roots
+entered `COVERAGE_INCLUDE`, and **no hosted run has been read for those figures** — **CC-64 (b)**,
+open on its own content, with the `LOCAL` labelling standing and limitation **L-2** of the
+certification packet refined and **not lifted**. **The completion condition beside this row keeps its
+words**: its figures limb is met by the hosted fill, and its second limb — the named holes closed or
+accepted — stands. **QA-001's state does not move on this note**: it remains `phase-level incomplete`,
+the QA certification is **unissued**, and **no locally measured figure becomes a hosted measurement
+here**.)_
+
+_(2026-09-16, beside the **QA-002** row above, which keeps its words. **One of that row's two "missing"
+limbs disappeared from the later re-derivations with no recorded closure, and it is accounted for
+here.** The cell reads, in part, "**P-12's export contract does not exist, so its error paths cannot be
+written**", and names "P-12 out of phase" in its owner column. **§ 2.10's QA-002 row does not carry
+it**: what that row classifies is the suites' execution limb, the bare-object success-body contract
+gap, and the certification. **What became of it: the limb is discharged by measurement, and the
+evidence is cited rather than assumed.** The export contract **exists** — the backend report export
+remediation merged as pull request **#397** at `develop` `9729b2b5` (§ 70.2 of the register) and its
+screen half as **#398** at `c1a2f9fc`, so the premise "does not exist" is false at this head. Its error
+paths are **exercised, not merely writable**: [`acceptance-record.md`](./acceptance-record.md) § 11.5
+records **four exports and an empty-selection export**, five correlated export audit events in the
+companion's window — exactly one per correlation id, four of them asserted by ledger steps of their own
+and the fifth measured from that window read rather than from an assertion of its own — and the default
+administrator **refused on all four report codes with `403 ERR-IAM-001`**. **QA-002's state
+does not move on this note**, and nothing here treats the limb's discharge as closing the row: QA-002
+remains `phase-level incomplete`, still carrying the bare-object success-body contract gap — which is
+an **Owner** item, **O-9** of the decision packet — and the QA certification, **unissued**. **The
+deeper success testing of every operation is not made a new deliverable by this note**, and none is
+implied.)_
+
 ### 2.4 Field 17 — DevOps (2 tasks)
 
 **Chapter obligation, identical for both** (`canonical-plan.md:293-294`, described at
@@ -179,6 +250,23 @@ evidence, identify unresolved limitations, and **route the result to the named a
 | ----------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | **DOC-001** | contract, catalog and traceability synchronisation (`canonical-plan.md:312`; § 12)     | corrections #1 and #2 merged as #354 (`0272390b`); correction #3 retracted in place by #383 (`ea3b7fc0`)                                                               | `security-and-qa-evidence.md` § 12; register § 57.2       | **implementation + decision** — **correction #4 is the Owner's act** (`OWR-2026-09-06-G-10` names a table that does not exist, in a requirement whose status is `Undecided`); `documentation/` does not exist and Field 34's numbered targets resolve to nothing; **D-14** and **D-16** are unanswered; and the task's own stated dependency, the operation set settling, is unmet while P-12 has not started | **Owner** for correction #4, D-14 and D-16 (packet **E-1**, **B-6**, **B-7**); a documentation slice for the rest | the Owner acts on the requirement row and answers D-14 and D-16, Field 34's tree is reconciled, and the operation set is declared settled |
 | **DOC-002** | operator and developer guidance, and the change record (`canonical-plan.md:313`; § 13) | the register itself; [`operator-runbook.md`](./operator-runbook.md) merged as #383 (`ea3b7fc0`); the register's open-disposition index at § 57.4, re-derived at § 62.x | register §§ 57 and 62; `security-and-qa-evidence.md` § 13 | **proof** — **the routing half is performed by this pull request and the acknowledgement half is not.** [`owner-decision-packet-2026-09-13.md`](./owner-decision-packet-2026-09-13.md) routes the controlled record to the approval owner; **no reply, acknowledgement or approval is recorded, and none is claimed.** Developer guidance beyond the two gate scripts § 13 names is unwritten                 | **Owner**, to acknowledge; a documentation slice for developer guidance                                           | the approval owner acknowledges the routed record, and developer guidance exists                                                          |
+
+_(2026-09-16, beside the **DOC-002** row above, which keeps its words. **This row was split into two
+halves here and only one half survived into the later re-derivations; the other is recorded rather
+than dropped.** The cell states both: "**the routing half is performed by this pull request and the
+acknowledgement half is not**", its responsible-owner column reads "**Owner**, to acknowledge", and its
+completion condition reads "**the approval owner acknowledges the routed record**, and developer
+guidance exists". **§ 2.10's DOC-002 row names only the routing half** — "routing the record **as it
+now stands** to the named approval owner" — and **no item of the reduced Owner decision packet asks for
+the acknowledgement**. **What became of it: nothing. It is still owed, and it is an Owner act.** An
+acknowledgement cannot be supplied by an engineer, a lane or a record; the packet of 2026-09-13 routed
+the controlled record and **no reply, acknowledgement or approval is recorded, and none is claimed** —
+that sentence is as true now as when it was written, and the record has grown since, which is why
+§ 2.10 restates the routing half against the record "as it now stands". **It is routed to the Owner as
+item O-21** of [`owner-decision-packet-2026-09-16.md`](./owner-decision-packet-2026-09-16.md),
+unanswered. **DOC-002's state does not move on this note**: the row keeps
+`merged (read-only/partial)`, and its second completion condition — that developer guidance exists —
+is engineering work and is unaffected by anything here.)_
 
 ### 2.6 Totals
 
@@ -571,6 +659,32 @@ concluded `success`** — that is the gate's execution — but **the coverage fi
 local measurements** and keep their own `LOCAL` labelling, because no hosted artefact publishes the
 per-file web summary they come from (**CC-50 (a)**, open). **QA-001's item does not close.**
 
+_(2026-09-16, correction to the identifier, not to the substance — the paragraph above keeps its
+words. **Its substance is unchanged and is not weakened: QA-001's item does not close, the coverage
+figures are LOCAL measurements, and a hosted gate execution does not convert a local figure into a
+hosted one.** **The attribution is what is corrected. CC-50 (a) is CLOSED, not open.** Its whole
+content, at change control § 60.5, is that the per-file web coverage summary reached no reader, so
+H-2 and H-3 could be filled from no hosted artefact; the remedy landed with **#389**, hosted run
+`34778434228` carried both files, and § 63.10 filled H-2 and H-3 from it — § 63.8 carries the dated
+closure note, and § 70.7 excludes the row from the open set by name. **The open fact here is later and
+different**: the record's figures were re-measured **locally** once three feature roots entered
+`COVERAGE_INCLUDE`, and **no hosted run has been read for those figures**. That is **CC-64 (b)** on its
+own content, corrected in the register at § 73.4 and § 73.6. **No row moves, and QA-001 stays
+`phase-level incomplete`.**)_
+
+_(2026-09-16, beside the **DO-001** row of the table above and the paragraph below it, both of which
+keep their words. **The state question this subsection recorded as open rather than decided has since
+been answered, by the file it belongs to, and the answer is that the row does not move.**
+[`task-matrix.md`](./task-matrix.md)'s amendment of 2026-09-16, "DO-001's state question, answered
+against this file's own rule", quotes the rule — the `end-to-end verified` definition and rule 2 — and
+applies it. **Outcome: DO-001 stays `merged (write path)`.** The rule's conditions are **not** shown
+satisfied: what closed is a **recording limb** and not the criterion's proof, the row still carries the
+live documented limitation **CC-62 (c)** on the gate's own observable surface, and **a state does not
+move because a citation was added** to runs that already existed and had only never been indexed.
+**Nothing is raised and nothing is lowered**, so every count in this subsection stands exactly as
+derived: `16 / 2 / 2 / 0 / 9 / 0`, total **29**, and the five categories unchanged. **CC-64 (a) is
+closed** by that determination, at change control § 74.)_
+
 **Every count re-derived, with whether it moved.**
 
 | figure                                              | at § 2.11    | now           | moved?                                                         |
@@ -702,12 +816,33 @@ Quoted from [`canonical-plan.md:464-472`](./canonical-plan.md):
 > and the approval owner records Pass / Conditional Pass / Fail / Deferred with conditions. Until
 > then, status remains Planned.
 
-| condition                                    | what exists on `develop` `fb65b049`                                                                                                                                                                                                                                                                                                                                                                                        | what is missing                                                                                                                                                                                                                                                                                                                   |
+| condition                                    | what existed on `develop` `fb65b049`, when this table was written                                                                                                                                                                                                                                                                                                                                                          | what is missing                                                                                                                                                                                                                                                                                                                   |
 | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **1.** the Definition of Done is evidenced   | twelve tasks `end-to-end verified` and three more with their write paths exercised; a 194-step HTTP journey with zero findings and 40 of 40 P1-31 browser cases in the corrected re-run, with 28 screenshots and zero shot failures; two phase gates — `validate:p1-31-access` and `validate:p1-31-write-shape` — registered and run by `verify:policies`; a runbook; a phase coverage record; a set-wide escalation suite | **all four bullets fall short** (§ 3). Seventeen tasks are not linked to evidence of their own completion; no task can satisfy its own Test reference; the monitoring half of DO-002 does not exist; `documentation/` is absent; the four operator acts are unperformed everywhere but one database; and no Owner decision exists |
 | **2.** the QA lead certifies the index       | the index [`security-and-qa-evidence.md`](./security-and-qa-evidence.md), thirteen sections re-measured at this head, plus [`acceptance-record.md`](./acceptance-record.md), [`coverage-record.md`](./coverage-record.md), [`audit-class-review.md`](./audit-class-review.md) and [`task-matrix.md`](./task-matrix.md)                                                                                                     | **no certification, and no certifier.** The index is marked OPEN and **no QA lead is named in this repository**. A record is not a certificate of itself, and appointing a role holder is not an engineering act — packet item **A-2**                                                                                            |
 | **3.** the Security reviewer clears blockers | SEC-001 … SEC-004 as §§ 1–4 of the index; the acceptance record's refusal, concurrency and isolation cases; the write-shape gate and the audit-class review; the set-wide escalation suite of § 59                                                                                                                                                                                                                         | **no clearance, and no reviewer.** No Security reviewer is named in this repository. The open security-relevant dispositions of § 5.1 are recorded, **none is formally accepted**, and SEC-003-O1 and SEC-003-O2 are undispositioned — packet item **A-3**                                                                        |
 | **4.** the approval owner records a verdict  | **nothing**                                                                                                                                                                                                                                                                                                                                                                                                                | the verdict itself — see the field below                                                                                                                                                                                                                                                                                          |
+
+_(2026-09-16, beside conditions **2** and **3** of the table above, whose cells keep their words and
+were true of the head they were measured at. **They are superseded, and a reader of this section alone
+would otherwise take the wrong reason from them.** The cells read "no certification, and no
+certifier", "**no QA lead is named in this repository**", "no clearance, and no reviewer" and "No
+Security reviewer is named in this repository". **The roles are held, and were already held when those
+cells were written.** The owner-approved
+[solo-developer review policy](../../governance/solo-developer-review-policy.md)`:18-20` assigns
+Eng. Ezzaldeen Al-Bitar as technical, QA and security reviewer, and the Owner-Approved Combined-Role
+Model at [`phase-1-1-owner-gate.md`](../phase-1-1/phase-1-1-owner-gate.md)`:135-136` records the same
+assignment as explicitly approved by both founders. **This record's own dated correction of 2026-09-14
+at `:3-9` said so first**, and
+[`certification-and-clearance-packet.md`](./certification-and-clearance-packet.md) § 2 `:70-74` reads
+these very sentences the same way: **as the absence of a CERTIFICATE, not of a certifier.** **So the
+right reason for each cell is the one this note supplies:** what is outstanding is an **unissued
+certification** and an **unissued clearance**, prepared for the holder already named and routed to
+them. **Nobody is appointed or re-appointed here, no certification or clearance exists, none is
+issued, implied or inferred, and no signature is written on anybody's behalf.** The packet-item
+pointers in those cells — **A-2** and **A-3** — are the earlier packet's ids; the live item is **O-2**,
+the independence question, which stays the Owner's. **Both conditions remain unsatisfied**, and the
+verdict field below stays empty.)_
 
 **Approval owner's verdict — Pass / Conditional Pass / Fail / Deferred, with conditions:**
 
@@ -772,6 +907,14 @@ place** rather than deleted. This subsection quotes § 62.6 and adjudicates noth
   re-measure**, which re-measures all twenty-nine on one head.
 - **CC-37(c)** is closed by the runbook (§ 57.3). **CC-50** is closed by the hosted fill;
   **CC-50 (a)** is open and names the two coverage figures no hosted artefact carries.
+  _(2026-09-16: **"CC-50 (a) is open" is false at this head and is left as written**, having been true
+  of the head this index was derived at. **CC-50 (a) is CLOSED**: its content is that the per-file web
+  coverage summary reached no reader, its stated remedy landed with #389, hosted run `34778434228`
+  carried both files, and change control § 63.10 filled H-2 and H-3 from it — § 63.8 carries the
+  closure note and § 70.7 excludes the row from the open set by name. **The two figures it named are
+  no longer the open thing**; what is open is that the record's **later** coverage figures are local
+  measurements no hosted run has been read for, which is **CC-64 (b)**. **The open set at the current
+  head is re-derived as 47** at change control § 70.7's dated note and § 74.3.)_
 - **CC-51** withdraws § 52.6's claim that relocation _resolved_ the two CodeQL findings.
 - **CC-52 (c)** is raised open by this re-measure: **three committed browser cases are owed** —
   delivery checklist recording, the final odometer, and the signature evidence — in both locales,
@@ -871,6 +1014,34 @@ Two corrections this record owes, and makes, to what it previously said here:
   migration, the two P-17 migrations, the delivering-employee backfill and the tenant-administrator
   bundle backfill. [`operator-runbook.md`](./operator-runbook.md) carries all four in the order that
   is load-bearing. **A runbook is not a run**, and CC-16 and CC-20 close on the run.
+- **The Field 34 external synchronisation set — assessed on 2026-09-16, and deliberately not
+  performed.** DOC-001's surviving engineering item is the documentation chapters and registry files
+  in the **parent workspace** that `canonical-plan.md:474-487` names and
+  [`canonical-reference-map.md`](./canonical-reference-map.md)`:17-33` maps. **All ten targets exist**,
+  and their byte lengths and SHA-256 digests were recomputed at protected `develop` `55131e44` and are
+  **identical, every one, to the LOCAL inventory of 2026-09-14** at
+  `orchestration/evidence/p1-31/astra-fe009-20260914/physical-canonical-reference-map.json` — nothing
+  in the set has drifted. **The earlier claim that `documentation/` does not exist is already corrected
+  at that map's `:52-58`**, and the sentences elsewhere in this record that repeat it keep their words
+  as true when written. **The synchronisation owed is not mechanical and was therefore not done**: the
+  chapter updates are conditioned on "**approved** findings", and no approval exists; the traceability
+  matrix records "Actual executed acceptance evidence | 0" and every evidence cell as "Allocated — not
+  produced", so writing P1-31 rows would declare evidence that `phase-1/_acceptance/README.md` forbids
+  absent an added artefact (**P1-ASM-025**), which QA-005's unmet packaging half does not provide; the
+  open-decision, risk and deliverable registers carry no P1-31 rows and adding them means choosing
+  statuses; and appending a change-log row would assert a modification that has not been made and
+  require that log's "Meaning Changed?" and "Review Required" values to be chosen — it attributes no
+  approval, and the determination rests on the three reasons before it. **Nothing was written to any of
+  the ten files, and none of them is committed by this repository.** It stays **remaining engineering**
+  on DOC-001 and is **not** added to the Owner packet — DOC-001's genuine Owner items are already
+  asked, as O-10, O-11 and O-12. Change control **§ 74.6** carries the full assessment. **DOC-001 does
+  not move.** _(2026-09-16 — the change-log clause above is corrected in place, and the correction is
+  noted rather than hidden: as first written it said that log's rows carry an "Approved by" column,
+  which `documentation/_registry/change-log.md:4` does not — its columns end at "Review Required".
+  Appending a row attributes no approval; the three reasons before it carry the determination, which is
+  unchanged. Change control **§ 74.6** and **§ 74.11** record it. **Field 34 also names "API/error/event/
+  test catalogs" and "data dictionary/ERDs where affected", which the ten inventoried targets do not
+  cover**; they are uninventoried and unassessed, and § 74.6 records that too.)_
 
 ## 6. Promotion eligibility
 
@@ -884,6 +1055,22 @@ P1-G31's four conditions are conjunctive. The unsatisfied conditions, named exac
 | **2. the QA lead certifies the index**       | **no QA lead is named in this repository and no certification exists**                                                                                                                                                                                                                                                                                                                  |
 | **3. the Security reviewer clears blockers** | **no Security reviewer is named in this repository and no clearance exists**; no open security disposition is formally accepted                                                                                                                                                                                                                                                         |
 | **4. the approval owner records a verdict**  | **the verdict field in § 4 is empty**                                                                                                                                                                                                                                                                                                                                                   |
+
+_(2026-09-16, beside conditions **2** and **3** of the table above, whose cells keep their words.
+**Both cells give a superseded reason, and the conclusion each supports is unchanged.** They read "no
+QA lead is named in this repository and no certification exists" and "no Security reviewer is named in
+this repository and no clearance exists". **The first half of each is superseded**: the QA and security
+reviewer roles are **held**, under
+[solo-developer-review-policy.md](../../governance/solo-developer-review-policy.md)`:18-20` and the
+Owner-Approved Combined-Role Model at
+[`phase-1-1-owner-gate.md`](../phase-1-1/phase-1-1-owner-gate.md)`:135-136`, and this record's own
+correction of 2026-09-14 at `:3-9` records that. **The second half of each stands exactly as written:
+no certification exists and no clearance exists** — that is the absence that matters here, and it is
+why both conditions are still unsatisfied. **The items a named reviewer would answer are prepared**, at
+[`certification-and-clearance-packet.md`](./certification-and-clearance-packet.md), **whose decision
+fields are empty**. **Nobody is appointed here, nothing is certified or cleared, and the phase's
+promotion ineligibility is unchanged** — gate P1-G31's four conditions are conjunctive and conditions
+2, 3 and 4 are unsatisfied.)_
 
 **Separately from the gate, three facts a promoter would need and does not have:** the phase's
 acceptance is loopback and local, not hosted; the evidence-packaging half of QA-005 is unmet, so the
@@ -941,6 +1128,16 @@ own row names, on the tier its own record names.
   `apps/web/coverage/web/coverage-summary.json` or `coverage-gate-web.json`, so the per-tree
   instrumented-file counts and the dashboard route tier measurement are measurable only locally and
   are cited nowhere. The remedy is on the CI-automation lane.
+  _(2026-09-16: **this limitation is DISCHARGED and is left as written**, because it states the
+  condition that discharged it. **The remedy landed on the lane it names**: #389 added both files to
+  the `evidence-web-quality` upload list, hosted run `34778434228` is the first to carry them, and
+  change control § 63.10 filled H-2 and H-3 from that artefact and from no earlier run. **CC-50 (a) is
+  closed.** **What replaces it as a live limitation is not the same thing**: the coverage record's
+  figures measured **after** three feature roots entered `COVERAGE_INCLUDE` are **LOCAL**, no hosted
+  run has been read for them, and they keep their `LOCAL` labelling — **CC-64 (b)**, open, and
+  limitation **L-2** of the certification packet, refined and **not lifted**. **H-2 and H-3 themselves
+  remain OPEN** on the terms each states, which are about what is instrumented and what is enforced,
+  not about missing numbers.)_
 - **The Playwright JSON reporter is conditional on `CI`.** A locally driven acceptance leaves no
   reporter document, so its pass counts are operator-recorded from the console while its failures are
   evidenced by retained per-failure directories (register § 61.6). The two kinds of figure are cited

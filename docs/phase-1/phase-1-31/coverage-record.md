@@ -7,6 +7,17 @@ per-suite index this record is the cross-screen artefact for), [`task-matrix.md`
 disposition for this record is § 60 / CC-50, pre-allocated by the closure plan and appended to the
 register at this lane's merge-queue turn, in pull request #385 (CC-50 closed at the fill; CC-50 (a) open for H-2 and H-3)
 
+_(2026-09-16 — **the status line above keeps its words, and the attribution in it is corrected.**
+**CC-50 (a) is CLOSED**, determined at change control § 74.2 by reading the row's own content at § 60.5
+against the fill: its stated remedy — adding `apps/web/coverage/web/coverage-summary.json` and
+`coverage-gate-web.json` to the `evidence-web-quality` upload list — landed with pull request **#389**,
+hosted run `34778434228` carried both files, and § 63.10 filled the **H-2 and H-3 figures** from it.
+**The coverage holes H-2 and H-3 measure are a different thing and are not closed by that**, and
+neither is the later fact that the figures now in § 4 were re-measured **locally** once three feature
+roots entered `COVERAGE_INCLUDE`, with no hosted run read for them — that fact is **CC-64 (b)**, open on
+its own content. **No figure in this record becomes a hosted measurement on this note**, and nothing in
+it is re-measured.)_
+
 **Measured at:** branch `feature/p1-31-refused-download-and-coverage`, at its merge of protected
 `develop` **`af924cab`**, on 2026-09-13 — the head carrying pull request #384. Every figure in this
 record was RE-DERIVED on that merged tree at this lane's queue turn, not carried over from the
@@ -413,6 +424,22 @@ the two that stayed open then — the per-tree instrumented-file counts (H-2) an
 tier's own measurement (H-3) — **are now filled from run `34778434228`**, the first run whose
 `evidence-web-quality` artefact carries `apps/web/coverage/web/coverage-summary.json`. **Every
 figure in this record is now hosted, and none is derived locally.**
+
+_(2026-09-16, correction — the sentence immediately above is FALSE at this head and is retained
+with its words rather than rewritten. It was written of the fill in § 4, and of that fill it was
+true: H-2 and H-3 were filled from hosted run `34778434228` and from no other. It was **not** true
+of the record as a whole even when it was written, and it is not true now. **This record carries
+four figures that are LOCAL and label themselves so** — the four dated notes of 2026-09-15 under
+H-2, at `:175`, `:187`, `:197` and `:205`, each headed `LOCAL, pending the hosted web-quality run`,
+which is where the 186-instrumented-file position and every percentage beside it come from. The
+same reading is recorded at [`acceptance-record.md`](./acceptance-record.md) § 11.11 (c), at
+[`certification-and-clearance-packet.md`](./certification-and-clearance-packet.md) **QA-C1** and
+limitation **L-2**, and at [`closure-record.md`](./closure-record.md) § 2.12. **What is true at
+this head:** the figures filled from run `34778434228` are hosted and are attributed to it; the
+figures measured after the three feature roots entered `COVERAGE_INCLUDE` are local and are
+labelled local; **no local figure is converted into a hosted one by this note**, and the hosted
+`web-quality` job having run and concluded `success` does not make a locally measured figure a
+hosted measurement.)_
 
 **Filling them changed no verdict in the table above.** H-2 and H-3 were never holes about missing
 numbers; they are holes about what is instrumented and what is enforced, and the numbers make both
