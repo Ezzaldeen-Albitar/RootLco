@@ -8570,7 +8570,9 @@ that no artefact at this head carries.
 
 From the Owner's instruction of **2026-09-15**, already quoted in
 [`acceptance-record.md`](./acceptance-record.md) § 11.12 and § 11.13 and quoted here from those
-records:
+records. **The first is a partial quotation** — it is the opening sentence of a longer paragraph,
+which continues past it, and [`acceptance-record.md`](./acceptance-record.md) § 11.12 records it as
+quoted partially. Nothing below stands for the rest of that paragraph:
 
 > Do not automatically turn every limitation into a phase blocker, and do not automatically accept
 > it.

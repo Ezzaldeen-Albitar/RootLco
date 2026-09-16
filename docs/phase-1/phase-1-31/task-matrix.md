@@ -331,6 +331,19 @@ and its head. This amendment re-derives all twenty-nine rows at protected `devel
 2026-09-15T23:32:04Z), against the closing acceptance run **attempt 4**, run `mu3ch41f`, recorded at
 [`acceptance-record.md`](./acceptance-record.md) **§ 11**, and against register sections 63 to 72.
 
+**What was re-derived in place above, and where each superseded reading is kept.** No sentence and no
+word above was withdrawn. Four kinds of cell were re-derived in place at the earlier head `c1a2f9fc`,
+and each carries its own dated note holding the superseded reading verbatim: the **State totals**
+table, whose reading of `end-to-end verified` **15** (FE-001 … FE-008, FE-010 … FE-016),
+`merged (write path)` **0** and `merged (read-only/partial)` **5** (FE-009, DO-001, DO-002, DOC-001,
+DOC-002) is preserved in the dated note of 2026-09-15 directly below that table; **FE-009**, whose cell
+records that the row read `merged (read-only/partial)` and that this was true when written; **DO-001**
+and **DO-002**, whose cells record the same earlier state word; and the prerequisite **P-12**, whose
+row records that it read `not started`. The prose of every row stands unaltered, including the report
+screens' `technician` drill-through sentence and QA-003's sentence that isolation is proved per seam.
+**Rows above were re-emitted by the formatter when a cell's width changed, and that re-emission moves
+no word.**
+
 **The two rules are unchanged, and are applied again.** Rule 1: a prerequisite closes no canonical
 task, and nothing below moves because a pull request merged. Rule 2: no task reaches
 `end-to-end verified` until a P1-31 acceptance record exists, and the record must show it. Attempt 4

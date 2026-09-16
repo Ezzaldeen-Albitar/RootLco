@@ -1642,7 +1642,12 @@ replacement is here and a dated note stands beside the original. It obeys the sa
 result is **quoted from the acceptance record** and is that record's measurement, and every
 **measured fact** was read on the tree at `849a8e9a` with its path. It **moves no state** (rules 1
 and 2) and it takes **no change-control allocation** — § 70 with CC-60 remains reserved, and the
-register's highest allocated pair at this head is **§ 72 with CC-63**.
+register's highest allocated pair at this head is **§ 72 with CC-63**. _(2026-09-16: true of protected
+`develop` `849a8e9a` as written, and still true of this section, which takes no allocation of its own.
+**§ 70 with CC-60 is allocated by the pull request that lands these records** — change control § 70,
+whose § 70.1 records it as the reserved section taken there. So as that pull request lands, the
+register's highest allocated pair is § 72 with CC-63 together with the reserved § 70 now taken. The
+sentence above keeps its words.)_
 
 ### 18.1 The figures of § 17, restated at the run of record
 
@@ -1762,7 +1767,11 @@ pending is unavailable to cite here for the reason § 11.11 (a) gives.
 11. **No hosted job executes any P1-31 browser case**, the two new receiver cases included; they run
     only in the closing runner against the local acceptance stack (§ 11.12 item 2).
 12. **No hosted check run is recorded for `849a8e9a`**, so every "recorded at a protected head" item
-    across SEC-001, SEC-003, SEC-004, QA-002, QA-003 and QA-004 remains open (§ 11.11 (a)).
+    across **eight rows** — SEC-001, SEC-002, SEC-003, SEC-004, QA-002, QA-003, QA-004 and DO-001 —
+    remains open (§ 11.11 (a)). _(2026-09-16: this item first named six of the eight, omitting SEC-002
+    and DO-001, while [`closure-record.md`](./closure-record.md) § 2.11, the task matrix amendment of
+    2026-09-16 and the certification packet § 4 each name eight. Eight is the figure; the six was an
+    incomplete list of the same one absence.)_
 13. **The privileged export fixture is a privileged local fixture on the shared acceptance database**
     and remains absent from hosted execution.
 14. **Branch scoping on download is proven for one case**, soft-deleted targets stay reachable, and

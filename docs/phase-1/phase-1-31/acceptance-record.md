@@ -2856,12 +2856,20 @@ coordinator in the dispatch; not re-queried by the executor" (quoted from
 coordinator's reading**, not as a read of the hosted run, and nothing is derived from it.
 
 **(c) The coverage record's measured figures, quoted with their own labels.**
-[`coverage-record.md`](./coverage-record.md) carries three dated notes of 2026-09-15, **each of which
-labels itself `LOCAL, pending the hosted web-quality run`**. Measured on the same command before and
-after the three feature roots entered the coverage instrument: **141 → 186 instrumented files**; after
-the phase-2 changes merged, 186 files with lines 3466/3887 (89.16%), statements 86.68%, functions
-91.19%, branches 80.87%; `features/delivery` 639/652 lines (98.01%, 25 files), `features/warranty`
-405/444 (91.22%), `features/reports` 367/383 (95.82%). **Every global floor still holds and no floor
+[`coverage-record.md`](./coverage-record.md) carries **four** dated notes of 2026-09-15 under H-2 —
+`coverage-record.md:175`, `:187`, `:197` and `:205` — **each of which labels itself
+`LOCAL, pending the hosted web-quality run`**. Measured on the same command before and after the three
+feature roots entered the coverage instrument: **141 → 186 instrumented files**. **The coverage
+position at this head is the last of the four**, the head note at `:205`, measured at branch head
+`8646e31c`, which is an ancestor of `849a8e9a`: 186 instrumented files; lines 3469/3890 (89.17%),
+statements 3819/4406 (86.67%), functions 1058/1159 (91.28%), branches 3243/4007 (80.93%);
+`features/delivery` 642/655 lines (98.02%, 25 files), `features/warranty` 405/444 (91.22%, 9 files),
+`features/reports` 367/383 (95.82%, 11 files). _(2026-09-16: this sub-section first read "three dated
+notes" and quoted the second of the four, at `:187` — 186 files, lines 3466/3887 (89.16%), statements
+86.68%, functions 91.19%, branches 80.87%, `features/delivery` 639/652 (98.01%). Those figures
+describe an **earlier tree**, as the coverage record itself says of them: "The figures in the note
+above describe the tree before that change." They are kept here as that earlier reading and are not
+the position at `849a8e9a`.)_ **Every global floor still holds and no floor
 moved.** The record's holes **H-2**, **H-3** and **H-4** are closed on that branch by the three
 feature roots entering `COVERAGE_INCLUDE`, by four critical-module rules covering the ten route
 directories, and by a four-case suite that renders the work-order record route page. **H-1 remains
