@@ -663,6 +663,10 @@ describe('shared.attachment-download-authorize', () => {
   it('signs a download URL for an accepted version and audits the issuance', async () => {
     const authorization = await authorizeUpload();
     const versionId = await seedVersion(authorization.documentId, 'accepted');
+    // Reachability is the download's first gate (P1-31 CC-63 (c)): upload authorization
+    // records the entity in an audit detail and writes no link, so the fixture has to
+    // create the one the caller reaches the document through.
+    await createLink(authorization.documentId);
 
     const grant = await withTransaction(asShared(), (db) =>
       attachments.requestDownload(db, { documentId: authorization.documentId, versionId })
@@ -675,6 +679,9 @@ describe('shared.attachment-download-authorize', () => {
   it('denial: a pending version is refused with ERR-DOC-001 and nothing is signed or audited', async () => {
     const authorization = await authorizeUpload();
     const versionId = await seedVersion(authorization.documentId, 'pending');
+    // Linked, so the refusal below is the version's STATE. Without the link the answer
+    // would be the uniform not-found, and this case would pass for the wrong reason.
+    await createLink(authorization.documentId);
 
     const error = await withTransaction(asShared(), (db) =>
       attachments

@@ -172,6 +172,44 @@ side effect of a QA record. **Recorded, not fixed.**
 **What closes it:** adding the three feature roots to `COVERAGE_INCLUDE` together with the
 re-measurement and the baseline movement that must accompany them, in a commit that says so.
 
+_2026-09-15 note (QA-001, LOCAL, pending the hosted web-quality run): closed on branch
+`feature/p1-31-frontend-closure-completion` over `develop` `c1a2f9fc`. The three roots are now in
+`COVERAGE_INCLUDE`. Measured with `npm run test:ci --workspace @rootlco/web` before and after on that
+base: 141 → 186 instrumented files; lines 2037/2408 (84.59%) → 3423/3867 (88.51%), statements
+82.80% → 86.09%, functions 87.10% → 90.97%, branches 78.89% → 80.23%. Every global floor in
+`coverage-baseline.web.json` (82.48 / 81 / 85 / 77.37) still holds and none moved. The trees
+measured: `features/delivery` 596/632 lines (94.30%, 25 files; 592/632, 93.67%, when its floor was set), `features/warranty` 405/444 (91.22%,
+9 files), `features/reports` 367/383 (95.82%, 11 files), now floored by critical modules at 92.67,
+90.22 and 94.82. No deficit against any floor, so no deficit test was needed; `signature-capture.ts`
+measured 0/25 lines because every suite mocks it, and that is recorded in the baseline's
+`p131CoverageNote`._
+
+_2026-09-15 later note (QA-001, LOCAL, pending the hosted web-quality run): re-measured with the same
+command after this branch merged `develop` `c7298c09`, with the phase-2 FE-003 changes in place.
+186 instrumented files; lines 3466/3887 (89.16%), statements 3816/4402 (86.68%), functions
+1056/1158 (91.19%), branches 3226/3989 (80.87%). `features/delivery` 639/652 lines (98.01%, 25
+files), `features/warranty` 405/444 (91.22%), `features/reports` 367/383 (95.82%). The coverage gate
+passed against the unchanged baseline, and no floor moved. The `signature-capture.ts` figure above
+no longer holds: it now measures 25/25 lines. A describe block in
+`apps/web/tests/delivery.dom.test.tsx` imports the real Server Action past its mock, and only the
+adapters it calls are mocked._
+
+_2026-09-15 further note (QA-001, LOCAL, pending the hosted web-quality run): re-measured with the
+same command after the receiver panel was changed to keep its verification form mounted while a
+re-read lands, with two DOM cases added for that path. 186 instrumented files; lines 3469/3890
+(89.17%), statements 3819/4406 (86.67%), functions 1058/1159 (91.28%), branches 3241/4005 (80.92%).
+`features/delivery` 642/655 lines (98.02%, 25 files), `features/warranty` 405/444 (91.22%),
+`features/reports` 367/383 (95.82%). No floor moved. The figures in the note above describe the tree
+before that change._
+
+_2026-09-15 head note (QA-001, LOCAL, pending the hosted web-quality run): measured with the same
+command at branch head `8646e31c`, after the receiver form gained a status line that states when no
+document is chosen and the Arabic limits case was tightened. 186 instrumented files; lines 3469/3890
+(89.17%), statements 3819/4406 (86.67%), functions 1058/1159 (91.28%), branches 3243/4007 (80.93%).
+`features/delivery` 642/655 lines (98.02%, 25 files), `features/warranty` 405/444 (91.22%, 9
+files), `features/reports` 367/383 (95.82%, 11 files). No floor moved. These are the figures of that
+head; the notes above describe earlier trees._
+
 ### H-3 — the route tier the P1-31 pages sit in is under its own floor, and exempt from it
 
 The line coverage of the ten P1-31 route pages (two delivery, four warranty, three reports, one
@@ -216,6 +254,15 @@ baseline, so the 60% touched-file floor does **not** apply to any of these pages
 could lose its test and the gate would not say so. The exemption is recorded in the baseline as
 temporary and is not this record's to remove.
 
+_2026-09-15 note (QA-001, LOCAL, pending the hosted web-quality run): closed on branch
+`feature/p1-31-frontend-closure-completion` over `develop` `c1a2f9fc` by the repository's own
+mechanism, without widening or narrowing any exemption. Four critical-module rules cover exactly the
+route directories that hold the ten pages — `delivery` 34/39 lines (87.18%, 2 files, floor 86.18),
+`warranty` 65/70 (92.86%, 4 files, floor 91.86), `reports` 43/46 (93.48%, 3 files, floor 92.48) and
+`administration/audit-log` 13/13 (100%, 1 file, floor 99) — so a page that loses its test now turns
+the gate red. The ten together measured 155/168 lines (92.26%) in that local run; no page fell below
+its enforced figure, so no page test was needed._
+
 ### H-4 — the mount point of the start-a-handover panel is not rendered by any suite
 
 `delivery-start.dom.test.tsx` renders `WorkOrderDeliveryPanel` **directly**. The panel's only
@@ -226,6 +273,22 @@ not.
 
 **What closes it:** a case that renders the work-order record route page with the delivery panel
 mounted, or moving that decision into a covered module.
+
+_2026-09-15 note (QA-001, LOCAL, pending the hosted web-quality run): closed on branch
+`feature/p1-31-frontend-closure-completion` over `develop` `c1a2f9fc` by
+`apps/web/tests/work-order-delivery-mount.dom.test.tsx`, four cases that render the work-order
+record ROUTE PAGE: the handover panel's own content inside the record for a caller holding the
+delivery read, the write authority carried into the mounted panel, the panel absent and unread
+without the delivery read, and the route's permission-denied branch reading neither the record nor a
+handover. All four passed in the local web tier of 144 files and 4101 tests._
+
+_2026-09-15 later note (QA-001, LOCAL, pending the hosted web-quality run): after this branch merged
+`develop` `c7298c09` and added the FE-003 phase-2 cases, the same four passed again in a local web
+tier of 144 files and 4122 tests._
+
+_2026-09-15 further note (QA-001, LOCAL, pending the hosted web-quality run): after two FE-003
+receiver-panel cases were added, the same four passed again in a local web tier of 144 files and
+4124 tests._
 
 ### H-5 — what the suites deliberately do not assert
 

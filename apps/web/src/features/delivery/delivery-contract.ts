@@ -446,6 +446,33 @@ export interface ActiveChecklist {
 export const SIGNATURE_CATEGORY_CODE = 'reception_signature';
 
 /**
+ * The document category a receiver's identity evidence is filed under (FE-003,
+ * the Owner's decision D-18).
+ *
+ * Named by CODE and by nothing else. The category's business-link purpose,
+ * accepted content types and size ceiling are the server's and are read from
+ * the published row at capture time. No other category is ever substituted:
+ * `reception_vin` also carries an identity-document purpose, and filing a
+ * person's proof of identity under vehicle evidence is the classification
+ * defect D-18 forbids, so a missing or inactive row is reported as an error.
+ */
+export const RECEIVER_IDENTITY_CATEGORY_CODE = 'delivery_receiver_identity';
+
+/**
+ * The two codes attaching identity evidence needs, beyond the delivery write.
+ *
+ * Reading the category needs `shared.document.read`; authorizing the upload,
+ * registering the version and linking the document need
+ * `shared.document.manage`. A caller holding the delivery write code without
+ * these may still verify a receiver without evidence, so the file control is
+ * withheld rather than offered as a control whose only outcome is a refusal.
+ */
+export const RECEIVER_EVIDENCE_PERMISSIONS = {
+  categoryRead: 'shared.document.read',
+  documentManage: 'shared.document.manage',
+} as const;
+
+/**
  * The longest reason either the waiver or the override may carry.
  *
  * `MAX_REASON` in the delivery domain, and the same bound on both: a waiver

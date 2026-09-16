@@ -21,6 +21,11 @@ const alias = { '@': fileURLToPath(new URL('./src', import.meta.url)) };
  * The instrumented surface — the P1-27 CRM and Vehicle screens, the routes that
  * mount them, and the shared library they are built on (`P1-27-QA-001`).
  *
+ * The three P1-31 feature trees — delivery, warranty and reports — joined on
+ * 2026-09-15 (`P1-31-QA-001`, coverage hole H-2): before that no line of P1-31
+ * feature code could be instrumented at all. Their critical-module floors are in
+ * `.github/ci-baselines/coverage-baseline.web.json`.
+ *
  * ## The escaping is load-bearing, not decoration
  *
  * The dashboard pages live at `src/app/[locale]/(dashboard)/`. Written into a
@@ -39,6 +44,9 @@ const alias = { '@': fileURLToPath(new URL('./src', import.meta.url)) };
 export const COVERAGE_INCLUDE = [
   'src/features/crm/**',
   'src/features/vehicles/**',
+  'src/features/delivery/**',
+  'src/features/warranty/**',
+  'src/features/reports/**',
   'src/app/\\[locale\\]/\\(dashboard\\)/**',
   'src/lib/**',
 ];
@@ -49,7 +57,7 @@ export const COVERAGE_INCLUDE = [
  * This is a decision, not an oversight, and it is recorded here because an
  * empty exclusion list is exactly what a reader assumes was forgotten.
  *
- * The four roots above were searched for the classes that genuinely cannot be
+ * The roots above were searched for the classes that genuinely cannot be
  * executed by a unit tier, and this tree contains none of them: no `.d.ts`
  * (declarations emit no runtime statement), no barrel `index.ts` (v8 attributes
  * a re-export to the defining module as well, so counting a barrel counts the

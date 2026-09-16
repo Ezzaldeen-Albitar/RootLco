@@ -70,6 +70,8 @@ import {
   DeliveryRuleError,
   MAX_REASON,
   assertChecklistResultShape,
+  isApprovedIdentityEvidenceCategory,
+  type EvidenceCategoryFacts,
   assertEligible,
   assertSignerRole,
   overridePermission,
@@ -618,11 +620,16 @@ export class DeliveryService {
     }
 
     if (input.identityEvidenceDocumentVersionId !== undefined) {
+      // D-18: identity evidence must be filed under the approved identity-evidence
+      // category — the platform row, active and not deleted. Every other rule — tenant
+      // visibility, company and branch, refused states, provenance — is the same one a
+      // signature is held to.
       await this.requireUsableDocumentVersion(
         db,
         delivery,
         input.identityEvidenceDocumentVersionId,
-        'body.identityEvidenceDocumentVersionId'
+        'body.identityEvidenceDocumentVersionId',
+        isApprovedIdentityEvidenceCategory
       );
     }
 
@@ -1310,7 +1317,15 @@ export class DeliveryService {
     db: DbHandle,
     delivery: DeliveryRecordRow,
     versionId: string,
-    path: string
+    path: string,
+    /**
+     * The rule the document's category must satisfy, when the evidence has a governed
+     * one. It receives the category's facts, or null when the category is not visible,
+     * and must fail closed on null. Checked with the other facts about the document
+     * itself, before provenance, and refused with the same `ERR-VAL-001` a mis-scoped or
+     * unlinked document gets.
+     */
+    categoryRule?: (category: EvidenceCategoryFacts | null) => boolean
   ): Promise<void> {
     const version = await sharedServicesModule().attachments.verifyEvidenceVersion(
       db,
@@ -1332,6 +1347,12 @@ export class DeliveryService {
     if (EVIDENCE_REFUSED_STATES.includes(version.status)) {
       throw new AppFailure('ERR-DOC-001', {
         message: 'The document version was refused by review or quarantine and cannot be bound.',
+      });
+    }
+    if (categoryRule !== undefined && !categoryRule(version.category)) {
+      throw new AppFailure('ERR-VAL-001', {
+        message: 'The document is not filed under the category this evidence requires.',
+        safeDetails: { violations: [{ path, rule: 'custom' }] },
       });
     }
 

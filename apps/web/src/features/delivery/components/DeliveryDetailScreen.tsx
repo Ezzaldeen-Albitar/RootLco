@@ -54,7 +54,10 @@ import { useEligibility } from './use-eligibility';
  * `revision` counts successful writes and is passed to every panel. Each panel
  * folds it into the key of what it holds, so a write makes every stale answer
  * ABSENT rather than merely old — the panels show their loading state while the
- * fresh reads land, instead of showing a decision that has since changed. Every
+ * fresh reads land, instead of showing a decision that has since changed. The
+ * receiver panel is the one exception: it keeps its last answer for the same
+ * delivery drawn while its re-read lands, because unmounting its verification
+ * form would drop a document the operator chose (`ReceiverPanel` says why). Every
  * preparation step moves the delivery version, so a screen that did not re-read
  * would send a version guaranteed to be refused.
  *
@@ -89,6 +92,7 @@ export function DeliveryDetailScreen({
   canReadFinance,
   canComplete,
   canManage = false,
+  canAttachEvidence = false,
   canIssueWarranty = false,
   canReadWarrantyPolicies = false,
   canReadWorkOrder = false,
@@ -102,6 +106,12 @@ export function DeliveryDetailScreen({
   readonly canComplete: boolean;
   /** Whether the caller holds the write code the preparation acts declare. */
   readonly canManage?: boolean;
+  /**
+   * Whether the caller holds both codes attaching identity evidence needs
+   * (`RECEIVER_EVIDENCE_PERMISSIONS`). Without them the receiver may still be
+   * verified, and the optional document control is withheld.
+   */
+  readonly canAttachEvidence?: boolean;
   /**
    * Whether the caller holds `wty.warranty.issue`.
    *
@@ -237,7 +247,9 @@ export function DeliveryDetailScreen({
         locale={locale}
         messages={messages}
         deliveryId={delivery.id}
+        receptionVisitId={delivery.receptionVisitId}
         canManage={canManage}
+        canAttachEvidence={canAttachEvidence}
         revision={revision}
         onDone={refresh}
       />

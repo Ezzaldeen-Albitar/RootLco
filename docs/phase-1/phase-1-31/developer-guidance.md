@@ -81,6 +81,12 @@ npm run validate:p1-31-write-shape
 npm run verify:policies
 ```
 
+_2026-09-15 note (DO-001): what the three P1-31 gates read, how to read a red, when to revert the
+change that made one red rather than correct the gate through a reviewed change, and why disabling,
+skipping or bypassing a required gate is never an operator act are recorded in
+[operator runbook § 11](./operator-runbook.md#11-the-three-p1-31-gates--running-them-reading-a-red-and-what-an-operator-may-do-about-it).
+Local branch state, pending the hosted run._
+
 Choose the affected DOM files for delivery or policies instead of treating the example as a full
 suite. Add meaningful negatives for permission/scope refusals, failed paging and stale responses.
 A test behind a mocked adapter proves the UI response; it does not establish server authorization.

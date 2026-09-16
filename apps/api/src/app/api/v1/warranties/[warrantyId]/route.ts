@@ -56,6 +56,9 @@ export const WARRANTY_DETAIL_OPERATION = defineOperation({
   // unregistered name at module load.
   rateLimitPolicy: 'low-risk-metadata',
   cacheCategory: 'never',
+  // An absent warranty, and one belonging to another tenant, answer ERR-RES-001 from the
+  // RLS-narrowed row read, so the contract lists the 404.
+  answersNotFound: true,
 });
 
 export async function GET(

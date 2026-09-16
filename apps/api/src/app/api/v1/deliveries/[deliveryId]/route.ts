@@ -72,6 +72,9 @@ export const DELIVERY_READ_OPERATION = defineOperation({
   auditClass: 'none',
   rateLimitPolicy: 'low-risk-metadata',
   cacheCategory: 'never',
+  // `requireDelivery` answers ERR-RES-001 for an absent or out-of-scope delivery (see
+  // "The 404 is decided before the scope decision" above), so the contract lists it.
+  answersNotFound: true,
 });
 
 export async function GET(

@@ -69,6 +69,9 @@ Two consequences are implemented rather than merely stated:
 - The screen counts successful writes and folds that count into the key of everything each panel
   holds. A write therefore makes every stale answer **absent** rather than merely old: the panels
   show their loading state while fresh reads land, instead of showing a decision that has changed.
+  The receiver panel is the one exception: while its re-read lands it keeps the last answer it read
+  for the same delivery, and states a failed re-read above that answer, because swapping in the
+  loading state would unmount the verification form and drop a document the operator had chosen.
 
 The one retry is deliberate and bounded. A record-version conflict is re-attempted **once**, against
 a version that was read again rather than derived by adding one — the record may have moved more
@@ -111,6 +114,35 @@ typecheck, focused ESLint, style, web boundary, server-action export and P1-31 a
 The phase matrix must distinguish the existing-record actions from withheld employee selection/start.
 
 ## 5. The receiver's identity evidence — a named prerequisite, not built
+
+_2026-09-15 note (FE-003, Owner decision D-18): this section describes the state before the
+approved category existed and is kept as written. On branch
+`feature/p1-31-frontend-closure-completion` the verification form now offers ONE optional identity
+document under the `delivery_receiver_identity` category that backend PR #399 seeds. It follows
+the signature capture's order — category read by code, capture against this delivery's reception
+visit, link under the category's own business-link purpose, then verification with the version
+bound (`apps/web/src/features/delivery/receiver-capture.ts`). Verification without a document is
+unchanged; a chosen document that fails to upload or link, or that the server refuses, is stated
+on the panel and the receiver stays unverified; no other category is substituted. No separate UI
+prototype exists for this capture; it was built within this section, D-18 and the existing delivery
+panels' patterns. Local branch state, pending #399's merge and the hosted run. The two browser cases
+in `apps/web/tests/e2e/authenticated/delivery-p1-31.spec.ts` are NOT executed by the hosted
+authenticated-browser job, which sets no P1-31 handoff, so there they skip; they act on the
+unverified-receiver handover the out-of-repository journey harness must publish as
+`browserFixtures.receiver`, which it does not publish yet. The FE-003 browser proof is therefore
+not executed, and nothing here records it as covered._
+
+_2026-09-15 correction to the note above: "pending #399's merge" no longer holds. PR #399 merged
+into `develop` as `c7298c09`, and this branch merged that head, so the `delivery_receiver_identity`
+category and the evidence binding it relies on are now on `develop`. The correction also changes
+three statements. First, a chosen document stays chosen after a failed upload, a failed link or a
+refusal: a further Confirm sends it again, and verifying without it takes the explicit Remove.
+Second, the file control's accepted types and the stated size ceiling are read from the
+category's published row. Third, the journey harness now publishes two unverified-receiver
+handovers per fixture key as `browserFixtures.receiver.<key>.refusal` and `.success`, one per
+browser case. Local branch state and the hosted run are still pending. The two browser cases
+still skip in the hosted authenticated-browser job, which sets no P1-31 handoff. They are not
+executed until a run that sets one, so nothing here records the browser proof as covered._
 
 `sal.delivery-receiver-verify` accepts an optional `identityEvidenceDocumentVersionId`. This slice
 sends none, and the verification form offers no capture for it.

@@ -553,6 +553,21 @@ describe('the instrumented surface is what it claims to be', () => {
     }
   });
 
+  it('covers the three P1-31 feature trees (P1-31-QA-001, coverage hole H-2)', () => {
+    // Until 2026-09-15 none of these could be instrumented at all, because the
+    // include list named no P1-31 tree. One real file per tree, so a root that
+    // silently fell off the list fails here rather than in a coverage report
+    // nobody reads.
+    for (const file of [
+      'apps/web/src/features/delivery/components/ReceiverPanel.tsx',
+      'apps/web/src/features/delivery/receiver-capture.ts',
+      'apps/web/src/features/warranty/warranty-contract.ts',
+      'apps/web/src/features/reports/reports-contract.ts',
+    ]) {
+      expect(INSTRUMENTED, `${file} is outside the measurement`).toContain(file);
+    }
+  });
+
   it('refuses an exclusion pattern that matches nothing', () => {
     // The exclusion list is empty today, and that is a recorded decision rather
     // than an omission — see the comment above COVERAGE_EXCLUDE. This case is
