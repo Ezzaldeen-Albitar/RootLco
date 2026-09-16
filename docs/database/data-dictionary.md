@@ -4942,3 +4942,35 @@ User-owned saved filter (owner-only RLS).
 | `updated_by`              | `uuid`        | internal | yes   | Last-updating actor.                                                                                     |
 | `deleted_at`              | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                                                     |
 | `deleted_by`              | `uuid`        | internal | yes   | Soft-deleting actor.                                                                                     |
+
+## §P1-32 — friendly search: text folding routines and search indexes
+
+No table and no column is added or changed. Two routines are added, four existing normalizers
+are re-issued over them, and seven indexes make the widened search surface index-eligible.
+Migrations `20260916090000_shared_text_folding.sql` and
+`20260916091000_search_expression_indexes.sql`.
+
+| Routine                         | Kind              | Security                   | Purpose                                                                                                                                                                  |
+| ------------------------------- | ----------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `shared.fold_digits(text)`      | function → `text` | INVOKER, IMMUTABLE, STRICT | Arabic-Indic (U+0660–U+0669) and Eastern Arabic-Indic (U+06F0–U+06F9) digits become ASCII `0`–`9`; nothing else changes; length preserved.                               |
+| `shared.fold_search_text(text)` | function → `text` | INVOKER, IMMUTABLE         | The NAME rule: strips tatweel and tashkeel, collapses the three hamza-seated alef forms onto bare alef, folds digits, lowercases, collapses whitespace; NULL on blank.   |
+| `crm.normalize_name(text)`      | function → `text` | INVOKER, IMMUTABLE         | Re-issued: now `shared.fold_search_text`.                                                                                                                                |
+| `crm.normalize_phone(text)`     | function → `text` | INVOKER, IMMUTABLE         | Re-issued: digits are folded BEFORE the non-digit strip, so an Arabic-Indic number no longer normalizes to NULL. `crm.contact_points.normalized_value` recomputed.       |
+| `veh.normalize_vin(text)`       | function → `text` | INVOKER, IMMUTABLE         | Re-issued: digits folded first; letters untouched. `veh.vehicles.vin_normalized` recomputed with `SET EXPRESSION` over the identical expression.                         |
+| `veh.normalize_plate(text)`     | function → `text` | INVOKER, IMMUTABLE         | Re-issued: digits folded first; letters, including non-Latin, untouched. `veh.plate_history.plate_normalized` recomputed with `SET EXPRESSION` over the same expression. |
+
+Letter folding is applied to names only, never to a VIN or a plate: those are identifiers.
+
+| Index                                   | Table                   | Definition                                                                        |
+| --------------------------------------- | ----------------------- | --------------------------------------------------------------------------------- |
+| `ix_business_partners_name_folded_trgm` | `crm.business_partners` | GIN `crm.normalize_name(display_name)` trigram; partial `deleted_at IS NULL`.     |
+| `ix_contact_points_phone_tail`          | `crm.contact_points`    | btree `(tenant_id, right(normalized_value, 7))`; partial `deleted_at IS NULL`.    |
+| `ix_vehicles_vin_trgm`                  | `veh.vehicles`          | GIN `vin_normalized` trigram; partial `deleted_at IS NULL`.                       |
+| `ix_plate_history_normalized_trgm`      | `veh.plate_history`     | GIN `plate_normalized` trigram, over every interval (historical plates included). |
+| `ix_makes_name_folded_trgm`             | `veh.makes`             | GIN `shared.fold_search_text(name)` trigram; partial `deleted_at IS NULL`.        |
+| `ix_models_name_folded_trgm`            | `veh.models`            | GIN `shared.fold_search_text(name)` trigram; partial `deleted_at IS NULL`.        |
+| `ix_work_orders_display_number_trgm`    | `wo.work_orders`        | GIN `display_number` trigram; partial `deleted_at IS NULL`.                       |
+
+Classification: `wo.work_orders.display_number` is now `searchable` in
+`wo-tech-dia-qms-personal-data-classification.json` (still `internal`); every other column these
+indexes serve was already classified searchable.
