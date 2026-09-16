@@ -2683,15 +2683,18 @@ already quoted at § 10.5:
 | `technician_labor_time`                                                | 200    | `text/csv` | `technician_labor_time-2026-09-15-2026-09-17.csv`   | 1    | 1368  | `8d7057d6…`    | exactly 1                             |
 | `inventory_movements`                                                  | 200    | `text/csv` | `inventory_movements-2026-09-15-2026-09-17.csv`     | 1    | 1478  | `0f347d21…`    | exactly 1                             |
 | `invoice_payment_summary`                                              | 200    | `text/csv` | `invoice_payment_summary-2026-09-15-2026-09-17.csv` | 2    | 2817  | `3333dadd…`    | exactly 1                             |
-| `work_orders_by_status`, empty selection, `2000-01-01` to `2000-01-02` | 200    | `text/csv` | `work_orders_by_status-2000-01-01-2000-01-02.csv`   | 0    | 3129  | `db0eb13e…`    | exactly 1                             |
+| `work_orders_by_status`, empty selection, `2000-01-01` to `2000-01-02` | 200    | `text/csv` | `work_orders_by_status-2000-01-01-2000-01-02.csv`   | 0    | 3129  | `db0eb13e…`    | 1, from the window read               |
 
 Each of the five carried its context record as its first record and recorded no fault. **The
 `work_orders_by_status` figure of 17 rows is this run's own**; attempt 3 recorded 11 for the same code
 over its own, different period, and the two are not the same measurement.
 
 **Audit correlation.** The companion read the audit log and found **five** `rpt.report.exported`
-events in its window, **exactly one for each export's correlation id**, with all five correlation
-identifiers enumerated in the ledger (steps 37–41).
+events in its window (step 37), **exactly one for each export's correlation id**. **Four of the five
+are asserted by ledger steps of their own** — steps 38 to 41, one per report code. **The fifth, the
+empty selection's, is measured from that window read rather than from an assertion of its own**: its
+correlation id appears among the five `correlationIdsSeen` that each of those four assertions carries,
+beside `eventsInWindow` 5, and no ledger step takes it as its subject.
 
 **The default administrator's refusal, retained.** The journey's administrator, who holds the
 tenant-administrator bundle and therefore not the export permission (CC-04), was refused the export of
