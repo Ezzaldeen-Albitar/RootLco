@@ -279,6 +279,12 @@ invent an approved design, and it is not to run a review. Nothing here approves 
 designates a basis, or claims a fidelity verdict for any module other than the P1-25 one already
 recorded.
 
+_(2026-09-16: that next task is now recorded at
+[`fe-001-fidelity-basis.md`](./fe-001-fidelity-basis.md), which confirms the fidelity basis per
+module against OIR-06 and P1-EC-006, records MISSING per module where no prototype artefact exists,
+and leaves six items open. It is preparatory, nothing in it was executed, and no other text of this
+section is changed by it.)_
+
 ---
 
 ## E. P1-31 carry into P1-32
