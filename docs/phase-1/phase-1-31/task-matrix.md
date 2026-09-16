@@ -453,6 +453,21 @@ remaining item is the hosted coverage **measurement**, and while the hosted `web
 concluded `success`, **the coverage figures stay local measurements** with their own `LOCAL` labelling
 (**CC-50 (a)**, open).
 
+_(2026-09-16, correction to the identifier only — the sentence above keeps its words and its
+substance is unchanged: **the coverage figures are local and stay local**, and a hosted gate
+execution does not convert a locally measured figure into a hosted measurement. **What is corrected
+is the attribution.** **CC-50 (a) is CLOSED, not open.** Its whole content, at change control
+§ 60.5, is that the per-file web coverage summary reached no reader, so H-2 and H-3 could be filled
+from no hosted artefact; its stated remedy — adding
+`apps/web/coverage/web/coverage-summary.json` and `coverage-gate-web.json` to the
+`evidence-web-quality` upload list — landed with pull request **#389**, hosted run `34778434228`
+carried both files, and § 63.10 filled H-2 and H-3 from it. § 63.8's dated note, § 63.10 and
+§ 70.7's exclusion list all read it closed, and § 70.7 does not count it among the open set. **The
+fact this sentence describes is a different and later one**: the figures now in the coverage record
+were measured **locally** after three feature roots entered `COVERAGE_INCLUDE`, and no hosted run
+has been read for them. That fact is **CC-64 (b)** on its own content, not CC-50 (a) restated.
+**No row moves on this note.**)_
+
 **The counts, re-derived here.** **The state totals do not move**: `16 / 2 / 2 / 0 / 9 / 0`, total
 **29**, exactly as above — no row rose and none was lowered. Of the five categories, **one moves**:
 `remaining engineering` read **14** and now reads **9**, because the recording limb was the only
@@ -464,3 +479,55 @@ beside it.
 
 **This amendment issues no certification and no clearance, records no Owner verdict, and does not
 claim the phase is complete.** Sixteen of twenty-nine is not a pass and is not offered as one.
+
+### Amendment of 2026-09-16 — DO-001's state question, answered against this file's own rule
+
+**Why this is here.** Change control **CC-64 (a)** records that DO-001 now has no
+remaining-engineering item and owes no human certification, that a state move belongs to this file
+**under its own rule**, and that no record makes one. This amendment applies that rule and records
+the outcome. **It is the application of a rule to a row, not a new criterion**, and it re-adjudicates
+nothing else.
+
+**The rule, quoted from this file and not paraphrased.** From the **State vocabulary** table:
+
+> **end-to-end verified** | proven against a running environment and recorded in a phase acceptance
+> record — see rule 2
+
+and from **rule 2** of "Two rules govern every row below":
+
+> **No task reaches `end-to-end verified` until a P1-31 acceptance record exists.**
+
+and, from the amendment of 2026-09-16 above, the sentence that governs which proof counts for a row
+of this kind:
+
+> **A security, QA, DevOps or documentation row is judged by the proof its own criterion calls for,
+> and a browser case is not that proof.**
+
+**The outcome: DO-001 does NOT move. It stays `merged (write path)`.** The rule's conditions are
+**not** shown satisfied, and the three reasons are stated so the judgement can be checked rather than
+taken on trust.
+
+1. **What closed is a recording limb, not the criterion's proof.** The hosted check runs at
+   `849a8e9a` and `137324770f` were **read from the repository's own API** and recorded at
+   [`acceptance-record.md`](./acceptance-record.md) § 11.11 (e). That record says in terms what those
+   readings are not: "**not a human certification, not a clearance and not a verdict**". They
+   establish a **citable execution** of the policy aggregate that carries the three P1-31 gates. A
+   citable execution of a gate is not the same thing as the row's criterion being proven against a
+   running environment and recorded in a phase acceptance record, and nothing in § 11.11 (e)
+   adjudicates DO-001's criterion.
+2. **The row still carries a live documented limitation on the gate's own observable surface.** The
+   DO-001 cell records it: **the job summary renders one of two unrun registers** (**CC-62 (c)**,
+   whose finding is "the hosted job summary renders one register or the other, not both"). That
+   limitation is **carried, not accepted**, by the cell's own words, and it sits on exactly the
+   surface a continuous-integration quality gate's evidence artefact is about.
+3. **The Owner's standing instruction forbids the move this file would otherwise be tempted into.** A
+   state does not move because a citation was added. The runs indexed at § 11.11 (e) **already
+   existed and had never been indexed** — no job was dispatched, re-run or invoked — so what changed
+   between `849a8e9a` and this head, for DO-001, is that an existing run acquired a citation.
+
+**What this amendment does not do.** It does not lower DO-001 either; the row's state is unchanged in
+both directions. **It moves no other row**, raises none and lowers none. **The state totals are
+unchanged: `16 / 2 / 2 / 0 / 9 / 0`, total 29**, and the five category counts are unchanged from the
+amendment above. It issues no certification and no clearance, and it records no Owner verdict.
+**CC-64 (a) is closed by this outcome** — not by a row moving, but by the rule having been applied and
+the answer recorded — and change control § 74 carries that closure.

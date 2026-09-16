@@ -5362,6 +5362,16 @@ identifier is the § 62 lane's act, not this one's._
 - **It changed no ledger, no evidence record and no CI baseline value.**
 - **It changed nothing about what coverage measures** — no threshold, no `include` list, no floor.
 - **It did not close CC-50 (a), CC-52 (b) or CC-53**, and it closed no finding by re-wording it.
+  _(Superseded in part by § 63.10, and left visible — the convention this register applies to the
+  first bullet of this list is applied here too, because the bullet as written now contradicts
+  § 63.8 and § 63.10 of its own section. It was **true of this slice**: #389 changed the upload list
+  and closed nothing by doing so, and no hosted run of the changed workflow had completed when it
+  was written. **Two of its three identifiers have since closed, and neither closed here**: run
+  `34778434228` produced the artefact, § 63.10 filled H-2 and H-3 from it, and **CC-53** and
+  **CC-50 (a)** both close on that fill — § 63.8 carries the dated note for each. **CC-52 (b)
+  remains OPEN**, exactly as this bullet says, and moving it is the § 62 lane's act. **Nothing is
+  closed by re-wording**: the fill is a measurement recorded in § 63.10 and in the coverage
+  record.)_
 - **It added, renamed and removed no npm script**, so the command-coverage register is untouched.
 
 **Two observations on the new rule, recorded rather than changed.** Both were found in review of
@@ -8635,6 +8645,30 @@ row that files CC-48's absence. And it does not close **CC-59 (b)** or **CC-62 (
 on a gate run this section did not take, and the second on a hosted job and a disposable-database run
 that no artefact at this head carries.
 
+_(2026-09-16, re-derived at a later head — **everything above keeps its words and its figures, which
+were true of `849a8e9a` and of the register as pull request #401 left it.** This note does not
+re-adjudicate the set, does not re-open a closure and does not change an exclusion; it states the
+figure at the current head, because **O-3 of the decision packet asks the Owner to accept or refuse
+exactly this set** and the set had moved with no record re-deriving it. **The counting rule is this
+subsection's own, unchanged:** a state cell counts as open unless that cell, or a dated note beside
+it, records a closure. **At protected `develop` `55131e4481b779cd2504c7eae1423fbe3377963c` the set is
+47 open.** The derivation: **45** as #401 left the register, the second figure above; **plus the two
+open sub-rows § 73 raises** in #402. **Every identifier added since that 45, named, with what it
+does:** **CC-64**, the hosted executions recorded from runs that already existed, **raised and closed
+by measurement in the same section**, so it never joins the open set; **CC-64 (a)**, the state question
+DO-001 raised, **open** when § 73 wrote it; and **CC-64 (b)**, the coverage figures staying local,
+**open**. 45 + 2 = **47**. **No other identifier was raised between `137324770f` and this head, and no
+open cell gained a closure note there** — § 73.6 disposes of its own three rows and nothing else, and
+§ 73.7 records that the slice moves no task-matrix row. **The two this subsection declines to close
+stay open**: **CC-59 (b)** and **CC-62 (b)**, neither of which § 73 touches — reading a check-run list
+is not the gate run CC-59 (b) turns on, nor the disposable-database run CC-62 (b) turns on. **The four
+stating no usable disposition are unchanged at 4** — CC-25, CC-26, CC-40, CC-48. **As the
+reconciliation at § 74 leaves the register the figure is still 47**: **CC-64 (a) closes** there and
+**CC-65 (a)** is raised open. 47 − 1 + 1 = **47**. **CC-50 (a) is still excluded by name and is not
+added back** — it closed at the § 63.10 fill, and the three § 73 passages calling it open are corrected
+at § 73.4 and § 73.6 as a misattribution of a later fact. **This note accepts nothing and refuses
+nothing.** The acceptance or refusal is the Owner's, as O-3.)_
+
 ### 70.8 Dispositions
 
 | id            | finding                                                                                                                                        | measured                                                                                                                                                                                                                                                                                                                                                         | disposition                                                                                                                                                                                                                                                                                                                               | owner / slice                    | state              |
@@ -8730,6 +8764,16 @@ never renumbered. **Nothing here renumbers anything.** As this slice leaves the 
 holds sections 1 … 73 with CC-01 … CC-64**, and the phase directory count is **unchanged at 46** —
 this slice adds no file.
 
+_(2026-09-16, beside the two sub-rows above, which keep their words. **CC-64 (a) is CLOSED**, by
+§ 74: the task matrix applied **its own rule** to DO-001 — the `end-to-end verified` definition and
+rule 2 — and recorded the outcome, which is that **the row does not move**. The rule's conditions are
+not shown satisfied, so the state question this row raised is answered rather than left standing.
+**CC-64 (b) stays OPEN**, and its wording is corrected in this register at § 73.4 and § 73.6: the
+open fact is the **coverage figures being local measurements no hosted run has been read for**, which
+is CC-64 (b)'s own content and **not CC-50 (a) restated** — CC-50 (a) closed at the § 63.10 fill and
+§ 70.7 already excludes it from the open set by name. **As of § 74 the register holds sections
+1 … 74 with CC-01 … CC-65**, and the phase directory count is still **46** — § 74 adds no file.)_
+
 ### 73.2 The readings, and how they were taken
 
 Each head was read once with `GET repos/{owner}/{repo}/commits/{sha}/check-runs?per_page=100`, polled
@@ -8805,10 +8849,39 @@ hosted coverage **measurement**, and although the hosted `web-quality` job ran a
 the coverage figures keep their `LOCAL` labelling because no hosted artefact publishes the per-file web
 summary they come from — **CC-50 (a)**, open, and carried here as **CC-64 (b)**.
 
+_(2026-09-16, correction to the identifier, not to the substance — the sentence above keeps its
+words. **Its substance holds and is not weakened:** the coverage figures are LOCAL, they keep their
+`LOCAL` labelling, and **a hosted gate execution does not convert a locally measured figure into a
+hosted measurement**. **What is wrong is the attribution.** **CC-50 (a) is CLOSED, not open.** Its
+whole content, at § 60.5, is that the per-file web coverage summary reached no reader, so H-2 and
+H-3 could be filled from no hosted artefact; its own stated remedy — adding
+`apps/web/coverage/web/coverage-summary.json` and `coverage-gate-web.json` to the
+`evidence-web-quality` upload list — landed with **#389** (§ 63.2, § 63.4), hosted run
+`34778434228` carried both files, and § 63.10 filled H-2 and H-3 from it under the § 63.6 rule.
+§ 63.8 carries the dated closure note, § 63.10 states it in terms, and **§ 70.7 excludes it from the
+open set by name and does not count it among the 41**. **So CC-50 (a) is not "the standing cause"
+here, and it is not restated by CC-64 (b).** The fact that IS open at this head is a later and
+different one: after the three feature roots entered `COVERAGE_INCLUDE` the record's figures were
+re-measured **locally**, and **no hosted run has been read for those figures** — the reader now
+exists, and nothing has been read through it. **That is CC-64 (b)'s own content**, it is open on it,
+and it does not move § 70.7's total in either direction.)_
+
 **DO-001 is the one row whose state question is now open**, and no record here answers it: its only
 remaining-engineering item is closed, it owes no human certification, and whether the documented
 limitation that remains permits a rise is a **state** decision belonging to
 [`task-matrix.md`](./task-matrix.md). Carried as **CC-64 (a)**.
+
+_(2026-09-16: **CC-64 (a) is CLOSED**, and the paragraph above keeps its words because it states the
+condition that closed it — the question belonged to the matrix, under the matrix's own rule.
+[`task-matrix.md`](./task-matrix.md) has since applied that rule, in its amendment of 2026-09-16
+headed "DO-001's state question, answered against this file's own rule": it quotes the
+`end-to-end verified` definition and rule 2, and records the outcome. **The outcome is that DO-001
+does NOT move** — the rule's conditions are not shown satisfied, on three grounds the amendment
+states: what closed is a **recording limb** and not the criterion's proof, the row still carries the
+live documented limitation **CC-62 (c)** on the gate's own observable surface, and **a state does not
+move because a citation was added** to runs that already existed. **The row is neither raised nor
+lowered**, the state totals are unchanged, and the question is answered rather than left standing.
+§ 74 records the closure.)_
 
 ### 73.5 Where it is recorded
 
@@ -8828,6 +8901,19 @@ limitation that remains permits a rise is a **state** decision belonging to
 | **CC-64**     | **the hosted executions at the protected heads were never indexed, though the runs existed** | **closed by measurement.** Read from the repository's own API and recorded in six documents; the recording limb closes on eight rows and no run was taken to close it |
 | **CC-64 (a)** | **DO-001 now has no remaining-engineering item and owes no human certification**             | **open.** A state move belongs to the matrix under its own rule, and no record in this slice makes one                                                                |
 | **CC-64 (b)** | **the coverage figures stay local although the hosted `web-quality` job ran**                | **open.** L-2 is refined rather than lifted, the `LOCAL` labelling is kept, and **CC-50 (a)** is the standing cause                                                   |
+
+_(2026-09-16, beside the two open rows in the table above, which keep their words and their
+dispositions. **CC-64 (a) is CLOSED** — [`task-matrix.md`](./task-matrix.md) applied its own state
+rule to DO-001 and recorded the outcome: **the row does not move**, the rule's conditions are not
+shown satisfied, and nothing is raised or lowered. The disposition cell's own terms are what closed
+it: it said a state move belonged to the matrix under its own rule, and the matrix has now made the
+determination. **CC-64 (b) stays OPEN, on corrected wording.** Its disposition cell names
+"**CC-50 (a)** is the standing cause", and that attribution is wrong at this head: **CC-50 (a) closed
+at the § 63.10 fill**, § 63.8 carries its dated closure note, and § 70.7 excludes it from the open set
+by name. **The standing cause is CC-64 (b)'s own content** — the record's coverage figures were
+re-measured **locally** after three feature roots entered `COVERAGE_INCLUDE`, and **no hosted run has
+been read for those figures**, although the artefact reader #389 added now exists. **The `LOCAL`
+labelling is kept and L-2 is not lifted**, exactly as the cell says. § 74 records both.)_
 
 ### 73.7 What this slice did NOT do
 
@@ -8870,3 +8956,195 @@ script and no manifest.
 `node scripts/ci/check-phase-ownership.mjs --resolve-context`, which reported `CHECK` and
 `ownership profile 'p1-31-frontend'` for the branch name; the gate proper then ran against
 `origin/develop` and exited 0.
+
+---
+
+## 74. The closing-record reconciliation — contradictions resolved by annotation (CC-65)
+
+**Slice:** `feature/p1-31-closure-reconciliation`, ownership profile `p1-31-frontend` — resolved by
+`node scripts/ci/check-phase-ownership.mjs --resolve-context` **before** the branch was created, which
+reported `CHECK … -> ownership profile 'p1-31-frontend'`. **Baseline:** protected `develop`
+`55131e4481b779cd2504c7eae1423fbe3377963c`, the merge of pull request #402.
+
+**Purpose.** The closing records had accumulated statements that **contradicted each other at one
+head**, and figures that were **true when written and false now**. None of them was a defect in the
+product; every one of them was a defect in the account. This section records one batched
+reconciliation of ten of them. **Every correction is made by annotation**: the original keeps its
+words, and a dated note beside it carries the state. **Nothing here re-adjudicates a finding, moves a
+task-matrix row, lowers a coverage floor, weakens an assertion, widens a permission, or converts a
+historical measurement into a current approval.** **No verdict, Pass, promotion, certification or
+clearance is recorded, and nothing is signed for anybody.**
+
+### 74.1 Identifier allocation
+
+| identifier    | meaning                                                                    | state                                                                  |
+| ------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| section 74    | this reconciliation                                                        | **the next free section, taken here** (§ 73.1 left none free below 74) |
+| **CC-65**     | the closing records contradicted each other and quoted superseded figures  | **closed by this section and the notes § 74.7 names**                  |
+| **CC-65 (a)** | the two Owner limbs that had disappeared from the records without decision | **open** — they are the Owner's, routed as **O-20** and **O-21**       |
+
+§ 48.1's rule holds: an identifier is a claim about the register at the moment it was raised, and it is
+never renumbered. **Nothing here renumbers anything.** As this slice leaves the file **the register
+holds sections 1 … 74 with CC-01 … CC-65**, and the phase directory count is **unchanged at 46** — this
+slice adds no file.
+
+### 74.2 CC-50 (a) was recorded closed and open at the same head — the determination
+
+**The contradiction.** At `55131e44`, **CC-50 (a) read CLOSED** at § 63.8's dated note, § 63.10, § 70.7
+(which excludes it by name and does not count it among the 41) and
+[`coverage-record.md`](./coverage-record.md) § 6, and **OPEN** at § 73.1, § 73.4, § 73.6 and
+[`closure-record.md`](./closure-record.md) § 2.12.
+
+**The determination: CC-50 (a) is CLOSED.** Established by reading what the row **requires** against
+what the fill **delivered**, and not by preferring one citation to another. Its whole content, at
+§ 60.5, is that the per-file web coverage summary **reached no reader**, so H-2 and H-3 could be filled
+from no hosted artefact; its own **stated remedy** is to add
+`apps/web/coverage/web/coverage-summary.json` and `coverage-gate-web.json` to the
+`evidence-web-quality` upload list. That remedy **landed** with #389 (§ 63.2, § 63.4), hosted run
+`34778434228` **carried both files**, and § 63.10 **filled H-2 and H-3 from it** under the § 63.6 rule —
+141 per-file entries, the four roots partitioned with no key outside them. **The row's content is
+exhausted**, which is what closing an identifier means here.
+
+**What the three § 73 passages actually describe is a later and different fact**, and calling it
+"CC-50 (a) restated" misattributes it: after #389 **the reader exists**. What is true at this head is
+that the record's coverage figures were re-measured **locally** once three feature roots entered
+`COVERAGE_INCLUDE`, and **no hosted run has been read for those figures**. That is **CC-64 (b)** on its
+own content, and it **stays open** on it. **So § 70.7's total does not move on this determination, and
+CC-64 (b) is not weakened by it** — the `LOCAL` labelling stands, **L-2 is not lifted**, and a hosted
+gate execution still does not make a locally measured figure a hosted measurement.
+
+**Consequently** the three § 73 citations carry dated corrections (§ 73.4, § 73.6, and the § 73.1
+allocation table), and so do the two later sites that repeat the attribution —
+[`closure-record.md`](./closure-record.md) § 2.12 and [`task-matrix.md`](./task-matrix.md)'s closing
+paragraph. **The § 63 sites needed no correction**: they were right.
+
+### 74.3 The open-disposition set, re-derived at this head
+
+**Derived by § 70.7's own counting rule**, quoted there and applied unchanged: a state cell counts as
+open unless that cell, or a dated note beside it, records a closure. **At `55131e44` the set is 47
+open.** 45 as #401 left the register, **plus CC-64 (a) and CC-64 (b)**, the two open sub-rows § 73
+raised. **CC-64 itself is raised and closed by measurement in the same section** and never joins the
+set. No other identifier was raised between `137324770f` and this head, and **no open cell gained a
+closure note there**. **CC-59 (b)** and **CC-62 (b)** stay open: reading a check-run list is neither
+the gate run the first turns on nor the disposable-database run the second turns on. **Four still state
+no usable disposition** — CC-25, CC-26, CC-40, CC-48. **As this slice leaves the register the figure is
+still 47**: **CC-64 (a) closes** (§ 74.4) and **CC-65 (a)** is raised open. 47 − 1 + 1 = **47**.
+
+**Why it is re-derived at all.** **O-3** asks the Owner to accept or refuse **exactly this set**, and
+the packet's figure was two merges old with no record re-deriving it. O-3's (e) now carries the same
+derivation. **Nothing here accepts or refuses anything.**
+
+### 74.4 DO-001's state question, answered by the file it belongs to — CC-64 (a) closes
+
+**CC-64 (a)** recorded that DO-001 has no remaining-engineering item, owes no human certification, and
+that whether the remaining documented limitation permits a rise is **a state decision belonging to the
+matrix under its own rule** — and that no record made one. **The matrix has now applied that rule**, in
+its amendment of 2026-09-16, quoting the `end-to-end verified` definition and rule 2.
+
+**The outcome: DO-001 does not move.** The rule's conditions are **not shown satisfied**, on three
+grounds: what closed is a **recording limb**, not the criterion's proof — the readings at
+[`acceptance-record.md`](./acceptance-record.md) § 11.11 (e) are "not a human certification, not a
+clearance and not a verdict" by that record's own words; the row still carries the live documented
+limitation **CC-62 (c)**, the job summary rendering one of two unrun registers, which sits on the
+gate's own observable surface; and **a state does not move because a citation was added** to runs that
+already existed and had only never been indexed. **The row is neither raised nor lowered**, the state
+totals stay `16 / 2 / 2 / 0 / 9 / 0`, total **29**, and **CC-64 (a) is closed** — by the rule having
+been applied and the answer recorded, not by anything moving.
+
+### 74.5 O-6's blocking mark, split against the Owner's own instruction
+
+**O-6 marked "Blocks the phase: YES" for authorising the operator acts "on every environment"**, which
+contradicts the Owner's instruction of **2026-09-13**, line 743: _"Do not invent deployments or make
+unspecified future environments a current blocker. Do not repeat acts already completed on the shared
+acceptance environment."_ **Exactly one environment exists — Local**
+(`docs/phase-1/phase-1-1/environment-matrix.md:11`); Development, Staging and Production each read
+"Planned — not provisioned". **Act 5 was performed on the one that exists** on 2026-09-15
+([`operator-runbook.md`](./operator-runbook.md) § 10).
+
+**The item is split in the packet, and neither limb is withdrawn, reduced or accepted.** Limb **(i)**,
+naming the runbook's owner, **stays a genuine Owner item** and reads **NO** on its own (f): bullet 3
+requires runbooks **synchronized**, the runbook is, and [`closure-record.md`](./closure-record.md) § 3
+states that bullet's residue without naming a missing runbook owner. Limb **(ii)** is recorded as
+**PROSPECTIVE — binding when an environment is provisioned — and therefore not a current blocker**, on
+line 743's authority. **CC-16 and CC-20 stay open as acts**, exactly as **CC-60 (e)** records: a runbook
+is not a run. **The packet's blocking count is restated from each item's own (f) line: 6 − 1 (O-6
+leaves) + 1 (O-20, in one limb) = 6** — a different six, with O-6 out and O-20 in.
+
+### 74.6 The external synchronisation set — assessed, and deliberately NOT performed
+
+**What it is.** DOC-001's surviving engineering item is the **Field 34 synchronisation set**
+(`canonical-plan.md:474-487`): four Master Documentation chapters, the change log and the API / error /
+event / test catalogs, and five Phase 1 registry targets including the `_acceptance/` evidence index.
+[`canonical-reference-map.md`](./canonical-reference-map.md)`:17-33` maps all ten to existing sources in
+the **parent workspace**, and `:52-58` corrects the earlier claim that they do not exist.
+
+**Verified here, before anything was decided.** All ten **exist**, and their byte lengths and SHA-256
+digests were recomputed at this head and are **identical, every one, to the LOCAL inventory of
+2026-09-14** at `orchestration/evidence/p1-31/astra-fe009-20260914/physical-canonical-reference-map.json`
+— so nothing in the set has drifted since that map was taken. **Those files are outside every git tree
+and are not committed by this slice; they are unchanged by it.**
+
+**The determination: the synchronisation owed is NOT mechanical. It requires content decisions, so it
+is not done here.** Four reasons, each read off the targets themselves:
+
+1. **Field 34 conditions the chapter updates on "where approved findings change their baselines".** The
+   predicate is an **approved** finding. No approval exists — gate condition 4 is empty and
+   Definition-of-Done bullet 2's formal-acceptance limb is unsatisfied — so **which findings change
+   which baselines is undecided**, and choosing would be deciding for the Owner.
+2. **The traceability matrix is an evidence ledger, not a status mirror.** Its coverage summary records
+   "Actual executed acceptance evidence | **0** — correct at planning time", and every row's evidence
+   cell reads "Allocated — not produced until execution/acceptance". Writing P1-31 rows into it means
+   **declaring acceptance evidence produced**, which `phase-1/_acceptance/README.md` forbids absent an
+   added evidence artefact (controlling assumption **P1-ASM-025**) — and **QA-005's packaging half is
+   unmet**, so no such artefact exists.
+3. **The open-decisions, risk and deliverable registers carry no P1-31 rows**, and the first states its
+   own rule that an open decision is never converted into an implementation default. Adding rows means
+   choosing statuses and resolution wording — content decisions throughout.
+4. **The change log's rows carry an "Approved by" column.** Appending one attributes an approval, which
+   this slice may not do.
+
+**So it is recorded, not performed. What it depends on**, named precisely: the Owner's verdict and the
+formal acceptance of findings (**O-1**, **O-3**); where phase evidence lands (**O-10**/D-16); QA-005's
+evidence-packaging half; and DOC-001's correction #4 (**O-12**). **No packet item is added for it**, and
+that is deliberate: [`task-matrix.md`](./task-matrix.md) classifies the synchronisation set as
+**remaining engineering** on DOC-001, and DOC-001's genuine-Owner items are already asked. Inventing a
+twenty-second Owner question here would ask the Owner for something the records say is engineering,
+gated on decisions already in front of them. **DOC-001 does not move**, and no content was invented,
+propagated or written into any of the ten targets.
+
+### 74.7 Where it is recorded
+
+| document                                                                           | what it gained                                                                                                                                                                             |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| this register                                                                      | **§ 74 / CC-65**; dated notes at § 63.9, § 70.7, § 73.1, § 73.4 (two) and § 73.6                                                                                                           |
+| [`coverage-record.md`](./coverage-record.md)                                       | the § 6 correction — the "every figure is now hosted" sentence retained and corrected                                                                                                      |
+| [`closure-record.md`](./closure-record.md)                                         | dated notes at § 1 (P-12), § 2.1 (FE-004's scope limb), § 2.3 (QA-002's P-12 limb), § 2.5 (DOC-002's acknowledgement limb), § 2.12 (two), § 4, § 5.1, § 6 and § 7.3; § 4's table re-headed |
+| [`task-matrix.md`](./task-matrix.md)                                               | the amendment answering DO-001's state question against the file's own rule; the CC-50 (a) attribution corrected                                                                           |
+| [`owner-decision-packet-2026-09-16.md`](./owner-decision-packet-2026-09-16.md)     | a dated head note; O-3's re-derived set; O-6 split; **O-20** and **O-21** added; § 6's count restated                                                                                      |
+| [`certification-and-clearance-packet.md`](./certification-and-clearance-packet.md) | a dated head note naming its measurement head and what changed since                                                                                                                       |
+
+### 74.8 Dispositions
+
+| id            | finding                                                                                                       | disposition                                                                                                                                                                                                                         | owner     | state    |
+| ------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | -------- |
+| **CC-65**     | **the closing records contradicted each other at one head, and several carried figures two merges stale**     | **closed by annotation.** Ten items reconciled; every original retained with its words and a dated note beside it. **CC-50 (a) determined CLOSED** and the three misattributing citations corrected; **CC-64 (a) closed** by § 74.4 | this lane | closed   |
+| **CC-65 (a)** | **two Owner limbs — FE-004's scope allocation and DOC-002's acknowledgement — vanished without adjudication** | **OPEN, and the Owner's.** Both are recorded where they disappeared and routed as **O-20** and **O-21**, unanswered. **Neither task row moves**, and neither limb is treated as closed by the fact that it stopped being asked      | the Owner | **open** |
+
+### 74.9 What this slice did NOT do
+
+- **It answered no Owner question.** O-3, O-6, O-20 and O-21 are left unanswered, and every
+  recommendation in either packet is labelled a recommendation.
+- **It moved no task-matrix row**, raised none and lowered none. The state totals are unchanged.
+- **It issued no certification and no clearance**, recorded no verdict, no Pass and no promotion, and
+  claimed no phase completion. Every decision field in the certification packet § 7 is still empty.
+- **It lowered no coverage floor, weakened no assertion and widened no permission.** No baseline, no
+  threshold and no allow-list was touched.
+- **It converted no historical measurement into a current approval**, and no local figure into a hosted
+  one.
+- **It manufactured no run.** No test tier, build, migration, database operation, browser tier or
+  deployment was run, and no hosted job was dispatched, re-run or invoked. **The changes are
+  documentation only** and touch no executable path.
+- **It wrote nothing outside the repository**, and nothing into the ten Field 34 targets or into
+  `phase-1/_acceptance/`.
+- **It closed no finding by re-wording it**, deleted no superseded passage and renumbered no
+  identifier.

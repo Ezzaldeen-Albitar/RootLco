@@ -7,6 +7,23 @@
 which is a delivered record, is **retained**, and is **not edited** except for one dated note pointing
 here.
 
+_(2026-09-16, head note — **this packet is measured two merges behind the current head, and every
+figure in it reads as a figure of the head named above.** It was measured at protected `develop`
+`849a8e9a`; the current protected head is
+`55131e4481b779cd2504c7eae1423fbe3377963c`, reached by pull request **#401** (`137324770f`) and then
+pull request **#402** (`55131e44`), and **#402 changed six of the records this packet cites**.
+**Nothing below is re-measured at the new head by this note**, and no figure in it is restated.
+**What changed since `849a8e9a` that bears on these items:** change control **§ 73 / CC-64** was
+raised, recording the hosted check runs at the protected heads **from runs that already existed** —
+no job was dispatched or re-run — with **CC-64 (a)** and **CC-64 (b)** open at that point;
+limitation **L-1** of the certification packet is **corrected** and **L-2** is **refined**, both
+retaining their original words; and the recording limb closed on eight task rows **without one of
+them changing state**. **CC-64 (a) is closed** by the reconciliation at change control § 74, which
+applies the task matrix's own rule to DO-001 and moves no row. **CC-64 (b) stays open.** The one
+item whose stated figure moves with all of this is **O-3**, and its (e) carries its own dated note
+below. **No item is answered, withdrawn or added by this note**; the two items the same
+reconciliation adds are **O-20** and **O-21**, at the end of § 5.)_
+
 **Nothing in this document is a decision, a verdict, an approval, a certification or a clearance**,
 and nothing in it asserts that any gate ran, that any environment exists, or that any approval was
 granted. It is the list of acts only the Owner can supply, after all authorized engineering work.
@@ -152,6 +169,30 @@ exclusion, so the set this item asks about can be checked row by row rather than
 recorded measurement closes each one while its own cell still reads open; **this item does not ask the
 Owner to accept either as open.**
 
+_(2026-09-16, re-derived so the Owner answers about the set that exists — the paragraph above keeps
+its words and its figures were true of `849a8e9a` and of the register as #401 left it. **The set has
+moved since, and no record re-derived it until now.** Re-derived at the current protected head
+`55131e4481b779cd2504c7eae1423fbe3377963c` **by § 70.7's own counting rule**, quoted:
+"**a state cell counts as open unless that cell, or a dated note beside it, records a closure**".
+**The new total is 47 open**, and the derivation is: **45** as pull request #401 left the register
+(§ 70.7's own figure), **plus the two open sub-rows raised by § 73** in pull request #402.
+**Every identifier added since the 45, named:** **CC-64** — the hosted executions recorded from runs
+that already existed — which is **raised and closed by measurement in the same section** and
+therefore never joins the open set; **CC-64 (a)**, the state question DO-001 raised, **open** at
+§ 73; and **CC-64 (b)**, the coverage figures staying local, **open**. 45 + 2 = **47**. **No other
+identifier was raised and no open cell gained a closure note between `137324770f` and this head** —
+§ 73 records no closure but its own, and it states that it moves no task-matrix row. **The four that
+state no usable disposition are unchanged at 4** — CC-25, CC-26, CC-40 and CC-48. **As the
+reconciliation recorded at change control § 74 leaves the register the figure is still 47**:
+**CC-64 (a) closes** there, on the task matrix applying its own state rule to DO-001 and recording
+that the row does not move, and **CC-65 (a) is raised open** — the two unadjudicated limbs now routed
+to the Owner as **O-20** and **O-21**. 47 − 1 + 1 = **47**. **CC-50 (a) is not in this set and is not
+added to it**: it closed at the § 63.10 fill, § 70.7 excludes it by name, and the three § 73 passages
+that called it open are corrected there as a misattribution — the open fact is CC-64 (b)'s own.
+**This note answers nothing.** It restates the set **O-3 asks about** so the acceptance or refusal is
+given against the set that exists at this head rather than against a figure two merges old, and the
+three carve-outs recommended in (d) are unchanged by it.)_
+
 **(f)** Without it, bullet 2 cannot be evidenced by either limb and the rows travel to the next phase
 with no owner and no deadline. **Blocks the phase: YES** — Definition-of-Done bullet **2**, and through
 it gate condition **1**.
@@ -239,6 +280,43 @@ run**: **CC-16** and **CC-20** close on a run.
 **(f)** Without it, any environment brought up from the merged tree gets a partial entitlement set and
 an unvalidated constraint. **Blocks the phase: YES** — Definition-of-Done bullet **3**, which names
 runbooks explicitly.
+
+_(2026-09-16 — **this item is SPLIT, and the (a) and (f) lines above keep their words.** As written it
+put two different acts behind one blocking mark, and the blocking mark **contradicts the Owner's own
+instruction**. The instruction, byte-exact from Appendix A of the Owner's message of **2026-09-13**,
+preserved outside this repository at
+`orchestration/evidence/p1-31/closeout-drafts/queue2/owner-decisions-2026-09-13.md` **line 743**:_
+
+> _Do not invent deployments or make unspecified future environments a current blocker. Do not repeat
+> acts already completed on the shared acceptance environment._
+
+_**Limb (i) — the runbook's owner. A genuine Owner item, and it stays.** Naming the owner of the
+runbook that carries the operator acts is a role assignment, which no engineer, lane or operator may
+make. It is unchanged and unanswered. **Blocks the phase: NO.** Derived, not asserted:
+Definition-of-Done bullet **3** requires that runbooks be **synchronized**, and
+[`operator-runbook.md`](./operator-runbook.md) exists and is synchronized; § 3 of
+[`closure-record.md`](./closure-record.md) states that bullet's residue as `documentation/` and
+`_acceptance/` being absent, the operator acts unperformed beyond the one database, and one
+Master-Documentation row owed to the Owner — **it does not name a missing runbook owner**. An
+unassigned owner is not a synchronisation failure._
+
+_**Limb (ii) — authorising the acts "on every environment". PROSPECTIVE, and therefore NOT a current
+blocker**, on the authority of line 743 quoted above. **Exactly one environment exists — Local**
+(`docs/phase-1/phase-1-1/environment-matrix.md:11`, rows at `:17-20`); Development, Staging and
+Production each read "**Planned — not provisioned**", so the environments this limb quantifies over
+are unspecified future ones, which line 743 forbids making a current blocker. **Act 5 was performed on
+the one environment that exists** — the shared local acceptance database, on **2026-09-15 at
+15:57:54Z**, one row inserted, platform document categories 7 to 8, the digest taken afterwards with
+the inserted row excluded equal to the one taken before (§ 10 of the runbook, dated note) — and line
+743 forbids asking for it again. **This limb is recorded as binding at the moment an environment is
+provisioned**, and it is **not withdrawn, not reduced and not accepted**: the obligation stands and
+becomes current with the environment. **Blocks the phase: NO, currently.**_
+
+_**What does not change.** **CC-16** and **CC-20** stay **open as acts** — a runbook is not a run, and
+each closes on a run, exactly as § 70.8's **CC-60 (e)** records. Nothing here performs an act,
+authorises one, invents a deployment, or claims an environment exists. **The recommendation in (d) is
+unchanged and is still a recommendation**, and **this item is still unanswered in both limbs.** The
+packet's blocking count is restated from each item's own (f) line in § 6._)
 
 ### O-7 — the work-order line-management code, declared by shipped operations and absent from the bundle _(earlier id: F-7)_
 
@@ -410,6 +488,82 @@ did not cover; and **O-19**'s register cell names the Owner as its owner and rea
 
 ---
 
+### Group D — raised by the reconciliation of 2026-09-16 (O-20, O-21)
+
+**Why these are added, and why they were not here before.** Each is a limb that an earlier
+subsection of [`closure-record.md`](./closure-record.md) named as the Owner's, and that then
+disappeared from the later re-derivations of the same rows **without any record adjudicating it**.
+Neither is a new question and neither is a new obligation: both are existing Owner acts that stopped
+being asked. They are numbered after **O-19** and **nothing above is renumbered**. **Both are
+unanswered here**, and the inclusion criterion of § 2 is applied to each without exception.
+
+### O-20 — whether checklist-template administration is inside FE-004 or a later phase
+
+**(a)** "Checklist-template administration is **inside FE-004** and is owed before P1-31 closes — or
+it is **a later phase's**, and FE-004 is complete without it."
+
+**(b)** It is an allocation of scope between phases, which only the Owner may make.
+[`closure-record.md`](./closure-record.md) § 2.1 named the Owner for exactly this, in the FE-004 row's
+own responsible-owner column: "Owner for whether template administration is inside FE-004 or a later
+phase", with the completion condition "plus that scope decision". **The canonical row does not settle
+it**: the delivery-checklist task does not automatically require a template administration screen, so
+the absence is a question about scope and not a defect anyone may close by building something.
+
+**(c)** Rule it inside FE-004; rule it a later phase's; or rule it inside FE-004 but deferred with the
+deferral recorded.
+
+**(d) Recommendation.** Engineering has **no recommendation to make on the allocation itself** — it is
+the Owner's reading of the chapter, and a recommendation here would be a reading dressed as advice.
+What engineering does state, as fact and not as advice: no screen exists, five payload mirrors stand
+PENDING for it, and the surface is covered by hole **H-1** of
+[`coverage-record.md`](./coverage-record.md), counted on FE-004. **This is a statement of position,
+not an answer.**
+
+**(e)** [`closure-record.md`](./closure-record.md) § 2.1, the FE-004 row (the naming, and the
+completion condition); § 2.10's FE-004 row, which classifies the remainder as **remaining engineering**
+and omits the scope limb; § 2.11's four genuine-Owner-decision rows, which do not include FE-004;
+[`coverage-record.md`](./coverage-record.md) **H-1**;
+[`security-and-qa-evidence.md`](./security-and-qa-evidence.md) § 4 for the five PENDING mirrors.
+
+**(f)** With "a later phase", FE-004 carries nothing further and Definition-of-Done bullet **1** is
+satisfiable for it on the evidence already recorded. With "inside FE-004", a screen is owed and bullet
+1 cannot be evidenced for FE-004 until it ships. **Blocks the phase: YES, in one limb** —
+Definition-of-Done bullet **1**, and through it gate condition **1**. In the other limb it blocks
+nothing.
+
+### O-21 — the approval owner's acknowledgement of the routed controlled record
+
+**(a)** "I acknowledge the controlled P1-31 record as routed to me — or I state what it must contain
+before I will."
+
+**(b)** DOC-002's canonical obligation ends in "**route the result to the named approval owner**", and
+[`closure-record.md`](./closure-record.md) § 2.5 splits the row into a routing half and an
+**acknowledgement** half, with the completion condition "the approval owner acknowledges the routed
+record". **Acknowledgement is an act only the approval owner can perform.** The routing has been
+performed; **no reply, acknowledgement or approval is recorded anywhere, and none is claimed.**
+
+**(c)** Acknowledge the record as routed; acknowledge with named conditions; or state what is missing
+before acknowledging.
+
+**(d) Recommendation.** Acknowledge **receipt** of the record as it now stands, separately from any
+verdict on the phase — receipt and verdict are different acts, and **O-1** is where the verdict lives.
+**A recommendation, not an answer**, and acknowledging receipt would neither accept a limitation nor
+approve anything.
+
+**(e)** [`closure-record.md`](./closure-record.md) § 2.5 (the split and the completion condition) and
+§ 2.10's DOC-002 row (which names only the routing half);
+[`owner-decision-packet-2026-09-13.md`](./owner-decision-packet-2026-09-13.md), the routed record; the
+register sections through § 74 and [`acceptance-record.md`](./acceptance-record.md) § 11, which are
+what "as it now stands" refers to.
+
+**(f)** Until it is answered, DOC-002's acknowledgement half stays open and the row keeps
+`merged (read-only/partial)`. **Blocks the phase: NO.** Derived: no gate condition names an
+acknowledgement, and DOC-002's other completion condition — that developer guidance exists — is
+engineering work that is owed independently, so the Owner's act is not the sole remaining condition.
+Touches Definition-of-Done bullet **3**.
+
+---
+
 ## 6. The count, derived
 
 | group                                            | items  |
@@ -424,6 +578,47 @@ O-3 (bullet 2, and through it condition 1), O-4 (bullet 1 and condition 1), O-6 
 one limb (bullet 1). The 2026-09-13 packet counted **eight** over twenty-six items; the difference is
 derived and not asserted: **its two appointment items are one question here** (O-2), and **its FE-009
 item is closed by engineering** (§ 7).
+
+_(2026-09-16, restated after the reconciliation of the same date — **the table and the paragraph above
+keep their words and were correct for the nineteen items as they stood.** Two things moved: **O-6 is
+split** into a runbook-owner limb and an environment-authorisation limb, and **two items are added**,
+**O-20** and **O-21**, at the end of § 5. **Nothing is renumbered.**_
+
+| group                                                       | items  |
+| ----------------------------------------------------------- | ------ |
+| A — the gate's own acts (O-1 … O-4)                         | 4      |
+| B — scope and authorisation acts (O-5 … O-12)               | 8      |
+| C — ratifications open to override (O-13 … O-19)            | 7      |
+| D — raised by the reconciliation of 2026-09-16 (O-20, O-21) | 2      |
+| **Total**                                                   | **21** |
+
+_**Blocking, recounted from each item's own (f) line after the split: 6** — and the arithmetic is
+shown so it can be checked rather than believed._
+
+_**Start from the six above:** O-1 (condition 4), O-2 (conditions 2 and 3), O-3 (bullet 2, and through
+it condition 1), O-4 (bullet 1 and condition 1), O-6 (bullet 3), O-10 in one limb (bullet 1)._
+
+_**Subtract O-6, which now contributes nothing — both of its limbs read NO on their own (f) lines.**
+Limb (i), naming the runbook's owner: Definition-of-Done bullet **3** requires runbooks to be
+**synchronized**, the runbook exists and is synchronized, and § 3 of
+[`closure-record.md`](./closure-record.md) states that bullet's residue without naming a missing
+runbook owner — an unassigned owner is not a synchronisation failure. Limb (ii), authorising the acts
+"on every environment": **PROSPECTIVE**, binding at the moment an environment is provisioned, and **not
+a current blocker** on the authority of the Owner's instruction of 2026-09-13 at line 743 — exactly one
+environment exists, the other three read "Planned — not provisioned", and act 5 was performed on the
+one that exists on 2026-09-15. **Neither limb is withdrawn, reduced or accepted**; both remain
+unanswered Owner items. **6 − 1 = 5.**_
+
+_**Add the two new items, counted from their own (f) lines.** **O-20** — whether checklist-template
+administration is inside FE-004 or a later phase — **YES, in one limb**: if it is inside FE-004, a
+screen is owed and Definition-of-Done bullet **1** cannot be evidenced for that row; if it is a later
+phase's, it blocks nothing. **O-21** — the approval owner's acknowledgement of the routed record —
+**NO**: no gate condition names an acknowledgement, and DOC-002's other completion condition is
+engineering work owed independently. **5 + 1 = 6.**_
+
+_**So the count is 6 again, but it is a different six:** O-1, O-2, O-3, O-4, O-10 in one limb, and
+**O-20** in one limb. **O-6 has left it.** The comparison with the 2026-09-13 packet's eight, in the
+paragraph above, is unchanged and is not re-derived here._)
 
 **No item in this packet asks the Owner to accept an unfinished task, and none asks for acceptance of
 the limitations as a set.** The limitations are carried, each with its own disposition, at

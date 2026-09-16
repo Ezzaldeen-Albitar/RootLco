@@ -11,6 +11,23 @@
 [`audit-class-review.md`](./audit-class-review.md) (SEC-004's declaration review),
 [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) (the dispositions)
 
+_(2026-09-16, head note — **this packet is measured two merges behind the current head, and every
+figure in it reads as a figure of the head named above.** It was measured at protected `develop`
+`849a8e9a`; the current protected head is
+`55131e4481b779cd2504c7eae1423fbe3377963c`, reached by pull request **#401** (`137324770f`) and then
+pull request **#402** (`55131e44`). **Nothing below is re-measured by this note**, and no figure in
+it is restated at the new head. **What changed since `849a8e9a` that bears on these items:**
+limitation **L-1** is **corrected** and limitation **L-2** is **refined** in § 9 — both by #402, both
+retaining their original words; the dated note under the § 5 table records that every QA item's
+"execution at a protected head, recorded" limb is closed by
+[`acceptance-record.md`](./acceptance-record.md) § 11.11 (e); and change control **§ 73 / CC-64** was
+raised, with **CC-64 (a)** and **CC-64 (b)** open at that point. **CC-64 (a) is closed** by the
+reconciliation recorded at change control § 74, which applies the task matrix's own state rule to
+DO-001 and moves no row. **CC-64 (b) stays open**, re-based on its own content: the coverage figures
+QA-C1 weighs are **LOCAL measurements**, and the hosted `web-quality` job having run and concluded
+`success` does not make them hosted ones. **No determination in this packet is issued, altered or
+implied by this note, and § 7 stays empty.**)_
+
 **THIS DOCUMENT PREPARES CERTIFICATIONS. IT ISSUES NONE.** Every decision field below is empty on
 purpose. No certification, no clearance, no waiver, no approval and no phase verdict is recorded,
 implied or inferred anywhere in it, and none may be supplied by any session, agent, pull request or
