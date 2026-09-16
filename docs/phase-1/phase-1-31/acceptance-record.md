@@ -2087,6 +2087,19 @@ beside the two locale projects. **It records measurements. It is not an Owner ve
 Pass, not a promotion and not a human certification, and it does not say the phase is complete**
 (§ 10.14).
 
+_(2026-09-16: **this section is superseded as the run of record by § 11**, the fourth attempt, run
+`mu3ch41f`, taken at protected `develop` `849a8e9a` after pull requests #399 and #400 merged. Every
+figure below was true of run `mu2ihptd` when it was written and is left exactly as written; the
+section is retained as the record of the third attempt. **Two qualifications belong on it.** First,
+its journey instrument `a9d4ca0e…` read a record version from a place the published contract does
+not carry it and supplied guessed version fallbacks at many call sites, so the quality-control
+finalisation of § 10.4 succeeded on a guessed value the server happened to accept and the
+quality-control detail steps passed while reading nothing; no quality-control checks are configured
+at platform or tenant level, so none were exercised. That is a defect of the instrument, not of the
+product, and § 11.2 records it and its correction. Second, § 10.7's figure of **78 executed** is the
+figure of that run's committed case set; the set has since grown by two receiver cases per project
+and § 11.6 derives **84** for attempt 4. Neither correction changes what § 10 measured.)_
+
 **It supersedes nothing above it.** §§ 2–6 remain the record of `mtz2geo1`, § 7.1 of `mtz5ppq8`,
 § 8 of `mtzmvemj`, § 9.1 of `mu0diepc` and § 9.2 of `mu0g1b1a`. Those runs stand for their own
 recorded scope and none of them was repeated to produce this one. The two earlier attempts of this
@@ -2484,3 +2497,439 @@ paragraph):
 
 - **No row of [`task-matrix.md`](./task-matrix.md) moves in this section.** A state change belongs
   to the matrix, under its own rule.
+
+## 11. The closing acceptance run, attempt 4, 2026-09-16 (run `mu3ch41f`)
+
+**What this section is.** The fourth and final attempt of the closing acceptance run, taken against
+protected `develop` after the backend closure hardening and the frontend closure completion merged,
+performed by one invocation of the same runner script, and recorded here as **the run of record of
+the closing run**. § 10 is retained as the record of attempt 3 and is superseded as the run of record
+by this section. **It records measurements. It is not an Owner verdict, not a phase Pass, not a
+promotion and not a human certification, and it does not say the phase is complete** (§ 11.13).
+
+**It supersedes nothing above it except the run-of-record designation.** §§ 2–6 remain the record of
+`mtz2geo1`, § 7.1 of `mtz5ppq8`, § 8 of `mtzmvemj`, § 9.1 of `mu0diepc`, § 9.2 of `mu0g1b1a` and § 10
+of `mu2ihptd`. None of them was repeated to produce this one.
+
+Evidence directory, outside every git working tree, nothing of it committed:
+
+- `orchestration\evidence\p1-31\acceptance-20260916-0008\` — run `mu3ch41f`
+- `orchestration\evidence\p1-31\acceptance-20260916-0008-monitoring-rehearsal\` — the DO-002 rehearsal
+
+Every figure below is read from those two directories or from the repository at the head under test.
+A file this section names without a directory is in the first of them.
+
+### 11.1 The head under test, and the proof it was that head
+
+| fact                     | value                                                                                                                                                                                                   |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| protected `develop`      | `849a8e9a7d8960e784456d5d886d5976350f0b24`, tree `b8390f335820e8e10a1f9f1db2c679e3f722c7b4`                                                                                                             |
+| its merge                | PR #400, `feature/p1-31-frontend-closure-completion`; first parent `c7298c096cb7ea0b6c3d70f0d1f927ab08ec5d20`, second parent `bb9802fdfffa625810d30861329075d62a432c4a`; committed 2026-09-15T23:32:04Z |
+| the merge before it      | `c7298c09`, PR #399, `remediation/p1-31-backend-closure-hardening`; first parent `c1a2f9fc`, second parent `69fb04d1015a56f9dfac9cd2d3a35d8b162ce61a`, tree `df54cbb6`; committed 2026-09-15T15:24:14Z  |
+| the two merges before it | `c1a2f9fc` (PR #398) and `9729b2b5` (PR #397), recorded in § 10.1                                                                                                                                       |
+| `main`                   | `1262de74560e57a2874596c210a49fda10a3795b`, unchanged; P1-31 is not promoted                                                                                                                            |
+| checkout                 | `wt-p12`; the runner's identity step read `HEAD` `849a8e9a…`, matching its pin, and a clean tracked tree (`runner.log`)                                                                                 |
+| run                      | `mu3ch41f`; organisations `p31_journey_a_mu3ch41f` and `p31_journey_b_mu3ch41f` (`summary.json`)                                                                                                        |
+| window                   | the runner's first step began 2026-09-16T00:08:49.644Z and its last ended 00:18:24.288Z; the runner recorded finishing at 00:18:24.397Z (`run-steps.tsv`, `runner.log`)                                 |
+
+**The hosted checks of this head are NOT recorded here, and no artefact carries them.** § 10.1 could
+quote check-run lists because attempt 3's evidence directory captured them
+(`acceptance-20260915-0638\preconditions\check-runs-c1a2f9fc.json`, for the earlier head). **No
+equivalent capture exists for `849a8e9a`** in any evidence directory, and the environment that wrote
+this section has no authenticated GitHub client — `gh auth status` reports that it is not logged in
+to any host. So **no check-run name, identifier or conclusion is stated for this head**, and none is
+invented. § 11.11 records what does exist and how it is labelled.
+
+### 11.2 The instruments, and their provenance
+
+Every instrument lives outside this repository, in `orchestration/acceptance/`, and is unversioned.
+**Its identity is established only by the digests recorded below**, each of which the runner's
+identity step compared against its pin before anything else ran (`runner.log`).
+
+| instrument                                    | sha256                                                             | bytes  |
+| --------------------------------------------- | ------------------------------------------------------------------ | ------ |
+| journey `p1-31-journey.mjs`                   | `66949016d5bad0f2e56e4839a09c6888606ab2531335cc1d65ba335152359fc8` | 229236 |
+| export companion `p1-31-export-companion.mjs` | `09d75d886def13ed193710c4120e2f92e91e997163b2f753d685ffec8ff56d7b` | 108070 |
+| screens `p1-31-screens.mjs`                   | `d91f213afba9bf1cdf319421e447e6076043999e54e94c3304c8fd98667055cc` | 9235   |
+| runner `p1-31-closing-run.sh`                 | `75d6598864f527ee8d4d531534f3726332a3f49376f2177dd0abf7a4931c3ccd` | 57172  |
+| plan `closing-run-plan-20260914.md`           | `ce2132fb10aa07db704b3aaa273b60adae8b716a0c5c5eff528d1770e75e2abb` | 116013 |
+
+**The runner changed by exactly two lines since attempt 3.** The preserved attempt-3 copy is
+`p1-31-closing-run.sh.attempt3-4441a67b`; a line-by-line comparison against the runner this attempt
+used differs only at its journey pin and its head pin, and in nothing else. The companion and the
+screens script are the same files attempt 3 used, at the same digests (§ 10.2). The plan digest above
+is the plan after a dated attempt-4 addendum was added to it; **the plan governs procedure and no
+figure in this section comes from it**.
+
+**The journey instrument was corrected between attempt 3 and this run, and the correction matters.**
+Attempt 3 ran `a9d4ca0e…`, preserved as `p1-31-journey.mjs.attempt3-a9d4ca0e`. That instrument read a
+record version from a place the contract does not publish it and carried guessed version fallbacks at
+many call sites, so its quality-control finalisation supplied a guessed value that the server
+happened to accept, and its quality-control detail steps passed while reading nothing. **This is a
+defect of the instrument, not of the product**, and § 10.4's journey result is qualified by it
+(see the dated note at § 10). The corrected instrument reads the location the published contract
+names, requires a well-formed body, carries no guessed version anywhere — one deliberate
+stale-version negative is kept — and stops a section when a transition fails rather than carrying a
+stale version forward.
+
+### 11.3 How it was driven
+
+**One runner invocation**, which exited 0 with all 28 recorded steps exiting 0 (`run-steps.tsv`,
+`runner.log`). Times are 2026-09-16, UTC. The step sequence and the reason the browser tier is split
+around the companion are § 10.3's, unchanged.
+
+| #   | step                       | start         | end           | exit |
+| --- | -------------------------- | ------------- | ------------- | ---- |
+| 1   | `identity`                 | 00:08:49.644Z | 00:08:51.205Z | 0    |
+| 2   | `ports-free`               | 00:08:51.329Z | 00:08:51.800Z | 0    |
+| 3   | `launcher-lock-free`       | 00:08:51.913Z | 00:08:52.404Z | 0    |
+| 4   | `stack-start`              | 00:08:52.508Z | 00:08:52.781Z | 0    |
+| 5   | `stack-ready`              | 00:08:52.902Z | 00:10:24.411Z | 0    |
+| 6   | `stack-ownership`          | 00:10:24.495Z | 00:10:25.473Z | 0    |
+| 7   | `journey`                  | 00:10:25.575Z | 00:11:44.062Z | 0    |
+| 8   | `prepare-tier1`            | 00:11:44.165Z | 00:11:44.535Z | 0    |
+| 9   | `browser-tier1`            | 00:11:44.643Z | 00:15:09.532Z | 0    |
+| 10  | `account-kind-tier1`       | 00:15:09.646Z | 00:15:10.242Z | 0    |
+| 11  | `results-tier1`            | 00:15:10.360Z | 00:15:11.996Z | 0    |
+| 12  | `screens`                  | 00:15:12.150Z | 00:16:21.325Z | 0    |
+| 13  | `companion-a1`             | 00:16:21.433Z | 00:16:33.776Z | 0    |
+| 14  | `login-window-pause`       | 00:16:33.874Z | 00:17:39.066Z | 0    |
+| 15  | `export-handoff-present`   | 00:17:39.155Z | 00:17:39.351Z | 0    |
+| 16  | `prepare-tier2`            | 00:17:39.484Z | 00:17:39.880Z | 0    |
+| 17  | `browser-tier2`            | 00:17:39.994Z | 00:18:05.444Z | 0    |
+| 18  | `account-kind-tier2`       | 00:18:05.569Z | 00:18:06.117Z | 0    |
+| 19  | `results-tier2`            | 00:18:06.225Z | 00:18:07.599Z | 0    |
+| 20  | `monitoring-extract`       | 00:18:07.772Z | 00:18:08.874Z | 0    |
+| 21  | `monitoring-command`       | 00:18:08.989Z | 00:18:09.952Z | 0    |
+| 22  | `dev-stop`                 | 00:18:10.086Z | 00:18:16.012Z | 0    |
+| 23  | `serve-exit`               | 00:18:16.132Z | 00:18:16.299Z | 0    |
+| 24  | `credential-scan`          | 00:18:16.421Z | 00:18:16.972Z | 0    |
+| 25  | `remove-handoff-companion` | 00:18:17.099Z | 00:18:19.973Z | 0    |
+| 26  | `remove-handoff-journey`   | 00:18:20.095Z | 00:18:23.053Z | 0    |
+| 27  | `handoff-check`            | 00:18:23.179Z | 00:18:23.607Z | 0    |
+| 28  | `ports-after-stop`         | 00:18:23.736Z | 00:18:24.288Z | 0    |
+
+Step 23's `0` is again the runner's own recording and not the stack's exit: `runner.log` reads
+`acceptance:serve exited 1` beside it (§ 11.12 item 4).
+
+**The preconditions the runner proved for itself.** The environment scrub removed nothing
+(`environment-scrub.txt`, 0 variables). Nothing was listening on 3000, 3100 or 3210 before the stack
+started, and nothing after it stopped (`runner.log`). Every stack-ownership check read `ok` — the
+launcher lock alive at pid 29668, its checkout `C:\Users\Ezzaldeen\wt-p12`, its command the
+acceptance server, the launcher state written after the start step, mode `production`, and both tiers
+**spawned, not adopted** (`stack-ownership.txt`). Both browser tiers signed in as `org-administrator`
+from the journey handoff, each tier's account-kind file written after that tier started
+(`browser/account-kind.tier1.json`, `browser/account-kind.tier2.json`, `browser/tier-starts.txt`).
+For each tier the runner found no `trace.zip` to delete and none remained in the checkout or the
+evidence.
+
+### 11.4 The HTTP journey
+
+**740 steps, 740 ok, 0 not ok, 0 findings.** The harness's own summary field `verdict` reads `PASS`;
+that is an output of the instrument and not a verdict of this record. `steps.json` is numbered 1 to
+740 without a gap. Started 2026-09-16T00:10:32.499Z, finished 00:11:43.956Z (`summary.json`). Report
+period `2026-09-15` to `2026-09-17`, time zone `Asia/Amman`. The harness recorded five notes, among
+them that the opened quality-control record had no unanswered mandatory check, so no per-check result
+was recorded and the finalisation is what the release gate reads.
+
+**One pacing row.** Step 697 records that the harness paced itself before a quality-control record
+read for the tablet receiver-success fixture: its own label reads `26 s` while the measurement beside
+it reads `waitedMs 25297`, against the read's rate policy of 30 in a 60-second window
+(`steps.md`, row 697). **The measured value is 25297 milliseconds**; the label is a rounded
+restatement of it and the two are recorded together rather than reconciled silently.
+
+**Fifteen browser fixtures were published**, listed by identifier in `summary.json`
+(`subjects.browserFixtureDeliveries`), and the journey's own closing steps assert for each fixture
+that every step which built it passed. The journey's step-by-step table is `steps.md`; it is not
+reproduced in this section.
+
+### 11.5 The export companion — separately labelled
+
+**A separate instrument with its own ledger**: 45 steps, 45 ok, 0 findings, its own summary field
+`verdict` reading `PASS`, on **attempt 1 of its bound of 3**. Started 00:16:27.041Z, finished
+00:16:33.687Z (`export-companion.a1.json`). Its steps are not part of the journey's 740 and are never
+added to them.
+
+**The principal.** Invited over HTTP by the journey's administrator with **no roles**, its credential
+set through the product's own recovery link read out of the local mailbox, and activated by the
+administrator (ledger steps 2–6).
+
+**Configurations.** `work_orders_by_status` already carried the journey's published configuration and
+was **reused**; the companion created and published workshop configurations for the other three report
+codes (steps 7–23). Those three publications are the writes § 10.3's tier split exists for.
+
+**The privileged fixture — limited, and an operator act.** A rehearsal inside a transaction that was
+rolled back, then the real pass; both exited 0 (steps 24–25). The fixture recorded
+(`export-companion.a1.json`, `setup.fixture`): the lease acquired; a privileged `postgres` connection
+to the local database on `127.0.0.1:54322`; the role `p31_mu3ch41f_export_fixture` carrying **nine
+permissions**; one grant at **branch** scope; `validTo` `2026-09-16T02:16:32.719Z`, exactly two hours
+after it was written; `approvalRef` `null`; the audit action `iam.grant.issued` with record
+`bad26ed5-e20c-4ad8-a915-75de751bddbf`; deferred constraints forced. **The fixture is limited to the
+single synthetic principal the companion created, one branch, that fixed permission set and the
+two-hour expiry.** It is not an HTTP delegation of the export permission, not a change to any role
+bundle and not a human approval. **It is a privileged LOCAL fixture on the shared acceptance
+database, and it is absent from every hosted job.** The Owner's instruction of **2026-09-15**, as
+already quoted at § 10.5:
+
+> Keep the privileged setup limited to the approved synthetic principal, branch, permission set and
+> expiry.
+
+**The four exports and the empty selection** (steps 26–36), over the journey's period `2026-09-15` to
+`2026-09-17` unless the row names another:
+
+| report code                                                            | status | media type | filename                                            | rows | bytes | content sha256 | correlated `rpt.report.exported` rows |
+| ---------------------------------------------------------------------- | ------ | ---------- | --------------------------------------------------- | ---- | ----- | -------------- | ------------------------------------- |
+| `work_orders_by_status`                                                | 200    | `text/csv` | `work_orders_by_status-2026-09-15-2026-09-17.csv`   | 17   | 11494 | `1c6954f2…`    | exactly 1                             |
+| `technician_labor_time`                                                | 200    | `text/csv` | `technician_labor_time-2026-09-15-2026-09-17.csv`   | 1    | 1368  | `8d7057d6…`    | exactly 1                             |
+| `inventory_movements`                                                  | 200    | `text/csv` | `inventory_movements-2026-09-15-2026-09-17.csv`     | 1    | 1478  | `0f347d21…`    | exactly 1                             |
+| `invoice_payment_summary`                                              | 200    | `text/csv` | `invoice_payment_summary-2026-09-15-2026-09-17.csv` | 2    | 2817  | `3333dadd…`    | exactly 1                             |
+| `work_orders_by_status`, empty selection, `2000-01-01` to `2000-01-02` | 200    | `text/csv` | `work_orders_by_status-2000-01-01-2000-01-02.csv`   | 0    | 3129  | `db0eb13e…`    | exactly 1                             |
+
+Each of the five carried its context record as its first record and recorded no fault. **The
+`work_orders_by_status` figure of 17 rows is this run's own**; attempt 3 recorded 11 for the same code
+over its own, different period, and the two are not the same measurement.
+
+**Audit correlation.** The companion read the audit log and found **five** `rpt.report.exported`
+events in its window, **exactly one for each export's correlation id**, with all five correlation
+identifiers enumerated in the ledger (steps 37–41).
+
+**The default administrator's refusal, retained.** The journey's administrator, who holds the
+tenant-administrator bundle and therefore not the export permission (CC-04), was refused the export of
+all four report codes with **403 `ERR-IAM-001`** (steps 42–45).
+
+### 11.6 The browser half, in two tiers
+
+**Tier 1 — before the companion, with the export handoff absent.** Report
+`browser/playwright-report.tier1.json`, sha256
+`4ad1f7e92dd365917a8434b994e8d05469c3511bbd6306b91f2611e3fe4dd2d8`, 951815 bytes; started
+00:11:50.597Z, 198.7 seconds. Its own totals are **82 expected, 372 skipped, 0 unexpected, 0 flaky**.
+
+| project                | collected | executed | skipped | failed | P1-31 cases executed |
+| ---------------------- | --------- | -------- | ------- | ------ | -------------------- |
+| sign-in setup          | 1         | 1        | 0       | 0      | —                    |
+| `authenticated-en`     | 180       | 27       | 153     | 0      | 27 of 28 collected   |
+| `authenticated-ar`     | 180       | 27       | 153     | 0      | 27 of 28 collected   |
+| `authenticated-tablet` | 93        | 27       | 66      | 0      | 27 of 28 collected   |
+
+The skips have **exactly two reasons**, read from the report's own annotations: **369** in
+specifications that predate this phase, every one annotated "requires the owner-acceptance account;
+signed in as org-administrator"; and **3** of the P1-31 export case, one per project, annotated with
+the absence of the export companion's handoff. **Those three skips are not a result** — neither a
+pass nor a failure — and the export case's result is its tier 2 execution.
+
+Per project, tier 1 executed `audit-log` 2, `delivery` **6**, `delivery-writes` 4, `overview` 3,
+`reports` 7 of 8 and `warranty` 5.
+
+**Tier 2 — after the companion, with both handoffs, the export case only.** Report
+`browser/playwright-report.tier2.json`, sha256
+`c1e0f0bb3cfdcbf2e0487a7428aa7fb15b74b2cfdba279ce35b99a732daf74f3`, 11542 bytes; started
+00:17:42.912Z, 21.9 seconds: **4 selected, 4 expected, 0 skipped, 0 unexpected** — the sign-in setup
+and the export case in each of the three authenticated projects, each on its first try. The selection
+guard found the export case in all three projects before the tier ran
+(`browser/tier2-selection.tier2.txt`), and no re-run was taken
+(`browser/test-results-tier2-rerun` is empty).
+
+**The P1-31 case total, derived from both reports together.** Each project collects **28** P1-31
+cases: `audit-log` 2, `delivery` 6, `delivery-writes` 4, `overview` 3, `reports` 8, `warranty` 5.
+Tier 1 executed 27 per project, 81 in all; tier 2 executed the one remaining case, the export case,
+once per project, 3 in all. **81 + 3 = 84 executed, 0 failed — 28 per authenticated project.** Each
+case is counted once, in the tier that executed it, and tier 1's three skipped entries are not
+counted. **Neither report alone carries 84**, and **a collection count is not an execution count**.
+
+**The two receiver cases, which are FE-003's browser proof.** `delivery-p1-31.spec.ts` grew from four
+cases to six. The two new ones —
+
+- `:478` — an identity document the server refuses leaves the receiver unverified
+- `:552` — an unverified receiver is verified through the screen with an identity document attached
+
+— **both executed and both passed in `authenticated-en`, `authenticated-ar` and
+`authenticated-tablet`: 6 executed, 6 passed, 0 skipped, 0 failed.** A defect found in review before
+these cases landed — a second confirmation after an evidence refusal verifying the receiver without
+the chosen document — was **fixed before the cases were committed**, and is recorded here as
+found-and-fixed rather than as a standing product fault.
+
+**The browser download** again exercised `work_orders_by_status` in all three projects. The other
+three report codes were proven by real HTTP export (§ 11.5), **not** by browser download.
+
+### 11.7 Screens
+
+**30 shot records, all `ok`; 28 PNG files** (`screens/screens.json`, `screens.log`) — 14 in English
+left-to-right and 14 in Arabic right-to-left. The two sign-in shots produce no image. The pass ran
+between tier 1 and the companion.
+
+### 11.8 Monitoring, and the DO-002 rehearsal
+
+**The run's own monitoring extraction.** The API log captured during the run was read by the
+repository's local monitoring command:
+
+| figure                                    | value                                                                       |
+| ----------------------------------------- | --------------------------------------------------------------------------- |
+| capture                                   | `monitoring/serve-snapshot.log`, 2661 lines, 886245 bytes                   |
+| lines beginning `[api]`                   | 2188                                                                        |
+| input                                     | `monitoring/api-application.jsonl`, 2180 records, 846679 bytes, `4c61339c…` |
+| read / ignored / routed / malformed / dup | 2180 / 2180 / 0 / 0 / 0, `complete: true` (`monitoring/monitor.log`)        |
+| alert queue                               | `monitoring/alerts-local.jsonl`, empty — the digest of the empty file       |
+
+The extraction counted **2188** `[api]` lines and wrote **2180** records: eight lines were not
+well-formed records and were dropped, and nothing that was a record was lost. No failure record at
+error or fatal severity existed in the capture, so **nothing was routed**. **What this measures is the
+command completing over this run's real log; it does not show an alert being routed.**
+
+**The DO-002 rehearsal, at the same head, which does show routing.** Evidence
+`acceptance-20260916-0008-monitoring-rehearsal\`, recorded 2026-09-16T00:29:26Z against checkout
+`wt-p12` at `849a8e9a` with a clean tracked tree before and after.
+
+- The committed unit suite for the alert router ran under vitest 4.1.11 and passed **8 of 8**, exit 0.
+- The monitoring command then ran over the captured record: exit 0, stderr empty, `inputBytes` 460,
+  **read 1, ignored 0, malformed 0, duplicate 0, routed 1**, `complete: true`.
+- Digests: captured input `848163c0…` (460 bytes, 1 line); in-memory alerts `5c1ab4ec…` (286 bytes,
+  1 alert); the written queue `0d041c14…` (222 bytes, 1 alert). The queue matches the in-memory alert
+  **field for field**.
+- The single alert carries six keys and no more: correlation id, environment `test`, error code
+  `ERR-SYS-001`, the operation, the two routes `technical-reviewer` and `security-reviewer`, and a
+  time.
+- **The injected canary is absent from both routing outputs.** It appears once in the captured input,
+  which is the injected fault before routing, and **zero times** in the in-memory alerts and zero
+  times in the written queue.
+
+**What the rehearsal is, and is not.** Its input is an **injected test fault** produced by the unit
+test through the real exception-capture boundary — not a production incident and not a business
+acceptance result. Routing is **local only**: no external delivery, no network transport, and no
+externally delivered alert is claimed. **Monitoring here is a local sanitized alert queue, and D-10
+is unresolved.** A reviewing judge re-executed the test and the command and reported reproducing the
+queue byte-identically; **that reproduction is reported in the review, not carried by any file in the
+rehearsal directory**, and it is cited on that basis.
+
+### 11.9 Credential hygiene, and the shared database
+
+- **The in-runner scan**, before the handoffs were removed: 3 handoff files read, 3 distinct
+  credential values searched for, **66 files scanned** with the handoffs excluded, **0 redactions**,
+  result complete (`credential-scan.txt`, `credential-scan.log` empty).
+- **Both instruments removed their handoffs**, and the check afterwards found **0 remaining**
+  (`remove-handoff.log`, `handoff-check.txt`). No trace file and no in-progress marker remains.
+
+The shared acceptance database, read-only: **`org.tenants` moved from 57 to 59** — this run's pair of
+organisations. **The runner does not record that figure.** It was derived from a live read-only query
+outside the runner and is stated here as derived, not as an artefact of the run. No other database
+figure is claimed for this run.
+
+### 11.10 Run history, and the rehearsals
+
+**Attempt 3, run `mu2ihptd`, is retained in § 10 and is superseded as the run of record.** Attempts 1
+and 2 are in § 10.11. Each attempt's cause was fixed before the next.
+
+Four labelled rehearsals of the receiver work preceded this run. **All four are history, not
+acceptance**, and no figure of theirs is quoted as a result of this phase:
+
+| rehearsal                          | what happened                                                                                                                                                                                                                                                                                    |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `receiver-rehearsal-20260915-1841` | stopped at stack readiness; nothing ran                                                                                                                                                                                                                                                          |
+| `receiver-rehearsal-20260915-1920` | the journey answered 700 steps with 2 failed — a rate-limited quality-control read and its re-read — while the fixture list still reported six of six published, and all six receiver browser cases timed out because the receiver search matched nothing. Both defects were diagnosed and fixed |
+| `receiver-rehearsal-20260915-2016` | the journey **blocked** at step 192 because the checklist fixture's quality-control record version was not available; the two steps before it answered 200 and were recorded ok with no version. This is the defect § 11.2 describes                                                             |
+| `receiver-rehearsal-20260915-2040` | 740 of 740 passed with one pacing row, fifteen fixtures published, and both receiver cases passing in all three projects                                                                                                                                                                         |
+
+**Two recording weaknesses in the rehearsal drivers, recorded rather than repaired.** Their "fixtures
+published" count read only non-empty identifiers and required exactly fifteen entries, so it never
+read the journey's own verdict — which is why the second rehearsal could report six of six beside two
+failed steps. Judges read the journey's own files instead. A session-storage file written by the
+browser tier remained in the runner checkout after a rehearsal; it is a product of the browser tier's
+sign-in state and is not part of any evidence directory.
+
+### 11.11 The evidence-recording gaps, from existing artefacts only
+
+This sub-section exists to close recording gaps **from artefacts that already exist**. Where no
+artefact exists, that is what is recorded. **No run is invented, and no proof is asserted merely
+because it has not yet been indexed.**
+
+**(a) The hosted executions of the merged P1-31 security and QA suites, and of the three P1-31 gates,
+at `849a8e9a` — NOT AVAILABLE, and not claimed.** No evidence directory holds a check-run capture for
+this head; the only such capture in the phase's evidence is attempt 3's, for `c1a2f9fc`. The recording
+environment has no authenticated GitHub client. **Therefore no check-run name, identifier or
+conclusion is recorded for this head.** The consequence is stated plainly: every row whose remaining
+item is "the suites' execution at a protected head recorded in an acceptance record section" **still
+has that item open**, and this section does not close it.
+
+**(b) What does exist, with its own label.** The seed act of 2026-09-15 records a post-merge figure
+for PR #399 in its own `act.json`, and that file **labels the figure itself**: "reported by the
+coordinator in the dispatch; not re-queried by the executor" (quoted from
+`orchestration/evidence/p1-31/reference-data-20260915/act.json`). It is cited here as **the
+coordinator's reading**, not as a read of the hosted run, and nothing is derived from it.
+
+**(c) The coverage record's measured figures, quoted with their own labels.**
+[`coverage-record.md`](./coverage-record.md) carries three dated notes of 2026-09-15, **each of which
+labels itself `LOCAL, pending the hosted web-quality run`**. Measured on the same command before and
+after the three feature roots entered the coverage instrument: **141 → 186 instrumented files**; after
+the phase-2 changes merged, 186 files with lines 3466/3887 (89.16%), statements 86.68%, functions
+91.19%, branches 80.87%; `features/delivery` 639/652 lines (98.01%, 25 files), `features/warranty`
+405/444 (91.22%), `features/reports` 367/383 (95.82%). **Every global floor still holds and no floor
+moved.** The record's holes **H-2**, **H-3** and **H-4** are closed on that branch by the three
+feature roots entering `COVERAGE_INCLUDE`, by four critical-module rules covering the ten route
+directories, and by a four-case suite that renders the work-order record route page. **H-1 remains
+open** and is counted on FE-004. **`signature-capture.ts` moved from 0/25 lines to 25/25** — the
+earlier figure was 0 because every suite mocked it, and a describe block now imports the real module
+past its mock. **Every one of these figures is local**, and the hosted web-quality measurement they
+are pending is itself part of gap (a).
+
+**(d) The index correction the carry list names — CC-58 (b).** The register records that the assurance
+evidence index read two constraint suites as isolation evidence they did not carry, and that **the
+code half was repaired**: both suites now carry a behavioural negative, so the index entry is **true
+at this head although it was not true when it was written**. The index document is not edited by this
+section, and the register's own disposition for CC-58 (b) is unchanged by it.
+
+### 11.12 Limitations carried with this run
+
+Each is carried as it stands. **This record turns none of them into a blocker and accepts none of
+them.** The Owner's instruction of **2026-09-15**, quoted partially at § 10.13 and repeated here with
+the same scope:
+
+> Do not automatically turn every limitation into a phase blocker, and do not automatically accept
+> it.
+
+1. **Every limitation § 10.13 lists still stands**, items 1 to 10, except where this section records
+   otherwise: the privileged-fixture proof absent from hosted execution and its hand-taken
+   falsifiability control; the five instruments outside the repository, unversioned and identified
+   only by digests; the P1-24 register's substring attribution; the job summary rendering one of two
+   unrun registers; the export audit recording selection and counts rather than bytes; monitoring
+   local only with D-10 unresolved; the browser download exercised for one report code; the
+   earlier-phase browser skips; and the instrument labelling minors.
+2. **No hosted job executes any P1-31 browser case.** Every P1-31 case — the original set and the two
+   new receiver cases — takes its registered skip in the hosted authenticated-browser job, because no
+   hosted job provisions a P1-31 journey handoff. The cases execute only in this runner against the
+   local acceptance stack. **This is never to be read as hosted proof.**
+3. **The hosted check runs of this head are not recorded** (§ 11.1, § 11.11 (a)).
+4. **`acceptance:serve exited 1` at shutdown**, inside a step the runner recorded as exiting 0.
+5. **A repeated "destination stream closed early" server message** appears across both browser tiers
+   with no case failing. It is unexplained and is recorded unexplained.
+6. **The monitoring extraction dropped 8 of 2188 captured lines** as not well-formed records, and the
+   run itself routed **0** alerts: routing is proven only by the rehearsal, and only from an injected
+   fault.
+7. **The rehearsal's before-and-after variable-state claims are operator testimony**, its recorded
+   command shows a relative output path while the artefact sits in the evidence directory, and its
+   directory creation is non-recursive so the parent must already exist — a practical note its own
+   record carries.
+8. **The plan's pre-edit digest cannot be re-checked**, and the other worktrees' pre-run preconditions
+   rest on operator testimony.
+9. **Attempt 3's journey carried guessed record-version values** (§ 11.2). Its quality-control
+   finalisation succeeded on a guess the server accepted and its quality-control detail steps read
+   nothing, so **no quality-control check answers were exercised by attempt 3**; no checks are
+   configured at platform or tenant level, so none existed to exercise.
+10. **A contract gap, recorded and not repaired here.** The quality-control record detail answers a
+    body carrying the record, its results and its unresolved mandatory count, and the published
+    contract declares that success body only as a bare object. This is an instance of the
+    generator-wide bare-object success schema already before the Owner, and it is recorded, not
+    dispositioned, by this section.
+11. **Tenants 57 → 59 is derived, not recorded** (§ 11.9).
+
+### 11.13 What this section does not claim
+
+- **No Owner verdict, no phase Pass, no promotion and no human certification**, and no claim that the
+  phase is complete. The `verdict` fields of the journey and the companion are instrument outputs.
+- **No hosted execution of anything in this run**, and no hosted check-run result for this head.
+- **No claim beyond the earlier runs' own scope.** §§ 2–10 stand for what they recorded.
+- **No collection figure as an execution figure.** The Owner's instruction of **2026-09-15**, as
+  already quoted at § 10.14:
+
+  > Do not equate a merged PR, collection count, index or browser smoke with full phase acceptance.
+
+- **No row of [`task-matrix.md`](./task-matrix.md) moves in this section.** A state change belongs to
+  the matrix, under its own rule.

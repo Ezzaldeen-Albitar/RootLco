@@ -558,6 +558,19 @@ accept that evidence.
 database only (§ 72.5 of the register); the shared local acceptance database has not received it.
 § 1's scope statement applies to it exactly as to the acts above.
 
+_(2026-09-16: **true when written, and false as of 2026-09-15.** This act was performed on the one
+shared local acceptance database on **2026-09-15 at 15:57:54Z** — the apply began 15:57:54.265Z and
+ended 15:57:54.933Z — by applying `supabase/seeds/05_shared_reference.sql` as it stands, at the blob
+the pull request #399 merge carries. Evidence, outside every git working tree:
+`orchestration/evidence/p1-31/reference-data-20260915/`. **Measured, before and after:** the seed
+file's three statements reported `INSERT 0 0`, `INSERT 0 0` and `INSERT 0 1`, so **exactly one row was
+inserted and nothing else changed**; platform document categories went from **7 to 8**; retention
+classes stayed at **5** with an identical digest; and the platform-category digest taken afterwards,
+with the inserted row excluded, **equals the one taken before**. The target held 141 applied
+migrations. **The act remains owed on every other environment**, and § 1's scope statement continues
+to apply to it exactly as to the acts above. This note records an operator act and issues no
+approval.)_
+
 ### Preconditions
 
 - **Independent of acts 1 to 4**, which it neither needs nor affects. It may be done in any order

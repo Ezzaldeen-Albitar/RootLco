@@ -94,6 +94,13 @@ _(2026-09-15: §§ 2.1–2.7 are the account at `fb65b049`, and they are superse
 `missing` column becomes a list of remaining items, each classified as exactly one of five categories
 instead of the four kinds above, and the verdict is still counted once.)_
 
+_(2026-09-16: §§ 2.8 and 2.9 are in turn superseded, not replaced, by **§ 2.10 and § 2.11**, which
+re-derive all twenty-nine rows at protected `develop` `849a8e9a` — the pull request #400 merge —
+against the closing acceptance run's **fourth** attempt, run `mu3ch41f`,
+[`acceptance-record.md`](./acceptance-record.md) § 11. **No row's state changed** between the two
+heads; the engineering that merged in #399 and #400 changed what rows owe, not what they have
+reached. The five categories are the same five.)_
+
 ### 2.1 Field 14 — Frontend (16 tasks)
 
 **Chapter obligation, identical for all sixteen** ([`canonical-plan.md:220-221`](./canonical-plan.md)):
@@ -399,6 +406,133 @@ stays empty.
 instruction of 2026-09-15:
 
 > Do not equate a merged PR, collection count, index or browser smoke with full phase acceptance.
+
+### 2.10 The twenty-nine tasks re-derived at `849a8e9a` (2026-09-16)
+
+**Measured at protected `develop` `849a8e9a7d8960e784456d5d886d5976350f0b24`**, tree `b8390f33`, the
+merge of PR #400 of 2026-09-15T23:32:04Z, whose first parent is `c7298c09` (PR #399) and whose second
+parent is `bb9802fd`. **§§ 2.8 and 2.9 are retained and are superseded by this subsection and § 2.11**,
+exactly as §§ 2.1–2.7 are retained and superseded by them. Every figure in § 2.8 was true of
+`c1a2f9fc` when it was written.
+
+**What counts as each row's own proof, at this head.** A Frontend row's proof is the closing
+acceptance run **attempt 4**, run `mu3ch41f`, of [`acceptance-record.md`](./acceptance-record.md)
+**§ 11**, taken at this protected head: its HTTP steps, and its browser cases each passing in
+`authenticated-en`, `authenticated-ar` and `authenticated-tablet`. **A security, QA, DevOps or
+documentation row is judged by the proof its own criterion calls for, and a browser case is not that
+proof.** The two Owner quotations § 2.8 records for this rule are not repeated here; they govern this
+subsection unchanged.
+
+**The five categories are § 2.8's, unchanged**: **none** beyond the Owner's verdict; **remaining
+engineering**; **documented limitation**; **human certification**; **genuine Owner decision**. A row
+may carry items in several; `none` is exclusive. **Human certification is owed by an assigned
+reviewer, and none is issued** — the QA and security reviewer roles are already held under
+[`solo-developer-review-policy.md`](../../governance/solo-developer-review-policy.md), this subsection
+appoints nobody, and **no certification and no clearance is recorded as issued anywhere in it**.
+
+**The state column is [`task-matrix.md`](./task-matrix.md)'s own value**, as that file's amendment of
+2026-09-16 derives it at this head; it is quoted, not derived here.
+
+**No row's state changed between `c1a2f9fc` and `849a8e9a`.** The engineering that merged in #399 and
+#400 changed what rows still owe, not what they have reached. The table records the change in
+obligation.
+
+**Field 14 — Frontend.**
+
+| task       | state               | what merged or was proven since `c1a2f9fc`                                                                                                                                                                                               | remaining, each item classified                                                                               |
+| ---------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **FE-001** | end-to-end verified | re-proven at this head: § 11.6, the two readiness cases, three projects                                                                                                                                                                  | **none**                                                                                                      |
+| **FE-002** | end-to-end verified | re-proven: § 11.6, the handover-record case, three projects                                                                                                                                                                              | **none**                                                                                                      |
+| **FE-003** | end-to-end verified | the optional identity-evidence category is in the repository seed and applied to the one shared acceptance database; the capture merged with #400; the server validates it; **two committed browser cases passed in all three projects** | **none** — the row's former remaining-engineering item is closed                                              |
+| **FE-004** | end-to-end verified | nothing                                                                                                                                                                                                                                  | **remaining engineering** — the checklist-template administration screen and its adapters (coverage hole H-1) |
+| **FE-005** | end-to-end verified | re-proven: § 11.6, three projects                                                                                                                                                                                                        | **none**                                                                                                      |
+| **FE-006** | end-to-end verified | re-proven: § 11.6, three projects                                                                                                                                                                                                        | **none**                                                                                                      |
+| **FE-007** | end-to-end verified | re-proven: § 11.6, the printable-copy case, three projects                                                                                                                                                                               | **none**                                                                                                      |
+| **FE-008** | end-to-end verified | re-proven: § 11.6, the warranty cases, three projects                                                                                                                                                                                    | **none**                                                                                                      |
+| **FE-009** | end-to-end verified | re-proven: § 11.4, the transition-ledger read and its genesis-only assertion                                                                                                                                                             | **none**                                                                                                      |
+| **FE-010** | end-to-end verified | re-proven: § 11.4 and § 11.6, three projects                                                                                                                                                                                             | **none**                                                                                                      |
+| **FE-011** | end-to-end verified | re-proven: § 11.5 its export, § 11.6 the tier-2 download case, three projects                                                                                                                                                            | **none**                                                                                                      |
+| **FE-012** | end-to-end verified | its export again proven over real HTTP (§ 11.5)                                                                                                                                                                                          | **documented limitation** — the browser download ran for one report code only; carried, not accepted          |
+| **FE-013** | end-to-end verified | its export again proven over real HTTP                                                                                                                                                                                                   | **documented limitation** — as FE-012                                                                         |
+| **FE-014** | end-to-end verified | its export again proven over real HTTP                                                                                                                                                                                                   | **documented limitation** — as FE-012                                                                         |
+| **FE-015** | end-to-end verified | re-proven: § 11.6, the two audit-log cases, three projects                                                                                                                                                                               | **none**                                                                                                      |
+| **FE-016** | end-to-end verified | re-proven: § 11.4, the branch-fixed overview and its agreement assertion                                                                                                                                                                 | **none**                                                                                                      |
+
+**Field 15 — Security.** Every row keeps `phase-level incomplete`.
+
+| task        | what merged or was proven since `c1a2f9fc`                                                                                                                                            | remaining, each item classified                                                                                                                                                                                                                                                                                                                           |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **SEC-001** | the export declaration and the run's refusals are re-exercised (§ 11.5)                                                                                                               | **remaining engineering** — the minimal-actor probe limitation, and the set-wide suites' execution at a protected head **recorded**, which § 11.11 (a) shows is not available at this head. **human certification** — the clearance, not issued                                                                                                           |
+| **SEC-002** | **the server-side refused-download negative EXISTS** (#399), and receiver identity evidence is captured and server-validated (#400), with two browser cases passing in three projects | **remaining engineering** — that suite's execution at a protected head recorded. **documented limitation** — the audit cannot identify the bytes disclosed; **branch scoping on download is proven for one case only**; a soft-deleted target stays reachable; runtime reachability covers three of nine link types. **human certification** — not issued |
+| **SEC-003** | the claim guard's fail-closed half is closed (#399)                                                                                                                                   | **remaining engineering** — the probes' execution at a protected head recorded. **human certification** — the clearance, with the two observations undispositioned by design before it, not issued                                                                                                                                                        |
+| **SEC-004** | the export audit is re-exercised: five exports, each with exactly one correlated event (§ 11.5)                                                                                       | **remaining engineering** — the emission suite's execution recorded. **documented limitation** — the export audit records selection and counts, not bytes. **human certification** — not issued                                                                                                                                                           |
+
+**Field 16 — QA.** Every row keeps `phase-level incomplete`.
+
+| task       | what merged or was proven since `c1a2f9fc`                                                                                                                                                                                 | remaining, each item classified                                                                                                                                                                                                                                                                                                                                                                 |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **QA-001** | **H-2, H-3 and H-4 closed in code** on the merged branch; `signature-capture.ts` moved 0/25 → 25/25 lines; 141 → 186 instrumented files — **every figure labelled LOCAL by its own record**                                | **remaining engineering** — the hosted web-quality measurement those figures are pending; H-1 is counted on FE-004. **human certification** — not issued                                                                                                                                                                                                                                        |
+| **QA-002** | **the two published not-found responses are corrected** (#399)                                                                                                                                                             | **remaining engineering** — the suites' execution recorded; and a **new contract gap**, the quality-control record detail publishing its success body as a bare object. **genuine Owner decision** — the bare-object success schemas. **human certification** — not issued                                                                                                                      |
+| **QA-003** | the index entry that read two constraint suites as isolation evidence is **true at this head**, its code half repaired                                                                                                     | **remaining engineering** — both layers' set-wide execution recorded. **human certification** — not issued                                                                                                                                                                                                                                                                                      |
+| **QA-004** | nothing                                                                                                                                                                                                                    | **remaining engineering** — the seven guarded operations with no consumer, each closing with the surface that consumes it; the suites' execution recorded. **human certification** — not issued                                                                                                                                                                                                 |
+| **QA-005** | **the run of record is attempt 4** — 740 HTTP steps, 0 not ok, 0 findings; 84 P1-31 browser cases executed, 0 failed; both tier reports retained — and **attempt 3's journey is qualified** by its guessed record versions | **remaining engineering** — the run's artefacts packaged as committed, digest-checked evidence. **genuine Owner decision** — where phase evidence lands. **documented limitation** — the instruments outside the repository, the hand-taken falsifiability control, the fixture proof run by no hosted job, the earlier-phase skips, the labelling minors. **human certification** — not issued |
+
+**Field 17 — DevOps.** Both rows keep `merged (write path)`.
+
+| task       | what merged or was proven since `c1a2f9fc`                                                                                                                                                    | remaining, each item classified                                                                                                                                                                                                                                                                                                                                              |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **DO-001** | **the rollback-criteria and operator-runbook limbs are recorded** for the three P1-31 gates, in [`operator-runbook.md`](./operator-runbook.md) § 11 (#400)                                    | **remaining engineering** — their execution at a protected head recorded, which § 11.11 (a) shows is unavailable here. **documented limitation** — the job summary renders one of two unrun registers                                                                                                                                                                        |
+| **DO-002** | **an alert was routed at this protected head and is recorded in an acceptance record section** (§ 11.8): unit suite 8 of 8, command exit 0, read 1, routed 1, canary absent from both outputs | **remaining engineering** — routing from a **qualifying failure record of a real run**; the run itself routed 0 and the rehearsal's fault is injected. **documented limitation** — a local sanitized queue, no external notification. **genuine Owner decision** — the event-consumption question, and the authorisation of the operator acts beyond the one shared database |
+
+**Field 18 — Documentation.** Both rows keep `merged (read-only/partial)`.
+
+| task        | what merged or was proven since `c1a2f9fc`                                                                                                  | remaining, each item classified                                                                                                                                                |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **DOC-001** | the export's contract artefacts and the two published not-found responses are on the tree                                                   | **remaining engineering** — the external synchronisation set. **documented limitation** — the register's substring attribution. **genuine Owner decision** — three named items |
+| **DOC-002** | the controlled record grew: both guidance documents, the monitoring runbook, register sections through **§ 72**, and acceptance record § 11 | **remaining engineering** — routing the record **as it now stands** to the named approval owner                                                                                |
+
+### 2.11 Totals, and the five categories, at `849a8e9a`
+
+| state                        | count  | rows                               |
+| ---------------------------- | ------ | ---------------------------------- |
+| `end-to-end verified`        | **16** | FE-001 … FE-016                    |
+| `merged (write path)`        | **2**  | DO-001, DO-002                     |
+| `merged (read-only/partial)` | **2**  | DOC-001, DOC-002                   |
+| `in open PR`                 | **0**  | —                                  |
+| `phase-level incomplete`     | **9**  | SEC-001 … SEC-004, QA-001 … QA-005 |
+| `not started`                | **0**  | —                                  |
+| **total**                    | **29** | —                                  |
+
+_(§ 2.9 counted the same 16 / 2 / 2 / 0 / 9 / 0 at `c1a2f9fc`, and § 2.6 counted 12 / 3 / 5 / 0 / 9 / 0
+at `fb65b049`. All were true when written. **No row rose and no row was lowered between `c1a2f9fc`
+and `849a8e9a`.**)_
+
+| category                        | count  | rows                                                                                                                               |
+| ------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| none beyond the Owner's verdict | **12** | FE-001, FE-002, **FE-003**, FE-005, FE-006, FE-007, FE-008, FE-009, FE-010, FE-011, FE-015, FE-016                                 |
+| remaining engineering           | **14** | FE-004, SEC-001 … SEC-004, QA-001 … QA-005, DO-001, DO-002, DOC-001, DOC-002                                                       |
+| documented limitation           | **9**  | FE-012, FE-013, FE-014; SEC-002, SEC-004; QA-005; DO-001; DO-002; DOC-001                                                          |
+| human certification             | **9**  | SEC-001 … SEC-004 (the security clearance); QA-001 … QA-005 (the QA certification) — owed by the assigned reviewer, **not issued** |
+| genuine Owner decision          | **4**  | QA-002, QA-005, DO-002, DOC-001                                                                                                    |
+
+**The arithmetic.** The four categories other than `none` overlap. Their union is **seventeen distinct
+rows** — the thirteen non-Frontend rows, and FE-004, FE-012, FE-013 and FE-014 — and 17 + 12 = **29**.
+_(§ 2.9 counted 11 / 15 / 9 / 9 / 4 over a union of eighteen. **The single move is FE-003**, whose
+remaining engineering closed on the seeded category, the merged capture, the server-side validation
+and two browser cases passing in all three authenticated projects; it leaves `remaining engineering`
+and joins `none`.)_ The verdict is owed by all twenty-nine and is counted once, as gate condition 4;
+**the verdict field in § 4 stays empty.**
+
+**One absence bears on eight rows at once.** **No hosted check run is recorded for `849a8e9a`**, and
+none is available to cite: no evidence directory captured one for this head, and the environment that
+wrote this record has no authenticated client to query one
+([`acceptance-record.md`](./acceptance-record.md) § 11.11 (a)). **Every remaining item of the form
+"the suites' or the gates' execution at a protected head, recorded" is therefore still open** — on
+SEC-001, SEC-002, SEC-003, SEC-004, QA-002, QA-003, QA-004 and DO-001. Nothing here treats that
+absence as satisfied, and no run is invented to fill it.
+
+**Sixteen of twenty-nine `end-to-end verified` is not a pass and is not offered as one.** No QA
+certification and no security clearance is issued, and the Owner's verdict is not recorded.
 
 ## 3. Definition of Done, bullet by bullet
 

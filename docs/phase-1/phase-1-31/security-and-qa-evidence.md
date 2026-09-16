@@ -504,6 +504,16 @@ that would need an acceptance record.
 - **The server-side refused-download negative does not exist.** The component negative is on the
   tree; nothing asserts the API's own refusal to an actor lacking the code, and the corrected
   acceptance re-run of `acceptance-record.md` § 8 exercises no download refusal either.
+  _(2026-09-16: **true when written, and false at `849a8e9a`.** The negative exists —
+  `tests/backend/p1-31-signature-download-refusal.test.ts`, merged with pull request #399 at
+  `c7298c09` under register § 72 — and it is a backend suite, not a component assertion behind a
+  mocked adapter. **Three limitations are recorded with it and none of them is closed by its
+  existence**: a live link to a soft-deleted entity still counts as reachable; runtime reachability is
+  exercised for three of the nine allow-listed link types, with a fourth reached through shared
+  fixtures; and branch scoping on download is **proved for one case only**, the broader statement
+  being measured from the policy catalogue rather than test-proven. § 18.2 states all three. The
+  suite's own execution at a protected head is **not** recorded, for the reason
+  [`acceptance-record.md`](./acceptance-record.md) § 11.11 (a) gives.)_
 
 ## 3. SEC-003 — scope hygiene and abuse cases
 
@@ -1620,6 +1630,155 @@ Carried as they stand, and neither turned into blockers nor accepted here:
   QA clearance, recorded or implied.
 - **No hosted run** of the acceptance or of the fixture proof. The measured facts above are reads of
   the tree, not reviews of it.
+
+## 18. Re-measured at `849a8e9a` against the run of record (2026-09-16)
+
+**What this section is.** § 17 was written at `c1a2f9fc` and quotes the closing run's **third**
+attempt. Two pull requests have merged since — #399 at `c7298c09` and #400 at `849a8e9a` — and the
+run of record is now **attempt 4**, run `mu3ch41f`, recorded at
+[`acceptance-record.md`](./acceptance-record.md) **§ 11**. This section re-measures § 17 against
+§ 11. **§ 17 keeps its words**; where a figure or a sentence of it has been superseded, the
+replacement is here and a dated note stands beside the original. It obeys the same rules: every run
+result is **quoted from the acceptance record** and is that record's measurement, and every
+**measured fact** was read on the tree at `849a8e9a` with its path. It **moves no state** (rules 1
+and 2) and it takes **no change-control allocation** — § 70 with CC-60 remains reserved, and the
+register's highest allocated pair at this head is **§ 72 with CC-63**.
+
+### 18.1 The figures of § 17, restated at the run of record
+
+| § 17 figure, at `c1a2f9fc` and attempt 3                  | the same figure at `849a8e9a` and attempt 4                                                                                   |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| HTTP journey 532 steps, 532 ok                            | **740 steps, 740 ok, 0 findings** (§ 11.4)                                                                                    |
+| browser 78 P1-31 cases executed, 0 failed, 26 per project | **84 executed, 0 failed, 28 per project** — 27 by tier 1 and 1 by tier 2 in each of the three authenticated projects (§ 11.6) |
+| export companion 45 steps, 45 ok                          | **45 steps, 45 ok**, attempt 1 of 3 (§ 11.5)                                                                                  |
+| monitoring 1799 read, 0 routed                            | **2180 read, 0 routed**, `complete: true` (§ 11.8)                                                                            |
+| screens 30 records, 28 images                             | **30 records, 28 images** (§ 11.7)                                                                                            |
+| export row counts 11 / 1 / 1 / 2                          | **17 / 1 / 1 / 2**, over this run's own period, plus an empty selection of 0 rows (§ 11.5)                                    |
+
+**The three unchanged conclusions.** The default administrator was again refused all four report codes
+with `403 ERR-IAM-001`; each of the five exports again carries **exactly one** correlated audit row;
+and the credential scan again read 3 handoffs, searched 66 files and **redacted nothing**, with 0
+handoffs remaining afterwards.
+
+### 18.2 SEC-002 — the server-side refused-download negative now EXISTS
+
+**This is the sentence of this file that #399 made false.** § 2's open item reads "**The server-side
+refused-download negative does not exist**", and a dated note now stands beside it.
+
+- **Measured fact.** `tests/backend/p1-31-signature-download-refusal.test.ts` exists on the tree at
+  `849a8e9a` and is a backend suite, not a component assertion behind a mocked adapter. It was merged
+  with #399 at `c7298c09` under register § 72 (**CC-63**).
+- **What it proves, and exactly how far.** The download authorization now applies a **live-link and
+  reachable-target rule**. Three limitations are recorded here for the security certifier, each
+  narrower than the rule sounds:
+  1. **A live link to a soft-deleted entity still counts as reachable.** No linkable table's read
+     policy filters on a deletion timestamp, so a soft-deleted target does not withdraw
+     reachability.
+  2. **Runtime reachability is exercised for three of the nine allow-listed link types**, with a
+     fourth reached through shared fixtures. The other five are covered by the catalogue-key test and
+     by read grants only, not by a runtime case.
+  3. **Branch scoping on download is PROVED FOR ONE CASE ONLY** — a work-order-linked document.
+     Documents linked to the other admitted entity kinds remain downloadable by any tenant holder of
+     the permission. **That statement is measured from the policy catalogue, not proven by a test**,
+     except for the one business-partner case that is test-proven. **Claim nothing broader.**
+- **State.** `phase-level incomplete`, unchanged. The engineering half of the open item closes; the
+  recording half does not, because **no hosted execution of this suite at this head is available to
+  cite** (§ 11.11 (a)), and the human clearance is not issued.
+
+### 18.3 SEC-002 and D-18 — receiver identity evidence, captured and validated
+
+- **Measured fact.** The receiver's optional identity evidence is now captured by the product
+  (`apps/web/src/features/delivery/receiver-capture.ts` and the receiver panel, merged with #400) and
+  validated by the server, which requires the category to be the platform identity-evidence category,
+  active and not deleted; the version to be in a bindable state; a **live link** to this delivery's
+  own work order or reception visit; the company and branch to match; the caller's own row-level
+  visibility to hold; and the verification permission to be the authority.
+- **The category row exists in the repository seed** and was applied to the one shared local
+  acceptance database on 2026-09-15 (§ 10 of [`operator-runbook.md`](./operator-runbook.md)). **It is
+  still owed on every other environment.**
+- **Two states have no backend case and are unit-proven only**: a quarantined version and a
+  soft-deleted category. The withdrawn-link case's control uses a fresh document.
+- **Pending and scanning versions may be bound as identity evidence.** That follows the established
+  evidence-state rule, and the download path still refuses a version that is not accepted. **This is
+  an engineering choice under D-18, and it is NOT an Owner item.**
+- **Quoted from the acceptance record (§ 11.6).** Two committed browser cases now exercise this
+  surface — a refusal that leaves the receiver unverified, and a verification carrying an attached
+  identity document — and **both passed in all three authenticated projects**.
+
+### 18.4 SEC-003 and QA-002 — what #399 closed
+
+- **The claim guard.** The fail-closed half of the branch-only claim finding is closed by #399
+  (register § 72). § 3's account of it stands as written and its remaining item is the recording of an
+  execution, not the code.
+- **Two published not-found responses.** The contract now publishes the 404 the delivery read and the
+  warranty detail read can answer, which closes the contract half of that finding. **A new contract
+  gap is recorded in its place** (§ 11.12 item 10): the quality-control record detail's success body is
+  published as a bare object although it carries a record, its results and an unresolved-mandatory
+  count. That is an instance of the generator-wide bare-object schema already before the Owner, and it
+  is recorded, not dispositioned.
+
+### 18.5 QA-005 — what the run's figures are, and are not
+
+- **Quoted from the acceptance record (§ 11.4 to § 11.8).** 740 HTTP steps with 0 not ok and 0
+  findings; the export companion, separately labelled, 45 of 45; **84 P1-31 browser cases executed and
+  0 failed**, derived from both tier reports together and from neither alone; 30 shot records and 28
+  images; 369 earlier-phase cases skipped for want of the account they require, outside P1-31 and not
+  P1-31 failures.
+- **Attempt 3's journey result is qualified.** Its instrument carried guessed record-version values,
+  so its quality-control finalisation succeeded on a guess and its quality-control detail steps read
+  nothing (§ 11.2, § 11.12 item 9). **Attempt 4, with the corrected instrument, is the run of record
+  for the journey.**
+- **The packaging half stays unmet.** Both Playwright reports and every other artefact of this run are
+  outside this repository; **nothing of the run is committed except the record**.
+- **A collection count is not an execution count**, and 84 is an execution count.
+
+### 18.6 DO-002 — an alert routed, at this head, from an injected fault
+
+- **Quoted from the acceptance record (§ 11.8).** The run's own extraction read **2180** records and
+  routed **0**, because no failure record at error or fatal severity existed in the capture. The
+  rehearsal at the same head passed its committed unit suite **8 of 8** and then routed **1** alert,
+  exit 0, with the queue matching the in-memory alert field for field and the **injected canary absent
+  from both routing outputs**.
+- **What that does and does not close.** Routing is now demonstrated **at a protected head and
+  recorded in an acceptance record section** — which is the recording the DO-002 row was short of —
+  but the fault is **injected by a unit test**, not a qualifying failure record arising from the run
+  itself. **Monitoring remains a local sanitized alert queue**; no external delivery exists or is
+  claimed, and **D-10 is unresolved**.
+
+### 18.7 QA-001 — the coverage holes, closed locally and pending a hosted measurement
+
+**Quoted from [`coverage-record.md`](./coverage-record.md), which labels every one of these figures
+`LOCAL, pending the hosted web-quality run`.** The three P1-31 feature roots are now inside the
+coverage instrument (141 → 186 instrumented files), four critical-module rules cover the ten route
+directories, and a four-case suite renders the work-order record route page. **H-2, H-3 and H-4 are
+closed on that evidence; H-1 remains open** and belongs to FE-004. `signature-capture.ts` moved from
+**0/25 lines to 25/25**. **None of these figures is hosted**, and the hosted web-quality run they are
+pending is unavailable to cite here for the reason § 11.11 (a) gives.
+
+### 18.8 Residual limitations that bear on security and QA
+
+§ 17.7's ten items stand. These are added or narrowed at this head:
+
+11. **No hosted job executes any P1-31 browser case**, the two new receiver cases included; they run
+    only in the closing runner against the local acceptance stack (§ 11.12 item 2).
+12. **No hosted check run is recorded for `849a8e9a`**, so every "recorded at a protected head" item
+    across SEC-001, SEC-003, SEC-004, QA-002, QA-003 and QA-004 remains open (§ 11.11 (a)).
+13. **The privileged export fixture is a privileged local fixture on the shared acceptance database**
+    and remains absent from hosted execution.
+14. **Branch scoping on download is proven for one case**, soft-deleted targets stay reachable, and
+    runtime reachability covers three of nine link types (§ 18.2).
+15. **Attempt 3's journey carried guessed record versions** (§ 18.5).
+16. **The quality-control record detail's published success body is a bare object** (§ 18.4).
+
+### 18.9 What this section does not claim
+
+- **No state moves.** The index is the matrix's (rule 1), and nothing here rises past
+  `phase-level incomplete` (rule 2).
+- **No Owner verdict, no phase Pass, no promotion and no human certification**, and no security or QA
+  clearance, recorded, issued or implied. The QA and security reviewer roles are already held, and
+  this section appoints nobody and signs nothing.
+- **No hosted run** of the acceptance, of the fixture proof, of any merged suite or of any gate at
+  this head. Where a hosted result is owed, § 11.11 (a) records that it is owed.
 
 ## Status
 
