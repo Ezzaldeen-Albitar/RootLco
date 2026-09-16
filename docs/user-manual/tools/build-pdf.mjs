@@ -149,6 +149,16 @@ function buildDocument(files, { cover, withToc }) {
 </section>`
     : '';
 
+  /*
+   * The rendered body on its own — cover, contents and parts — before the
+   * document's own stylesheet is spliced in below. `leftoverMarkdown` reads
+   * THIS, not the finished document, so it never has to strip the stylesheet
+   * element back out of a string it just put one into.
+   */
+  const bodyFragment = `${coverHtml}
+${toc}
+${bodies}`;
+
   const html = `<!doctype html>
 <html lang="en" dir="ltr">
 <head>
@@ -158,19 +168,21 @@ function buildDocument(files, { cover, withToc }) {
 <style>${CSS}</style>
 </head>
 <body>
-${coverHtml}
-${toc}
-${bodies}
+${bodyFragment}
 </body>
 </html>
 `;
-  return { html, version, shortVersion, environment };
+  return { html, bodyFragment, version, shortVersion, environment };
 }
 
-/** A construct the converter did not understand shows up as visible Markdown. */
-function leftoverMarkdown(html) {
-  const text = html
-    .replace(/<style[\s\S]*?<\/style>/g, '')
+/**
+ * A construct the converter did not understand shows up as visible Markdown.
+ *
+ * Takes the rendered body fragment, so the only markup it meets is markup the
+ * converter produced.
+ */
+function leftoverMarkdown(bodyFragment) {
+  const text = bodyFragment
     .replace(/<code[\s\S]*?<\/code>/g, '')
     .replace(/<pre[\s\S]*?<\/pre>/g, '')
     .replace(/<[^>]+>/g, ' ');
@@ -245,7 +257,7 @@ for (const [name, doc] of [
   ['full manual', full],
   ['quick start', quick],
 ]) {
-  const findings = leftoverMarkdown(doc.html);
+  const findings = leftoverMarkdown(doc.bodyFragment);
   if (findings.length) {
     console.error(`FAIL ${name}: leftover Markdown in the rendered HTML — ${findings.join(', ')}`);
     process.exit(1);
