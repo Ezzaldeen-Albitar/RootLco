@@ -744,6 +744,15 @@ items in six blocks, of which eight are marked as blocking this phase. It states
 criterion, excludes anything an engineer or an operator may lawfully do, and lists what is **already
 decided** so that nothing is asked a second time.
 
+_(2026-09-16: true of the packet it names, which is retained. The live list at protected `develop`
+`849a8e9a` is **[`owner-decision-packet-2026-09-16.md`](./owner-decision-packet-2026-09-16.md)** —
+**nineteen** items in three groups, **six** of them blocking, each re-checked against the committed
+records, with the items since closed by engineering or by cited authority listed separately. The QA
+and security items a named reviewer would answer are prepared at
+**[`certification-and-clearance-packet.md`](./certification-and-clearance-packet.md)**, whose decision
+fields are empty. **No certification, clearance or verdict is created by either document.** Change
+control § 70 / **CC-60** carries both.)_
+
 Two corrections this record owes, and makes, to what it previously said here:
 
 - **CC-35(a) and CC-35(b) are not pending.** The Owner decided them, with CC-35, on 2026-09-12
