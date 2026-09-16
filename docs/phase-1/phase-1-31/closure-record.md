@@ -460,12 +460,12 @@ obligation.
 
 **Field 15 — Security.** Every row keeps `phase-level incomplete`.
 
-| task        | what merged or was proven since `c1a2f9fc`                                                                                                                                            | remaining, each item classified                                                                                                                                                                                                                                                                                                                           |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **SEC-001** | the export declaration and the run's refusals are re-exercised (§ 11.5)                                                                                                               | **remaining engineering** — the minimal-actor probe limitation, and the set-wide suites' execution at a protected head **recorded**, which § 11.11 (a) shows is not available at this head. **human certification** — the clearance, not issued                                                                                                           |
-| **SEC-002** | **the server-side refused-download negative EXISTS** (#399), and receiver identity evidence is captured and server-validated (#400), with two browser cases passing in three projects | **remaining engineering** — that suite's execution at a protected head recorded. **documented limitation** — the audit cannot identify the bytes disclosed; **branch scoping on download is proven for one case only**; a soft-deleted target stays reachable; runtime reachability covers three of nine link types. **human certification** — not issued |
-| **SEC-003** | the claim guard's fail-closed half is closed (#399)                                                                                                                                   | **remaining engineering** — the probes' execution at a protected head recorded. **human certification** — the clearance, with the two observations undispositioned by design before it, not issued                                                                                                                                                        |
-| **SEC-004** | the export audit is re-exercised: five exports, each with exactly one correlated event (§ 11.5)                                                                                       | **remaining engineering** — the emission suite's execution recorded. **documented limitation** — the export audit records selection and counts, not bytes. **human certification** — not issued                                                                                                                                                           |
+| task        | what merged or was proven since `c1a2f9fc`                                                                                                                                            | remaining, each item classified                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **SEC-001** | the export declaration and the run's refusals are re-exercised (§ 11.5)                                                                                                               | **remaining engineering** — the minimal-actor probe limitation, and the set-wide suites' execution at a protected head **recorded**, which § 11.11 (a) shows is not available at this head. _(2026-09-16: **now available and recorded** at § 11.11 (e) — 19 check runs at this head, all `success`. **The recording limb of this item is closed; the minimal-actor probe limitation is not**, so this row keeps a remaining-engineering item and does not move.)_ **human certification** — the clearance, not issued |
+| **SEC-002** | **the server-side refused-download negative EXISTS** (#399), and receiver identity evidence is captured and server-validated (#400), with two browser cases passing in three projects | **remaining engineering** — that suite's execution at a protected head recorded. **documented limitation** — the audit cannot identify the bytes disclosed; **branch scoping on download is proven for one case only**; a soft-deleted target stays reachable; runtime reachability covers three of nine link types. **human certification** — not issued                                                                                                                                                              |
+| **SEC-003** | the claim guard's fail-closed half is closed (#399)                                                                                                                                   | **remaining engineering** — the probes' execution at a protected head recorded. **human certification** — the clearance, with the two observations undispositioned by design before it, not issued                                                                                                                                                                                                                                                                                                                     |
+| **SEC-004** | the export audit is re-exercised: five exports, each with exactly one correlated event (§ 11.5)                                                                                       | **remaining engineering** — the emission suite's execution recorded. **documented limitation** — the export audit records selection and counts, not bytes. **human certification** — not issued                                                                                                                                                                                                                                                                                                                        |
 
 **Field 16 — QA.** Every row keeps `phase-level incomplete`.
 
@@ -479,10 +479,10 @@ obligation.
 
 **Field 17 — DevOps.** Both rows keep `merged (write path)`.
 
-| task       | what merged or was proven since `c1a2f9fc`                                                                                                                                                    | remaining, each item classified                                                                                                                                                                                                                                                                                                                                              |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **DO-001** | **the rollback-criteria and operator-runbook limbs are recorded** for the three P1-31 gates, in [`operator-runbook.md`](./operator-runbook.md) § 11 (#400)                                    | **remaining engineering** — their execution at a protected head recorded, which § 11.11 (a) shows is unavailable here. **documented limitation** — the job summary renders one of two unrun registers                                                                                                                                                                        |
-| **DO-002** | **an alert was routed at this protected head and is recorded in an acceptance record section** (§ 11.8): unit suite 8 of 8, command exit 0, read 1, routed 1, canary absent from both outputs | **remaining engineering** — routing from a **qualifying failure record of a real run**; the run itself routed 0 and the rehearsal's fault is injected. **documented limitation** — a local sanitized queue, no external notification. **genuine Owner decision** — the event-consumption question, and the authorisation of the operator acts beyond the one shared database |
+| task       | what merged or was proven since `c1a2f9fc`                                                                                                                                                    | remaining, each item classified                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **DO-001** | **the rollback-criteria and operator-runbook limbs are recorded** for the three P1-31 gates, in [`operator-runbook.md`](./operator-runbook.md) § 11 (#400)                                    | **remaining engineering** — their execution at a protected head recorded, which § 11.11 (a) shows is unavailable here. _(2026-09-16: **now available and recorded** at § 11.11 (e); all three gates run inside the policy aggregate the `hosted-clean-room` job executes. **This closes the only remaining-engineering item this row carried.** Its state is not moved here — the matrix owns state under its own rule — and the documented limitation below stands.)_ **documented limitation** — the job summary renders one of two unrun registers |
+| **DO-002** | **an alert was routed at this protected head and is recorded in an acceptance record section** (§ 11.8): unit suite 8 of 8, command exit 0, read 1, routed 1, canary absent from both outputs | **remaining engineering** — routing from a **qualifying failure record of a real run**; the run itself routed 0 and the rehearsal's fault is injected. **documented limitation** — a local sanitized queue, no external notification. **genuine Owner decision** — the event-consumption question, and the authorisation of the operator acts beyond the one shared database                                                                                                                                                                          |
 
 **Field 18 — Documentation.** Both rows keep `merged (read-only/partial)`.
 
@@ -531,8 +531,77 @@ wrote this record has no authenticated client to query one
 SEC-001, SEC-002, SEC-003, SEC-004, QA-002, QA-003, QA-004 and DO-001. Nothing here treats that
 absence as satisfied, and no run is invented to fill it.
 
+_(2026-09-16, later the same day: **the paragraph above is retained and was true when written** — the
+environment that wrote it had no authenticated client. **The absence is closed, and not by a new run.**
+The hosted check runs at `849a8e9a` were read from the repository's own API and are recorded at
+[`acceptance-record.md`](./acceptance-record.md) § 11.11 (e). **§ 2.12 below re-derives all eight rows
+and every count**, and states which moved.)_
+
 **Sixteen of twenty-nine `end-to-end verified` is not a pass and is not offered as one.** No QA
 certification and no security clearance is issued, and the Owner's verdict is not recorded.
+
+### 2.12 The eight rows re-derived once the hosted runs are recorded (2026-09-16)
+
+**What this sub-section is.** § 2.11's "one absence" is closed from an artefact that already existed:
+the hosted check runs at `849a8e9a` and at `13732477`, read from the repository's own API and recorded
+at [`acceptance-record.md`](./acceptance-record.md) § 11.11 (e) with the job-to-suite mapping the
+workflow definitions support. **No job was dispatched or re-run, and no run was invented.**
+
+**What the runs establish, and what they do not.** They establish that the named jobs executed at a
+protected head and each concluded `success` — so the merged backend, database and unit tiers, the web
+suites, the coverage ratchets and the policy aggregate carrying the three P1-31 gates each have a
+citable execution at a protected head. **They are not a human certification and not a verdict.** A row
+whose other outstanding item is the QA certification or the security clearance **stays
+`phase-level incomplete`**, because a hosted run cannot supply a determination a person owes.
+
+| row         | the recording limb                                | what still stands                                                                                             | state       |
+| ----------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ----------- |
+| **SEC-001** | **closed** — the set-wide suites ran at this head | the minimal-actor probe limitation (**CC-58 (a)**) **and** the clearance, unissued                            | **no move** |
+| **SEC-002** | **closed** — the refused-download negative ran    | four documented limitations **and** the clearance, unissued                                                   | **no move** |
+| **SEC-003** | **closed** — the escalation probes ran            | **SEC-003-O2** open **and** the clearance, unissued                                                           | **no move** |
+| **SEC-004** | **closed** — the audit-emission suite ran         | the export audit records selection and counts, not bytes, **and** the clearance, unissued                     | **no move** |
+| **QA-002**  | **closed** — the contract suites ran              | the bare-object success-body contract gap, an Owner decision, **and** the certification, unissued             | **no move** |
+| **QA-003**  | **closed** — both layers' isolation proofs ran    | the certification, unissued                                                                                   | **no move** |
+| **QA-004**  | **closed** — the concurrency suites ran           | the seven guarded operations with no consumer **and** the certification, unissued                             | **no move** |
+| **DO-001**  | **closed** — all three gates ran in the aggregate | the job summary rendering one of two unrun registers. **This row owes no human certification** — see the note | **no move** |
+
+**QA-001 is deliberately absent from that table, and the distinction is the point.** Its remaining item
+is **the hosted coverage measurement**, not a suite's execution. The hosted `web-quality` job **ran and
+concluded `success`** — that is the gate's execution — but **the coverage figures in the record remain
+local measurements** and keep their own `LOCAL` labelling, because no hosted artefact publishes the
+per-file web summary they come from (**CC-50 (a)**, open). **QA-001's item does not close.**
+
+**Every count re-derived, with whether it moved.**
+
+| figure                                              | at § 2.11    | now           | moved?                                                         |
+| --------------------------------------------------- | ------------ | ------------- | -------------------------------------------------------------- |
+| state totals `16 / 2 / 2 / 0 / 9 / 0`, total **29** | 16/2/2/0/9/0 | **identical** | **NO.** No row rose and none was lowered                       |
+| `none beyond the Owner's verdict`                   | **12**       | **12**        | **NO**                                                         |
+| `remaining engineering`                             | **14**       | **9**         | **YES** — five rows leave it                                   |
+| `documented limitation`                             | **9**        | **9**         | **NO**                                                         |
+| `human certification`                               | **9**        | **9**         | **NO** — nine determinations are still owed and none is issued |
+| `genuine Owner decision`                            | **4**        | **4**         | **NO**                                                         |
+| the union of the four overlapping categories        | **17**       | **17**        | **NO**, and 17 + 12 = **29** still holds                       |
+
+**The one count that moves, shown so it can be checked rather than believed.** `remaining engineering`
+read **14** — FE-004, SEC-001 … SEC-004, QA-001 … QA-005, DO-001, DO-002, DOC-001, DOC-002. **Five
+rows leave it**, because the recording limb was the only remaining-engineering item each of them
+carried: **SEC-002, SEC-003, SEC-004, QA-003 and DO-001**. It now reads **9** — FE-004, SEC-001,
+QA-001, QA-002, QA-004, QA-005, DO-002, DOC-001, DOC-002. **The union does not move**, because each of
+the five stays in the union through another category: SEC-002 and SEC-004 through both a documented
+limitation and the clearance, SEC-003 and QA-003 through the clearance and the certification, DO-001
+through its documented limitation.
+
+**DO-001 is the one row whose state question is now open, and this record does not answer it.** Its
+only remaining-engineering item is closed and **it owes no human certification**, so what remains is a
+documented limitation. Whether that permits a rise is **a state decision, and state belongs to
+[`task-matrix.md`](./task-matrix.md) under its own rule** — so **nothing here moves it**, and the
+question is recorded as open rather than decided.
+
+**What this sub-section does not claim.** **No row rises and none is lowered.** **No QA certification
+and no security clearance is issued, recorded or implied**, and no Owner verdict. **Sixteen of
+twenty-nine `end-to-end verified` is still not a pass and is not offered as one.** No hosted run was
+taken to produce any figure here, and the Definition-of-Done adjudication at § 3 is not reopened by it.
 
 ## 3. Definition of Done, bullet by bullet
 

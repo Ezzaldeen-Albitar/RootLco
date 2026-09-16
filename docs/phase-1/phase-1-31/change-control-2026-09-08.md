@@ -8416,18 +8416,18 @@ appoints nobody and signs nothing.
 
 ### 70.1 Identifier allocation
 
-| identifier    | meaning                                                 | state                                                    |
-| ------------- | ------------------------------------------------------- | -------------------------------------------------------- |
-| section 70    | this closing reconciliation                             | **the reserved section, taken here** (§ 69.13.1, § 71.1) |
-| **CC-60**     | the closing evidence and the two assembled packets      | this branch                                              |
-| **CC-60 (a)** | the run of record, and the run it supersedes            | closed by measurement (§ 70.3)                           |
-| **CC-60 (b)** | the twenty-nine-task reconciliation at one head         | closed by the records named in § 70.4                    |
-| **CC-60 (c)** | the reduced Owner decision packet                       | **open** — the decisions are the Owner's                 |
-| **CC-60 (d)** | the certification and clearance items                   | **open, and deliberately** — no certificate exists       |
-| **CC-60 (e)** | the environment record and the operator acts            | **open as an act**, recorded as a statement              |
-| **CC-60 (f)** | the residual limitations carried out of the closing run | **carried, named** — neither blockers nor accepted       |
-| **CC-60 (g)** | the provenance of the out-of-repository instruments     | **open, recorded**                                       |
-| § 73 / CC-64  | —                                                       | **not allocated at this head, and not taken here**       |
+| identifier    | meaning                                                 | state                                                                                                |
+| ------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| section 70    | this closing reconciliation                             | **the reserved section, taken here** (§ 69.13.1, § 71.1)                                             |
+| **CC-60**     | the closing evidence and the two assembled packets      | this branch                                                                                          |
+| **CC-60 (a)** | the run of record, and the run it supersedes            | closed by measurement (§ 70.3)                                                                       |
+| **CC-60 (b)** | the twenty-nine-task reconciliation at one head         | closed by the records named in § 70.4                                                                |
+| **CC-60 (c)** | the reduced Owner decision packet                       | **open** — the decisions are the Owner's                                                             |
+| **CC-60 (d)** | the certification and clearance items                   | **open, and deliberately** — no certificate exists                                                   |
+| **CC-60 (e)** | the environment record and the operator acts            | **open as an act**, recorded as a statement                                                          |
+| **CC-60 (f)** | the residual limitations carried out of the closing run | **carried, named** — neither blockers nor accepted                                                   |
+| **CC-60 (g)** | the provenance of the out-of-repository instruments     | **open, recorded**                                                                                   |
+| § 73 / CC-64  | —                                                       | **not allocated at this head, and not taken here** _(2026-09-16: allocated and taken by § 73 below)_ |
 
 § 48.1's rule holds: an identifier is a claim about the register at the moment it was raised, and it
 is never renumbered. Nothing above renumbers anything.
@@ -8450,7 +8450,11 @@ it, 46**, the two additions being
 [`owner-decision-packet-2026-09-16.md`](./owner-decision-packet-2026-09-16.md). The register holds
 **sections 1 … 72 with CC-01 … CC-63** at `849a8e9a`, with § 70 reserved and empty, and **the same
 range with § 70 written and CC-60 allocated** as this pull request leaves it. **No section number is
-free below 73 and no identifier below CC-64.**
+free below 73 and no identifier below CC-64.** _(2026-09-16: both figures move with the slice recorded
+at § 73, which takes the next free section and the next free identifier exactly as this row predicted.
+**As that slice leaves the file the register holds sections 1 … 73 with CC-01 … CC-64**, and the phase
+directory count is unchanged at **46** — § 73 adds no file. The sentence above is retained as the
+measurement at `849a8e9a`.)_
 
 ### 70.2 What landed in the closing queue, by pull request and head
 
@@ -8696,3 +8700,173 @@ cycle was not re-run: these changes touch no executable path.
 commit `8715b80a` carries a 73-character subject, one character over the 72-character limit the
 branch's other subjects keep. The branch is preserved rather than rewritten — nothing on it is reset,
 rebased or amended — so the subject stands as written and is recorded here instead of being changed.
+
+## 73. The hosted executions recorded from runs that already existed (CC-64)
+
+**Slice:** `feature/p1-31-hosted-evidence-record`, ownership profile `p1-31-frontend` — resolved by
+`node scripts/ci/check-phase-ownership.mjs --resolve-context` **before** the branch was created, which
+reported `CHECK … -> ownership profile 'p1-31-frontend'`. **Baseline:** protected `develop`
+`137324770fef2474391f5335e22fd8023bca7a04`, the merge of pull request #401.
+
+**Purpose.** The closing records carried one absence, and it bore on eight rows at once: **no hosted
+check run was recorded for `849a8e9a`**, so no merged suite's and no gate's execution at a protected
+head could be cited. **That was true of the environment that wrote it** — it had no authenticated
+GitHub client and said so. **It is no longer true of these records.** The runs existed all along and
+had never been indexed. This section records them **from artefacts that already exist**. **No job was
+dispatched, no job was re-run, and no run was invented.** Nothing here is a verdict, a certification or
+a clearance.
+
+### 73.1 Identifier allocation
+
+| identifier    | meaning                                                                        | state                                                                      |
+| ------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| section 73    | this evidence-recording closure                                                | **the next free section, predicted by § 70.1 and taken here**              |
+| **CC-64**     | the hosted executions at the protected heads, recorded from runs already taken | **closed by measurement** (§ 73.2, § 73.3)                                 |
+| **CC-64 (a)** | the state question DO-001 now raises                                           | **open** — a state move belongs to the matrix under its own rule           |
+| **CC-64 (b)** | the coverage figures stay local although their gate has a hosted execution     | **open** — **CC-50 (a)** restated at this head, and it does not close here |
+
+§ 48.1's rule holds: an identifier is a claim about the register at the moment it was raised, and it is
+never renumbered. **Nothing here renumbers anything.** As this slice leaves the file **the register
+holds sections 1 … 73 with CC-01 … CC-64**, and the phase directory count is **unchanged at 46** —
+this slice adds no file.
+
+### 73.2 The readings, and how they were taken
+
+Each head was read once with `GET repos/{owner}/{repo}/commits/{sha}/check-runs?per_page=100`, polled
+until nothing was pending. The full list of names, check-suite and workflow-run identifiers and
+completion times is recorded at [`acceptance-record.md`](./acceptance-record.md) § 11.11 (e); the
+totals are restated here so this register can be checked without leaving it.
+
+| head                                       | what it is                                           | check runs | conclusions                                       |
+| ------------------------------------------ | ---------------------------------------------------- | ---------- | ------------------------------------------------- |
+| `849a8e9a7d8960e784456d5d886d5976350f0b24` | protected `develop`, #400 — the run of record's head | **19**     | **19 `completed`/`success`; 0 failed, 0 skipped** |
+| `137324770fef2474391f5335e22fd8023bca7a04` | protected `develop`, #401 — the closing records      | **19**     | **19 `completed`/`success`; 0 failed, 0 skipped** |
+| `c7298c096cb7ea0b6c3d70f0d1f927ab08ec5d20` | protected `develop`, #399                            | **19**     | **19 `completed`/`success`; 0 failed, 0 skipped** |
+| `bb9802fdfffa625810d30861329075d62a432c4a` | the pull-request head of #400                        | **21**     | **21 `success`; 0 failed**                        |
+| `37ffd4efae62d9a14f378787ea962a7e4483e675` | the pull-request head of #401, documentation only    | **19**     | **13 `success`, 6 `skipped`; 0 failed**           |
+
+**`protected-gate` is present and `success` at all three protected heads**, concluding last of the 19
+at each. **A skip is recorded as a skip and is never read as a pass**: the six at `37ffd4ef` are the
+conditional aggregates a documentation-only change does not trigger.
+
+**The protection contexts, as the repository states them.** `develop` carries **no classic branch
+protection** — that API answers `Branch not protected` — and is governed by an active repository
+ruleset named `Protect develop`, whose required status checks are exactly five:
+`Docker build validation`, `Secret and sensitive-file scan`, `Lint, types, tests, build`,
+`Database migrations and RLS tests` and `ci-gate`. **Four of the five appear at each protected head**;
+`ci-gate` is a pull-request job and `protected-gate` is the post-merge gate that appears instead. All
+five appear and are `success` at `37ffd4ef`.
+
+### 73.3 Which job executes what, from the workflow definitions
+
+**Only what a definition states is recorded, and no suite is claimed to have run inside a job whose
+definition does not put it there.** The mapping is tabulated in full at
+[`acceptance-record.md`](./acceptance-record.md) § 11.11 (e) with a file and line for every row. In
+summary: the merged **backend** tier runs in `integration-tests`, in `hosted-clean-room` and in
+`Database migrations and RLS tests`; the merged **database** tier in `database-security`, in
+`hosted-clean-room` and in that same legacy job; the **unit** tier in `unit-tests-coverage`, in
+`hosted-clean-room` and in `Lint, types, tests, build`; the **web** suites and the web coverage ratchet
+in `web-quality` and in `hosted-clean-room`; and **the policy aggregate carrying all three P1-31
+gates** in `hosted-clean-room`, through `npm run verify:workspaces`, whose first member is
+`verify:policies`. **`database-migration-replay` runs neither the database nor the backend tier** and
+is cited for neither.
+
+**Two facts that make the citation about this head rather than a later one.** First, the aggregate
+chain was read **on the tree at `849a8e9a` itself**, where all three P1-31 gate scripts are present and
+named by `verify:policies`. Second, `git diff` between `849a8e9a` and `137324770f` reports **nine
+changed files, all under `docs/phase-1/phase-1-31/`** — none under `.github/`, `scripts/ci/` or
+`package.json` — so the two protected heads ran identical machinery. The suites the eight rows rest on
+are on the tree at `849a8e9a`: twenty `tests/backend/p1-31-*` files and
+`tests/db/p1-31-export-fixture.test.ts` — the last of which is **on the tree but excluded from the
+hosted database tier by name**, at `vitest.config.db.ts:23`, so **no hosted job executes it** and no
+hosted run here is evidence about it. That is what **§ 71.4 of this register** already states, and
+what limitation **L-6** of the certification and clearance packet records. _(Corrected 2026-09-16: as
+first written, this sentence placed the fixture file among the suites the hosted tier is evidence
+about, which `vitest.config.db.ts:23` and § 71.4 disprove.)_
+
+### 73.4 What moved, and what did not
+
+**What the runs establish:** the named jobs executed at a protected head and each concluded `success`,
+so the merged backend, database and unit tiers, the web suites, the coverage ratchets and the policy
+aggregate carrying the three P1-31 gates **each have a citable execution at a protected head**. **What
+they are not:** a human certification, a clearance, or a verdict. **They execute no P1-31 browser
+case.** **They do not convert a local coverage figure into a hosted one.**
+
+**Moved.** The recording limb closes on all eight rows — SEC-001, SEC-002, SEC-003, SEC-004, QA-002,
+QA-003, QA-004 and DO-001. One category count moves with it: **`remaining engineering` read 14 and now
+reads 9**, because the recording limb was the only remaining-engineering item that SEC-002, SEC-003,
+SEC-004, QA-003 and DO-001 carried.
+
+**Did not move.** **The state totals: `16 / 2 / 2 / 0 / 9 / 0`, total 29** — no row rose and none was
+lowered. `none` **12**, `documented limitation` **9**, `human certification` **9** — **all nine still
+owed, none issued** — `genuine Owner decision` **4**, and the union of the four overlapping categories
+**17**, so 17 + 12 = **29** still holds. **QA-001's item does not close**: its remaining item is the
+hosted coverage **measurement**, and although the hosted `web-quality` job ran and concluded `success`,
+the coverage figures keep their `LOCAL` labelling because no hosted artefact publishes the per-file web
+summary they come from — **CC-50 (a)**, open, and carried here as **CC-64 (b)**.
+
+**DO-001 is the one row whose state question is now open**, and no record here answers it: its only
+remaining-engineering item is closed, it owes no human certification, and whether the documented
+limitation that remains permits a rise is a **state** decision belonging to
+[`task-matrix.md`](./task-matrix.md). Carried as **CC-64 (a)**.
+
+### 73.5 Where it is recorded
+
+| document                                                                           | what it gained                                                                                                                                                   |
+| ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`acceptance-record.md`](./acceptance-record.md)                                   | **§ 11.11 (e)**, the readings and the job-to-suite mapping; a dated note beside § 11.11 (a)'s original sentence                                                  |
+| [`closure-record.md`](./closure-record.md)                                         | **§ 2.12**, the eight rows and every count re-derived; dated notes on the SEC-001 and DO-001 cells of § 2.10 and on § 2.11's "one absence" paragraph             |
+| [`task-matrix.md`](./task-matrix.md)                                               | the amendment of 2026-09-16; dated notes on the SEC-001 and DO-001 cells                                                                                         |
+| [`certification-and-clearance-packet.md`](./certification-and-clearance-packet.md) | **L-1 corrected and L-2 refined** in § 9, both retaining their original words; dated notes under the § 5 and § 6 tables and beside § 4's "one absence" paragraph |
+| [`security-and-qa-evidence.md`](./security-and-qa-evidence.md)                     | a dated correction on **§ 18.8 item 12**                                                                                                                         |
+| this register                                                                      | **§ 73 / CC-64**, and dated notes on § 70.1's allocation row and its register-range sentence                                                                     |
+
+### 73.6 Dispositions
+
+| id            | finding                                                                                      | disposition                                                                                                                                                           |
+| ------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CC-64**     | **the hosted executions at the protected heads were never indexed, though the runs existed** | **closed by measurement.** Read from the repository's own API and recorded in six documents; the recording limb closes on eight rows and no run was taken to close it |
+| **CC-64 (a)** | **DO-001 now has no remaining-engineering item and owes no human certification**             | **open.** A state move belongs to the matrix under its own rule, and no record in this slice makes one                                                                |
+| **CC-64 (b)** | **the coverage figures stay local although the hosted `web-quality` job ran**                | **open.** L-2 is refined rather than lifted, the `LOCAL` labelling is kept, and **CC-50 (a)** is the standing cause                                                   |
+
+### 73.7 What this slice did NOT do
+
+- **It ran no hosted job and invoked none.** Every hosted figure is a read of a run that already
+  existed, taken through the repository's own API.
+- **It ran no test tier, no build, no migration, no database operation and no browser tier**, and it
+  touched no executable path: the changes are documentation only.
+- **It issues no QA certification and no security clearance**, records no Owner verdict, no Pass, no
+  promotion and no approval, and **claims no phase completion**. Every decision field in the
+  certification packet § 7 is still empty.
+- **It moves no task-matrix row**, raises none and lowers none.
+- **It signs for nobody**, and appoints nobody.
+- **It did not reword an earlier finding to make it look satisfied.** Every corrected sentence is
+  retained with its own words and carries a dated note saying it was true when written.
+
+### 73.8 Verification
+
+**Documentation gates only, and every one of them LOCAL**, run on this machine at this branch head.
+They are recorded as what they are: static checkers over the changed files. **No hosted result is
+claimed for this slice**, and none of the hosted figures in § 73.2 was produced by any command below —
+those were read from the repository's own API.
+
+| command                                                                   | exit |
+| ------------------------------------------------------------------------- | ---- |
+| `npx prettier --check` over the six changed files                         | 0    |
+| `npm run validate:encoding`                                               | 0    |
+| `node scripts/ci/check-phase-ownership.mjs p1-31-frontend origin/develop` | 0    |
+| `npm run validate:p1-24-register`                                         | 0    |
+| `npm run validate:p1-27-doc-counts`                                       | 0    |
+| `npm run validate:p1-27-closing-values` (check mode)                      | 0    |
+| `npm run validate:plain-language`                                         | 0    |
+| `npm run validate:generated-artifacts`                                    | 0    |
+
+**No test tier, build, migration, database operation, browser tier or deployment was run**, and the
+P1-27 record cycle was not re-run: these changes touch **no executable path**. The slice changes six
+documents under `docs/phase-1/phase-1-31/` and nothing else — no new file, no source, no workflow, no
+script and no manifest.
+
+**The ownership profile was resolved before the branch existed**, by
+`node scripts/ci/check-phase-ownership.mjs --resolve-context`, which reported `CHECK` and
+`ownership profile 'p1-31-frontend'` for the branch name; the gate proper then ran against
+`origin/develop` and exited 0.

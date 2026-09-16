@@ -2852,6 +2852,16 @@ conclusion is recorded for this head.** The consequence is stated plainly: every
 item is "the suites' execution at a protected head recorded in an acceptance record section" **still
 has that item open**, and this section does not close it.
 
+_(2026-09-16, later the same day: **the sentences above are retained as written and were true of the
+environment that wrote them** — it had no authenticated GitHub client, and `gh auth status` reported
+exactly that. **They are no longer true of this record.** An authenticated client has since read the
+check-run list of this head directly from the repository's own API, and **§ 11.11 (e) below records
+what it returned**: names, statuses, conclusions, check-suite and workflow-run identifiers and
+completion times. **No job was dispatched, re-run or invoked to produce it** — the runs already
+existed and had only never been indexed. The "still has that item open" consequence is re-derived per
+row at § 11.11 (e): the recording limb closes, and every certification and clearance limb stays
+open.)_
+
 **(b) What does exist, with its own label.** The seed act of 2026-09-15 records a post-merge figure
 for PR #399 in its own `act.json`, and that file **labels the figure itself**: "reported by the
 coordinator in the dispatch; not re-queried by the executor" (quoted from
@@ -2886,6 +2896,97 @@ evidence index read two constraint suites as isolation evidence they did not car
 code half was repaired**: both suites now carry a behavioural negative, so the index entry is **true
 at this head although it was not true when it was written**. The index document is not edited by this
 section, and the register's own disposition for CC-58 (b) is unchanged by it.
+
+**(e) The hosted check runs at the protected heads — READ 2026-09-16 from the repository's own API,
+and recorded here.** This sub-section closes gap (a) from an artefact that already existed. Each head
+was read once with `GET repos/{owner}/{repo}/commits/{sha}/check-runs?per_page=100`, polled until
+nothing was pending. **No job was dispatched, re-run or invoked to produce any figure below, no run
+was invented, and nothing here is a verdict, a certification or a clearance.**
+
+| head                                       | what it is                                                                       | check runs | conclusions                                       | earliest … latest completion (UTC) |
+| ------------------------------------------ | -------------------------------------------------------------------------------- | ---------- | ------------------------------------------------- | ---------------------------------- |
+| `849a8e9a7d8960e784456d5d886d5976350f0b24` | protected `develop`, the merge of #400 — the head the run of record was taken at | **19**     | **19 `completed`/`success`; 0 failed, 0 skipped** | 2026-09-15T23:32:20Z … 23:59:22Z   |
+| `137324770fef2474391f5335e22fd8023bca7a04` | protected `develop`, the merge of #401 — the closing records                     | **19**     | **19 `completed`/`success`; 0 failed, 0 skipped** | 2026-09-16T03:14:44Z … 03:40:01Z   |
+| `c7298c096cb7ea0b6c3d70f0d1f927ab08ec5d20` | protected `develop`, the merge of #399                                           | **19**     | **19 `completed`/`success`; 0 failed, 0 skipped** | 2026-09-15T15:24:38Z … 15:50:52Z   |
+| `bb9802fdfffa625810d30861329075d62a432c4a` | the pull-request head of #400, before its merge                                  | **21**     | **21 `success`; 0 failed**                        | 2026-09-15T23:03:50Z … 23:30:06Z   |
+| `37ffd4efae62d9a14f378787ea962a7e4483e675` | the pull-request head of #401, documentation only                                | **19**     | **13 `success`, 6 `skipped`; 0 failed**           | 2026-09-16T02:48:20Z … 03:11:07Z   |
+
+**The 19 runs at each protected head, and the two check suites that carry them.** All three protected
+heads return the same 19 names. At `849a8e9a`: check suite `94881549141` (workflow run `35036095936`)
+carries 15 — `static-quality / static-quality`, `web-quality / web-quality`,
+`unit-tests-coverage / unit-coverage`, `application-build / build`,
+`database-migration-replay / migration-replay`, `database-security / security-matrix`,
+`integration-tests / integration-tests`, `dependency-security / dependency-security`,
+`code-security / code-security (actions)`, `code-security / code-security (javascript-typescript)`,
+`secret-scan / secret-scan`, `container-security / container-security`,
+`hosted-clean-room / hosted-clean-room`, `authenticated-browser / authenticated-browser` and
+`protected-gate` — and check suite `94881548148` (workflow run `35036095577`) carries 4:
+`Lint, types, tests, build`, `Docker build validation`, `Database migrations and RLS tests` and
+`Secret and sensitive-file scan`. At `13732477` the same 19 arrive as check suites `94920354776`
+(workflow run `35051042528`, 15 runs) and `94920354660` (workflow run `35051042499`, 4 runs); at
+`c7298c09` as `94747431286` (workflow run `34988215364`) and `94747429548` (workflow run
+`34988214749`). **`protected-gate` is present and `success` at all three**, concluding last of the 19
+at each — `849a8e9a` 23:59:22Z, `13732477` 03:40:01Z, `c7298c09` 15:50:52Z.
+
+**Which job the workflow definitions show executing what.** Only what a definition states is recorded;
+**no suite is claimed to have run inside a job whose definition does not put it there.** The two
+protected heads carry identical machinery: `git diff` between `849a8e9a` and `13732477` reports nine
+changed files, **all of them under `docs/phase-1/phase-1-31/`** and none under `.github/`,
+`scripts/ci/` or `package.json`.
+
+| the thing executed                                                       | the job that executes it, and where the definition says so                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the merged backend tier (`tests/backend/**`, the P1-31 suites included)  | `integration-tests` — `npm run test:backend -- --coverage`, `.github/workflows/_reusable-integration-tests.yml:130`, reached because `protected-develop-verification.yml:124-129` calls it with `collect-coverage: true`, after the schema is built at `_reusable-integration-tests.yml:111-112`. Also `hosted-clean-room` at `_reusable-clean-room.yml:162`, and `ci.yml:406`                                      |
+| the merged database tier (`tests/db/**`, less one file excluded by name) | `database-security`, task `security-matrix` — `npm run test:db`, `_reusable-database-assurance.yml:362`, called at `protected-develop-verification.yml:116-122`; the role-by-table matrix follows at `:386`. Also `hosted-clean-room` at `_reusable-clean-room.yml:159`, and `ci.yml:390`. The tier's include carries **one named exclusion**, `tests/db/p1-31-export-fixture.test.ts`, at `vitest.config.db.ts:23` |
+| the unit tier, and its coverage ratchet                                  | `unit-tests-coverage`, task `unit-coverage` — `_reusable-node-quality.yml:473`, ratchet `node scripts/ci/coverage-gate.mjs` at `:545`. Also `hosted-clean-room` at `_reusable-clean-room.yml:156` and `ci.yml:210`                                                                                                                                                                                                  |
+| the web suites, and the web coverage ratchet                             | `web-quality` — `npm run test:web-ci`, `_reusable-node-quality.yml:712`, ratchet at `:719`. Also `hosted-clean-room` at `_reusable-clean-room.yml:222`                                                                                                                                                                                                                                                              |
+| the policy aggregate carrying **all three** P1-31 gates                  | `hosted-clean-room` — `npm run verify:workspaces`, `_reusable-clean-room.yml:203`. `verify:workspaces` begins with `verify:policies`, and `verify:policies` names all three P1-31 gate scripts. **Read on the tree at `849a8e9a` itself**, not at a later head                                                                                                                                                      |
+| the record-version gate, additionally **by name**                        | `web-quality` — `npm run validate:p1-31-version-sourcing`, `_reusable-node-quality.yml:697`. The comment at `:693-696` states its two P1-31 siblings are reached only through the aggregate, which is the row above                                                                                                                                                                                                 |
+| the repository gate block, `validate:p1-24-register` among it            | `static-quality` — `_reusable-node-quality.yml:217-309`, the register at `:240`                                                                                                                                                                                                                                                                                                                                     |
+| every migration applied from zero, and the seeds twice                   | `database-migration-replay`, task `migration-replay` — `_reusable-database-assurance.yml:248` and `:257`. **This job runs neither the database nor the backend tier**, and is cited for neither                                                                                                                                                                                                                     |
+
+**The suites the eight rows rest on are on the tree at `849a8e9a`**, which is what makes the tier that
+ran there evidence about them: `git ls-tree` at that head lists **twenty** `tests/backend/p1-31-*`
+suites — the audit-emission, privilege-escalation, concurrency-and-versioning,
+receiver-identity-evidence and signature-download-refusal suites among them.
+
+**One P1-31 file on that tree is not among them, and the hosted tier is evidence about nothing in
+it.** `tests/db/p1-31-export-fixture.test.ts` is on the tree at `849a8e9a` too, and the hosted
+database tier **excludes it by name**: `vitest.config.db.ts:23` lists it in `exclude`, so **no hosted
+job executes it**. Limitation **L-6** of the certification and clearance packet says the same and is
+not weakened — the fixture is absent from hosted execution — and change control **§ 71.4** already
+records that the file is executed by no hosted job and by no local aggregate. _(Corrected 2026-09-16:
+as first written, this paragraph listed the fixture file among the suites the tier that ran at
+`849a8e9a` is evidence about, which `vitest.config.db.ts:23` disproves.)_
+
+**What these readings establish, stated no wider than they reach.** The named jobs executed at a
+protected head and each concluded `success`, so the merged backend, database and unit tiers, the web
+suites, the coverage ratchets and the policy aggregate carrying the three P1-31 gates **each have a
+citable execution at a protected head**. **What they are not.** They are **not a human certification,
+not a clearance and not a verdict**; they issue none, and they do not make the phase complete. **They
+execute no P1-31 browser case** — § 11.12 item 2 stands word for word. **They do not convert a local
+coverage figure into a hosted one:** the hosted `web-quality` job ran the web ratchet, and the
+coverage figures quoted at (c) above **remain local measurements**, labelled as such by their own
+record.
+
+**The protection contexts, as the repository states them.** `develop` carries **no classic branch
+protection** — that API answers `Branch not protected` — and is governed by an active repository
+ruleset named `Protect develop`, whose required status checks are exactly five:
+`Docker build validation`, `Secret and sensitive-file scan`, `Lint, types, tests, build`,
+`Database migrations and RLS tests` and `ci-gate`. **Four of the five appear at each protected head**;
+`ci-gate` does not, because it is a pull-request job, and `protected-gate` is the post-merge gate that
+appears in its place. **All five appear and are `success` at `37ffd4ef`**, the pull-request head of
+#401.
+
+**The two pull-request heads, recorded because the required contexts were measured on them.** At
+`bb9802fd` (#400) the 21 runs include `ci-gate`, `change-detection` and both `code-security` legs, all
+`success`, and a `CodeQL` run in a check suite of its own (`94876168068`) whose details URL names no
+workflow run. At `37ffd4ef` (#401, documentation only) six conditional aggregates concluded
+`skipped` — `application-build`, `code-security`, `container-security`, `database-migration-replay`,
+`database-security` and `integration-tests` — with `ci-gate` `success`; **a skip is recorded as a skip
+and is never read as a pass.** The web job is named `Web quality / web-quality` at a pull-request head
+and `web-quality / web-quality` at a protected push; the casing differs by workflow, and the job is
+the same one.
 
 ### 11.12 Limitations carried with this run
 
