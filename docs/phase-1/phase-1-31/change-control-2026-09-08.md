@@ -9039,8 +9039,14 @@ it summarised was two sites short**. The two it missed are in § 60 itself — *
 which reads "CC-50 closed at the hosted fill and CC-50 (a) open", and **§ 60.5's CC-50 row disposition
 cell**, a different cell from the CC-50 (a) row beside it, which reads "Sub-item (a) below stays OPEN".
 Both now carry the same dated re-attribution, added at **§ 74.13**, each keeping its own words, which
-brings the swept total to **eight**. Of every other occurrence, all but two either carry a dated
-re-attribution or already read the row closed; the two are [`task-matrix.md`](./task-matrix.md)'s
+brings the swept total to **eight**. **A ninth site was missed by this correction too, and the
+sentence that follows it was false as corrected**: [`task-matrix.md`](./task-matrix.md)'s **QA-001**
+next-dependency cell — a different cell from the QA-001 evidence cell beside it, which the round-two
+sweep had annotated — read "CC-50 is closed and CC-50 (a) carries the two open figures" in its own
+current voice with no note beside it. It now carries the same dated re-attribution, added by the
+fifth review round at **§ 74.15**, which brings the swept total to **nine**, and the sentence that
+follows holds only with that annotation in place. Of every other occurrence, all but two either
+carry a dated re-attribution or already read the row closed; the two are [`task-matrix.md`](./task-matrix.md)'s
 **SEC-002** evidence cell and the delivered
 [`owner-decision-packet-2026-09-13.md`](./owner-decision-packet-2026-09-13.md), which names it in its
 disposition table and again in its recommendation — those cite what the register held at #385 and at
@@ -9443,6 +9449,14 @@ one dated head note. **Every other mention of the identifier in the directory ei
 carries no state at all**, including the § 63 sites, which were right when written and needed no
 correction.
 
+_(2026-09-16, appended after the fifth review round — **the enumeration above keeps its words, and it
+was derived row by row where the state is carried cell by cell.** It counts
+[`task-matrix.md`](./task-matrix.md)'s **QA-001** site once; that row carries the identifier in two
+adjacent cells, only the evidence cell had been annotated, and the next-dependency cell beside it read
+the row open in its own voice with no note. **That is the same adjacent-cell-in-one-row pattern this
+subsection records for § 60.5**, repeated in a second document. The set is re-derived cell by cell at
+**§ 74.15**, where the totals above are restated; nothing here is deleted, edited or renumbered.)_
+
 **The pattern, stated plainly, because this is its third round.** Round one was a fabricated "Approved
 by" column, asserted about a file whose columns had not been read. Round two was a missed **QA-001**
 cell, after a sweep declared complete over a set that had not been listed. Round three is these two
@@ -9535,6 +9549,13 @@ carrying the false accounting and did not check which other passages quoted a nu
 enumeration § 74.13 sets down is unchanged and is not re-derived here**; what this round did was read
 every passage of § 74 that states a figure for that sweep, and annotate the one left stale.
 
+_(2026-09-16, appended after the fifth review round — **the paragraph above keeps its words, and
+taking the enumeration as settled carried its one gap forward.** § 74.13's list was derived row by
+row, and a row of [`task-matrix.md`](./task-matrix.md) carries the identifier in two adjacent cells;
+the un-annotated one is named and annotated at **§ 74.15**, where the set is re-derived cell by cell.
+**No figure of this subsection is restated by that**, and the finding this round annotated stands as
+it is written.)_
+
 **One smaller correction: a counting unit named.** § 74.13 said **"Three occurrences are left
 deliberately"** — [`task-matrix.md`](./task-matrix.md)'s **SEC-002** evidence cell, plus the delivered
 [`owner-decision-packet-2026-09-13.md`](./owner-decision-packet-2026-09-13.md) twice — while § 74.2's
@@ -9593,3 +9614,119 @@ no script, no manifest, no baseline and no npm script, so the command-coverage r
 **The ownership gate reading above is the post-commit one**, for the reason § 74.10 records: it judges
 **committed** state against `origin/develop`, so a run taken over an uncommitted working tree proves
 nothing about the file this round changes.
+
+### 74.15 The fifth review round — the sweep enumerated cell by cell
+
+**This subsection records a fifth review of § 74's own changes, and what it changed.** It **allocates
+no identifier**, moves **no task state**, restates **no phase figure**, answers **no Owner item**, and
+issues **no verdict, approval or clearance**. Sections 1 … 74 and CC-01 … CC-65 stand exactly as
+§ 74.1 allocates them, **§ 74.12's findings list and § 74.13's enumeration are not edited** — each
+gains a dated note beside it — and the phase directory still holds **46** tracked files; this
+subsection adds none.
+
+**What the review found.** One site still read **CC-50 (a)** OPEN in its own current voice with no
+dated note beside it: [`task-matrix.md`](./task-matrix.md)'s **QA-001** next-dependency cell, which
+reads "CC-50 is closed and CC-50 (a) carries the two open figures". **The omitted site is an adjacent
+cell inside a row the sweep had already visited** — round two annotated that row's evidence cell and
+read the row as done — and it is **the same adjacent-cell-in-one-row pattern § 74.13 records at
+§ 60.5**, where an annotated disposition cell and an un-annotated one sat side by side in one table.
+The earlier enumerations did not catch it because they were **derived row by row where the state is
+carried cell by cell**. The cell now carries the same dated re-attribution the other sites carry, and
+**it keeps its own words**.
+
+**The accounting written over it, and how each passage is handled.** § 74.2's appended note gave the
+swept total as **eight** and said "all but two" of the remaining occurrences either carried a dated
+re-attribution or already read the row closed; § 74.13's enumeration counted the QA-001 row as one
+site, giving **fourteen** already annotated, **two** annotated there and **three** left deliberately;
+§ 74.14 declared that enumeration unchanged and not re-derived. None of the three included this cell.
+**§ 74.2's sentence is corrected in place**, because it is text this slice wrote and not inherited
+text: it now records the ninth site, gives the swept total as **nine**, and states that its "all but
+two" clause holds only with the annotation added here. **§ 74.13's and § 74.14's passages are
+annotated rather than rewritten**, each keeping its words, because one is the round-three record and
+the other the round-four record, and rewriting either would leave a later subsection describing text
+that no longer exists.
+
+**The set, re-derived cell by cell.** Every occurrence in the phase directory of the identifier, and
+of the two phrasings that carry it without naming it — "sub-item (a)" and "the per-file web coverage
+summary" — was listed one by one before this count was written, **counting a table cell, a bullet and
+a paragraph each as one site, rather than a table row as one**.
+
+- **Seventeen sites read the row open in their own words and carry a dated re-attribution beside
+  them**: the fourteen § 74.13 lists, the two § 60 sites § 74.13 added, and the **QA-001**
+  next-dependency cell annotated by this round.
+- **Three occurrences, in two documents, are left deliberately and are named**, exactly as § 74.13
+  names them: [`task-matrix.md`](./task-matrix.md)'s **SEC-002** evidence cell, which cites what the
+  register held at #385, and the delivered
+  [`owner-decision-packet-2026-09-13.md`](./owner-decision-packet-2026-09-13.md) twice, in its
+  disposition table and again in its recommendation, that packet being a routed record edited only by
+  its one dated head note.
+- **Four passages in § 63 name the identifier in a forward-tense, slice-scoped voice** — § 63.1's
+  quotation of the finding and its "Neither is closed by this section", § 63.6's statement of the
+  defect the fill plan addresses, § 63.8's "unblocked by § 63.2 and moves when the fill lands", and
+  § 63.9's bullet. **§ 74.13 classed the § 63 sites as needing no correction and that classification
+  is not disturbed here.** One reading is recorded so a later review need not find it again: **the
+  closure note in § 63.8 that carries the state for those passages bears no date**, unlike § 63.9's,
+  which § 74.13 dated. **It is not edited by this subsection**, and nothing rests on it that the
+  dated notes elsewhere do not also carry.
+- **Every other mention either reads the row closed or states no status at all** — in this register,
+  in [`closure-record.md`](./closure-record.md), in [`coverage-record.md`](./coverage-record.md), in
+  [`security-and-qa-evidence.md`](./security-and-qa-evidence.md) and in
+  [`owner-decision-packet-2026-09-16.md`](./owner-decision-packet-2026-09-16.md).
+
+**The pattern, a fifth time, and what changed in how it was checked.** § 74.13 states it for rounds
+one to three: completeness asserted over a set that had never been enumerated. Round four was a
+figure left stale by the fix. **Round five is the enumeration's own counting unit** — the set was
+listed, but by row, and a row is not the unit the state lives in. The enumeration above is by cell,
+and it was written after the listing rather than before it.
+
+**Why § 74.7's table is not touched.** Its [`task-matrix.md`](./task-matrix.md) row already reads
+"the CC-50 (a) attribution corrected", which is what this round added to a second cell of that file,
+and its row for this register lists notes in sections 1 … 73, where a note sits beside a state cell a
+reader weighs; the notes added here sit inside § 74's own record of itself, as § 74.12's, § 74.13's
+and § 74.14's did. **The seven documents this slice changes in total are unchanged in number** — this
+round touches two of them, the register and the task matrix, both already among them.
+
+**Two review findings are recorded and deliberately NOT acted on**, both carried unchanged from the
+earlier rounds and neither newly discovered here.
+
+1. **The packet's recounted blocking figure is still not literally derivable from the (f) line it
+   cites.** [`owner-decision-packet-2026-09-16.md`](./owner-decision-packet-2026-09-16.md) § 6
+   recounts the blocking items after O-6's split while **O-6's own (f) line keeps its words**; the
+   per-limb marks live in the dated note beneath it. Correcting it further would mean rewriting an
+   (f) line, which the retention convention forbids, so it stands — disclosed in the recount itself
+   and again at § 74.5, § 74.12, § 74.13 and § 74.14.
+2. **Commit `0c09070d`'s body describes the documentation gates that slice ran**, against the
+   instruction that commit bodies carry no gate claim. **A published commit is not amended, rebased
+   or rewritten**; this is the fifth record of it, and the commit carrying this subsection carries no
+   gate claim in its body.
+
+**What this round does not do.** **CC-50 (a)'s determination is unchanged** — closed on its own
+content, by § 74.2's reading of § 60.5 against the fill — and so is everything that determination
+leaves standing: the coverage holes **H-2** and **H-3** are not closed, the coverage record's later
+figures remain **LOCAL** measurements under **CC-64 (b)**, their `LOCAL` labelling stands, limitation
+**L-2** does **not** lift, and a hosted gate execution still does not make a locally measured figure
+a hosted measurement. **QA-001 does not move**, and neither does any other row. No coverage floor,
+baseline, allow-list, threshold, script, workflow or source file is touched by this subsection or by
+the slice it corrects.
+
+**The gates, re-run over the two documents changed by this round at this branch head.** Documentation
+gates only, every one of them **LOCAL** and static over the changed files. **No hosted result is
+claimed, no hosted job was dispatched, re-run or read, and no test tier, build, migration, database
+operation, browser tier or deployment was run** — these changes touch no executable path, no source,
+no workflow, no script, no manifest, no baseline and no npm script, so the command-coverage register
+is untouched.
+
+| command                                                                   | exit |
+| ------------------------------------------------------------------------- | ---- |
+| `npx prettier --check` over the two documents changed by this round       | 0    |
+| `npm run validate:encoding`                                               | 0    |
+| `node scripts/ci/check-phase-ownership.mjs p1-31-frontend origin/develop` | 0    |
+| `npm run validate:p1-24-register`                                         | 0    |
+| `npm run validate:p1-27-doc-counts`                                       | 0    |
+| `npm run validate:p1-27-closing-values` (check mode)                      | 0    |
+| `npm run validate:plain-language`                                         | 0    |
+| `npm run validate:generated-artifacts`                                    | 0    |
+
+**The ownership gate reading above is the post-commit one**, for the reason § 74.10 records: it
+judges **committed** state against `origin/develop`, so a run taken over an uncommitted working tree
+proves nothing about the files this round changes.
