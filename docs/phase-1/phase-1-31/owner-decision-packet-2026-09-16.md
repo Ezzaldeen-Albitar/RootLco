@@ -488,7 +488,7 @@ did not cover; and **O-19**'s register cell names the Owner as its owner and rea
 
 ---
 
-### Group D — raised by the reconciliation of 2026-09-16 (O-20, O-21)
+## Group D — raised by the reconciliation of 2026-09-16 (O-20, O-21)
 
 **Why these are added, and why they were not here before.** Each is a limb that an earlier
 subsection of [`closure-record.md`](./closure-record.md) named as the Owner's, and that then
@@ -496,6 +496,11 @@ disappeared from the later re-derivations of the same rows **without any record 
 Neither is a new question and neither is a new obligation: both are existing Owner acts that stopped
 being asked. They are numbered after **O-19** and **nothing above is renumbered**. **Both are
 unanswered here**, and the inclusion criterion of § 2 is applied to each without exception.
+
+**This group's heading carries no section number on purpose.** Groups A, B and C are §§ 3, 4 and 5, and
+numbering this one would have pushed § 6, § 7 and § 8 along by one. It sits at the same heading level as
+the other three groups, which is what the count table in § 6 treats it as, and **no existing number
+moves**.
 
 ### O-20 — whether checklist-template administration is inside FE-004 or a later phase
 
@@ -598,7 +603,10 @@ shown so it can be checked rather than believed._
 _**Start from the six above:** O-1 (condition 4), O-2 (conditions 2 and 3), O-3 (bullet 2, and through
 it condition 1), O-4 (bullet 1 and condition 1), O-6 (bullet 3), O-10 in one limb (bullet 1)._
 
-_**Subtract O-6, which now contributes nothing — both of its limbs read NO on their own (f) lines.**
+_**Subtract O-6, which now contributes nothing — both of its limbs are marked NO.** The marks are
+recorded in the 2026-09-16 dated note under **O-6**, not on that item's own (f) line: **that line keeps
+its words and still reads "Blocks the phase: YES"** for the item as it stood before the split, and the
+per-limb reading below is what supersedes it._
 Limb (i), naming the runbook's owner: Definition-of-Done bullet **3** requires runbooks to be
 **synchronized**, the runbook exists and is synchronized, and § 3 of
 [`closure-record.md`](./closure-record.md) states that bullet's residue without naming a missing

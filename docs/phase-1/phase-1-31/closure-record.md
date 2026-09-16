@@ -197,8 +197,10 @@ evidence is cited rather than assumed.** The export contract **exists** — the 
 remediation merged as pull request **#397** at `develop` `9729b2b5` (§ 70.2 of the register) and its
 screen half as **#398** at `c1a2f9fc`, so the premise "does not exist" is false at this head. Its error
 paths are **exercised, not merely writable**: [`acceptance-record.md`](./acceptance-record.md) § 11.5
-records five exports each carrying exactly one correlated audit row, an empty-selection export, and the
-default administrator **refused on all four report codes with `403 ERR-IAM-001`**. **QA-002's state
+records **four exports and an empty-selection export**, five correlated export audit events in the
+companion's window — exactly one per correlation id, four of them asserted by ledger steps of their own
+and the fifth measured from that window read rather than from an assertion of its own — and the default
+administrator **refused on all four report codes with `403 ERR-IAM-001`**. **QA-002's state
 does not move on this note**, and nothing here treats the limb's discharge as closing the row: QA-002
 remains `phase-level incomplete`, still carrying the bare-object success-body contract gap — which is
 an **Owner** item, **O-9** of the decision packet — and the QA certification, **unissued**. **The
@@ -1005,11 +1007,19 @@ Two corrections this record owes, and makes, to what it previously said here:
   produced", so writing P1-31 rows would declare evidence that `phase-1/_acceptance/README.md` forbids
   absent an added artefact (**P1-ASM-025**), which QA-005's unmet packaging half does not provide; the
   open-decision, risk and deliverable registers carry no P1-31 rows and adding them means choosing
-  statuses; and the change log's rows carry an "Approved by" column. **Nothing was written to any of
+  statuses; and appending a change-log row would assert a modification that has not been made and
+  require that log's "Meaning Changed?" and "Review Required" values to be chosen — it attributes no
+  approval, and the determination rests on the three reasons before it. **Nothing was written to any of
   the ten files, and none of them is committed by this repository.** It stays **remaining engineering**
   on DOC-001 and is **not** added to the Owner packet — DOC-001's genuine Owner items are already
   asked, as O-10, O-11 and O-12. Change control **§ 74.6** carries the full assessment. **DOC-001 does
-  not move.**
+  not move.** _(2026-09-16 — the change-log clause above is corrected in place, and the correction is
+  noted rather than hidden: as first written it said that log's rows carry an "Approved by" column,
+  which `documentation/_registry/change-log.md:4` does not — its columns end at "Review Required".
+  Appending a row attributes no approval; the three reasons before it carry the determination, which is
+  unchanged. Change control **§ 74.6** and **§ 74.11** record it. **Field 34 also names "API/error/event/
+  test catalogs" and "data dictionary/ERDs where affected", which the ten inventoried targets do not
+  cover**; they are uninventoried and unassessed, and § 74.6 records that too.)_
 
 ## 6. Promotion eligibility
 
