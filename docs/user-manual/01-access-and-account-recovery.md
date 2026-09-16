@@ -116,7 +116,13 @@ browser history, so pressing Back does not return you to it.
 | **Too many attempts. Wait a short while before trying again.** <!-- auth.login.error.throttled --> | Too many sign-in attempts in a short period.                                                                             | Wait, then try once more. This is not a verdict on your password.                                                                                            |
 | **The service is not responding. This is usually brief.** <!-- auth.login.error.unavailable -->    | The application could not reach the service behind it.                                                                   | Wait a moment and try again. If it persists, the application tier is probably not running (1.1).                                                             |
 
-**Screenshot.** No screenshot available at this version.
+**Screenshot** — `images/login-en.png`; the right-to-left rendering is
+`images/login-ar.png`. Both show the sign-in page as an anonymous visitor meets it, with the fields
+empty.
+
+![Sign-in page, English](images/login-en.png)
+
+![Sign-in page, Arabic](images/login-ar.png)
 
 ---
 
@@ -287,7 +293,12 @@ expires.** <!-- auth.forgot.submittedDetail -->
 | **Too many requests. Wait a short while before trying again.** <!-- auth.forgot.error.throttled --> | Too many requests in a short period.               | Wait, then ask once. |
 | **The service is not responding. This is usually brief.** <!-- auth.forgot.error.unavailable -->    | The service behind the application did not answer. | Try again shortly.   |
 
-**Screenshot.** No screenshot available at this version.
+**Screenshot** — `images/forgot-password-en.png`; the right-to-left rendering is
+`images/forgot-password-ar.png`. Both show the request page with the address field empty.
+
+![Password reset request page, English](images/forgot-password-en.png)
+
+![Password reset request page, Arabic](images/forgot-password-ar.png)
 
 ### 1.6.2 Choosing the new password
 
@@ -321,7 +332,15 @@ in** <!-- auth.reset.continue --> takes you to the sign-in page.
 **If it goes wrong.** The same messages as in 1.5 apply, including **This link has expired or has
 already been used.** with **Request a new link**.
 
-**Screenshot.** No screenshot available at this version.
+**Screenshot** — `images/reset-password-no-token-en.png`; the right-to-left rendering
+is `images/reset-password-no-token-ar.png`. Both show the page opened without the identifying part
+of the link: it reads **This link is not complete** <!-- auth.reset.missingToken --> , offers
+**Request a new link** <!-- auth.reset.requestAnother --> , and withholds the password fields
+altogether, so there is nothing to fill in until a complete link is opened.
+
+![Reset password page opened without a complete link, English](images/reset-password-no-token-en.png)
+
+![Reset password page opened without a complete link, Arabic](images/reset-password-no-token-ar.png)
 
 ### 1.6.3 What the application does not do with passwords
 
@@ -384,9 +403,11 @@ are carried across.
 **If it goes wrong.** If a screen looks mirrored or the text runs the wrong way, check which
 language is highlighted in the language control; Arabic is right-to-left by design.
 
-**Screenshot.** No screenshot available at this version. (The evidence captures held for this
-version cover the delivery, warranty, reports and audit-log screens in both languages, not the
-sign-in or profile screens.)
+**Screenshot** — `images/login-ar.png` is the mirrored layout: the same sign-in page as
+`images/login-en.png`, read from the right, with the language control and the fields laid out in
+the opposite direction. (The evidence captures held for this version cover the sign-in and
+password-recovery pages and the delivery, warranty, reports and audit-log screens in both languages,
+not the profile screen.)
 
 ---
 
@@ -553,7 +574,8 @@ records. Do not expect an automatic response to a fault.
   final brand pending** <!-- app.provisionalBrand --> (Arabic: مظهر مؤقّت — الهوية النهائية قيد
   الاعتماد), and the home page explains that changing them later is a settings change that affects
   no customer or vehicle record.
-- No screenshots of the sign-in, password, language or profile screens exist at this version.
+- The sign-in page and both password-recovery pages are shown in both languages (1.2, 1.6.1,
+  1.6.2); no screenshot of the profile screen exists at this version.
 
 ---
 

@@ -1110,7 +1110,8 @@ and **Discard** <!-- form.discard --> .
   work-order sheet or quality certificate. The printable documents that do exist belong to reception
   and to handover.
 - **No screenshot exists for any screen in this part at this version.** The evidence captures made
-  for this release cover the delivery, warranty, reports and audit-log screens only.
+  for this release cover the sign-in and password-recovery pages and the delivery, warranty,
+  reports and audit-log screens only.
 
 ---
 

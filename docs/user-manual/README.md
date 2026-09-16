@@ -105,12 +105,14 @@ something someone in your organisation entered.
 
 ## Screenshots
 
-Screenshots exist for the delivery readiness queue, the vehicle handover record, the warranty list,
-one warranty record, the warranty plans list, the report catalogue, two reports and the audit log,
-in English and in Arabic. They are stored in [`images/`](images/) and were captured on the local
-environment described above, from a disposable organisation created for the purpose. Every other
-workflow in this manual says **"no screenshot available at this version"** in its Screenshot field
-rather than showing a picture of something else.
+Screenshots exist for the sign-in page, the password-reset request page, the reset page opened
+without a complete link, the delivery readiness queue, the vehicle handover record, the warranty
+list, one warranty record, the warranty plans list, the report catalogue, two reports and the audit
+log, in English and in Arabic. They are stored in [`images/`](images/) and were captured on the
+local environment described above, from a disposable organisation created for the purpose — except
+the sign-in and password-recovery captures, which are of anonymous pages, signed out, with every
+field empty. Every other workflow in this manual says **"no screenshot available at this version"**
+in its Screenshot field rather than showing a picture of something else.
 
 ## Table of contents
 

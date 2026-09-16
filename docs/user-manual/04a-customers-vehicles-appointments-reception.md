@@ -32,9 +32,10 @@ Al-Mansour (example)" (a customer), "Faris Haddad (example)" (a second customer)
 illustration.
 
 **No screenshots exist for any screen in this part.** The evidence capture at this version
-photographed the delivery, warranty, report and audit-log screens only. Every workflow below
-therefore reads "no screenshot available at this version". None of the screens in this part was
-exercised by the closing acceptance run's browser evidence either — see section 4A.8.
+photographed the sign-in and password-recovery pages and the delivery, warranty, report and
+audit-log screens only. Every workflow below therefore reads "no screenshot available at this
+version". None of the screens in this part was exercised by the closing acceptance run's browser
+evidence either — see section 4A.8.
 
 ---
 
