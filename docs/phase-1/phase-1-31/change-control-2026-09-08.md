@@ -9045,12 +9045,15 @@ next-dependency cell — a different cell from the QA-001 evidence cell beside i
 sweep had annotated — read "CC-50 is closed and CC-50 (a) carries the two open figures" in its own
 current voice with no note beside it. It now carries the same dated re-attribution, added by the
 fifth review round at **§ 74.15**, which brings the swept total to **nine**, and the sentence that
-follows holds only with that annotation in place. Of every other occurrence, all but two either
-carry a dated re-attribution or already read the row closed; the two are [`task-matrix.md`](./task-matrix.md)'s
+follows holds only with that annotation in place. Of every other occurrence, all but seven either
+carry a dated re-attribution or already read the row closed; three of the seven, in two documents, are
+[`task-matrix.md`](./task-matrix.md)'s
 **SEC-002** evidence cell and the delivered
 [`owner-decision-packet-2026-09-13.md`](./owner-decision-packet-2026-09-13.md), which names it in its
 disposition table and again in its recommendation — those cite what the register held at #385 and at
-that packet's own date, and **neither is edited here**. Annotating
+that packet's own date, and **neither is edited here** — and the other four are the § 63 passages that
+name the identifier in a forward-tense, slice-scoped voice, which **§ 74.13 classed as needing no
+correction**. Annotating
 § 60.5 matters beyond tidiness: § 70.7 counts
 a row open "unless that cell, or a dated note beside it, records a closure", and until now that cell
 carried no note, so the rule read this row open while § 70.7's exclusion list read it closed. **No
@@ -9644,7 +9647,11 @@ text: it now records the ninth site, gives the swept total as **nine**, and stat
 two" clause holds only with the annotation added here. **§ 74.13's and § 74.14's passages are
 annotated rather than rewritten**, each keeping its words, because one is the round-three record and
 the other the round-four record, and rewriting either would leave a later subsection describing text
-that no longer exists.
+that no longer exists. _(2026-09-16, appended after review — **§ 74.2's partition is corrected in place
+to match the enumeration below**, its clause now reading "all but seven" and naming, beside the three
+occurrences left deliberately in two documents, the four forward-tense § 63 passages § 74.13 classed as
+needing no correction, so the two subsections no longer describe one set two ways; the swept total of
+**nine** is unchanged and nothing else in that sentence is touched.)_
 
 **The set, re-derived cell by cell.** Every occurrence in the phase directory of the identifier, and
 of the two phrasings that carry it without naming it — "sub-item (a)" and "the per-file web coverage
