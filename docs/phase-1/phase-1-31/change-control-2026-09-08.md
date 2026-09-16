@@ -1828,6 +1828,19 @@ the pins in `tests/ci/p1-31-access-gate.test.ts` were moved to 11 and 8 in this 
 | --------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------ |
 | **CC-31** | **FE-009 ships PARTIAL: a vehicle-filtered list, and no per-record transition ledger** | `wty.warranty_status_history` (the table’s real name; CC-10 above records it as `wty.warranty_record_status_history`, which no migration ever created) is written by the database and read by **no operation anywhere** in `apps/api/src` — **CC-10**, unchanged. The only history that can be read honestly is `wty.warranty-list` filtered by its one filter, `vehicleId` | **accepted, with the missing half NAMED and NOT simulated.** The record screen states in the operator's own language that the transition record cannot be read yet. No sequence is composed from the record's current state: an invented ledger would be believed, which is worse than an absent one. The backend prerequisite is named as **P-18 — warranty history reader**, a `wty.warranty.read` branch-scoped read over the existing table. It is a Backend seam and is not in this lane. _**2026-09-13, § 65 / CC-55:** the named prerequisite is DELIVERED. `wty.warranty-status-history` publishes the ledger under `wty.warranty.read`, branch-scoped, over the existing table — exactly the read this cell specified. **The frontend half of this row stays open**: the record screen still states the transition record cannot be read, because a web change is outside this branch's ownership profile. What is closed is the obstacle, not the screen._ _**2026-09-14, § 69 / CC-59:** every word above was true when it was written and none of it is rewritten. The sentence "the record screen still states the transition record cannot be read" is no longer true of the tree: the web slice recorded in § 69 removed `warranty.record.noHistoryYet` and renders the ledger through `wty.warranty-status-history`. **CC-31's frontend half is delivered; CC-31 itself stays open** until the browser proof at the closing head, which is CC-59 and CC-59 (a)._ | a Backend seam lane (backend half delivered); the screen owed to a web slice | open, recorded — backend half closed |
 
+_(2026-09-16, beside the **CC-31** row above, every word of which was true when written and none of
+which is rewritten. The row's 2026-09-14 note left exactly one condition — "**CC-31** itself stays
+open until the browser proof at the closing head, which is CC-59 and CC-59 (a)". **That proof was
+taken.** The closing acceptance run's fourth attempt, run `mu3ch41f` at protected `develop`
+`849a8e9a`, read the warranty transition ledger in its journey and passed the warranty browser cases
+in `authenticated-en`, `authenticated-ar` and `authenticated-tablet`
+([`acceptance-record.md`](./acceptance-record.md) §§ 11.4 and 11.6), and § 69.7's dated note records
+**CC-59** and **CC-59 (a)** closed on that measurement. **So CC-31's substance is closed**, on the
+condition its own cell set and on no wider reading; the state cell above keeps its words and this note
+carries the state. § 70.7 excludes the row from the open set by name for this reason, and § 70.5 item 7
+records this note. FE-009's matrix state does not move here — it was already `end-to-end verified` at
+`c1a2f9fc`.)_
+
 ### 43.4 What this slice did NOT do
 
 - **No backend file was edited**, no migration was written, no seed changed and no permission was
@@ -3757,6 +3770,13 @@ covered by nothing**, and is owed to a separate pull request — a new
 | **CC-46(c)** | the OpenAPI shortfall was recorded for `sal.delivery-*` and is wider than that            | **re-measured: all 45 P1-31 operations publish a bare-object success schema** in `docs/api/openapi.v1.json`. A0 classified the shortfall as chapter-level and it stays there; the extent is recorded so the next reader does not measure a subset. The generated file was **not** edited                                                                                                    | a later slice | open, recorded                                                                                                                                                                                                                                                                                                                                                         |
 | **CC-46(d)** | two figures in the index's second version did not reproduce at the new head               | **corrected in place, with what they replace named**: the three web feature trees hold 24, 8 and 10 TypeScript files rather than fifteen, six and six, and no slice touched those trees between the two heads; and the phase's own document counts now add up to the directory. A figure that does not reproduce is corrected, never restated                                               | this slice    | **closed, recorded** _(re-opened at section 57.4 when the phase directory grew past the count the index stated, and **closed again by measurement** at the closure re-measure: the index states the directory at 35 files at `develop` `fb65b049` and 36 as that pull request leaves it, and the register range at sections 1 … 62 with CC-01 … CC-52. Section 62.2.)_ |
 
+_(2026-09-16, beside the **CC-46 (d)** cell above, which was true of the head it names. The row
+re-opens on every merge that adds a document to the phase directory, and it has re-opened again: the
+index's stated 35 and 36 are figures of `fb65b049`, and at protected `develop` `849a8e9a` the
+directory `docs/phase-1/phase-1-31/` holds **44** files, **46** as the pull request that lands the
+closing records leaves it. The register range at `849a8e9a` is **sections 1 … 72 with CC-01 … CC-63**.
+**Closed again by that measurement**, which is stated once, in § 70.1. Nothing is renumbered.)_
+
 **What was verified, and what is not claimed.** Locally and without the stack: the changed-file
 ownership gate in both its forms, the documentation count and citation-anchor gates, root Prettier
 over `docs/`, and the static checkers whose report lines the index quotes —
@@ -5053,6 +5073,19 @@ shape, and it is raised as **CC-52 (a)** rather than fixed by editing four other
 | **CC-52 (b)** | **a gate accepts a provenance word without reading the ledger behind it**                                                                                                                                                                                                     | `tests/ci/p1-27-doc-counts.test.ts:613` accepts either `local` or `HOSTED` as the provenance marker beside a recorded figure and does not check the run ledger, so a marker can claim a hosted provenance over a locally derived figure and the gate stays green. Observed by the § 58 lane and recorded for this re-measure                                                                                                                                                                                                                                                                                                                                   | **recorded, and deliberately not worked around.** Nothing in P1-31 relies on the weakness, no marker in this pull request claims a provenance it does not have, and the fix belongs to the lane that owns the gate. Widening or relaxing anything to accommodate it would be the defect the gate exists to prevent                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | the CI-automation lane      | open, recorded   |
 | **CC-52 (c)** | **three matrix rows held `end-to-end verified` on their HTTP chains alone**                                                                                                                                                                                                   | FE-004, FE-005 and FE-006 moved on the acceptance record's § 6, whose own stated standard is "both an HTTP chain that ran **and** a browser case that passed in both locales". **No committed browser case exercises the delivery checklist, the final odometer or the signature evidence in either locale.** The delivery case that opens the handed-over record asserts the summary, eligibility and receiver panels and nothing else; a search of the five `*-p1-31.spec.ts` files for those three subjects returns only the warranty screen's odometer-limit column. § 6's own "Not moved, and why" list applies the same standard to the rows it withheld | **the three rows are LOWERED to `merged (write path)`** — the vocabulary's state for work on `develop` including the commands the task implies, which is exactly what the HTTP journey exercised and all it exercised. **Three committed browser cases are owed**, in both locales, on the next acceptance pass, and the three rows stay where they are until then. The acceptance record is annotated beside the paragraph this corrects, with the original left visible; **no figure of the run itself moves**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | the acceptance re-run lane  | open, recorded   |
 
+_(2026-09-16, beside the **CC-52 (c)** row above, which was true of the tree it was written against and
+is not rewritten. The row's condition was that "**three committed browser cases are owed**, in both
+locales, on the next acceptance pass, and the three rows stay where they are until then". **The cases
+were delivered and executed.** § 64.8's **CC-54** row reads `closed`: run `mu0g1b1a` of 2026-09-14
+executed **48 of 48** P1-31 browser cases with 0 failed and 0 unrun, eight of them in
+`delivery-writes-p1-31.spec.ts`, four per locale, and each of FE-004, FE-005 and FE-006 has in both
+locales a write through the real interface, a meaningful negative and a reload that re-reads the
+persisted state — the mapping is § 9.7 of [`acceptance-record.md`](./acceptance-record.md). The three
+matrix rows were raised out of `merged (write path)` on that measurement. **So CC-52 (c)'s substance is
+closed**; the state cell above keeps its words and this note carries the state. § 70.7 excludes the row
+from the open set by name for this reason, and § 70.5 item 6 records this note. **CC-52 (a)** and
+**CC-52 (b)** are untouched by it and stay open.)_
+
 ### 62.8 What this slice did NOT do, and what is not claimed
 
 - **It ran no tier that needs a database, no build, no migration, no seed and no deployment.** The
@@ -5581,6 +5614,10 @@ optional `answersNotFound` field, the delivery record read and the warranty deta
 it, and `docs/api/openapi.v1.json` and the P1-24 operation register were regenerated from the
 declarations rather than edited. Recorded in § 72.3 under **CC-63**. The row's state moves to closed
 only when that branch merges.)_
+
+_(2026-09-16: that branch merged as pull request **#399** at `c7298c09`, the first parent of
+`849a8e9a`, so **CC-54 (b) is closed**. The row above keeps its wording and its state cell, and
+nothing is renumbered; this note carries the state. § 70.5 records it.)_
 
 ### 64.9 What this slice did NOT do, and what is not claimed
 
@@ -6134,6 +6171,11 @@ running a statement, and the pin in `tests/backend/authorization.test.ts` assert
 real, visible branch. An empty claim still resolves. All four callers were read and each names a
 company, so no route's behaviour changes. Recorded in § 72.2 under **CC-63**. The row's state moves to
 closed only when that branch merges.)_
+
+_(2026-09-16: that branch merged as pull request **#399** at `c7298c09`, the first parent of
+`849a8e9a`, so **CC-56 (c) is closed**. **CC-56 (b) and CC-56 (d) are unchanged and open** — neither
+was touched by that merge. The rows above keep their wording and their state cells, and nothing is
+renumbered. § 70.5 records it.)_
 
 ### 66.9 CC-56 (b) enumerated — every site outside this phase that still answers the old way
 
@@ -7280,6 +7322,18 @@ would let a page-level pass stand in for a panel that never rendered.
 | **CC-59 (e)** | **the same composed-key defect remains at sixteen sites across nine files outside this phase**    | `grep -rn 'state.\${' apps/web/src` at this head, minus the nine sites CC-59 (c) fixed and minus two docblocks that quote the pattern in order to name it. Every one composes `state.${status}.title` from a `ReadFailureStatus`; every one therefore renders the literal `state.not-found.title` to an operator when that read answers `not-found`. `features/diagnostics/components/JobDiagnosticsScreen.tsx:113`, `TemplateCatalogueScreen.tsx:42`, `TemplateDetailScreen.tsx:87` and `:404`; `features/quality/components/JobBlockersPanel.tsx:118`, `WorkOrderClosureScreen.tsx:126`, `:991`, `:1356` and `:1367`, `WorkOrderHistorySection.tsx:73`; `features/technicians/components/JobWorkPanel.tsx:387`, `:692` and `:900`; `features/work-orders/components/JobPanel.tsx:235`, `WorkOrderDetailScreen.tsx:152` and `:576`. **There is no billing site, and the review's brief that named one is corrected here rather than followed:** billing composes `invoices.status.${…}`, which is a closed PRODUCT vocabulary with a matching catalogue entry for every value and no camel-cased member, so it is a different class from a key built out of a read-failure status. The wider grep for `translateDynamic(messages, \`…${` returns roughly 150 such vocabulary compositions across the product; not one of them is this defect, and none is listed here. **Sixteen sites, NINE files** — the count is the passages, not the files, and both figures are re-derived from the grep at this head rather than carried: an earlier draft of this row said eight files, which was a miscount of the same list | **listed and NOT fixed, deliberately.** All sixteen belong to P1-29 and P1-30 features; rewriting them from this branch would be a platform-wide change made under a warranty ticket, reviewed by nobody who owns those screens, and it would put nine untested files in a slice whose subject is one panel. It is recorded as a platform follow-up so the next lane that owns those features has the enumeration rather than the grep. **The one site that was NOT outside this phase has been removed from this row and fixed** — see CC-59 (c). It was listed here for one commit because the review's instruction said to defer the whole residue while its stated reason covered only other phases' features; the contradiction was reported rather than resolved by this lane, and the coordinator's answer was to fix it                                                                                                                                                                                                                                                                                                                                                                                                | a platform follow-up lane; the delivery site is P1-31's own | **open**                                                                            |
 | **CC-59 (d)** | **the acceptance plan's browser-case count does not include a spec that has not merged**          | `--list` on this tree collects **21 P1-31 cases per locale project, 42 in total**, across the five `*-p1-31.spec.ts` files that exist at `aa20c959`. The delivery-writes spec is on the unmerged Frontend proofs branch (§ 64 / CC-54) and contributes none of them                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | **the figure is stated as measured and named as one that moves.** After the Frontend proofs branch merges the count becomes twenty-five per locale and fifty in total, and the sentence in § 3 of the acceptance plan moves with it. Nothing is pre-written to a number no run has produced                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | this integration, after #393                                | **settled for collection — § 69.9; earlier state: open**                            |
 
+_(2026-09-16, beside the **CC-59** and **CC-59 (a)** rows above, both of which were true when written.
+**CC-59** waited on "a browser assertion over a real ledger, which only the closing-head acceptance run
+can give", and **CC-59 (a)** on a harness that published no warranty ledger. The closing acceptance
+run's **fourth** attempt, run `mu3ch41f`, was taken at protected `develop` `849a8e9a`: its journey
+reads the warranty transition ledger and asserts the genesis-only shape
+([`acceptance-record.md`](./acceptance-record.md) § 11.4), and its warranty browser cases executed and
+passed in `authenticated-en`, `authenticated-ar` and `authenticated-tablet` (§ 11.6). **Both rows are
+closed on that measurement.** FE-009's matrix state did not move at this head — it was already
+`end-to-end verified` at `c1a2f9fc` — so no row is raised by this note. **CC-59 (b) and CC-59 (e) stay
+open**: the first turns on a gate run this note did not take, and the second on sixteen sites outside
+this phase that remain deliberately unfixed. Nothing is renumbered; § 70.5 records this note.)_
+
 ### 69.9 Resumed integration on 2026-09-14
 
 The interrupted merge from protected `develop`
@@ -8331,3 +8385,314 @@ not changed, only the reachability beneath it. `attachment-lifecycle.md` **was**
 dated note beside its enforcement claim, because that claim is now true. `security-and-qa-evidence.md`
 and `closure-record.md` remain unedited, and the survey of other operations for an undeclared
 not-found remains undone.)_
+
+_(2026-09-16: the **CC-63** row of § 72.6 read "done on this branch, pending merge" and was true when
+written. That branch merged as pull request **#399** at `c7298c09`, which is the first parent of
+`849a8e9a`. The row is not rewritten and nothing is renumbered; this note carries the state.)_
+
+---
+
+## 70. The closing records reconciled at one head, and the two packets assembled (CC-60)
+
+**Slice:** `feature/p1-31-closing-records`, ownership profile `p1-31-frontend`. **Baseline:**
+protected `develop` `849a8e9a7d8960e784456d5d886d5976350f0b24`, tree `b8390f33` — the merge of pull
+request **#400** of 2026-09-15T23:32:04Z. `main` `1262de74`, unchanged and far behind. **This slice
+changes no application source, no migration, no seed, no permission code, no audit action, no
+contract mirror and no gate.** It is records, and it cites one acceptance run whose evidence lives
+outside every git working tree.
+
+**Purpose.** Four pull requests merged after § 62 took the last whole-file re-measure, and a closing
+acceptance run was taken four times. This section states, at one head, what the records now say, which
+earlier sentence each new figure supersedes, and what the phase still owes. It also records the two
+artefacts the Owner asked for and that no lane owned: the prepared QA and security certification and
+clearance items, and the reduced list of genuine Owner decisions.
+
+**This section records no verdict and recommends none.** Gate condition 4 of § 4 of
+[`closure-record.md`](./closure-record.md) reads "**nothing**" before this slice and reads
+"**nothing**" after it. **No certification and no clearance is issued here**, and the two review roles
+are already held under
+[`solo-developer-review-policy.md`](../../governance/solo-developer-review-policy.md) — this section
+appoints nobody and signs nothing.
+
+### 70.1 Identifier allocation
+
+| identifier    | meaning                                                 | state                                                    |
+| ------------- | ------------------------------------------------------- | -------------------------------------------------------- |
+| section 70    | this closing reconciliation                             | **the reserved section, taken here** (§ 69.13.1, § 71.1) |
+| **CC-60**     | the closing evidence and the two assembled packets      | this branch                                              |
+| **CC-60 (a)** | the run of record, and the run it supersedes            | closed by measurement (§ 70.3)                           |
+| **CC-60 (b)** | the twenty-nine-task reconciliation at one head         | closed by the records named in § 70.4                    |
+| **CC-60 (c)** | the reduced Owner decision packet                       | **open** — the decisions are the Owner's                 |
+| **CC-60 (d)** | the certification and clearance items                   | **open, and deliberately** — no certificate exists       |
+| **CC-60 (e)** | the environment record and the operator acts            | **open as an act**, recorded as a statement              |
+| **CC-60 (f)** | the residual limitations carried out of the closing run | **carried, named** — neither blockers nor accepted       |
+| **CC-60 (g)** | the provenance of the out-of-repository instruments     | **open, recorded**                                       |
+| § 73 / CC-64  | —                                                       | **not allocated at this head, and not taken here**       |
+
+§ 48.1's rule holds: an identifier is a claim about the register at the moment it was raised, and it
+is never renumbered. Nothing above renumbers anything.
+
+**The section order is inverted, and the inversion is recorded rather than corrected.** § 70 was
+reserved and left empty at § 69.13.1, and §§ 71 and 72 were written into the next free numbers while
+it stayed reserved. **So § 70 sits after § 71 and § 72 in file order.** That is the same discipline
+the register already applies to § 60 preceding § 59 and to the missing § 69.8: a number states when a
+claim was raised, not where its text sits. **Nothing is moved and nothing is renumbered.**
+
+**Two further facts about the register's own shape at this head, restated so a reader does not take
+either for damage.** **CC-40** is allocated and never used — the permanent hole § 57.5 records. **§ 69
+has no subsection 69.8**, and § 69.14 is a top-level heading inside § 69's range.
+
+**The directory count and the register range, measured here because three passages carry them and
+they re-open on every merge — this is what CC-46 (d) is about.** At `849a8e9a` the phase directory
+`docs/phase-1/phase-1-31/` holds **44** files; **as the pull request that lands these records leaves
+it, 46**, the two additions being
+[`certification-and-clearance-packet.md`](./certification-and-clearance-packet.md) and
+[`owner-decision-packet-2026-09-16.md`](./owner-decision-packet-2026-09-16.md). The register holds
+**sections 1 … 72 with CC-01 … CC-63** at `849a8e9a`, with § 70 reserved and empty, and **the same
+range with § 70 written and CC-60 allocated** as this pull request leaves it. **No section number is
+free below 73 and no identifier below CC-64.**
+
+### 70.2 What landed in the closing queue, by pull request and head
+
+| pull request | what it carried                                                                                                                                                                                               | merge head on `develop` |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| **#397**     | the backend report export remediation                                                                                                                                                                         | `9729b2b5`              |
+| **#398**     | the export monitoring integration; § 71 / **CC-62**                                                                                                                                                           | `c1a2f9fc`              |
+| **#399**     | backend closure hardening; § 72 / **CC-63** — the claim guard, the two published not-found answers, the server-side refused-download negative, the D-18 identity-evidence category, and operator-runbook § 10 | `c7298c09`              |
+| **#400**     | the frontend closure completion — the optional receiver identity-evidence capture, its two committed browser cases, the coverage work of § 11.11 (c) of the acceptance record, and operator-runbook § 11      | `849a8e9a`              |
+
+**Hosted results are cited only where an artefact carries them.** [`acceptance-record.md`](./acceptance-record.md)
+§ 10.1 quotes the check-run capture taken for `c1a2f9fc`, because attempt 3's evidence directory holds
+one. **No evidence directory holds a check-run capture for `c7298c09` or for `849a8e9a`**, and the
+environment that wrote these records has no authenticated client to query one
+([`acceptance-record.md`](./acceptance-record.md) § 11.11 (a)). **So no check-run name, identifier or
+conclusion is stated for either head here, and none is invented.**
+
+### 70.3 The closing acceptance run — attempt 4 is the run of record
+
+Recorded at [`acceptance-record.md`](./acceptance-record.md) **§ 11**, run `mu3ch41f`, taken against a
+production build of protected `develop` `849a8e9a` by one runner invocation that exited 0 with all 28
+recorded steps exiting 0. Evidence outside every git working tree at
+`orchestration/evidence/p1-31/acceptance-20260916-0008/`. **Every figure in the table below is quoted
+from that section and is its measurement, not this one's.**
+
+| figure                    | value at this head                                                                                                                                                                     |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| HTTP journey              | **740 steps, 740 ok, 0 not ok, 0 findings**, one pacing row (§ 11.4)                                                                                                                   |
+| export companion          | **45 steps, 45 ok, 0 findings**, attempt 1 of its bound of 3 (§ 11.5)                                                                                                                  |
+| exports                   | four at 200 `text/csv` with **17 / 1 / 1 / 2** rows, plus an empty selection of 0 rows; **exactly one correlated audit row each**; the default administrator refused all four (§ 11.5) |
+| P1-31 browser cases       | **84 executed, 0 failed — 28 per authenticated project**, derived from both tier reports together and from neither alone (§ 11.6)                                                      |
+| the two receiver cases    | **6 executed, 6 passed** across the three authenticated projects (§ 11.6)                                                                                                              |
+| screens                   | **30 shot records, 28 images** (§ 11.7)                                                                                                                                                |
+| monitoring, the run's own | **2180 records read, 0 routed**, `complete: true` (§ 11.8)                                                                                                                             |
+| the DO-002 rehearsal      | unit suite **8 of 8**; the command **routed 1**, canary absent from both routing outputs (§ 11.8)                                                                                      |
+| credential hygiene        | 3 handoffs, 66 files scanned, **0 redactions**, 0 handoffs remaining (§ 11.9)                                                                                                          |
+| `org.tenants`             | **57 → 59**, **derived from a read-only query and not recorded by the runner** (§ 11.9)                                                                                                |
+
+**Attempt 3 is retained and superseded as the run of record.** Its journey instrument carried guessed
+record-version values, so its quality-control finalisation succeeded on a guess the server accepted
+and its quality-control detail steps read nothing (§ 11.2, § 11.12 item 9). **Attempt 3's section is
+not rewritten**; a dated note stands beside it.
+
+**Four labelled rehearsals preceded the run and are history, not acceptance** (§ 11.10). The third
+found the instrument defect; the fourth reproduced the run's shape.
+
+### 70.4 The re-measure — which record carries what, at this head
+
+**Rule of order, from § 62 and unchanged:** [`task-matrix.md`](./task-matrix.md) owns state and moves
+first; [`closure-record.md`](./closure-record.md) quotes it;
+[`security-and-qa-evidence.md`](./security-and-qa-evidence.md) only assesses.
+
+| record                                                         | what it now carries at `849a8e9a`                                                                     |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| [`acceptance-record.md`](./acceptance-record.md)               | § 11, the run of record, with § 10 retained and annotated                                             |
+| [`security-and-qa-evidence.md`](./security-and-qa-evidence.md) | § 18, § 17 re-measured against § 11, with § 17 keeping its words                                      |
+| [`task-matrix.md`](./task-matrix.md)                           | the amendment of 2026-09-16 — all twenty-nine rows re-derived, nothing renumbered                     |
+| [`closure-record.md`](./closure-record.md)                     | §§ 2.10 and 2.11, the same twenty-nine rows and the five categories, with §§ 2.8 and 2.9 retained     |
+| [`operator-runbook.md`](./operator-runbook.md)                 | § 10's dated note recording act 5 performed on the one shared local acceptance database on 2026-09-15 |
+| this register                                                  | this section, and the dated notes § 70.5 lists                                                        |
+
+**The account the three records agree on, re-derived from the rows rather than restated:** **16**
+`end-to-end verified`, **2** `merged (write path)`, **2** `merged (read-only/partial)`, **0** in open
+pull request, **9** `phase-level incomplete`, **0** `not started` — **29**. **No row rose and no row
+was lowered between `c1a2f9fc` and `849a8e9a`.** The five categories are **12** none beyond the
+Owner's verdict, **14** remaining engineering, **9** documented limitation, **9** human certification
+and **4** genuine Owner decision, over a union of **seventeen** distinct rows; 17 + 12 = 29. **The
+single move since `c1a2f9fc` is FE-003**, whose remaining engineering closed.
+
+**Sixteen of twenty-nine is not a pass and is not offered as one.**
+
+### 70.5 Dated notes applied elsewhere in this register, each beside the text it corrects
+
+**No landed identifier is renumbered and no earlier sentence is deleted.**
+
+1. **§ 64.8, CC-54 (b)** — the two published not-found answers. The row's own closure note said its
+   state moves when the backend closure branch merges. It merged as #399 at `c7298c09`.
+2. **§ 66.8, CC-56 (c)** — the claim probe's shape-dependent guard, closed by § 72.2 on the same
+   merge.
+3. **§ 69.7, CC-59 and CC-59 (a)** — the FE-009 screen half and the harness field it waited on. The
+   journey now reads the transition ledger and the warranty browser cases executed in all three
+   authenticated projects.
+4. **§ 56.4, CC-46 (d)** — the phase directory count, re-opened by every merge that adds a document
+   and closed again by the measurement in § 70.1.
+5. **§ 72.6, CC-63** — "pending merge", merged at `c7298c09`.
+6. **§ 62.7, CC-52 (c)** — the three owed browser cases. The row's own cell made them the condition it
+   stays open on, and § 64.8's **CC-54** row records them delivered. **The note carries no closure of
+   its own**; it puts the recorded one beside the cell that reads open.
+7. **§ 43.3, CC-31** — FE-009's warranty transition ledger. The row's own 2026-09-14 note made the
+   closing-head browser proof its one remaining condition, and § 69.7's note records that proof taken.
+   **The note carries no closure of its own** either; the measurement is item 3's.
+
+**Seven notes, counted here so the figure is not taken on trust:** items 1 to 5 were applied by the
+earlier commits of this candidate, and items 6 and 7 by the reconciliation that re-derived § 70.7.
+
+### 70.6 The two assembled artefacts
+
+| artefact                                                                           | what it is                                                                                                                                                           | what it is not                                                   |
+| ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| [`certification-and-clearance-packet.md`](./certification-and-clearance-packet.md) | one item per QA and security task, each naming the gate condition that requires it, the assigned holder, the evidence with its digests, and the limitations to weigh | **no certificate, no clearance, and no answered decision field** |
+| [`owner-decision-packet-2026-09-16.md`](./owner-decision-packet-2026-09-16.md)     | the genuinely unresolved Owner decisions after all authorized engineering, with the items closed by engineering or by an existing decision listed separately         | **no verdict, no request for blanket acceptance, no signature**  |
+
+The packet of 2026-09-13 is a delivered record. **It is not edited**, except for one dated note
+pointing at the new one.
+
+### 70.7 The reconciled disposition state at this head
+
+**Derived from each identifier's own state cell in the section that disposes of it, plus the dated
+closure notes those sections carry.** This subsection moves no state except where a note in § 70.5
+carries one, and it re-adjudicates nothing.
+
+**The counting rule, stated so the figure can be checked rather than believed: a state cell counts as
+open unless that cell, or a dated note beside it, records a closure.** Three open cells do not use the
+word — **CC-34** (`recorded — no action here`), **CC-63 (a)** (`recorded limitation`) and
+**CC-60 (f)** (`carried, named`) — and each is counted open here.
+
+**Open at `849a8e9a`, before this pull request adds this section — 41.** Twenty-two were raised at or
+before § 62: **CC-04**, **CC-06**, **CC-12**, **CC-16**, **CC-20**, **CC-23**, **CC-24**,
+**CC-27 (b)**, **CC-29**, **CC-30**, **CC-32**, **CC-34**, **CC-37 (a)**, **CC-37 (b)**,
+**CC-38**, **CC-38 (a)**, **CC-41**, **CC-43**, **CC-44**, **CC-46 (c)**, **CC-47**,
+**CC-52 (b)**. Nineteen were raised by §§ 63 – 72: **CC-54 (a)**, **CC-54 (d)**, **CC-55 (a)**,
+**CC-55 (c)**, **CC-56 (b)**, **CC-56 (d)**, **CC-57 (a)**, **CC-57 (b)**, **CC-58 (a)**,
+**CC-58 (b)**, **CC-58 (c)**, **CC-59 (b)**, **CC-59 (e)**, **CC-61**, **CC-61 (b)**, **CC-61 (c)**,
+**CC-62 (b)**, **CC-62 (c)**, **CC-63 (a)**.
+
+**Reconciliation with the index the 2026-09-13 packet tabulated, which read 26 open.** Four of its
+twenty-six have closed since: **CC-10**, closed with the ledger reader P-18; **CC-50 (a)**, closed by
+the coverage fill § 63 records; **CC-52 (c)**, closed by the delivery write proofs § 64.8 measures
+under **CC-54**; and **CC-31**, closed by the warranty browser proof its own cell names as its
+condition, which § 69.7's dated note records as taken. That index counted **CC-27** and **CC-27 (b)**
+as two rows for one open half, which is counted once here. And it omitted **CC-52 (b)**, whose own cell
+reads `open, recorded` and which § 63 states it did not close. 26 − 4 − 1 + 1 = **22**.
+
+**As this pull request leaves the file — 45.** **CC-54 (d)** closes, the closure record's stale
+Frontend rows, discharged by §§ 2.10 and 2.11 of that record; and this section raises five open
+sub-rows of its own, **CC-60 (c)**, **CC-60 (d)**, **CC-60 (e)**, **CC-60 (f)** and **CC-60 (g)**.
+41 − 1 + 5 = **45**. § 70 does not exist at `849a8e9a`, which is why its own rows are counted in the
+second figure and not the first.
+
+**The open rows excluded by name, each because a closure is recorded even where the row's own cell
+still reads open:** **CC-37 (c)** (§ 57.3's row reads `closed in § 57`), **CC-53** (§ 63.8's dated note
+reads closed, artefact received), **CC-61 (a)** and **CC-61 (d)** (each closed by its own 2026-09-14
+note), **CC-63 (c)** (§ 72.6's dated note records it fixed), **CC-52 (c)** (§ 64.8's **CC-54** row
+reads `closed`: the three browser cases its own cell said were owed executed in run `mu0g1b1a`, 48 of
+48, and the three matrix rows were raised), **CC-31** (its own cell makes the browser proof at the
+closing head — **CC-59** and **CC-59 (a)** — the one condition it stays open on, and § 69.7's dated
+note records both closed on the measurement § 70.5 item 3 carries), and **CC-54 (b)**, **CC-56 (c)**,
+**CC-59**, **CC-59 (a)**, **CC-62**, **CC-62 (a)** and **CC-46 (d)**, which § 70.5 carries. **CC-21**
+is closed: the cell reading `open, claims section 35` is an identifier-allocation row about a branch,
+not a disposition state cell.
+
+_(2026-09-16, corrected before this candidate was published: an earlier reading of this subsection gave
+the set as **38** at this head and **37** as the pull request leaves it, constructed as twenty-one
+carried plus seventeen raised. That construction omitted **CC-61**, **CC-61 (b)** and **CC-61 (c)**,
+all raised at § 69.13 and all open on their own cells, and the five open sub-rows this section itself
+raises: 38 + 3 = **41** here, and 37 + 3 + 5 = **45** as the pull request leaves the file. It also
+omitted **CC-31** and **CC-52 (c)**, which the 2026-09-13 index carried; that omission is affirmed here
+for a reason the earlier reading did not state — each is excluded by name above, because a measurement
+recorded elsewhere closes it while its own cell still reads open — and not because either row was
+overlooked. A second reading of this subsection then counted both as open and gave **43** and **47**;
+those two figures are superseded by the 41 and 45 derived above and are recorded here rather than
+removed. The figure is load-bearing — the Owner is asked to accept or refuse exactly this set as item
+**O-3** of the decision packet, and **CC-61 (c)** is carried as a live limitation by both the task
+matrix and the certification packet — so it is re-derived above with its rule and its exclusions
+stated.)_
+
+**Closed since the reconciliation taken at `32c79754`, each by the section that closed it:**
+**CC-54 (b)** and **CC-56 (c)** by § 72 (#399); **CC-63 (b)** and **CC-63 (c)** by § 72's own dated
+notes; **CC-62** and **CC-62 (a)** by § 71; **CC-59** and **CC-59 (a)** by the measurement § 70.5
+item 3 records; and **CC-46 (d)** again by the measurement in § 70.1.
+
+**States no usable disposition — 4, unchanged:** **CC-25** and **CC-26** (prose bullets with no state
+cell), **CC-40** (allocated and never used), and **CC-48**, whose absence of a disposition row is
+itself filed as **CC-52 (a)**.
+
+**Two things this subsection is careful not to do.** It does not count **CC-52 (a)** twice — it is the
+row that files CC-48's absence. And it does not close **CC-59 (b)** or **CC-62 (b)**: the first turns
+on a gate run this section did not take, and the second on a hosted job and a disposable-database run
+that no artefact at this head carries.
+
+### 70.8 Dispositions
+
+| id            | finding                                                                                                                                        | measured                                                                                                                                                                                                                                                                                                                                                         | disposition                                                                                                                                                                                                                                                                                                                               | owner / slice                    | state              |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | ------------------ |
+| **CC-60**     | **the shared records quoted figures from several heads, and no single head held a consistent account of the phase**                            | four merges and four run attempts since § 62                                                                                                                                                                                                                                                                                                                     | **closed by this section and the records § 70.4 names.** Every figure re-read at `849a8e9a`; where a figure replaces an earlier one, the earlier one is quoted beside it. **It closes no gate condition** either way                                                                                                                      | this slice                       | closed, recorded   |
+| **CC-60 (a)** | **no acceptance run existed at a protected head carrying the receiver identity evidence, the corrected journey instrument, or a routed alert** | run `mu3ch41f` at `849a8e9a`: 740 HTTP steps with 0 findings, 84 P1-31 browser cases executed and 0 failed across three authenticated projects, 28 images, an alert routed in the rehearsal at the same head (§ 70.3)                                                                                                                                            | **closed by measurement**, with attempt 3 retained as history and qualified by its instrument defect                                                                                                                                                                                                                                      | this slice                       | closed, measured   |
+| **CC-60 (b)** | **no record reconciled all twenty-nine tasks against their individual criteria at one protected head**                                         | the matrix amendment of 2026-09-16 and closure record §§ 2.10 and 2.11                                                                                                                                                                                                                                                                                           | **closed.** Each row is judged against its own criterion, a security, QA, DevOps or documentation row by the proof its criterion calls for and not by a browser case, and each remaining item takes exactly one of five categories                                                                                                        | this slice                       | closed             |
+| **CC-60 (c)** | **the decision packet of 2026-09-13 asked the Owner for acts that cited authority or later engineering has since settled**                     | the items closed by engineering are listed in the new packet with how each closed                                                                                                                                                                                                                                                                                | **the reduced packet is written; the decisions themselves are OPEN and are the Owner's.** No item asks for blanket acceptance, and no recommendation is written as an answer                                                                                                                                                              | the Owner                        | **open**           |
+| **CC-60 (d)** | **gate conditions 2 and 3 had no items a named reviewer could answer**                                                                         | the certification and clearance packet lays out one item per QA and security task, each answerable against a named artefact and figure                                                                                                                                                                                                                           | **OPEN, and deliberately.** **No certificate is issued and engineering cannot issue one.** The two roles are already held; what is outstanding is an **unissued certification and an unissued clearance**. **Independence — Field 11 of the canonical plan, P1-EC-016 — stays open as a separate Owner question**                         | the assigned reviewer; the Owner | **open**           |
+| **CC-60 (e)** | **"the operator acts on every other environment" quantified over an inventory nobody had stated**                                              | **exactly one environment exists — Local** (`docs/phase-1/phase-1-1/environment-matrix.md:11`, rows at `:17-20`, ADR-012 at `:7`); Development, Staging and Production each read "Planned — not provisioned". **Act 5 was performed on the one shared local acceptance database on 2026-09-15**, recorded at [`operator-runbook.md`](./operator-runbook.md) § 10 | **PENDING as a statement, OPEN as an act.** The acts are the ones the runbook maps row by row, plus act 5. **No deployment is invented and no environment is claimed.** **CC-16** and **CC-20** stay open on that record, because a runbook is not a run                                                                                  | the Owner; the operator          | **open as an act** |
+| **CC-60 (f)** | **the closing run carries residual limitations that would otherwise reach nobody**                                                             | eleven items at § 11.12 of the acceptance record and sixteen at § 18.8 of the assurance index                                                                                                                                                                                                                                                                    | **carried, each named, and neither turned into a blocker nor accepted.** The load-bearing ones for the certifier are the absent hosted execution of every P1-31 browser case and of the merged suites at this head, the privileged local fixture, the one-case branch-scope proof on download, and the uncommitted falsifiability control | the certifier; the Owner         | **carried, named** |
+| **CC-60 (g)** | **the five instruments the run of record used live outside the repository, unversioned**                                                       | journey `66949016…` 229236 bytes, companion `09d75d88…`, screens `d91f213a…`, runner `75d65988…` 57172 bytes, plan `ce2132fb…` 116013 bytes; the runner differs from its preserved attempt-3 copy at exactly two pin lines (§ 11.2)                                                                                                                              | **recorded, not closed.** Identity rests on the digests the runner compared against its pins before anything ran. Bringing the instruments under version control is not this slice's act                                                                                                                                                  | a later lane                     | **open, recorded** |
+
+### 70.9 The Owner's rules this section is written under, quoted and not paraphrased
+
+From the Owner's instruction of **2026-09-15**, already quoted in
+[`acceptance-record.md`](./acceptance-record.md) § 11.12 and § 11.13 and quoted here from those
+records. **The first is a partial quotation** — it is the opening sentence of a longer paragraph,
+which continues past it, and [`acceptance-record.md`](./acceptance-record.md) § 11.12 records it as
+quoted partially. Nothing below stands for the rest of that paragraph:
+
+> Do not automatically turn every limitation into a phase blocker, and do not automatically accept
+> it.
+
+> Do not equate a merged PR, collection count, index or browser smoke with full phase acceptance.
+
+### 70.10 What this slice did NOT do, and what is not claimed
+
+- **It changed no application source, no migration, no seed, no permission code, no audit action, no
+  contract mirror and no gate.**
+- **It ran no hosted job and claims no hosted result.** Where a hosted result is owed, § 11.11 (a) of
+  the acceptance record records that it is owed.
+- **It issued no certificate and cleared no blocker.** CC-60 (d) is open.
+- **It recorded no verdict and recommended none.** A recommendation in either packet is a
+  recommendation and is never read as an answer.
+- **It moved no task-matrix row.** The states in § 70.4 are the matrix's own, quoted.
+- **It touched no database and deleted no tenant.** The tenant figure in § 70.3 is a read-only query,
+  labelled as derived.
+- **It did not promote.** `main` is `1262de74` before and after.
+- **It did not write into `phase-1/_acceptance/`.** The proposed evidence references the certification
+  packet names are outside the repository and are marked proposed.
+
+### 70.11 Verification
+
+Documentation-only. Each command was run at this branch's head and its exit code read off the command
+that produced it; **no result is asserted in a commit body**, and no hosted result is claimed.
+
+| command                                                                   | exit |
+| ------------------------------------------------------------------------- | ---- |
+| `npx prettier --check` over the changed and new files                     | 0    |
+| `npm run validate:encoding`                                               | 0    |
+| `node scripts/ci/check-phase-ownership.mjs p1-31-frontend origin/develop` | 0    |
+| `npm run validate:p1-24-register`                                         | 0    |
+| `npm run validate:p1-27-doc-counts`                                       | 0    |
+| `npm run validate:p1-27-closing-values` (check mode)                      | 0    |
+| `npm run validate:plain-language`                                         | 0    |
+| `npm run validate:generated-artifacts`                                    | 0    |
+
+**No test tier, build, migration, database operation or deployment was run**, and the P1-27 record
+cycle was not re-run: these changes touch no executable path.
+
+**One deviation from this branch's commit convention is recorded rather than corrected.** The merge
+commit `8715b80a` carries a 73-character subject, one character over the 72-character limit the
+branch's other subjects keep. The branch is preserved rather than rewritten — nothing on it is reset,
+rebased or amended — so the subject stands as written and is recorded here instead of being changed.

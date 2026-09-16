@@ -1,5 +1,12 @@
 # P1-31 — Owner decision packet
 
+_(2026-09-16: **this packet is retained as the delivered record of 2026-09-13 and is superseded as the
+live list** by [`owner-decision-packet-2026-09-16.md`](./owner-decision-packet-2026-09-16.md), which
+re-checks every item against the committed records at protected `develop` `849a8e9a`, lists separately
+the items since closed by engineering or by cited authority, and derives its own count. **Every figure
+and citation below keeps the head it was measured at**; nothing here is rewritten, renumbered or
+deleted, and no item below is withdrawn by this note.)_
+
 _(2026-09-14, correction to A-2/A-3: do not use the proposed appointment wording below.
 Eng. Ezzaldeen Al-Bitar already holds the QA and security review roles under the owner-approved
 [solo-developer review policy](../../governance/solo-developer-review-policy.md). The concrete
