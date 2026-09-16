@@ -308,3 +308,106 @@ export function backendConfig(): BackendConfig {
 export function __resetBackendConfigForTests(): void {
   cached = undefined;
 }
+
+/**
+ * The raw environment, as this module inspects it before zod coerces anything.
+ *
+ * Deliberately a plain record rather than `BackendConfig`: the production
+ * requirements below are about ABSENCE, and the parsed shape has already
+ * substituted defaults for several of the names in question. `''` and
+ * `undefined` become indistinguishable once `CORS_ALLOWED_ORIGINS` is `[]`.
+ */
+export type RawEnvironment = Readonly<Record<string, string | undefined>>;
+
+/**
+ * Environments in which the values below stop being optional.
+ *
+ * `local` and `development` are excluded on purpose: the whole test tier, the
+ * launcher and a fresh clone run without a database, without an identity
+ * provider and without an object store, and that has to keep working.
+ */
+const PRODUCTION_LIKE = new Set(['staging', 'production']);
+
+/** Names that must carry a non-empty value once the deployment is not local. */
+const REQUIRED_WHEN_DEPLOYED = [
+  /** The request-path pool. `pool.ts` throws `DatabaseNotConfiguredError` without it. */
+  'DATABASE_URL',
+  /** The control plane. It has NO fallback to `DATABASE_URL` and fails closed. */
+  'PLATFORM_DATABASE_URL',
+  /** Read through `serverEnv()`; the iam adapter refuses to compose without it. */
+  'SUPABASE_SERVICE_ROLE_KEY',
+  /** Token verification. Absent means no request can ever authenticate. */
+  'AUTH_JWT_SECRET',
+  'AUTH_JWT_ISSUER',
+  /**
+   * Empty is the safe default locally — it rejects every caller-supplied
+   * redirect — but a deployment that serves password-reset and invitation links
+   * and names no destination cannot complete either flow.
+   */
+  'AUTH_REDIRECT_ALLOWLIST',
+  /**
+   * The web tier and the API tier are separate origins in every deployed shape,
+   * so an empty list is a misconfiguration there even though it is correct
+   * locally. NOTE: no CORS layer reads this value today — it is validated and
+   * inert, which `docs/platform/environment-configuration.md` records as a gap.
+   * Requiring it here states the deployment's obligation; it does not claim a
+   * header is emitted.
+   */
+  'CORS_ALLOWED_ORIGINS',
+] as const;
+
+/** Storage selections that cannot serve a deployed request. */
+const NON_SERVING_STORAGE = new Set(['', 'unconfigured', 'local_fake']);
+
+/** Credentials the adapter itself demands once `s3_compatible` is selected. */
+const S3_REQUIRED = [
+  'STORAGE_S3_ENDPOINT',
+  'STORAGE_S3_ACCESS_KEY_ID',
+  'STORAGE_S3_SECRET_ACCESS_KEY',
+] as const;
+
+function isBlank(value: string | undefined): boolean {
+  return value === undefined || value.trim().length === 0;
+}
+
+/**
+ * The names a staging or production deployment is missing. **Names only.**
+ *
+ * Pure: it reads the record it is handed and nothing else, so readiness, a test
+ * and any future preflight can ask the same question of different inputs. It
+ * returns an empty list for every environment that is not `staging` or
+ * `production`, which is why wiring it into readiness cannot change local or
+ * test behaviour.
+ *
+ * No value is inspected beyond "is it present" and, for the storage selection,
+ * "is it one of the explicitly non-serving choices" — so nothing that reaches
+ * the returned list can be a credential.
+ */
+export function productionConfigurationProblems(env: RawEnvironment): string[] {
+  if (!PRODUCTION_LIKE.has(env['NEXT_PUBLIC_APP_ENV'] ?? '')) return [];
+
+  const problems: string[] = [];
+  for (const name of REQUIRED_WHEN_DEPLOYED) {
+    if (isBlank(env[name])) problems.push(name);
+  }
+
+  // Attachments are not feature-gated: `UnconfiguredStorageProvider` refuses at
+  // the first signed-URL request, and `local_fake` signs against a `.invalid`
+  // host. Either one, deployed, is an outage of the whole attachment surface.
+  const storage = (env['STORAGE_PROVIDER'] ?? '').trim();
+  if (NON_SERVING_STORAGE.has(storage)) {
+    problems.push('STORAGE_PROVIDER');
+  } else if (storage === 's3_compatible') {
+    for (const name of S3_REQUIRED) {
+      if (isBlank(env[name])) problems.push(name);
+    }
+  }
+
+  // Disabling the limiter is expressible, and locally it is sometimes useful.
+  // Deployed it removes the only protection the public routes have.
+  if ((env['RATE_LIMIT_ENABLED'] ?? 'true').trim() === 'false') {
+    problems.push('RATE_LIMIT_ENABLED');
+  }
+
+  return problems;
+}
