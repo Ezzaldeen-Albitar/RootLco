@@ -8776,7 +8776,13 @@ chain was read **on the tree at `849a8e9a` itself**, where all three P1-31 gate 
 named by `verify:policies`. Second, `git diff` between `849a8e9a` and `137324770f` reports **nine
 changed files, all under `docs/phase-1/phase-1-31/`** — none under `.github/`, `scripts/ci/` or
 `package.json` — so the two protected heads ran identical machinery. The suites the eight rows rest on
-are on the tree at `849a8e9a`: twenty `tests/backend/p1-31-*` files and `tests/db/p1-31-export-fixture.test.ts`.
+are on the tree at `849a8e9a`: twenty `tests/backend/p1-31-*` files and
+`tests/db/p1-31-export-fixture.test.ts` — the last of which is **on the tree but excluded from the
+hosted database tier by name**, at `vitest.config.db.ts:23`, so **no hosted job executes it** and no
+hosted run here is evidence about it. That is what **§ 71.4 of this register** already states, and
+what limitation **L-6** of the certification and clearance packet records. _(Corrected 2026-09-16: as
+first written, this sentence placed the fixture file among the suites the hosted tier is evidence
+about, which `vitest.config.db.ts:23` and § 71.4 disprove.)_
 
 ### 73.4 What moved, and what did not
 
