@@ -505,7 +505,7 @@ describe('P1-15 / the counter cannot be rewound', () => {
 });
 
 describe('P1-15 / the runtime grant shape on shared.number_sequences', () => {
-  it('reports SELECT and a column-scoped UPDATE, and no table-level UPDATE', async () => {
+  it('reports SELECT, a column-scoped UPDATE and INSERT, and no table-level UPDATE', async () => {
     const privileges = await withRolledBackTx(runtime, AS_A, async (tx) => {
       const { rows } = await tx.query<{
         sel: boolean;
@@ -541,7 +541,14 @@ describe('P1-15 / the runtime grant shape on shared.number_sequences', () => {
     expect(privileges?.upd_next_value).toBe(true);
     expect(privileges?.upd_current_period).toBe(true);
     expect(privileges?.upd_prefix_template).toBe(false);
-    expect(privileges?.ins).toBe(false);
+    // TRUE since migration 20260916090000, and narrower than the privilege reads:
+    // ins_number_sequences_branch_authority admits only a per-branch row for a
+    // real branch of the session's own tenant, under org.branch.manage. A branch
+    // created after provisioning needs its invoice, quotation and receipt runs,
+    // and the only other INSERT policy on this table requires a tenant that is
+    // still provisioning. tests/db/org-capacity.test.ts proves the policy refuses
+    // a tenant-wide run, an actor without the permission, and another tenant.
+    expect(privileges?.ins).toBe(true);
     expect(privileges?.del).toBe(false);
     expect(privileges?.exec).toBe(true);
   });

@@ -1,20 +1,20 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 413,
-    "openapiPaths": 321,
-    "openapiOperations": 413,
+    "operations": 416,
+    "openapiPaths": 322,
+    "openapiOperations": 416,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
     "eventsDeliveryTested": 50,
     "outboxForeignWriters": 0,
-    "errorCodes": 28,
+    "errorCodes": 30,
     "permissionCodes": 121,
-    "auditActions": 235
+    "auditActions": 237
   },
   "counts": {
-    "Covered": 413
+    "Covered": 416
   },
   "operations": [
     {
@@ -3791,6 +3791,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/iam-auth-provider.test.ts",
+        "tests/backend/od-organization-administration.test.ts",
         "tests/backend/p1-14-idempotency-replay.test.ts",
         "tests/backend/p1-24-iam-route-depth.test.ts",
         "tests/backend/p1-29-w9-owner-bootstrap.test.ts"
@@ -5362,6 +5363,48 @@
       "file": "apps/api/src/app/api/v1/meta/ping/route.ts"
     },
     {
+      "id": "org.branch-create",
+      "domain": "iam",
+      "method": "POST",
+      "route": "/api/v1/org/branches",
+      "permissions": ["org.branch.manage"],
+      "public": false,
+      "scope": "company",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "org.branch.created",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/org/branches",
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/od-organization-administration.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/org/branches/route.ts"
+    },
+    {
       "id": "org.branch-list",
       "domain": "iam",
       "method": "GET",
@@ -5431,6 +5474,80 @@
       "tests": ["tests/backend/pre-p1-29-wave-c-company-rbac.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/org/branches/[branchId]/route.ts"
+    },
+    {
+      "id": "org.capacity-read",
+      "domain": "iam",
+      "method": "GET",
+      "route": "/api/v1/org/capacity",
+      "permissions": ["org.tenant.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/org/capacity",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "denial",
+        "cross-tenant"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/od-organization-administration.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/org/capacity/route.ts"
+    },
+    {
+      "id": "org.company-create",
+      "domain": "iam",
+      "method": "POST",
+      "route": "/api/v1/org/companies",
+      "permissions": ["org.company.manage"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "org.company.created",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/org/companies",
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/od-organization-administration.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/org/companies/route.ts"
     },
     {
       "id": "org.company-list",

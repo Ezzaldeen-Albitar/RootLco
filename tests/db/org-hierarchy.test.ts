@@ -48,15 +48,72 @@ afterAll(async () => {
   await admin.end();
 });
 
+/**
+ * Runs `fn` while USER_A holds org.company.manage and org.branch.manage.
+ *
+ * Since migration 20260916090000 a runtime INSERT into org.legal_companies or
+ * org.branches must also satisfy a RESTRICTIVE policy requiring the matching
+ * manage permission. The shared fixture actor holds no permission at all, so
+ * the cases below that exercise the runtime write path are given exactly that
+ * authority for their duration and no longer. Committed by the owner, because
+ * the runtime transaction under test cannot see an uncommitted grant, and
+ * removed again in `finally` so the next case sees the fixture it expects.
+ */
+async function withCreationAuthority(fn: () => Promise<void>): Promise<void> {
+  const role = await admin.query<{ id: string }>(
+    `INSERT INTO iam.roles (tenant_id, role_code, name, created_by)
+     VALUES ($1, 'fx_hierarchy_creation', 'Hierarchy creation fixture', $2) RETURNING id`,
+    [TENANT_A, USER_A]
+  );
+  const roleId = role.rows[0]!.id;
+  try {
+    await admin.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1, $2, id, 'allow', $3 FROM iam.permissions
+        WHERE permission_code IN ('org.company.manage', 'org.branch.manage')`,
+      [TENANT_A, roleId, USER_A]
+    );
+    await admin.query(
+      // granted_by is the platform system actor: ck_role_grants_no_self_grant
+      // refuses a grant whose grantee and grantor are the same principal.
+      `INSERT INTO iam.role_grants (tenant_id, user_id, role_id, scope_mode, status, granted_by, created_by)
+       VALUES ($1, $2, $3, 'unrestricted', 'active', $4, $4)`,
+      [TENANT_A, USER_A, roleId, '00000000-0000-4000-8000-000000000001']
+    );
+    await fn();
+  } finally {
+    await admin.query('DELETE FROM iam.role_grants WHERE role_id = $1', [roleId]);
+    await admin.query('DELETE FROM iam.role_permissions WHERE role_id = $1', [roleId]);
+    await admin.query('DELETE FROM iam.roles WHERE id = $1', [roleId]);
+  }
+}
+
 describe('org.legal_companies — tenant-scoped CRUD as the runtime role', () => {
   it('a tenant session creates a company in its own tenant', async () => {
+    await withCreationAuthority(() =>
+      withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (c) => {
+        const { rows } = await c.query(
+          `INSERT INTO org.legal_companies (tenant_id, company_code, legal_name, base_currency_code, created_by)
+           VALUES ($1, 'created_by_runtime', 'Runtime Co', 'USD', $2) RETURNING id, status`,
+          [TENANT_A, USER_A]
+        );
+        expect(rows[0].status).toBe('active');
+      })
+    );
+  });
+
+  it('a tenant session WITHOUT org.company.manage cannot create a company (42501)', async () => {
+    // The counterpart that makes the case above mean something: the tenant term
+    // alone no longer admits the write.
     await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (c) => {
-      const { rows } = await c.query(
-        `INSERT INTO org.legal_companies (tenant_id, company_code, legal_name, base_currency_code, created_by)
-         VALUES ($1, 'created_by_runtime', 'Runtime Co', 'USD', $2) RETURNING id, status`,
-        [TENANT_A, USER_A]
+      await expectSqlState(
+        c.query(
+          `INSERT INTO org.legal_companies (tenant_id, company_code, legal_name, base_currency_code, created_by)
+           VALUES ($1, 'refused_by_runtime', 'Refused Co', 'USD', $2)`,
+          [TENANT_A, USER_A]
+        ),
+        '42501'
       );
-      expect(rows[0].status).toBe('active');
     });
   });
 
@@ -667,29 +724,34 @@ describe('org.change_company_status — two-state lifecycle, emitter-owned histo
   });
 
   it('C12 pins the residual: deactivation gates nothing, so a branch may still be created', async () => {
-    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (c) => {
-      await c.query(`SELECT org.change_company_status($1, 'inactive', 'pinning the residual')`, [
-        COMPANY_A1,
-      ]);
-      // Confirm the precondition in the same transaction, or the insert below
-      // succeeds for the wrong reason.
-      const company = await c.query('SELECT status FROM org.legal_companies WHERE id = $1', [
-        COMPANY_A1,
-      ]);
-      expect(company.rows[0].status).toBe('inactive');
+    // The creation authority is supplied so that the ONLY thing this case varies
+    // is the company status; without it the insert would be refused by the
+    // RESTRICTIVE branch policy and the residual would look closed when it is not.
+    await withCreationAuthority(() =>
+      withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (c) => {
+        await c.query(`SELECT org.change_company_status($1, 'inactive', 'pinning the residual')`, [
+          COMPANY_A1,
+        ]);
+        // Confirm the precondition in the same transaction, or the insert below
+        // succeeds for the wrong reason.
+        const company = await c.query('SELECT status FROM org.legal_companies WHERE id = $1', [
+          COMPANY_A1,
+        ]);
+        expect(company.rows[0].status).toBe('inactive');
 
-      // org.guard_parent_company_live() reads deleted_at and archived_at and
-      // never reads status — measured, the word does not occur in its body. So
-      // an inactive company still receives new branches. This test exists to PIN
-      // that, not to bless it: if the guard is ever made status-aware, this case
-      // goes red and forces the change to be deliberate rather than incidental.
-      const branch = await c.query(
-        `INSERT INTO org.branches (tenant_id, company_id, branch_code, name, timezone_name, created_by)
+        // org.guard_parent_company_live() reads deleted_at and archived_at and
+        // never reads status — measured, the word does not occur in its body. So
+        // an inactive company still receives new branches. This test exists to PIN
+        // that, not to bless it: if the guard is ever made status-aware, this case
+        // goes red and forces the change to be deliberate rather than incidental.
+        const branch = await c.query(
+          `INSERT INTO org.branches (tenant_id, company_id, branch_code, name, timezone_name, created_by)
          VALUES ($1, $2, 'wc_residual', 'Branch under an inactive company', 'UTC', $3)
          RETURNING id`,
-        [TENANT_A, COMPANY_A1, USER_A]
-      );
-      expect(branch.rows).toHaveLength(1);
-    });
+          [TENANT_A, COMPANY_A1, USER_A]
+        );
+        expect(branch.rows).toHaveLength(1);
+      })
+    );
   });
 });

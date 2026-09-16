@@ -256,6 +256,20 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
   // operations declaring `privileged` that appended nothing for exactly that
   // reason. A declared class with no append call is a silent no-op.
   {
+    code: 'org.company.created',
+    class: 'privileged',
+    entityType: 'org.legal_company',
+    description:
+      'A legal company was added to an organisation. Until the Owner directive the only writer of org.legal_companies was the provisioning function, so an organisation could never gain a second legal entity after it was created.',
+  },
+  {
+    code: 'org.branch.created',
+    class: 'privileged',
+    entityType: 'org.branch',
+    description:
+      'A branch was added to a legal company. Until the Owner directive the only writer of org.branches was the provisioning function, which creates the pilot branch and nothing after it.',
+  },
+  {
     code: 'org.company.updated',
     class: 'privileged',
     entityType: 'org.legal_company',

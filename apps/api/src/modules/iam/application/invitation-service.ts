@@ -48,6 +48,7 @@ import { DelegationPolicy, type GrantFacts } from '../domain/delegation-policy';
 import type { IdentityProvider } from '../provider/identity-provider';
 import { ProviderFailure } from '../provider/identity-provider';
 import { toAppFailureFromProvider } from '../provider/provider-errors';
+import { throwCapacityFailure } from './capacity-failure';
 
 export interface InviteInput {
   readonly email: string;
@@ -159,7 +160,14 @@ export class InvitationService extends ApplicationService {
           message: 'An account already exists for that address in this tenant',
         });
       }
-      throw error;
+      // The user-seat ceiling. `tg_user_accounts_capacity` refuses the INSERT
+      // when the plan's seats are spent, and this is the mapping that turns that
+      // refusal into ERR-CAP-001 with the numbers attached. Deliberately NOT a
+      // pre-check: the trigger counts and writes under one per-tenant advisory
+      // lock, so it is the only reading two concurrent invitations cannot both
+      // pass. A seat count taken here would be a second copy of the rule that
+      // agreed with it right up to the moment it mattered.
+      throwCapacityFailure(error);
     }
 
     for (const roleId of roleIds) {

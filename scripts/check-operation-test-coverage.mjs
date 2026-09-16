@@ -1975,9 +1975,10 @@ export const MANIFEST = {
       'tests/backend/p1-14-idempotency-replay.test.ts',
       'tests/backend/p1-24-iam-route-depth.test.ts',
       'tests/backend/p1-29-w9-owner-bootstrap.test.ts',
+      'tests/backend/od-organization-administration.test.ts',
     ],
     required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
-    note: 'invited account + audit + event; duplicate conflict; unprivileged refused; tenant-bound',
+    note: 'invited account + audit + event; duplicate conflict; unprivileged refused; tenant-bound; answers ERR-CAP-001 with the seat numbers once the plan seats are spent',
   },
   'iam.invitation-cancel': {
     files: [
@@ -2922,6 +2923,21 @@ export const MANIFEST = {
     files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
     required: ['denial', 'audit'],
     note: 'G-4: org.branch.manage guarded nothing; company and branch code are frozen by tg_branches_immutable and status belongs to shared.branch-status-change, so the body carries none of the three',
+  },
+  'org.company-create': {
+    files: ['tests/backend/od-organization-administration.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency'],
+    note: 'Owner directive: the first writer of org.legal_companies outside org.provision_organization; the ceiling is enforced by tg_legal_companies_capacity and the suite proves the refusal reaches the caller as ERR-CAP-001 with kind, limit and used rather than as ERR-SYS-001',
+  },
+  'org.branch-create': {
+    files: ['tests/backend/od-organization-administration.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency'],
+    note: 'Owner directive: the first writer of org.branches outside provisioning; a new branch is given its three per-branch numbering runs in the same transaction, and a cross-tenant company is a denial rather than a composite-foreign-key fault',
+  },
+  'org.capacity-read': {
+    files: ['tests/backend/od-organization-administration.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'Owner directive: the allowances and the subscription behind them, read from org.capacity_usage — the same function the refusal is computed from — so the screen cannot explain a refusal with numbers assembled a second way',
   },
   'org.department-create': {
     files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
