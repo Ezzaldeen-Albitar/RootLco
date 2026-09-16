@@ -1774,7 +1774,18 @@ pending is unavailable to cite here for the reason § 11.11 (a) gives.
     remains open (§ 11.11 (a)). _(2026-09-16: this item first named six of the eight, omitting SEC-002
     and DO-001, while [`closure-record.md`](./closure-record.md) § 2.11, the task matrix amendment of
     2026-09-16 and the certification packet § 4 each name eight. Eight is the figure; the six was an
-    incomplete list of the same one absence.)_
+    incomplete list of the same one absence.)_ _(2026-09-16, later the same day — **CORRECTED. The
+    sentence above is retained because it was true of the environment that wrote it**, which had no
+    authenticated client. **A hosted check run IS now recorded for `849a8e9a`**: 19 check runs, all
+    `completed`/`success`, `protected-gate` among them, read from the repository's own API and
+    recorded at [`acceptance-record.md`](./acceptance-record.md) § 11.11 (e) with their check-suite
+    and workflow-run identifiers, their completion times, and the job-to-suite mapping the workflow
+    definitions support. **No job was dispatched or re-run to produce it.** The "recorded at a
+    protected head" limb is therefore closed on all eight rows. **Every one of those rows stays where
+    it is:** seven still owe the QA certification or the security clearance, which a hosted run is
+    neither, and DO-001's state belongs to the matrix under its own rule. **No state moves here**
+    (§ 18.9), and no certification or clearance is issued, implied or inferred. Change control § 73;
+    [`closure-record.md`](./closure-record.md) § 2.12 re-derives the counts.)_
 13. **The privileged export fixture is a privileged local fixture on the shared acceptance database**
     and remains absent from hosted execution.
 14. **Branch scoping on download is proven for one case**, soft-deleted targets stay reachable, and
