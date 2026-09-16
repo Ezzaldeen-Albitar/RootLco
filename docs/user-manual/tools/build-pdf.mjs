@@ -13,7 +13,7 @@
  * so the repository keeps one copy of every screenshot.
  *
  * Usage (from anywhere):
- *   UM_OUT_DIR=<output directory> node docs/user-manual/build/build-pdf.mjs
+ *   UM_OUT_DIR=<output directory> node docs/user-manual/tools/build-pdf.mjs
  *
  * Optional:
  *   UM_CHROMIUM  path to a Chromium executable, if Playwright's own registry
@@ -54,7 +54,7 @@ const outDir = process.env.UM_OUT_DIR;
 if (!outDir) {
   console.error(
     'UM_OUT_DIR is not set. Point it at a directory OUTSIDE this repository, for example:\n' +
-      '  UM_OUT_DIR=../handover node docs/user-manual/build/build-pdf.mjs'
+      '  UM_OUT_DIR=../handover node docs/user-manual/tools/build-pdf.mjs'
   );
   process.exit(2);
 }
