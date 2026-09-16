@@ -3045,3 +3045,16 @@ the same scope:
 
 - **No row of [`task-matrix.md`](./task-matrix.md) moves in this section.** A state change belongs to
   the matrix, under its own rule.
+
+_(2026-09-16, beside the bullets above, **every one of which keeps its words.** **An Owner decision
+now exists**: the approval owner recorded **CONDITIONAL PASS** for the documented P1-31 scope on
+2026-09-16, at [`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md) § 7 (**D-38**) and
+in the verdict field at [`closure-record.md`](./closure-record.md) § 4. **It is neither the
+engineering PASS this record reports nor a human determination.** The engineering verdict here is an
+output of this record for the run it describes; the Owner's is a conditional phase decision, "subject
+to the applicable certification, security, and carried-obligation conditions"; and the QA and Security
+determinations — **QA-C1 … QA-C5** and **SEC-C1 … SEC-C4** — **do not exist**, their fields at
+[`certification-and-clearance-packet.md`](./certification-and-clearance-packet.md) § 7 being empty.
+**The first bullet above keeps its first limb exactly**: no phase **Pass**, no promotion and no human
+certification is claimed by this section, and none is created by this note. **No figure is restated,
+no row moves, and this section is not re-measured.**)_

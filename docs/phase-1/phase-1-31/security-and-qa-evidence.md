@@ -1639,6 +1639,17 @@ Carried as they stand, and neither turned into blockers nor accepted here:
 - **No hosted run** of the acceptance or of the fixture proof. The measured facts above are reads of
   the tree, not reviews of it.
 
+_(2026-09-16, beside the bullets above, **every one of which keeps its words.** **An Owner decision
+now exists**: the approval owner recorded **CONDITIONAL PASS** for the documented P1-31 scope on
+2026-09-16, at [`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md) § 7 (**D-38**) and
+in the verdict field at [`closure-record.md`](./closure-record.md) § 4. **It is neither the
+engineering PASS of the acceptance record nor a human determination.** **No security or QA clearance
+exists, recorded or implied** — the second bullet stands exactly as written: **QA-C1 … QA-C5** and
+**SEC-C1 … SEC-C4** at [`certification-and-clearance-packet.md`](./certification-and-clearance-packet.md)
+§ 7 are **empty**, and the Owner's decision **D-32** appoints and authorizes the reviewer without
+manufacturing a determination. **No state moves, no figure is restated, and nothing here is
+re-measured.**)_
+
 ## 18. Re-measured at `849a8e9a` against the run of record (2026-09-16)
 
 **What this section is.** § 17 was written at `c1a2f9fc` and quotes the closing run's **third**

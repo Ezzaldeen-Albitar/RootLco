@@ -125,6 +125,43 @@ model supplies an **authority** and explicitly not an **independence**
 other way would appoint somebody the Owner has not named.** It is carried to the Owner as item
 **O-2** of [`owner-decision-packet-2026-09-16.md`](./owner-decision-packet-2026-09-16.md).
 
+_(2026-09-16 — **ANSWERED by the Owner. Every word above keeps its place, the table is not edited, and
+the heading's "open, and the Owner's" was true of every head before this one.** The answer is the
+**Confirmation** row of the table above, taken as an explicit Owner decision about reviewer
+independence, and it is recorded at
+[`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md) § 1, **D-32**. In the Owner's
+words:_
+
+> _Retain Eng. Ezzaldeen Al-Bitar as the designated human technical, QA, and Security reviewer. I
+> accept a disclosed, authorized internal/self-review for this phase instead of requiring recruitment
+> of another reviewer._
+>
+> _Record this as an explicit Owner decision concerning reviewer independence. Do not describe a
+> self-review as independent. This does not authorize GitHub self-approval contrary to repository
+> rules._
+
+_**What that settles:** a **disclosed, authorized self-review is accepted for this phase**, and no
+further reviewer need be recruited for it. **What it does not settle, in the Owner's own terms:** the
+review **must not be described as independent** — the Confirmation row's own consequence, that
+"**P1-EC-016 stays open**, and each determination must be labelled a self-review", is unchanged and
+`docs/governance/standing-technical-authorization-policy.md:192-194` still carries it; and the
+decision **authorises no GitHub self-approval contrary to repository rules**, so branch protection and
+the review rules are untouched._
+
+_**The disclosure sentence of § 2 remains MANDATORY on every determination**, word for word, with its
+self-review labelling and its open P1-EC-016 clause intact. The Owner's acceptance of a self-review is
+the reason the sentence is required, not a reason to drop it._
+
+_**§ 7's nine decision fields stay EMPTY, and they are empty at
+`7a1e1eefeca38533b507bf128206c8a71eb1b4b9`.** The Owner's decision **appoints and authorizes and does
+not manufacture a determination** — in the Owner's words, "This decision appoints and authorizes the
+reviewer; it does not manufacture his determinations. Do not sign for him or substitute an AI review
+for a human certification." **No certification and no clearance exists, none is issued, implied or
+inferred here, and gate conditions 2 and 3 remain unsatisfied.** The Owner also directed that the
+items be answered against the existing evidence packet: "Use the existing evidence packet for QA-C1
+through QA-C5 and SEC-C1 through SEC-C4. Do not launch new tests merely to prepare those
+determinations." **No test was launched to prepare them.**)_
+
 ## 4. How to read an item
 
 Each item names **one task**, because the closure record's human-certification category is per task:
@@ -205,6 +242,14 @@ SEC-C2 L-9, L-10, L-11 and **CC-63 (a)**, SEC-C3 L-12 with **SEC-003-O2** open, 
 
 **Only the person holding the role may fill a row.** A blank row is not a refusal and is not a
 pending approval; it is an act that has not been performed.
+
+_(2026-09-16 — **the nine fields below are still EMPTY, and this note fills none of them.** The
+Owner's decision **D-32** of [`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md)
+answered the independence question of § 3 by accepting a disclosed, authorized self-review for this
+phase; **it appoints and authorizes the reviewer and does not manufacture a determination.** So the
+sentence above is unchanged and is the whole of the state here: **an act that has not been
+performed.** **Gate conditions 2 and 3 are unsatisfied**, and the Owner's conditional phase decision
+of the same date does not satisfy either — that decision's own words forbid claiming it does.)_
 
 ### QA certification — gate condition 2
 

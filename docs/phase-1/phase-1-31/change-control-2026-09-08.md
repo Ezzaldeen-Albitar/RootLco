@@ -1841,6 +1841,26 @@ carries the state. § 70.7 excludes the row from the open set by name for this r
 records this note. FE-009's matrix state does not move here — it was already `end-to-end verified` at
 `c1a2f9fc`.)_
 
+_(2026-09-16, a mechanical reference repair beside the note above, under Owner decision **D-35** of
+[`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md): "Repair broken references
+mechanically where the evidence already exists." **The note above keeps every word, and no finding,
+state or closure is re-adjudicated by this one.** **The defect:** the note cites
+"[`acceptance-record.md`](./acceptance-record.md) §§ 11.4 and 11.6" for a run that "read the warranty
+transition ledger in its journey", and **§ 11.4 does not carry that read.** Read at
+`7a1e1eefeca38533b507bf128206c8a71eb1b4b9`, § 11.4 records 740 steps, 740 ok, 0 not ok, 0 findings,
+five harness notes, one pacing row and fifteen published browser fixtures, and states that "The
+journey's step-by-step table is `steps.md`; it is not reproduced in this section." **No section of the
+acceptance record names a warranty transition-ledger step**, and the harness step § 69.6 records as
+owed — "The step it owes is a … read for the journey's own warranty, published as the transitions
+page" — is nowhere recorded as written. **The evidence that does exist, and the corrected citation:
+§ 11.6 alone**, which records five `warranty` browser cases executed in each of `authenticated-en`,
+`authenticated-ar` and `authenticated-tablet` with 0 failed, the run's only skips being 369 legacy
+cases and the three export-case entries — so no warranty case was skipped. **The browser clause stands
+on § 11.6. The journey clause has no in-repository citation and the § 11.4 reference is withdrawn as a
+citation for it**, which is the whole of this repair. **CC-31's own closure condition is unaffected**:
+its cell made the browser proof at the closing head the one condition, and that proof is § 11.6's.
+**No test identifier is retired, nothing is regenerated or re-run, and no row moves.**)_
+
 ### 43.4 What this slice did NOT do
 
 - **No backend file was edited**, no migration was written, no seed changed and no permission was
@@ -7346,6 +7366,19 @@ closed on that measurement.** FE-009's matrix state did not move at this head �
 open**: the first turns on a gate run this note did not take, and the second on sixteen sites outside
 this phase that remain deliberately unfixed. Nothing is renumbered; § 70.5 records this note.)_
 
+_(2026-09-16, the same mechanical reference repair the **CC-31** note at § 43.3 carries, applied here
+because this note carries the identical clause, under Owner decision **D-35**. **The note above keeps
+every word, and neither CC-59 nor CC-59 (a) is re-adjudicated, reopened or moved by this one.** The
+clause "its journey reads the warranty transition ledger and asserts the genesis-only shape
+([`acceptance-record.md`](./acceptance-record.md) § 11.4)" **cites a section that does not carry it**:
+§ 11.4 records the journey's totals — 740 steps, 740 ok, 0 not ok, 0 findings — five harness notes, one
+pacing row and fifteen published browser fixtures, and says its step table "is not reproduced in this
+section". **No section of the acceptance record names a warranty transition-ledger step.** **The
+browser clause is correctly cited and stands**: § 11.6 records five `warranty` cases executed in each
+of the three authenticated projects with 0 failed and no warranty case skipped. **The § 11.4 reference
+is withdrawn as a citation for the journey clause**, and that is the whole of this repair. **No
+identifier is retired, nothing is regenerated or re-run, and no row moves.**)_
+
 ### 69.9 Resumed integration on 2026-09-14
 
 The interrupted merge from protected `develop`
@@ -8684,6 +8717,46 @@ nothing.** The acceptance or refusal is the Owner's, as O-3.)_
 | **CC-60 (f)** | **the closing run carries residual limitations that would otherwise reach nobody**                                                             | eleven items at § 11.12 of the acceptance record and sixteen at § 18.8 of the assurance index                                                                                                                                                                                                                                                                    | **carried, each named, and neither turned into a blocker nor accepted.** The load-bearing ones for the certifier are the absent hosted execution of every P1-31 browser case and of the merged suites at this head, the privileged local fixture, the one-case branch-scope proof on download, and the uncommitted falsifiability control | the certifier; the Owner         | **carried, named** |
 | **CC-60 (g)** | **the five instruments the run of record used live outside the repository, unversioned**                                                       | journey `66949016…` 229236 bytes, companion `09d75d88…`, screens `d91f213a…`, runner `75d65988…` 57172 bytes, plan `ce2132fb…` 116013 bytes; the runner differs from its preserved attempt-3 copy at exactly two pin lines (§ 11.2)                                                                                                                              | **recorded, not closed.** Identity rests on the digests the runner compared against its pins before anything ran. Bringing the instruments under version control is not this slice's act                                                                                                                                                  | a later lane                     | **open, recorded** |
 
+_(2026-09-16, beside the five open sub-rows of the table above, **every cell of which keeps its words
+and its disposition. Not one of them is closed, marked fixed or moved by this note.** The Owner's
+decisions of that date are recorded at
+[`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md), **D-32** … **D-38**, and § 75 of
+this register records their effects._
+
+_**CC-60 (c)** — "the decisions themselves are OPEN and are the Owner's". **Seven of them are now
+answered**: packet items **O-1**, **O-2**, **O-3**, **O-4**, **O-10** in its convention limb, **O-20**
+and **O-21**. **Fourteen remain open** — O-5, O-6 in both limbs, O-7, O-8, O-9, O-11 … O-19 — and
+**this row is NOT closed**, because it is a row about the packet's items as a set and fourteen of them
+are unanswered. Carried under **D-33** on the terms § 2.1 of that file records._
+
+_**CC-60 (d)** — "**No certificate is issued and engineering cannot issue one.**" **Unchanged, and the
+one thing that moved is the reading.** **D-32** retains Eng. Ezzaldeen Al-Bitar in all three roles and
+accepts a **disclosed, authorized internal/self-review** for this phase — **not to be described as
+independent**, and authorising no GitHub self-approval contrary to repository rules. **It appoints and
+authorizes and manufactures no determination.** The nine decision fields at
+[`certification-and-clearance-packet.md`](./certification-and-clearance-packet.md) § 7 are **still
+EMPTY**; the outstanding thing is still "an **unissued certification and an unissued clearance**"; and
+**gate conditions 2 and 3 are still unsatisfied**. This row is marked **NOT COVERED BY O-3** in § 2.1
+of the decisions file, so the Owner's carry-forward does **not** reach it._
+
+_**CC-60 (e)** — "**PENDING as a statement, OPEN as an act.**" **Unchanged. O-6 is unanswered in both
+limbs**, and the Owner's message of 2026-09-16 says nothing about it. The row is carried under
+**D-33** with its restriction intact: **CC-16** and **CC-20** stay open, a runbook is not a run, no
+deployment is invented and no environment is claimed._
+
+_**CC-60 (f)** — "**carried, each named, and neither turned into a blocker nor accepted.**" **D-33
+carries the set forward with its restrictions preserved and marks nothing fixed.** One of the items
+this cell names as load-bearing for the certifier — the one-case branch-scope proof on download,
+**CC-63 (a)** — is marked **NOT COVERED BY O-3**, so the Owner's acceptance does not reach it and it is
+not downgraded. The remaining named items stay carried and unaccepted, exactly as this cell says._
+
+_**CC-60 (g)** — "**recorded, not closed.**" **Unchanged**, carried under **D-33** to a later lane.
+**D-35** approves the repository evidence convention and does **not** bring the five instruments into
+version control; nothing is regenerated, relocated or re-run._
+
+_**Nothing in this note issues a certification or a clearance, moves a state cell, moves a task-matrix
+row, or claims a gate run.**)_
+
 ### 70.9 The Owner's rules this section is written under, quoted and not paraphrased
 
 From the Owner's instruction of **2026-09-15**, already quoted in
@@ -9203,6 +9276,18 @@ row is this slice's own text, so it is corrected rather than annotated.)_
 | ------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | -------- |
 | **CC-65**     | **the closing records contradicted each other at one head, and several carried figures two merges stale**     | **closed by annotation.** Ten items reconciled; every original retained with its words and a dated note beside it. **CC-50 (a) determined CLOSED** and the three misattributing citations corrected; **CC-64 (a) closed** by § 74.4 | this lane | closed   |
 | **CC-65 (a)** | **two Owner limbs — FE-004's scope allocation and DOC-002's acknowledgement — vanished without adjudication** | **OPEN, and the Owner's.** Both are recorded where they disappeared and routed as **O-20** and **O-21**, unanswered. **Neither task row moves**, and neither limb is treated as closed by the fact that it stopped being asked      | the Owner | **open** |
+
+_(2026-09-16, beside the **CC-65 (a)** row above, which keeps its words, its disposition and its
+state. **Both limbs are ANSWERED by the Owner, and this row is NOT marked fixed or closed here** — a
+closure of it belongs to the section that raised it. **FE-004's scope allocation** is answered by
+**D-36**: checklist execution stays within P1-31 and the separate template administration screen is
+deferred to the named follow-up backlog item **`P1-31-FU-001`** (§ 75.4), which "is not a P1-31
+closure requirement and must not be inserted into P1-32". **DOC-002's acknowledgement** is answered by
+**D-37**: the approval owner acknowledges **receiving** the controlled report and its disclosed
+limitations, and "This acknowledgement does not replace QA or Security determinations." Both are
+recorded at [`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md) and at § 75 below.
+**Neither task row moves**, exactly as this row's disposition requires, and the row is carried under
+**D-33** in § 2.1 of that file.)_
 
 ### 74.9 What this slice did NOT do
 
@@ -9737,3 +9822,228 @@ is untouched.
 **The ownership gate reading above is the post-commit one**, for the reason § 74.10 records: it
 judges **committed** state against `origin/develop`, so a run taken over an uncommitted working tree
 proves nothing about the files this round changes.
+
+## 75. The Owner's closure decisions of 2026-09-16, applied to the records (CC-66)
+
+**Slice:** `feature/p1-31-owner-closure-decisions`, ownership profile `p1-31-frontend` — resolved
+from the branch-rule table at `.github/ci-baselines/phase-ownership-profiles.json` **before** the
+branch was created, which reported `check … -> ownership profile 'p1-31-frontend'`. **Baseline:**
+protected `develop` `7a1e1eefeca38533b507bf128206c8a71eb1b4b9`, the merge of pull request #403.
+
+**Purpose.** The Product Owner answered seven of the twenty-one items of
+[`owner-decision-packet-2026-09-16.md`](./owner-decision-packet-2026-09-16.md) on **2026-09-16**. This
+section records the decisions and their effects on the records, in **one consolidated documentation
+pass**. **Every quotation is byte-exact from the Product Owner's message of 2026-09-16 to the
+coordinator**, preserved in full at
+[`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md).
+
+**Three facts are kept separate everywhere in this section, on the Owner's own instruction**: the
+Owner's **conditional decision**; the **actual QA and Security determinations**, which are **absent**;
+and whether the **formal gate P1-G31 prerequisites** are satisfied, which they are **not**. **Nothing
+here states that the conditional decision satisfies a missing certification.** **No review is
+described as independent. No unconditional Pass, no "100% verified" claim, no production-readiness
+claim and no issued certification is recorded. Nothing is signed for anybody.** **No task-matrix row
+moves, no state cell is marked fixed, no finding is re-adjudicated, no gate rule is changed and no
+promotion is authorised.**
+
+### 75.1 Identifier allocation
+
+| identifier    | meaning                                                                   | state                                                                                  |
+| ------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| section 75    | this recording pass                                                       | **the next free section, taken here** (§ 74.1 left none free below 75)                 |
+| **CC-66**     | the Owner's decisions of 2026-09-16 were unrecorded in the register       | **closed by this section and the notes § 75.7 names**                                  |
+| **CC-66 (a)** | the O-3 carry — the 47 open dispositions, carried with their restrictions | **open** — 44 carried, 3 not covered; **no row is closed and none is marked fixed**    |
+| **CC-66 (b)** | the O-20 follow-up backlog item                                           | **open** — deferred work, named and not built                                          |
+| **CC-66 (c)** | the O-21 acknowledgement of the routed controlled record                  | **recorded** — receipt only; DOC-002's other half stays open and the row does not move |
+| **CC-66 (d)** | the gate status after the decisions                                       | **open** — conditions **1**, **2** and **3** unsatisfied; condition **4** answered     |
+
+§ 48.1's rule holds: an identifier is a claim about the register at the moment it was raised, and it is
+never renumbered. **Nothing here renumbers anything.** As this slice leaves the file **the register
+holds sections 1 … 75 with CC-01 … CC-66**, and the **phase directory count moves from 46 to 47** —
+this slice adds exactly one file, [`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md).
+
+### 75.2 The seven decisions, and what each answers
+
+**Each is recorded in full, with its limits in the Owner's own terms, at
+[`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md). The table below is an index and
+is not the record.** The numbers continue after **D-31**, the highest already in use, which is in the
+Owner's decisions of 2026-09-13 preserved outside this repository.
+
+| decision | packet item | what it settles, in one sentence                                                                                                       | what it does not settle                                                                                             |
+| -------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **D-32** | **O-2**     | the reviewer is retained in all three roles and a **disclosed, authorized internal/self-review is accepted for this phase**            | it "appoints and authorizes the reviewer; it does not manufacture his determinations"; not to be called independent |
+| **D-33** | **O-3**     | the existing documented non-blocking limitations and deferred work are **carried forward with their restrictions preserved**           | it creates "no new acceptance of an unresolved critical defect or an unresolved security/isolation blocker"         |
+| **D-34** | **O-4**     | P1-31 closes at its **documented delivered scope**, as a conditional closure with explicit carry-forward obligations                   | "A phase decision must not automatically turn all 29 tasks into 'end-to-end verified.'"                             |
+| **D-35** | **O-10**    | the **existing repository evidence convention** is approved, and broken references are repaired mechanically where the evidence exists | it retires no test identifier, and D-16's ownership limb stays open                                                 |
+| **D-36** | **O-20**    | checklist **execution** stays within P1-31; the template administration screen is **deferred** to a named follow-up backlog item       | it "is not a P1-31 closure requirement and must not be inserted into P1-32"                                         |
+| **D-37** | **O-21**    | the approval owner **acknowledges receiving** the controlled report and its disclosed limitations                                      | "This acknowledgement does not replace QA or Security determinations."                                              |
+| **D-38** | **O-1**     | the Owner's phase decision is **CONDITIONAL PASS** for the documented P1-31 scope                                                      | no unconditional Pass, no "100% verified", no production readiness, no issued human certification                   |
+
+**Fourteen items of the packet remain open** and are listed in the dated note at § 6 of that packet:
+O-5, O-6 in both limbs, O-7, O-8, O-9 and O-11 … O-19. **None of them is answered here.**
+
+### 75.3 CC-66 (a) — the O-3 carry
+
+**The list is attached, and it is not restated here.** The Owner asked that the "exact existing
+disposition list" be attached or referenced, with each carried item keeping "its identifier, actual
+obligation, owner, operational restriction, and appropriate destination or release condition". **That
+table is § 2.1 of [`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md)**, one row per
+identifier over the **47** that § 70.7 re-derives at this head under its own counting rule, as § 74.3
+confirms.
+
+**The counts:** **47 rows. 44 CARRIED UNDER O-3. 3 NOT COVERED BY O-3** — **CC-56 (b)**, **CC-60 (d)**
+and **CC-63 (a)**. 44 + 3 = 47.
+
+**What the three NOT COVERED rows are, and what happens to them.** Each meets the Owner's own
+exclusion — an unresolved critical defect or an unresolved security or isolation blocker — judged from
+its own cell: **CC-56 (b)**, six open sites outside this phase where a refusal across a tenant or
+scope boundary discloses whether the target exists; **CC-60 (d)**, the unissued certification and the
+unissued clearance, which are the prerequisites of gate conditions 2 and 3; and **CC-63 (a)**, the
+download authorization that does not refuse a caller whose file-access grant is scoped to another
+branch. **None of the three is downgraded, closed, reclassified or moved out of its owner's hands.**
+The Owner's carry-forward does not reach them, and that is the whole of the difference.
+
+**What this subsection does not do.** It closes no row, marks nothing fixed or completed, moves no
+state cell, and re-derives no figure. **The four identifiers that state no usable disposition** —
+CC-25, CC-26, CC-40 and CC-48 — are outside the set of 47 and are untouched.
+
+**One concrete contradiction, recorded and not allowed to stop the pass**, under the Owner's
+instruction to "Escalate only a concrete contradiction that prevents the requested action; continue
+unaffected work": § 70.7 retains two superseded figures of its own second reading, 43 and 47, "rather
+than removed", beside the derivation that gives 41 and 45 and the later note that gives 47 at this
+head. **The figure used is the one § 70.7 and § 74.3 state at this head — 47** — and the superseded
+readings are not used. It did not prevent the pass, and the pass continued.
+
+### 75.4 CC-66 (b) — the follow-up backlog item the Owner named
+
+**The repository has no cross-phase backlog register**, searched at this head. The nearest existing
+convention is a **per-phase follow-up register inside the phase's own README** —
+`docs/phase-1/phase-1-18/README.md` § 7.1, "Follow-up register — open items, plus closed and
+attributed records", carrying phase-scoped identifiers. **P1-31 has no README**, and this slice does
+not create one, so the item is recorded here as a register sub-row and **this sentence says so**.
+
+**The item.**
+
+| field                             | value                                                                                                                                                                                                                                                                                                                                                               |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **identifier**                    | **`P1-31-FU-001`**                                                                                                                                                                                                                                                                                                                                                  |
+| **name**                          | **Delivery checklist-template administration screen**                                                                                                                                                                                                                                                                                                               |
+| **authority**                     | Owner decision **D-36** of [`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md), answering packet item **O-20**                                                                                                                                                                                                                                       |
+| **scope**                         | the **six checklist-template write operations that have no adapter, no screen and therefore no component test** — the writes hole **H-1** of [`coverage-record.md`](./coverage-record.md) names, against a family of eight of which two are already consumed by the handover record screen — together with the screen that would consume them and its own DOM suite |
+| **what it is not**                | in the Owner's words: it "is not a P1-31 closure requirement and must not be inserted into P1-32, whose purpose is frontend validation rather than new administration features"                                                                                                                                                                                     |
+| **what stays inside P1-31**       | in the Owner's words: "Delivery checklist execution remains within P1-31."                                                                                                                                                                                                                                                                                          |
+| **related, and NOT closed by it** | coverage hole **H-1**, open on its own terms; **CC-57 (a)**, of whose seven operations three are checklist-template writes; the five pending mirror entries the write-shape gate records                                                                                                                                                                            |
+| **owner**                         | unassigned — a later Frontend lane. **Naming it is not this slice's act**                                                                                                                                                                                                                                                                                           |
+| **state**                         | **open, deferred, not built**                                                                                                                                                                                                                                                                                                                                       |
+
+**Nothing is built by this row, no adapter is written, no mirror entry is cleared, and FE-004 does not
+move.**
+
+### 75.5 CC-66 (c) — the acknowledgement of the routed controlled record
+
+**Recorded as receipt and as nothing else.** DOC-002's canonical obligation ends in "route the result
+to the named approval owner"; the routing was performed on 2026-09-13 and again as the record now
+stands, and **before 2026-09-16 no reply, acknowledgement or approval was recorded anywhere, and none
+was claimed**. The Owner now records an acknowledgement of **receiving** the controlled P1-31 report
+and its **disclosed limitations**, with the Owner's own limit in the same sentence: "This
+acknowledgement does not replace QA or Security determinations."
+
+**What it is not.** It is not a verdict — that is **D-38**. It is not a certification and not a
+clearance. **It accepts no limitation**: acknowledging that a limitation was disclosed is not accepting
+it, and **CC-60 (f)**'s "neither turned into a blocker nor accepted" stands. **DOC-002 stays
+`merged (read-only/partial)`**, because its other completion condition is engineering work owed
+independently.
+
+### 75.6 CC-66 (d) — the gate status after the decisions, derived
+
+**Derived from each condition's own text, and asserted of nothing else.**
+
+| condition                                    | after the decisions of 2026-09-16 | why                                                                                                                                                                                                                                                                              |
+| -------------------------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1.** the Definition of Done is evidenced   | **NOT satisfied**                 | bullet 2's "formally accepted by the authorized owner" limb is now satisfied **for the 44 CARRIED rows only** and unsatisfied for the 3 NOT COVERED rows; bullets 1 and 3 are unchanged and unevidenced; **D-34** forbids a phase decision moving any task state, and none moves |
+| **2.** the QA lead certifies the index       | **NOT satisfied**                 | the missing prerequisite is the five human determinations **QA-C1 … QA-C5**, whose decision fields at [`certification-and-clearance-packet.md`](./certification-and-clearance-packet.md) § 7 are **EMPTY**. **D-32** appoints and authorizes and manufactures no determination   |
+| **3.** the Security reviewer clears blockers | **NOT satisfied**                 | the missing prerequisite is the four human determinations **SEC-C1 … SEC-C4**, in the same empty § 7. **CC-63 (a)** is **NOT COVERED BY O-3** and is carried for the security certifier to weigh, unaccepted                                                                     |
+| **4.** the approval owner records a verdict  | **ANSWERED**                      | **CONDITIONAL PASS**, dated 2026-09-16, recorded in the verdict field at [`closure-record.md`](./closure-record.md) § 4 from **D-38**. **Answering condition 4 satisfies condition 4 and nothing else**                                                                          |
+
+**The four conditions are conjunctive, so the gate is not satisfied.** **Promotion stays NOT
+eligible** ([`closure-record.md`](./closure-record.md) § 6), `main` is not moved, and no dependent work
+is authorised by this section.
+
+### 75.7 Dispositions
+
+| id            | finding                                                                                         | disposition                                                                                                                                                                                                                                              | owner                             | state                       |
+| ------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- | --------------------------- |
+| **CC-66**     | **the Owner answered seven packet items and no record in the repository carried the decisions** | **closed by this section** and by the seven decision sections and the dated notes § 75.8 names. Every quotation byte-exact; every limit recorded in the Owner's own terms; **the three facts kept separate throughout**                                  | this slice                        | closed, recorded            |
+| **CC-66 (a)** | **the 47 open dispositions had no formal acceptance or refusal**                                | **44 CARRIED UNDER O-3, 3 NOT COVERED BY O-3** — CC-56 (b), CC-60 (d), CC-63 (a) — attached as § 2.1 of the decisions file. **No row is closed, marked fixed, downgraded or reclassified, and no state cell moves**                                      | the Owner; each row's own owner   | **open**                    |
+| **CC-66 (b)** | **the checklist-template administration screen had no named destination**                       | **named as `P1-31-FU-001` at § 75.4**, with its scope, its exclusions and the Owner's words. **Nothing is built**, H-1 and CC-57 (a) are not closed, and FE-004 does not move                                                                            | a later Frontend lane, unassigned | **open, deferred**          |
+| **CC-66 (c)** | **DOC-002's acknowledgement half had no answer, and none was claimed**                          | **recorded at § 75.5 as receipt only.** It replaces no QA or Security determination, accepts no limitation, and **DOC-002 does not move**                                                                                                                | the Owner                         | **recorded — receipt only** |
+| **CC-66 (d)** | **the gate status after an Owner decision had been recorded nowhere**                           | **derived at § 75.6: conditions 1, 2 and 3 NOT satisfied, condition 4 ANSWERED.** The missing prerequisite behind 2 and 3 is the nine human determinations in the certification packet's empty § 7. **No gate rule is changed and no promotion follows** | the assigned reviewer; the Owner  | **open**                    |
+
+### 75.8 Where it is recorded
+
+1. **[`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md)** — NEW. The seven decisions,
+   **D-32** … **D-38**, with the O-3 carry table at § 2.1.
+2. **[`owner-decision-packet-2026-09-16.md`](./owner-decision-packet-2026-09-16.md)** — a dated note
+   beside each of O-1, O-2, O-3, O-4, O-10, O-20 and O-21 recording that it is answered; a dated note
+   beside O-6 recording that its runbook-owner limb is open and its environment limb prospective; and
+   a dated note in § 6 recounting answered against open. **No item is renumbered and no figure is
+   restated.**
+3. **[`closure-record.md`](./closure-record.md)** — § 4: a dated note beside the four-condition table,
+   the verdict field filled with the Owner's own value and a dated note beside the paragraph that
+   governed it; § 6: a dated note keeping promotion NOT eligible and naming the missing prerequisite
+   once; § 7.4: a dated note recording the Owner's decision as the Owner's and keeping the
+   engineering result distinct; § 8: a dated note beside the first bullet.
+4. **[`certification-and-clearance-packet.md`](./certification-and-clearance-packet.md)** — § 3: a
+   dated note recording the independence question as answered by **D-32**, with the disclosure
+   sentence still mandatory; § 7: a dated note recording that the nine fields stay **EMPTY**.
+5. **[`task-matrix.md`](./task-matrix.md)** — a head note recording that **no row's state changes**,
+   and dated notes on **FE-004** (**D-36**) and **DOC-002** (**D-37**), neither of which moves a row.
+6. **this register** — § 75; the dated note beside the five open **CC-60** sub-rows at § 70.8; the
+   dated note beside **CC-65 (a)** at § 74.8; and the two mechanical reference repairs at § 43.3 and
+   § 69.7.
+7. **[`acceptance-record.md`](./acceptance-record.md)** § 11.13 and
+   **[`security-and-qa-evidence.md`](./security-and-qa-evidence.md)** § 17.8 — one dated note each.
+
+**The evidence convention, ratified and applied.** **D-35** approves the existing repository
+convention, so the five **proposed** evidence references prepared outside this repository at
+`orchestration/evidence/p1-31/closeout-drafts/_acceptance-proposed/` are **superseded by the
+in-repository index**. **They are not deleted**, nothing is copied in from them, and **nothing was
+written into `phase-1/_acceptance/`**, which still holds its README and nothing else.
+
+### 75.9 What this slice did NOT do
+
+- **It issued no certification and no clearance**, and it filled none of the nine decision fields.
+  **Gate conditions 2 and 3 are unsatisfied.**
+- **It described no review as independent**, and it signed for nobody.
+- **It recorded no unconditional Pass, no "100% verified" claim, no production-readiness claim and no
+  issued human certification.**
+- **It moved no task-matrix row**, no state total and no register state cell, and it **marked nothing
+  fixed or completed**.
+- **It re-adjudicated, re-extracted, re-audited and re-classified nothing**, and it re-derived no
+  figure: every figure it quotes is the one its own source states at this head.
+- **It retired no test identifier**, and it deleted no artefact.
+- **It ran no test tier, no build, no migration, no database operation, no browser tier and no hosted
+  job**, and it dispatched, re-ran and read none. The changes are documentation only: no source, no
+  workflow, no script, no manifest, no baseline and no npm script is touched, so the command-coverage
+  register is untouched.
+- **It authorised no promotion and moved no protected branch.**
+
+### 75.10 Verification
+
+**Documentation gates only, every one of them LOCAL and static over the changed files. No hosted
+result is claimed.**
+
+| command                                                                   | exit |
+| ------------------------------------------------------------------------- | ---- |
+| `npx prettier --check` over the documents changed by this slice           | 0    |
+| `npm run validate:encoding`                                               | 0    |
+| `node scripts/ci/check-phase-ownership.mjs p1-31-frontend origin/develop` | 0    |
+| `npm run validate:p1-24-register`                                         | 0    |
+| `npm run validate:p1-27-doc-counts`                                       | 0    |
+| `npm run validate:p1-27-closing-values` (check mode)                      | 0    |
+| `npm run validate:plain-language`                                         | 0    |
+| `npm run validate:generated-artifacts`                                    | 0    |
+
+**The ownership gate reading above is the post-commit one**, on § 74.10's reason: it judges
+**committed** state against `origin/develop`, so a run over an uncommitted working tree proves nothing
+about the files this slice changes.
