@@ -187,6 +187,28 @@ failure, and recovery coverage appropriate to the affected workflow."
 | **QA-004** | concurrency and idempotency (`canonical-plan.md:279`; § 8)         | #386 (`e2908f06`) — `tests/backend/p1-31-concurrency-and-versioning.test.ts`, C17-0 … C17-4                                                         | `security-and-qa-evidence.md` § 8; register § 59 (**CC-49**); acceptance steps 47, 103–104, 105, 116                                                                                                              | **decision** — whether P1-31 owes a **sibling version-sourcing gate** over its own version-guarded operations, or a recorded waiver, is undecided; **no P1-31 version-sourcing gate exists**. And no acceptance record exercises the non-delivery guarded operations                                                                                                                                                                                                                                                                                                                                                                                  | **Owner** (packet **F-5**), then the QA lane                                       | the Owner chooses a gate or a waiver; if a gate, it lands green over the guarded set                                           |
 | **QA-005** | regression and evidence packaging (`canonical-plan.md:280`; § 9)   | harness #378 (`6005cfa4`), record #380 (`81b3bce8`), corrected re-run #387 (`fb65b049`)                                                             | `acceptance-record.md` § 8 — **194 HTTP steps, 0 findings**, 40 of 40 P1-31 browser cases, 28 screenshots, 0 shot failures; register § 61 (**CC-51**)                                                             | **proof + decision** — the run is an **engineering** PASS and the record's own § 1 verdict stays **PARTIAL** _(2026-09-15: not true when written — this cell was written after commit `0e40fd42` replaced that verdict, and `acceptance-record.md:27` records an engineering verdict of PASS for run `mtzmvemj`, an engineering result for that one run and not the Owner's phase verdict, which remains unrecorded)_; the **evidence-packaging half is unmet** because nothing of the run is committed except the record; a locally driven run leaves no Playwright reporter document at all (§ 61.6); and D-16's packaging convention is unresolved | the QA lane for packaging; **Owner** for the verdict and for D-16                  | the run's artefacts are packaged and digest-checked into a committed ledger, D-16 is answered, and the Owner records a verdict |
 
+_(2026-09-16, beside the **QA-001** row above, which keeps its words — **the attribution in it is
+corrected, and nothing in it is weakened.** The cell reads, in part, "**CC-50 (a)** is open: the
+per-tree instrumented-file counts (H-2) and the dashboard route tier measurement (H-3) can be filled
+from no hosted artefact, because no job uploads the per-file web coverage summary". **CC-50 (a) is
+CLOSED, not open**, determined at change control § 74.2 by reading the row's own content at § 60.5
+against the fill: the remedy that cell itself states — adding
+`apps/web/coverage/web/coverage-summary.json` and `coverage-gate-web.json` to the
+`evidence-web-quality` upload list — landed with pull request **#389**, hosted run `34778434228`
+carried both files, and § 63.10 filled the **H-2 and H-3 figures** from it; § 63.8's dated note,
+§ 62.6's index row and § 70.7's exclusion list all read it closed. **What the rest of this cell says
+stands and is not discharged here**: H-2 and H-3 as coverage **holes** are not closed by that fill,
+coverage across the phase screens is still partial, and the statement that no P1-31 feature code was
+inside the coverage instrument was true of the head this cell was written at. **The later fact is a
+different one**: the coverage record's figures were re-measured **locally** once three feature roots
+entered `COVERAGE_INCLUDE`, and **no hosted run has been read for those figures** — **CC-64 (b)**,
+open on its own content, with the `LOCAL` labelling standing and limitation **L-2** of the
+certification packet refined and **not lifted**. **The completion condition beside this row keeps its
+words**: its figures limb is met by the hosted fill, and its second limb — the named holes closed or
+accepted — stands. **QA-001's state does not move on this note**: it remains `phase-level incomplete`,
+the QA certification is **unissued**, and **no locally measured figure becomes a hosted measurement
+here**.)_
+
 _(2026-09-16, beside the **QA-002** row above, which keeps its words. **One of that row's two "missing"
 limbs disappeared from the later re-derivations with no recorded closure, and it is accounted for
 here.** The cell reads, in part, "**P-12's export contract does not exist, so its error paths cannot be

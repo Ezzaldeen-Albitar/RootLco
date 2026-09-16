@@ -9019,13 +9019,24 @@ allocation table), and so do the two later sites that repeat the attribution —
 paragraph. **The § 63 sites needed no correction**: they were right.
 
 _(2026-09-16, appended after review — **the paragraph above keeps its words, and the correction it
-describes was incomplete.** Five further sites still read the row OPEN in their own current-reading
+describes was incomplete.** Six further sites still read the row OPEN in their own current-reading
 voice, so the contradiction this subsection was raised to remove survived where a reviewer would meet
 it. Each now carries the same dated re-attribution, and **each keeps its original words**:
 [`certification-and-clearance-packet.md`](./certification-and-clearance-packet.md) § 9, limitation
 **L-2**; [`coverage-record.md`](./coverage-record.md)'s status line;
 [`security-and-qa-evidence.md`](./security-and-qa-evidence.md)'s coverage-record item; **§ 60.5's own
-disposition cell**; and **§ 62.6's index row**. Annotating § 60.5 matters beyond tidiness: § 70.7 counts
+disposition cell**; **§ 62.6's index row**; and [`closure-record.md`](./closure-record.md) **§ 2.3's
+QA-001 "missing" cell**. **The count in this note first read five and named only the first five**: the
+QA-001 cell — a reader-facing determination in the closure record's own task tables, contradicted
+three subsections later in that same file at § 2.12 — was missed, and **the count and the list are
+corrected here in place** because this note is text this slice wrote. The second review round that
+found it is recorded at **§ 74.12**. **What the remaining occurrences of the identifier are**, so that
+"six" is not read as a claim about every occurrence: a search of the phase directory finds it
+elsewhere only in cells that already carry a dated re-attribution, in cells that already read it
+closed, in [`task-matrix.md`](./task-matrix.md)'s **SEC-002** evidence cell and in the delivered
+[`owner-decision-packet-2026-09-13.md`](./owner-decision-packet-2026-09-13.md) — the last two cite what
+the register held at #385 and at that packet's own date, and **neither is edited here**. Annotating
+§ 60.5 matters beyond tidiness: § 70.7 counts
 a row open "unless that cell, or a dated note beside it, records a closure", and until now that cell
 carried no note, so the rule read this row open while § 70.7's exclusion list read it closed. **No
 figure is restated and no count is re-derived by this note**, and **L-2 does not lift** — the coverage
@@ -9251,9 +9262,14 @@ re-measures anything, moves any task state, or allocates an identifier.
    because **reasons 1 to 3 carry it independently**; the same sentence in
    [`closure-record.md`](./closure-record.md) § 5 is corrected in place.
 2. **The CC-50 (a) re-attribution was incomplete.** § 74.2 corrected three § 73 citations and two
-   later sites, but **five further sites still read the row OPEN in their own current-reading voice**,
-   including the limitation table a reviewer weighs. All five now carry the same dated note, each
-   keeping its original words; they are listed in § 74.2's appended note.
+   later sites, but **six further sites still read the row OPEN in their own current-reading voice**,
+   including the limitation table a reviewer weighs. All six now carry the same dated note, each
+   keeping its original words; they are listed in § 74.2's appended note. _(Corrected in place by the
+   second review round of the same date, **§ 74.12**, in text this slice itself wrote: this finding
+   read **five** and the sweep it records had missed [`closure-record.md`](./closure-record.md)
+   § 2.3's **QA-001** "missing" cell, which is exactly the reader-facing kind of cell the finding is
+   about. That cell now carries the same dated note, § 74.2's list names all six, and **no state, count
+   or figure moves on the correction**.)_
 
 **Three smaller corrections, none of which changes a finding.** A Group D heading in
 [`owner-decision-packet-2026-09-16.md`](./owner-decision-packet-2026-09-16.md) sat one level too deep,
@@ -9289,3 +9305,74 @@ script, no manifest, no baseline and no npm script.
 
 **As § 74.10 records for its own table, the ownership gate judges COMMITTED state**, so the binding
 reading is the one taken after the commit that carries these corrections.
+
+### 74.12 The second review round — one finding applied, three recorded and not acted on
+
+**This subsection records a second review of § 74's own changes, and what it changed.** It
+**allocates no identifier**, moves **no task state**, restates **no figure**, re-derives **no count**,
+and issues **no verdict, approval or clearance**. Sections 1 … 74 and CC-01 … CC-65 stand exactly as
+§ 74.1 allocates them, and the phase directory still holds **46** tracked files — this subsection adds
+none.
+
+**The finding that was applied: the re-attribution sweep of § 74.2 was still one site short, and the
+site was the one that mattered most to a reader.** [`closure-record.md`](./closure-record.md) § 2.3's
+**QA-001** "missing" cell still read, in its own current voice, that the row "is open" and that the two
+figures "can be filled from no hosted artefact". That is a determination a reviewer meets in the
+closure record's own task table, it contradicted the determination reached three subsections later in
+the same file (§ 2.12) and in five other documents, and the note § 74.11 added below that same table
+addressed only the **QA-002** row beside it. **The cell now carries the same dated re-attribution the
+other six sites carry, and it keeps its words.** Two passages of this slice's own record were
+overstated by the same omission and are **corrected in place**, because they are text this slice
+wrote and not inherited text: § 74.2's appended note, which said **five further sites** and listed
+five, and § 74.11's finding 2, which said the same. Both now read **six** and name the QA-001 cell.
+§ 74.2's note also now accounts for the remaining occurrences of the identifier, so that "six" cannot
+be read as a claim about every occurrence in the phase directory.
+
+**What the correction does not do.** **CC-50 (a)'s determination is unchanged** — closed on its own
+content, by § 74.2's reading of § 60.5 against the fill — and so is everything that determination
+leaves standing: the coverage holes **H-2** and **H-3** are not closed, the coverage record's later
+figures remain **LOCAL** measurements under **CC-64 (b)**, their `LOCAL` labelling stands, limitation
+**L-2** does **not** lift, and **a hosted gate execution still does not make a locally measured figure a
+hosted measurement**. **QA-001 does not move**: `phase-level incomplete`, with the QA certification
+unissued. No coverage floor, baseline, allow-list, threshold, script, workflow or source file is
+touched by this subsection or by the slice it corrects.
+
+**Three further review findings are recorded here and deliberately NOT acted on**, so that each is
+visible rather than silently carried.
+
+1. **The packet's recounted blocking figure is not literally derivable from the (f) lines it cites.**
+   [`owner-decision-packet-2026-09-16.md`](./owner-decision-packet-2026-09-16.md) § 6 recounts the
+   blocking items after O-6's split, while **O-6's own (f) line keeps its words and still reads
+   "Blocks the phase: YES"**; the per-limb NO marks live in the dated note directly beneath it. **This
+   is disclosed in the recount itself and again at § 74.5, and the arithmetic is shown so it can be
+   checked rather than believed.** Correcting it further would mean rewriting an (f) line, which the
+   retention convention forbids, so it stands as written.
+2. **Commit `0c09070d`'s body describes the documentation gates that slice ran**, against the
+   instruction that commit bodies carry no gate claim. **A published commit is not amended, rebased or
+   rewritten**; this is the second record of it, § 74.11 being the first, and the commits carrying this
+   subsection carry no gate claim in their bodies.
+3. **The delivered packet of 2026-09-13 still lists the row as open in its own table.** That packet is
+   a routed record and is edited only by its one dated head note, so the occurrence is left exactly
+   where it is and named here, rather than mistaken later for an oversight.
+
+**The gates, re-run over the changed documents at this branch head.** Documentation gates only, every
+one of them **LOCAL** and static. **No hosted result is claimed, no hosted job was dispatched, re-run
+or read, and no test tier, build, migration, database operation, browser tier or deployment was run** —
+these changes touch no executable path, no source, no workflow, no script, no manifest, no baseline and
+no npm script, so the command-coverage register is untouched.
+
+| command                                                                   | exit |
+| ------------------------------------------------------------------------- | ---- |
+| `npx prettier --check` over the two documents changed by this round       | 0    |
+| `npm run validate:encoding`                                               | 0    |
+| `node scripts/ci/check-phase-ownership.mjs p1-31-frontend origin/develop` | 0    |
+| `npm run validate:p1-24-register`                                         | 0    |
+| `npm run validate:p1-27-doc-counts`                                       | 0    |
+| `npm run validate:p1-27-closing-values` (check mode)                      | 0    |
+| `npm run validate:plain-language`                                         | 0    |
+| `npm run validate:generated-artifacts`                                    | 0    |
+
+**The ownership gate reading above is the post-commit one**, for the reason § 74.10 records: it judges
+**committed** state against `origin/develop`, so a run taken over an uncommitted working tree proves
+nothing about the files this round changes. **The seven documents this slice changes in total are
+unchanged in number by this round** — both documents it touches were already among them.
