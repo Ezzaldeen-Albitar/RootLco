@@ -29,6 +29,7 @@ import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 import { buildPage, keysetFragment, type Page, type PageRequest } from '@/server/db/pagination';
 import { halfOpenLocalDayRange } from '@/server/db/period';
+import { toWorkOrderSearchTerms } from '../domain/work-order';
 
 export interface WorkOrderRow {
   readonly id: string;
@@ -113,6 +114,23 @@ export interface WorkOrderListFilter {
    * would silently widen it to every state.
    */
   readonly states?: readonly string[] | undefined;
+  /**
+   * Exact work-order number (P1-32). Digits are folded, so a number typed on an
+   * Arabic keyboard finds the same work order. Served by
+   * `uq_work_orders_active_display_number`.
+   */
+  readonly number?: string | undefined;
+  /**
+   * One free-text box (P1-32): part of the work-order number, part of the name of
+   * any party on its reception visit, part of any plate the vehicle has carried,
+   * or part of its VIN.
+   *
+   * A SELECTOR, like `customerId` — it narrows a result set the caller is already
+   * entitled to, and it is applied IN THE QUERY before the keyset window for the
+   * same reason: post-filtering a fetched page produces short pages and a
+   * `hasMore` that lies.
+   */
+  readonly q?: string | undefined;
 }
 
 /**
@@ -568,6 +586,7 @@ export class WorkOrderRepository extends Repository {
     page: PageRequest
   ): Promise<Page<WorkOrderRow>> {
     const context = this.assertContext(db);
+    const terms = toWorkOrderSearchTerms({ number: filter.number, q: filter.q });
     const values: unknown[] = [
       context.principal.tenantId,
       filter.companyId,
@@ -578,6 +597,11 @@ export class WorkOrderRepository extends Repository {
       filter.openedTo ?? null,
       filter.customerId ?? null,
       filter.states === undefined ? null : [...filter.states],
+      terms.number,
+      terms.hasFreeText ? terms.numberFragment : null,
+      terms.nameFragment,
+      terms.plateFragment,
+      terms.vinFragment,
     ];
     const keyset = keysetFragment(
       page,
@@ -627,6 +651,39 @@ export class WorkOrderRepository extends Repository {
           -- short pages and a hasMore flag that lies. An EMPTY array matches nothing,
           -- which is what a catalogue resolving no closed state must answer.
           AND ($9::text[] IS NULL OR state = ANY($9::text[]))
+          -- P1-32. The exact number, digit-folded in the domain.
+          AND ($10::text IS NULL OR display_number = $10::text)
+          -- P1-32. The free-text box. $11 is NULL exactly when no box was sent.
+          -- Every arm is a correlated EXISTS rather than a join, for the reason the
+          -- BR-05 predicate above gives: a join would return the work order once per
+          -- party role or once per plate interval. An arm whose fragment reduced to
+          -- nothing is disabled by its own <> '' guard instead of being left to
+          -- match every row through LIKE '%%'.
+          AND ($11::text IS NULL OR (
+                display_number ILIKE '%' || $11::text || '%' ESCAPE '\\'
+             OR ($12::text <> '' AND EXISTS (
+                  SELECT 1
+                    FROM rec.reception_party_roles r
+                    JOIN crm.business_partners bp
+                      ON bp.tenant_id = r.tenant_id AND bp.id = r.partner_id
+                     AND bp.deleted_at IS NULL
+                   WHERE r.tenant_id = wo.work_orders.tenant_id
+                     AND r.reception_visit_id = wo.work_orders.reception_visit_id
+                     AND r.deleted_at IS NULL
+                     AND crm.normalize_name(bp.display_name)
+                         LIKE '%' || $12::text || '%' ESCAPE '\\'))
+             OR ($13::text <> '' AND EXISTS (
+                  SELECT 1
+                    FROM veh.plate_history ph
+                   WHERE ph.tenant_id = wo.work_orders.tenant_id
+                     AND ph.vehicle_id = wo.work_orders.vehicle_id
+                     AND ph.plate_normalized LIKE '%' || $13::text || '%'))
+             OR ($14::text <> '' AND EXISTS (
+                  SELECT 1
+                    FROM veh.vehicles v
+                   WHERE v.tenant_id = wo.work_orders.tenant_id
+                     AND v.id = wo.work_orders.vehicle_id
+                     AND v.vin_normalized LIKE '%' || $14::text || '%'))))
           ${keyset.predicate}
         ${keyset.order}
         ${keyset.limitClause}`,

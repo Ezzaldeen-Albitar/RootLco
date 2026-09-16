@@ -105,6 +105,12 @@ export {
   CUSTOMER_PARTY_TYPES,
   CUSTOMER_LIFECYCLE_STATUSES,
   MAX_NAME_FRAGMENT,
+  MAX_PHONE_FRAGMENT,
+  MIN_PHONE_SUFFIX,
+  MIN_SEARCH_FRAGMENT,
+  PHONE_MASK_CHARACTER,
+  PHONE_VISIBLE_DIGITS,
+  maskPhone,
   type CustomerPartyType,
   type CustomerLifecycleStatus,
 } from './domain/customer-search';
