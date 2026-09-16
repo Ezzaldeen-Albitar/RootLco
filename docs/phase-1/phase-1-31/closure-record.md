@@ -570,10 +570,11 @@ change control § 62.6, quoted in § 5.1.** _(The lineage of that figure, so no 
 reconstruct it: **28** was § 57.4's, derived at `821ed668` plus #383 and now superseded; **25** was
 § 62.6 as first derived at this head, `25 + 4 + 47 = 76`; **26** is § 62.6 as it stands, `76 +
 CC-52 (c) = 77`, the twenty-sixth open row being the three owed browser cases. Each was true of its
-own basis.)_ _(2026-09-16: the open set is re-derived at protected `develop` `849a8e9a` as **38**
-identifiers — change control § 70.7: twenty-one carried from the index the 2026-09-13 packet
-tabulated and seventeen raised by §§ 63 to 72, with four more holding no usable disposition, and
-**CC-54 (d)** closing as the pull request that lands these records lands, which leaves **37**. The
+own basis.)_ _(2026-09-16: the open set is re-derived at protected `develop` `849a8e9a` as **43**
+identifiers — change control § 70.7: twenty-four raised at or before § 62 and nineteen raised by
+§§ 63 to 72, with four more holding no usable disposition. **CC-54 (d)** closes as the pull request
+that lands these records lands, and § 70 raises five open sub-rows of its own, so the set is **47** as
+that pull request leaves the register. The
 **26** above was true of `fb65b049` on § 62.6's basis and is not carried to the new head by this note.
 The verdict — **not evidenced** — is unchanged.)_ The isolation
 half is now strong on the engineering side: every refusal, concurrency and isolation case the

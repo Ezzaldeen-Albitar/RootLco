@@ -144,8 +144,10 @@ first.
 credential-dependent; and **CC-63 (a)**, the one-case branch-scope proof on download, which belongs in
 front of the security determination rather than in a set. **A recommendation, not an answer.**
 
-**(e)** Change control § 70.7 re-derives the set at this head: **38 open**, of which one closes as the
-pull request that lands these records lands, leaving **37**; **four state no usable disposition**.
+**(e)** Change control § 70.7 re-derives the set at this head: **43 open** before this pull request,
+and **47** as it leaves the register — **CC-54 (d)** closes and § 70 raises five open sub-rows of its
+own; **four state no usable disposition**. The derivation states its counting rule and names every
+exclusion, so the set this item asks about can be checked row by row rather than taken on trust.
 
 **(f)** Without it, bullet 2 cannot be evidenced by either limb and the rows travel to the next phase
 with no owner and no deadline. **Blocks the phase: YES** — Definition-of-Done bullet **2**, and through

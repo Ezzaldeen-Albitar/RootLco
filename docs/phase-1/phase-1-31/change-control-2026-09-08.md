@@ -8527,17 +8527,49 @@ pointing at the new one.
 closure notes those sections carry.** This subsection moves no state except where a note in § 70.5
 carries one, and it re-adjudicates nothing.
 
-**Open at `849a8e9a` — 38.** Twenty-one carried from the index the 2026-09-13 packet tabulated:
-**CC-04**, **CC-06**, **CC-12**, **CC-16**, **CC-20**, **CC-23**, **CC-24**, **CC-27 (b)**, **CC-29**,
-**CC-30**, **CC-32**, **CC-34**, **CC-37 (a)**, **CC-37 (b)**, **CC-38**, **CC-38 (a)**, **CC-41**,
-**CC-43**, **CC-44**, **CC-46 (c)**, **CC-47**. Seventeen raised by §§ 63 – 72 and still open:
-**CC-52 (b)**, **CC-54 (a)**, **CC-54 (d)**, **CC-55 (a)**, **CC-55 (c)**, **CC-56 (b)**,
-**CC-56 (d)**, **CC-57 (a)**, **CC-57 (b)**, **CC-58 (a)**, **CC-58 (b)**, **CC-58 (c)**,
-**CC-59 (b)**, **CC-59 (e)**, **CC-62 (b)**, **CC-62 (c)**, **CC-63 (a)**.
+**The counting rule, stated so the figure can be checked rather than believed: a state cell counts as
+open unless that cell, or a dated note beside it, records a closure.** Three open cells do not use the
+word — **CC-34** (`recorded — no action here`), **CC-63 (a)** (`recorded limitation`) and
+**CC-60 (f)** (`carried, named`) — and each is counted open here.
 
-**One of the thirty-eight closes as this pull request lands: CC-54 (d)**, the closure record's stale
-Frontend rows, discharged by §§ 2.10 and 2.11 of that record. **So the set is 38 at this head and 37
-as this pull request leaves it.**
+**Open at `849a8e9a`, before this pull request adds this section — 43.** Twenty-four were raised at or
+before § 62: **CC-04**, **CC-06**, **CC-12**, **CC-16**, **CC-20**, **CC-23**, **CC-24**,
+**CC-27 (b)**, **CC-29**, **CC-30**, **CC-31**, **CC-32**, **CC-34**, **CC-37 (a)**, **CC-37 (b)**,
+**CC-38**, **CC-38 (a)**, **CC-41**, **CC-43**, **CC-44**, **CC-46 (c)**, **CC-47**, **CC-52 (b)**,
+**CC-52 (c)**. Nineteen were raised by §§ 63 – 72: **CC-54 (a)**, **CC-54 (d)**, **CC-55 (a)**,
+**CC-55 (c)**, **CC-56 (b)**, **CC-56 (d)**, **CC-57 (a)**, **CC-57 (b)**, **CC-58 (a)**,
+**CC-58 (b)**, **CC-58 (c)**, **CC-59 (b)**, **CC-59 (e)**, **CC-61**, **CC-61 (b)**, **CC-61 (c)**,
+**CC-62 (b)**, **CC-62 (c)**, **CC-63 (a)**.
+
+**Reconciliation with the index the 2026-09-13 packet tabulated, which read 26 open.** Two of its
+twenty-six have closed since: **CC-10**, closed with the ledger reader P-18, and **CC-50 (a)**, closed
+by the coverage fill § 63 records. That index counted **CC-27** and **CC-27 (b)** as two rows for one
+open half, which is counted once here. And it omitted **CC-52 (b)**, whose own cell reads
+`open, recorded` and which § 63 states it did not close. 26 − 2 − 1 + 1 = **24**.
+
+**As this pull request leaves the file — 47.** **CC-54 (d)** closes, the closure record's stale
+Frontend rows, discharged by §§ 2.10 and 2.11 of that record; and this section raises five open
+sub-rows of its own, **CC-60 (c)**, **CC-60 (d)**, **CC-60 (e)**, **CC-60 (f)** and **CC-60 (g)**.
+43 − 1 + 5 = **47**. § 70 does not exist at `849a8e9a`, which is why its own rows are counted in the
+second figure and not the first.
+
+**The open rows excluded by name, each because a closure is recorded even where the row's own cell
+still reads open:** **CC-37 (c)** (§ 57.3's row reads `closed in § 57`), **CC-53** (§ 63.8's dated note
+reads closed, artefact received), **CC-61 (a)** and **CC-61 (d)** (each closed by its own 2026-09-14
+note), **CC-63 (c)** (§ 72.6's dated note records it fixed), and **CC-54 (b)**, **CC-56 (c)**,
+**CC-59**, **CC-59 (a)**, **CC-62**, **CC-62 (a)** and **CC-46 (d)**, which § 70.5 carries. **CC-21**
+is closed: the cell reading `open, claims section 35` is an identifier-allocation row about a branch,
+not a disposition state cell.
+
+_(2026-09-16, corrected before this candidate was published: an earlier reading of this subsection gave
+the set as **38** at this head and **37** as the pull request leaves it, constructed as twenty-one
+carried plus seventeen raised. That construction omitted **CC-31** and **CC-52 (c)**, which the
+2026-09-13 index carried and which no section closes; **CC-61**, **CC-61 (b)** and **CC-61 (c)**, all
+raised at § 69.13 and all open on their own cells; and the five open sub-rows this section itself
+raises. The figure is load-bearing — the Owner is asked to accept or refuse exactly this set as item
+**O-3** of the decision packet, and **CC-61 (c)** is carried as a live limitation by both the task
+matrix and the certification packet — so it is re-derived above with its rule and its exclusions
+stated, and the superseded figure is recorded here rather than removed.)_
 
 **Closed since the reconciliation taken at `32c79754`, each by the section that closed it:**
 **CC-54 (b)** and **CC-56 (c)** by § 72 (#399); **CC-63 (b)** and **CC-63 (c)** by § 72's own dated
@@ -8612,3 +8644,8 @@ that produced it; **no result is asserted in a commit body**, and no hosted resu
 
 **No test tier, build, migration, database operation or deployment was run**, and the P1-27 record
 cycle was not re-run: these changes touch no executable path.
+
+**One deviation from this branch's commit convention is recorded rather than corrected.** The merge
+commit `8715b80a` carries a 73-character subject, one character over the 72-character limit the
+branch's other subjects keep. The branch is preserved rather than rewritten — nothing on it is reset,
+rebased or amended — so the subject stands as written and is recorded here instead of being changed.
