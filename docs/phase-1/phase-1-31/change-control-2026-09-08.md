@@ -9280,7 +9280,15 @@ re-measures anything, moves any task state, or allocates an identifier.
    read **five** and the sweep it records had missed [`closure-record.md`](./closure-record.md)
    § 2.3's **QA-001** "missing" cell, which is exactly the reader-facing kind of cell the finding is
    about. That cell now carries the same dated note, § 74.2's list names all six, and **no state, count
-   or figure moves on the correction**.)_
+   or figure moves on the correction**.)_ _(2026-09-16, appended after the third review round — **this
+   finding keeps its words, and its count of six was the sweep as it stood when the sentence was
+   written.** The third round found **two further sites**, both in § 60 itself: the section's heading
+   note and § 60.5's CC-50 row disposition cell. So § 74.2's appended note, which this finding points
+   the reader at, now records that same sweep as **two sites short** and gives the swept total as
+   **eight**, resting on an enumeration of every occurrence in the phase directory. That round is
+   recorded at **§ 74.13**, and this note is added by the fourth, **§ 74.14**. **§ 74.12's statement of
+   six is the round-two record and keeps its words**, as does this finding. **No state, count or figure
+   moves on this note**, and **CC-50 (a)'s determination is unchanged**.)_
 
 **Three smaller corrections, none of which changes a finding.** A Group D heading in
 [`owner-decision-packet-2026-09-16.md`](./owner-decision-packet-2026-09-16.md) sat one level too deep,
@@ -9426,8 +9434,8 @@ cell in this register;
 [`closure-record.md`](./closure-record.md)'s **QA-001** "missing" cell, its § 2.12 paragraph, its
 open-disposition index bullet and its documented-limitation bullet; and
 [`task-matrix.md`](./task-matrix.md)'s **QA-001** cell and its closing paragraph. **Two carried none —
-the two § 60 sites above** — and both are annotated here. **Three occurrences are left deliberately and
-are named rather than swept**: [`task-matrix.md`](./task-matrix.md)'s **SEC-002** evidence cell, which
+the two § 60 sites above** — and both are annotated here. **Three occurrences, in two documents, are
+left deliberately and are named rather than swept**: [`task-matrix.md`](./task-matrix.md)'s **SEC-002** evidence cell, which
 cites what the register held at #385, and the delivered
 [`owner-decision-packet-2026-09-13.md`](./owner-decision-packet-2026-09-13.md) twice, in its
 disposition table and again in its recommendation, that packet being a routed record edited only by its
@@ -9465,6 +9473,95 @@ records.
    instruction that commit bodies carry no gate claim. **A published commit is not amended, rebased or
    rewritten**; this is the third record of it, § 74.11 and § 74.12 being the first two, and the commits
    carrying this subsection carry no gate claim in their bodies.
+
+**What this round does not do.** **CC-50 (a)'s determination is unchanged** — closed on its own
+content, by § 74.2's reading of § 60.5 against the fill — and so is everything that determination
+leaves standing: the coverage holes **H-2** and **H-3** are not closed, the coverage record's later
+figures remain **LOCAL** measurements under **CC-64 (b)**, their `LOCAL` labelling stands, limitation
+**L-2** does **not** lift, and a hosted gate execution still does not make a locally measured figure a
+hosted measurement. **QA-001 does not move**, and neither does any other row. No coverage floor,
+baseline, allow-list, threshold, script, workflow or source file is touched by this subsection or by
+the slice it corrects, and **the seven documents this slice changes in total are unchanged in number** —
+this round touches one of them, the register itself.
+
+**The gates, re-run over the document changed by this round at this branch head.** Documentation gates
+only, every one of them **LOCAL** and static over the changed file. **No hosted result is claimed, no
+hosted job was dispatched, re-run or read, and no test tier, build, migration, database operation,
+browser tier or deployment was run** — these changes touch no executable path, no source, no workflow,
+no script, no manifest, no baseline and no npm script, so the command-coverage register is untouched.
+
+| command                                                                   | exit |
+| ------------------------------------------------------------------------- | ---- |
+| `npx prettier --check` over the document changed by this round            | 0    |
+| `npm run validate:encoding`                                               | 0    |
+| `node scripts/ci/check-phase-ownership.mjs p1-31-frontend origin/develop` | 0    |
+| `npm run validate:p1-24-register`                                         | 0    |
+| `npm run validate:p1-27-doc-counts`                                       | 0    |
+| `npm run validate:p1-27-closing-values` (check mode)                      | 0    |
+| `npm run validate:plain-language`                                         | 0    |
+| `npm run validate:generated-artifacts`                                    | 0    |
+
+**The ownership gate reading above is the post-commit one**, for the reason § 74.10 records: it judges
+**committed** state against `origin/develop`, so a run taken over an uncommitted working tree proves
+nothing about the file this round changes.
+
+### 74.14 The fourth review round — the corrected count's own summary, and a counting unit named
+
+**This subsection records a fourth review of § 74's own changes, and what it changed.** It **allocates
+no identifier**, moves **no task state**, restates **no figure**, re-derives **no count**, and issues
+**no verdict, approval or clearance**. Sections 1 … 74 and CC-01 … CC-65 stand exactly as § 74.1
+allocates them, **§ 74.12's findings list is not edited**, and the phase directory still holds **46**
+tracked files — this subsection adds none.
+
+**What the review found: the third round corrected the accounting sentence and left the finding that
+had summarised it.** § 74.11's finding 2 still read that **six further sites** had been swept and that
+they "are listed in § 74.2's appended note" — and that note, as § 74.13 corrected it, now records the
+same sweep as **two sites short** and gives the swept total as **eight**. So a reader who followed the
+pointer met a different number from the one the finding gave, and the stale figure was this slice's own
+uncorrected text, in the subsection that reports the defect. **The finding keeps its words and gains a
+dated note** pointing at § 74.13 and at the enumeration the total rests on.
+
+**Why it is annotated and not corrected in place.** § 74.12 records, as its one applied finding, that
+it changed this very sentence from **five** to **six**; that findings list is ring-fenced and keeps its
+words. Rewriting the finding to read **eight** would leave § 74.12 describing a sentence that no longer
+exists, trading one stale cross-reference for another. **The dated note is the form that leaves both
+records true** — § 74.12's as the round-two record, § 74.11's as what the sweep stood at when it was
+written — and it is the form the retention convention already uses everywhere else in this register.
+
+**The same defect class a fourth time, in its narrowest form.** § 74.13 states the pattern for rounds
+one to three: completeness asserted over a set that had not been enumerated. **Round four is a
+consequence of the fix rather than of the original omission** — the third round corrected the sentence
+carrying the false accounting and did not check which other passages quoted a number from it. **The
+enumeration § 74.13 sets down is unchanged and is not re-derived here**; what this round did was read
+every passage of § 74 that states a figure for that sweep, and annotate the one left stale.
+
+**One smaller correction: a counting unit named.** § 74.13 said **"Three occurrences are left
+deliberately"** — [`task-matrix.md`](./task-matrix.md)'s **SEC-002** evidence cell, plus the delivered
+[`owner-decision-packet-2026-09-13.md`](./owner-decision-packet-2026-09-13.md) twice — while § 74.2's
+note calls the same set **"the two"**, counting documents, and the body of commit `fc264d91` counts two
+on the same footing. Both register passages disclose the packet's two mentions, so **nothing was
+hidden and no figure changes**, but one word carried two units. § 74.13 now reads **"Three occurrences,
+in two documents"**; § 74.2's sentence keeps its words, already naming both of the packet's mentions.
+**The commit body is not amended.**
+
+**Why § 74.7's row is not touched again.** That row lists the dated notes this slice added in sections 1
+… 73, where a note sits beside a state cell a reader weighs. **The note added here sits inside § 74's
+own record of itself**, as § 74.12's and § 74.13's in-place corrections did, and none of those was
+listed there either. It is set down so a later reading does not take the row for another omission.
+
+**Two review findings are recorded and deliberately NOT acted on**, both carried unchanged from the
+earlier rounds and neither newly discovered here.
+
+1. **The packet's recounted blocking figure is still not literally derivable from the (f) line it
+   cites.** [`owner-decision-packet-2026-09-16.md`](./owner-decision-packet-2026-09-16.md) § 6 recounts
+   the blocking items after O-6's split while **O-6's own (f) line keeps its words and still reads
+   "Blocks the phase: YES"**; the per-limb marks live in the dated note beneath it. Correcting it
+   further would mean rewriting an (f) line, which the retention convention forbids, so it stands —
+   disclosed in the recount itself and again at § 74.5, § 74.12 and § 74.13.
+2. **Commit `0c09070d`'s body describes the documentation gates that slice ran**, against the
+   instruction that commit bodies carry no gate claim. **A published commit is not amended, rebased or
+   rewritten**; this is the fourth record of it, and the commit carrying this subsection carries no gate
+   claim in its body.
 
 **What this round does not do.** **CC-50 (a)'s determination is unchanged** — closed on its own
 content, by § 74.2's reading of § 60.5 against the fill — and so is everything that determination
