@@ -9148,3 +9148,39 @@ propagated or written into any of the ten targets.
   `phase-1/_acceptance/`.
 - **It closed no finding by re-wording it**, deleted no superseded passage and renumbered no
   identifier.
+
+### 74.10 Verification
+
+**Documentation gates only, and every one of them LOCAL**, run on this machine at this branch head.
+They are recorded as what they are: static checkers over the changed files. **No hosted result is
+claimed for this slice, and no hosted job was dispatched, re-run or read to produce any line of it.**
+
+| command                                                                   | exit |
+| ------------------------------------------------------------------------- | ---- |
+| `npx prettier --check` over the six changed files                         | 0    |
+| `npm run validate:encoding`                                               | 0    |
+| `node scripts/ci/check-phase-ownership.mjs p1-31-frontend origin/develop` | 0    |
+| `npm run validate:p1-24-register`                                         | 0    |
+| `npm run validate:p1-27-doc-counts`                                       | 0    |
+| `npm run validate:p1-27-closing-values` (check mode)                      | 0    |
+| `npm run validate:plain-language`                                         | 0    |
+| `npm run validate:generated-artifacts`                                    | 0    |
+
+**The ownership gate was run twice, and the first run proved nothing — recorded here because the
+reading is a trap.** Run before the commit, it reported **0 changed files** and said so in terms: the
+diff from `55131e44` to `HEAD` was empty and both named the same tree, "so this branch changes nothing
+and there is nothing to own". **It judges COMMITTED state against `origin/develop`, so an uncommitted
+working tree is invisible to it**, and a green exit from that run is not evidence that the changed
+files are ownable. Run again after the commit, it reported **6 changed file(s), 0 violation(s)**, all
+six classified `docs`. **The second run is the binding one**, and it is the one the table records.
+
+**Two figures this section asserts, measured rather than assumed.** The phase directory
+`docs/phase-1/phase-1-31/` holds **46** tracked files, unchanged — this slice adds no file. The
+register holds **sections 1 … 74** with **CC-01 … CC-65**, which is what § 74.1 allocates.
+
+**No test tier, build, migration, database operation, browser tier or deployment was run**, and the
+P1-27 record cycle was not re-run: these changes touch **no executable path**. The slice changes six
+documents under `docs/phase-1/phase-1-31/` and nothing else — no source, no workflow, no script, no
+manifest, no baseline and no npm script, so the command-coverage register is untouched. **The gates
+above were run at the branch head before this subsection was added to it**, which is the same
+discipline § 73.8 records for its own table.
