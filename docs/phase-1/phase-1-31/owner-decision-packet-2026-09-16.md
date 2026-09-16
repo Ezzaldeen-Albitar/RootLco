@@ -144,10 +144,13 @@ first.
 credential-dependent; and **CC-63 (a)**, the one-case branch-scope proof on download, which belongs in
 front of the security determination rather than in a set. **A recommendation, not an answer.**
 
-**(e)** Change control § 70.7 re-derives the set at this head: **43 open** before this pull request,
-and **47** as it leaves the register — **CC-54 (d)** closes and § 70 raises five open sub-rows of its
+**(e)** Change control § 70.7 re-derives the set at this head: **41 open** before this pull request,
+and **45** as it leaves the register — **CC-54 (d)** closes and § 70 raises five open sub-rows of its
 own; **four state no usable disposition**. The derivation states its counting rule and names every
 exclusion, so the set this item asks about can be checked row by row rather than taken on trust.
+**Two rows § 7 lists as closed are outside this set** — **CC-31** and **CC-52 (c)** — because a
+recorded measurement closes each one while its own cell still reads open; **this item does not ask the
+Owner to accept either as open.**
 
 **(f)** Without it, bullet 2 cannot be evidenced by either limb and the rows travel to the next phase
 with no owner and no deadline. **Blocks the phase: YES** — Definition-of-Done bullet **2**, and through
@@ -431,7 +434,12 @@ the limitations as a set.** The limitations are carried, each with its own dispo
 
 ## 7. Closed since the earlier packets — listed so nothing is asked twice
 
-**None of these is a decision, and none of them appears above.** Each says how it closed and where.
+**None of these is a decision, and none of them is asked as an item above.** Each says how it closed
+and where. **Two of the identifiers named below are inside the open set O-3 asks about** — **CC-37 (b)**
+and **CC-57 (a)**, named again at the end of this section — **and no other identifier in this table is
+in it.** In particular **CC-31** and **CC-52 (c)** are outside it: change control § 70.7 excludes both
+by name, on the measurements the rows below cite, so nothing here is listed as closed and asked as open
+at the same time.
 
 | earlier item                                                          | how it closed                                                                                                                                                                                                                     | where                                                                                                                 |
 | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
@@ -446,8 +454,8 @@ the limitations as a set.** The limitations are carried, each with its own dispo
 | **SEC-002's missing server-side negative**                            | **closed by engineering** — a backend suite, not a component assertion behind a mocked adapter                                                                                                                                    | change control § 72.4; [`security-and-qa-evidence.md`](./security-and-qa-evidence.md) § 18.2                          |
 | **D-18's identity-evidence binding, and pending/scanning states**     | **engineering choices** under the established evidence-state rule; the download path still refuses a version that is not accepted. **Not Owner items**                                                                            | change control **CC-63 (b)**; § 18.3 of the index                                                                     |
 | **CC-50 (a)** and **CC-53** — the per-file coverage artefact          | **closed by the hosted fill**                                                                                                                                                                                                     | change control § 63                                                                                                   |
-| **CC-52 (c)** — three owed browser cases                              | **closed** by the delivery write proofs                                                                                                                                                                                           | change control § 64                                                                                                   |
-| **CC-10** and **CC-31** — the warranty ledger                         | **closed** in both halves                                                                                                                                                                                                         | change control §§ 65 and 69                                                                                           |
+| **CC-52 (c)** — three owed browser cases                              | **closed** by the delivery write proofs — 48 of 48 browser cases in run `mu0g1b1a`, and the three matrix rows raised                                                                                                              | change control § 64 / **CC-54**, the dated note at § 62.7, and the exclusion in § 70.7                                |
+| **CC-10** and **CC-31** — the warranty ledger                         | **closed** in both halves, **CC-31** on the closing-head browser proof its own cell named as its one condition                                                                                                                    | change control §§ 65 and 69, the dated notes at §§ 69.7 and 43.3, and the exclusion in § 70.7                         |
 | **CC-54 (b)** and **CC-56 (c)**                                       | **closed** by the backend closure hardening merged as pull request #399                                                                                                                                                           | change control § 72, and the dated notes at §§ 64.8 and 66.8                                                          |
 | **CC-63 (b)** and **CC-63 (c)**                                       | **closed** — the binding rule as an engineering choice, the live-link contract by a fix with six new cases                                                                                                                        | change control § 72.6                                                                                                 |
 | **CC-59** and **CC-59 (a)**                                           | **closed by measurement** at the run of record                                                                                                                                                                                    | the dated note at change control § 69.7                                                                               |
