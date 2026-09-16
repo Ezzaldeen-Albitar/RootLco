@@ -114,6 +114,17 @@ defensible values are **Conditional Pass**, with the conditions being O-2, O-3 a
 `Planned`, no dependent work may be authorised, and no promotion may be justified by phase closure.
 **Blocks the phase: YES** — gate condition **4**.
 
+_(2026-09-16 — **ANSWERED by the Owner**, and everything above keeps its words. **The answer, in one
+sentence:** the Owner records the phase decision as **CONDITIONAL PASS** for the documented P1-31
+scope, subject to the applicable certification, security and carried-obligation conditions, and
+forbids recording an unconditional Pass, a "100% verified" claim, production readiness or an issued
+human certification. **Recorded at**
+[`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md) § 7, **D-38**. **The three facts
+stay separate**: the conditional decision exists; the QA and security determinations do **not**; and
+the formal gate prerequisites are **not** satisfied, because conditions **2** and **3** turn on those
+determinations. Gate condition **4** is answered and **nothing else is**. The recommendation in (d)
+remains a recommendation and is not what was recorded.)_
+
 ### O-2 — which reading governs gate conditions 2 and 3 _(earlier ids: A-2 and A-3, merged)_
 
 **(a)** "For P1-31, conditions 2 and 3 are satisfied by **the assigned combined-role holder's written
@@ -142,6 +153,17 @@ with empty decision fields; `solo-developer-review-policy.md:18-20`.
 
 **(f)** Conditions 2 and 3 cannot be executed until the reading is fixed. **Blocks the phase: YES** —
 gate conditions **2** and **3**.
+
+_(2026-09-16 — **ANSWERED by the Owner**, and everything above keeps its words. **The answer, in one
+sentence:** the Owner retains Eng. Ezzaldeen Al-Bitar in all three roles and accepts a **disclosed,
+authorized internal/self-review** for this phase instead of requiring another reviewer, with the
+express limits that a self-review is **not** to be described as independent, that this authorises no
+GitHub self-approval contrary to repository rules, and that the decision "appoints and authorizes the
+reviewer; it does not manufacture his determinations". **Recorded at**
+[`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md) § 1, **D-32**. **The reading is
+fixed; the two determinations are still absent**, so gate conditions **2** and **3** remain
+unsatisfied and the nine decision fields at
+[`certification-and-clearance-packet.md`](./certification-and-clearance-packet.md) § 7 stay empty.)_
 
 ### O-3 — formal acceptance, or refusal, of the open dispositions _(earlier id: A-4)_
 
@@ -197,6 +219,19 @@ three carve-outs recommended in (d) are unchanged by it.)_
 with no owner and no deadline. **Blocks the phase: YES** — Definition-of-Done bullet **2**, and through
 it gate condition **1**.
 
+_(2026-09-16 — **ANSWERED by the Owner**, and everything above keeps its words and its figures.
+**The answer, in one sentence:** the Owner authorises **carrying forward the existing documented
+non-blocking limitations and deferred work, with their restrictions preserved**, as "one mechanical
+recording pass, not another investigation", while creating "no new acceptance of an unresolved
+critical defect or an unresolved security/isolation blocker" and marking nothing fixed or completed.
+**Recorded at** [`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md) § 2, **D-33**,
+whose **§ 2.1 is the attached list** — one row per identifier over the **47** this item's dated note
+above re-derives, each with its obligation, owner, operational restriction and destination. **44 rows
+are CARRIED UNDER O-3 and 3 are NOT COVERED BY O-3** — **CC-56 (b)**, **CC-60 (d)** and **CC-63 (a)**
+— named there and here, not downgraded, and left with their existing owners. **No register state cell
+moves.** The three carve-outs recommended in (d) are not what was recorded; two of them, CC-63 (a) and
+the certification row, fall inside the three NOT COVERED rows on the Owner's own exclusion.)_
+
 ### O-4 — what P1-31 closes at, and what is carried _(earlier id: F-2)_
 
 **(a)** "P1-31 closes at the account recorded at `849a8e9a`, with the residue formally carried to a
@@ -222,6 +257,16 @@ categories is **seventeen** distinct rows.
 
 **(f)** The difference between a partial closure with a named successor and an open phase.
 **Blocks the phase: YES** — Definition-of-Done bullet **1** and gate condition **1**.
+
+_(2026-09-16 — **ANSWERED by the Owner**, and everything above keeps its words. **The answer, in one
+sentence:** the Owner closes the P1-31 implementation cycle **at its documented delivered scope**, as
+a **conditional closure with explicit carry-forward obligations**, forbidding any expansion of P1-31
+to absorb every platform improvement and stating that "A phase decision must not automatically turn
+all 29 tasks into 'end-to-end verified.'" **Recorded at**
+[`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md) § 3, **D-34**. **No task state
+moves**, the account stays 16 / 2 / 2 / 0 / 9, and validation work travels to P1-32 **only** where it
+belongs to P1-32's canonical scope — of the 47 carried rows, **none** is routed there, and every one
+keeps its existing owner or backlog destination.)_
 
 ---
 
@@ -317,6 +362,17 @@ each closes on a run, exactly as § 70.8's **CC-60 (e)** records. Nothing here p
 authorises one, invents a deployment, or claims an environment exists. **The recommendation in (d) is
 unchanged and is still a recommendation**, and **this item is still unanswered in both limbs.** The
 packet's blocking count is restated from each item's own (f) line in § 6._)
+
+_(2026-09-16, after the Owner's decisions of the same date — **this item is NOT answered by any of
+them, and every word above keeps its place.** The Owner's message of 2026-09-16 answers **O-1**,
+**O-2**, **O-3**, **O-4**, **O-10**, **O-20** and **O-21** and says nothing about this one. **Limb
+(i), the runbook's owner, remains OPEN and unassigned** — naming it is a role assignment that no
+engineer, lane or operator may make, and none is made here. **Limb (ii) remains PROSPECTIVE**, binding
+at the moment an environment is provisioned, and not a current blocker, exactly as the note above
+records it. **CC-16** and **CC-20** stay open as acts, and **CC-60 (e)** is carried under **D-33**
+with that restriction intact — see
+[`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md) § 2.1. **Nothing here performs an
+act, authorises one, invents a deployment or claims an environment exists.**)_
 
 ### O-7 — the work-order line-management code, declared by shipped operations and absent from the bundle _(earlier id: F-7)_
 
@@ -420,6 +476,17 @@ written into `phase-1/_acceptance/`.**
 **(f)** Definition-of-Done bullet 1 requires each task "linked to immutable evidence"; while the
 question is open, that link cannot be made in the chapter's own vocabulary for any of the twenty-nine.
 **Blocks the phase: YES, in one limb.**
+
+_(2026-09-16 — **ANSWERED IN ONE LIMB by the Owner**, and everything above keeps its words. **The
+answer, in one sentence:** the Owner **approves the existing repository evidence convention** — the
+controlled acceptance index with stable references to retained evidence, commits, runs and artefacts,
+with the local/hosted, executed/skipped and rehearsal/incident distinctions preserved — and directs
+that broken references be **repaired mechanically where the evidence already exists**, while
+forbidding the retirement of "a missing required test to make a gate appear satisfied". **Recorded
+at** [`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md) § 4, **D-35**. **The
+ownership limb is NOT answered**: which task owns which cited criterion identifier stays open, **no
+identifier is retired**, and the five proposed references outside the repository are recorded as
+**superseded by the in-repository index** without being deleted.)_
 
 ### O-11 — D-14: Field 7's product-name precondition _(earlier id: B-6)_
 
@@ -536,6 +603,17 @@ satisfiable for it on the evidence already recorded. With "inside FE-004", a scr
 Definition-of-Done bullet **1**, and through it gate condition **1**. In the other limb it blocks
 nothing.
 
+_(2026-09-16 — **ANSWERED by the Owner**, and everything above keeps its words. **The answer, in one
+sentence:** delivery checklist **execution remains within P1-31**, and the separate
+**checklist-template administration screen is deferred to an explicitly named follow-up backlog
+item**, which "is not a P1-31 closure requirement and must not be inserted into P1-32, whose purpose
+is frontend validation rather than new administration features". **Recorded at**
+[`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md) § 5, **D-36**; the backlog item is
+**`P1-31-FU-001`** at [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) § 75.4. **This
+is the limb in which the item blocks nothing**, so Definition-of-Done bullet 1 is satisfiable for
+FE-004 on the evidence already recorded. **FE-004 does not move**, and coverage hole **H-1** and
+**CC-57 (a)** are not closed by it. The statement of position in (d) is unchanged.)_
+
 ### O-21 — the approval owner's acknowledgement of the routed controlled record
 
 **(a)** "I acknowledge the controlled P1-31 record as routed to me — or I state what it must contain
@@ -566,6 +644,14 @@ what "as it now stands" refers to.
 acknowledgement, and DOC-002's other completion condition — that developer guidance exists — is
 engineering work that is owed independently, so the Owner's act is not the sole remaining condition.
 Touches Definition-of-Done bullet **3**.
+
+_(2026-09-16 — **ANSWERED by the Owner**, and everything above keeps its words. **The answer, in one
+sentence:** the Owner records an **acknowledgement of receiving the controlled P1-31 report and its
+disclosed limitations**, stating in the same breath that "This acknowledgement does not replace QA or
+Security determinations". **Recorded at**
+[`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md) § 6, **D-37**. **It is receipt and
+not a verdict**, it accepts no limitation, and **DOC-002 does not move** — its other completion
+condition is engineering work owed independently.)_
 
 ---
 
@@ -627,6 +713,29 @@ engineering work owed independently. **5 + 1 = 6.**_
 _**So the count is 6 again, but it is a different six:** O-1, O-2, O-3, O-4, O-10 in one limb, and
 **O-20** in one limb. **O-6 has left it.** The comparison with the 2026-09-13 packet's eight, in the
 paragraph above, is unchanged and is not re-derived here._)
+
+_(2026-09-16, after the Owner's decisions of the same date — **the two tables and both derivations
+above keep their words and their figures; the total is still 21 and nothing is renumbered.** What
+changes is how many items are **answered**. **All six blocking items are ANSWERED** — **O-1**,
+**O-2**, **O-3**, **O-4**, **O-10** in its blocking limb, and **O-20** in its blocking limb — each
+recorded at [`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md) as **D-38**, **D-32**,
+**D-33**, **D-34**, **D-35** and **D-36**. **A seventh item, O-21, is also answered** — **D-37** —
+and it was never one of the six, because its own (f) line reads "Blocks the phase: NO". **7 of 21
+answered; 14 remain open.**_
+
+_**The fourteen that remain open, named so none is assumed:** **O-5**, **O-6** (both limbs),
+**O-7**, **O-8**, **O-9**, **O-11**, **O-12**, **O-13**, **O-14**, **O-15**, **O-16**, **O-17**,
+**O-18** and **O-19**. **Each is non-blocking on its own (f) line** — O-6 by the split recorded in
+its own dated note, and O-13 … O-19 because § 5 states that none of the ratifications is blocking.
+**All fourteen stay OPEN**, none is withdrawn, and no recommendation beside any of them has become
+an answer._
+
+_**What this means for the gate, derived and not asserted.** **No blocking item of this packet is
+now unanswered.** That is **not** the same as the gate being satisfied: **O-2 fixes the reading for
+gate conditions 2 and 3 and supplies neither determination**, so both conditions stay unsatisfied,
+and **O-3's carry does not reach the three rows marked NOT COVERED**, so Definition-of-Done bullet 2
+is evidenced for the carried rows only. **Gate condition 4 is answered; conditions 1, 2 and 3 are
+not.**_)
 
 **No item in this packet asks the Owner to accept an unfinished task, and none asks for acceptance of
 the limitations as a set.** The limitations are carried, each with its own disposition, at

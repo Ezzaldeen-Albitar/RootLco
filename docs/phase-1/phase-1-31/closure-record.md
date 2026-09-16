@@ -844,18 +844,78 @@ pointers in those cells — **A-2** and **A-3** — are the earlier packet's ids
 the independence question, which stays the Owner's. **Both conditions remain unsatisfied**, and the
 verdict field below stays empty.)_
 
+_(2026-09-16, beside the four-condition table above, every cell of which keeps its words and was true
+of the head it was measured at. **The Owner's decisions of 2026-09-16 change what is answered, and
+they change no condition's rule.** Each is recorded at
+[`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md) and none is paraphrased here._
+
+_**Condition 4 — ANSWERED.** The approval owner records a verdict of **CONDITIONAL PASS**, dated
+**2026-09-16**, in the Owner's words: "Record my Owner decision as CONDITIONAL PASS for the documented
+P1-31 scope, subject to the applicable certification, security, and carried-obligation conditions."
+**D-38**, § 7 of that file. The verdict field below carries it. **The same decision forbids recording
+an unconditional Pass, a "100% verified" claim, production readiness or an issued human
+certification**, and none of the four is recorded anywhere in this document._
+
+_**Conditions 2 and 3 — NOT SATISFIED, and the missing prerequisite named exactly.** **O-2 is
+answered** by **D-32**: Eng. Ezzaldeen Al-Bitar is retained as the designated technical, QA and
+security reviewer, and a **disclosed, authorized internal/self-review is accepted for this phase**
+instead of recruiting another reviewer — **not to be described as independent**, and authorising no
+GitHub self-approval contrary to repository rules. **That answers the reading and supplies no
+determination**: the Owner's own sentence is that the decision "appoints and authorizes the reviewer;
+it does not manufacture his determinations. Do not sign for him or substitute an AI review for a human
+certification." **The exact missing prerequisite is therefore the nine human determinations by
+Eng. Ezzaldeen Al-Bitar — QA-C1, QA-C2, QA-C3, QA-C4, QA-C5 for condition 2 and SEC-C1, SEC-C2,
+SEC-C3, SEC-C4 for condition 3 — whose decision fields at § 7 of
+[`certification-and-clearance-packet.md`](./certification-and-clearance-packet.md) are EMPTY at
+`7a1e1eefeca38533b507bf128206c8a71eb1b4b9`.** No certification and no clearance exists, none is issued,
+implied or inferred, and the conditional decision of D-38 does not satisfy either — the Owner forbids
+that reading in terms._
+
+_**Condition 1 — NOT SATISFIED, re-stated against the Definition of Done with D-33 and D-34 applied
+honestly.** **Bullet 2**, "closed **or** formally accepted by the authorized owner": **D-33 carries
+forward the existing documented non-blocking limitations and deferred work, with their restrictions
+preserved.** The attached list is § 2.1 of
+[`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md) — the **47** open identifiers § 70.7
+of [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) re-derives, one row each. **So
+bullet 2's "formally accepted by the authorized owner" limb is now satisfied for the 44 rows marked
+CARRIED UNDER O-3, and is UNSATISFIED for the 3 rows marked NOT COVERED BY O-3** — **CC-56 (b)**,
+**CC-60 (d)** and **CC-63 (a)** — which the Owner's own sentence excludes: the instruction "creates no
+new acceptance of an unresolved critical defect or an unresolved security/isolation blocker". **None of
+the three is downgraded, closed or reclassified.** **Bullets 1, 3 and 4** are unchanged by these
+decisions, and **D-34** says why bullet 1 cannot move: "A phase decision must not automatically turn
+all 29 tasks into 'end-to-end verified.'" **No task state moves; the account stays 16 / 2 / 2 / 0 / 9.**
+Bullet 1's residue at § 3 stands as written, and bullet 3's does too. **So condition 1 is not
+satisfied, with bullet 2 now partly evidenced and bullets 1 and 3 not evidenced at all.**_
+
+_**The four conditions after the decisions: 1 not satisfied, 2 not satisfied, 3 not satisfied, 4
+answered.** They are conjunctive. **Nothing is certified or cleared here, no signature is written on
+anybody's behalf, and no gate rule is changed.**)_
+
 **Approval owner's verdict — Pass / Conditional Pass / Fail / Deferred, with conditions:**
 
-|                        |     |
-| ---------------------- | --- |
-| **Verdict**            |     |
-| **Date**               |     |
-| **Conditions, if any** |     |
+|                        |                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Verdict**            | **CONDITIONAL PASS**, for the documented P1-31 scope. The Owner's words: "Record my Owner decision as CONDITIONAL PASS for the documented P1-31 scope, subject to the applicable certification, security, and carried-obligation conditions."                                                                                                                                                      |
+| **Date**               | **2026-09-16**                                                                                                                                                                                                                                                                                                                                                                                     |
+| **Conditions, if any** | The Owner's own three: the **certification** condition — QA-C1 … QA-C5, **absent**; the **security** condition — SEC-C1 … SEC-C4, **absent**; and the **carried-obligation** condition — the 47 open dispositions at [`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md) § 2.1, of which **44 are carried under O-3** and **3 are not covered by it**, each keeping its restriction |
 
 **This field is deliberately empty.** Only the approval owner named in Field 35 — the Product Owner
 — may fill it. No engineering session, no agent, no pull request and no record may supply it, infer
 it, or treat its absence as any of the four values. It has not been given, and nothing in this
 document should be read as suggesting otherwise.
+
+_(2026-09-16, beside the paragraph above, which keeps its words and was true of every head before
+this one. **The field is no longer empty, and the rule the paragraph states is the rule under which it
+was filled.** The value is the approval owner's own, given in the Product Owner's message of
+2026-09-16 to the coordinator and quoted byte-exact in
+[`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md) § 7 (**D-38**). **It is transcribed
+here, not supplied, inferred or composed**: no engineering session, no agent and no pull request
+originated it, and **no signature is written on anybody's behalf**. **What it is:** the Owner's
+decision on gate condition **4**. **What it is not:** an engineering result, a QA certification, a
+security clearance, an unconditional Pass, a claim that anything is 100% verified, a claim of
+production readiness, or an authorisation to promote. The engineering result for the run of record
+remains what [`acceptance-record.md`](./acceptance-record.md) records, separately and as an
+engineering result.)_
 
 ## 5. Open items carried out of the phase
 
@@ -1072,6 +1132,20 @@ fields are empty**. **Nobody is appointed here, nothing is certified or cleared,
 promotion ineligibility is unchanged** — gate P1-G31's four conditions are conjunctive and conditions
 2, 3 and 4 are unsatisfied.)_
 
+_(2026-09-16, beside the four-condition table above, whose cells keep their words. **Promotion stays
+NOT eligible, and this note does not recommend one.** What moves is condition **4**: the approval owner
+recorded **CONDITIONAL PASS** on 2026-09-16 (§ 4's verdict field; **D-38** at
+[`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md)), so that row's stated reason — "the
+verdict field in § 4 is empty" — is superseded while its words stand. **Conditions 1, 2 and 3 are still
+unsatisfied**, and the four are conjunctive. **The missing prerequisite behind conditions 2 and 3,
+named once: the nine human determinations by Eng. Ezzaldeen Al-Bitar — QA-C1 … QA-C5 and
+SEC-C1 … SEC-C4 — whose decision fields at § 7 of
+[`certification-and-clearance-packet.md`](./certification-and-clearance-packet.md) are empty.** The
+Owner's decision **D-32** appoints and authorizes the reviewer and manufactures no determination, and
+**D-38** forbids treating the conditional decision as satisfying a missing certification. **Condition
+1** is unsatisfied on the terms § 4's note re-states. **Nothing here certifies, clears, promotes or
+recommends a promotion.**)_
+
 **Separately from the gate, three facts a promoter would need and does not have:** the phase's
 acceptance is loopback and local, not hosted; the evidence-packaging half of QA-005 is unmet, so the
 run's artefacts are not in the repository; and `main` `1262de74` is far behind `develop`, so a
@@ -1177,9 +1251,30 @@ own row names, on the tier its own record names.
 session, no agent, no pull request and no record may supply it, infer it, or treat its absence as any
 of the four values.
 
+_(2026-09-16, beside the sentence above, which keeps its words and was true of every head before this
+one. **The field now carries the approval owner's own value.** **The Owner's decision:**
+**CONDITIONAL PASS** for the documented P1-31 scope, dated **2026-09-16**, "subject to the applicable
+certification, security, and carried-obligation conditions" — the Product Owner's, transcribed from
+the Product Owner's message of 2026-09-16 to the coordinator and recorded byte-exact at
+[`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md) § 7 (**D-38**). **The rule the
+sentence states is unchanged and was the rule under which the field was filled.**_
+
+_**The engineering result is a different thing and stays a different thing.** The engineering verdict
+for the run of record is [`acceptance-record.md`](./acceptance-record.md)'s own, for the run it
+describes, and that record's § 11.13 disclaims any Owner verdict, phase Pass, promotion or human
+certification. **Neither stands in for the other**, and **neither is a QA certification or a security
+clearance** — those nine determinations do not exist. **No promotion is authorised by either**: § 6
+keeps the phase NOT eligible.)_
+
 ## 8. What this record does not claim
 
-- **No Owner Pass, and no verdict of any kind.**
+- **No Owner Pass, and no verdict of any kind.** _(2026-09-16 — this bullet keeps its words and was
+  true of every head before this one. **A verdict now exists and it is the Owner's**: CONDITIONAL
+  PASS, dated 2026-09-16, recorded in § 4's verdict field from
+  [`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md) § 7 (**D-38**). **The bullet's
+  first limb stands exactly as written — there is no Owner Pass**, unconditional or otherwise, and
+  this record still claims none. **This record produces no verdict of its own**; it transcribes the
+  Owner's.)_
 - **No promotion, and no eligibility for one** (§ 6).
 - **No hosted acceptance.** Every figure in the acceptance record is loopback, taken on a production
   build served on one machine against one local database.
