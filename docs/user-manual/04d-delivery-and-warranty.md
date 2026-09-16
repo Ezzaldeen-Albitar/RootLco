@@ -958,7 +958,7 @@ still in use, and every window of cover terms it holds." <!-- warranty.policies.
 
 **Who** — `wty.warranty.read` to open it; `wty.policy.manage` for every change.
 
-**The summary** <!-- warranty.policies.summaryHeading --> **Plan** shows **Plan name**, **State**,
+**The summary** **Plan** <!-- warranty.policies.summaryHeading --> shows **Plan name**, **State**,
 **Plan reference** and **Company reference**.
 
 ### Workflow — Rename a plan
