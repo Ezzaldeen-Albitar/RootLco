@@ -262,7 +262,10 @@ describe('the API application lives in the workspace', () => {
     // this time — and a slice that had added a second verb to the new module, or
     // hung the read off an existing module as a query parameter, would break that
     // symmetry here and nowhere else.
-    expect(routeFiles.length).toBe(321);
+    // 332 with the P1-32 Platform Owner Console backend: THIRTEEN operations over
+    // ELEVEN new route modules — the plan and charge collections each carry a
+    // list and a create on one path, so the counts move by 13 and 11.
+    expect(routeFiles.length).toBe(332);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -283,7 +286,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 413 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 426 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -346,7 +349,7 @@ describe('the API application lives in the workspace', () => {
     // 412 with the P1-31 warranty status-history read (P-18): one operation over
     // one new module, so both counts move by one.
     // P1-31 P-12 adds the report export action to the existing report-code route.
-    expect(report.operations).toHaveLength(413);
+    expect(report.operations).toHaveLength(426);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the

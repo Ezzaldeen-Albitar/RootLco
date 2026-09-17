@@ -508,7 +508,9 @@ describe('the coverage include lists are pinned, because they are the denominato
     );
     expect(files.filter((file) => file.endsWith('.d.ts'))).toEqual([]);
     // P1-31 P-12 adds ReportExportService to the measured backend population.
-    expect(files.length).toBe(291);
+    // P1-32-PRE-021..026 add seven platform-module files (three repositories and
+    // four services), so 291 -> 298.
+    expect(files.length).toBe(298);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -581,11 +583,17 @@ describe('the coverage include lists are pinned, because they are the denominato
      * The floors are untouched for the reason above: re-establishing them needs a
      * hosted measurement run, which these slices did not perform and do not claim.
      *
-     * The 290 above is these 289 plus `server/openapi/document.ts`, which the
+     * 296 with the P1-32 Platform Owner Console backend: SEVEN more, all in the
+     * platform module — `data/subscription-repository.ts`,
+     * `data/billing-repository.ts`, `data/insight-repository.ts` and the
+     * `application/` session, subscription, billing and insight services. The
+     * floors are untouched for the reason above.
+     *
+     * The 297 below is these 296 plus `server/openapi/document.ts`, which the
      * include list admits and `exclude` then removes; the two numbers moving
      * together by the same count is what says no file slipped in behind the
      * exclusion.
      */
-    expect(instrumented.length).toBe(290);
+    expect(instrumented.length).toBe(297);
   });
 });

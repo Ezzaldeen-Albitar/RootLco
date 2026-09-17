@@ -2983,9 +2983,87 @@ export const MANIFEST = {
     note: 'the sanctioned path to org.provision_organization; tenant.activate is never forwarded, because that branch would close the §6.3 bootstrap window inside the transaction that depends on it',
   },
   'platform.organization-lifecycle': {
-    files: ['tests/backend/pre-p1-29-platform-control-plane.test.ts'],
+    files: [
+      'tests/backend/pre-p1-29-platform-control-plane.test.ts',
+      'tests/backend/p1-32-platform-console.test.ts',
+    ],
     required: ['denial', 'audit'],
-    note: 'the operation that makes the bootstrap window self-closing rather than permanent; the graph is M4s and the history row is M3s, so the route duplicates neither',
+    note: 'the operation that makes the bootstrap window self-closing rather than permanent; the graph is M4s and the history row is M3s, so the route duplicates neither. P1-32-PRE-023 adds a suspended/reactivated subscription event beside the live assignment and a home-tenant audit record carrying target_tenant_id',
+  },
+
+  // ========================================================================
+  // P1-32-PRE-021..026 — the Platform Owner Console backend. Every operation
+  // declares a `platform.` permission, so it runs on the platform connection
+  // and authorizes through iam.has_platform_authority. The derived floor for
+  // `platform.` is route · service · success · authorization plus the
+  // registration-derived cross-tenant / idempotency / stale-version / audit;
+  // `denial` is additive and proves the platform branch is load-bearing by
+  // asserting a 403 for a caller that lacks the specific code.
+  // ========================================================================
+  'platform.session-read': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-021. GET /auth/session declares the tenant permission iam.user.read and answers 403 to the genesis operator, who holds no tenant role by construction; this is the console session. platformPermissions is read under sel_platform_grants_own, so it lists the caller own codes and cannot enumerate another operator. email and displayName are deliberately absent: app_platform SELECT on iam.user_accounts is column-scoped and widening it would expose every tenant address through the census policy',
+  },
+  'platform.organization-detail': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-022. Companies, branches, account COUNTS by status, subscriptions, subscription events, status history and capacity used-vs-limit from the active plan. Unknown tenant is 404, never an empty document. Readable for a tenant in ANY state through the *_platform_console policies, where Wave B could only read children of a provisioning tenant',
+  },
+  'platform.plan-list': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-023. The platform plan catalogue; list_price stays a decimal string from driver to wire',
+  },
+  'platform.plan-create': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-023. Prices are configured here and never seeded. The entitlement document is validated by org.validate_plan_documents(), the only place that knows which feature flags exist; a price without a currency is refused before the write',
+  },
+  'platform.plan-update': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-023. If-Match on the table own record_version; plan_code is absent from the body AND from the UPDATE column grant',
+  },
+  'platform.subscription-assign': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-023. assigned/renewed/upgraded/downgraded are the same two rows and four acts; an upgrade or downgrade onto the plan in force and a renewal onto a different plan are refused 409. The live assignment is closed the day before the new one starts and ex_tenant_subscriptions_no_active_overlap is the final authority on overlap, mapped to 409 rather than a 500',
+  },
+  'platform.subscription-cancel': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-023. Only an active assignment can be cancelled; the row keeps its period so what the tenant held stays readable',
+  },
+  'platform.charge-list': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-024. PLATFORM revenue, never tenant revenue: app_runtime holds no grant on org.subscription_charges or org.subscription_receipts. outstanding is computed in SQL numeric and floored at zero',
+  },
+  'platform.charge-record': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-024. A charge is only ever created open (ins_subscription_charges_platform). A subscriptionId belonging to another organisation is refused, because the foreign key proves existence and not ownership',
+  },
+  'platform.charge-void': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-024. open -> void only, with a mandatory reason; a settled charge cannot be voided (org.guard_subscription_charge_status)',
+  },
+  'platform.receipt-record': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-024. Append-only. The receipt currency is the charge currency and a mismatching request is refused; tg_subscription_receipts_settle settles the charge exactly once when the receipts reach its amount',
+  },
+  'platform.statistics-read': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-025. Every figure one SQL aggregate inside the request transaction; revenue per currency as decimal strings, projectedRenewalValue labelled as a planning figure and not a receivable; health reuses foundationReadiness and queueHealth and degrades to nulls rather than zeros when the worker connection is absent',
+  },
+  'platform.audit-search': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-026. The operator OWN trail: sel_audit_records_platform is tenant_id = current_tenant_id(), so only home-tenant records are reachable; targetTenantId filters by the target_tenant_id detail every platform write stamps. from/to mandatory and capped at 92 days',
   },
 
   // ========================================================================

@@ -137,9 +137,14 @@ describe('every route body serialises a named type', () => {
     // be named `WarrantyStatusHistoryEntryView` as well — so `named` moves by one
     // and `composed` does not.
     // P1-31 P-12 adds the named ReportExportView response.
-    expect(summary.bodies).toBe(413);
-    expect(summary.named).toBe(360);
-    expect(summary.composed).toBe(53);
+    // 426 with the P1-32 Platform Owner Console backend: thirteen new bodies,
+    // every one a NAMED service return type, so `named` moves by thirteen — and
+    // by one more, because `platform.organization-read` now serialises the named
+    // `Page<OrganizationView>` from its service where it used to compose
+    // `{ items }` in the route, which is also why `composed` falls by one.
+    expect(summary.bodies).toBe(426);
+    expect(summary.named).toBe(374);
+    expect(summary.composed).toBe(52);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);
   });
