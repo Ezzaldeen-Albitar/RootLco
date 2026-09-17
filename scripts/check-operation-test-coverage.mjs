@@ -3042,7 +3042,10 @@ export const MANIFEST = {
     note: 'P1-32-PRE-023. If-Match on the table own record_version; plan_code is absent from the body AND from the UPDATE column grant',
   },
   'platform.subscription-assign': {
-    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    files: [
+      'tests/backend/p1-32-platform-console.test.ts',
+      'tests/backend/p1-32-platform-organization-growth.test.ts',
+    ],
     required: ['denial'],
     note: 'P1-32-PRE-023. assigned/renewed/upgraded/downgraded are the same two rows and four acts; an upgrade or downgrade onto the plan in force and a renewal onto a different plan are refused 409. The live assignment is closed the day before the new one starts and ex_tenant_subscriptions_no_active_overlap is the final authority on overlap, mapped to 409 rather than a 500',
   },
@@ -3070,6 +3073,21 @@ export const MANIFEST = {
     files: ['tests/backend/p1-32-platform-console.test.ts'],
     required: ['denial'],
     note: 'P1-32-PRE-024. Append-only. The receipt currency is the charge currency and a mismatching request is refused; tg_subscription_receipts_settle settles the charge exactly once when the receipts reach its amount',
+  },
+  'platform.organization-company-create': {
+    files: ['tests/backend/p1-32-platform-organization-growth.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-151. The console adds a legal company to a LIVE organisation through the same iam port org.company-create uses, inside a platform-on-target window for the named tenant. tg_legal_companies_capacity governs it exactly as it governs the tenant operation - the control plane holds EXECUTE on the counting functions since 20260916096000 - so a spent ceiling is ERR-CAP-001 with the kind, limit and usage attached. Audited in the operator home tenant carrying target_tenant_id',
+  },
+  'platform.organization-branch-create': {
+    files: ['tests/backend/p1-32-platform-organization-growth.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-151. The branch half, and it carries the numbering runs a branch owes: three of the registered runs are per branch and shared.next_display_number refuses rather than degrading, so a copied INSERT would have committed a branch that could never issue an invoice. A company of another organisation is a 404 rather than a composite-foreign-key fault',
+  },
+  'platform.organization-administrator-invite': {
+    files: ['tests/backend/p1-32-platform-organization-growth.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-151. Closes the hole the control plane shipped with: an organisation whose first owner never accepted had nobody who could sign in and no operation could give it one. Reuses the first-owner bootstrap inside the target window - the address lock, the identity rules, the seat ceiling and the refusal recovery - and refuses a second administrator unless one is asked for explicitly with a reason. mode resend writes nothing and reissues the link',
   },
   'platform.statistics-read': {
     files: ['tests/backend/p1-32-platform-console.test.ts'],

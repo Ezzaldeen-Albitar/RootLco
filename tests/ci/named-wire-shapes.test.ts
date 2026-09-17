@@ -146,8 +146,13 @@ describe('every route body serialises a named type', () => {
     // create serialises `CompanyResult`, the branch create `BranchResult` and the
     // capacity read `CapacityResult` — all NAMED — so `named` moves by three and
     // `composed` does not.
-    expect(summary.bodies).toBe(429);
-    expect(summary.named).toBe(377);
+    // 432 with the P1-32-PRE-151 organisation growth: the company add serialises
+    // `CompanyAddedView`, the branch add `BranchAddedView` and the administrator
+    // setup `AdministratorSetupResultView` — all NAMED, all carrying the target
+    // organisation beside the row, so `named` moves by three and `composed` does
+    // not.
+    expect(summary.bodies).toBe(432);
+    expect(summary.named).toBe(380);
     expect(summary.composed).toBe(52);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

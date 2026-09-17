@@ -1,20 +1,20 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 429,
-    "openapiPaths": 333,
-    "openapiOperations": 429,
+    "operations": 432,
+    "openapiPaths": 336,
+    "openapiOperations": 432,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
     "eventsDeliveryTested": 50,
     "outboxForeignWriters": 0,
-    "errorCodes": 30,
+    "errorCodes": 31,
     "permissionCodes": 127,
-    "auditActions": 244
+    "auditActions": 245
   },
   "counts": {
-    "Covered": 429
+    "Covered": 432
   },
   "operations": [
     {
@@ -6096,6 +6096,126 @@
       "file": "apps/api/src/app/api/v1/platform/organizations/[tenantId]/charges/[chargeId]/void/route.ts"
     },
     {
+      "id": "platform.organization-administrator-invite",
+      "domain": "platform",
+      "method": "POST",
+      "route": "/api/v1/platform/organizations/{tenantId}/administrators",
+      "permissions": ["platform.organization.manage"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "iam.tenant_administrator.invited",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/platform/organizations/{tenantId}/administrators",
+      "documentedResponses": ["201", "401", "403", "404", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-32-platform-organization-growth.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/platform/organizations/[tenantId]/administrators/route.ts"
+    },
+    {
+      "id": "platform.organization-branch-create",
+      "domain": "platform",
+      "method": "POST",
+      "route": "/api/v1/platform/organizations/{tenantId}/branches",
+      "permissions": ["platform.organization.manage"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "org.branch.created",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/platform/organizations/{tenantId}/branches",
+      "documentedResponses": ["201", "401", "403", "404", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-32-platform-organization-growth.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/platform/organizations/[tenantId]/branches/route.ts"
+    },
+    {
+      "id": "platform.organization-company-create",
+      "domain": "platform",
+      "method": "POST",
+      "route": "/api/v1/platform/organizations/{tenantId}/companies",
+      "permissions": ["platform.organization.manage"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "org.company.created",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/platform/organizations/{tenantId}/companies",
+      "documentedResponses": ["201", "401", "403", "404", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-32-platform-organization-growth.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/platform/organizations/[tenantId]/companies/route.ts"
+    },
+    {
       "id": "platform.organization-detail",
       "domain": "platform",
       "method": "GET",
@@ -6468,7 +6588,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-32-platform-console.test.ts"],
+      "tests": [
+        "tests/backend/p1-32-platform-console.test.ts",
+        "tests/backend/p1-32-platform-organization-growth.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/platform/organizations/[tenantId]/subscriptions/route.ts"
     },

@@ -512,7 +512,9 @@ describe('the coverage include lists are pinned, because they are the denominato
     // four services), so 291 -> 298.
     // The Owner directive organisation administration adds capacity-failure.ts,
     // so the merge of both holds 299.
-    expect(files.length).toBe(299);
+    // P1-32-PRE-151 adds iam/application/identity-compensation.ts, the one place
+    // the provider identity of a refused write is undone, so 299 -> 300.
+    expect(files.length).toBe(300);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -601,6 +603,6 @@ describe('the coverage include lists are pinned, because they are the denominato
      * database capacity refusal that both organisation creation and invitation
      * share. The floors stay untouched for the same reason.
      */
-    expect(instrumented.length).toBe(298);
+    expect(instrumented.length).toBe(299);
   });
 });

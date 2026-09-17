@@ -10,7 +10,7 @@
  * The backend requires an `Idempotency-Key` header on every operation it
  * registers as idempotent, and answers `400 ERR-INT-002` without one — before
  * authorization is evaluated. That set is NOT "the POST operations": it is
- * currently 183 operations (PATCH 4, POST 173, PUT 6).
+ * currently 186 operations (PATCH 4, POST 176, PUT 6).
  *
  * The client used to infer the answer from the HTTP method, which was wrong for
  * every non-POST member of that set. This table is the contract instead of a
@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 13, export 2, financial 14, none 186, privileged 201, security 13.
+ * Currently approval 13, export 2, financial 14, none 186, privileged 204, security 13.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 429 of them. */
+/** Every operation the contract publishes. 432 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -1627,6 +1627,20 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'none',
   },
   {
+    template: '/platform/organizations/{tenantId}/administrators',
+    method: 'POST',
+    operationId: 'platform.organization-administrator-invite',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/platform/organizations/{tenantId}/branches',
+    method: 'POST',
+    operationId: 'platform.organization-branch-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
     template: '/platform/organizations/{tenantId}/charges',
     method: 'GET',
     operationId: 'platform.charge-list',
@@ -1644,6 +1658,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     template: '/platform/organizations/{tenantId}/charges/{chargeId}/void',
     method: 'POST',
     operationId: 'platform.charge-void',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/platform/organizations/{tenantId}/companies',
+    method: 'POST',
+    operationId: 'platform.organization-company-create',
     idempotent: true,
     auditClass: 'privileged',
   },

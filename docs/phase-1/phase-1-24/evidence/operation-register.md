@@ -9,22 +9,22 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 429   |
+| Public operations        | 432   |
 | Domains (modules)        | 20    |
-| OpenAPI paths            | 333   |
-| OpenAPI operations       | 429   |
+| OpenAPI paths            | 336   |
+| OpenAPI operations       | 432   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 127   |
-| Audit actions catalogued | 244   |
+| Audit actions catalogued | 245   |
 | Domain events catalogued | 50    |
-| Structured error codes   | 30    |
+| Structured error codes   | 31    |
 
 ## Coverage classification
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 429        |
+| Covered           | 432        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -42,7 +42,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | inventory       | 24         | 24      | 13     | 14      | 11         | 0               |
 | meta            | 1          | 1       | 0      | 0       | 0          | 0               |
 | payments        | 5          | 5       | 2      | 2       | 2          | 0               |
-| platform        | 16         | 16      | 9      | 9       | 8          | 1               |
+| platform        | 19         | 19      | 12     | 12      | 11         | 1               |
 | pricing         | 9          | 9       | 5      | 5       | 5          | 2               |
 | quality         | 15         | 15      | 7      | 8       | 7          | 2               |
 | quotation       | 10         | 10      | 5      | 5       | 5          | 2               |
@@ -214,6 +214,9 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `platform.charge-list`                              | GET    | `/api/v1/platform/organizations/{tenantId}/charges`                                     | tenant  | `platform.billing.read`                                              | —                                              | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
 | `platform.charge-record`                            | POST   | `/api/v1/platform/organizations/{tenantId}/charges`                                     | tenant  | `platform.billing.manage`                                            | org.subscription_charge.recorded               | yes  | —   | audit authorization cross-tenant denial idempotency route service success                                                     | Covered |
 | `platform.charge-void`                              | POST   | `/api/v1/platform/organizations/{tenantId}/charges/{chargeId}/void`                     | tenant  | `platform.billing.manage`                                            | org.subscription_charge.voided                 | yes  | —   | audit authorization cross-tenant denial idempotency route service success                                                     | Covered |
+| `platform.organization-administrator-invite`        | POST   | `/api/v1/platform/organizations/{tenantId}/administrators`                              | tenant  | `platform.organization.manage`                                       | iam.tenant_administrator.invited               | yes  | —   | audit authorization cross-tenant denial idempotency route service success                                                     | Covered |
+| `platform.organization-branch-create`               | POST   | `/api/v1/platform/organizations/{tenantId}/branches`                                    | tenant  | `platform.organization.manage`                                       | org.branch.created                             | yes  | —   | audit authorization cross-tenant denial idempotency route service success                                                     | Covered |
+| `platform.organization-company-create`              | POST   | `/api/v1/platform/organizations/{tenantId}/companies`                                   | tenant  | `platform.organization.manage`                                       | org.company.created                            | yes  | —   | audit authorization cross-tenant denial idempotency route service success                                                     | Covered |
 | `platform.organization-detail`                      | GET    | `/api/v1/platform/organizations/{tenantId}`                                             | tenant  | `platform.organization.read`                                         | —                                              | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
 | `platform.organization-lifecycle`                   | POST   | `/api/v1/platform/organizations/{tenantId}/status`                                      | tenant  | `platform.organization.lifecycle`                                    | org.tenant.status_changed                      | —    | —   | audit authorization cross-tenant denial route service success                                                                 | Covered |
 | `platform.organization-provision`                   | POST   | `/api/v1/platform/organizations`                                                        | tenant  | `platform.organization.provision`                                    | org.tenant.provisioned                         | yes  | —   | audit authorization denial idempotency route service success                                                                  | Covered |

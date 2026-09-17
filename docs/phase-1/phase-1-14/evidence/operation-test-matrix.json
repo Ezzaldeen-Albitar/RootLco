@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 429,
-    "publicApi": 429,
+    "registered": 432,
+    "publicApi": 432,
     "internal": 0,
-    "withRequiredEvidence": 429,
+    "withRequiredEvidence": 432,
     "invocationOnly": 0,
     "p1_15": {
       "registered": 28,
@@ -5263,6 +5263,132 @@
       "unitOnly": false
     },
     {
+      "id": "platform.organization-administrator-invite",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/platform/organizations/{tenantId}/administrators",
+      "public": false,
+      "files": ["tests/backend/p1-32-platform-organization-growth.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "platform.organization-branch-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/platform/organizations/{tenantId}/branches",
+      "public": false,
+      "files": ["tests/backend/p1-32-platform-organization-growth.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "platform.organization-company-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/platform/organizations/{tenantId}/companies",
+      "public": false,
+      "files": ["tests/backend/p1-32-platform-organization-growth.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "platform.organization-detail",
       "surface": "public-api",
       "method": "GET",
@@ -5538,7 +5664,10 @@
       "method": "POST",
       "path": "/platform/organizations/{tenantId}/subscriptions",
       "public": false,
-      "files": ["tests/backend/p1-32-platform-console.test.ts"],
+      "files": [
+        "tests/backend/p1-32-platform-console.test.ts",
+        "tests/backend/p1-32-platform-organization-growth.test.ts"
+      ],
       "referenced": true,
       "derived": [
         "route",

@@ -91,6 +91,7 @@ const ascending = (values: readonly string[]): string[] => [...values].sort();
 const EXPECTED_ERROR_CODES = [
   'ERR-CAP-001',
   'ERR-CAP-002',
+  'ERR-CAP-003',
   'ERR-CON-001',
   'ERR-CON-002',
   'ERR-CTX-001',
@@ -130,6 +131,7 @@ const EXPECTED_ERROR_CODES = [
 const EXPECTED_ERROR_CONTRACTS = [
   { code: 'ERR-CAP-001', status: 409, owner: 'capacity', class: 'conflict', retryable: false },
   { code: 'ERR-CAP-002', status: 409, owner: 'capacity', class: 'conflict', retryable: false },
+  { code: 'ERR-CAP-003', status: 409, owner: 'capacity', class: 'conflict', retryable: false },
   { code: 'ERR-CON-001', status: 409, owner: 'concurrency', class: 'conflict', retryable: true },
   { code: 'ERR-CON-002', status: 428, owner: 'concurrency', class: 'client', retryable: false },
   { code: 'ERR-CTX-001', status: 500, owner: 'context', class: 'server', retryable: false },
@@ -272,6 +274,7 @@ const EXPECTED_AUDIT_ACTIONS = [
   'iam.role.updated',
   'iam.session.revoked',
   'iam.session.revoked_all',
+  'iam.tenant_administrator.invited',
   'iam.user.activated',
   'iam.user.archived',
   'iam.user.invitation_cancelled',
