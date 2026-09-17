@@ -36,7 +36,7 @@
       "bytes": 15409
     },
     "docs/phase-1/phase-1-27/clean-room-evidence.md": {
-      "sha256": "e560e03f52a0179088da7580e6a31b95a35f44bee7b0cc51000e3282802ff271",
+      "sha256": "c68645132b113c6b359e5957a59fd57f1d8d61c2695d1371d6861dfa436cd627",
       "bytes": 23806
     },
     "docs/phase-1/phase-1-27/closure-record.md": {
@@ -52,7 +52,7 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "2a2a51c27eb9915ff630c9c01d8e20efa7d995309cde09fdb7ed68cc0729be76",
+      "sha256": "b405df5431445a3d7929f19e03ce98147469d3c54fdf4cd80266ec5fd737e3ce",
       "bytes": 149609
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
@@ -64,7 +64,7 @@
       "bytes": 81669
     },
     "docs/phase-1/phase-1-27/evidence/closing-value-ledger.json": {
-      "sha256": "3329aef9903ca156a9db25da3037aa79ce8c81c6ece39ca7e3e91c68ad52faf6",
+      "sha256": "07bc9ac5ac1a177a4faf839f3cee7f8c150a30cce0b670410cb800bb04ccc0e1",
       "bytes": 50367
     },
     "docs/phase-1/phase-1-27/evidence/lifecycle-ledger.json": {
@@ -124,7 +124,7 @@
       "bytes": 14530
     },
     "docs/phase-1/phase-1-27/open-decisions.md": {
-      "sha256": "c9631e2f0648615d1309f6525a758c41096414cbb7d0573182dca5c8e90b25a0",
+      "sha256": "9d4d21910ce49fb84dfd46784d49945aa2867972ba701707de14deb4b7aea034",
       "bytes": 124614
     },
     "docs/phase-1/phase-1-27/operator-guide.md": {
@@ -136,7 +136,7 @@
       "bytes": 5776
     },
     "docs/phase-1/phase-1-27/owner-acceptance-fail-remediation.md": {
-      "sha256": "4d92b700492f0f79d7a0426c7edf8b2bf2459481fb8dbbafdeb6fb81897b9baa",
+      "sha256": "815ed77810472d32b4fdff5671356c67eedb487da1c254ffc6852d395e6e25da",
       "bytes": 13549
     },
     "docs/phase-1/phase-1-27/p1-27-int-113-unregistered-rate-limit-policy.md": {
@@ -156,7 +156,7 @@
       "bytes": 62211
     },
     "docs/phase-1/phase-1-27/risk-register.md": {
-      "sha256": "6c648d22d655432f590649d7142eef7f090549a0fe96112dea5c6720d7336467",
+      "sha256": "1205a3147d620ce0d228bb3ded455f9b3601a1ab64f7850ef106acccf23afecc",
       "bytes": 187802
     },
     "docs/phase-1/phase-1-27/task-matrix-verdicts.json": {
