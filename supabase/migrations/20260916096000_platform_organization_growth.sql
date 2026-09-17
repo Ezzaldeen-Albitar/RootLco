@@ -126,7 +126,9 @@ STABLE
 SECURITY INVOKER
 SET search_path = ''
 AS $$
-  SELECT pg_catalog.coalesce(
+  -- COALESCE is syntax rather than a function, so it needs no schema
+  -- qualification and cannot be resolved as one under an empty search_path.
+  SELECT COALESCE(
            pg_catalog.jsonb_agg(
              pg_catalog.jsonb_build_object(
                'kind', k.kind, 'used', k.used, 'newLimit', k.new_limit)

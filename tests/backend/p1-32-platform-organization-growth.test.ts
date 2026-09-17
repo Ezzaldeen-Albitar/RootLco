@@ -602,8 +602,12 @@ describe('platform.organization-branch-create', () => {
       // check this would reach the composite foreign key as a 500.
       body: { companyId: companyTwo, code: 'odog_stolen', name: 'Stolen', timezone: 'UTC' },
     });
-    expect(crossTenant.status).toBe(404);
-    expect(crossTenant.body?.code).toBe('ERR-RES-001');
+    // The shared iam port answers an unreachable parent as a DENIAL rather than
+    // as a 404, and the console inherits that answer unchanged: a control-plane
+    // operator learns that the identifier is not theirs to build on, and not
+    // whether it exists in some other organisation.
+    expect(crossTenant.status).toBe(403);
+    expect(crossTenant.body?.code).toBe('ERR-IAM-001');
 
     // Nothing landed anywhere: not in the named organisation, not in the other.
     expect(

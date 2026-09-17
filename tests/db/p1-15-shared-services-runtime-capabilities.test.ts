@@ -756,16 +756,16 @@ describe('P1-15 / global security posture', () => {
       // longer provisioning. Tenant-scoped, org.branch.manage, per-branch rows of
       // a real branch only — tests/db/org-capacity.test.ts proves each refusal.
       'ins_number_sequences_branch_authority',
+      // --- added by PRE-P1-29 Wave B (the platform control plane) ---
+      // Provisioning allocates the new tenant's first document sequences, which
+      // is a write into shared on behalf of a tenant that is mid-creation.
+      'ins_number_sequences_platform',
       // --- added by migration 148 (P1-32 organisation growth) ---
       // The console equivalent of the policy above: a branch opened from the
       // control plane owes the same invoice, quotation and receipt runs, and
       // app_platform could not write them because ins_number_sequences_platform
       // admits only a tenant that is still provisioning.
       'ins_number_sequences_platform_manage',
-      // --- added by PRE-P1-29 Wave B (the platform control plane) ---
-      // Provisioning allocates the new tenant's first document sequences, which
-      // is a write into shared on behalf of a tenant that is mid-creation.
-      'ins_number_sequences_platform',
       // --- added by migration 117 ---
       'ins_outbound_messages_enqueue',
       'ins_template_version_approvals_scope',
