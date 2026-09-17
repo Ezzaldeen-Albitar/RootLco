@@ -1045,10 +1045,19 @@ describe('an adapter the contract places outside apt/rec is excluded from the co
     const live = run() as Report & {
       outsideByContract: { name: string; operations: string[] }[];
     };
-    expect(live.outsideByContract).toEqual([
-      { name: 'postGoodsReceipt', operations: ['inv.goods-receipt-post'] },
-      { name: 'recordStockCountLine', operations: ['inv.stock-count-line-record'] },
+    // The operation ids are asserted by SHAPE rather than spelled out: this file's
+    // header records that a real id written here is credited as coverage for an
+    // operation this suite does not exercise, and the P1-24 register does exactly
+    // that. The adapter names are the claim; the namespace is what places them
+    // outside an apt/rec subject.
+    expect(live.outsideByContract.map((one) => one.name)).toEqual([
+      'postGoodsReceipt',
+      'recordStockCountLine',
     ]);
+    for (const entry of live.outsideByContract) {
+      expect(entry.operations).toHaveLength(1);
+      expect(entry.operations[0]).toMatch(/^inv[.]/);
+    }
     expect(live.accountedFor).not.toContain('postGoodsReceipt');
     expect(live.accountedFor).not.toContain('recordStockCountLine');
   });
