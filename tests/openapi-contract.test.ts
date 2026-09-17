@@ -370,6 +370,20 @@ import '@/app/api/v1/items/[itemId]/sale-prices/route';
 import '@/app/api/v1/counter-sales/route';
 import '@/app/api/v1/sales-returns/route';
 import '@/app/api/v1/returnable-quantities/route';
+// P1-32 preparatory slice 3b — material demand control, reference data and transfer
+// settlements.
+import '@/app/api/v1/material-requirements/route';
+import '@/app/api/v1/material-requirements/[requirementId]/route';
+import '@/app/api/v1/material-requirements/[requirementId]/approval/route';
+import '@/app/api/v1/material-requirements/[requirementId]/exceptions/route';
+import '@/app/api/v1/material-exceptions/[exceptionId]/decision/route';
+import '@/app/api/v1/unit-conversions/route';
+import '@/app/api/v1/unit-conversions/[conversionId]/retirement/route';
+import '@/app/api/v1/vehicle-fluid-specifications/route';
+import '@/app/api/v1/vehicle-fluid-specifications/[specificationId]/confirmation/route';
+import '@/app/api/v1/vehicle-fluid-specifications/[specificationId]/retirement/route';
+import '@/app/api/v1/stock-transfers/[transferId]/discrepancy-resolution/route';
+import '@/app/api/v1/stock-transfer-settlements/[settlementId]/decision/route';
 
 // Phase 1-22 — billing, payment, delivery and warranty.
 //

@@ -67,7 +67,10 @@ describe('every operation publishes the success status it returns', () => {
     // 437 with P1-32 preparatory slice 2: six identifier operations.
     // 444 with the rest of that slice: two item-price operations, two counter-sale
     // operations and three return operations.
-    expect(actual.size).toBe(444);
+    // 459 with P1-32 preparatory slice 3b: six material-requirement operations,
+    // three unit-conversion operations, four specification operations and the two
+    // transfer discrepancy acts.
+    expect(actual.size).toBe(459);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -115,7 +118,10 @@ describe('every operation publishes the success status it returns', () => {
     // publishes as 200, exactly as `inv.stock-reservation-create` already does.
     // P1-32 preparatory slice 2 adds ONE literal 201, the identifier add; the
     // internal-barcode allocation returns `replayed ? 200 : 201` and publishes 200.
-    expect(counts[201]).toBe(117);
+    // P1-32 preparatory slice 3b adds FOUR literal 201s — the requirement create,
+    // the exception create, the conversion set and the specification record — and
+    // the discrepancy resolution returns `replayed ? 200 : 201` and publishes 200.
+    expect(counts[201]).toBe(121);
     expect(counts[202]).toBe(1);
     // The two P1-30 opening-batch reads (S-17) are GETs returning 200, so
     // 264 -> 266 while 201 and 202 are unchanged.
@@ -156,7 +162,11 @@ describe('every operation publishes the success status it returns', () => {
     // set REVISES a row and returns 200), the two counter-sale operations and the
     // three return operations — the counter-sale create and the return receipt
     // resolve to 200 because their status is a replay ternary rather than a literal.
-    expect(counts[200]).toBe(326);
+    // 326 -> 337 with P1-32 preparatory slice 3b: eleven of its fifteen operations —
+    // the four reads, the four decisions and retirements of rows that already exist,
+    // the confirmation, and the discrepancy resolution whose status is a replay
+    // ternary — publish 200.
+    expect(counts[200]).toBe(337);
   });
 
   it('reads the handler, not the declaration', () => {

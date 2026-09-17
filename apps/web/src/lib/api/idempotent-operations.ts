@@ -10,7 +10,7 @@
  * The backend requires an `Idempotency-Key` header on every operation it
  * registers as idempotent, and answers `400 ERR-INT-002` without one — before
  * authorization is evaluated. That set is NOT "the POST operations": it is
- * currently 190 operations (PATCH 3, POST 180, PUT 7).
+ * currently 201 operations (PATCH 3, POST 191, PUT 7).
  *
  * The client used to infer the answer from the HTTP method, which was wrong for
  * every non-POST member of that set. This table is the contract instead of a
@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 14, export 2, financial 15, none 193, privileged 207, security 13.
+ * Currently approval 17, export 2, financial 15, none 197, privileged 215, security 13.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 444 of them. */
+/** Every operation the contract publishes. 459 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -1410,6 +1410,48 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'privileged',
   },
   {
+    template: '/material-exceptions/{exceptionId}/decision',
+    method: 'POST',
+    operationId: 'inv.material-exception-decide',
+    idempotent: true,
+    auditClass: 'approval',
+  },
+  {
+    template: '/material-requirements',
+    method: 'GET',
+    operationId: 'inv.material-requirement-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/material-requirements',
+    method: 'POST',
+    operationId: 'inv.material-requirement-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/material-requirements/{requirementId}',
+    method: 'GET',
+    operationId: 'inv.material-requirement-read',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/material-requirements/{requirementId}/approval',
+    method: 'POST',
+    operationId: 'inv.material-requirement-approve',
+    idempotent: true,
+    auditClass: 'approval',
+  },
+  {
+    template: '/material-requirements/{requirementId}/exceptions',
+    method: 'POST',
+    operationId: 'inv.material-exception-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
     template: '/message-templates',
     method: 'POST',
     operationId: 'shared.template-create',
@@ -2530,6 +2572,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'privileged',
   },
   {
+    template: '/stock-transfer-settlements/{settlementId}/decision',
+    method: 'POST',
+    operationId: 'inv.stock-transfer-write-off-decide',
+    idempotent: true,
+    auditClass: 'approval',
+  },
+  {
     template: '/stock-transfers',
     method: 'GET',
     operationId: 'inv.stock-transfer-list',
@@ -2547,6 +2596,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     template: '/stock-transfers/{transferId}/cancellation',
     method: 'POST',
     operationId: 'inv.stock-transfer-cancel',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/stock-transfers/{transferId}/discrepancy-resolution',
+    method: 'POST',
+    operationId: 'inv.stock-transfer-discrepancy-resolve',
     idempotent: true,
     auditClass: 'privileged',
   },
@@ -2705,6 +2761,27 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'privileged',
   },
   {
+    template: '/unit-conversions',
+    method: 'GET',
+    operationId: 'inv.unit-conversion-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/unit-conversions',
+    method: 'POST',
+    operationId: 'inv.unit-conversion-set',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/unit-conversions/{conversionId}/retirement',
+    method: 'POST',
+    operationId: 'inv.unit-conversion-retire',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
     template: '/units-of-measure',
     method: 'GET',
     operationId: 'inv.uom-list',
@@ -2757,6 +2834,34 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     template: '/vehicle-duplicates/{candidateId}/review',
     method: 'POST',
     operationId: 'veh.vehicle-duplicate-review',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/vehicle-fluid-specifications',
+    method: 'GET',
+    operationId: 'inv.vehicle-specification-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/vehicle-fluid-specifications',
+    method: 'POST',
+    operationId: 'inv.vehicle-specification-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/vehicle-fluid-specifications/{specificationId}/confirmation',
+    method: 'POST',
+    operationId: 'inv.vehicle-specification-confirm',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/vehicle-fluid-specifications/{specificationId}/retirement',
+    method: 'POST',
+    operationId: 'inv.vehicle-specification-retire',
     idempotent: true,
     auditClass: 'privileged',
   },

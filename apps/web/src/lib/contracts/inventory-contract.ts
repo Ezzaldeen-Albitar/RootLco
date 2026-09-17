@@ -33,6 +33,12 @@ export interface StockReservationCreateBody {
   readonly workOrderId?: string;
   readonly idempotencyKey?: string;
   readonly expiresAt?: string;
+  /**
+   * The material requirement the reservation draws on. Required by the server when
+   * the work order has a requirement covering the item; a draw beyond what it allows
+   * is refused (409).
+   */
+  readonly materialRequirementId?: string;
 }
 
 /**
@@ -59,6 +65,12 @@ export interface StockIssueCreateBody {
   readonly reservationId?: string;
   /** The required-part line this issue satisfies, when it was recorded against one. */
   readonly requiredPartRef?: string;
+  /**
+   * The material requirement the issue draws on. Required by the server when the
+   * work order has a requirement covering the item, unless the named reservation
+   * already draws on it; a draw beyond what it allows is refused (409).
+   */
+  readonly materialRequirementId?: string;
 }
 
 /**

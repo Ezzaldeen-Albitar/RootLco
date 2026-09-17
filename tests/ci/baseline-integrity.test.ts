@@ -512,7 +512,9 @@ describe('the coverage include lists are pinned, because they are the denominato
     // adjustment and count services and the shared failure mapper.
     // 298 with P1-32 preparatory slice 2: the item identifier service and the
     // sales-return service.
-    expect(files.length).toBe(298);
+    // 300 with P1-32 preparatory slice 3b: the material service and the reference
+    // data service.
+    expect(files.length).toBe(300);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -595,6 +597,7 @@ describe('the coverage include lists are pinned, because they are the denominato
      * move by five. The floors are untouched for the same reason.
      */
     // 297 with P1-32 preparatory slice 2, for the same two files.
-    expect(instrumented.length).toBe(297);
+    // 299 with P1-32 preparatory slice 3b, for the same two files.
+    expect(instrumented.length).toBe(299);
   });
 });

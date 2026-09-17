@@ -3241,6 +3241,84 @@ export const MANIFEST = {
     required: ['success', 'cross-tenant', 'isolation'],
     note: 'what left, what has come back through BOTH return tables, and the remainder; a source in another tenant answers 404',
   },
+  // P1-32 preparatory slice 3b: material demand control, the reference data it is
+  // measured against, and the transfer discrepancy acts. The assertions rest on the
+  // requirement's usage figures, balances, settlement rows and audit rows.
+  'inv.material-requirement-create': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'an entered allowance is pending approval; a derivation with no confirmed specification is stored as approval_required / missing_specification with no allowance, and with one it carries the specification capacity and unit; a second active requirement for the same need on the line is refused; a replayed key returns the first',
+  },
+  'inv.material-requirement-list': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'isolation'],
+    note: 'one branch, narrowable to a work order; a grant in another branch is refused',
+  },
+  'inv.material-requirement-read': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'cross-tenant', 'isolation'],
+    note: 'allowance, approved exceptions, requested, reserved, issued, committed and remaining in the requirement unit, moved by every governed draw and release; another tenant answers 404',
+  },
+  'inv.material-requirement-approve': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'the requester is refused, a caller without inv.material.approve is refused, an approval_required requirement cannot be decided, a rejection needs a reason; approval and rejection are audited',
+  },
+  'inv.material-exception-create': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'finite quantity with a reason on an approved requirement only; pending adds nothing to the allowance',
+  },
+  'inv.material-exception-decide': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'isolation'],
+    note: 'the requester, a caller without inv.material.exception.approve, another branch and another tenant are all refused; an approval records the resulting allowance and lets the next draw through',
+  },
+  'inv.unit-conversion-list': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'isolation'],
+    note: 'live rows by default, retired rows on request, narrowed to what applies to one item',
+  },
+  'inv.unit-conversion-set': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'exact factor with its source; a changed factor retires the old row; a branch-scoped grant and a tenant-wide cross-dimension row are refused and write nothing',
+  },
+  'inv.unit-conversion-retire': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'a second retirement changes nothing and is audited once; another tenant answers 404',
+  },
+  'inv.vehicle-specification-list': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'isolation'],
+    note: 'narrowable by make, model, service condition and status',
+  },
+  'inv.vehicle-specification-create': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'audit', 'isolation'],
+    note: 'born recorded with capacity, unit and source; a caller without the code or with a branch-scoped grant writes nothing',
+  },
+  'inv.vehicle-specification-confirm': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'attributable confirmation, once; a confirmed rival with overlapping model years is refused as a conflict; another tenant answers 404',
+  },
+  'inv.vehicle-specification-retire': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'a second retirement changes nothing; another tenant answers 404',
+  },
+  'inv.stock-transfer-discrepancy-resolve': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'a return to origin posts at once and puts the unit back in the origin; a write-off is born pending and claims its units against a further receipt; a replayed key returns the first settlement; a reader and another tenant are refused',
+  },
+  'inv.stock-transfer-write-off-decide': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'isolation'],
+    note: 'the requester, a reader and another tenant are refused; approval takes the units out of transit and settles the transfer; rejection leaves them in transit',
+  },
 };
 
 // ---------------------------------------------------------------------------

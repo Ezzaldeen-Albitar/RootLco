@@ -1107,7 +1107,7 @@ describe('inventory_movements — the rows the Owner asked for', () => {
 });
 
 describe('inventory_movements — the vocabulary the ledger actually has', () => {
-  it('constrains movement_type to the seven terms the ledger actually has', async () => {
+  it('constrains movement_type to the eight terms the ledger actually has', async () => {
     // Measured against the live CHECK, not against a comment. D-4 asks that the
     // distinct meanings of a return and a transfer be preserved; there is no
     // transfer to preserve, so the report shows no transfer bucket rather than an
@@ -1121,7 +1121,9 @@ describe('inventory_movements — the vocabulary the ledger actually has', () =>
     const definition = check.rows[0]?.definition ?? '';
     // `transfer` and `receipt` joined with the P1-32 preparatory slice, which gave
     // them real sources (a transfer row, a goods receipt line) and provenance
-    // branches; a return and a transfer remain distinct terms.
+    // branches; a return and a transfer remain distinct terms. `sale` joined with
+    // P1-32 preparatory slice 2: a counter sale leaves the shelf against its invoice
+    // line.
     for (const term of [
       'opening',
       'issue',
@@ -1130,10 +1132,11 @@ describe('inventory_movements — the vocabulary the ledger actually has', () =>
       'adjustment',
       'transfer',
       'receipt',
+      'sale',
     ]) {
       expect(definition).toContain(term);
     }
-    expect([...definition.matchAll(/'([a-z_]+)'::text/g)].map((m) => m[1])).toHaveLength(7);
+    expect([...definition.matchAll(/'([a-z_]+)'::text/g)].map((m) => m[1])).toHaveLength(8);
   });
 
   it('stamps occurred_at from the transaction clock, so no movement can be backdated', async () => {

@@ -104,6 +104,14 @@ export const BODYLESS = Object.freeze({
     'retirement carries nothing but the item and the identifier in the path and the caller as actor',
   'inv.item-barcode-assign':
     'allocation carries nothing but the item in the path; the code comes from the tenant counter',
+  // P1-32 preparatory slice 3b. Retiring a conversion, and confirming or retiring a
+  // specification, name the row in the path and the caller as actor.
+  'inv.unit-conversion-retire':
+    'retirement carries nothing but the conversion in the path and the caller as actor',
+  'inv.vehicle-specification-confirm':
+    'confirmation carries nothing but the specification in the path and the caller as confirmer',
+  'inv.vehicle-specification-retire':
+    'retirement carries nothing but the specification in the path and the caller as actor',
 });
 
 /** Field-level omissions the web side has decided, with reasons. Empty today. */
@@ -169,6 +177,24 @@ export const PENDING_MIRRORS = Object.freeze({
     'PENDING: P1-32 preparatory slice 2 is Backend and Database only; the counter-sale screen that sends this owes the mirror',
   'inv.sales-return-create':
     'PENDING: P1-32 preparatory slice 2 is Backend and Database only; the returns screen that sends this owes the mirror',
+  // P1-32 preparatory slice 3b: material demand control, its reference data and the
+  // transfer discrepancy acts. Backend only; the slice-3 screens owe every mirror.
+  'inv.material-requirement-create':
+    'PENDING: P1-32 preparatory slice 3b is Backend only; the material requirement screen that sends this owes the mirror',
+  'inv.material-requirement-approve':
+    'PENDING: P1-32 preparatory slice 3b is Backend only; the material approval screen that sends this owes the mirror',
+  'inv.material-exception-create':
+    'PENDING: P1-32 preparatory slice 3b is Backend only; the material exception screen that sends this owes the mirror',
+  'inv.material-exception-decide':
+    'PENDING: P1-32 preparatory slice 3b is Backend only; the material exception screen that sends this owes the mirror',
+  'inv.unit-conversion-set':
+    'PENDING: P1-32 preparatory slice 3b is Backend only; the unit conversion screen that sends this owes the mirror',
+  'inv.vehicle-specification-create':
+    'PENDING: P1-32 preparatory slice 3b is Backend only; the vehicle specification screen that sends this owes the mirror',
+  'inv.stock-transfer-discrepancy-resolve':
+    'PENDING: P1-32 preparatory slice 3b is Backend only; the transfer receipt screen that sends this owes the mirror',
+  'inv.stock-transfer-write-off-decide':
+    'PENDING: P1-32 preparatory slice 3b is Backend only; the transfer receipt screen that sends this owes the mirror',
   // The `sal` writes entered this scope with W6, which mirrors the invoice
   // create and cancel bodies. Payments belong to W7 (canonical plan §4); credit
   // notes are sent by no P1-30 screen.

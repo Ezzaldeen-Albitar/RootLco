@@ -271,7 +271,10 @@ describe('the API application lives in the workspace', () => {
     // because the item-price, counter-sale and sales-return collections each
     // co-locate a GET and a POST on one path, and the returnable-quantity read is
     // the only module with a single verb.
-    expect(routeFiles.length).toBe(344);
+    // 356 with P1-32 preparatory slice 3b: fifteen operations over TWELVE new
+    // modules, because the requirement, conversion and specification collections
+    // each co-locate a GET and a POST.
+    expect(routeFiles.length).toBe(356);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -360,7 +363,9 @@ describe('the API application lives in the workspace', () => {
     // 437 with P1-32 preparatory slice 2, for the reason stated above.
     // 444 with the rest of that slice: seven operations over four new modules, for
     // the reason stated above the route-module count.
-    expect(report.operations).toHaveLength(444);
+    // 459 with P1-32 preparatory slice 3b: fifteen operations over twelve new
+    // modules, for the reason stated above the route-module count.
+    expect(report.operations).toHaveLength(459);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the
