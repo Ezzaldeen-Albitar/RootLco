@@ -38,6 +38,9 @@ const HIT = {
   partyType: 'individual' as const,
   lifecycleStatus: 'active' as const,
   createdAt: '2026-08-04T10:00:00.000Z',
+  primaryPhone: '*******4567',
+  phoneMasked: true,
+  vehicleCount: 2,
 };
 
 function page(overrides: Record<string, unknown> = {}) {
@@ -74,7 +77,7 @@ describe('before the operator has asked for anything', () => {
   it('issues no request while the operator types', async () => {
     const user = userEvent.setup();
     renderScreen();
-    await user.type(screen.getByLabelText(en['crm.customers.search.name']), 'Nadia Khoury');
+    await user.type(screen.getByLabelText(en['crm.customers.search.q']), 'Nadia Khoury');
     // Twelve keystrokes. Search-as-you-type would have spent 12 of 30 requests.
     expect(searchCustomers).not.toHaveBeenCalled();
   });
@@ -84,25 +87,25 @@ describe('submitting', () => {
   it('searches when the button is pressed', async () => {
     const user = userEvent.setup();
     renderScreen();
-    await user.type(screen.getByLabelText(en['crm.customers.search.name']), 'Nadia');
+    await user.type(screen.getByLabelText(en['crm.customers.search.q']), 'Nadia');
     await user.click(screen.getByRole('button', { name: en['crm.customers.search.submit'] }));
 
     await waitFor(() => expect(searchCustomers).toHaveBeenCalledTimes(1));
-    const [, , criteria] = searchCustomers.mock.calls[0] as [unknown, unknown, { name?: string }];
-    expect(criteria.name).toBe('Nadia');
+    const [, , criteria] = searchCustomers.mock.calls[0] as [unknown, unknown, { q?: string }];
+    expect(criteria.q).toBe('Nadia');
   });
 
   it('searches when Enter is pressed in a field', async () => {
     const user = userEvent.setup();
     renderScreen();
-    await user.type(screen.getByLabelText(en['crm.customers.search.name']), 'Nadia{Enter}');
+    await user.type(screen.getByLabelText(en['crm.customers.search.q']), 'Nadia{Enter}');
     await waitFor(() => expect(searchCustomers).toHaveBeenCalledTimes(1));
   });
 
   it('renders the result row', async () => {
     const user = userEvent.setup();
     renderScreen();
-    await user.type(screen.getByLabelText(en['crm.customers.search.name']), 'Nadia{Enter}');
+    await user.type(screen.getByLabelText(en['crm.customers.search.q']), 'Nadia{Enter}');
     expect(await screen.findByText('Nadia Khoury')).toBeInTheDocument();
     expect(screen.getByText('C-0001')).toBeInTheDocument();
 
@@ -132,7 +135,7 @@ describe('states', () => {
     searchCustomers.mockResolvedValue(page({ status: 'unavailable', rows: [] }));
     const user = userEvent.setup();
     renderScreen();
-    await user.type(screen.getByLabelText(en['crm.customers.search.name']), 'Nadia{Enter}');
+    await user.type(screen.getByLabelText(en['crm.customers.search.q']), 'Nadia{Enter}');
     expect(await screen.findByRole('status')).toBeInTheDocument();
   });
 
@@ -142,7 +145,7 @@ describe('states', () => {
     searchCustomers.mockResolvedValue(page({ status: 'denied', rows: [] }));
     const user = userEvent.setup();
     renderScreen();
-    await user.type(screen.getByLabelText(en['crm.customers.search.name']), 'Nadia{Enter}');
+    await user.type(screen.getByLabelText(en['crm.customers.search.q']), 'Nadia{Enter}');
     expect(await screen.findByText(en['state.denied.title'])).toBeInTheDocument();
   });
 
@@ -150,7 +153,7 @@ describe('states', () => {
     searchCustomers.mockResolvedValue(page({ status: 'error', rows: [] }));
     const user = userEvent.setup();
     renderScreen();
-    await user.type(screen.getByLabelText(en['crm.customers.search.name']), 'Nadia{Enter}');
+    await user.type(screen.getByLabelText(en['crm.customers.search.q']), 'Nadia{Enter}');
     expect(await screen.findByText('fixed-correlation-id')).toBeInTheDocument();
   });
 
@@ -158,7 +161,7 @@ describe('states', () => {
     searchCustomers.mockResolvedValue(page({ rows: [] }));
     const user = userEvent.setup();
     renderScreen(true);
-    await user.type(screen.getByLabelText(en['crm.customers.search.name']), 'Zzz{Enter}');
+    await user.type(screen.getByLabelText(en['crm.customers.search.q']), 'Zzz{Enter}');
     expect(
       await screen.findByText(en['crm.customers.search.createIndividual'])
     ).toBeInTheDocument();
@@ -168,9 +171,87 @@ describe('states', () => {
     searchCustomers.mockResolvedValue(page({ rows: [] }));
     const user = userEvent.setup();
     renderScreen(false);
-    await user.type(screen.getByLabelText(en['crm.customers.search.name']), 'Zzz{Enter}');
+    await user.type(screen.getByLabelText(en['crm.customers.search.q']), 'Zzz{Enter}');
     await waitFor(() => expect(searchCustomers).toHaveBeenCalled());
     expect(screen.queryByText(en['crm.customers.search.createIndividual'])).toBeNull();
+  });
+});
+
+describe('friendly search (P1-32)', () => {
+  it('keeps the precise filters behind "More filters" and sends them when used', async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    expect(screen.queryByLabelText(en['crm.customers.search.phone'])).toBeNull();
+
+    const toggle = screen.getByRole('button', { name: en['crm.customers.search.moreFilters'] });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await user.click(toggle);
+    expect(
+      screen.getByRole('button', { name: en['crm.customers.search.fewerFilters'] })
+    ).toHaveAttribute('aria-expanded', 'true');
+
+    await user.type(screen.getByLabelText(en['crm.customers.search.name']), 'Nad');
+    await user.type(screen.getByLabelText(en['crm.customers.search.reference']), 'C-0001');
+    await user.type(screen.getByLabelText(en['crm.customers.search.phone']), '1234567{Enter}');
+
+    await waitFor(() => expect(searchCustomers).toHaveBeenCalledTimes(1));
+    const [, , criteria] = searchCustomers.mock.calls[0] as [unknown, unknown, unknown];
+    expect(criteria).toEqual({ name: 'Nad', customerNumber: 'C-0001', phone: '1234567' });
+  });
+
+  it('shows phone, vehicle count and a partly-hidden hint on a masked phone', async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    await user.type(screen.getByLabelText(en['crm.customers.search.q']), '4567{Enter}');
+    const row = await screen.findByRole('row', { name: /Nadia Khoury/ });
+    expect(within(row).getByText('*******4567')).toBeInTheDocument();
+    expect(within(row).getByText(en['crm.customers.search.phonePartlyHidden'])).toBeInTheDocument();
+    expect(within(row).getByText('2')).toBeInTheDocument();
+    // A direct link to the profile, keyed by id.
+    expect(
+      within(row).getByRole('link', { name: en['crm.customers.search.open'] })
+    ).toHaveAttribute('href', `/en/crm/customers/${HIT.id}`);
+  });
+
+  it('does not show the hint when the phone is shown whole', async () => {
+    searchCustomers.mockResolvedValue(
+      page({ rows: [{ ...HIT, primaryPhone: '0791234567', phoneMasked: false }] })
+    );
+    const user = userEvent.setup();
+    renderScreen();
+    await user.type(screen.getByLabelText(en['crm.customers.search.q']), 'Nadia{Enter}');
+    expect(await screen.findByText('0791234567')).toBeInTheDocument();
+    expect(screen.queryByText(en['crm.customers.search.phonePartlyHidden'])).toBeNull();
+  });
+
+  it('refuses a one-character search box and says why, without a request', async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    await user.type(screen.getByLabelText(en['crm.customers.search.q']), 'N{Enter}');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      en['crm.customers.search.qTooShort']
+    );
+    expect(searchCustomers).not.toHaveBeenCalled();
+  });
+
+  it('echoes Arabic-Indic digits for reading and sends what was typed', async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    await user.type(screen.getByLabelText(en['crm.customers.search.q']), '٤٥٦٧');
+    expect(screen.getByTestId('digits-echo')).toHaveTextContent('4567');
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(searchCustomers).toHaveBeenCalledTimes(1));
+    const [, , criteria] = searchCustomers.mock.calls[0] as [unknown, unknown, { q?: string }];
+    expect(criteria.q).toBe('٤٥٦٧');
+  });
+
+  it('states the empty result with a next step', async () => {
+    searchCustomers.mockResolvedValue(page({ rows: [] }));
+    const user = userEvent.setup();
+    renderScreen();
+    await user.type(screen.getByLabelText(en['crm.customers.search.q']), 'Zzz{Enter}');
+    expect(await screen.findByText(en['crm.customers.search.noMatch'])).toBeInTheDocument();
+    expect(en['crm.customers.search.noMatch']).toContain('last digits of the phone');
   });
 });
 
@@ -190,7 +271,7 @@ describe('a stale response cannot replace a newer one', () => {
 
     const user = userEvent.setup();
     renderScreen();
-    const field = screen.getByLabelText(en['crm.customers.search.name']);
+    const field = screen.getByLabelText(en['crm.customers.search.q']);
 
     await user.type(field, 'First{Enter}');
     await user.clear(field);
@@ -211,7 +292,7 @@ describe('both directions', () => {
     const user = userEvent.setup();
     renderRtl(<CustomerSearchScreen locale="ar" messages={ar} canCreate={false} />);
     expect(screen.getByText(ar['crm.customers.search.idleTitle'])).toBeInTheDocument();
-    await user.type(screen.getByLabelText(ar['crm.customers.search.name']), 'نادية{Enter}');
+    await user.type(screen.getByLabelText(ar['crm.customers.search.q']), 'نادية{Enter}');
     expect(await screen.findByText('Nadia Khoury')).toBeInTheDocument();
   });
 });

@@ -2100,7 +2100,7 @@ describe('P1-27-QA-003 — what the client tier can prove about isolation', () =
       'displayNumber',
       'id',
       'lifecycleStatus',
-      'partyType',
+      ...['partyType', 'phoneMasked', 'primaryPhone', 'vehicleCount'], // last three: P1-32
     ]);
     for (const name of SCOPE_NAMES) {
       expect(fields, `CustomerSearchHit now carries ${name}`).not.toContain(name);

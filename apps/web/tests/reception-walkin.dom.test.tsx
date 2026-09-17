@@ -10,11 +10,10 @@ import { renderLtr, renderRtl } from './render';
  *
  * The claims that matter most here:
  *
- *   1. **The phone degradation is stated on screen, in both languages**
- *      (`G-CRM-PHONE`). The first thing a receptionist tries is the caller's
- *      phone number; the platform's customer directory cannot search by it,
- *      and a search that silently returns nothing teaches the operator the
- *      customer does not exist.
+ *   1. **Phone search is real** (P1-32, closing `G-CRM-PHONE`). The first thing
+ *      a receptionist tries is the caller's phone number; the picker sends it
+ *      as typed and shows the matched phone exactly as the backend returned
+ *      it, partly hidden when it is masked.
  *   2. **The customer-first vehicle pick is real** — the customer's own
  *      vehicle list is read through `crm.customer-vehicle-list`, a vehicle
  *      chosen from it needs no relationship step, and a relationship row
@@ -209,25 +208,62 @@ async function chooseCustomer(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByText(en['receptions.intake.vehicle.ownListTitle']);
 }
 
-describe('the stated phone degradation (G-CRM-PHONE)', () => {
-  it('states beside the search controls, in English, that phone search is not available', () => {
+describe('searching for the caller by phone (P1-32, closing G-CRM-PHONE)', () => {
+  const MASKED_HIT = { ...CUSTOMER_HIT, primaryPhone: '*******4567', phoneMasked: true };
+
+  it('offers a phone box and no longer states that phone search is missing', () => {
     renderLtr(<WalkInIntakeScreen {...props()} />);
-    const notice = screen.getByTestId('phone-search-notice');
-    expect(notice).toHaveTextContent(en['receptions.intake.phone.title']);
-    expect(notice).toHaveTextContent(en['receptions.intake.phone.body']);
+    expect(screen.getByLabelText(en['customerSelector.phone'])).toBeInTheDocument();
+    expect(screen.queryByTestId('phone-search-notice')).not.toBeInTheDocument();
   });
 
-  it('states it in Arabic for the Arabic interface', () => {
+  it('sends the typed phone number as the phone criterion and shows the masked result', async () => {
+    searchCustomerDirectory.mockResolvedValue(page([MASKED_HIT]));
+    const user = userEvent.setup();
+    renderLtr(<WalkInIntakeScreen {...props()} />);
+
+    // Enter searches; it must not submit anything else.
+    await user.type(screen.getByLabelText(en['customerSelector.phone']), '0791234567{Enter}');
+
+    expect(await screen.findByText('*******4567')).toBeInTheDocument();
+    expect(searchCustomerDirectory).toHaveBeenCalledTimes(1);
+    const [, , criteria] = searchCustomerDirectory.mock.calls[0] as [
+      unknown,
+      unknown,
+      Record<string, unknown>,
+    ];
+    expect(criteria).toEqual({ phone: '0791234567' });
+    // Shown exactly as returned, with the plain-language hint beside it.
+    const choice = screen.getByRole('button', { name: /Layla Haddad/ });
+    expect(within(choice).getByText(en['crm.customers.search.phonePartlyHidden'])).toBeVisible();
+  });
+
+  it('sends Arabic-Indic digits as typed, and only echoes the Western form for reading', async () => {
+    const user = userEvent.setup();
     renderRtl(<WalkInIntakeScreen {...props({ locale: 'ar', messages: ar })} />);
-    const notice = screen.getByTestId('phone-search-notice');
-    expect(notice).toHaveTextContent(ar['receptions.intake.phone.title']);
-    expect(notice).toHaveTextContent(ar['receptions.intake.phone.body']);
+    const box = screen.getByLabelText(ar['customerSelector.phone']);
+    await user.type(box, '٠٧٩١٢٣٤٥٦٧');
+
+    expect(screen.getByTestId('digits-echo')).toHaveTextContent('0791234567');
+    await user.type(box, '{Enter}');
+    await screen.findByText('Layla Haddad');
+    const [, , criteria] = searchCustomerDirectory.mock.calls[0] as [
+      unknown,
+      unknown,
+      Record<string, unknown>,
+    ];
+    expect(criteria).toEqual({ phone: '٠٧٩١٢٣٤٥٦٧' });
   });
 
-  it('offers no phone search box to fail silently', () => {
+  it('does not show the partly-hidden hint when the phone is shown whole', async () => {
+    searchCustomerDirectory.mockResolvedValue(
+      page([{ ...CUSTOMER_HIT, primaryPhone: '0791234567', phoneMasked: false }])
+    );
+    const user = userEvent.setup();
     renderLtr(<WalkInIntakeScreen {...props()} />);
-    // The two search boxes are name and reference — nothing labelled phone.
-    expect(screen.queryByLabelText(en['field.phone'])).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText(en['customerSelector.phone']), '1234567{Enter}');
+    expect(await screen.findByText('0791234567')).toBeInTheDocument();
+    expect(screen.queryByText(en['crm.customers.search.phonePartlyHidden'])).toBeNull();
   });
 });
 

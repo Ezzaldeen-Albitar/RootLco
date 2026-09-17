@@ -17,11 +17,14 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import { searchCustomerDirectory } from '@/lib/customers/directory';
+import { DigitsEcho } from '@/components/forms/DigitsEcho';
 import {
   MAX_CUSTOMER_NUMBER_LENGTH,
   MAX_NAME_LENGTH,
+  MAX_PHONE_LENGTH,
   PARTY_TYPES,
   isEmptyCriteria,
+  isFreeTextTooShort,
   normalizeCriteria,
   toPartyIdentity,
   type CustomerSearchCriteria,
@@ -30,7 +33,13 @@ import {
 } from '@/lib/customers/directory-contract';
 
 /**
- * Choosing a customer by name (`P1-27-FE-021`, `P1-27-FE-025`).
+ * Choosing a customer by name, number or phone (`P1-27-FE-021`, `P1-27-FE-025`,
+ * P1-32).
+ *
+ * P1-32 added two boxes: one free-text box (`q`, part of a name, a customer
+ * number or a phone number) and a phone box (the whole number or at least its
+ * last seven digits). A match shows its primary phone exactly as the backend
+ * returned it — partly hidden unless the operator may see it whole.
  *
  * Ownership transfer and relationship linking both need an operator to name the
  * customer a vehicle is being attached to. The contract wants a `partnerId`, and
@@ -178,6 +187,18 @@ function Results({
                 `partnerName` is non-null here by construction — a search hit is
                 a customer this caller can see. */}
             <PartyLabel messages={messages} party={toPartyIdentity(hit)} />
+            {hit.primaryPhone ? (
+              <span className="ms-auto flex shrink-0 flex-col items-end">
+                <span className="font-mono text-caption text-text-secondary" dir="ltr">
+                  {hit.primaryPhone}
+                </span>
+                {hit.phoneMasked ? (
+                  <span className="text-caption text-text-muted">
+                    {translate(messages, 'crm.customers.search.phonePartlyHidden')}
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
           </button>
         </li>
       ))}
@@ -229,6 +250,7 @@ export function CustomerSelector({
    * nothing".
    */
   const [submitted, setSubmitted] = useState<CustomerSearchCriteria | null>(null);
+  const [tooShort, setTooShort] = useState(false);
 
   const loadKey = JSON.stringify(submitted ?? {});
   const load = useCallback(
@@ -255,6 +277,13 @@ export function CustomerSelector({
   );
 
   const search = () => {
+    // One character in the free-text box is refused by the backend, so it is
+    // stated here instead of being dropped silently.
+    if (isFreeTextTooShort(draft)) {
+      setTooShort(true);
+      return;
+    }
+    setTooShort(false);
     const normalized = normalizeCriteria(draft);
     // An empty search would ask the backend for "everything", spending one of
     // thirty requests to say something the operator did not ask.
@@ -347,6 +376,40 @@ export function CustomerSelector({
         have happened in the wizard all along.
       */}
       <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(11rem,1fr))]">
+        <div className="flex flex-col gap-1">
+          <TextField
+            label={translate(messages, 'customerSelector.q')}
+            value={draft.q ?? ''}
+            maxLength={MAX_NAME_LENGTH}
+            error={tooShort ? translate(messages, 'crm.customers.search.qTooShort') : undefined}
+            onChange={(event) => setDraft({ ...draft, q: event.target.value })}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                search();
+              }
+            }}
+          />
+          <DigitsEcho messages={messages} value={draft.q} />
+        </div>
+        <div className="flex flex-col gap-1">
+          <TextField
+            label={translate(messages, 'customerSelector.phone')}
+            description={translate(messages, 'crm.customers.search.phoneHint')}
+            value={draft.phone ?? ''}
+            maxLength={MAX_PHONE_LENGTH}
+            inputMode="tel"
+            dir="ltr"
+            onChange={(event) => setDraft({ ...draft, phone: event.target.value })}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                search();
+              }
+            }}
+          />
+          <DigitsEcho messages={messages} value={draft.phone} />
+        </div>
         <TextField
           label={translate(messages, 'crm.customers.column.name')}
           value={draft.name ?? ''}
@@ -402,10 +465,8 @@ export function CustomerSelector({
         >
           {translate(messages, 'customerSelector.search')}
         </button>
-        {/* Deliberately no phone or email box. `NFR-PRV-001` makes raw contact
-            values non-searchable, so a control for one could not work — and
-            offering it disabled would advertise a capability the product does
-            not have. */}
+        {/* Deliberately no email box: email is not in the search allow-list, so
+            a control for it could not work. Phone is, since P1-32. */}
       </div>
 
       {submitted === null ? (

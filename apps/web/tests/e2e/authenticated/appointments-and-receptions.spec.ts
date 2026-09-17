@@ -1674,11 +1674,13 @@ test.describe('the walk-in intake confirms a customer before a vehicle', () => {
         say(locale, 'receptions.intake.customer.createOffer')
       );
 
-      // The stated phone degradation (`G-CRM-PHONE`), rendered where a
-      // receptionist would type a caller's number rather than in a help page.
-      const phone = page.getByTestId('phone-search-notice');
-      await expect(phone, 'the phone-search degradation is not stated at the intake').toBeVisible();
-      await expect(phone).toContainText(say(locale, 'receptions.intake.phone.title'));
+      // P1-32 closed `G-CRM-PHONE`: the intake offers a phone box where a
+      // receptionist types a caller's number, and the retired notice is gone.
+      await expect(
+        page.getByLabel(say(locale, 'customerSelector.phone'), { exact: true }),
+        'the intake offers no phone search box'
+      ).toBeVisible();
+      await expect(page.getByTestId('phone-search-notice')).toHaveCount(0);
 
       // No handoff has happened, so the handoff panel must not be printed.
       await expect(

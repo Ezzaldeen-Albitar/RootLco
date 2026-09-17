@@ -3,7 +3,7 @@
  *
  * The claims worth holding are the ones a screen gets wrong by being helpful:
  * sending a `sort` the operation does not accept, inventing a total the backend
- * does not publish, offering a phone box the allow-list does not include, and
+ * does not publish, offering an email box the allow-list does not include, and
  * searching on every keystroke against a 30-per-minute budget.
  */
 import { describe, expect, it } from 'vitest';
@@ -13,8 +13,11 @@ import {
   LIFECYCLE_STATUSES,
   MAX_CUSTOMER_NUMBER_LENGTH,
   MAX_NAME_LENGTH,
+  MAX_PHONE_LENGTH,
+  MIN_FREE_TEXT_LENGTH,
   PARTY_TYPES,
   isEmptyCriteria,
+  isFreeTextTooShort,
   normalizeCriteria,
 } from '@/features/crm/customers/contract';
 import { CRM_PERMISSIONS, VEHICLE_PERMISSIONS, holds } from '@/features/crm/permissions';
@@ -79,6 +82,21 @@ describe('normalizeCriteria', () => {
     expect(result.customerNumber).toHaveLength(MAX_CUSTOMER_NUMBER_LENGTH);
   });
 
+  it('keeps a phone value exactly as typed, Arabic-Indic digits included (P1-32)', () => {
+    // The backend folds the digits. Folding here too would be a second normaliser.
+    expect(normalizeCriteria({ phone: ' ٠٧٩١٢٣٤٥٦٧ ' })).toEqual({ phone: '٠٧٩١٢٣٤٥٦٧' });
+    expect(normalizeCriteria({ phone: '9'.repeat(40) }).phone).toHaveLength(MAX_PHONE_LENGTH);
+  });
+
+  it('drops a one-character free-text value the backend would refuse (P1-32)', () => {
+    expect(normalizeCriteria({ q: 'a' })).toEqual({});
+    expect(normalizeCriteria({ q: ' ab ' })).toEqual({ q: 'ab' });
+    expect(isFreeTextTooShort({ q: ' a ' })).toBe(true);
+    expect(isFreeTextTooShort({ q: 'ab' })).toBe(false);
+    expect(isFreeTextTooShort({})).toBe(false);
+    expect(MIN_FREE_TEXT_LENGTH).toBe(2);
+  });
+
   it('keeps the discriminators as given', () => {
     expect(normalizeCriteria({ partyType: 'organization', lifecycleStatus: 'blocked' })).toEqual({
       partyType: 'organization',
@@ -98,6 +116,8 @@ describe('isEmptyCriteria', () => {
     expect(isEmptyCriteria({ customerNumber: 'C-1' })).toBe(false);
     expect(isEmptyCriteria({ partyType: 'individual' })).toBe(false);
     expect(isEmptyCriteria({ lifecycleStatus: 'active' })).toBe(false);
+    expect(isEmptyCriteria({ phone: '4567' })).toBe(false);
+    expect(isEmptyCriteria({ q: 'ab' })).toBe(false);
   });
 });
 
@@ -151,7 +171,7 @@ describe('what the adapter must never send', () => {
     expect(call).not.toContain('sort');
   });
 
-  it('sends only the six parameters the contract accepts', () => {
+  it('sends only the parameters the contract accepts', () => {
     const call = adapter.slice(
       adapter.indexOf('query({'),
       adapter.indexOf('});', adapter.indexOf('query({'))
@@ -161,14 +181,16 @@ describe('what the adapter must never send', () => {
       'limit',
       'name',
       'customerNumber',
+      'phone: criteria.phone',
+      // Spelled out: a bare 'q' is a substring of almost anything.
+      'q: criteria.q',
       'partyType',
       'lifecycleStatus',
     ]) {
       expect(call, allowed).toContain(allowed);
     }
-    // Not in the allow-list, and deliberately so — NFR-PRV-001 keeps raw contact
-    // values out of the searchable surface entirely.
-    expect(call).not.toContain('phone');
+    // P1-32 admitted phone and the free-text box. Email is still not in the
+    // allow-list.
     expect(call).not.toContain('email');
   });
 
@@ -228,8 +250,8 @@ describe('the screen searches on intent, not on a keystroke', () => {
     expect(screen).not.toContain('sortable');
   });
 
-  it('offers no phone or email input', () => {
-    expect(screen.toLowerCase()).not.toContain('phone');
+  it('offers a phone input (P1-32) and still no email input', () => {
+    expect(screen).toContain("'crm.customers.search.phone'");
     expect(screen.toLowerCase()).not.toContain('email');
   });
 
