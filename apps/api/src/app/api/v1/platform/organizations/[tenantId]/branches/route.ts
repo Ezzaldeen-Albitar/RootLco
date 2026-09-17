@@ -14,8 +14,12 @@
  * half-configured branch to discover.
  *
  * The parent company is resolved INSIDE the target organisation before the
- * insert — a company of another tenant is a 404, not a foreign-key 500 — and
- * `tg_branches_capacity` owns the ceiling.
+ * insert, so a company of another organisation never reaches the composite
+ * foreign key as a 500. The shared `iam` port answers an unreachable parent as
+ * a DENIAL — `403 ERR-IAM-001` — and the console inherits that answer
+ * unchanged, so an operator learns the identifier is not theirs to build on
+ * rather than whether it exists somewhere else. `tg_branches_capacity` owns the
+ * ceiling.
  */
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';

@@ -3082,7 +3082,7 @@ export const MANIFEST = {
   'platform.organization-branch-create': {
     files: ['tests/backend/p1-32-platform-organization-growth.test.ts'],
     required: ['denial'],
-    note: 'P1-32-PRE-151. The branch half, and it carries the numbering runs a branch owes: three of the registered runs are per branch and shared.next_display_number refuses rather than degrading, so a copied INSERT would have committed a branch that could never issue an invoice. A company of another organisation is a 404 rather than a composite-foreign-key fault',
+    note: 'P1-32-PRE-151. The branch half, and it carries the numbering runs a branch owes: three of the registered runs are per branch and shared.next_display_number refuses rather than degrading, so a copied INSERT would have committed a branch that could never issue an invoice. A company of another organisation is refused by the shared iam port as 403 ERR-IAM-001, never reaching the composite foreign key as a fault',
   },
   'platform.organization-administrator-invite': {
     files: ['tests/backend/p1-32-platform-organization-growth.test.ts'],
