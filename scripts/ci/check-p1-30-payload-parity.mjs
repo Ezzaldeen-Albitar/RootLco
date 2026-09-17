@@ -91,6 +91,13 @@ export const BODYLESS = Object.freeze({
   // `sal` DELETE (P1-31 P-9), not because a P1-30 screen sends it.
   'sal.delivery-checklist-template-item-remove':
     'the withdrawal carries nothing but the template and item in the path and the caller as actor',
+  // P1-32 preparatory inventory slice. Posting names the receipt in the path and its
+  // version as If-Match; reconciling names the count in the path. Neither has a field
+  // a body could carry.
+  'inv.goods-receipt-post':
+    'posting carries nothing but the receipt in the path and its version as If-Match',
+  'inv.stock-count-reconcile':
+    'reconciliation carries nothing but the count in the path and the caller as actor',
 });
 
 /** Field-level omissions the web side has decided, with reasons. Empty today. */
@@ -125,6 +132,27 @@ export const PENDING_MIRRORS = Object.freeze({
     'PENDING: no P1-30 screen sends this (outside FE-008…FE-013); a later phase owes the mirror',
   'inv.external-purchase-part-create':
     'PENDING: no P1-30 screen sends this (outside FE-008…FE-013); a later phase owes the mirror',
+  // The P1-32 preparatory inventory writes. They entered this scope the moment they
+  // were registered; their screens are the next slice on the same branch, which
+  // must declare each mirror and delete its entry in that same change.
+  'inv.goods-receipt-create':
+    'PENDING: P1-32 preparatory inventory slice 1 is Backend and Database only; the inventory screens that send this (slice 2, same branch) owe the mirror',
+  'inv.stock-adjustment-approve':
+    'PENDING: P1-32 preparatory inventory slice 1 is Backend and Database only; the inventory screens that send this (slice 2, same branch) owe the mirror',
+  'inv.stock-adjustment-create':
+    'PENDING: P1-32 preparatory inventory slice 1 is Backend and Database only; the inventory screens that send this (slice 2, same branch) owe the mirror',
+  'inv.stock-count-cancel':
+    'PENDING: P1-32 preparatory inventory slice 1 is Backend and Database only; the inventory screens that send this (slice 2, same branch) owe the mirror',
+  'inv.stock-count-line-record':
+    'PENDING: P1-32 preparatory inventory slice 1 is Backend and Database only; the inventory screens that send this (slice 2, same branch) owe the mirror',
+  'inv.stock-count-open':
+    'PENDING: P1-32 preparatory inventory slice 1 is Backend and Database only; the inventory screens that send this (slice 2, same branch) owe the mirror',
+  'inv.stock-transfer-cancel':
+    'PENDING: P1-32 preparatory inventory slice 1 is Backend and Database only; the inventory screens that send this (slice 2, same branch) owe the mirror',
+  'inv.stock-transfer-create':
+    'PENDING: P1-32 preparatory inventory slice 1 is Backend and Database only; the inventory screens that send this (slice 2, same branch) owe the mirror',
+  'inv.stock-transfer-receive':
+    'PENDING: P1-32 preparatory inventory slice 1 is Backend and Database only; the inventory screens that send this (slice 2, same branch) owe the mirror',
   // The `sal` writes entered this scope with W6, which mirrors the invoice
   // create and cancel bodies. Payments belong to W7 (canonical plan §4); credit
   // notes are sent by no P1-30 screen.

@@ -1107,7 +1107,7 @@ describe('inventory_movements — the rows the Owner asked for', () => {
 });
 
 describe('inventory_movements — the vocabulary the ledger actually has', () => {
-  it('constrains movement_type to five terms, and TRANSFER is not one of them', async () => {
+  it('constrains movement_type to the seven terms the ledger actually has', async () => {
     // Measured against the live CHECK, not against a comment. D-4 asks that the
     // distinct meanings of a return and a transfer be preserved; there is no
     // transfer to preserve, so the report shows no transfer bucket rather than an
@@ -1119,16 +1119,21 @@ describe('inventory_movements — the vocabulary the ledger actually has', () =>
           AND conname = 'ck_stock_movements_type'`
     );
     const definition = check.rows[0]?.definition ?? '';
-    for (const term of ['opening', 'issue', 'return', 'damage', 'adjustment']) {
+    // `transfer` and `receipt` joined with the P1-32 preparatory slice, which gave
+    // them real sources (a transfer row, a goods receipt line) and provenance
+    // branches; a return and a transfer remain distinct terms.
+    for (const term of [
+      'opening',
+      'issue',
+      'return',
+      'damage',
+      'adjustment',
+      'transfer',
+      'receipt',
+    ]) {
       expect(definition).toContain(term);
     }
-    expect(definition).not.toContain('transfer');
-    // And the ledger has no transfer row in the reported branch either, so the
-    // absence is a property of the schema and not of this suite's fixtures.
-    const posted = await admin.query<{ total: string }>(
-      `SELECT count(*)::text AS total FROM inv.stock_movements WHERE movement_type = 'transfer'`
-    );
-    expect(posted.rows[0]?.total).toBe('0');
+    expect([...definition.matchAll(/'([a-z_]+)'::text/g)].map((m) => m[1])).toHaveLength(7);
   });
 
   it('stamps occurred_at from the transaction clock, so no movement can be backdated', async () => {
