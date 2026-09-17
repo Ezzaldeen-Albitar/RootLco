@@ -807,11 +807,20 @@ const SESSION_MODULE = resolve(WEB_SRC, 'features', 'platform', 'api', 'session.
 const ACTIONS_MODULE = resolve(WEB_SRC, 'features', 'platform', 'actions.ts');
 const TABLE_READS_MODULE = resolve(WEB_SRC, 'features', 'platform', 'table-reads.ts');
 
-/** The directive a module opens with, if any. */
+/**
+ * The directive a module opens with, if any.
+ *
+ * The block-comment branch spells its body as "not a star, or a star that does
+ * not close the comment" rather than as a lazy any-character run. The lazy form
+ * lets one iteration of the outer repetition swallow a comment terminator that
+ * another iteration could equally have matched, so a source that opens a block
+ * comment and then repeats close-open pairs costs exponential backtracking
+ * (`js/redos`). This spelling gives every character exactly one branch, which
+ * makes the match linear and the language it accepts is unchanged.
+ */
 function directiveOf(source: string): string | null {
-  const match = /^(?:\s|\/\/[^\n]*\n|\/\*[\s\S]*?\*\/)*['"](use (?:client|server))['"]/.exec(
-    source
-  );
+  const match =
+    /^(?:\s|\/\/[^\n]*\n|\/\*(?:[^*]|\*(?!\/))*\*\/)*['"](use (?:client|server))['"]/.exec(source);
   return match ? (match[1] ?? null) : null;
 }
 
