@@ -34,18 +34,18 @@
     },
     "web": {
       "command": "npm run test --workspace @rootlco/web -- --reporter=json",
-      "tests": 4226,
-      "passed": 4226,
+      "tests": 4356,
+      "passed": 4356,
       "failed": 0,
       "skipped": 0,
-      "files": 149,
+      "files": 154,
       "exitCode": 0,
       "reporterSuccess": true,
       "failedSuites": [],
       "filesWithoutCases": [],
-      "measuredAtCommit": "9e030740fccdff6338dd8b88bb907eb4db477359",
+      "measuredAtCommit": "4bd35ca72f3a67b51d8ef5558b0076e50e7810a9",
       "dirtyExecutablePaths": [],
-      "measuredAt": "2026-09-17T17:27:37.518Z"
+      "measuredAt": "2026-09-17T21:06:25.630Z"
     }
   }
 }

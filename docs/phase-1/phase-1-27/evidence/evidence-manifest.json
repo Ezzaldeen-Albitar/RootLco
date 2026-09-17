@@ -36,7 +36,7 @@
       "bytes": 15409
     },
     "docs/phase-1/phase-1-27/clean-room-evidence.md": {
-      "sha256": "06ef200982cc6329057680b1a60ee162e93b810b8142cb5562151117526b81b2",
+      "sha256": "6aad64fa13699418f9398364da4c4088d660f5296edb08eebb4cee36ce690c97",
       "bytes": 23703
     },
     "docs/phase-1/phase-1-27/closure-record.md": {
@@ -52,7 +52,7 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "55759817daa411d0a861ff6a3387a2b133183b11ed4b53872f96c81cdb49d272",
+      "sha256": "6e719c74174d64450264f132b37df5dcb77f6f7122bf9384faede5811086495b",
       "bytes": 149609
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
@@ -64,7 +64,7 @@
       "bytes": 81669
     },
     "docs/phase-1/phase-1-27/evidence/closing-value-ledger.json": {
-      "sha256": "2fa54ad7af22c468c613fff760994ff135c45c29ad81c6ed5f6fdf2e6fa9742d",
+      "sha256": "4702ceaf01c4659029e48d5ef76845bd7230188ffe60bb2cc0bc9a28349aed18",
       "bytes": 50367
     },
     "docs/phase-1/phase-1-27/evidence/lifecycle-ledger.json": {
@@ -72,7 +72,7 @@
       "bytes": 9208
     },
     "docs/phase-1/phase-1-27/evidence/local-run-ledger.json": {
-      "sha256": "fc9991176099cb9254d785efea51f403e14e77ca0cf469256b60d86cf2ad8394",
+      "sha256": "e874c854ec4f0a4c370f6160192a1be2ae04bf6a6b230cadeb857b1344c760c4",
       "bytes": 2005
     },
     "docs/phase-1/phase-1-27/evidence/task-traceability.md": {
@@ -124,7 +124,7 @@
       "bytes": 14530
     },
     "docs/phase-1/phase-1-27/open-decisions.md": {
-      "sha256": "ea1957d30c405dec11f355c2f1f4ce96062fa4b52e436c058d193d342a761ac6",
+      "sha256": "0e95c10833c37431c026254da2b1a1d49336efffa5fc4320a3e0c70f031b8bca",
       "bytes": 124614
     },
     "docs/phase-1/phase-1-27/operator-guide.md": {
@@ -136,7 +136,7 @@
       "bytes": 5776
     },
     "docs/phase-1/phase-1-27/owner-acceptance-fail-remediation.md": {
-      "sha256": "19841fa8e9b31151dc64338473d2fdfbc6fbde6bb82007056f9aed06c6d107d2",
+      "sha256": "9c84bb02594b75b5ab2a0c1b0edcc97eed5bf883324119d6011576c12f0de472",
       "bytes": 13549
     },
     "docs/phase-1/phase-1-27/p1-27-int-113-unregistered-rate-limit-policy.md": {
@@ -156,7 +156,7 @@
       "bytes": 62211
     },
     "docs/phase-1/phase-1-27/risk-register.md": {
-      "sha256": "dc6a18a6ec44ba6a1a0ecb9463d7f7756ea0c207edef43efdc662519662956a9",
+      "sha256": "cc1f6bf04075f7ff03ef5685f1162e6292c73d9c7c53d5b8e1e062f7443f0678",
       "bytes": 187802
     },
     "docs/phase-1/phase-1-27/task-matrix-verdicts.json": {
