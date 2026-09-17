@@ -3201,7 +3201,45 @@ export const MANIFEST = {
   'inv.item-label-data': {
     files: ['tests/backend/p1-32-item-identifiers.test.ts'],
     required: ['success', 'cross-tenant', 'isolation'],
-    note: 'primary code else internal code else first live code, with a symbology hint by kind and length; carries no price because no item price source exists',
+    note: 'primary code else internal code else first live code, with a symbology hint by kind and length; carries no price, because the label is tenant-wide and a selling price is narrowed to a company and a branch, so nothing here could say which one applies',
+  },
+  // P1-32 preparatory slice 2: the selling price of an item, and the counter sale
+  // that resolves it. The assertions rest on invoice rows, invoice line amounts and
+  // the stock movements the issuance posts.
+  'inv.item-sale-price-list': {
+    files: ['tests/backend/p1-32-counter-sales.test.ts'],
+    required: ['success', 'cross-tenant', 'isolation'],
+    note: 'most specific first — branch rows, then company rows, then the tenant-wide row; another tenant item answers 404',
+  },
+  'inv.item-sale-price-set': {
+    files: ['tests/backend/p1-32-counter-sales.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'isolation'],
+    note: 'one live row per (item, company, branch), so a second call revises rather than duplicating; a branch narrowing without its company is refused on body.companyId; a tenant-wide price requires inv.item.manage held tenant-wide; the audit record carries the figure as restricted',
+  },
+  'sal.counter-sale-create': {
+    files: ['tests/backend/p1-32-counter-sales.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'priced from inv.item_sale_prices and taxed from org.tax_rates inside the database; an item with no price refuses the whole sale; no body field can carry an amount; the draft moves no stock; the Idempotency-Key header replays the first sale',
+  },
+  'sal.counter-sale-list': {
+    files: ['tests/backend/p1-32-counter-sales.test.ts'],
+    required: ['success', 'isolation'],
+    note: 'counter sales only — a work-order invoice in the same branch is never listed',
+  },
+  'inv.sales-return-create': {
+    files: ['tests/backend/p1-32-sales-returns.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'the movement lands in the received location when restockable and in the quarantine location when damaged; the ceiling counts inv.part_returns too; an invoice-line source raises exactly one pending credit note for the returned share of the line gross; a replayed key receives nothing twice',
+  },
+  'inv.sales-return-list': {
+    files: ['tests/backend/p1-32-sales-returns.test.ts'],
+    required: ['success', 'isolation'],
+    note: 'one branch, newest first, narrowable to one source',
+  },
+  'inv.returnable-quantity-read': {
+    files: ['tests/backend/p1-32-sales-returns.test.ts'],
+    required: ['success', 'cross-tenant', 'isolation'],
+    note: 'what left, what has come back through BOTH return tables, and the remainder; a source in another tenant answers 404',
   },
 };
 

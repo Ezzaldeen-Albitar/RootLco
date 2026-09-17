@@ -143,8 +143,12 @@ describe('every route body serialises a named type', () => {
     // eighteen and `composed` does not.
     // 437 with P1-32 preparatory slice 2: six identifier operations, each a NAMED
     // view, so `named` moves by six and `composed` does not.
-    expect(summary.bodies).toBe(437);
-    expect(summary.named).toBe(384);
+    // 444 with the rest of that slice: the two item-price operations, the two
+    // counter-sale operations and the three return operations — again every one a
+    // named view or a `Page<…>` of one, so `named` moves by seven and `composed`
+    // does not.
+    expect(summary.bodies).toBe(444);
+    expect(summary.named).toBe(391);
     expect(summary.composed).toBe(53);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

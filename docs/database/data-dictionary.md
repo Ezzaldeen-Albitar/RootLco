@@ -4476,6 +4476,60 @@ Generated from the live catalog after `20260917091000_inv_item_identifiers.sql`.
 | 15  | `updated_at`       | timestamp with time zone | yes      |
 | 16  | `updated_by`       | uuid                     | yes      |
 
+### Item selling prices (`inv`, P1-32 preparatory slice 2)
+
+Generated from the live catalog after `20260917092000_inv_item_sale_prices.sql`. What the tenant SELLS an item for, optionally narrowed to a company and a branch: one live row per (tenant, item, company, branch) (`uq_item_sale_prices_signature`, NULLS NOT DISTINCT), resolved most-specific-first by `inv.resolve_item_sale_price`, which returns NO ROW when nothing is configured. This is a selling price and is `internal`; item COST stays in `inv.item_cost_details` / `inv.item_cost_layers`, gated by `inv.cost.view`. The tax CLASS is stored and the rate is read from `org.tax_rates` at the moment of sale.
+
+#### inv.item_sale_prices
+
+| #   | Column           | Type                     | Nullable |
+| --- | ---------------- | ------------------------ | -------- |
+| 1   | `id`             | uuid                     | no       |
+| 2   | `tenant_id`      | uuid                     | no       |
+| 3   | `item_id`        | uuid                     | no       |
+| 4   | `company_id`     | uuid                     | yes      |
+| 5   | `branch_id`      | uuid                     | yes      |
+| 6   | `currency_code`  | text                     | no       |
+| 7   | `unit_price`     | numeric                  | no       |
+| 8   | `tax_class_id`   | uuid                     | yes      |
+| 9   | `status`         | text                     | no       |
+| 10  | `record_version` | integer                  | no       |
+| 11  | `created_at`     | timestamp with time zone | no       |
+| 12  | `created_by`     | uuid                     | no       |
+| 13  | `updated_at`     | timestamp with time zone | yes      |
+| 14  | `updated_by`     | uuid                     | yes      |
+| 15  | `deleted_at`     | timestamp with time zone | yes      |
+| 16  | `deleted_by`     | uuid                     | yes      |
+
+### Sales returns (`inv`, P1-32 preparatory slice 2)
+
+Generated from the live catalog after `20260917094000_inv_sales_returns.sql`. A part coming back, from the part issue it was fitted from or the counter-sale invoice line it was sold on. `return_condition` decides the destination cell — the receiving location when `restockable`, the quarantine location when `damaged` — and `inv.guard_sales_return_ceiling` bounds the running total against the source, counting `inv.part_returns` as well for a part-issue source. An invoice-line source also raises a PENDING `sal.credit_notes` row, linked by `credit_note_id`. No restricted column: the amount lives on the credit note, under its own policy.
+
+#### inv.sales_returns
+
+| #   | Column                   | Type                     | Nullable |
+| --- | ------------------------ | ------------------------ | -------- |
+| 1   | `id`                     | uuid                     | no       |
+| 2   | `tenant_id`              | uuid                     | no       |
+| 3   | `company_id`             | uuid                     | no       |
+| 4   | `branch_id`              | uuid                     | no       |
+| 5   | `source_kind`            | text                     | no       |
+| 6   | `source_id`              | uuid                     | no       |
+| 7   | `item_id`                | uuid                     | no       |
+| 8   | `quantity`               | numeric                  | no       |
+| 9   | `return_condition`       | text                     | no       |
+| 10  | `received_location_id`   | uuid                     | no       |
+| 11  | `quarantine_location_id` | uuid                     | yes      |
+| 12  | `reason`                 | text                     | yes      |
+| 13  | `credit_note_id`         | uuid                     | yes      |
+| 14  | `status`                 | text                     | no       |
+| 15  | `idempotency_key`        | text                     | yes      |
+| 16  | `record_version`         | integer                  | no       |
+| 17  | `created_at`             | timestamp with time zone | no       |
+| 18  | `created_by`             | uuid                     | no       |
+| 19  | `updated_at`             | timestamp with time zone | yes      |
+| 20  | `updated_by`             | uuid                     | yes      |
+
 ---
 
 # Phase 1-11 — SAL / WTY / RPT (Billing, Payment, Delivery, Warranty, Reporting)
@@ -4749,28 +4803,30 @@ RESTRICTED 1:1 invoice-line money + payer split (gated by `sal.finance.view`).
 
 Invoice line (structural); amounts + payer split in restricted `sal.invoice_line_amounts`.
 
-| Column                     | Type            | class    | Null? | Purpose                                                                                                 |
-| -------------------------- | --------------- | -------- | ----- | ------------------------------------------------------------------------------------------------------- |
-| `id`                       | `uuid`          | internal | no    | Primary key (UUID).                                                                                     |
-| `tenant_id`                | `uuid`          | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                         |
-| `company_id`               | `uuid`          | internal | no    | Company scope (branch composite scope).                                                                 |
-| `branch_id`                | `uuid`          | internal | no    | Branch scope (branch composite scope).                                                                  |
-| `invoice_id`               | `uuid`          | internal | no    | Composite FK -> `sal.invoices(...)` RESTRICT; frozen once invoice issued (`guard_invoice_line_frozen`). |
-| `line_number`              | `integer`       | internal | no    | Line ordinal (>=1); `UNIQUE(...,invoice_id, line_number)`.                                              |
-| `line_type`                | `text`          | internal | no    | CHECK IN ('service','part','fee').                                                                      |
-| `quantity`                 | `numeric(12,3)` | internal | no    | Line quantity `NUMERIC(12,3)` (>0).                                                                     |
-| `tax_class_id`             | `uuid`          | internal | yes   | Composite FK -> `org.tax_classes(tenant_id, company_id, id)` RESTRICT (nullable).                       |
-| `currency_code`            | `text`          | internal | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                 |
-| `source_service_line_id`   | `uuid`          | internal | yes   | Opaque source ref to a work-order service line (nullable).                                              |
-| `source_part_issue_id`     | `uuid`          | internal | yes   | Opaque source ref to an `inv` part issue (nullable).                                                    |
-| `source_quotation_item_id` | `uuid`          | internal | yes   | Opaque source ref to a `quo` quotation item (nullable).                                                 |
-| `record_version`           | `integer`       | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                  |
-| `created_at`               | `timestamptz`   | internal | no    | Row creation timestamp.                                                                                 |
-| `created_by`               | `uuid`          | internal | no    | Creating actor (user id).                                                                               |
-| `updated_at`               | `timestamptz`   | internal | yes   | Last-update timestamp (NULL until first update).                                                        |
-| `updated_by`               | `uuid`          | internal | yes   | Last-updating actor.                                                                                    |
-| `deleted_at`               | `timestamptz`   | internal | yes   | Soft-delete timestamp (NULL = live).                                                                    |
-| `deleted_by`               | `uuid`          | internal | yes   | Soft-deleting actor.                                                                                    |
+| Column                     | Type            | class    | Null? | Purpose                                                                                                                                                         |
+| -------------------------- | --------------- | -------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                       | `uuid`          | internal | no    | Primary key (UUID).                                                                                                                                             |
+| `tenant_id`                | `uuid`          | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                                                                 |
+| `company_id`               | `uuid`          | internal | no    | Company scope (branch composite scope).                                                                                                                         |
+| `branch_id`                | `uuid`          | internal | no    | Branch scope (branch composite scope).                                                                                                                          |
+| `invoice_id`               | `uuid`          | internal | no    | Composite FK -> `sal.invoices(...)` RESTRICT; frozen once invoice issued (`guard_invoice_line_frozen`).                                                         |
+| `line_number`              | `integer`       | internal | no    | Line ordinal (>=1); `UNIQUE(...,invoice_id, line_number)`.                                                                                                      |
+| `line_type`                | `text`          | internal | no    | CHECK IN ('service','part','fee').                                                                                                                              |
+| `quantity`                 | `numeric(12,3)` | internal | no    | Line quantity `NUMERIC(12,3)` (>0).                                                                                                                             |
+| `tax_class_id`             | `uuid`          | internal | yes   | Composite FK -> `org.tax_classes(tenant_id, company_id, id)` RESTRICT (nullable).                                                                               |
+| `currency_code`            | `text`          | internal | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                                                                         |
+| `source_service_line_id`   | `uuid`          | internal | yes   | Opaque source ref to a work-order service line (nullable).                                                                                                      |
+| `source_part_issue_id`     | `uuid`          | internal | yes   | Opaque source ref to an `inv` part issue (nullable).                                                                                                            |
+| `source_quotation_item_id` | `uuid`          | internal | yes   | Opaque source ref to a `quo` quotation item (nullable).                                                                                                         |
+| `item_id`                  | `uuid`          | internal | yes   | P1-32: the stock item a counter-sale line sells; composite FK -> `inv.item_master(tenant_id, id)` RESTRICT. NULL on a work-order invoice.                       |
+| `stock_location_id`        | `uuid`          | internal | yes   | P1-32: the cell the line is drawn from at issuance; composite FK -> `inv.stock_locations(...)` RESTRICT. Paired with `item_id` (`ck_invoice_lines_stock_pair`). |
+| `record_version`           | `integer`       | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                                                                          |
+| `created_at`               | `timestamptz`   | internal | no    | Row creation timestamp.                                                                                                                                         |
+| `created_by`               | `uuid`          | internal | no    | Creating actor (user id).                                                                                                                                       |
+| `updated_at`               | `timestamptz`   | internal | yes   | Last-update timestamp (NULL until first update).                                                                                                                |
+| `updated_by`               | `uuid`          | internal | yes   | Last-updating actor.                                                                                                                                            |
+| `deleted_at`               | `timestamptz`   | internal | yes   | Soft-delete timestamp (NULL = live).                                                                                                                            |
+| `deleted_by`               | `uuid`          | internal | yes   | Soft-deleting actor.                                                                                                                                            |
 
 ### `sal.invoice_numbering_configs`
 
@@ -4815,27 +4871,28 @@ Append-only invoice status ledger (SELECT+INSERT).
 
 Invoice master (branch-scoped, structural). Money lives in restricted `sal.invoice_amounts`.
 
-| Column                  | Type          | class    | Null? | Purpose                                                                                                                |
-| ----------------------- | ------------- | -------- | ----- | ---------------------------------------------------------------------------------------------------------------------- |
-| `id`                    | `uuid`        | internal | no    | Primary key (UUID).                                                                                                    |
-| `tenant_id`             | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                        |
-| `company_id`            | `uuid`        | internal | no    | Company scope (branch composite scope).                                                                                |
-| `branch_id`             | `uuid`        | internal | no    | Branch scope (branch composite scope).                                                                                 |
-| `work_order_id`         | `uuid`        | internal | no    | Composite FK -> `wo.work_orders(...)` RESTRICT; one live invoice per WO (`uq_invoices_work_order_active`).             |
-| `quotation_revision_id` | `uuid`        | internal | yes   | Composite FK -> `quo.quotation_revisions(...)` RESTRICT; provenance only (nullable).                                   |
-| `payer_partner_id`      | `uuid`        | internal | no    | Payer; composite FK -> `crm.business_partners(tenant_id, id)` RESTRICT.                                                |
-| `currency_code`         | `text`        | internal | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                                |
-| `status`                | `text`        | internal | no    | Lifecycle only; CHECK IN ('draft','issued','credited','void_before_issue'); paid/partially_paid are derived (M-fin-1). |
-| `invoice_number`        | `text`        | internal | yes   | Allocated at issue via `shared.next_display_number`; NULL until issued; CHECK number-iff-issued (H-fin-5).             |
-| `issued_at`             | `timestamptz` | internal | yes   | Issue timestamp; NULL until issued; frozen by `guard_invoice_freeze`.                                                  |
-| `idempotency_key`       | `text`        | internal | yes   | Business idempotency key; partial `UNIQUE(tenant_id, idempotency_key)` (BR-SAL-001).                                   |
-| `record_version`        | `integer`     | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                                 |
-| `created_at`            | `timestamptz` | internal | no    | Row creation timestamp.                                                                                                |
-| `created_by`            | `uuid`        | internal | no    | Creating actor (user id).                                                                                              |
-| `updated_at`            | `timestamptz` | internal | yes   | Last-update timestamp (NULL until first update).                                                                       |
-| `updated_by`            | `uuid`        | internal | yes   | Last-updating actor.                                                                                                   |
-| `deleted_at`            | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                                                                   |
-| `deleted_by`            | `uuid`        | internal | yes   | Soft-deleting actor.                                                                                                   |
+| Column                  | Type          | class    | Null? | Purpose                                                                                                                                                                                                         |
+| ----------------------- | ------------- | -------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                    | `uuid`        | internal | no    | Primary key (UUID).                                                                                                                                                                                             |
+| `tenant_id`             | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                                                                                                                 |
+| `company_id`            | `uuid`        | internal | no    | Company scope (branch composite scope).                                                                                                                                                                         |
+| `branch_id`             | `uuid`        | internal | no    | Branch scope (branch composite scope).                                                                                                                                                                          |
+| `work_order_id`         | `uuid`        | internal | yes   | Composite FK -> `wo.work_orders(...)` RESTRICT; one live invoice per WO (`uq_invoices_work_order_active`, partial on `work_order_id IS NOT NULL` since P1-32). NULL exactly when `sale_kind` is `counter_sale`. |
+| `sale_kind`             | `text`        | internal | no    | P1-32: CHECK IN ('work_order','counter_sale'); `ck_invoices_sale_kind_source` makes it a biconditional with `work_order_id`. Frozen by `tg_invoices_immutable`.                                                 |
+| `quotation_revision_id` | `uuid`        | internal | yes   | Composite FK -> `quo.quotation_revisions(...)` RESTRICT; provenance only (nullable).                                                                                                                            |
+| `payer_partner_id`      | `uuid`        | internal | no    | Payer; composite FK -> `crm.business_partners(tenant_id, id)` RESTRICT.                                                                                                                                         |
+| `currency_code`         | `text`        | internal | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                                                                                                                         |
+| `status`                | `text`        | internal | no    | Lifecycle only; CHECK IN ('draft','issued','credited','void_before_issue'); paid/partially_paid are derived (M-fin-1).                                                                                          |
+| `invoice_number`        | `text`        | internal | yes   | Allocated at issue via `shared.next_display_number`; NULL until issued; CHECK number-iff-issued (H-fin-5).                                                                                                      |
+| `issued_at`             | `timestamptz` | internal | yes   | Issue timestamp; NULL until issued; frozen by `guard_invoice_freeze`.                                                                                                                                           |
+| `idempotency_key`       | `text`        | internal | yes   | Business idempotency key; partial `UNIQUE(tenant_id, idempotency_key)` (BR-SAL-001).                                                                                                                            |
+| `record_version`        | `integer`     | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                                                                                                                          |
+| `created_at`            | `timestamptz` | internal | no    | Row creation timestamp.                                                                                                                                                                                         |
+| `created_by`            | `uuid`        | internal | no    | Creating actor (user id).                                                                                                                                                                                       |
+| `updated_at`            | `timestamptz` | internal | yes   | Last-update timestamp (NULL until first update).                                                                                                                                                                |
+| `updated_by`            | `uuid`        | internal | yes   | Last-updating actor.                                                                                                                                                                                            |
+| `deleted_at`            | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                                                                                                                                                            |
+| `deleted_by`            | `uuid`        | internal | yes   | Soft-deleting actor.                                                                                                                                                                                            |
 
 ### `sal.payment_allocations`
 

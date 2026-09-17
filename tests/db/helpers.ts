@@ -384,6 +384,11 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('sal.delivery_checklist_templates');
   await deleteFrom('sal.payment_allocations');
   await deleteFrom('sal.receipt_reversals');
+  // P1-32 preparatory slice 2: a sales return cites the credit note it raised
+  // (fk_sales_returns_credit_note is ON DELETE RESTRICT), so it goes before
+  // sal.credit_notes — and therefore before the inv block below, which removes
+  // the part issues and locations it also cites.
+  await deleteFrom('inv.sales_returns');
   await deleteFrom('sal.credit_notes');
   await deleteFrom('sal.receipts');
   await deleteFrom('sal.invoice_status_history');
@@ -511,6 +516,8 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('inv.item_cost_details');
   // P1-32 preparatory slice 2: identifiers cite the item and a unit.
   await deleteFrom('inv.item_identifiers');
+  // Selling prices cite the item, a company, a branch and a tax class.
+  await deleteFrom('inv.item_sale_prices');
   await deleteFrom('inv.item_master');
   await deleteFrom('inv.stock_locations');
   await deleteFrom('inv.item_categories');

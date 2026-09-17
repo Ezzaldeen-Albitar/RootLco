@@ -163,6 +163,12 @@ export const PENDING_MIRRORS = Object.freeze({
   // barcode screens owe this mirror and must delete this entry in that change.
   'inv.item-identifier-add':
     'PENDING: P1-32 preparatory slice 2 (item identifiers) is Backend and Database only; the barcode screens that send this owe the mirror',
+  'inv.item-sale-price-set':
+    'PENDING: P1-32 preparatory slice 2 is Backend and Database only; the item pricing screen that sends this owes the mirror',
+  'sal.counter-sale-create':
+    'PENDING: P1-32 preparatory slice 2 is Backend and Database only; the counter-sale screen that sends this owes the mirror',
+  'inv.sales-return-create':
+    'PENDING: P1-32 preparatory slice 2 is Backend and Database only; the returns screen that sends this owes the mirror',
   // The `sal` writes entered this scope with W6, which mirrors the invoice
   // create and cancel bodies. Payments belong to W7 (canonical plan §4); credit
   // notes are sent by no P1-30 screen.

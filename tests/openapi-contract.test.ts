@@ -365,6 +365,11 @@ import '@/app/api/v1/items/[itemId]/identifiers/[identifierId]/retirement/route'
 import '@/app/api/v1/items/[itemId]/internal-barcode/route';
 import '@/app/api/v1/items/[itemId]/label/route';
 import '@/app/api/v1/barcodes/[value]/route';
+// P1-32 preparatory slice 2 — item selling prices, the counter sale, and returns.
+import '@/app/api/v1/items/[itemId]/sale-prices/route';
+import '@/app/api/v1/counter-sales/route';
+import '@/app/api/v1/sales-returns/route';
+import '@/app/api/v1/returnable-quantities/route';
 
 // Phase 1-22 — billing, payment, delivery and warranty.
 //

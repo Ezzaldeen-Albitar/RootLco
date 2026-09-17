@@ -9,14 +9,14 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 437   |
+| Public operations        | 444   |
 | Domains (modules)        | 20    |
-| OpenAPI paths            | 340   |
-| OpenAPI operations       | 437   |
+| OpenAPI paths            | 344   |
+| OpenAPI operations       | 444   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 121   |
-| Audit actions catalogued | 250   |
+| Audit actions catalogued | 253   |
 | Domain events catalogued | 50    |
 | Structured error codes   | 28    |
 
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 437        |
+| Covered           | 444        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -34,12 +34,12 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Domain          | Operations | Covered | Writes | Audited | Idempotent | Version-guarded |
 | --------------- | ---------- | ------- | ------ | ------- | ---------- | --------------- |
-| billing         | 9          | 9       | 5      | 5       | 5          | 2               |
+| billing         | 11         | 11      | 6      | 6       | 6          | 2               |
 | crm             | 29         | 29      | 15     | 15      | 15         | 0               |
 | delivery        | 22         | 22      | 11     | 11      | 8          | 4               |
 | diagnostics     | 23         | 23      | 15     | 15      | 14         | 4               |
 | iam             | 50         | 50      | 31     | 29      | 13         | 10              |
-| inventory       | 48         | 48      | 27     | 28      | 25         | 2               |
+| inventory       | 53         | 53      | 29     | 30      | 26         | 2               |
 | meta            | 1          | 1       | 0      | 0       | 0          | 0               |
 | payments        | 5          | 5       | 2      | 2       | 2          | 0               |
 | platform        | 3          | 3       | 2      | 2       | 1          | 0               |
@@ -188,12 +188,17 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `inv.item-identifier-list`                          | GET    | `/api/v1/items/{itemId}/identifiers`                                                | tenant  | `inv.item.read`                                                      | —                                              | —    | —   | authorization cross-tenant isolation route service success                                                                    | Covered |
 | `inv.item-identifier-retire`                        | POST   | `/api/v1/items/{itemId}/identifiers/{identifierId}/retirement`                      | tenant  | `inv.item.manage`                                                    | inv.item_identifier.retired                    | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `inv.item-label-data`                               | GET    | `/api/v1/items/{itemId}/label`                                                      | tenant  | `inv.item.read`                                                      | —                                              | —    | —   | authorization cross-tenant isolation route service success                                                                    | Covered |
+| `inv.item-sale-price-list`                          | GET    | `/api/v1/items/{itemId}/sale-prices`                                                | tenant  | `inv.item.read`                                                      | —                                              | —    | —   | authorization cross-tenant isolation route service success                                                                    | Covered |
+| `inv.item-sale-price-set`                           | POST   | `/api/v1/items/{itemId}/sale-prices`                                                | tenant  | `inv.item.manage`                                                    | inv.item_sale_price.set                        | —    | —   | audit authorization cross-tenant denial isolation route service success                                                       | Covered |
 | `inv.item-search`                                   | GET    | `/api/v1/items`                                                                     | tenant  | `inv.item.read`                                                      | —                                              | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
 | `inv.opening-batch-approve`                         | POST   | `/api/v1/opening-inventory-batches/{batchId}/approval`                              | branch  | `inv.adjustment.approve`                                             | inv.opening_batch.approved                     | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `inv.opening-batch-create`                          | POST   | `/api/v1/opening-inventory-batches`                                                 | branch  | `inv.stock.operate`                                                  | inv.opening_batch.created                      | yes  | —   | audit authorization denial idempotency isolation route service success                                                        | Covered |
 | `inv.opening-batch-line-create`                     | POST   | `/api/v1/opening-inventory-batches/{batchId}/lines`                                 | branch  | `inv.stock.operate`                                                  | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `inv.opening-batch-list`                            | GET    | `/api/v1/opening-inventory-batches`                                                 | branch  | `inv.stock.read`                                                     | —                                              | —    | —   | authorization cross-tenant denial isolation pagination route service success                                                  | Covered |
 | `inv.opening-batch-read`                            | GET    | `/api/v1/opening-inventory-batches/{batchId}`                                       | branch  | `inv.stock.read`                                                     | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
+| `inv.returnable-quantity-read`                      | GET    | `/api/v1/returnable-quantities`                                                     | branch  | `inv.stock.read`                                                     | —                                              | —    | —   | authorization cross-tenant isolation route service success                                                                    | Covered |
+| `inv.sales-return-create`                           | POST   | `/api/v1/sales-returns`                                                             | branch  | `inv.stock.operate`<br>`sal.finance.view`                            | inv.sales_return.received                      | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
+| `inv.sales-return-list`                             | GET    | `/api/v1/sales-returns`                                                             | branch  | `inv.stock.read`                                                     | —                                              | —    | —   | authorization isolation route service success                                                                                 | Covered |
 | `inv.stock-adjustment-approve`                      | POST   | `/api/v1/stock-adjustments/{adjustmentId}/approval`                                 | branch  | `inv.adjustment.approve`                                             | inv.stock_adjustment.approved                  | yes  | —   | audit authorization cross-tenant denial idempotency isolation outbox route service success                                    | Covered |
 | `inv.stock-adjustment-create`                       | POST   | `/api/v1/stock-adjustments`                                                         | branch  | `inv.stock.operate`                                                  | inv.stock_adjustment.requested                 | yes  | —   | audit authorization denial idempotency isolation route service success                                                        | Covered |
 | `inv.stock-adjustment-list`                         | GET    | `/api/v1/stock-adjustments`                                                         | branch  | `inv.stock.read`                                                     | —                                              | —    | —   | authorization isolation route service success                                                                                 | Covered |
@@ -320,6 +325,8 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `rpt.report-export`                                 | POST   | `/api/v1/reports/{reportCode}:export`                                               | branch  | `rpt.export`<br>`rpt.report.read`                                    | rpt.report.exported                            | —    | —   | audit authorization cross-tenant denial isolation route service success                                                       | Covered |
 | `rpt.report-read`                                   | GET    | `/api/v1/reports/{reportCode}`                                                      | tenant  | `rpt.report.read`                                                    | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `rpt.report-run`                                    | GET    | `/api/v1/reports/{reportCode}/rows`                                                 | branch  | `rpt.report.read`                                                    | —                                              | —    | —   | authorization cross-tenant denial isolation pagination route service success                                                  | Covered |
+| `sal.counter-sale-create`                           | POST   | `/api/v1/counter-sales`                                                             | branch  | `sal.invoice.manage`<br>`sal.finance.view`                           | sal.counter_sale.created                       | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
+| `sal.counter-sale-list`                             | GET    | `/api/v1/counter-sales`                                                             | branch  | `sal.invoice.manage`                                                 | —                                              | —    | —   | authorization isolation route service success                                                                                 | Covered |
 | `sal.credit-note-approve`                           | POST   | `/api/v1/credit-notes/{creditNoteId}/approval`                                      | branch  | `sal.credit.manage`<br>`sal.finance.view`                            | sal.credit_note.approved                       | yes  | —   | audit authorization cross-tenant denial idempotency isolation outbox route service success                                    | Covered |
 | `sal.credit-note-create`                            | POST   | `/api/v1/invoices/{invoiceId}/credit-notes`                                         | branch  | `sal.credit.manage`<br>`sal.finance.view`                            | sal.credit_note.requested                      | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `sal.delivery-checklist-record`                     | POST   | `/api/v1/deliveries/{deliveryId}/checklist-results`                                 | branch  | `sal.delivery.manage`                                                | sal.delivery.checklist_recorded                | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |

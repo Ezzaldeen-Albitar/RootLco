@@ -2,7 +2,7 @@
   "$schema": "./classification.schema.json",
   "description": "P1-10-SEC — Service Catalog / Pricing / Quotation / Inventory personal-and-financial-data classification registry. Restricted = cost/margin fields gated by inv.cost.view. Prices and quotation totals are operational (internal). No restricted column is searchable.",
   "allowedClassifications": ["public", "internal", "restricted", "secret"],
-  "columnCount": 712,
+  "columnCount": 748,
   "columns": {
     "inv.customer_supplied_parts.branch_id": {
       "classification": "internal",
@@ -934,6 +934,86 @@
       "searchable": false,
       "dataType": "uuid"
     },
+    "inv.item_sale_prices.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_sale_prices.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_sale_prices.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.item_sale_prices.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_sale_prices.currency_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.item_sale_prices.deleted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.item_sale_prices.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_sale_prices.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_sale_prices.item_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_sale_prices.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "inv.item_sale_prices.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.item_sale_prices.tax_class_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_sale_prices.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_sale_prices.unit_price": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "inv.item_sale_prices.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.item_sale_prices.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
     "inv.opening_inventory_batches.approved_at": {
       "classification": "internal",
       "searchable": false,
@@ -1250,6 +1330,106 @@
       "dataType": "timestamp with time zone"
     },
     "inv.part_returns.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.sales_returns.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.sales_returns.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.sales_returns.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.sales_returns.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.sales_returns.credit_note_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.sales_returns.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.sales_returns.idempotency_key": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.sales_returns.item_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.sales_returns.quantity": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "inv.sales_returns.quarantine_location_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.sales_returns.reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.sales_returns.received_location_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.sales_returns.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "inv.sales_returns.return_condition": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.sales_returns.source_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.sales_returns.source_kind": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.sales_returns.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.sales_returns.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.sales_returns.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.sales_returns.updated_by": {
       "classification": "internal",
       "searchable": false,
       "dataType": "uuid"

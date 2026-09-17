@@ -286,12 +286,20 @@ describe('internal barcode allocation', () => {
         await one<{ id: string }>(c, `SELECT inv.assign_internal_barcode($1) AS id`, [item])
       ).id;
       expect(second).not.toBe(first);
-      const numbers = await c.query<{ n: string }>(
-        `SELECT substr(normalized_value, 3, 9) AS n FROM inv.item_identifiers WHERE id = ANY($1) ORDER BY created_at, id`,
+      // Keyed on which row is LIVE, not on insertion order: both rows are written
+      // in one transaction, so they share `created_at` to the microsecond and an
+      // `ORDER BY created_at, id` tie-break is the random UUID — which decides
+      // nothing about allocation and would make this assertion a coin flip.
+      const numbers = await c.query<{ id: string; n: string; live: boolean }>(
+        `SELECT id, substr(normalized_value, 3, 9) AS n, (retired_at IS NULL) AS live
+           FROM inv.item_identifiers WHERE id = ANY($1)`,
         [[first, second]]
       );
-      const [old, fresh] = numbers.rows.map((r) => BigInt(r.n));
-      expect(fresh! > old!).toBe(true);
+      const retired = numbers.rows.find((r) => !r.live);
+      const live = numbers.rows.find((r) => r.live);
+      expect(retired?.id).toBe(first);
+      expect(live?.id).toBe(second);
+      expect(BigInt(live!.n) > BigInt(retired!.n)).toBe(true);
     });
   });
 

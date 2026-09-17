@@ -65,7 +65,9 @@ describe('every operation publishes the success status it returns', () => {
     // 431 with the P1-32 preparatory inventory slice: eighteen more route
     // handlers, each resolved from its own literal status or its absence.
     // 437 with P1-32 preparatory slice 2: six identifier operations.
-    expect(actual.size).toBe(437);
+    // 444 with the rest of that slice: two item-price operations, two counter-sale
+    // operations and three return operations.
+    expect(actual.size).toBe(444);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -150,7 +152,11 @@ describe('every operation publishes the success status it returns', () => {
     // adjustment request is the one 201 counted above.
     // 314 -> 319 with P1-32 preparatory slice 2: the list, the retirement, the
     // barcode allocation, the resolver and the label read.
-    expect(counts[200]).toBe(319);
+    // 319 -> 326 with the rest of that slice: the two item-price operations (the
+    // set REVISES a row and returns 200), the two counter-sale operations and the
+    // three return operations — the counter-sale create and the return receipt
+    // resolve to 200 because their status is a replay ternary rather than a literal.
+    expect(counts[200]).toBe(326);
   });
 
   it('reads the handler, not the declaration', () => {
