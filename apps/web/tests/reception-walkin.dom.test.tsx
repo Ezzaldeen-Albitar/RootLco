@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
@@ -1240,14 +1240,79 @@ describe('continuing from the customer profile into the existing check-in flow',
     await searchAndLink(user);
 
     const block = await selectedIdentity();
-    await vi.waitFor(() => expect(readVehicleSummary).toHaveBeenCalledWith(SEARCHED_VEHICLE_ID));
-    await vi.waitFor(() => expect(listPlates).toHaveBeenCalled());
+    // Wait until BOTH refused reads have resolved and the block has re-rendered
+    // from them — asserting before that would only prove the pre-read state.
+    await waitFor(() => expect(block).toHaveAttribute('data-read-state', 'settled'));
+    expect(readVehicleSummary).toHaveBeenCalledWith(SEARCHED_VEHICLE_ID);
+    expect(listPlates).toHaveBeenCalled();
+    expect(block).toHaveTextContent(en['receptions.workOrderStart.selectedVehicleNumber']);
     expect(within(block).getByTestId('work-order-start-selected-number')).toHaveTextContent(
       'V-0100'
     );
     expect(within(block).queryByTestId('work-order-start-selected-plate')).not.toBeInTheDocument();
     expect(within(block).queryByTestId('work-order-start-selected-vin')).not.toBeInTheDocument();
     expect(within(block).queryByTestId('work-order-start-selected-model')).not.toBeInTheDocument();
+  });
+
+  /** An open plate whose effective date has not arrived: `active`, and not in force. */
+  const FUTURE_OPEN_PLATE = {
+    ...CURRENT_PLATE,
+    id: '7f8091a2-8888-4888-8888-888888888888',
+    plate: '55-99999',
+    validFrom: '2999-01-01',
+    validTo: null,
+    active: true,
+  };
+  /** The plate in force today, closed on the day the future plate takes over. */
+  const IN_FORCE_PLATE = {
+    ...CURRENT_PLATE,
+    validFrom: '2000-01-01',
+    validTo: '2999-01-01',
+    active: false,
+  };
+
+  it('shows the plate in force today, not a future-dated open plate', async () => {
+    listPlates.mockResolvedValue(page([FUTURE_OPEN_PLATE, IN_FORCE_PLATE]));
+    const user = userEvent.setup();
+    await addFromEmptyState(user);
+    await searchAndLink(user);
+
+    const block = await selectedIdentity();
+    await waitFor(() => expect(block).toHaveAttribute('data-read-state', 'settled'));
+    expect(within(block).getByTestId('work-order-start-selected-plate')).toHaveTextContent(
+      '12-34567'
+    );
+    expect(within(block).queryByText('55-99999')).not.toBeInTheDocument();
+  });
+
+  it('walks past a first page without an in-force plate to find the one in force', async () => {
+    listPlates
+      .mockResolvedValueOnce(page([FUTURE_OPEN_PLATE], { hasMore: true, nextCursor: 'next-page' }))
+      .mockResolvedValueOnce(page([IN_FORCE_PLATE]));
+    const user = userEvent.setup();
+    await addFromEmptyState(user);
+    await searchAndLink(user);
+
+    const block = await selectedIdentity();
+    await waitFor(() => expect(block).toHaveAttribute('data-read-state', 'settled'));
+    expect(within(block).getByTestId('work-order-start-selected-plate')).toHaveTextContent(
+      '12-34567'
+    );
+    expect(listPlates).toHaveBeenCalledTimes(2);
+    expect(listPlates.mock.calls[1]?.[2]).toBe('next-page');
+  });
+
+  it('shows no plate when the only open plate is not yet in force', async () => {
+    listPlates.mockResolvedValue(page([FUTURE_OPEN_PLATE]));
+    const user = userEvent.setup();
+    await addFromEmptyState(user);
+    await searchAndLink(user);
+
+    const block = await selectedIdentity();
+    await waitFor(() => expect(block).toHaveAttribute('data-read-state', 'settled'));
+    expect(within(block).getByTestId('work-order-start-selected-vin')).toBeInTheDocument();
+    expect(within(block).queryByTestId('work-order-start-selected-plate')).not.toBeInTheDocument();
+    expect(within(block).queryByText('55-99999')).not.toBeInTheDocument();
   });
 
   it('does not read the vehicle for an operator without vehicle read access, and stays neutral', async () => {

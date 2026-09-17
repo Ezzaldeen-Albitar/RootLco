@@ -11,6 +11,7 @@ import type { Locale } from '@/i18n/config';
 import { listCustomerVehicles } from '@/lib/customers/vehicles';
 import type { CustomerVehicleEntry } from '@/lib/customers/vehicles-contract';
 import { listPlates } from '@/features/vehicles/history-api';
+import { isInForceOn, localToday } from '@/features/vehicles/history-contract';
 import { readVehicleSummary, type CheckInVehicleSummary } from '../../support-api';
 import { checkInWizardHref } from '../intake-handoff';
 import { IntakeVehicleStep, ListStates, Pager, type ChosenVehicle } from './IntakeVehicleStep';
@@ -428,6 +429,38 @@ function ContinueBar({
   );
 }
 
+/** The most plate-history pages walked looking for the plate in force. */
+const PLATE_PAGE_BUDGET = 5;
+/** The largest page the plate history operation accepts. */
+const PLATE_PAGE_SIZE = 100;
+
+/**
+ * The plate in force today, or `null` when none is.
+ *
+ * `active` is `valid_to IS NULL` and is NOT "current": a plate assigned with a
+ * future effective date is open and not yet in force. The history operation
+ * offers no filter and no sort and lists newest first, so a future-dated plate
+ * sits ahead of the one in force. Pages are walked at the largest size the
+ * operation accepts until an in-force row is found, the set ends, or the page
+ * budget is spent — never only the first few rows in default order.
+ */
+async function readPlateInForce(vehicleId: string, today: string): Promise<string | null> {
+  let cursor: string | null = null;
+  for (let walked = 0; walked < PLATE_PAGE_BUDGET; walked += 1) {
+    const plates = await listPlates(
+      vehicleId,
+      { ...INITIAL_REQUEST, pageSize: PLATE_PAGE_SIZE },
+      cursor
+    );
+    if (plates.status !== 'ok') return null;
+    const inForce = plates.rows.find((entry) => isInForceOn(entry, today));
+    if (inForce !== undefined) return inForce.plate;
+    if (!plates.hasMore || plates.nextCursor === null) return null;
+    cursor = plates.nextCursor;
+  }
+  return null;
+}
+
 interface IdentityRead {
   readonly vehicleId: string;
   readonly vehicle: CheckInVehicleSummary | null;
@@ -461,17 +494,13 @@ function SelectedVehicleIdentity({
     const vehicleId = chosen.id;
     Promise.all([
       readVehicleSummary(vehicleId).catch(() => null),
-      listPlates(vehicleId, { ...INITIAL_REQUEST, pageSize: 10 }, null).catch(() => null),
-    ]).then(([vehicle, plates]) => {
+      readPlateInForce(vehicleId, localToday(new Date())).catch(() => null),
+    ]).then(([vehicle, plate]) => {
       if (cancelled) return;
-      const current =
-        plates !== null && plates.status === 'ok'
-          ? (plates.rows.find((entry) => entry.active) ?? null)
-          : null;
       setRead({
         vehicleId,
         vehicle: vehicle !== null && vehicle.status === 'ok' ? vehicle.data : null,
-        plate: current !== null ? current.plate : null,
+        plate,
       });
     });
     return () => {
@@ -491,13 +520,14 @@ function SelectedVehicleIdentity({
     <div
       className="flex flex-col gap-1 text-caption text-text-secondary"
       data-testid="work-order-start-selected-vehicle"
+      data-read-state={canRead ? (identity !== null ? 'settled' : 'pending') : 'not-read'}
       aria-live="polite"
     >
       <span className="font-medium text-text-primary">
         {translate(messages, 'receptions.workOrderStart.selectedVehicle')}
       </span>
       <span className="flex flex-wrap items-center gap-2">
-        <span>{translate(messages, 'vehicles.column.reference')}</span>
+        <span>{translate(messages, 'receptions.workOrderStart.selectedVehicleNumber')}</span>
         {displayNumber ? (
           <code className="font-mono" dir="ltr" data-testid="work-order-start-selected-number">
             {displayNumber}
