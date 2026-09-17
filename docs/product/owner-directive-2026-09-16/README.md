@@ -152,10 +152,9 @@ suite's. Acceptance never wipes the shared database.
 
 Observed 2026-09-16, read-only, through the check-runs API.
 
-At develop head `2c573a24` all 40 check runs completed with conclusion `success`. Among them:
-`code-security / code-security (javascript-typescript)` (check-run ids 104870467494 and
-104870309857), `code-security / code-security (actions)`, and `protected-gate` (check-run id
-104880098822).
+At develop head `2c573a24` all 40 check runs completed with conclusion `success`, including both
+code-security language jobs — `code-security / code-security (javascript-typescript)` and
+`code-security / code-security (actions)` — and `protected-gate`.
 
 At the head commit of pull request #409, `7926f634`, the umbrella `code-security` check was
 `skipped`. The pull request changed one file, `docs/user-manual/tools/build-pdf.mjs`, and the
