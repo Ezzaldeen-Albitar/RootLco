@@ -285,6 +285,18 @@ BEGIN
     RETURN;
   END IF;
 
+  -- The control plane never grows a live organisation: every ins_*_platform
+  -- policy on these tables admits only a tenant that is still `provisioning`,
+  -- which returned above. Its role deliberately holds no EXECUTE on the counting
+  -- functions and no tenant-wide SELECT to count with, and this BEFORE trigger
+  -- runs ahead of the policy check — so without this line a refused platform
+  -- write would surface as a privilege error on a counter instead of as the
+  -- row-level-security refusal that actually decides it. A session that may not
+  -- count is not a session this rule governs; the policy remains the authority.
+  IF NOT pg_catalog.has_function_privilege('org.capacity_used(uuid, text)', 'EXECUTE') THEN
+    RETURN;
+  END IF;
+
   IF v_status <> 'active' THEN
     RAISE EXCEPTION 'tenant_not_active'
       USING ERRCODE = 'check_violation',
@@ -310,7 +322,13 @@ COMMENT ON FUNCTION org.assert_capacity_available(uuid, text) IS
   'Refuses one more unit of a capacity kind for a tenant. Takes a per-tenant advisory transaction lock first, so two concurrent creations of the last permitted unit serialise and the second is refused. A tenant in `provisioning` is exempt (that is the state org.provision_organization runs in); any other non-active status raises `tenant_not_active`; a reached ceiling raises `capacity_limit_reached` with a json DETAIL naming kind, limit and used so the service can answer with a problem document the screen can render. SECURITY INVOKER; both errors are check_violation.';
 
 REVOKE EXECUTE ON FUNCTION org.assert_capacity_available(uuid, text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION org.assert_capacity_available(uuid, text) TO app_runtime;
+-- app_platform too: the control plane inserts the first company, branch and
+-- owner account through ins_*_platform while the tenant is `provisioning`, and
+-- the trigger wrapper below calls this function as the inserting role. Without
+-- EXECUTE, every provisioning would be refused with a privilege error before the
+-- exemption could apply. The platform never reaches the counting branch — see
+-- the privilege test in the body.
+GRANT EXECUTE ON FUNCTION org.assert_capacity_available(uuid, text) TO app_runtime, app_platform;
 
 -- ----------------------------------------------------------------------------
 -- 5. org.enforce_capacity — the trigger wrapper.
