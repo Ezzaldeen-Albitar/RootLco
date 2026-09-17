@@ -122,6 +122,9 @@ export const STOCK_TRANSFER_CREATE_OPERATION = defineOperation({
   id: 'inv.stock-transfer-create',
   module: 'inventory',
   method: 'POST',
+  // `status: x.replayed ? 200 : 201`: a create, and the replay of one.
+  successStatus: 201,
+  replayStatus: 200,
   path: '/stock-transfers',
   summary: 'Dispatch a stock transfer from one location into transit toward another.',
   permissions: ['inv.stock.operate'],

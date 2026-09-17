@@ -96,6 +96,20 @@ export interface OperationDeclaration {
    */
   readonly successStatus?: 200 | 201 | 202 | 204;
   /**
+   * The status an idempotent create answers with when it REPLAYS what it already
+   * created — the handler's `status: x.replayed ? 200 : 201`. Published beside
+   * `successStatus` (and named in `x-replay-status`) so a client is told both
+   * answers the operation gives.
+   *
+   * Until it existed the gate could not read that ternary as a literal, resolved it
+   * to 200, and the contract advertised ONLY the replay status for the create —
+   * `inv.stock-transfer-discrepancy-resolve`, `inv.counter-sale-create` and the other
+   * replayable inventory creates published a 200 they return only on a retry, and
+   * no 201 at all. `check-openapi-success-status.mjs` now reads the ternary and
+   * holds this field to it.
+   */
+  readonly replayStatus?: 200;
+  /**
    * Whether the operation answers `404 ERR-RES-001` for a resource it addresses
    * that is absent or not visible to the caller, so the published contract lists
    * that response. Defaults to false.

@@ -112,6 +112,10 @@ export const BODYLESS = Object.freeze({
     'confirmation carries nothing but the specification in the path and the caller as confirmer',
   'inv.vehicle-specification-retire':
     'retirement carries nothing but the specification in the path and the caller as actor',
+  // P1-32 preparatory slice 3c. A re-check reads the requirement named in the path
+  // again; there is nothing for a caller to state.
+  'inv.material-requirement-recheck':
+    're-check carries nothing but the requirement in the path and the caller as actor',
 });
 
 /** Field-level omissions the web side has decided, with reasons. Empty today. */
@@ -195,6 +199,14 @@ export const PENDING_MIRRORS = Object.freeze({
     'PENDING: P1-32 preparatory slice 3b is Backend only; the transfer receipt screen that sends this owes the mirror',
   'inv.stock-transfer-write-off-decide':
     'PENDING: P1-32 preparatory slice 3b is Backend only; the transfer receipt screen that sends this owes the mirror',
+  // P1-32 preparatory slice 3c: cancelling a requirement, and closing or cancelling a
+  // material request. Backend only; the slice-3 screens owe every mirror.
+  'inv.material-requirement-cancel':
+    'PENDING: P1-32 preparatory slice 3c is Backend only; the material requirement screen that sends this owes the mirror',
+  'inv.material-request-close':
+    'PENDING: P1-32 preparatory slice 3c is Backend only; the material request screen that sends this owes the mirror',
+  'inv.material-request-cancel':
+    'PENDING: P1-32 preparatory slice 3c is Backend only; the material request screen that sends this owes the mirror',
   // The `sal` writes entered this scope with W6, which mirrors the invoice
   // create and cancel bodies. Payments belong to W7 (canonical plan §4); credit
   // notes are sent by no P1-30 screen.

@@ -27,6 +27,7 @@ import { readFileSync } from 'node:fs';
 import {
   actualSuccessStatuses,
   declaredOperations,
+  publishedSuccessStatuses,
   routeFiles,
   successStatuses,
 } from '../../scripts/ci/check-openapi-success-status.mjs';
@@ -38,14 +39,14 @@ const SPEC = JSON.parse(readFileSync('docs/api/openapi.v1.json', 'utf8')) as {
   >;
 };
 
+/** The published success status of each operation, the replay status set apart. */
 function publishedSuccess(): Map<string, number> {
   const out = new Map<string, number>();
-  for (const methods of Object.values(SPEC.paths)) {
-    for (const op of Object.values(methods)) {
-      if (!op || typeof op !== 'object' || !op.responses || !op.operationId) continue;
-      const success = Object.keys(op.responses).find((code) => code.startsWith('2'));
-      if (success) out.set(op.operationId, Number(success));
-    }
+  for (const [id, published] of publishedSuccessStatuses(SPEC) as Map<
+    string,
+    { success: number; replay: number | null; codes: number[] }
+  >) {
+    out.set(id, published.success);
   }
   return out;
 }
@@ -70,7 +71,9 @@ describe('every operation publishes the success status it returns', () => {
     // 459 with P1-32 preparatory slice 3b: six material-requirement operations,
     // three unit-conversion operations, four specification operations and the two
     // transfer discrepancy acts.
-    expect(actual.size).toBe(459);
+    // 463 with slice 3c: the requirement re-check and cancellation and the request
+    // closure and cancellation.
+    expect(actual.size).toBe(463);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -121,7 +124,13 @@ describe('every operation publishes the success status it returns', () => {
     // P1-32 preparatory slice 3b adds FOUR literal 201s — the requirement create,
     // the exception create, the conversion set and the specification record — and
     // the discrepancy resolution returns `replayed ? 200 : 201` and publishes 200.
-    expect(counts[201]).toBe(121);
+    // 121 -> 129 when slice 3c taught the scanner the replay ternary: the EIGHT
+    // creates written `x.replayed ? 200 : 201` — reservation, transfer dispatch,
+    // goods receipt, count open, barcode allocation, counter sale, sales return and
+    // discrepancy resolution — now resolve to the 201 they return on a create, and
+    // publish their replay 200 beside it (`x-replay-status`). None of slice 3c's own
+    // four operations creates anything, so none of them moves this count.
+    expect(counts[201]).toBe(129);
     expect(counts[202]).toBe(1);
     // The two P1-30 opening-batch reads (S-17) are GETs returning 200, so
     // 264 -> 266 while 201 and 202 are unchanged.
@@ -166,7 +175,11 @@ describe('every operation publishes the success status it returns', () => {
     // the four reads, the four decisions and retirements of rows that already exist,
     // the confirmation, and the discrepancy resolution whose status is a replay
     // ternary — publish 200.
-    expect(counts[200]).toBe(337);
+    // 337 -> 333 with slice 3c: minus the eight replayable creates now resolved to
+    // 201 (see above), plus its four operations — the re-check, the requirement
+    // cancellation, the request closure and the request cancellation — all of which
+    // change a row that already exists and return 200.
+    expect(counts[200]).toBe(333);
   });
 
   it('reads the handler, not the declaration', () => {
@@ -197,6 +210,53 @@ describe('every operation publishes the success status it returns', () => {
     expect(found.resolved.size).toBe(0);
     expect(found.unresolved).toHaveLength(1);
     expect(found.unresolved[0]).toContain('names no defineOperation');
+  });
+
+  it('reads a replayable create as its create status, with the replay status beside it', () => {
+    const replayable = `
+      export const R_OPERATION = defineOperation({ id: 'fx.replayable' });
+      export async function POST(): Promise<Response> {
+        return handleOperation(R_OPERATION, request, async () => {
+          const created = await create();
+          return { status: created.replayed ? 200 : 201, body: created };
+        });
+      }`;
+    const found = successStatuses(replayable, 'fixture');
+    expect(found.unresolved).toEqual([]);
+    expect(found.resolved.get('fx.replayable')).toBe(201);
+    expect(found.replays.get('fx.replayable')).toBe(200);
+
+    // Any OTHER computed status is still not a literal and publishes nothing new.
+    const other = `
+      export const O_OPERATION = defineOperation({ id: 'fx.other' });
+      export async function POST(): Promise<Response> {
+        return handleOperation(O_OPERATION, request, async () => {
+          return { status: result.created ? 201 : 200, body: result };
+        });
+      }`;
+    const otherFound = successStatuses(other, 'fixture');
+    expect(otherFound.replays.has('fx.other')).toBe(false);
+  });
+
+  it('publishes both statuses of every replayable create, and names the replay one', () => {
+    const { replays } = actualSuccessStatuses();
+    const published = publishedSuccessStatuses(SPEC) as Map<
+      string,
+      { success: number; replay: number | null; codes: number[] }
+    >;
+    expect([...replays.keys()].sort()).toEqual([
+      'inv.goods-receipt-create',
+      'inv.item-barcode-assign',
+      'inv.sales-return-create',
+      'inv.stock-count-open',
+      'inv.stock-reservation-create',
+      'inv.stock-transfer-create',
+      'inv.stock-transfer-discrepancy-resolve',
+      'sal.counter-sale-create',
+    ]);
+    for (const [id, replay] of replays) {
+      expect(published.get(id), id).toEqual({ success: 201, replay, codes: [200, 201] });
+    }
   });
 
   it('refuses a handler with two different literal statuses', () => {

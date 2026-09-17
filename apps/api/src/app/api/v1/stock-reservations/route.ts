@@ -175,6 +175,9 @@ export const STOCK_RESERVATION_CREATE_OPERATION = defineOperation({
   id: 'inv.stock-reservation-create',
   module: 'inventory',
   method: 'POST',
+  // `status: x.replayed ? 200 : 201`: a create, and the replay of one.
+  successStatus: 201,
+  replayStatus: 200,
   path: '/stock-reservations',
   summary: 'Reserve stock at a location, optionally against a work order.',
   permissions: ['inv.stock.operate'],

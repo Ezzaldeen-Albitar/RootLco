@@ -377,6 +377,11 @@ import '@/app/api/v1/material-requirements/[requirementId]/route';
 import '@/app/api/v1/material-requirements/[requirementId]/approval/route';
 import '@/app/api/v1/material-requirements/[requirementId]/exceptions/route';
 import '@/app/api/v1/material-exceptions/[exceptionId]/decision/route';
+// P1-32 preparatory slice 3c: re-check and cancel a requirement; close and cancel a request.
+import '@/app/api/v1/material-requirements/[requirementId]/recheck/route';
+import '@/app/api/v1/material-requirements/[requirementId]/cancellation/route';
+import '@/app/api/v1/material-requests/[requestId]/closure/route';
+import '@/app/api/v1/material-requests/[requestId]/cancellation/route';
 import '@/app/api/v1/unit-conversions/route';
 import '@/app/api/v1/unit-conversions/[conversionId]/retirement/route';
 import '@/app/api/v1/vehicle-fluid-specifications/route';

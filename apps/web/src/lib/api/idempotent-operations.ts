@@ -10,7 +10,7 @@
  * The backend requires an `Idempotency-Key` header on every operation it
  * registers as idempotent, and answers `400 ERR-INT-002` without one — before
  * authorization is evaluated. That set is NOT "the POST operations": it is
- * currently 201 operations (PATCH 3, POST 191, PUT 7).
+ * currently 205 operations (PATCH 3, POST 195, PUT 7).
  *
  * The client used to infer the answer from the HTTP method, which was wrong for
  * every non-POST member of that set. This table is the contract instead of a
@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 17, export 2, financial 15, none 197, privileged 215, security 13.
+ * Currently approval 17, export 2, financial 15, none 197, privileged 219, security 13.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 459 of them. */
+/** Every operation the contract publishes. 463 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -1417,6 +1417,20 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'approval',
   },
   {
+    template: '/material-requests/{requestId}/cancellation',
+    method: 'POST',
+    operationId: 'inv.material-request-cancel',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/material-requests/{requestId}/closure',
+    method: 'POST',
+    operationId: 'inv.material-request-close',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
     template: '/material-requirements',
     method: 'GET',
     operationId: 'inv.material-requirement-list',
@@ -1445,9 +1459,23 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'approval',
   },
   {
+    template: '/material-requirements/{requirementId}/cancellation',
+    method: 'POST',
+    operationId: 'inv.material-requirement-cancel',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
     template: '/material-requirements/{requirementId}/exceptions',
     method: 'POST',
     operationId: 'inv.material-exception-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/material-requirements/{requirementId}/recheck',
+    method: 'POST',
+    operationId: 'inv.material-requirement-recheck',
     idempotent: true,
     auditClass: 'privileged',
   },

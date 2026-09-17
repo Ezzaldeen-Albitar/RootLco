@@ -8,7 +8,7 @@
   "fileCount": 41,
   "files": {
     "docs/phase-1/phase-1-27/adversarial-round-five.md": {
-      "sha256": "c546f8f803c6b5f09ac7d73e8e6443b41ff41f344df5968828be31569bd9b39b",
+      "sha256": "c66af08251b979dee6173ca15574921475b2ef422a367936096a6f836a7cab39",
       "bytes": 549224
     },
     "docs/phase-1/phase-1-27/adversarial-round-four.md": {
@@ -36,11 +36,11 @@
       "bytes": 15409
     },
     "docs/phase-1/phase-1-27/clean-room-evidence.md": {
-      "sha256": "6668f9c5fd17ab582397782c009502c8cbd2adc77934b57cfabf8742916e1eb0",
+      "sha256": "36815458c1e16b196f02daceaad336e7d2f9da51885e1819d404ae5815c28617",
       "bytes": 23721
     },
     "docs/phase-1/phase-1-27/closure-record.md": {
-      "sha256": "44ec4a54458781438f22af94447e8dbd7611eed747d30f73be781254500d1071",
+      "sha256": "4335296414d4c8a8e0937f7398242d2850b174d3f62e225ca1fce6749e9345bf",
       "bytes": 8630
     },
     "docs/phase-1/phase-1-27/continuation-checkpoint.md": {
@@ -52,7 +52,7 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "e82752a2e5b8a7a120cca6fd19f78a8570108d93604a40b1f5f89057612408c6",
+      "sha256": "807582d12972e55ad57c62a0f696cf26df23affd9509288eb16f46846d9f4c97",
       "bytes": 149609
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
@@ -64,7 +64,7 @@
       "bytes": 81669
     },
     "docs/phase-1/phase-1-27/evidence/closing-value-ledger.json": {
-      "sha256": "6f966104bf170af8057dfb3e78005d1c642a68ebd82cd9c4e0405c706ece53e0",
+      "sha256": "3a212dafca77d1f5b479667d24c309786510fd1328dcc6ad204d7b594ce789aa",
       "bytes": 50345
     },
     "docs/phase-1/phase-1-27/evidence/lifecycle-ledger.json": {
@@ -100,7 +100,7 @@
       "bytes": 76545
     },
     "docs/phase-1/phase-1-27/finding-phase-disposition.md": {
-      "sha256": "e0b907faf7b0c6dab4aa548fc89bd2b126620d6775811bea266406be2aec45e6",
+      "sha256": "f2ced89b870d12c7ee517dda74a9b60787f163081f3901ccd7561e7d23aa51f2",
       "bytes": 167366
     },
     "docs/phase-1/phase-1-27/finding-task-map.json": {
@@ -160,11 +160,11 @@
       "bytes": 187802
     },
     "docs/phase-1/phase-1-27/task-matrix-verdicts.json": {
-      "sha256": "11b4020a7f28b4aa20c52a6039eaaf817e965148654953a78c99512af0208073",
+      "sha256": "db195615acbfd5a6d3b0a359aefccbda69321c4c21682d718bb81ab47e002535",
       "bytes": 264827
     },
     "docs/phase-1/phase-1-27/task-matrix.json": {
-      "sha256": "64f12faad1f2ec953c9fcc73882f81d6360c33d497b3fb7d8786419e18d00b12",
+      "sha256": "4688d633bd900d1bb011f817853cd1f6c79f16b8214987d44d5a3eef8ff381ae",
       "bytes": 284228
     },
     "docs/phase-1/phase-1-27/task-register.md": {

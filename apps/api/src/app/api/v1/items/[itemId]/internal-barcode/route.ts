@@ -29,6 +29,9 @@ export const ITEM_BARCODE_ASSIGN_OPERATION = defineOperation({
   id: 'inv.item-barcode-assign',
   module: 'inventory',
   method: 'POST',
+  // `status: x.replayed ? 200 : 201`: a create, and the replay of one.
+  successStatus: 201,
+  replayStatus: 200,
   path: '/items/{itemId}/internal-barcode',
   summary: "Allocate an item's internal barcode, once per item.",
   permissions: ['inv.item.manage'],

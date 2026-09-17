@@ -92,6 +92,9 @@ export const STOCK_COUNT_OPEN_OPERATION = defineOperation({
   id: 'inv.stock-count-open',
   module: 'inventory',
   method: 'POST',
+  // `status: x.replayed ? 200 : 201`: a create, and the replay of one.
+  successStatus: 201,
+  replayStatus: 200,
   path: '/stock-counts',
   summary: 'Open a stock count of one location, snapshotting what it holds.',
   permissions: ['inv.stock.operate'],

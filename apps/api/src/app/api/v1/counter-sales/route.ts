@@ -137,6 +137,9 @@ export const COUNTER_SALE_CREATE_OPERATION = defineOperation({
   id: 'sal.counter-sale-create',
   module: 'billing',
   method: 'POST',
+  // `status: x.replayed ? 200 : 201`: a create, and the replay of one.
+  successStatus: 201,
+  replayStatus: 200,
   path: '/counter-sales',
   summary: 'Create a draft counter sale of stock, priced from the item price list.',
   permissions: ['sal.invoice.manage', 'sal.finance.view'],

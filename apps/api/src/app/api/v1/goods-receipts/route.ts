@@ -130,6 +130,9 @@ export const GOODS_RECEIPT_CREATE_OPERATION = defineOperation({
   id: 'inv.goods-receipt-create',
   module: 'inventory',
   method: 'POST',
+  // `status: x.replayed ? 200 : 201`: a create, and the replay of one.
+  successStatus: 201,
+  replayStatus: 200,
   path: '/goods-receipts',
   summary: 'Create a draft goods receipt with its counted lines.',
   permissions: ['inv.stock.operate'],

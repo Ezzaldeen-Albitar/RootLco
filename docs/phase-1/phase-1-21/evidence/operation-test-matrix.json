@@ -1,9 +1,9 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 68,
-    "publicApi": 68,
-    "operationDepth": 68,
+    "registered": 72,
+    "publicApi": 72,
+    "operationDepth": 72,
     "invocationOnly": 0,
     "pending": 0,
     "unitOnly": 0,
@@ -700,7 +700,7 @@
         "audit",
         "isolation"
       ],
-      "declared": ["success", "denial", "audit", "idempotency", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "audit", "idempotency", "isolation"],
       "required": [
         "route",
         "service",
@@ -773,10 +773,155 @@
       "unitOnly": false
     },
     {
+      "id": "inv.material-request-cancel",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/material-requests/{requestId}/cancellation",
+      "public": false,
+      "files": ["tests/backend/p1-32-material-demand.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": [
+        "success",
+        "denial",
+        "cross-tenant",
+        "audit",
+        "outbox",
+        "idempotency",
+        "isolation"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial",
+        "outbox"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "outbox",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "inv.material-request-close",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/material-requests/{requestId}/closure",
+      "public": false,
+      "files": ["tests/backend/p1-32-material-demand.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit", "idempotency", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "inv.material-requirement-approve",
       "surface": "public-api",
       "method": "POST",
       "path": "/material-requirements/{requirementId}/approval",
+      "public": false,
+      "files": ["tests/backend/p1-32-material-demand.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit", "idempotency", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "inv.material-requirement-cancel",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/material-requirements/{requirementId}/cancellation",
       "public": false,
       "files": ["tests/backend/p1-32-material-demand.test.ts"],
       "referenced": true,
@@ -834,7 +979,7 @@
         "audit",
         "isolation"
       ],
-      "declared": ["success", "denial", "audit", "idempotency", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "audit", "idempotency", "isolation"],
       "required": [
         "route",
         "service",
@@ -843,11 +988,13 @@
         "idempotency",
         "audit",
         "isolation",
-        "denial"
+        "denial",
+        "cross-tenant"
       ],
       "provided": [
         "audit",
         "authorization",
+        "cross-tenant",
         "denial",
         "idempotency",
         "isolation",
@@ -868,9 +1015,25 @@
       "files": ["tests/backend/p1-32-material-demand.test.ts"],
       "referenced": true,
       "derived": ["route", "service", "success", "authorization", "isolation"],
-      "declared": ["success", "isolation"],
-      "required": ["route", "service", "success", "authorization", "isolation"],
-      "provided": ["authorization", "isolation", "route", "service", "success"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -884,9 +1047,70 @@
       "files": ["tests/backend/p1-32-material-demand.test.ts"],
       "referenced": true,
       "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
-      "declared": ["success", "cross-tenant", "isolation"],
-      "required": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
-      "provided": ["authorization", "cross-tenant", "isolation", "route", "service", "success"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "inv.material-requirement-recheck",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/material-requirements/{requirementId}/recheck",
+      "public": false,
+      "files": ["tests/backend/p1-32-material-demand.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit", "idempotency", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -2106,9 +2330,25 @@
       "files": ["tests/backend/p1-32-material-demand.test.ts"],
       "referenced": true,
       "derived": ["route", "service", "success", "authorization"],
-      "declared": ["success", "isolation"],
-      "required": ["route", "service", "success", "authorization", "isolation"],
-      "provided": ["authorization", "isolation", "route", "service", "success"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "denial",
+        "cross-tenant",
+        "isolation"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -2130,7 +2370,7 @@
         "idempotency",
         "audit"
       ],
-      "declared": ["success", "cross-tenant", "audit", "idempotency", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "audit", "idempotency", "isolation"],
       "required": [
         "route",
         "service",
@@ -2139,12 +2379,14 @@
         "cross-tenant",
         "idempotency",
         "audit",
+        "denial",
         "isolation"
       ],
       "provided": [
         "audit",
         "authorization",
         "cross-tenant",
+        "denial",
         "idempotency",
         "isolation",
         "route",
@@ -2164,7 +2406,7 @@
       "files": ["tests/backend/p1-32-material-demand.test.ts"],
       "referenced": true,
       "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
-      "declared": ["success", "denial", "audit", "idempotency", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "audit", "idempotency", "isolation"],
       "required": [
         "route",
         "service",
@@ -2173,11 +2415,13 @@
         "idempotency",
         "audit",
         "denial",
+        "cross-tenant",
         "isolation"
       ],
       "provided": [
         "audit",
         "authorization",
+        "cross-tenant",
         "denial",
         "idempotency",
         "isolation",
@@ -2258,7 +2502,7 @@
       "files": ["tests/backend/p1-32-material-demand.test.ts"],
       "referenced": true,
       "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
-      "declared": ["success", "denial", "audit", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "audit", "isolation"],
       "required": [
         "route",
         "service",
@@ -2267,11 +2511,13 @@
         "idempotency",
         "audit",
         "denial",
+        "cross-tenant",
         "isolation"
       ],
       "provided": [
         "audit",
         "authorization",
+        "cross-tenant",
         "denial",
         "idempotency",
         "isolation",
@@ -2292,9 +2538,25 @@
       "files": ["tests/backend/p1-32-material-demand.test.ts"],
       "referenced": true,
       "derived": ["route", "service", "success", "authorization"],
-      "declared": ["success", "isolation"],
-      "required": ["route", "service", "success", "authorization", "isolation"],
-      "provided": ["authorization", "isolation", "route", "service", "success"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "denial",
+        "cross-tenant",
+        "isolation"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -2316,7 +2578,7 @@
         "idempotency",
         "audit"
       ],
-      "declared": ["success", "cross-tenant", "audit", "idempotency", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "audit", "idempotency", "isolation"],
       "required": [
         "route",
         "service",
@@ -2325,12 +2587,14 @@
         "cross-tenant",
         "idempotency",
         "audit",
+        "denial",
         "isolation"
       ],
       "provided": [
         "audit",
         "authorization",
         "cross-tenant",
+        "denial",
         "idempotency",
         "isolation",
         "route",

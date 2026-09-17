@@ -54,6 +54,9 @@ export const STOCK_TRANSFER_DISCREPANCY_RESOLVE_OPERATION = defineOperation({
   id: 'inv.stock-transfer-discrepancy-resolve',
   module: 'inventory',
   method: 'POST',
+  // `status: x.replayed ? 200 : 201`: a create, and the replay of one.
+  successStatus: 201,
+  replayStatus: 200,
   path: '/stock-transfers/{transferId}/discrepancy-resolution',
   summary: 'Return undelivered transfer units to the origin, or put them forward for write-off.',
   permissions: ['inv.stock.operate'],

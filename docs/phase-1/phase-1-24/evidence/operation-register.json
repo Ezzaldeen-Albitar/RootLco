@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 459,
-    "openapiPaths": 356,
-    "openapiOperations": 459,
+    "operations": 463,
+    "openapiPaths": 360,
+    "openapiOperations": 463,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -11,10 +11,10 @@
     "outboxForeignWriters": 0,
     "errorCodes": 29,
     "permissionCodes": 126,
-    "auditActions": 267
+    "auditActions": 271
   },
   "counts": {
-    "Covered": 459
+    "Covered": 463
   },
   "operations": [
     {
@@ -4531,7 +4531,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/goods-receipts",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["200", "201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -4553,7 +4553,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-32-inventory-operations.test.ts"],
+      "tests": [
+        "tests/backend/p1-32-inventory-operations.test.ts",
+        "tests/ci/openapi-success-status.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/goods-receipts/route.ts"
     },
@@ -4715,7 +4718,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/items/{itemId}/internal-barcode",
-      "documentedResponses": ["200", "401", "403", "404", "409", "422", "429", "500"],
+      "documentedResponses": ["200", "201", "401", "403", "404", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -4739,7 +4742,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-32-item-identifiers.test.ts"],
+      "tests": [
+        "tests/backend/p1-32-item-identifiers.test.ts",
+        "tests/ci/openapi-success-status.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/items/[itemId]/internal-barcode/route.ts"
     },
@@ -5240,6 +5246,92 @@
       "file": "apps/api/src/app/api/v1/material-exceptions/[exceptionId]/decision/route.ts"
     },
     {
+      "id": "inv.material-request-cancel",
+      "domain": "inventory",
+      "method": "POST",
+      "route": "/api/v1/material-requests/{requestId}/cancellation",
+      "permissions": ["inv.material.request"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "inv.material_request.cancelled",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/material-requests/{requestId}/cancellation",
+      "documentedResponses": ["200", "401", "403", "404", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial",
+        "outbox"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "outbox",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-32-material-demand.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/material-requests/[requestId]/cancellation/route.ts"
+    },
+    {
+      "id": "inv.material-request-close",
+      "domain": "inventory",
+      "method": "POST",
+      "route": "/api/v1/material-requests/{requestId}/closure",
+      "permissions": ["inv.material.request"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "inv.material_request.closed",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/material-requests/{requestId}/closure",
+      "documentedResponses": ["200", "401", "403", "404", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-32-material-demand.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/material-requests/[requestId]/closure/route.ts"
+    },
+    {
       "id": "inv.material-requirement-approve",
       "domain": "inventory",
       "method": "POST",
@@ -5282,6 +5374,48 @@
       "file": "apps/api/src/app/api/v1/material-requirements/[requirementId]/approval/route.ts"
     },
     {
+      "id": "inv.material-requirement-cancel",
+      "domain": "inventory",
+      "method": "POST",
+      "route": "/api/v1/material-requirements/{requirementId}/cancellation",
+      "permissions": ["inv.material.request"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "inv.material_requirement.cancelled",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/material-requirements/{requirementId}/cancellation",
+      "documentedResponses": ["200", "401", "403", "404", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-32-material-demand.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/material-requirements/[requirementId]/cancellation/route.ts"
+    },
+    {
       "id": "inv.material-requirement-create",
       "domain": "inventory",
       "method": "POST",
@@ -5304,11 +5438,13 @@
         "idempotency",
         "audit",
         "isolation",
-        "denial"
+        "denial",
+        "cross-tenant"
       ],
       "providedEvidence": [
         "audit",
         "authorization",
+        "cross-tenant",
         "denial",
         "idempotency",
         "isolation",
@@ -5336,8 +5472,24 @@
       "versionGuarded": false,
       "openapi": "GET /api/v1/material-requirements",
       "documentedResponses": ["200", "401", "403", "422", "429", "500"],
-      "requiredEvidence": ["route", "service", "success", "authorization", "isolation"],
-      "providedEvidence": ["authorization", "isolation", "route", "service", "success"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
       "missingEvidence": [],
       "tests": ["tests/backend/p1-32-material-demand.test.ts"],
       "classification": "Covered",
@@ -5364,11 +5516,13 @@
         "success",
         "authorization",
         "cross-tenant",
-        "isolation"
+        "isolation",
+        "denial"
       ],
       "providedEvidence": [
         "authorization",
         "cross-tenant",
+        "denial",
         "isolation",
         "route",
         "service",
@@ -5378,6 +5532,48 @@
       "tests": ["tests/backend/p1-32-material-demand.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/material-requirements/[requirementId]/route.ts"
+    },
+    {
+      "id": "inv.material-requirement-recheck",
+      "domain": "inventory",
+      "method": "POST",
+      "route": "/api/v1/material-requirements/{requirementId}/recheck",
+      "permissions": ["inv.material.request"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "inv.material_requirement.rechecked",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/material-requirements/{requirementId}/recheck",
+      "documentedResponses": ["200", "401", "403", "404", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-32-material-demand.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/material-requirements/[requirementId]/recheck/route.ts"
     },
     {
       "id": "inv.opening-batch-approve",
@@ -5637,7 +5833,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/sales-returns",
-      "documentedResponses": ["200", "401", "403", "404", "409", "422", "429", "500"],
+      "documentedResponses": ["200", "201", "401", "403", "404", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -5661,7 +5857,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-32-sales-returns.test.ts"],
+      "tests": [
+        "tests/backend/p1-32-sales-returns.test.ts",
+        "tests/ci/openapi-success-status.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/sales-returns/route.ts"
     },
@@ -5957,7 +6156,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/stock-counts",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["200", "201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -5979,7 +6178,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-32-inventory-operations.test.ts"],
+      "tests": [
+        "tests/backend/p1-32-inventory-operations.test.ts",
+        "tests/ci/openapi-success-status.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/stock-counts/route.ts"
     },
@@ -6250,7 +6452,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/stock-reservations",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["200", "201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -6472,7 +6674,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/stock-transfers",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["200", "201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -6496,7 +6698,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-32-inventory-operations.test.ts"],
+      "tests": [
+        "tests/backend/p1-32-inventory-operations.test.ts",
+        "tests/ci/openapi-success-status.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/stock-transfers/route.ts"
     },
@@ -6514,7 +6719,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/stock-transfers/{transferId}/discrepancy-resolution",
-      "documentedResponses": ["200", "401", "403", "404", "409", "422", "429", "500"],
+      "documentedResponses": ["200", "201", "401", "403", "404", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -6538,7 +6743,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-32-material-demand.test.ts"],
+      "tests": [
+        "tests/backend/p1-32-material-demand.test.ts",
+        "tests/ci/openapi-success-status.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/stock-transfers/[transferId]/discrepancy-resolution/route.ts"
     },
@@ -6668,8 +6876,24 @@
       "versionGuarded": false,
       "openapi": "GET /api/v1/unit-conversions",
       "documentedResponses": ["200", "401", "403", "422", "429", "500"],
-      "requiredEvidence": ["route", "service", "success", "authorization", "isolation"],
-      "providedEvidence": ["authorization", "isolation", "route", "service", "success"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "denial",
+        "cross-tenant",
+        "isolation"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
       "missingEvidence": [],
       "tests": ["tests/backend/p1-32-material-demand.test.ts"],
       "classification": "Covered",
@@ -6698,12 +6922,14 @@
         "cross-tenant",
         "idempotency",
         "audit",
+        "denial",
         "isolation"
       ],
       "providedEvidence": [
         "audit",
         "authorization",
         "cross-tenant",
+        "denial",
         "idempotency",
         "isolation",
         "route",
@@ -6738,11 +6964,13 @@
         "idempotency",
         "audit",
         "denial",
+        "cross-tenant",
         "isolation"
       ],
       "providedEvidence": [
         "audit",
         "authorization",
+        "cross-tenant",
         "denial",
         "idempotency",
         "isolation",
@@ -6842,11 +7070,13 @@
         "idempotency",
         "audit",
         "denial",
+        "cross-tenant",
         "isolation"
       ],
       "providedEvidence": [
         "audit",
         "authorization",
+        "cross-tenant",
         "denial",
         "idempotency",
         "isolation",
@@ -6874,8 +7104,24 @@
       "versionGuarded": false,
       "openapi": "GET /api/v1/vehicle-fluid-specifications",
       "documentedResponses": ["200", "401", "403", "422", "429", "500"],
-      "requiredEvidence": ["route", "service", "success", "authorization", "isolation"],
-      "providedEvidence": ["authorization", "isolation", "route", "service", "success"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "denial",
+        "cross-tenant",
+        "isolation"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
       "missingEvidence": [],
       "tests": ["tests/backend/p1-32-material-demand.test.ts"],
       "classification": "Covered",
@@ -6904,12 +7150,14 @@
         "cross-tenant",
         "idempotency",
         "audit",
+        "denial",
         "isolation"
       ],
       "providedEvidence": [
         "audit",
         "authorization",
         "cross-tenant",
+        "denial",
         "idempotency",
         "isolation",
         "route",
@@ -11165,7 +11413,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/counter-sales",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["200", "201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -11188,7 +11436,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-32-counter-sales.test.ts"],
+      "tests": [
+        "tests/backend/p1-32-counter-sales.test.ts",
+        "tests/ci/openapi-success-status.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/counter-sales/route.ts"
     },

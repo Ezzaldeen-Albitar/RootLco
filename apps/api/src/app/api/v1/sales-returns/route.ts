@@ -131,6 +131,9 @@ export const SALES_RETURN_CREATE_OPERATION = defineOperation({
   id: 'inv.sales-return-create',
   module: 'inventory',
   method: 'POST',
+  // `status: x.replayed ? 200 : 201`: a create, and the replay of one.
+  successStatus: 201,
+  replayStatus: 200,
   path: '/sales-returns',
   summary: 'Receive a returned part, restock it or quarantine it, and credit a sale.',
   permissions: ['inv.stock.operate', 'sal.finance.view'],

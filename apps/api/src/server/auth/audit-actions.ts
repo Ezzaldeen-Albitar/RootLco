@@ -1568,7 +1568,7 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     class: 'privileged',
     entityType: 'inv.stock_transfer',
     description:
-      'A dispatched stock transfer was received in full: the quantity left transit and entered the destination location. Partial receipt is unrepresentable, so a transfer is received whole or cancelled.',
+      'Units of a dispatched stock transfer were received: what arrived left transit and entered the destination location. A receipt records only what arrived; a remainder stays in transit until a further receipt, a return to the origin, or a write-off approved by a second person settles it.',
   },
   {
     code: 'inv.stock_transfer.cancelled',

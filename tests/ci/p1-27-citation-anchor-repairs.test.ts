@@ -89,21 +89,26 @@ const WEB_CLIENT = 'apps/web/src/lib/api/client.ts';
  * the occurrence check below runs per document, so a repair present in one and
  * missing from the other fails.
  */
+//
+// Re-anchored when P1-32 preparatory slices 3b and 3c added the material-draw problem
+// detail to `ProblemDetails`: every construct below line 124 of the client moved down
+// by nineteen lines and is cited where it now is. Same files, same tokens, same
+// claims; only the line numbers the growth displaced.
 const MATRIX_REPAIRS: ReadonlyArray<Omit<Repair, 'doc'>> = [
   // FE-020.ROUND5_FINDING_IDS — `H-09`, the 409 that chooses by catalog code.
   {
     citedAs: 'lib/api/client.ts',
     resolvesTo: WEB_CLIENT,
-    from: 806,
-    to: 807,
+    from: 825,
+    to: 826,
     anchor: 'state.conflict.blocked.title',
   },
   // SEC-003.NEGATIVE_OR_MUTATION_PROOF — the mapping the mutation rewrites.
   {
     citedAs: 'lib/api/client.ts',
     resolvesTo: WEB_CLIENT,
-    from: 757,
-    to: 757,
+    from: 776,
+    to: 776,
     anchor: 'state.denied.title',
   },
   // QA-002.IMPLEMENTATION_SURFACES — the declared error contract.
@@ -126,48 +131,48 @@ const MATRIX_REPAIRS: ReadonlyArray<Omit<Repair, 'doc'>> = [
   {
     citedAs: 'lib/api/client.ts',
     resolvesTo: WEB_CLIENT,
-    from: 806,
-    to: 807,
+    from: 825,
+    to: 826,
     anchor: 'state.conflict.blocked.title',
   },
   // QA-004.IMPLEMENTATION_SURFACES — the conflict-copy region.
   {
     citedAs: 'lib/api/client.ts',
     resolvesTo: WEB_CLIENT,
-    from: 759,
-    to: 807,
+    from: 778,
+    to: 826,
     anchor: 'state.conflict.blocked.title',
   },
   // QA-004.CONFLICT_STATE — the row's stated strongest evidence.
   {
     citedAs: 'lib/api/client.ts',
     resolvesTo: WEB_CLIENT,
-    from: 806,
-    to: 807,
+    from: 825,
+    to: 826,
     anchor: 'state.conflict.blocked.title',
   },
   // DOC-001.NEGATIVE_OR_MUTATION_PROOF — the deadline callback a mutation empties.
   {
     citedAs: WEB_CLIENT,
     resolvesTo: WEB_CLIENT,
-    from: 444,
-    to: 447,
+    from: 463,
+    to: 466,
     anchor: 'setTimeout',
   },
   // DOC-001.NEGATIVE_OR_MUTATION_PROOF — the cancellation flag a mutation pins false.
   {
     citedAs: WEB_CLIENT,
     resolvesTo: WEB_CLIENT,
-    from: 503,
-    to: 503,
+    from: 522,
+    to: 522,
     anchor: 'isAbort',
   },
   // DOC-001.NEGATIVE_OR_MUTATION_PROOF — the key a mutation overwrites.
   {
     citedAs: WEB_CLIENT,
     resolvesTo: WEB_CLIENT,
-    from: 365,
-    to: 367,
+    from: 384,
+    to: 386,
     anchor: 'idempotencyKey',
   },
 ];
@@ -180,16 +185,16 @@ const REPAIRS: readonly Repair[] = [
     doc: 'docs/phase-1/phase-1-27/adversarial-round-five.md',
     citedAs: 'client.ts',
     resolvesTo: WEB_CLIENT,
-    from: 806,
-    to: 807,
+    from: 825,
+    to: 826,
     anchor: 'state.conflict.blocked.title',
   },
   {
     doc: 'docs/phase-1/phase-1-27/finding-phase-disposition.md',
     citedAs: 'client.ts',
     resolvesTo: WEB_CLIENT,
-    from: 365,
-    to: 368,
+    from: 384,
+    to: 387,
     anchor: 'idempotencyKey',
   },
   {
