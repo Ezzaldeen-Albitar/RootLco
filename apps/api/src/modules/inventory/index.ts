@@ -121,6 +121,7 @@ export type {
 
 export type {
   TransferListView,
+  TransferSettlementReadView,
   TransferSettlementView,
   TransferSettlementWriteView,
   TransferView,

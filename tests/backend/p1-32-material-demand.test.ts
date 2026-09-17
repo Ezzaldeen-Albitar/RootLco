@@ -42,6 +42,8 @@
  *   inv.material-request-cancel: route service authorization success denial cross-tenant audit outbox idempotency isolation
  *   inv.stock-transfer-discrepancy-resolve: route service authorization success denial cross-tenant audit idempotency isolation
  *   inv.stock-transfer-write-off-decide: route service authorization success denial cross-tenant audit idempotency isolation
+ *   inv.stock-transfer-settlement-list: route service authorization success denial cross-tenant isolation
+ *   inv.stock-transfer-settlement-read: route service authorization success denial cross-tenant isolation
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
@@ -56,7 +58,15 @@ import {
   TENANT_A,
   USER_A,
 } from './helpers';
-import { FULL, createOpenWorkOrder, establishP1_19Fixtures, type Principal } from './p1-19-helpers';
+import {
+  BRANCH_A2,
+  BRANCH_B1,
+  COMPANY_B1,
+  FULL,
+  createOpenWorkOrder,
+  establishP1_19Fixtures,
+  type Principal,
+} from './p1-19-helpers';
 import {
   CATEGORY_A,
   INV_APPROVER,
@@ -65,6 +75,7 @@ import {
   INV_MATERIAL_APPROVER,
   INV_MATERIAL_SCOPED_A2,
   INV_READER,
+  INV_SCOPED_A2,
   INV_TENANT_B,
   INV_TENANT_B_MATERIAL,
   ITEM_A,
@@ -112,6 +123,8 @@ import { POST as TRANSFER_CREATE } from '@/app/api/v1/stock-transfers/route';
 import { POST as TRANSFER_RECEIVE } from '@/app/api/v1/stock-transfers/[transferId]/receipt/route';
 import { POST as DISCREPANCY } from '@/app/api/v1/stock-transfers/[transferId]/discrepancy-resolution/route';
 import { POST as WRITE_OFF_DECIDE } from '@/app/api/v1/stock-transfer-settlements/[settlementId]/decision/route';
+import { GET as SETTLEMENT_LIST } from '@/app/api/v1/stock-transfer-settlements/route';
+import { GET as SETTLEMENT_READ } from '@/app/api/v1/stock-transfer-settlements/[settlementId]/route';
 
 let admin: Pool;
 /** A tenant-A unit of VOLUME, so a pack-to-litre conversion crosses dimensions. */
@@ -1272,6 +1285,181 @@ describe('inv.stock-transfer-receive (partial), inv.stock-transfer-discrepancy-r
     });
     expect(await auditCountFor('inv.stock_transfer.write_off_rejected', writeOff.id)).toBe(1);
     expect(await onHandAt(ITEM_A, transfer.transitLocationId)).toBe(transitAfterDispatch);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P1-32-PRE-141 — the reads that reach a settlement.
+// ---------------------------------------------------------------------------
+
+interface SettlementReadBody {
+  readonly id: string;
+  readonly transferId: string;
+  readonly itemId: string;
+  readonly sku: string;
+  readonly kind: string;
+  readonly quantity: string;
+  readonly reason: string | null;
+  readonly status: string;
+  readonly decision: string | null;
+  readonly requestedBy: string;
+  readonly decidedBy: string | null;
+  readonly decidedAt: string | null;
+}
+
+describe('inv.stock-transfer-settlement-list, inv.stock-transfer-settlement-read', () => {
+  async function dispatchedBetween(fromBranch: string, toBranch: string): Promise<string> {
+    const from = await freshLocation(fromBranch);
+    const to = await freshLocation(toBranch);
+    await seedStock({ itemId: ITEM_A, locationId: from, quantity: '5' });
+    authAs(INV_FULL);
+    const created = await post(TRANSFER_CREATE, '/api/v1/stock-transfers', {
+      itemId: ITEM_A,
+      fromLocationId: from,
+      toLocationId: to,
+      quantity: '3',
+    });
+    expect(created.status).toBe(201);
+    return (await bodyOf<{ id: string }>(created)).id;
+  }
+
+  const settle = (transferId: string, kind: string, reason: string) =>
+    postAt(
+      DISCREPANCY,
+      `/api/v1/stock-transfers/${transferId}/discrepancy-resolution`,
+      { transferId },
+      { kind, quantity: '1', reason }
+    );
+
+  const list = (query: string) =>
+    get(SETTLEMENT_LIST, `/api/v1/stock-transfer-settlements?${query}`);
+
+  const read = (settlementId: string) =>
+    getAt(SETTLEMENT_READ, `/api/v1/stock-transfer-settlements/${settlementId}`, {
+      settlementId,
+    });
+
+  const itemsOf = async (response: Response): Promise<SettlementReadBody[]> =>
+    (await bodyOf<{ items: SettlementReadBody[] }>(response)).items;
+
+  it('lists and reads a return and a write-off for the sending and the destination branch, with the decision', async () => {
+    const transferId = await dispatchedBetween(BRANCH_A1, BRANCH_A2);
+    authAs(INV_FULL);
+    const receipt = await postAt(
+      TRANSFER_RECEIVE,
+      `/api/v1/stock-transfers/${transferId}/receipt`,
+      { transferId },
+      { quantity: '1' }
+    );
+    expect(receipt.status).toBe(200);
+    const returned = await bodyOf<SettlementBody>(
+      await settle(transferId, 'return_to_origin', 'Wrong item packed')
+    );
+    const writeOff = await bodyOf<SettlementBody>(
+      await settle(transferId, 'write_off', 'Lost in transit')
+    );
+
+    // The sending branch: both discrepancy settlements, and never the receipt.
+    authAs(INV_READER);
+    const scope = `companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&transferId=${transferId}`;
+    const sent = await list(scope);
+    expect(sent.status).toBe(200);
+    const sentItems = await itemsOf(sent);
+    expect(sentItems.map((row) => row.id).sort()).toEqual([returned.id, writeOff.id].sort());
+    expect(sentItems.map((row) => row.kind)).not.toContain('receipt');
+
+    const pending = await itemsOf(await list(`${scope}&status=pending`));
+    expect(pending).toHaveLength(1);
+    expect(pending[0]).toMatchObject({
+      id: writeOff.id,
+      transferId,
+      itemId: ITEM_A,
+      kind: 'write_off',
+      quantity: '1.000',
+      reason: 'Lost in transit',
+      status: 'pending',
+      decision: 'pending',
+      requestedBy: INV_FULL.userId,
+      decidedBy: null,
+      decidedAt: null,
+    });
+    expect(pending[0]?.sku).toEqual(expect.any(String));
+    const returns = await itemsOf(await list(`${scope}&kind=return_to_origin`));
+    expect(returns.map((row) => [row.id, row.decision])).toEqual([[returned.id, null]]);
+
+    // The destination branch reads the same two, by list and by id.
+    authAs(INV_SCOPED_A2);
+    const inbound = await list(
+      `companyId=${COMPANY_A1}&branchId=${BRANCH_A2}&transferId=${transferId}`
+    );
+    expect(inbound.status).toBe(200);
+    expect((await itemsOf(inbound)).map((row) => row.id).sort()).toEqual(
+      [returned.id, writeOff.id].sort()
+    );
+    const destinationRead = await read(writeOff.id);
+    expect(destinationRead.status).toBe(200);
+    expect(await bodyOf<SettlementReadBody>(destinationRead)).toMatchObject({
+      id: writeOff.id,
+      decision: 'pending',
+    });
+
+    // Decided by a second person, the rows say who and when.
+    authAs(INV_APPROVER);
+    const decided = await postAt(
+      WRITE_OFF_DECIDE,
+      `/api/v1/stock-transfer-settlements/${writeOff.id}/decision`,
+      { settlementId: writeOff.id },
+      { decision: 'approved', reason: 'Carrier confirmed the loss' }
+    );
+    expect(decided.status).toBe(200);
+    authAs(INV_READER);
+    const approved = await itemsOf(await list(`${scope}&status=approved`));
+    expect(approved).toHaveLength(1);
+    expect(approved[0]).toMatchObject({
+      id: writeOff.id,
+      status: 'posted',
+      decision: 'approved',
+      decidedBy: INV_APPROVER.userId,
+    });
+    expect(approved[0]?.decidedAt).not.toBeNull();
+    expect(await itemsOf(await list(`${scope}&status=pending`))).toEqual([]);
+    const sourceRead = await read(writeOff.id);
+    expect(sourceRead.status).toBe(200);
+    expect(await bodyOf<SettlementReadBody>(sourceRead)).toMatchObject({
+      decision: 'approved',
+      decidedBy: INV_APPROVER.userId,
+    });
+  });
+
+  it('refuses a caller without inv.stock.read, a branch that is neither end, and another tenant', async () => {
+    const transferId = await dispatchedBetween(BRANCH_A1, BRANCH_A1);
+    authAs(INV_FULL);
+    const writeOff = await bodyOf<SettlementBody>(
+      await settle(transferId, 'write_off', 'Crushed pallet')
+    );
+    const own = `companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&transferId=${transferId}`;
+
+    authAs(FULL);
+    expect((await list(own)).status).toBe(403);
+    expect((await read(writeOff.id)).status).toBe(403);
+
+    // A2 is neither end: its own list does not carry the row, A1's is refused, and the
+    // row is not read.
+    authAs(INV_SCOPED_A2);
+    const elsewhere = await list(
+      `companyId=${COMPANY_A1}&branchId=${BRANCH_A2}&transferId=${transferId}`
+    );
+    expect(elsewhere.status).toBe(200);
+    expect(await itemsOf(elsewhere)).toEqual([]);
+    expect((await list(own)).status).toBe(403);
+    expect((await read(writeOff.id)).status).toBe(403);
+
+    authAs(INV_TENANT_B);
+    expect((await read(writeOff.id)).status).toBe(404);
+    expect((await list(own)).status).toBe(403);
+    const foreign = await list(`companyId=${COMPANY_B1}&branchId=${BRANCH_B1}`);
+    expect(foreign.status).toBe(200);
+    expect((await itemsOf(foreign)).map((row) => row.id)).not.toContain(writeOff.id);
   });
 });
 

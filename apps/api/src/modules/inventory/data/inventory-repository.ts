@@ -145,6 +145,16 @@ export const TRANSFER_ORDER: OrderingContract = Object.freeze({
   direction: 'desc',
 });
 
+/**
+ * Transfer settlements are listed newest-first by `created_at`, which the row carries
+ * from its insert and never changes; a decision stamps `approved_at` or `rejected_at`
+ * and leaves it alone. Qualified, so a transfer-list cursor is refused here.
+ */
+export const TRANSFER_SETTLEMENT_ORDER: OrderingContract = Object.freeze({
+  key: 'inv.stock_transfer_settlements:created_at_desc',
+  direction: 'desc',
+});
+
 /** Goods receipts are listed newest-first by `created_at`, like every other draft. */
 export const GOODS_RECEIPT_ORDER: OrderingContract = Object.freeze({
   key: 'inv.goods_receipts:created_at_desc',
@@ -1709,6 +1719,15 @@ const toTransferSettlement = (r: TransferSettlementSql): TransferSettlementRow =
   recordVersion: r.record_version,
   createdAt: r.created_at,
 });
+
+/** A settlement with the item its transfer moves, for a reader deciding what it is. */
+export interface TransferSettlementListRow extends TransferSettlementRow {
+  readonly itemId: string;
+  readonly sku: string;
+}
+
+/** The decision a settlement list is narrowed by; see `listTransferSettlements`. */
+export type TransferSettlementDecisionFilter = 'pending' | 'approved' | 'rejected';
 
 export class InventoryRepository extends Repository {
   protected readonly module = 'inventory';
@@ -5821,6 +5840,101 @@ export class InventoryRepository extends Repository {
       [context.principal.tenantId, settlementId]
     );
     return row ? toTransferSettlement(row) : null;
+  }
+
+  /**
+   * One settlement with its transfer's item. Visible to a reader of either branch
+   * through `sel_stock_transfer_settlements_scope` or `..._destination`; the service
+   * decides which of the two branches authorizes the read.
+   */
+  public async readTransferSettlementDetail(
+    db: DbHandle,
+    settlementId: string
+  ): Promise<TransferSettlementListRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<TransferSettlementSql & { item_id: string; sku: string }>(
+      db,
+      `SELECT ${TRANSFER_SETTLEMENT_COLUMNS}, t.item_id, i.sku
+         FROM inv.stock_transfer_settlements s
+         JOIN inv.stock_transfers t ON t.tenant_id = s.tenant_id AND t.id = s.transfer_id
+         JOIN inv.item_master i ON i.tenant_id = t.tenant_id AND i.id = t.item_id
+        WHERE s.tenant_id = $1 AND s.id = $2`,
+      [context.principal.tenantId, settlementId]
+    );
+    return row ? { ...toTransferSettlement(row), itemId: row.item_id, sku: row.sku } : null;
+  }
+
+  /**
+   * One branch's discrepancy settlements — returns to the origin and write-offs —
+   * whether the branch sent the transfer or is its destination, newest first.
+   *
+   * A `receipt` settlement is not listed: it is the receipt of what arrived, already
+   * visible on the transfer, and nobody decides it. The branch predicate is explicit,
+   * for the reason `listTransfers` records: `app.branch_ids` is the permission-blind
+   * union of every active grant.
+   *
+   * The decision filter reads the stored columns: `pending` and `rejected` are the
+   * status, `approved` is a write-off posted with `approved_at` stamped. A return to
+   * the origin posts at once and is never decided, so it matches none of the three.
+   */
+  public async listTransferSettlements(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly decision?: TransferSettlementDecisionFilter | undefined;
+      readonly kind?: string | undefined;
+      readonly transferId?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<TransferSettlementListRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.decision ?? null,
+      filter.kind ?? null,
+      filter.transferId ?? null,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 's.created_at', id: 's.id' },
+      TRANSFER_SETTLEMENT_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<
+      TransferSettlementSql & { item_id: string; sku: string; sort_value: string }
+    >(
+      db,
+      `SELECT ${TRANSFER_SETTLEMENT_COLUMNS}, t.item_id, i.sku,
+              ${cursorTimestamp('s.created_at')} AS sort_value
+         FROM inv.stock_transfer_settlements s
+         JOIN inv.stock_transfers t ON t.tenant_id = s.tenant_id AND t.id = s.transfer_id
+         JOIN inv.item_master i ON i.tenant_id = t.tenant_id AND i.id = t.item_id
+        WHERE s.tenant_id = $1 AND s.company_id = $2
+          AND (s.branch_id = $3 OR s.to_branch_id = $3)
+          AND s.settlement_kind IN ('return_to_origin', 'write_off')
+          AND ($4::text IS NULL
+               OR ($4 = 'pending' AND s.status = 'pending')
+               OR ($4 = 'rejected' AND s.status = 'rejected')
+               OR ($4 = 'approved' AND s.status = 'posted' AND s.approved_at IS NOT NULL))
+          AND ($5::text IS NULL OR s.settlement_kind = $5)
+          AND ($6::uuid IS NULL OR s.transfer_id = $6)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: { ...toTransferSettlement(row), itemId: row.item_id, sku: row.sku },
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      TRANSFER_SETTLEMENT_ORDER
+    );
   }
 
   public async readTransferSettlementByIdempotencyKey(

@@ -41,12 +41,15 @@ import { AppFailure } from '@/server/errors/app-failure';
 import { appendAudit } from '@/server/audit/audit';
 import { pageRequest, type Page } from '@/server/db/pagination';
 import type { DbHandle } from '@/server/db/transaction';
-import type { ScopeAuthorizer } from '@/server/auth/authorization';
+import { callerHoldsPermission, type ScopeAuthorizer } from '@/server/auth/authorization';
 import {
   TRANSFER_ORDER,
+  TRANSFER_SETTLEMENT_ORDER,
   type InventoryRepository,
   type TransferListRow,
   type TransferRow,
+  type TransferSettlementDecisionFilter,
+  type TransferSettlementListRow,
   type TransferSettlementRow,
 } from '../data/inventory-repository';
 import {
@@ -154,6 +157,45 @@ export interface TransferSettlementView {
   readonly recordVersion: number;
   readonly createdAt: string;
 }
+
+/**
+ * A discrepancy settlement as a reader of either branch sees it
+ * (`inv.stock-transfer-settlement-list`, `inv.stock-transfer-settlement-read`).
+ */
+export interface TransferSettlementReadView extends TransferSettlementView {
+  readonly itemId: string;
+  readonly sku: string;
+  /**
+   * `pending` or `rejected` for a write-off in that status, `approved` for a write-off
+   * a second person approved, and `null` for a return to the origin, which posts at
+   * once and is never decided.
+   */
+  readonly decision: 'pending' | 'approved' | 'rejected' | null;
+  /** Who approved or rejected a write-off, and when; `null` until it is decided. */
+  readonly decidedBy: string | null;
+  readonly decidedAt: string | null;
+}
+
+function decisionOf(row: TransferSettlementRow): TransferSettlementReadView['decision'] {
+  if (row.kind !== 'write_off') return null;
+  if (row.status === 'pending') return 'pending';
+  if (row.status === 'rejected') return 'rejected';
+  return row.approvedAt === null ? null : 'approved';
+}
+
+function toSettlementReadView(row: TransferSettlementListRow): TransferSettlementReadView {
+  return {
+    ...toSettlementView(row),
+    itemId: row.itemId,
+    sku: row.sku,
+    decision: decisionOf(row),
+    decidedBy: row.approvedBy ?? row.rejectedBy,
+    decidedAt: iso(row.approvedAt ?? row.rejectedAt),
+  };
+}
+
+/** `inv.stock.read`: the code both settlement reads declare. */
+const STOCK_READ = 'inv.stock.read';
 
 /** A settlement with the transfer as it stands after it. */
 export interface TransferSettlementWriteView extends TransferSettlementView {
@@ -636,6 +678,60 @@ export class InventoryTransferService {
       pageRequest(TRANSFER_ORDER, page)
     );
     return { ...result, items: result.items.map(toTransferListView) };
+  }
+
+  /**
+   * One branch's returns to the origin and write-offs, whether it sent the transfer
+   * or is its destination — the same two readers `inv.stock_transfers` admits. The
+   * named branch is authorized unconditionally, as `list` does.
+   */
+  public async listSettlements(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly decision?: TransferSettlementDecisionFilter | undefined;
+      readonly kind?: string | undefined;
+      readonly transferId?: string | undefined;
+    },
+    page: { readonly cursor?: string | undefined; readonly limit?: number | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<Page<TransferSettlementReadView>> {
+    await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
+    const result = await this.repository.listTransferSettlements(
+      db,
+      filter,
+      pageRequest(TRANSFER_SETTLEMENT_ORDER, page)
+    );
+    return { ...result, items: result.items.map(toSettlementReadView) };
+  }
+
+  /**
+   * One settlement, for a reader of the source branch or of the destination branch.
+   *
+   * RLS already shows the row to either (`sel_stock_transfer_settlements_scope` and
+   * `..._destination`), so the decisive check is which branch the caller reads in:
+   * the source when the caller holds `inv.stock.read` there, otherwise the
+   * destination, whose `authorizeScope` refuses a caller who holds it in neither.
+   */
+  public async readSettlement(
+    db: DbHandle,
+    settlementId: string,
+    authorizeScope: ScopeAuthorizer
+  ): Promise<TransferSettlementReadView> {
+    const row = await this.repository.readTransferSettlementDetail(db, settlementId);
+    if (!row || row.kind === 'receipt') {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Transfer settlement ${settlementId} was not found`,
+      });
+    }
+    const source = { companyId: row.companyId, branchId: row.branchId };
+    if (await callerHoldsPermission(db, STOCK_READ, source)) {
+      await authorizeScope(source);
+    } else {
+      await authorizeScope({ companyId: row.companyId, branchId: row.toBranchId });
+    }
+    return toSettlementReadView(row);
   }
 
   private async readTransferOrFail(db: DbHandle, transferId: string): Promise<TransferRow> {

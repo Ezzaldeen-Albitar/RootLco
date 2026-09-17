@@ -389,6 +389,9 @@ import '@/app/api/v1/vehicle-fluid-specifications/[specificationId]/confirmation
 import '@/app/api/v1/vehicle-fluid-specifications/[specificationId]/retirement/route';
 import '@/app/api/v1/stock-transfers/[transferId]/discrepancy-resolution/route';
 import '@/app/api/v1/stock-transfer-settlements/[settlementId]/decision/route';
+// The two reads that let the second person reach a pending write-off.
+import '@/app/api/v1/stock-transfer-settlements/route';
+import '@/app/api/v1/stock-transfer-settlements/[settlementId]/route';
 
 // Phase 1-22 — billing, payment, delivery and warranty.
 //

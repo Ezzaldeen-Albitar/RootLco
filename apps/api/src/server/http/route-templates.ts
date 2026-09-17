@@ -320,6 +320,8 @@ export const ROUTE_TEMPLATES = Object.freeze([
   '/stock-reservations',
   '/stock-reservations/{reservationId}/release',
   '/stock-returns',
+  '/stock-transfer-settlements',
+  '/stock-transfer-settlements/{settlementId}',
   '/stock-transfer-settlements/{settlementId}/decision',
   '/stock-transfers',
   '/stock-transfers/{transferId}/cancellation',
