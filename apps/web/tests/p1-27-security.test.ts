@@ -1557,18 +1557,20 @@ describe('P1-27-SEC-004 — audit-event coverage', () => {
      * WHICH tags were inspected, not how many.
      *
      * `R4`: this guard was `expect(inspected).toBeGreaterThan(0)`, a suite-wide
-     * counter over a sweep that matches exactly two tags across eight routes.
-     * Renaming either failure-state component, or moving or deleting either
-     * route, would have dropped one of the two and left the counter at 1 — still
-     * greater than zero, still green, and the comment beside it claiming that
-     * "a rename or a route move cannot make it pass by matching nothing".
+     * counter over a sweep that matched a handful of tags across the routes.
+     * Renaming a failure-state component, or moving or deleting a route, would
+     * have dropped one of them and left the counter above zero — still green,
+     * and the comment beside it claiming that "a rename or a route move cannot
+     * make it pass by matching nothing".
      *
      * A count above zero is not coverage; it is the weakest possible statement
-     * that something happened. Naming the pair means a route joining or leaving
-     * the recoverable surface has to be acknowledged here.
+     * that something happened. Naming each one means a route joining or leaving
+     * the recoverable surface has to be acknowledged here — as the customer's
+     * work-order entry step did when it landed.
      */
     expect(inspected.sort(), 'the set of inspected route failure states changed').toEqual([
       '[locale]/(dashboard)/crm/customers/[customerId]/page.tsx <BackendUnavailableState>',
+      '[locale]/(dashboard)/crm/customers/[customerId]/work-order/new/page.tsx <BackendUnavailableState>',
       '[locale]/(dashboard)/vehicles/[vehicleId]/page.tsx <ErrorState>',
     ]);
   });

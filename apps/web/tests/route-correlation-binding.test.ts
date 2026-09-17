@@ -62,9 +62,11 @@ import {
  * BRANCH rather than per component, in "a denial the backend issued is
  * traceable" below.
  *
- * Six of the eight P1-27 routes render only `PermissionDeniedState` — they do no
- * failable server-side read, deferring their reads to a client table — so the
- * two asserted here are the whole recoverable surface.
+ * Most P1-27 routes render only `PermissionDeniedState` — they do no failable
+ * server-side read, deferring their reads to a client table — so the three
+ * asserted here are the whole recoverable surface. The third is the customer's
+ * work-order entry step, which reads the customer before it can name them and
+ * therefore joined that surface when it landed.
  *
  * That last sentence is DERIVED, not asserted: the final case walks the route
  * tree and fails if any page renders a recoverable state this file does not
@@ -93,16 +95,28 @@ vi.mock('@/features/vehicles/relations-api', () => ({
 vi.mock('@/features/vehicles/documents-api', () => ({
   listVehicleDocuments: async () => ({ status: 'ok', documentIds: [] }),
 }));
+const readCustomerSummary = vi.fn();
+vi.mock('@/features/receptions/support-api', () => ({
+  readCustomerSummary: (...a: unknown[]) => readCustomerSummary(...a),
+}));
 
 const { CRM_PERMISSIONS, VEHICLE_PERMISSIONS } = await import('@/features/crm/permissions');
+const { RECEPTION_PERMISSIONS } = await import('@/features/receptions/receptions-contract');
 const CustomerPage = (await import('@/app/[locale]/(dashboard)/crm/customers/[customerId]/page'))
   .default;
 const VehiclePage = (await import('@/app/[locale]/(dashboard)/vehicles/[vehicleId]/page')).default;
+const WorkOrderStartPage = (
+  await import('@/app/[locale]/(dashboard)/crm/customers/[customerId]/work-order/new/page')
+).default;
 
 /** The reference the transport produced. Distinct per route, so a hard-coded
  *  string in a component could not satisfy both. */
 const CRM_REFERENCE = 'corr-crm-7f3a';
 const VEHICLE_REFERENCE = 'corr-veh-91b2';
+const WORK_ORDER_REFERENCE = 'corr-wos-4d15';
+
+/** The codes the customer-first work-order step gates on, together. */
+const WORK_ORDER_PERMISSIONS = [CRM_PERMISSIONS.customerRead, RECEPTION_PERMISSIONS.manage];
 
 /**
  * Walks a rendered tree for the first node carrying a `correlationId` prop.
@@ -346,6 +360,7 @@ function routeSources(): readonly { readonly file: string; readonly text: string
 beforeEach(() => {
   readCustomer.mockReset();
   readVehicle.mockReset();
+  readCustomerSummary.mockReset();
 });
 
 describe('a recoverable backend failure reaches the operator with its reference', () => {
@@ -377,6 +392,38 @@ describe('a recoverable backend failure reaches the operator with its reference'
     } as never);
 
     expect(findCorrelation(tree)).toBe(VEHICLE_REFERENCE);
+  });
+
+  it('the customer work-order step — the third route on the recoverable surface', async () => {
+    /*
+     * The Owner's entry point from the customer profile reads the customer
+     * server-side before it can name them, so it inherits exactly the surface
+     * `SEC-004` was reported against, on a route written after that fix.
+     */
+    PERMISSIONS = WORK_ORDER_PERMISSIONS;
+    readCustomerSummary.mockResolvedValue({
+      status: 'unavailable',
+      correlationId: WORK_ORDER_REFERENCE,
+    });
+
+    const tree = await WorkOrderStartPage({
+      params: Promise.resolve({ locale: 'en', customerId: 'c-1' }),
+    } as never);
+
+    expect(rendersState(tree, BackendUnavailableState)).toBe(true);
+    expect(findCorrelation(tree)).toBe(WORK_ORDER_REFERENCE);
+  });
+
+  it('the customer work-order step — its client gate carries nothing and reads nothing', async () => {
+    PERMISSIONS = [];
+
+    const tree = await WorkOrderStartPage({
+      params: Promise.resolve({ locale: 'en', customerId: 'c-1' }),
+    } as never);
+
+    expect(rendersState(tree, PermissionDeniedState)).toBe(true);
+    expect(findCorrelation(tree)).toBeUndefined();
+    expect(readCustomerSummary, 'a denied caller still reached the backend').not.toHaveBeenCalled();
   });
 
   it('passes the reference through rather than inventing one', async () => {
@@ -665,14 +712,15 @@ describe('the scoped surface stays the surface', () => {
   it('finds no P1-27 route rendering a recoverable failure this file does not invoke', () => {
     /*
      * The sentence at the head of this file — "the two asserted here are the
-     * whole recoverable surface" — was written before anything checked it. Two
-     * routes carry a recoverable state today; a third that starts reading
-     * server-side would inherit exactly the `SEC-004` defect and no case here
-     * would notice, which is how this phase's dominant defect class gets in.
+     * whole recoverable surface" — was written before anything checked it. A
+     * route that starts reading server-side inherits exactly the `SEC-004`
+     * defect, and no case here would notice, which is how this phase's dominant
+     * defect class gets in.
      *
      * So the claim is derived rather than asserted: the route tree is walked and
-     * every page rendering a recoverable state must be one of the two invoked
-     * above. Adding a third fails here, naming it.
+     * every page rendering a recoverable state must be one of those invoked
+     * above. Adding another fails here, naming it — which is exactly what the
+     * customer's work-order entry step did.
      */
     const routes = join(process.cwd(), 'src', 'app');
     const pages: string[] = [];
@@ -700,6 +748,7 @@ describe('the scoped surface stays the surface', () => {
 
     expect(named, 'a P1-27 route renders a recoverable failure this file never invokes').toEqual([
       '[locale]/(dashboard)/crm/customers/[customerId]/page.tsx',
+      '[locale]/(dashboard)/crm/customers/[customerId]/work-order/new/page.tsx',
       '[locale]/(dashboard)/vehicles/[vehicleId]/page.tsx',
     ]);
   });
