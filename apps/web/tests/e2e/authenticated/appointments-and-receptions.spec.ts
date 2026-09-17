@@ -2397,7 +2397,9 @@ test.describe('the configured workspace: the four catalogue-blocked capabilities
 
     // The customer, by NAME — the whole reason `CustomerSelector` exists.
     const selector = page.getByTestId('customer-selector');
-    await selector.getByLabel(say('en', 'crm.customers.column.name')).fill('Acceptance');
+    await selector
+      .getByLabel(say('en', 'crm.customers.column.name'), { exact: true })
+      .fill('Acceptance');
     await selector.getByRole('button', { name: say('en', 'customerSelector.search') }).click();
     await selector.getByRole('button').filter({ hasText: manifest.customerDisplayName }).click();
     await expect(
@@ -2568,7 +2570,9 @@ test.describe('the configured workspace: the four catalogue-blocked capabilities
     await nameScope(page.getByLabel(say('en', 'receptions.checkIn.branch')), manifest.branchId);
 
     const selector = page.getByTestId('customer-selector');
-    await selector.getByLabel(say('en', 'crm.customers.column.name')).fill('Acceptance');
+    await selector
+      .getByLabel(say('en', 'crm.customers.column.name'), { exact: true })
+      .fill('Acceptance');
     await selector.getByRole('button', { name: say('en', 'customerSelector.search') }).click();
     await selector.getByRole('button').filter({ hasText: manifest.customerDisplayName }).click();
 
