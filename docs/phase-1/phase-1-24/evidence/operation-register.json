@@ -6081,6 +6081,7 @@
         "tests/backend/p1-30-tenant-bootstrap-reachability.test.ts",
         "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/backend/p1-31-tenant-administrator-bundle-backfill.test.ts",
+        "tests/backend/p1-32-platform-console.test.ts",
         "tests/backend/pre-p1-29-platform-control-plane.test.ts"
       ],
       "classification": "Covered",
@@ -6272,7 +6273,10 @@
       "requiredEvidence": ["route", "service", "success", "authorization", "denial"],
       "providedEvidence": ["authorization", "denial", "route", "service", "success"],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-32-platform-console.test.ts"],
+      "tests": [
+        "tests/backend/p1-32-platform-console.test.ts",
+        "tests/ci/platform-grant-base-entitlement.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/platform/session/route.ts"
     },

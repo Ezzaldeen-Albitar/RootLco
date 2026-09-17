@@ -983,7 +983,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      whose regexes read the label and the number as adjacent cells. -->
 
 <!-- derived: files apps/web/tests = 148 -->
-<!-- derived: files tests/ci = 76 -->
+<!-- derived: files tests/ci = 77 -->
 <!-- derived: files scripts/ci = 66 -->
 <!-- derived: files apps/web/scripts = 4 -->
 <!-- derived: files supabase/migrations = 144 -->

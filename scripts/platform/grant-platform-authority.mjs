@@ -28,11 +28,32 @@
  *
  *   - owner-controlled: `--confirm <email>` must repeat GRANT_OPERATOR_EMAIL,
  *     and ROOTLCO_ENV must be one of the two named gates;
+ *   - BASE ENTITLEMENT: a requested set of platform codes (`--codes`, default
+ *     every code in `PLATFORM_AUTHORITY_CODES`) that lacks
+ *     `platform.organization.read`, or names a code outside that list, is
+ *     REFUSED with a non-zero exit before a connection is opened. The script
+ *     never adds the base code on the operator's behalf: an incompatible
+ *     request is a refusal, not a silent widening of authority. The set the
+ *     operator would be left holding is checked again inside the transaction,
+ *     and so is the set the operator would be left holding. That code is the
+ *     Platform Owner Console's base entitlement: `GET /platform/session` — the
+ *     first request every console page makes — declares it and nothing else, so
+ *     an operator granted only `platform.audit.read` or
+ *     `platform.subscription.manage` is refused at the session read and bounced
+ *     out of the console before a page gate could admit them. Granting platform
+ *     authority therefore means granting the base code PLUS whatever else the
+ *     operator needs, never a subset without it. The published permission set of
+ *     `platform.session-read` is deliberately unchanged; the rule lives where
+ *     grants are MADE. The only other code path that writes
+ *     `iam.platform_grants` is `genesis-platform-operator.mjs` — no operation
+ *     and no policy admits an application role to that table — and it refuses
+ *     the same set through the same function;
  *   - idempotent: an operator who already holds every code is a no-op (exit 0)
  *     that writes nothing, not even an audit record;
  *   - fail-closed: any refusal rolls everything back and exits non-zero;
- *   - `--dry-run` performs every write and then rolls back, so the evidence
- *     reports exactly what a real run would have done;
+ *   - `--dry-run` reads the operator, prints the intended delta (the codes a
+ *     real run would add) and nothing else: no row is inserted, no audit record
+ *     is appended and no evidence file is written;
  *   - evidence without secrets: identifiers, timestamps and the database host.
  *
  * Inputs:
@@ -43,13 +64,13 @@
  *   GRANT_EVIDENCE_PATH      where to write the evidence JSON
  *                            (default .tmp/platform-authority-grant-<ts>.json)
  *
- *   node scripts/platform/grant-platform-authority.mjs --confirm <email> [--dry-run]
+ *   node scripts/platform/grant-platform-authority.mjs --confirm <email> [--codes a,b,...] [--dry-run]
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import { PLATFORM_AUTHORITY_CODES } from './genesis-platform-operator.mjs';
+import { PLATFORM_AUTHORITY_CODES, platformGrantSetRefusal } from './genesis-platform-operator.mjs';
 
 const ALLOWED_ENVIRONMENTS = new Set(['local-acceptance', 'production-genesis']);
 /** The catalogue seed's own actor: the only uuid that predates every account. */
@@ -67,17 +88,43 @@ function fail(message, exitCode = 2) {
 }
 
 function parseArgs(argv) {
-  const parsed = { confirm: undefined, dryRun: false };
+  const parsed = { confirm: undefined, dryRun: false, codes: undefined };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--dry-run') parsed.dryRun = true;
     else if (arg === '--confirm') {
       parsed.confirm = argv[++index];
       if (!parsed.confirm) fail('--confirm requires the operator address');
+    } else if (arg === '--codes') {
+      const list = argv[++index];
+      if (!list) fail('--codes requires a comma-separated list of platform authority codes');
+      parsed.codes = list
+        .split(',')
+        .map((code) => code.trim())
+        .filter((code) => code.length > 0);
     } else fail(`Unknown argument: ${arg}`);
   }
   if (!parsed.confirm) fail('Missing required --confirm <operator-email>');
   return parsed;
+}
+
+/**
+ * The refusal a REQUESTED grant set earns, or `null` when it may be granted.
+ *
+ * Stricter than `platformGrantSetRefusal`: a code outside
+ * `PLATFORM_AUTHORITY_CODES` is incompatible too, because this script can only
+ * complete an operator with codes the catalogue ships for platform authority.
+ *
+ * @param {readonly string[] | undefined} codes
+ * @returns {string | null}
+ */
+export function requestedGrantSetRefusal(codes) {
+  if (!Array.isArray(codes)) return platformGrantSetRefusal(codes);
+  const unknown = codes.filter((code) => !PLATFORM_AUTHORITY_CODES.includes(code));
+  if (unknown.length > 0) {
+    return `Refused: not a platform authority code this script may grant: ${unknown.join(', ')}`;
+  }
+  return platformGrantSetRefusal(codes);
 }
 
 /** Reads what the run needs. The password stays in this object and is never logged. */
@@ -92,9 +139,13 @@ export function readGrantInput(env = process.env, argv = process.argv.slice(2)) 
   if (args.confirm.trim().toLowerCase() !== email) {
     fail('--confirm must exactly match GRANT_OPERATOR_EMAIL');
   }
+  const codes = args.codes === undefined ? [...PLATFORM_AUTHORITY_CODES] : args.codes;
+  const refusal = requestedGrantSetRefusal(codes);
+  if (refusal) fail(refusal, 4);
   return {
     environment,
     dryRun: args.dryRun,
+    codes: [...new Set(codes)].sort(),
     db: {
       host: env.DB_HOST ?? '127.0.0.1',
       port: Number(env.DB_PORT ?? 54322),
@@ -112,6 +163,13 @@ export function readGrantInput(env = process.env, argv = process.argv.slice(2)) 
  * against a real database without spawning a process.
  */
 export async function runGrant(client, input) {
+  // The base-entitlement rule on the set this run was asked to establish, before
+  // any row is read or written. `readGrantInput` already refused it; a caller
+  // driving this function directly is held to the same rule. The set the
+  // operator is LEFT holding is checked again below.
+  const requested = input.codes ?? [...PLATFORM_AUTHORITY_CODES];
+  const requestRefusal = requestedGrantSetRefusal(requested);
+  if (requestRefusal) fail(requestRefusal, 4);
   await client.query('BEGIN');
   try {
     const accounts = await client.query(
@@ -150,7 +208,7 @@ export async function runGrant(client, input) {
       fail(`Refused: the operator account ${operator.id} is ${operator.status}, not active`, 4);
     }
 
-    const missing = PLATFORM_AUTHORITY_CODES.filter((code) => !operator.held.includes(code));
+    const missing = [...new Set(requested)].filter((code) => !operator.held.includes(code)).sort();
     if (missing.length === 0) {
       await client.query('ROLLBACK');
       return {
@@ -159,6 +217,24 @@ export async function runGrant(client, input) {
         homeTenantId: operator.tenant_id,
         grants: operator.held,
         grantedCodes: [],
+      };
+    }
+
+    const after = [...new Set([...operator.held, ...missing])].sort();
+    // The set the operator is left holding obeys the same rule as the set that
+    // was requested, checked before anything is written.
+    const resultRefusal = platformGrantSetRefusal(after);
+    if (resultRefusal) fail(resultRefusal, 4);
+
+    if (input.dryRun) {
+      // The intended delta only: nothing is inserted and nothing is audited.
+      await client.query('ROLLBACK');
+      return {
+        outcome: 'dry-run',
+        operatorAccountId: operator.id,
+        homeTenantId: operator.tenant_id,
+        grants: after,
+        grantedCodes: missing,
       };
     }
 
@@ -171,7 +247,6 @@ export async function runGrant(client, input) {
         [operator.id, code, GRANT_ACTOR]
       );
     }
-    const after = [...new Set([...operator.held, ...missing])].sort();
     const audit = await client.query(
       `SELECT iam.audit_append(
           p_tenant => $1, p_actor => $2, p_actor_kind => 'system',
@@ -195,14 +270,14 @@ export async function runGrant(client, input) {
     );
 
     const result = {
-      outcome: input.dryRun ? 'dry-run' : 'granted',
+      outcome: 'granted',
       operatorAccountId: operator.id,
       homeTenantId: operator.tenant_id,
       grants: after,
       grantedCodes: missing,
       auditRecordId: audit.rows[0].id,
     };
-    await client.query(input.dryRun ? 'ROLLBACK' : 'COMMIT');
+    await client.query('COMMIT');
     return result;
   } catch (error) {
     try {
@@ -249,6 +324,14 @@ async function main() {
     result = await runGrant(client, input);
   } finally {
     await client.end();
+  }
+  if (input.dryRun) {
+    console.log(`Platform authority grant: ${result.outcome} (dry run, nothing written)`);
+    console.log(`  operator account  ${result.operatorAccountId}`);
+    console.log(
+      `  would grant       ${result.grantedCodes.length === 0 ? '(none)' : result.grantedCodes.join(', ')}`
+    );
+    return;
   }
   const path = writeEvidence(input, result);
   console.log(`Platform authority grant: ${result.outcome}`);

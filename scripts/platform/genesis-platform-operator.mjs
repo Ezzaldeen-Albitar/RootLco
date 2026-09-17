@@ -97,6 +97,48 @@ export const PLATFORM_AUTHORITY_CODES = Object.freeze([
   'platform.audit.read',
 ]);
 const PLATFORM_CODES = PLATFORM_AUTHORITY_CODES;
+
+/**
+ * The Platform Owner Console's BASE entitlement.
+ *
+ * `GET /platform/session` — the console's own session read, the first request
+ * every console page makes — declares `platform.organization.read` and nothing
+ * else. So an operator granted, say, `platform.audit.read` alone is refused at
+ * the session read and bounced out of the console before any page gate could
+ * admit them: their grants are real and completely unusable.
+ *
+ * The published permission set of `platform.session-read` is NOT widened to
+ * repair that, because a session read that accepts any one of eight codes tells
+ * a caller nothing about which console it may open. The rule is enforced where
+ * grants are MADE instead: every platform grant set contains this code.
+ */
+export const PLATFORM_BASE_AUTHORITY_CODE = 'platform.organization.read';
+
+/**
+ * The refusal a platform grant set earns, or `null` when it is admissible.
+ *
+ * A message rather than a thrown error, so each script raises it through its own
+ * refusal class and exit code; a pure function of the codes, so
+ * `tests/ci/platform-grant-base-entitlement.test.ts` can drive it with sets that
+ * no run would produce and prove each one is refused rather than assuming it.
+ *
+ * @param {readonly string[]} codes The platform authority codes a run would establish.
+ * @returns {string | null}
+ */
+export function platformGrantSetRefusal(codes) {
+  if (!Array.isArray(codes) || codes.length === 0) {
+    return 'Refused: a platform grant set must name at least one platform authority code';
+  }
+  if (!codes.includes(PLATFORM_BASE_AUTHORITY_CODE)) {
+    return (
+      `Refused: every platform grant set must contain ${PLATFORM_BASE_AUTHORITY_CODE}, ` +
+      'the console base entitlement that GET /platform/session declares. Without it the ' +
+      `operator is refused at the session read and never reaches a page. Requested: ${codes.join(', ')}`
+    );
+  }
+  return null;
+}
+
 /** The catalogue seed's own actor: the only uuid that predates every account. */
 const GENESIS_ACTOR = '00000000-0000-4000-8000-000000000001';
 
@@ -211,6 +253,11 @@ async function establishProviderIdentity(input) {
  */
 export async function runGenesis(client, input, identity) {
   const state = {};
+  // The base-entitlement rule, checked before anything is written: this is one
+  // of the two code paths that issue a platform grant, and both refuse the same
+  // set for the same reason.
+  const refusal = platformGrantSetRefusal(PLATFORM_CODES);
+  if (refusal) fail(refusal, 4);
   await client.query('BEGIN');
   try {
     // G2 — one-time. Any active platform grant held by a different account
