@@ -20,6 +20,14 @@
  *  and a transfer receipt records what arrived: the remainder stays in transit
  *  until a further receipt, a return to origin, or a second-person write-off.
  *
+ * Slice 3c (P1-32-PRE-132) adds: EVERY work-order reservation and part issue draws
+ * on a material request against an approved requirement — the function, the
+ * primitive and a raw INSERT are all refused without one; an issue of exactly what
+ * was reserved succeeds (P1-21-D-01); the derivation answers a vehicle with no make;
+ * a soft-deleted return gives nothing back; an expired reservation gives its
+ * allowance back like a release; and each table's row policies, not a guard, are
+ * what refuse a foreign tenant.
+ *
  * Cases run inside rolled-back transactions on the runtime role, except the race,
  * which needs committed fixtures and separate connections; `cleanFixtures` unwinds
  * it through `deleteTenantCascade`.
@@ -42,6 +50,7 @@ import {
   BRANCH_A1,
   USER_A,
   USER_B,
+  RUNTIME_LOGIN,
 } from './helpers';
 import { seedP109Base, makeAuthorizedVisit, newWorkOrder } from './p1-09-helpers';
 import { seedLocations, seedStock, expectFail, OTHER_ACTOR } from './p1-10-helpers';
@@ -169,6 +178,29 @@ async function workshop(
     )
   ).id;
   return { make, model, wo, line };
+}
+
+/** A vehicle with NO make (nothing a specification can be keyed on), a work order and a line. */
+async function workshopWithoutMake(c: Q, tag: string): Promise<{ wo: string; line: string }> {
+  const vehicle = (
+    await one<{ id: string }>(
+      c,
+      `INSERT INTO veh.vehicles (tenant_id, vin_raw, powertrain_category, lifecycle_status, created_by)
+       VALUES ($1, upper(rpad('MDN' || $2, 17, '0')), 'ice', 'active', $3) RETURNING id`,
+      [TENANT_A, tag, USER_A]
+    )
+  ).id;
+  const visit = await makeAuthorizedVisit(c, vehicle);
+  const wo = await newWorkOrder(c, visit, { vehicle });
+  const line = (
+    await one<{ id: string }>(
+      c,
+      `INSERT INTO wo.work_order_service_lines (tenant_id, company_id, branch_id, work_order_id, description, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+      [TENANT_A, COMPANY_A1, BRANCH_A1, wo, `Oil service ${tag}`, USER_A]
+    )
+  ).id;
+  return { wo, line };
 }
 
 /** Proposes an ENTERED requirement as USER_A and approves it as OTHER_ACTOR. */
@@ -923,12 +955,27 @@ describe('inv.material_requirement_usage — no double counting across states', 
         `SELECT inv.create_material_request($1,$2,1)`,
         [requirement, stranger]
       );
-      // A reservation of another item cannot be linked to this request.
-      const foreignReservation = (
-        await one<{ id: string }>(c, `SELECT inv.reserve_stock($1,$2,1,$3) AS id`, [
+      // The slice-3a bypass — reserving for the work order straight through the
+      // primitive — is refused since slice 3c: no request, no draw.
+      await expectRefusal(
+        c,
+        '23514',
+        /material_approval_required: no_requirement/,
+        `SELECT inv.reserve_stock($1,$2,1,$3)`,
+        [otherOil, warehouse, wo]
+      );
+      // A reservation of another item, drawn on its own request, cannot be linked to
+      // this request as well.
+      const otherRequest = (
+        await one<{ id: string }>(c, `SELECT inv.create_material_request($1,$2,1) AS id`, [
+          requirement,
           otherOil,
+        ])
+      ).id;
+      const foreignReservation = (
+        await one<{ id: string }>(c, `SELECT inv.reserve_material_request($1,$2,1) AS id`, [
+          otherRequest,
           warehouse,
-          wo,
         ])
       ).id;
       await expectFail(
@@ -940,6 +987,377 @@ describe('inv.material_requirement_usage — no double counting across states', 
       );
       // The link table is append-only for the runtime role.
       await expectFail(c, '42501', `DELETE FROM inv.material_request_fulfillments`);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Slice 3c — every work-order draw is governed, in the database
+// ---------------------------------------------------------------------------
+describe('every work-order draw is governed by an approved requirement (slice 3c)', () => {
+  it('refuses the function, the primitive and a raw INSERT with no material request, and still serves a draw with no work order', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const litre = await unit(c, 'mdc_gov_l', 'volume');
+      const { item: oil } = await item(c, 'gov', litre);
+      const { wo } = await workshop(c, 'gov');
+      const { warehouse } = await seedLocations(c, 'mdc_gov');
+      await seedStock(c, oil, warehouse, 10, 'mdc_gov');
+
+      const noRequirement = /material_approval_required: no_requirement/;
+      await expectRefusal(c, '23514', noRequirement, `SELECT inv.reserve_stock($1,$2,1,$3)`, [
+        oil,
+        warehouse,
+        wo,
+      ]);
+      await expectRefusal(c, '23514', noRequirement, `SELECT inv.issue_part($1,$2,$3,1)`, [
+        wo,
+        oil,
+        warehouse,
+      ]);
+      await expectRefusal(
+        c,
+        '23514',
+        noRequirement,
+        `INSERT INTO inv.stock_reservations (tenant_id, company_id, branch_id, item_id, location_id, work_order_id, quantity, status, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,1,'active',$7)`,
+        [TENANT_A, COMPANY_A1, BRANCH_A1, oil, warehouse, wo, USER_A]
+      );
+      await expectRefusal(
+        c,
+        '23514',
+        noRequirement,
+        `INSERT INTO inv.part_issues (tenant_id, company_id, branch_id, work_order_id, item_id, location_id, quantity, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,1,$7)`,
+        [TENANT_A, COMPANY_A1, BRANCH_A1, wo, oil, warehouse, USER_A]
+      );
+      // Nothing moved and nothing was held.
+      expect(await onHand(c, oil, warehouse)).toBe('10.000');
+      expect(
+        await text(
+          c,
+          `SELECT ((SELECT count(*) FROM inv.stock_reservations WHERE item_id = $1)
+                 + (SELECT count(*) FROM inv.part_issues WHERE item_id = $1))::text AS v`,
+          [oil]
+        )
+      ).toBe('0');
+      // A reservation with no work order (a counter hold) is outside the rule.
+      await c.query(`SELECT inv.reserve_stock($1,$2,1)`, [oil, warehouse]);
+
+      // Naming a request by hand is a name, not an authority. The request below is
+      // for ANOTHER work order's approved requirement.
+      const other = await workshop(c, 'gov_b');
+      const requirement = await approvedRequirement(c, other.line, { item: oil }, '3', litre);
+      const request = (
+        await one<{ id: string }>(c, `SELECT inv.create_material_request($1,$2,2) AS id`, [
+          requirement,
+          oil,
+        ])
+      ).id;
+      await c.query(`SELECT set_config('inv.material_request_id', $1, true)`, [request]);
+      // A raw reservation for THIS work order is refused at the link.
+      await expectRefusal(
+        c,
+        '23514',
+        /another item or work order/,
+        `INSERT INTO inv.stock_reservations (tenant_id, company_id, branch_id, item_id, location_id, work_order_id, quantity, status, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,1,'active',$7)`,
+        [TENANT_A, COMPANY_A1, BRANCH_A1, oil, warehouse, wo, USER_A]
+      );
+      // For the request's own work order, past the request is refused; within it, the
+      // draw is linked and counted exactly as a governed one.
+      await expectRefusal(
+        c,
+        '23514',
+        /material_request_exceeded/,
+        `SELECT inv.issue_part($1,$2,$3,3)`,
+        [other.wo, oil, warehouse]
+      );
+      await c.query(`SELECT inv.issue_part($1,$2,$3,2)`, [other.wo, oil, warehouse]);
+      await c.query(`SELECT set_config('inv.material_request_id', '', true)`);
+      expect(await usage(c, requirement)).toMatchObject({ issued: '2.000', committed: '2.000' });
+      // The request is spent: a further draw on it is refused however it is made.
+      await expectRefusal(
+        c,
+        '23514',
+        /material_request_exceeded/,
+        `SELECT inv.issue_material_request($1,$2,1,NULL)`,
+        [request, warehouse]
+      );
+      // The governed functions clear the name after the call, so the next raw draw is
+      // refused again.
+      await c.query(
+        `SELECT inv.reserve_material_request(inv.create_material_request($1,$2,1),$3,1)`,
+        [requirement, oil, warehouse]
+      );
+      await expectRefusal(c, '23514', noRequirement, `SELECT inv.issue_part($1,$2,$3,1)`, [
+        other.wo,
+        oil,
+        warehouse,
+      ]);
+    });
+  });
+
+  it('issues exactly what was reserved: the reservation is consumed before stock leaves (P1-21-D-01)', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const litre = await unit(c, 'mdc_d01_l', 'volume');
+      const { item: oil } = await item(c, 'd01', litre);
+      const { line } = await workshop(c, 'd01');
+      const { warehouse } = await seedLocations(c, 'mdc_d01');
+      await seedStock(c, oil, warehouse, 4, 'mdc_d01');
+      const requirement = await approvedRequirement(c, line, { item: oil }, '4', litre);
+      const request = (
+        await one<{ id: string }>(c, `SELECT inv.create_material_request($1,$2,4) AS id`, [
+          requirement,
+          oil,
+        ])
+      ).id;
+      // Every unit on the shelf is reserved: on hand 4, reserved 4, available 0.
+      const reservation = (
+        await one<{ id: string }>(c, `SELECT inv.reserve_material_request($1,$2,4) AS id`, [
+          request,
+          warehouse,
+        ])
+      ).id;
+      // Issuing those four used to post the out movement first and trip
+      // ck_stock_balances_available; the reservation is now consumed first.
+      await c.query(`SELECT inv.issue_material_request($1,$2,4,$3)`, [
+        request,
+        warehouse,
+        reservation,
+      ]);
+      expect(
+        await one(
+          c,
+          `SELECT on_hand_qty::text AS on_hand, reserved_qty::text AS reserved FROM inv.stock_balances
+            WHERE item_id = $1 AND location_id = $2`,
+          [oil, warehouse]
+        )
+      ).toEqual({ on_hand: '0.000', reserved: '0.000' });
+      expect(
+        await text(c, `SELECT status AS v FROM inv.stock_reservations WHERE id = $1`, [reservation])
+      ).toBe('consumed');
+      expect(await usage(c, requirement)).toMatchObject({
+        reserved: '0.000',
+        issued: '4.000',
+        committed: '4.000',
+      });
+      expect(await onHand(c, oil, warehouse)).toBe(await ledger(c, oil, warehouse));
+    });
+  });
+
+  it('derives and re-checks a requirement for a vehicle with no make as missing_specification', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const litre = await unit(c, 'mdc_nomake_l', 'volume');
+      const { item: oil, category } = await item(c, 'nomake', litre);
+      const { line } = await workshopWithoutMake(c, 'nomake');
+      // A confirmed specification exists for SOME make; this vehicle has none.
+      const { make } = await workshop(c, 'nomake_other');
+      const spec = (
+        await one<{ id: string }>(
+          c,
+          `SELECT inv.record_vehicle_fluid_specification($1,NULL,NULL,NULL,NULL,'engine_oil_change',NULL,4,$2,'Manual') AS id`,
+          [make, litre]
+        )
+      ).id;
+      await c.query(`SELECT inv.confirm_vehicle_fluid_specification($1)`, [spec]);
+
+      const byItem = (
+        await one<{ id: string }>(
+          c,
+          `SELECT inv.derive_material_requirement($1,$2,NULL,'engine_oil_change',NULL) AS id`,
+          [line, oil]
+        )
+      ).id;
+      expect(
+        await one(
+          c,
+          `SELECT status, approval_required_reason AS reason, basis, allowance_quantity AS allowance,
+                  specification_id
+             FROM inv.material_requirements WHERE id = $1`,
+          [byItem]
+        )
+      ).toEqual({
+        status: 'approval_required',
+        reason: 'missing_specification',
+        basis: 'specification',
+        allowance: null,
+        specification_id: null,
+      });
+      // The re-check reads the same vehicle and still finds nothing, without failing.
+      expect(await text(c, `SELECT inv.recheck_material_requirement($1) AS v`, [byItem])).toBe(
+        'approval_required'
+      );
+      // A family requirement for another vehicle with no make takes the same path.
+      const { line: second } = await workshopWithoutMake(c, 'nomake_b');
+      const byFamily = (
+        await one<{ id: string }>(
+          c,
+          `SELECT inv.derive_material_requirement($1,NULL,$2,'engine_oil_change','  ') AS id`,
+          [second, category]
+        )
+      ).id;
+      expect(await text(c, `SELECT inv.recheck_material_requirement($1) AS v`, [byFamily])).toBe(
+        'approval_required'
+      );
+      expect(
+        await text(
+          c,
+          `SELECT approval_required_reason AS v FROM inv.material_requirements WHERE id = $1`,
+          [byFamily]
+        )
+      ).toBe('missing_specification');
+    });
+  });
+
+  it('gives nothing back for a soft-deleted return, and gives back an expired reservation like a released one', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const litre = await unit(c, 'mdc_back_l', 'volume');
+      const { item: oil } = await item(c, 'back', litre);
+      const { line } = await workshop(c, 'back');
+      const { warehouse } = await seedLocations(c, 'mdc_back');
+      await seedStock(c, oil, warehouse, 20, 'mdc_back');
+      const requirement = await approvedRequirement(c, line, { item: oil }, '10', litre);
+
+      // A live return gives its quantity back; soft-deleting it takes that back.
+      const issue = (
+        await one<{ id: string }>(
+          c,
+          `SELECT inv.issue_material_request(inv.create_material_request($1,$2,4),$3,4,NULL) AS id`,
+          [requirement, oil, warehouse]
+        )
+      ).id;
+      const partReturn = (
+        await one<{ id: string }>(c, `SELECT inv.return_part($1,2,'Unopened',NULL) AS id`, [issue])
+      ).id;
+      expect(await usage(c, requirement)).toMatchObject({
+        issued: '4.000',
+        returned: '2.000',
+        committed: '2.000',
+      });
+      await c.query(
+        `UPDATE inv.part_returns SET deleted_at = now(), deleted_by = $2 WHERE id = $1`,
+        [partReturn, USER_A]
+      );
+      expect(await usage(c, requirement)).toMatchObject({ returned: '0.000', committed: '4.000' });
+
+      // An EXPIRED governed reservation stops counting, exactly as a RELEASED one does.
+      // The expiring one is booked last: any reservation at the same cell expires stale
+      // rows first.
+      const releasing = (
+        await one<{ id: string }>(c, `SELECT inv.create_material_request($1,$2,3) AS id`, [
+          requirement,
+          oil,
+        ])
+      ).id;
+      const released = (
+        await one<{ id: string }>(c, `SELECT inv.reserve_material_request($1,$2,3) AS id`, [
+          releasing,
+          warehouse,
+        ])
+      ).id;
+      const expiring = (
+        await one<{ id: string }>(c, `SELECT inv.create_material_request($1,$2,3) AS id`, [
+          requirement,
+          oil,
+        ])
+      ).id;
+      await c.query(
+        `SELECT inv.reserve_material_request($1,$2,3,NULL,now() - interval '1 minute')`,
+        [expiring, warehouse]
+      );
+      expect(await usage(c, requirement)).toMatchObject({
+        reserved: '6.000',
+        committed: '10.000',
+        remaining: '0.000',
+      });
+
+      expect(
+        await text(c, `SELECT inv.expire_reservations($1,$2)::text AS v`, [oil, warehouse])
+      ).toBe('1');
+      expect(await usage(c, requirement)).toMatchObject({
+        open: '0.000',
+        reserved: '3.000',
+        committed: '7.000',
+      });
+      await c.query(`SELECT inv.release_reservation($1,'Job re-scoped')`, [released]);
+      expect(await usage(c, requirement)).toMatchObject({
+        open: '0.000',
+        reserved: '0.000',
+        committed: '4.000',
+        remaining: '6.000',
+      });
+
+      // What went back is the allowance's, not the request's: neither request can draw
+      // those units again, and a new request can.
+      for (const request of [expiring, releasing]) {
+        await expectRefusal(
+          c,
+          '23514',
+          /material_request_exceeded/,
+          `SELECT inv.reserve_material_request($1,$2,1)`,
+          [request, warehouse]
+        );
+      }
+      await c.query(`SELECT inv.create_material_request($1,$2,6)`, [requirement, oil]);
+      expect((await usage(c, requirement)).remaining).toBe('0.000');
+    });
+  });
+
+  it('refuses to cancel a requirement while quantity is committed against it, and cancels it once returned', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const litre = await unit(c, 'mdc_cxl_l', 'volume');
+      const { item: oil } = await item(c, 'cxl', litre);
+      const { line } = await workshop(c, 'cxl');
+      const { warehouse } = await seedLocations(c, 'mdc_cxl');
+      await seedStock(c, oil, warehouse, 10, 'mdc_cxl');
+      const requirement = await approvedRequirement(c, line, { item: oil }, '5', litre);
+      const request = (
+        await one<{ id: string }>(c, `SELECT inv.create_material_request($1,$2,2) AS id`, [
+          requirement,
+          oil,
+        ])
+      ).id;
+      await expectRefusal(
+        c,
+        '23514',
+        /material_requirement_committed: the requirement has open requests/,
+        `SELECT inv.cancel_material_requirement($1,'Job re-scoped')`,
+        [requirement]
+      );
+      const issue = (
+        await one<{ id: string }>(c, `SELECT inv.issue_material_request($1,$2,2,NULL) AS id`, [
+          request,
+          warehouse,
+        ])
+      ).id;
+      await c.query(`SELECT inv.finish_material_request($1,'closed',NULL)`, [request]);
+      await expectRefusal(
+        c,
+        '23514',
+        /material_requirement_committed: 2/,
+        `SELECT inv.cancel_material_requirement($1,'Job re-scoped')`,
+        [requirement]
+      );
+      expect(
+        await text(c, `SELECT status AS v FROM inv.material_requirements WHERE id = $1`, [
+          requirement,
+        ])
+      ).toBe('approved');
+      await c.query(`SELECT inv.return_part($1,2,'Not fitted',NULL)`, [issue]);
+      await c.query(`SELECT inv.cancel_material_requirement($1,'Job re-scoped')`, [requirement]);
+      expect(
+        await one(c, `SELECT status, cancel_reason FROM inv.material_requirements WHERE id = $1`, [
+          requirement,
+        ])
+      ).toEqual({ status: 'cancelled', cancel_reason: 'Job re-scoped' });
+      // A cancelled requirement allows no draw.
+      await expectRefusal(
+        c,
+        '23514',
+        /material_approval_required/,
+        `SELECT inv.create_material_request($1,$2,1)`,
+        [requirement, oil]
+      );
     });
   });
 });
@@ -988,6 +1406,40 @@ describe('the material ceiling under concurrency', () => {
       expect(results.filter((r) => r === '23514').length, `rep ${rep}: loser is 23514`).toBe(1);
       const committed = await withRolledBackTx(runtime, ctxA, (c) => usage(c, requirement));
       expect(committed.committed, `rep ${rep}: one request counted`).toBe('3.000');
+    }
+  });
+
+  it('lets exactly one of two concurrent governed reservations take the last of the allowance (x3)', async () => {
+    for (let rep = 0; rep < 3; rep++) {
+      const { requirement, oil, warehouse } = await withCommittedTx(runtime, ctxA, async (c) => {
+        const litre = await unit(c, `mdc_rrace_l${rep}`, 'volume');
+        const created = await item(c, `rrace${rep}`, litre);
+        const { line } = await workshop(c, `rrace${rep}`);
+        const locations = await seedLocations(c, `mdc_rrace${rep}`);
+        await seedStock(c, created.item, locations.warehouse, 10, `mdc_rrace${rep}`);
+        const id = await approvedRequirement(c, line, { item: created.item }, '5', litre);
+        return { requirement: id, oil: created.item, warehouse: locations.warehouse };
+      });
+      const draw = `SELECT inv.reserve_material_request(inv.create_material_request($1,$2,3),$3,3)`;
+      const results = await Promise.all([
+        race(draw, [requirement, oil, warehouse]),
+        race(draw, [requirement, oil, warehouse]),
+      ]);
+      expect(results.filter((r) => r === 'ok').length, `rep ${rep}: exactly one winner`).toBe(1);
+      expect(results.filter((r) => r === '23514').length, `rep ${rep}: loser is 23514`).toBe(1);
+      const after = await withRolledBackTx(runtime, ctxA, (c) => usage(c, requirement));
+      expect(after, `rep ${rep}: one reservation counted`).toMatchObject({
+        reserved: '3.000',
+        committed: '3.000',
+      });
+      const held = await withRolledBackTx(runtime, ctxA, (c) =>
+        text(
+          c,
+          `SELECT reserved_qty::text AS v FROM inv.stock_balances WHERE item_id = $1 AND location_id = $2`,
+          [oil, warehouse]
+        )
+      );
+      expect(held, `rep ${rep}: one reservation held on the shelf`).toBe('3.000');
     }
   });
 });
@@ -1184,7 +1636,7 @@ describe('stock transfers — a receipt records what arrived', () => {
 // ---------------------------------------------------------------------------
 // Tenant isolation — every new table
 // ---------------------------------------------------------------------------
-describe('tenant isolation of the slice-3a tables', () => {
+describe('tenant isolation of the slice-3a tables, by their row policies', () => {
   const TABLES = [
     'inv.item_unit_conversions',
     'inv.vehicle_fluid_specifications',
@@ -1195,7 +1647,8 @@ describe('tenant isolation of the slice-3a tables', () => {
     'inv.stock_transfer_settlements',
   ];
 
-  it('hides tenant A rows from tenant B and refuses a tenant-B write claiming tenant A', async () => {
+  it('proves the SELECT, UPDATE and INSERT row policies of every table against a foreign tenant', async () => {
+    const captured = new Map<string, Record<string, unknown>>();
     await withRolledBackTx(runtime, ctxA, async (c) => {
       const pack = await unit(c, 'mdc_iso_p', 'count');
       const litre = await unit(c, 'mdc_iso_l', 'volume');
@@ -1234,36 +1687,106 @@ describe('tenant isolation of the slice-3a tables', () => {
       ).id;
       await c.query(`SELECT inv.receive_transfer($1,1,NULL)`, [transfer]);
 
+      // One real tenant-A row per table, captured whole while tenant A can read it.
       for (const table of TABLES) {
-        expect(
-          Number(await text(c, `SELECT count(*)::text AS v FROM ${table}`)),
-          `${table} holds a tenant-A row`
-        ).toBeGreaterThan(0);
+        const row = (await c.query(`SELECT to_jsonb(t) AS row FROM ${table} t LIMIT 1`)).rows[0] as
+          { row: Record<string, unknown> } | undefined;
+        expect(row, `${table} holds a tenant-A row`).toBeDefined();
+        captured.set(table, row!.row);
       }
 
       await setContext(c, ctxB);
       for (const table of TABLES) {
+        const row = captured.get(table)!;
+        // SELECT policy: tenant B reads none of it.
         expect(await text(c, `SELECT count(*)::text AS v FROM ${table}`), `${table} leaked`).toBe(
           '0'
         );
-        await expectFail(
-          c,
-          ['42501', '23502', '23503', '23514'],
-          `INSERT INTO ${table} (tenant_id) VALUES ($1)`,
-          [TENANT_A]
-        );
+        // UPDATE policy: tenant B's UPDATE of that exact row matches nothing, and the
+        // append-only link table grants no UPDATE at all.
+        if (table === 'inv.material_request_fulfillments') {
+          await expectRefusal(
+            c,
+            '42501',
+            /permission denied/,
+            `UPDATE ${table} SET created_by = created_by WHERE id = $1`,
+            [row.id]
+          );
+        } else {
+          const updated = await c.query(`UPDATE ${table} SET updated_by = $2 WHERE id = $1`, [
+            row.id,
+            USER_B,
+          ]);
+          expect(updated.rowCount, `${table} updated across tenants`).toBe(0);
+        }
       }
-      // And a well-formed row claiming tenant A — two platform units every tenant can
-      // see, so no guard refuses it first — is refused by the policy itself.
-      await expectFail(
-        c,
-        '42501',
-        `INSERT INTO inv.item_unit_conversions (tenant_id, from_uom_id, to_uom_id, factor, source_reference, created_by)
-         SELECT $1, ml.id, l.id, 0.001, 'Spoof', $2
-           FROM inv.units_of_measure ml, inv.units_of_measure l
-          WHERE ml.scope = 'platform' AND ml.code = 'millilitre' AND l.scope = 'platform' AND l.code = 'litre'`,
-        [TENANT_A, USER_B]
-      );
+      await setContext(c, ctxA);
+      for (const table of TABLES.filter((t) => t !== 'inv.material_request_fulfillments')) {
+        expect(
+          await text(
+            c,
+            `SELECT (updated_by IS DISTINCT FROM $2)::text AS v FROM ${table} WHERE id = $1`,
+            [captured.get(table)!.id, USER_B]
+          ),
+          `${table} row untouched`
+        ).toBe('true');
+      }
     });
+
+    // INSERT policy: a copy of that real row, claiming tenant A, written by tenant B.
+    // Every table's BEFORE guard would refuse it first (it reads references tenant B
+    // cannot see), which is why the earlier version of this case accepted a guard's
+    // 23502/23503/23514 as "isolation". Here the user triggers are switched off inside
+    // a rolled-back transaction, so the ONLY thing left to refuse the row is the row
+    // policy — and the same row under tenant A's context is admitted by it.
+    for (const table of TABLES) {
+      const row = captured.get(table)!;
+      const client = await admin.connect();
+      try {
+        await client.query('BEGIN');
+        const columns = (
+          await client.query<{ column_name: string }>(
+            `SELECT column_name FROM information_schema.columns
+              WHERE table_schema = $1 AND table_name = $2 AND is_generated = 'NEVER'
+              ORDER BY ordinal_position`,
+            table.split('.')
+          )
+        ).rows.map((r) => r.column_name);
+        const copy = { ...row, id: '00000000-0000-4000-8000-00000000c0de' };
+        const insert = `INSERT INTO ${table} (${columns.join(', ')})
+          SELECT ${columns.join(', ')} FROM jsonb_populate_record(NULL::${table}, $1::jsonb)`;
+        await client.query(`ALTER TABLE ${table} DISABLE TRIGGER USER`);
+        await client.query(`SET LOCAL ROLE ${RUNTIME_LOGIN}`);
+
+        await setContext(client, ctxB);
+        await client.query('SAVEPOINT sp_policy');
+        const refused = await client.query(insert, [JSON.stringify(copy)]).then(
+          () => null,
+          (error: { code?: string; message?: string }) => error
+        );
+        await client.query('ROLLBACK TO SAVEPOINT sp_policy');
+        expect(`${refused?.code}: ${refused?.message}`, `${table} under tenant B`).toMatch(
+          new RegExp(
+            `^42501: new row violates row-level security policy for table "${table.split('.')[1]}"`
+          )
+        );
+
+        await setContext(client, ctxA);
+        await client.query('SAVEPOINT sp_policy');
+        const admitted = await client.query(insert, [JSON.stringify(copy)]).then(
+          () => null,
+          (error: { code?: string; message?: string }) => error
+        );
+        await client.query('ROLLBACK TO SAVEPOINT sp_policy');
+        // The row's references were rolled back with the fixtures, so under tenant A it
+        // may still fail a foreign key — but never the row policy.
+        expect(admitted?.message ?? '', `${table} under tenant A`).not.toMatch(
+          /row-level security/
+        );
+      } finally {
+        await client.query('ROLLBACK');
+        client.release();
+      }
+    }
   });
 });

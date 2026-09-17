@@ -32,7 +32,13 @@ import {
   USER_A,
 } from './helpers';
 import { seedP109Base, makeAuthorizedVisit, newWorkOrder } from './p1-09-helpers';
-import { seedItem, seedLocations, seedStock, expectFail } from './p1-10-helpers';
+import {
+  seedItem,
+  seedLocations,
+  seedStock,
+  seedMaterialRequest,
+  expectFail,
+} from './p1-10-helpers';
 import {
   DAMAGE_DISPOSITIONS,
   DIRECTIONS,
@@ -219,7 +225,18 @@ describe('P1-21-BE-012 — negative stock is structurally impossible', () => {
       const { item } = await seedItem(c, 'neg2');
       const { warehouse } = await seedLocations(c, 'neg2');
       await seedStock(c, item, warehouse, 2, 'neg2');
-      await expectFail(c, '23514', `SELECT inv.issue_part($1,$2,$3,3)`, [wo, item, warehouse]);
+      // The draw is approved for 3, so what refuses it is the stock and nothing else.
+      const { request } = await seedMaterialRequest(c, wo, item, 3);
+      await c.query('SAVEPOINT sp_neg2');
+      const refusal = await c
+        .query(`SELECT inv.issue_material_request($1,$2,3,NULL)`, [request, warehouse])
+        .then(
+          () => null,
+          (error: { code?: string; message?: string }) => error
+        );
+      await c.query('ROLLBACK TO SAVEPOINT sp_neg2');
+      expect(refusal?.code).toBe('23514');
+      expect(refusal?.message).not.toMatch(/material_/);
     });
   });
 
@@ -230,7 +247,8 @@ describe('P1-21-BE-012 — negative stock is structurally impossible', () => {
       const { item } = await seedItem(c, 'coh1');
       const { warehouse } = await seedLocations(c, 'coh1');
       await seedStock(c, item, warehouse, 10, 'coh1');
-      await c.query(`SELECT inv.issue_part($1,$2,$3,4)`, [wo, item, warehouse]);
+      const { request } = await seedMaterialRequest(c, wo, item, 4);
+      await c.query(`SELECT inv.issue_material_request($1,$2,4,NULL)`, [request, warehouse]);
 
       const check = await c.query<{ stored: string; ledger: string }>(
         `SELECT b.on_hand_qty AS stored,
@@ -326,10 +344,10 @@ describe('P1-21-BE-015 — every movement carries a valid business reference', (
       const { item } = await seedItem(c, 'ref3');
       const { warehouse } = await seedLocations(c, 'ref3');
       await seedStock(c, item, warehouse, 10, 'ref3');
+      const { request } = await seedMaterialRequest(c, wo, item, 2);
       const issue = (
-        await c.query<{ id: string }>(`SELECT inv.issue_part($1,$2,$3,2) AS id`, [
-          wo,
-          item,
+        await c.query<{ id: string }>(`SELECT inv.issue_material_request($1,$2,2,NULL) AS id`, [
+          request,
           warehouse,
         ])
       ).rows[0]!.id;

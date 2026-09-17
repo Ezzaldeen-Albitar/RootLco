@@ -38,7 +38,7 @@ import {
   BRANCH_A1,
   USER_A,
 } from './helpers';
-import { seedItem, seedLocations, seedStock } from './p1-10-helpers';
+import { seedItem, seedLocations, seedStock, seedMaterialRequest } from './p1-10-helpers';
 import {
   ctxA,
   expectFail,
@@ -624,10 +624,11 @@ describe('inv.sales_returns — condition, ceiling and credit', () => {
       const { warehouse } = await seedLocations(c, 'odcs_ceiling');
       await seedStock(c, item, warehouse, 10, 'odcs_ceiling');
       const { wo } = await makeWorkOrder(c, 'odcs_ceiling');
+      const { request } = await seedMaterialRequest(c, wo, item, 5);
       const issue = await one<{ id: string }>(
         c,
-        `SELECT inv.issue_part($1,$2,$3,5,NULL,NULL,NULL) AS id`,
-        [wo, item, warehouse]
+        `SELECT inv.issue_material_request($1,$2,5,NULL) AS id`,
+        [request, warehouse]
       );
 
       expect(
@@ -696,10 +697,11 @@ describe('inv.sales_returns — condition, ceiling and credit', () => {
       const { warehouse } = await seedLocations(c, 'odcs_noguc');
       await seedStock(c, item, warehouse, 10, 'odcs_noguc');
       const { wo } = await makeWorkOrder(c, 'odcs_noguc');
+      const { request } = await seedMaterialRequest(c, wo, item, 5);
       const issue = await one<{ id: string }>(
         c,
-        `SELECT inv.issue_part($1,$2,$3,5,NULL,NULL,NULL) AS id`,
-        [wo, item, warehouse]
+        `SELECT inv.issue_material_request($1,$2,5,NULL) AS id`,
+        [request, warehouse]
       );
 
       await c.query(`SELECT set_config('app.tenant_id','',true)`);
@@ -742,10 +744,11 @@ describe('inv.sales_returns — condition, ceiling and credit', () => {
       const { warehouse } = await seedLocations(c, 'odcs_idem');
       await seedStock(c, item, warehouse, 10, 'odcs_idem');
       const { wo } = await makeWorkOrder(c, 'odcs_idem');
+      const { request } = await seedMaterialRequest(c, wo, item, 3);
       const issue = await one<{ id: string }>(
         c,
-        `SELECT inv.issue_part($1,$2,$3,3,NULL,NULL,NULL) AS id`,
-        [wo, item, warehouse]
+        `SELECT inv.issue_material_request($1,$2,3,NULL) AS id`,
+        [request, warehouse]
       );
       const first = await one<{ id: string }>(
         c,
