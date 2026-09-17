@@ -38,9 +38,12 @@
  *
  * ## What the label does not carry
  *
- * A price. `svc.resolve_price` prices SERVICES only — `svc.price_rules.service_id`
- * is NOT NULL and no table holds a selling price for an inventory item — so there
- * is no figure a label could print, whatever permission the caller holds.
+ * A price. `inv.item_sale_prices` does hold one since P1-32, but a price is
+ * narrowed to a company and a branch while this operation — like the item and its
+ * identifiers — is tenant-wide and takes no branch. There is therefore no single
+ * figure a label could print, whatever permission the caller holds; a screen that
+ * prints a shelf label for ONE branch reads that branch's price through
+ * `GET /items/{itemId}/sale-prices`.
  */
 import { AppFailure } from '@/server/errors/app-failure';
 import { appendAudit } from '@/server/audit/audit';

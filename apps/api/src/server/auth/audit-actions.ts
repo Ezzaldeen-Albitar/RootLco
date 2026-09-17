@@ -1664,6 +1664,20 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'An internal barcode was allocated to an item from the tenant counter, once per item. An allocated number is never reused, including after retirement.',
   },
+  {
+    code: 'inv.item_sale_price.set',
+    class: 'privileged',
+    entityType: 'inv.item_sale_price',
+    description:
+      'The price at which the tenant sells an item was set for a tenant, a company or a branch. Configuration, not a transaction: it moves no stock and no money, and it is what a later counter sale resolves. The figure itself is recorded as a restricted value, because audit records carry no sal.finance.view gate.',
+  },
+  {
+    code: 'inv.sales_return.received',
+    class: 'privileged',
+    entityType: 'inv.sales_return',
+    description:
+      'A part came back and was taken into stock: into a sellable location when restockable, into a quarantine location when damaged. Bounded by inv.guard_sales_return_ceiling, which locks the source and counts the legacy inv.part_returns rows too. A return against an issued counter sale also raises a pending credit note, whose identity is recorded here and whose amount is not.',
+  },
 
   // ---- Phase 1-22 — Billing and payment (sal) ----
   //
@@ -1680,11 +1694,18 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'A draft invoice was created from approved commercial data. Creates no receivable: sal.guard_invoice_freeze refuses an INSERT whose status is not `draft`, so the document carries no number and no issue timestamp until sal.issue_invoice allocates one, and uq_invoices_work_order_active permits at most one live invoice per work order.',
   },
   {
+    code: 'sal.counter_sale.created',
+    class: 'financial',
+    entityType: 'sal.invoice',
+    description:
+      'A draft counter sale was created: an invoice for stock sold over the counter, with no work order. Every line is priced by inv.resolve_item_sale_price inside sal.create_counter_sale_invoice — no amount can be sent — and no stock moves until the sale is issued.',
+  },
+  {
     code: 'sal.invoice.issued',
     class: 'financial',
     entityType: 'sal.invoice',
     description:
-      'A draft invoice was issued and consumed exactly one number from its branch sequence. The point of no return: post-issue correction is impossible by design, and the only remaining instruments are a credit note and a new invoice. sal.issue_invoice is idempotent on an already-issued invoice and returns the existing number rather than allocating a second one.',
+      'A draft invoice was issued and consumed exactly one number from its branch sequence. The point of no return: post-issue correction is impossible by design, and the only remaining instruments are a credit note and a new invoice. sal.issue_invoice is idempotent on an already-issued invoice and returns the existing number rather than allocating a second one. For a counter sale this is also the moment the stock leaves the shelf, in the same transaction; cancelling the document later never puts it back, because an issued invoice cannot be voided at all.',
   },
   {
     code: 'sal.invoice.voided',

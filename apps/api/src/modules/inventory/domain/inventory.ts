@@ -33,6 +33,8 @@ export const MOVEMENT_TYPES = Object.freeze([
   'adjustment',
   'transfer',
   'receipt',
+  // A counter sale: stock sold over the counter leaves at issuance, `out` only.
+  'sale',
 ] as const);
 export type MovementType = (typeof MOVEMENT_TYPES)[number];
 
@@ -46,8 +48,30 @@ export const REFERENCE_KINDS = Object.freeze([
   'transfer_dispatch',
   'transfer_receipt',
   'goods_receipt_line',
+  'invoice_line',
+  'sales_return',
 ] as const);
 export type ReferenceKind = (typeof REFERENCE_KINDS)[number];
+
+/**
+ * `ck_sales_returns_condition`. The condition decides which cell the returned unit
+ * lands in — a sellable one or a quarantine one — and nothing else about a return
+ * depends on it.
+ */
+export const RETURN_CONDITIONS = Object.freeze(['restockable', 'damaged'] as const);
+export type ReturnCondition = (typeof RETURN_CONDITIONS)[number];
+
+/** `ck_sales_returns_source_kind`. What the returned unit left on. */
+export const SALES_RETURN_SOURCE_KINDS = Object.freeze(['part_issue', 'invoice_line'] as const);
+export type SalesReturnSourceKind = (typeof SALES_RETURN_SOURCE_KINDS)[number];
+
+/**
+ * `ck_sales_returns_status`. `credited` means the return raised a pending credit
+ * note; a second person still approves it. There is no third state: nothing in this
+ * slice closes a return.
+ */
+export const SALES_RETURN_STATES = Object.freeze(['received', 'credited'] as const);
+export type SalesReturnState = (typeof SALES_RETURN_STATES)[number];
 
 /** `ck_stock_movements_direction`. */
 export const DIRECTIONS = Object.freeze(['in', 'out'] as const);
@@ -283,6 +307,11 @@ export const MOVEMENT_REFERENCE_MATRIX: readonly {
   { movementType: 'transfer', referenceKind: 'transfer_receipt', direction: 'out' },
   { movementType: 'transfer', referenceKind: 'transfer_receipt', direction: 'in' },
   { movementType: 'receipt', referenceKind: 'goods_receipt_line', direction: 'in' },
+  // A counter sale leaves the shelf once, at issuance, against the invoice line
+  // that sold it. There is no `in` leg: stock comes back only as a sales return,
+  // which is the row below and a separate act.
+  { movementType: 'sale', referenceKind: 'invoice_line', direction: 'out' },
+  { movementType: 'return', referenceKind: 'sales_return', direction: 'in' },
 ]);
 
 /** True when the triple is one the protected schema will accept. */

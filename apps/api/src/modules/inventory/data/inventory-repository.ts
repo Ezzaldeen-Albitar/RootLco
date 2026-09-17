@@ -1090,6 +1090,137 @@ const toItemIdentifier = (r: ItemIdentifierSql): ItemIdentifierRow => ({
   createdAt: r.created_at,
 });
 
+/** One selling-price row of an item (P1-32-PRE-105). */
+export interface ItemSalePriceRow {
+  readonly id: string;
+  readonly itemId: string;
+  /** Null applies the price to every company of the tenant. */
+  readonly companyId: string | null;
+  /** Null applies the price to every branch of the named company. */
+  readonly branchId: string | null;
+  readonly currencyCode: string;
+  /** Exact decimal string: `numeric(18,4)`, never a number. */
+  readonly unitPrice: string;
+  readonly taxClassId: string | null;
+  readonly taxClassCode: string | null;
+  readonly status: string;
+  readonly recordVersion: number;
+  readonly createdAt: Date;
+}
+
+const SALE_PRICE_COLUMNS = `p.id, p.item_id, p.company_id, p.branch_id, p.currency_code,
+  p.unit_price::text AS unit_price, p.tax_class_id, tc.tax_class_code, p.status,
+  p.record_version, p.created_at`;
+
+interface ItemSalePriceSql {
+  id: string;
+  item_id: string;
+  company_id: string | null;
+  branch_id: string | null;
+  currency_code: string;
+  unit_price: string;
+  tax_class_id: string | null;
+  tax_class_code: string | null;
+  status: string;
+  record_version: number;
+  created_at: Date;
+}
+
+const toItemSalePrice = (r: ItemSalePriceSql): ItemSalePriceRow => ({
+  id: r.id,
+  itemId: r.item_id,
+  companyId: r.company_id,
+  branchId: r.branch_id,
+  currencyCode: r.currency_code,
+  unitPrice: r.unit_price,
+  taxClassId: r.tax_class_id,
+  taxClassCode: r.tax_class_code,
+  status: r.status,
+  recordVersion: r.record_version,
+  createdAt: r.created_at,
+});
+
+/** A part that came back (P1-32-PRE-112). */
+export interface SalesReturnRow {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly sourceKind: string;
+  readonly sourceId: string;
+  readonly itemId: string;
+  /** Exact decimal string. */
+  readonly quantity: string;
+  readonly condition: string;
+  readonly receivedLocationId: string;
+  readonly quarantineLocationId: string | null;
+  readonly reason: string | null;
+  readonly creditNoteId: string | null;
+  readonly status: string;
+  readonly recordVersion: number;
+  readonly createdAt: Date;
+}
+
+/** A listed return, with the SKU of what came back. */
+export interface SalesReturnListRow extends SalesReturnRow {
+  readonly sku: string;
+}
+
+/** How much of a source may still be returned (P1-32-PRE-116). */
+export interface ReturnableQuantityRow {
+  readonly sourceQuantity: string;
+  readonly returnedQuantity: string;
+  readonly remainingQuantity: string;
+  readonly itemId: string;
+  readonly companyId: string;
+  readonly branchId: string;
+}
+
+/** Returns are listed newest-first by `created_at`, like every other event row. */
+export const SALES_RETURN_ORDER: OrderingContract = Object.freeze({
+  key: 'inv.sales_returns:created_at_desc',
+  direction: 'desc',
+});
+
+const SALES_RETURN_COLUMNS = `r.id, r.company_id, r.branch_id, r.source_kind, r.source_id,
+  r.item_id, r.quantity::text AS quantity, r.return_condition, r.received_location_id,
+  r.quarantine_location_id, r.reason, r.credit_note_id, r.status, r.record_version, r.created_at`;
+
+interface SalesReturnSql {
+  id: string;
+  company_id: string;
+  branch_id: string;
+  source_kind: string;
+  source_id: string;
+  item_id: string;
+  quantity: string;
+  return_condition: string;
+  received_location_id: string;
+  quarantine_location_id: string | null;
+  reason: string | null;
+  credit_note_id: string | null;
+  status: string;
+  record_version: number;
+  created_at: Date;
+}
+
+const toSalesReturn = (r: SalesReturnSql): SalesReturnRow => ({
+  id: r.id,
+  companyId: r.company_id,
+  branchId: r.branch_id,
+  sourceKind: r.source_kind,
+  sourceId: r.source_id,
+  itemId: r.item_id,
+  quantity: r.quantity,
+  condition: r.return_condition,
+  receivedLocationId: r.received_location_id,
+  quarantineLocationId: r.quarantine_location_id,
+  reason: r.reason,
+  creditNoteId: r.credit_note_id,
+  status: r.status,
+  recordVersion: r.record_version,
+  createdAt: r.created_at,
+});
+
 export class InventoryRepository extends Repository {
   protected readonly module = 'inventory';
 
@@ -4264,5 +4395,243 @@ export class InventoryRepository extends Repository {
       isStockTracked: r.is_stock_tracked,
       lifecycleStatus: r.lifecycle_status,
     }));
+  }
+
+  // -------------------------------------------------------------------------
+  // P1-32-PRE-105…106 — the selling price of an item.
+  // -------------------------------------------------------------------------
+
+  /** Every live price row of one item, most specific first. */
+  public async listItemSalePrices(
+    db: DbHandle,
+    itemId: string
+  ): Promise<readonly ItemSalePriceRow[]> {
+    const context = this.assertContext(db);
+    const rows = await this.run<ItemSalePriceSql>(
+      db,
+      `SELECT ${SALE_PRICE_COLUMNS}
+         FROM inv.item_sale_prices p
+         LEFT JOIN org.tax_classes tc
+           ON tc.tenant_id = p.tenant_id AND tc.company_id = p.company_id AND tc.id = p.tax_class_id
+        WHERE p.tenant_id = $1 AND p.item_id = $2 AND p.deleted_at IS NULL
+        ORDER BY (p.branch_id IS NOT NULL) DESC, (p.company_id IS NOT NULL) DESC, p.id`,
+      [context.principal.tenantId, itemId]
+    );
+    return rows.rows.map(toItemSalePrice);
+  }
+
+  public async readItemSalePrice(db: DbHandle, priceId: string): Promise<ItemSalePriceRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ItemSalePriceSql>(
+      db,
+      `SELECT ${SALE_PRICE_COLUMNS}
+         FROM inv.item_sale_prices p
+         LEFT JOIN org.tax_classes tc
+           ON tc.tenant_id = p.tenant_id AND tc.company_id = p.company_id AND tc.id = p.tax_class_id
+        WHERE p.tenant_id = $1 AND p.id = $2 AND p.deleted_at IS NULL`,
+      [context.principal.tenantId, priceId]
+    );
+    return row ? toItemSalePrice(row) : null;
+  }
+
+  /** `inv.set_item_sale_price` — one live row per (item, company, branch). */
+  public async setItemSalePrice(
+    db: DbHandle,
+    input: {
+      readonly itemId: string;
+      readonly companyId: string | null;
+      readonly branchId: string | null;
+      readonly currencyCode: string;
+      /** Exact decimal STRING; never a number. */
+      readonly unitPrice: string;
+      readonly taxClassId: string | null;
+    }
+  ): Promise<string> {
+    this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `SELECT inv.set_item_sale_price($1, $2, $3, $4, $5::numeric, $6) AS id`,
+      [
+        input.itemId,
+        input.companyId,
+        input.branchId,
+        input.currencyCode,
+        input.unitPrice,
+        input.taxClassId,
+      ]
+    );
+    if (!row) throw new Error('inventory: inv.set_item_sale_price returned no row');
+    return row.id;
+  }
+
+  // -------------------------------------------------------------------------
+  // P1-32-PRE-111…116 — the counter sale's stock leg, and sales returns.
+  // -------------------------------------------------------------------------
+
+  /**
+   * `inv.post_counter_sale_line` — the `sale`/`out` movement of ONE invoice line.
+   *
+   * The line id is the only argument: the item, the cell and the quantity are read
+   * from the line inside the function, so nothing a caller passes can redirect the
+   * posting to another shelf.
+   */
+  public async postCounterSaleLine(db: DbHandle, invoiceLineId: string): Promise<string> {
+    this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `SELECT inv.post_counter_sale_line($1, $2) AS id`,
+      [invoiceLineId, db.context.correlationId]
+    );
+    if (!row) throw new Error('inventory: inv.post_counter_sale_line returned no movement');
+    return row.id;
+  }
+
+  /** `inv.returnable_quantity` — advisory; null when the source cannot be returned. */
+  public async readReturnableQuantity(
+    db: DbHandle,
+    sourceKind: string,
+    sourceId: string
+  ): Promise<ReturnableQuantityRow | null> {
+    this.assertContext(db);
+    const row = await this.runOne<{
+      source_quantity: string;
+      returned_quantity: string;
+      remaining_quantity: string;
+      item_id: string;
+      company_id: string;
+      branch_id: string;
+    }>(
+      db,
+      `SELECT source_quantity::text AS source_quantity,
+              returned_quantity::text AS returned_quantity,
+              remaining_quantity::text AS remaining_quantity,
+              item_id, company_id, branch_id
+         FROM inv.returnable_quantity($1, $2)`,
+      [sourceKind, sourceId]
+    );
+    return row
+      ? {
+          sourceQuantity: row.source_quantity,
+          returnedQuantity: row.returned_quantity,
+          remainingQuantity: row.remaining_quantity,
+          itemId: row.item_id,
+          companyId: row.company_id,
+          branchId: row.branch_id,
+        }
+      : null;
+  }
+
+  /** `inv.receive_sales_return` — the row, the movement and, for a sale, the credit. */
+  public async receiveSalesReturn(
+    db: DbHandle,
+    input: {
+      readonly sourceKind: string;
+      readonly sourceId: string;
+      readonly quantity: string;
+      readonly condition: string;
+      readonly receivedLocationId: string;
+      readonly quarantineLocationId: string | null;
+      readonly reason: string | null;
+      readonly idempotencyKey: string | null;
+    }
+  ): Promise<string> {
+    this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `SELECT inv.receive_sales_return($1, $2, $3::numeric, $4, $5, $6, $7, $8, $9) AS id`,
+      [
+        input.sourceKind,
+        input.sourceId,
+        input.quantity,
+        input.condition,
+        input.receivedLocationId,
+        input.quarantineLocationId,
+        input.reason,
+        input.idempotencyKey,
+        db.context.correlationId,
+      ]
+    );
+    if (!row) throw new Error('inventory: inv.receive_sales_return returned no row');
+    return row.id;
+  }
+
+  public async readSalesReturn(db: DbHandle, returnId: string): Promise<SalesReturnRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<SalesReturnSql>(
+      db,
+      `SELECT ${SALES_RETURN_COLUMNS}
+         FROM inv.sales_returns r
+        WHERE r.tenant_id = $1 AND r.id = $2`,
+      [context.principal.tenantId, returnId]
+    );
+    return row ? toSalesReturn(row) : null;
+  }
+
+  public async readSalesReturnByIdempotencyKey(
+    db: DbHandle,
+    key: string
+  ): Promise<SalesReturnRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<SalesReturnSql>(
+      db,
+      `SELECT ${SALES_RETURN_COLUMNS}
+         FROM inv.sales_returns r
+        WHERE r.tenant_id = $1 AND r.idempotency_key = $2`,
+      [context.principal.tenantId, key]
+    );
+    return row ? toSalesReturn(row) : null;
+  }
+
+  /** One branch's returns, newest first, optionally narrowed to one source. */
+  public async listSalesReturns(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly sourceKind?: string | undefined;
+      readonly sourceId?: string | undefined;
+      readonly condition?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<SalesReturnListRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.sourceKind ?? null,
+      filter.sourceId ?? null,
+      filter.condition ?? null,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'r.created_at', id: 'r.id' },
+      SALES_RETURN_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<SalesReturnSql & { sku: string; sort_value: string }>(
+      db,
+      `SELECT ${SALES_RETURN_COLUMNS}, i.sku,
+              ${cursorTimestamp('r.created_at')} AS sort_value
+         FROM inv.sales_returns r
+         JOIN inv.item_master i ON i.tenant_id = r.tenant_id AND i.id = r.item_id
+        WHERE r.tenant_id = $1 AND r.company_id = $2 AND r.branch_id = $3
+          AND ($4::text IS NULL OR r.source_kind = $4)
+          AND ($5::uuid IS NULL OR r.source_id = $5)
+          AND ($6::text IS NULL OR r.return_condition = $6)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: { ...toSalesReturn(row), sku: row.sku },
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      SALES_RETURN_ORDER
+    );
   }
 }

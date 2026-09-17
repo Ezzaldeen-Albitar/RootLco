@@ -11,7 +11,8 @@
  * the movement ledger, balances, reservations, opening batches, adjustments, part
  * issues and returns, damaged stock, customer-supplied parts, external-purchase
  * references, stock transfers, goods receipts with their cost history, and stock
- * counts, and item barcodes and packaging identifiers.
+ * counts, item barcodes and packaging identifiers, the selling price of an item,
+ * and sales returns.
  *
  * ## What no other module may do
  *
@@ -43,7 +44,18 @@
  * - **A stock count never posts stock.** Reconciling a count raises PENDING
  *   adjustments; approving them is the separate maker-checker act it always was.
  * - **It does not invoice.** Consuming stock and billing for it are different acts
- *   owned by different phases.
+ *   owned by different phases. Since P1-32 it does hold the SELLING price of an
+ *   item (`inv.item_sale_prices`) and it does post the stock leg of a counter sale
+ *   — `stock.postCounterSaleLines`, the port `@/modules/billing` calls after
+ *   `sal.issue_invoice` — but the document, its numbering and its money remain
+ *   entirely that module's. The price lives here because it is a property of the
+ *   ITEM, and because `svc.price_rules` prices services only.
+ * - **It raises no credit note itself.** A sales return against a counter sale
+ *   credits the customer through `sal.request_return_credit_note`, the `sal`-owned
+ *   primitive `inv.receive_sales_return` calls in the same transaction. No
+ *   TypeScript in this module reads or writes a `sal` table, and none imports
+ *   `@/modules/billing` — which would close a cycle, because billing imports this
+ *   module.
  */
 import { composeModule } from '@/server/layering';
 import { InventoryRepository } from './data/inventory-repository';
@@ -57,6 +69,7 @@ import { InventoryReceiptService } from './application/inventory-receipt-service
 import { InventoryAdjustmentService } from './application/inventory-adjustment-service';
 import { InventoryCountService } from './application/inventory-count-service';
 import { InventoryIdentifierService } from './application/inventory-identifier-service';
+import { InventorySalesReturnService } from './application/inventory-sales-return-service';
 
 export type {
   AdjustmentListRow,
@@ -70,6 +83,7 @@ export type {
   ItemCostSummaryRow,
   ItemListFilter,
   ItemRow,
+  ItemSalePriceRow,
   MovementListFilter,
   MovementReportFilter,
   MovementRow,
@@ -77,6 +91,9 @@ export type {
   OpeningLineRow,
   ReservationRow,
   ResolvedIdentifierRow,
+  ReturnableQuantityRow,
+  SalesReturnListRow,
+  SalesReturnRow,
   StockBalanceRow,
   StockCountLineRow,
   StockCountListRow,
@@ -129,8 +146,16 @@ export type {
   CreatedItemView,
   CreatedStockLocationView,
   ItemCategoryView,
+  ItemSalePriceListView,
+  ItemSalePriceView,
   UnitOfMeasureView,
 } from './application/inventory-catalog-service';
+
+export type {
+  ReturnableQuantityView,
+  SalesReturnListView,
+  SalesReturnView,
+} from './application/inventory-sales-return-service';
 
 export type {
   AvailabilityView,
@@ -199,6 +224,9 @@ export {
   Quantity,
   REFERENCE_KINDS,
   RESERVATION_STATES,
+  RETURN_CONDITIONS,
+  SALES_RETURN_SOURCE_KINDS,
+  SALES_RETURN_STATES,
   SKU_FORMAT,
   STOCK_COUNT_STATES,
   TRANSFER_STATES,
@@ -229,6 +257,9 @@ export {
   type OperatorLocationType,
   type ReferenceKind,
   type ReservationState,
+  type ReturnCondition,
+  type SalesReturnSourceKind,
+  type SalesReturnState,
   type StockCountState,
   type TransferState,
 } from './domain/inventory';
@@ -276,6 +307,11 @@ export const inventoryModule = composeModule({
       // reference data that moves no stock. Composes `reads` only so a scan can
       // report availability through the one read that already authorizes a branch.
       identifiers: new InventoryIdentifierService(repository, reads),
+      // P1-32 preparatory slice 2. A part coming back: from the job it was fitted
+      // to, or from the counter sale it was sold on. Composes `stock` for the
+      // location preconditions and for publishing the `in` leg, exactly as the
+      // transfer and receipt services do.
+      salesReturns: new InventorySalesReturnService(repository, stock),
     };
   },
 });

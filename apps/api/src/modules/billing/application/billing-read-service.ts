@@ -105,7 +105,10 @@ export interface InvoiceView {
   readonly id: string;
   readonly companyId: string;
   readonly branchId: string;
-  readonly workOrderId: string;
+  /** Null exactly when `saleKind` is `counter_sale` (P1-32 preparatory slice 2). */
+  readonly workOrderId: string | null;
+  /** `work_order` or `counter_sale`. */
+  readonly saleKind: string;
   readonly quotationRevisionId: string | null;
   readonly payerPartnerId: string;
   readonly currency: string;
@@ -285,6 +288,7 @@ export const toInvoiceView = (row: InvoiceRow): InvoiceView => ({
   companyId: row.companyId,
   branchId: row.branchId,
   workOrderId: row.workOrderId,
+  saleKind: row.saleKind,
   quotationRevisionId: row.quotationRevisionId,
   payerPartnerId: row.payerPartnerId,
   currency: row.currencyCode,

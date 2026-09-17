@@ -715,6 +715,56 @@ export class InventoryStockService {
   }
 
   // -------------------------------------------------------------------------
+  // P1-32-PRE-111 — the counter sale's stock leg (the port `billing` calls).
+  // -------------------------------------------------------------------------
+
+  /**
+   * Posts the `sale`/`out` movement of every line of a counter sale that has just
+   * been issued, in the caller's transaction.
+   *
+   * This is the ONLY way an invoice moves stock, and it is here rather than in
+   * `billing` because a module that is not this one may not write `inv`. The
+   * argument is a list of invoice LINE ids: `inv.post_counter_sale_line` reads the
+   * item, the cell and the quantity from the line itself, checks availability
+   * inside the balance-row lock, and posts through `inv.post_stock_movement` — so
+   * nothing a caller passes can redirect a posting or sell more than is there.
+   *
+   * Exactly once, structurally: `uq_stock_movements_source` is UNIQUE on
+   * (reference_kind, reference_id, direction), so a second call for one line is
+   * refused by the index rather than by a code path that could be skipped. The
+   * caller's own replay guard — `issueInvoice` short-circuits on an already-issued
+   * invoice — means that index is a backstop and not the routine path.
+   *
+   * No audit record: the act being audited is the ISSUANCE, and `billing` writes
+   * `sal.invoice.issued` for it. A second record here would report one event twice
+   * under two names. The movements are published as `stock.movement.posted`, which
+   * is what a consumer projecting availability needs.
+   */
+  public async postCounterSaleLines(
+    db: DbHandle,
+    input: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly invoiceLineIds: readonly string[];
+    },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<readonly string[]> {
+    await authorizeScope({ companyId: input.companyId, branchId: input.branchId });
+    assertLegalMovementReference('sale', 'invoice_line', 'out');
+
+    const movementIds: string[] = [];
+    for (const invoiceLineId of input.invoiceLineIds) {
+      try {
+        movementIds.push(await this.repository.postCounterSaleLine(db, invoiceLineId));
+      } catch (error) {
+        toDomainFailure(error, 'Counter sale');
+      }
+      await this.publishPostedMovements(db, 'invoice_line', invoiceLineId);
+    }
+    return movementIds;
+  }
+
+  // -------------------------------------------------------------------------
   // Shared preconditions.
   // -------------------------------------------------------------------------
 

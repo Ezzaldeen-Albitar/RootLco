@@ -44,6 +44,18 @@ export const AUDIT_READ = 'inv.audit.read';
 export const WORK_ORDER_READ = 'wo.work_order.read';
 /** P1-32 preparatory slice 2: the catalogue authority identifier writes require. */
 export const ITEM_MANAGE = 'inv.item.manage';
+/**
+ * P1-32 preparatory slice 2: the three `sal` codes a counter sale needs.
+ *
+ * A counter sale is sold from stock and invoiced in one act, so the principal that
+ * performs it holds inventory AND billing authority. They are named here rather
+ * than imported from `p1-22-helpers.ts` because that module seeds its own tenant-A
+ * fixtures, principals and payment methods, and a suite that wanted three codes
+ * would inherit all of it.
+ */
+export const INVOICE_MANAGE = 'sal.invoice.manage';
+export const INVOICE_ISSUE = 'sal.invoice.issue';
+export const FINANCE_VIEW = 'sal.finance.view';
 
 const ALL_INVENTORY = [
   ITEM_READ,
@@ -226,6 +238,45 @@ export const INV_TENANT_B_CATALOG: Principal = {
   permissions: [...ALL_INVENTORY, ITEM_MANAGE],
 };
 
+/**
+ * P1-32 preparatory slice 2. Everything the counter needs: the inventory codes, the
+ * tenant-wide catalogue authority a selling price requires, and the three `sal`
+ * codes that create and issue the invoice.
+ */
+export const INV_COUNTER: Principal = {
+  roleId: 'e1000000-0000-4000-8000-0000000001a1',
+  userId: 'e1000000-0000-4000-8000-0000000001a2',
+  subject: 'fx_p1_21_counter',
+  tenantId: TENANT_A,
+  permissions: [...ALL_INVENTORY, ITEM_MANAGE, INVOICE_MANAGE, INVOICE_ISSUE, FINANCE_VIEW],
+};
+
+/**
+ * The same authority scoped to branch A2.
+ *
+ * A2 is a real branch of the same company, so RLS does not hide A1's rows from a
+ * caller whose union includes them — which is what makes a refusal here a statement
+ * about the scoped permission check and not about row visibility.
+ */
+export const INV_COUNTER_SCOPED_A2: Principal = {
+  roleId: 'e1000000-0000-4000-8000-0000000001b1',
+  userId: 'e1000000-0000-4000-8000-0000000001b2',
+  subject: 'fx_p1_21_counter_scoped_a2',
+  tenantId: TENANT_A,
+  permissions: [...ALL_INVENTORY, ITEM_MANAGE, INVOICE_MANAGE, INVOICE_ISSUE, FINANCE_VIEW],
+  scope: { companyId: COMPANY_A1, branchId: BRANCH_A2 },
+  grantId: 'e1000000-0000-4000-8000-0000000001f4',
+};
+
+/** Tenant B with the same authority: a refusal is the tenant boundary. */
+export const INV_TENANT_B_COUNTER: Principal = {
+  roleId: 'e1000000-0000-4000-8000-0000000001c1',
+  userId: 'e1000000-0000-4000-8000-0000000001c2',
+  subject: 'fx_p1_21_tenant_b_counter',
+  tenantId: TENANT_B,
+  permissions: [...ALL_INVENTORY, ITEM_MANAGE, INVOICE_MANAGE, INVOICE_ISSUE, FINANCE_VIEW],
+};
+
 export const P1_21_PRINCIPALS: readonly Principal[] = [
   INV_FULL,
   INV_APPROVER,
@@ -238,6 +289,9 @@ export const P1_21_PRINCIPALS: readonly Principal[] = [
   INV_CATALOG,
   INV_CATALOG_SCOPED_A1,
   INV_TENANT_B_CATALOG,
+  INV_COUNTER,
+  INV_COUNTER_SCOPED_A2,
+  INV_TENANT_B_COUNTER,
 ];
 
 let admin: Pool;
@@ -797,7 +851,57 @@ export async function seedStock(input: {
 }
 
 /** Removes only what this file created, newest dependency first. */
+/**
+ * Removes the counter sales this slice's suites create, and the returns that cite
+ * them, in ONE transaction.
+ *
+ * One transaction because of `tg_invoice_line_amounts_reconcile`, which is
+ * DEFERRABLE INITIALLY DEFERRED: deleting an issued sale's line amounts in its own
+ * statement commits a document whose header totals no longer match its (now absent)
+ * lines, and the trigger raises at that COMMIT. With the header, the lines and the
+ * INVOICE removed together, the trigger finds no invoice at commit time and has
+ * nothing to reconcile.
+ *
+ * Only `counter_sale` invoices are removed: a work-order invoice in this tenant
+ * belongs to another suite's fixtures.
+ */
+async function removeCounterSales(): Promise<void> {
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    const sales = `SELECT id FROM sal.invoices WHERE tenant_id IN ($1,$2) AND sale_kind = 'counter_sale'`;
+    // The returns go first: they cite the credit note and the invoice line.
+    await client.query(`DELETE FROM inv.sales_returns WHERE tenant_id IN ($1,$2)`, [
+      TENANT_A,
+      TENANT_B,
+    ]);
+    for (const table of [
+      'sal.credit_notes',
+      'sal.invoice_status_history',
+      'sal.invoice_line_amounts',
+      'sal.invoice_lines',
+      'sal.invoice_amounts',
+    ]) {
+      await client.query(
+        `DELETE FROM ${table} WHERE tenant_id IN ($1,$2) AND invoice_id IN (${sales})`,
+        [TENANT_A, TENANT_B]
+      );
+    }
+    await client.query(
+      `DELETE FROM sal.invoices WHERE tenant_id IN ($1,$2) AND sale_kind = 'counter_sale'`,
+      [TENANT_A, TENANT_B]
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function cleanP1_21Fixtures(): Promise<void> {
+  await removeCounterSales();
   for (const statement of [
     `DELETE FROM inv.external_purchase_part_details WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.external_purchase_parts WHERE tenant_id IN ($1,$2)`,
@@ -815,6 +919,8 @@ export async function cleanP1_21Fixtures(): Promise<void> {
     `DELETE FROM inv.stock_transfers WHERE tenant_id IN ($1,$2)`,
     // P1-32 preparatory slice 2: identifiers cite an item and a unit below.
     `DELETE FROM inv.item_identifiers WHERE tenant_id IN ($1,$2)`,
+    // Selling prices cite the item, a company, a branch and a tax class.
+    `DELETE FROM inv.item_sale_prices WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.stock_movements WHERE tenant_id IN ($1,$2)`,
     // After the movements that cite them: a top-up seed approves an adjustment,
     // and a leftover row would keep the item and location rows below undeletable.

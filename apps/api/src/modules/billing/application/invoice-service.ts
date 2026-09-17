@@ -51,10 +51,13 @@ import { publishEvent } from '@/server/events/publisher';
 import { isSqlState, sqlState, SQLSTATE } from '@/server/db/repository';
 import { Decimal, MONEY } from '@/modules/pricing';
 import { findSequenceDefinition, sharedServicesModule } from '@/modules/shared-services';
+import { inventoryModule } from '@/modules/inventory';
 import type { DbHandle } from '@/server/db/transaction';
+import { pageRequest, type Page } from '@/server/db/pagination';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import {
   BILLING_SQLSTATE,
+  COUNTER_SALE_ORDER,
   INVOICE_UNIQUE_INDEX,
   violatedIndex,
   type BillingRepository,
@@ -137,6 +140,31 @@ export interface CreateInvoiceInput {
    */
   readonly payerPartnerId?: string | undefined;
   readonly idempotencyKey?: string | undefined;
+}
+
+/**
+ * What a counter sale is created from: a buyer, a branch, and what left the shelf.
+ *
+ * No price, no total, no tax and no discount — deliberately unexpressible, like
+ * `CreateInvoiceInput`. A `notes` field is absent too: `sal.invoices` has no notes
+ * column, and inventing one for a document the customer receives is a schema
+ * decision this slice does not take.
+ */
+export interface CreateCounterSaleInput {
+  readonly companyId: string;
+  readonly branchId: string;
+  /**
+   * The buyer — a business partner of the SELLING tenant and nothing more. No
+   * tenant, no login and no data access is created for it.
+   */
+  readonly customerPartnerId: string;
+  readonly lines: readonly {
+    readonly itemId: string;
+    readonly locationId: string;
+    /** Exact decimal STRING; `numeric(12,3)` is not IEEE-754. */
+    readonly quantity: string;
+  }[];
+  readonly idempotencyKey?: string;
 }
 
 export interface RequestCreditNoteInput {
@@ -656,6 +684,175 @@ export class InvoiceService {
   }
 
   // -------------------------------------------------------------------------
+  // Counter sale (P1-32-PRE-107…110).
+  // -------------------------------------------------------------------------
+
+  /**
+   * Creates a draft counter sale: an invoice for stock sold over the counter, with
+   * no work order and no vehicle.
+   *
+   * ### The caller says what was sold, never what it costs
+   *
+   * `CreateCounterSaleInput` has no price, no total, no tax and no discount, and
+   * the route's body is `.strict()` — so there is no field through which a
+   * client-supplied amount could arrive, exactly as on `sal.invoice-create`. Each
+   * line is priced by `inv.resolve_item_sale_price` inside
+   * `sal.create_counter_sale_invoice`, and an item with no configured price refuses
+   * the whole sale rather than leaving at zero.
+   *
+   * ### Why one database call instead of the header/line sequence above
+   *
+   * Because the money must be COMPUTED rather than copied. A work-order invoice
+   * snapshots amounts an accepted quotation already holds; a counter sale has no
+   * prior document, so the line net, the line tax and the header totals are
+   * arithmetic — and the only engine this platform computes money with is
+   * PostgreSQL `numeric`. Pricing the lines here would be a second engine, in
+   * IEEE-754, on a customer's bill.
+   *
+   * ### Nothing moves yet
+   *
+   * A draft moves no stock. The sale leaves the shelf at ISSUANCE, through
+   * `issueInvoice` below, and a customer who walks away from a draft leaves nothing
+   * to undo.
+   *
+   * ### Creating a counter sale requires `sal.finance.view`
+   *
+   * For the reason `createInvoice` records: `ins_invoice_amounts_gated` and
+   * `ins_invoice_line_amounts_gated` both require it, and this path writes both.
+   */
+  public async createCounterSale(
+    db: DbHandle,
+    input: CreateCounterSaleInput,
+    authorizeScope: ScopeAuthorizer
+  ): Promise<CreatedInvoice> {
+    await authorizeScope({ companyId: input.companyId, branchId: input.branchId });
+
+    if (input.idempotencyKey !== undefined) {
+      const existing = await this.repository.findInvoiceByIdempotencyKey(db, input.idempotencyKey);
+      if (existing) {
+        if (existing.saleKind !== 'counter_sale') {
+          throw new AppFailure('ERR-INT-001', {
+            message:
+              'This idempotency key already created an invoice for a work order. Reuse a key ' +
+              'only for an identical request.',
+          });
+        }
+        // Re-authorized rather than assumed: the key is unique per TENANT, not per
+        // branch, so a replay can name a row this caller must be judged against again.
+        await authorizeScope({ companyId: existing.companyId, branchId: existing.branchId });
+        return { ...(await this.detailOf(db, existing)), replayed: true };
+      }
+    }
+
+    let invoiceId: string;
+    try {
+      invoiceId = await this.repository.createCounterSaleInvoice(db, {
+        companyId: input.companyId,
+        branchId: input.branchId,
+        customerPartnerId: input.customerPartnerId,
+        lines: input.lines,
+        idempotencyKey: input.idempotencyKey ?? null,
+      });
+    } catch (error) {
+      if (
+        isSqlState(error, SQLSTATE.uniqueViolation) &&
+        violatedIndex(error) === INVOICE_UNIQUE_INDEX.idempotency
+      ) {
+        throw new AppFailure('ERR-INT-001', {
+          message:
+            'This idempotency key was used for another sale while this request was in flight. ' +
+            'Re-read the sale rather than retrying.',
+          cause: error,
+        });
+      }
+      toDomainFailure(error, 'Counter sale creation');
+    }
+
+    const created = await this.repository.findInvoice(db, invoiceId);
+    /* c8 ignore next 5 -- written in this transaction under the tenant predicate
+       the read applies; unreachable without a policy change. */
+    if (!created) {
+      throw new AppFailure('ERR-SYS-001', {
+        message: 'The counter sale was not readable back after it was created',
+      });
+    }
+
+    await appendAudit(db, {
+      action: 'sal.counter_sale.created',
+      entityType: 'sal.invoice',
+      entityId: created.id,
+      companyId: created.companyId,
+      branchId: created.branchId,
+      requestRef: 'sal.counter-sale-create',
+      details: [
+        { field: 'customerPartnerId', classification: 'internal', value: created.payerPartnerId },
+        { field: 'currencyCode', classification: 'internal', value: created.currencyCode },
+        { field: 'lineCount', classification: 'internal', value: String(input.lines.length) },
+        // `restricted`, for the reason `sal.invoice.created` records: audit records
+        // are not gated by `sal.finance.view`, so the figure would travel past the
+        // policy that restricts it. The marker records that a total exists.
+        {
+          field: 'grossTotal',
+          classification: 'restricted',
+          value: created.money?.grossTotal ?? null,
+        },
+      ],
+    });
+
+    await publishEvent(db, {
+      eventType: 'invoice.created',
+      aggregateId: created.id,
+      aggregateVersion: created.recordVersion,
+      producer: 'billing.invoice-service',
+      companyId: created.companyId,
+      branchId: created.branchId,
+      eventKey: `invoice.created:${created.id}`,
+      // The same event a work-order invoice publishes, with `workOrderId: null` and
+      // the sale kind naming what it is. A consumer that keys on the event name is
+      // not asked to learn a second one for a document that is an invoice in every
+      // respect that matters to it. No amounts, for the reason given there.
+      payload: {
+        invoiceId: created.id,
+        workOrderId: null,
+        saleKind: created.saleKind,
+        currency: created.currencyCode,
+        status: created.status,
+        lineCount: input.lines.length,
+      },
+    });
+
+    return { ...(await this.detailOf(db, created)), replayed: false };
+  }
+
+  /**
+   * One branch's counter sales, newest first.
+   *
+   * A list exists here and nowhere else on this module's surface, and the asymmetry
+   * is the point: a work-order invoice is found through its work order, which every
+   * screen already has. A counter sale has no parent document at all, so without
+   * this it could only be found by an id nobody recorded.
+   */
+  public async listCounterSales(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly status?: string | undefined;
+      readonly customerPartnerId?: string | undefined;
+    },
+    page: { readonly cursor?: string | undefined; readonly limit?: number | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<Page<InvoiceView>> {
+    await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
+    const result = await this.repository.listCounterSales(
+      db,
+      filter,
+      pageRequest(COUNTER_SALE_ORDER, page)
+    );
+    return { ...result, items: result.items.map(toInvoiceView) };
+  }
+
+  // -------------------------------------------------------------------------
   // Issue.
   // -------------------------------------------------------------------------
 
@@ -771,6 +968,26 @@ export class InvoiceService {
        disappear between the call and this read. */
     if (!after) {
       throw new AppFailure('ERR-SYS-001', { message: 'Invoice vanished after issue' });
+    }
+
+    // The stock leg of a counter sale, in THIS transaction.
+    //
+    // After the status flip, because `inv.guard_stock_movement_provenance` refuses a
+    // `sale` movement against an invoice that is not `issued` — a draft may still be
+    // voided, and stock that left for a voided document would be gone from the shelf
+    // and from the ledger's explanation of why. Before the audit and the event, so a
+    // sale of stock that is not there rolls the whole issuance back rather than
+    // leaving a numbered invoice announcing a delivery the branch cannot make.
+    //
+    // A work-order invoice posts nothing: its parts left as part issues, one by one,
+    // when they were fitted.
+    if (after.saleKind === 'counter_sale') {
+      const invoiceLineIds = await this.repository.listCounterSaleLineIds(db, after.id);
+      await inventoryModule().stock.postCounterSaleLines(
+        db,
+        { companyId: after.companyId, branchId: after.branchId, invoiceLineIds },
+        authorizeScope
+      );
     }
 
     // No status-history row is written here. `sal.issue_invoice` already inserts the

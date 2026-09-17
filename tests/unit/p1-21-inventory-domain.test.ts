@@ -31,6 +31,9 @@ import {
   Quantity,
   REFERENCE_KINDS,
   RESERVATION_STATES,
+  RETURN_CONDITIONS,
+  SALES_RETURN_SOURCE_KINDS,
+  SALES_RETURN_STATES,
   assertLegalMovementReference,
   assertQuarantineDestination,
   assertReservationMatchesIssue,
@@ -54,6 +57,7 @@ describe('inventory vocabularies mirror the frozen inv CHECK constraints', () =>
       'adjustment',
       'transfer',
       'receipt',
+      'sale',
     ]);
     expect([...REFERENCE_KINDS]).toEqual([
       'opening_line',
@@ -64,7 +68,12 @@ describe('inventory vocabularies mirror the frozen inv CHECK constraints', () =>
       'transfer_dispatch',
       'transfer_receipt',
       'goods_receipt_line',
+      'invoice_line',
+      'sales_return',
     ]);
+    expect([...RETURN_CONDITIONS]).toEqual(['restockable', 'damaged']);
+    expect([...SALES_RETURN_SOURCE_KINDS]).toEqual(['part_issue', 'invoice_line']);
+    expect([...SALES_RETURN_STATES]).toEqual(['received', 'credited']);
     expect([...DIRECTIONS]).toEqual(['in', 'out']);
     expect([...RESERVATION_STATES]).toEqual(['active', 'released', 'consumed', 'expired']);
     expect([...LOCATION_TYPES]).toEqual(['warehouse', 'storage', 'quarantine', 'transit']);
@@ -90,8 +99,8 @@ describe('inventory vocabularies mirror the frozen inv CHECK constraints', () =>
 });
 
 describe('the movement/reference matrix (P1-21-BE-015)', () => {
-  it('accepts exactly the twelve legal triples and nothing else', () => {
-    expect(MOVEMENT_REFERENCE_MATRIX).toHaveLength(12);
+  it('accepts exactly the fourteen legal triples and nothing else', () => {
+    expect(MOVEMENT_REFERENCE_MATRIX).toHaveLength(14);
     // Every legal triple is accepted.
     for (const row of MOVEMENT_REFERENCE_MATRIX) {
       expect(isLegalMovementReference(row.movementType, row.referenceKind, row.direction)).toBe(
@@ -121,8 +130,8 @@ describe('the movement/reference matrix (P1-21-BE-015)', () => {
         }
       }
     }
-    // 7 types x 8 kinds x 2 directions = 112 combinations, 12 of which are legal.
-    expect(refused).toBe(100);
+    // 8 types x 10 kinds x 2 directions = 160 combinations, 14 of which are legal.
+    expect(refused).toBe(146);
   });
 
   it('refuses a movement type that does not exist at all', () => {
