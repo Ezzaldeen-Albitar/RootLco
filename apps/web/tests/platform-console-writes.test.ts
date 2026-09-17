@@ -333,6 +333,198 @@ describe('lifecycle and subscription writes name their subject and their act', (
   });
 });
 
+/*
+ * The four growth acts (P1-32-PRE-151). `platform-organization-growth.dom.test.tsx`
+ * replaces this whole module, so it proves which dialog calls which action and
+ * nothing about the document that action builds. These cases hold the other half:
+ * the path each act addresses, the mode the two administrator acts share one
+ * operation by, and the optional fields that are dropped rather than sent empty.
+ */
+describe('growing a live organisation addresses the organisation it names', () => {
+  it('adds a company under the organisation, dropping a registration that was left blank', async () => {
+    const state = await actions.addCompanyAction(TENANT, {
+      code: 'nw_second',
+      legalName: 'Northern Workshops Second Company',
+      baseCurrency: 'JOD',
+    });
+    expect(state.status).toBe('success');
+    const { method, path, body } = sent();
+    expect(method).toBe('POST');
+    expect(path).toBe(`/api/v1/platform/organizations/${TENANT}/companies`);
+    expect(body).toEqual({
+      code: 'nw_second',
+      legalName: 'Northern Workshops Second Company',
+      baseCurrency: 'JOD',
+    });
+  });
+
+  it('carries a registration and a tax registration when they were given', async () => {
+    await actions.addCompanyAction(TENANT, {
+      code: 'nw_third',
+      legalName: 'Northern Workshops Third Company',
+      baseCurrency: 'JOD',
+      registrationNumber: 'REG-3',
+      taxRegistrationNumber: 'TAX-3',
+    });
+    expect(sent().body).toEqual({
+      code: 'nw_third',
+      legalName: 'Northern Workshops Third Company',
+      baseCurrency: 'JOD',
+      registrationNumber: 'REG-3',
+      taxRegistrationNumber: 'TAX-3',
+    });
+  });
+
+  it('refuses a company code the catalogue cannot hold and an organisation that is not one', async () => {
+    const code = await actions.addCompanyAction(TENANT, {
+      code: 'Second Company',
+      legalName: 'Northern Workshops Second Company',
+      baseCurrency: 'JOD',
+    });
+    expect(code.status).toBe('invalid');
+    expect(code.fieldErrors?.code).toBe('platform.error.required');
+
+    const unknown = await actions.addCompanyAction(NOT_AN_ID, {
+      code: 'nw_second',
+      legalName: 'Northern Workshops Second Company',
+      baseCurrency: 'JOD',
+    });
+    expect(unknown.messageKey).toBe('state.notFound.title');
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('opens a branch under the company it names, dropping a blank city', async () => {
+    const state = await actions.addBranchAction(TENANT, {
+      companyId: SUBSCRIPTION,
+      code: 'nw_north',
+      name: 'Northern branch',
+      timezone: 'Asia/Amman',
+      countryCode: 'JO',
+    });
+    expect(state.status).toBe('success');
+    const { path, body } = sent();
+    expect(path).toBe(`/api/v1/platform/organizations/${TENANT}/branches`);
+    expect(body).toEqual({
+      companyId: SUBSCRIPTION,
+      code: 'nw_north',
+      name: 'Northern branch',
+      timezone: 'Asia/Amman',
+      countryCode: 'JO',
+    });
+  });
+
+  it('refuses a parent company that is not an identifier, without asking the server', async () => {
+    const parent = await actions.addBranchAction(TENANT, {
+      companyId: NOT_AN_ID,
+      code: 'nw_north',
+      name: 'Northern branch',
+      timezone: 'Asia/Amman',
+    });
+    expect(parent.status).toBe('invalid');
+    expect(parent.fieldErrors?.companyId).toBe('platform.error.required');
+
+    const unknown = await actions.addBranchAction(NOT_AN_ID, {
+      companyId: SUBSCRIPTION,
+      code: 'nw_north',
+      name: 'Northern branch',
+      timezone: 'Asia/Amman',
+    });
+    expect(unknown.messageKey).toBe('state.notFound.title');
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('invites a first administrator as the `invite` mode of the one operation', async () => {
+    const state = await actions.inviteAdministratorAction(TENANT, {
+      email: 'operations@northern-workshops.example',
+      displayName: 'Northern Workshops operations',
+    });
+    expect(state.status).toBe('success');
+    const { path, body } = sent();
+    expect(path).toBe(`/api/v1/platform/organizations/${TENANT}/administrators`);
+    expect(body).toEqual({
+      mode: 'invite',
+      email: 'operations@northern-workshops.example',
+      displayName: 'Northern Workshops operations',
+    });
+  });
+
+  it('sends a further administrator only with the reason that was given for it', async () => {
+    const state = await actions.inviteAdministratorAction(TENANT, {
+      email: 'second@northern-workshops.example',
+      displayName: 'Northern Workshops second operator',
+      additionalAdministrator: true,
+      reason: 'The first administrator is on leave for the quarter',
+    });
+    expect(state.status).toBe('success');
+    expect(sent().body).toEqual({
+      mode: 'invite',
+      email: 'second@northern-workshops.example',
+      displayName: 'Northern Workshops second operator',
+      additionalAdministrator: true,
+      reason: 'The first administrator is on leave for the quarter',
+    });
+  });
+
+  it('refuses the flag without a reason, and a reason without the flag', async () => {
+    const flagOnly = await actions.inviteAdministratorAction(TENANT, {
+      email: 'second@northern-workshops.example',
+      displayName: 'Northern Workshops second operator',
+      additionalAdministrator: true,
+    });
+    expect(flagOnly.fieldErrors?.reason).toBe('overlay.reasonRequired');
+
+    const reasonOnly = await actions.inviteAdministratorAction(TENANT, {
+      email: 'second@northern-workshops.example',
+      displayName: 'Northern Workshops second operator',
+      reason: 'The first administrator is on leave for the quarter',
+    });
+    expect(reasonOnly.fieldErrors?.reason).toBe('overlay.reasonRequired');
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('refuses an invitation with no name and an organisation that is not one', async () => {
+    const name = await actions.inviteAdministratorAction(TENANT, {
+      email: 'operations@northern-workshops.example',
+      displayName: '   ',
+    });
+    expect(name.fieldErrors?.displayName).toBe('platform.error.required');
+
+    const unknown = await actions.inviteAdministratorAction(NOT_AN_ID, {
+      email: 'operations@northern-workshops.example',
+      displayName: 'Northern Workshops operations',
+    });
+    expect(unknown.messageKey).toBe('state.notFound.title');
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('sends the link again as the `resend` mode, carrying the address and nothing else', async () => {
+    const state = await actions.resendAdministratorInvitationAction(
+      TENANT,
+      '  operations@northern-workshops.example  '
+    );
+    expect(state.status).toBe('success');
+    const { path, body } = sent();
+    expect(path).toBe(`/api/v1/platform/organizations/${TENANT}/administrators`);
+    expect(body).toEqual({
+      mode: 'resend',
+      email: 'operations@northern-workshops.example',
+    });
+  });
+
+  it('refuses a resend to an address that is not one, and to an organisation that is not one', async () => {
+    const address = await actions.resendAdministratorInvitationAction(TENANT, 'a');
+    expect(address.status).toBe('invalid');
+    expect(address.fieldErrors?.email).toBe('platform.error.email');
+
+    const unknown = await actions.resendAdministratorInvitationAction(
+      NOT_AN_ID,
+      'operations@northern-workshops.example'
+    );
+    expect(unknown.messageKey).toBe('state.notFound.title');
+    expect(send).not.toHaveBeenCalled();
+  });
+});
+
 describe('recorded money crosses the boundary as the string it was typed as', () => {
   it('sends a charge amount unchanged, with its currency and its due date', async () => {
     const state = await actions.recordChargeAction(TENANT, {
