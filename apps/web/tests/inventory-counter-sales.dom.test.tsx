@@ -396,7 +396,25 @@ describe('issuing and voiding', () => {
     ).toBeNull();
   });
 
-  it('links the payments screen AT this invoice, rather than naming it in a sentence', async () => {
+  it('offers no payment link beside a DRAFT, because there is nothing to settle yet', async () => {
+    /*
+     * A draft has no number and no receivable; `sal.payment-record` refuses to
+     * allocate against one. A link offered here sends the operator to a screen
+     * that can only refuse them, which is the defect this case exists to keep
+     * shut. The sentence beside the link goes with it.
+     */
+    const user = userEvent.setup();
+    renderLtr(screenAt());
+    await toDraft(user);
+    expect(
+      screen.queryByRole('link', {
+        name: EN['inventory.counterSales.sale.takePayment'] as string,
+      })
+    ).toBeNull();
+    expect(screen.queryByText(EN['inventory.counterSales.sale.paymentNote'] as string)).toBeNull();
+  });
+
+  it('links the payments screen AT this invoice once it is ISSUED', async () => {
     /*
      * The payments page reads an `invoiceId` from the address and prefills the
      * allocation with it, so a sentence saying "settle it on the payments
@@ -407,6 +425,10 @@ describe('issuing and voiding', () => {
     const user = userEvent.setup();
     renderLtr(screenAt());
     await toDraft(user);
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.counterSales.issue.action'] as string })
+    );
+    await screen.findByText(EN['inventory.counterSales.sale.issuedNote'] as string);
     const link = await screen.findByRole('link', {
       name: EN['inventory.counterSales.sale.takePayment'] as string,
     });
@@ -506,7 +528,14 @@ describe('the buyer search', () => {
     expect(searchCustomerDirectory.mock.calls[0]?.[2]).toEqual({ customerNumber: 'C-0001' });
   });
 
-  it('states plainly that a telephone number cannot be searched on', async () => {
+  it('searches by telephone number, sending it as typed under `phone`', async () => {
+    /*
+     * `crm.customer-search` publishes a `phone` parameter — the whole number or
+     * a tail of at least seven digits — and this screen sends it through the one
+     * customer-search authority rather than folding or reshaping it here. The
+     * criterion object is asserted, because a number smuggled into `name` would
+     * still produce a request and still find nobody.
+     */
     const user = userEvent.setup();
     renderLtr(screenAt());
     await chooseBranch(
@@ -514,9 +543,33 @@ describe('the buyer search', () => {
       'inventory.counterSales.targetLabel',
       'inventory.counterSales.chooseBranch'
     );
+    await user.selectOptions(
+      await screen.findByLabelText(labelled('inventory.counterSales.buyer.searchBy')),
+      'phone'
+    );
+    await user.type(
+      screen.getByLabelText(labelled('inventory.counterSales.buyer.term')),
+      '0791234567'
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.counterSales.buyer.search'] as string })
+    );
+    await waitFor(() => expect(searchCustomerDirectory).toHaveBeenCalledTimes(1));
+    expect(searchCustomerDirectory.mock.calls[0]?.[2]).toEqual({ phone: '0791234567' });
+  });
+
+  it('offers the telephone number as a search field rather than refusing it', async () => {
+    const user = userEvent.setup();
+    renderLtr(screenAt());
+    await chooseBranch(
+      user,
+      'inventory.counterSales.targetLabel',
+      'inventory.counterSales.chooseBranch'
+    );
+    const chooser = await screen.findByLabelText(labelled('inventory.counterSales.buyer.searchBy'));
     expect(
-      await screen.findByText(EN['inventory.counterSales.buyer.explain'] as string)
-    ).toBeTruthy();
+      [...chooser.querySelectorAll('option')].map((option) => option.getAttribute('value'))
+    ).toEqual(['name', 'customerNumber', 'phone']);
   });
 
   it('offers no buyer search without the customer permission, and says so', async () => {

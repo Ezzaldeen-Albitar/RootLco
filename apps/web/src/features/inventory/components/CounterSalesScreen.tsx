@@ -33,10 +33,12 @@
  *
  * ## Finding the buyer
  *
- * Through the customer directory, by name or by customer number. The published
- * search accepts no telephone number — `crm.customer-search` offers name,
- * customer number, party type and lifecycle status and nothing else — so the
- * field is not offered here rather than offered and silently ignored.
+ * Through the customer directory, by name, by customer number or by telephone
+ * number. `crm.customer-search` publishes a `phone` parameter — an exact number
+ * or a tail of at least seven digits — and this screen sends it through the one
+ * customer-search authority, `lib/customers/directory`, exactly as the customer
+ * search screen does. The number is sent as typed: the backend folds
+ * Arabic-Indic digits before it compares.
  *
  * Permissions: `sal.invoice.manage` gates the page and offers the draft and the
  * void; `sal.finance.view` is required by construction wherever amounts are
@@ -229,6 +231,13 @@ function BranchCounter({
  * The buyer
  * ------------------------------------------------------------------ */
 
+/**
+ * The three criteria this picker offers, each a parameter `crm.customer-search`
+ * publishes. Email is deliberately absent: the backend accepts no email filter,
+ * and a box that is silently ignored is worse than no box.
+ */
+type BuyerSearchField = 'name' | 'customerNumber' | 'phone';
+
 function BuyerPicker({
   messages,
   canReadCustomers,
@@ -241,7 +250,7 @@ function BuyerPicker({
   readonly onChange: (next: CustomerSearchHit | null) => void;
 }) {
   const [term, setTerm] = useState('');
-  const [field, setField] = useState<'name' | 'customerNumber'>('name');
+  const [field, setField] = useState<BuyerSearchField>('name');
   const [found, setFound] = useState<readonly CustomerSearchHit[] | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
@@ -254,7 +263,13 @@ function BuyerPicker({
     const page = await searchCustomerDirectory(
       { ...INITIAL_REQUEST, pageSize: 25 },
       null,
-      field === 'name' ? { name: text } : { customerNumber: text }
+      // One criterion at a time, named by the chosen field. `directory.ts`
+      // normalises and truncates it; nothing is assembled here.
+      field === 'name'
+        ? { name: text }
+        : field === 'phone'
+          ? { phone: text }
+          : { customerNumber: text }
     );
     if (page.status === 'ok') {
       setFound(page.rows);
@@ -294,7 +309,7 @@ function BuyerPicker({
             <SelectField
               label={translate(messages, 'inventory.counterSales.buyer.searchBy')}
               value={field}
-              onChange={(event) => setField(event.target.value as 'name' | 'customerNumber')}
+              onChange={(event) => setField(event.target.value as BuyerSearchField)}
               options={[
                 {
                   value: 'name',
@@ -303,6 +318,10 @@ function BuyerPicker({
                 {
                   value: 'customerNumber',
                   label: translate(messages, 'inventory.counterSales.buyer.byNumber'),
+                },
+                {
+                  value: 'phone',
+                  label: translate(messages, 'inventory.counterSales.buyer.byPhone'),
                 },
               ]}
             />
@@ -818,15 +837,25 @@ function SalePanel({
        * `invoiceId` from the address and prefills the allocation with it. So
        * this is a link rather than an instruction to go and find the sale
        * again — the operator arrives with the invoice already chosen.
+       *
+       * It is offered for an ISSUED invoice and for nothing else. A draft has
+       * no number and no receivable — `sal.payment-record` refuses to allocate
+       * against one — so a link offered beside a draft sends the operator to a
+       * screen that can only refuse them, and a voided sale has nothing left to
+       * settle at all.
        */}
-      <p className="text-caption text-text-muted">
-        {translate(messages, 'inventory.counterSales.sale.paymentNote')}
-      </p>
-      <div>
-        <Link href={`/${locale}/payments?invoiceId=${invoice.id}`} className={LINK}>
-          {translate(messages, 'inventory.counterSales.sale.takePayment')}
-        </Link>
-      </div>
+      {invoice.status === 'issued' ? (
+        <>
+          <p className="text-caption text-text-muted">
+            {translate(messages, 'inventory.counterSales.sale.paymentNote')}
+          </p>
+          <div>
+            <Link href={`/${locale}/payments?invoiceId=${invoice.id}`} className={LINK}>
+              {translate(messages, 'inventory.counterSales.sale.takePayment')}
+            </Link>
+          </div>
+        </>
+      ) : null}
       <div>
         <button type="button" className={SECONDARY_BUTTON} onClick={onNewSale}>
           {translate(messages, 'inventory.counterSales.sale.next')}
