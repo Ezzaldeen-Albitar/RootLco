@@ -44,22 +44,112 @@ writes `SUPABASE_SERVICE_ROLE_KEY`, `AUTH_JWT_SECRET` and `AUTH_JWT_ISSUER` into
 | `apps/api/src/config/env.ts`                   | 6     | first `clientEnv()`/`serverEnv()` | The older Supabase/`NODE_ENV` subset. Still live: iam composes from it. |
 | `apps/web/src/lib/env.ts`                      | 4     | module load                       | Parsed at import, so a bad value stops the boot, not the first request. |
 
-The two `NEXT_PUBLIC_APP_ENV` vocabularies **differ and are not interchangeable**: the API accepts
-`local | development | staging | production`; the web tier accepts `local | preview | production`
-and defaults to `production` so a deployment that forgets it still sets `Secure` on the session
-cookie.
+The two `NEXT_PUBLIC_APP_ENV` vocabularies **differ and are not interchangeable**. Section 2 is the
+one place that difference, and every other name that is not shared between the tiers, is written
+down.
 
 ### Column legend for the inventory
 
 - **local / staging / production** — three tokens. `set` a value is written down; `default` the
   schema default is correct; `required` a deployment must supply it; `unset` deliberately absent;
   `n/a` the name does not apply to that environment.
+- **Requirement** — the same words, plus `reserved`: the name is accepted and read by nothing, so
+  setting it has no effect. Section 3 is the complete list and the only place a name earns that
+  word.
 - **Local value available?** — determined by listing variable NAMES in the working
   `.env.local` files. No value was read.
 
 ---
 
-## 2. Inventory — web tier, browser-safe
+## 2. API and web names: what differs, what pairs, and what is aliased
+
+**Nothing here is a rename.** Every name below keeps working exactly as it does today; this section
+records the differences so a deployment can be configured without guessing, and it is the only place
+they are written down.
+
+### 2.1 The mapping table
+
+| Web name (`apps/web`)                 | API name (`apps/api`)                                                                      | Relationship                                             | Meaning                                                                                                                                     | Allowed values                                                                                                                      |
+| ------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_APP_ENV`                 | `NEXT_PUBLIC_APP_ENV`                                                                      | **One name, two vocabularies.** Nothing compares them.   | Web: whether the session cookie carries `Secure`. API: the storage-key segment, and the switch that turns the production-required check on. | Web: `local \| preview \| production`, default `production`. API: `local \| development \| staging \| production`, default `local`. |
+| `NEXT_PUBLIC_API_BASE_URL`            | — (no equivalent)                                                                          | Web-only.                                                | The origin the BROWSER calls, and the origin `src/proxy.ts` puts in the CSP `connect-src`.                                                  | Any absolute URL. Inlined at build time.                                                                                            |
+| `NEXT_PUBLIC_CLIENT_MONITORING_URL`   | — (no equivalent)                                                                          | Web-only.                                                | Where client diagnostics are delivered, if a collector is ever operated.                                                                    | Absolute URL, or unset.                                                                                                             |
+| `NEXT_PUBLIC_CLIENT_MONITORING_LEVEL` | — (no equivalent)                                                                          | Web-only.                                                | Severity threshold for what leaves the browser.                                                                                             | `debug \| info \| warn \| error`, or unset (means `error`).                                                                         |
+| `ROOTLCO_ENABLE_GALLERY`              | — (no equivalent)                                                                          | Web-only, server-side.                                   | Opens the internal component gallery.                                                                                                       | Any value opens it; unset is off.                                                                                                   |
+| — (never on the web tier)             | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`                                | API-only, despite the browser-safe prefix.               | Identity-provider URL and public project key, handed to the iam adapter.                                                                    | URL and opaque key.                                                                                                                 |
+| — (never on the web tier)             | `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, `PLATFORM_DATABASE_URL`, every `STORAGE_S3_*` | API-only, and **by design unavailable to the web tier**. | Server credentials. The web tier reaches the API over HTTP and holds no credential at all.                                                  | See sections 6–11.                                                                                                                  |
+| — (no web equivalent)                 | `AUTH_REDIRECT_ALLOWLIST`                                                                  | API-only, but its VALUE is web URLs.                     | The exact absolute reset and invitation destinations on the public web origin.                                                              | Comma-separated absolute URLs.                                                                                                      |
+
+The last row is the pattern to watch for: several API values are _about_ the web tier without being
+_set on_ it. The public web origin is one Owner decision that lands in the API tier's configuration,
+not the web tier's.
+
+### 2.2 Which `NEXT_PUBLIC_APP_ENV` pairs are valid together
+
+The two tiers validate independently and **no code compares them**, so "valid" below means "both
+processes boot and neither is lying about what it is".
+
+| Web value    | API value     | Verdict                                                                                                                                                                 |
+| ------------ | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `local`      | `local`       | Valid. The developer default, and what the launcher sets on both tiers.                                                                                                 |
+| `local`      | `development` | Valid. `development` is the API's name for a shared non-local development deployment; the web tier has no separate token and `local` is its nearest.                    |
+| `production` | `staging`     | Valid, and the only sound spelling of staging: the web tier has no `staging`, and `production` is the value that keeps `Secure` on the cookie.                          |
+| `production` | `production`  | Valid.                                                                                                                                                                  |
+| `preview`    | _anything_    | **No equivalent.** `preview` is a web-only token; the API refuses it (see below).                                                                                       |
+| `local`      | `production`  | Both boot, and the pair is wrong: the cookie loses `Secure` while the API mints production storage keys and enforces the production-required check. Nothing detects it. |
+
+### 2.3 What happens at runtime for a value with no equivalent
+
+- **A value the tier itself does not accept stops that tier.** `apps/web/src/lib/env.ts` parses at
+  module load, so `development` or `staging` on the web tier throws naming the field and the process
+  does not boot. `backendConfig()` likewise refuses `preview` on the API tier with
+  `BackendConfigError`, which names the variable and never the value.
+- **A value each tier accepts separately is never cross-checked.** There is no comparison between
+  the tiers at build, boot or request time, so the mismatched pair in the last row above runs. That
+  is a known gap, recorded in section 16, not a behaviour to rely on.
+- **Storage keys are the irreversible consequence.** `NEXT_PUBLIC_APP_ENV` is the first segment of
+  every `storage_key` the API writes, and a key is immutable once written — a key minted under the
+  wrong token can only be superseded, never corrected.
+
+### 2.4 Aliases and renames the code actually supports
+
+Three, and no others. Nothing translates one tier's `NEXT_PUBLIC_APP_ENV` vocabulary into the
+other's.
+
+| Mechanism                              | What it does                                                                                                                                                                                                                                                         | Scope                |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| `scripts/dev/storage-env.mjs:52-55`    | Renames the Supabase CLI's `STORAGE_S3_URL`, `S3_PROTOCOL_ACCESS_KEY_ID`, `S3_PROTOCOL_ACCESS_KEY_SECRET` and `S3_PROTOCOL_REGION` into the application's `STORAGE_S3_ENDPOINT`, `STORAGE_S3_ACCESS_KEY_ID`, `STORAGE_S3_SECRET_ACCESS_KEY` and `STORAGE_S3_REGION`. | Local launcher only. |
+| `scripts/dev/start-local.mjs:727,735`  | Defaults `NEXT_PUBLIC_API_BASE_URL` and `NEXT_PUBLIC_APP_ENV` with `??=`, so an existing value is never overridden.                                                                                                                                                  | Local launcher only. |
+| `WORKER_DATABASE_URL` → `DATABASE_URL` | The one fallback inside the application: `workerDbPool()` uses the primary DSN when the worker has none. `PLATFORM_DATABASE_URL` deliberately has no such fallback.                                                                                                  | Runtime, API tier.   |
+
+## 3. Settings that are accepted and read by nothing
+
+**A setting is not operational because a validator accepts it.** Validation proves a value is
+well-formed; it never proves anything reads it. Every name accepted by the API config schema
+(`ACCEPTED_SETTING_NAMES`, derived from the schema itself), by `apps/api/src/config/env.ts`, by the
+production-required rule and by the web schema was checked against the API and web source for a
+consumer. **Three names have none.**
+
+| Name                        | Accepted by             | Why nothing reads it                                                                                                                                 | Effect of setting it                                      | Required in production?                                                                                          |
+| --------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `CORS_ALLOWED_ORIGINS`      | `backend-config.ts:185` | There is no CORS layer and no response-header layer on this tier. `server/http/route-handler.ts` is the only edge and writes no cross-origin header. | None. No `Access-Control-Allow-Origin` header is emitted. | **No.** It was required until this change; requiring a value that governs nothing refused readiness for nothing. |
+| `CACHE_DEFAULT_TTL_SECONDS` | `backend-config.ts:108` | `Cache.set()` requires an explicit `ttlSeconds` from its caller and no path falls back to a default, so there is nothing to govern.                  | None.                                                     | No.                                                                                                              |
+| `DATABASE_REPLICA_URL`      | `backend-config.ts:45`  | Read-replica routing is not implemented: `poolFor('replica')` returns the primary pool, and no replica is provisioned (ADR-012).                     | None.                                                     | No.                                                                                                              |
+
+**What "reserved" commits to.** Each name stays in the schema, so a deployment that already sets it
+starts exactly as before; none is in `REQUIRED_WHEN_DEPLOYED`; none can fail readiness; and each is
+carried in the templates **commented out**, with the same note.
+
+**The guard.** `tests/foundation/reserved-settings.test.ts` derives the accepted names from
+`schema.shape` — not from this document and not from any list maintained beside the schema — and
+fails when an accepted name is neither consumed in `apps/api/src` nor listed in `RESERVED_SETTINGS`,
+when a reserved name gains a consumer, or when a reserved name appears in the production-required
+set. A name mentioned only in a comment does not count as consumed, which is asserted directly:
+`pool.ts:8` discusses `DATABASE_REPLICA_URL` at length and must not read as a use.
+
+**Every other accepted name has a consumer**, cited by `path:line` in the inventories that follow.
+
+## 4. Inventory — web tier, browser-safe
 
 Every `NEXT_PUBLIC_*` value is inlined by Next during `next build`. It is a **build-time** input:
 changing one on a running deployment changes nothing until the next build.
@@ -71,7 +161,7 @@ changing one on a running deployment changes nothing until the next build.
 | `NEXT_PUBLIC_CLIENT_MONITORING_URL`   | `apps/web/src/lib/env.ts:94`  | Where client diagnostics are delivered, if a deployment operates a sink.        | `unset` / `unset` / `unset`  | feature-dependent | browser-safe | Owner, only if a collector is ever operated. None exists.       | not needed locally                           |
 | `NEXT_PUBLIC_CLIENT_MONITORING_LEVEL` | `apps/web/src/lib/env.ts:128` | Severity threshold for what leaves the browser. Unset means `error`.            | `unset` / `unset` / `unset`  | feature-dependent | browser-safe | Set only alongside the sink URL; invalid values refuse to boot. | not needed locally                           |
 
-## 3. Inventory — web tier, server-only
+## 5. Inventory — web tier, server-only
 
 Read on the server at request or build time. The web tier holds **no** database URL, service-role
 key or storage credential, by design.
@@ -82,35 +172,35 @@ key or storage credential, by design.
 | `ROOTLCO_DIST_DIR`       | `apps/web/next.config.ts:31`            | Build output directory. Defaults to `.next`.                            | `set` / `unset` / `unset`         | optional          | server-only | SET BY THE LAUNCHER only, and only for the dev server     | yes (derived by the launcher)                |
 | `NODE_ENV`               | `apps/web/src/lib/gallery-access.ts`    | Runtime mode. Provided by Node and Next; never written into a template. | `default` / `default` / `default` | provided          | server-only | The toolchain sets it                                     | not needed locally                           |
 
-## 4. Inventory — API tier, browser-safe
+## 6. Inventory — API tier, browser-safe
 
 | Name                            | Consumer (path:line)                        | Purpose                                                                                                                               | local / staging / production    | Requirement | Secret?      | Valid source and how to set it                                      | Local value available?                       |
 | ------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- | ----------- | ------------ | ------------------------------------------------------------------- | -------------------------------------------- |
 | `NEXT_PUBLIC_SUPABASE_URL`      | `apps/api/src/config/env.ts:72`             | Identity provider API URL, handed to the adapter by `modules/iam/index.ts:147`.                                                       | `set` / `required` / `required` | required    | browser-safe | `npm run supabase:status` locally; the hosted project in production | yes (present by name in apps/api/.env.local) |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `apps/api/src/config/env.ts:73`             | Public project key. Safe only because RLS is enabled and forced on every tenant table.                                                | `set` / `required` / `required` | required    | browser-safe | `npm run supabase:status` locally; the hosted project in production | yes (present by name in apps/api/.env.local) |
-| `NEXT_PUBLIC_APP_ENV`           | `backend-config.ts:182`, `config/env.ts:74` | First segment of every storage key (immutable once written); selects bucket auto-creation; switches the production-required check on. | `set` / `required` / `required` | required    | browser-safe | Written in `apps/api/.env.local`                                    | yes (present by name in apps/api/.env.local) |
+| `NEXT_PUBLIC_APP_ENV`           | `backend-config.ts:210`, `config/env.ts:74` | First segment of every storage key (immutable once written); selects bucket auto-creation; switches the production-required check on. | `set` / `required` / `required` | required    | browser-safe | Written in `apps/api/.env.local`                                    | yes (present by name in apps/api/.env.local) |
 | `NEXT_PUBLIC_APP_VERSION`       | `apps/api/src/shared/constants/app.ts:30`   | Build identity surfaced by `/api/health`. Defaults to `0.1.0`.                                                                        | `unset` / optional / optional   | optional    | browser-safe | Injected at image build by CI                                       | not needed locally                           |
 | `NEXT_PUBLIC_COMMIT_SHA`        | `apps/api/src/shared/constants/app.ts:31`   | Build identity. Defaults to `unknown`.                                                                                                | `unset` / optional / optional   | optional    | browser-safe | Injected at image build by CI                                       | not needed locally                           |
 
-## 5. Inventory — API tier, database
+## 7. Inventory — API tier, database
 
 Every value here is a PostgreSQL connection string and therefore a credential. **Two distinct login
 roles are mandatory**: PostgreSQL resolves membership at the login role, so one role holding both
 `app_runtime` and `app_platform` would carry both authorities on one connection and the containment
 would buy nothing.
 
-| Name                       | Consumer (path:line)                           | Purpose                                                                            | local / staging / production      | Requirement | Secret? | Valid source and how to set it                                   | Local value available?                       |
-| -------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------- | --------------------------------- | ----------- | ------- | ---------------------------------------------------------------- | -------------------------------------------- |
-| `DATABASE_URL`             | `apps/api/src/server/db/pool.ts:70`            | Request-path pool. Login role: `app_runtime` member, no BYPASSRLS.                 | `set` / `required` / `required`   | required    | secret  | Composed from `supabase status`; from the provider in production | yes (present by name in apps/api/.env.local) |
-| `PLATFORM_DATABASE_URL`    | `apps/api/src/server/db/pool.ts:130`           | Control plane. NO fallback to `DATABASE_URL` — the platform path fails closed.     | `set` / `required` / `required`   | required    | secret  | Composed from `supabase status`; from the provider in production | yes (present by name in apps/api/.env.local) |
-| `WORKER_DATABASE_URL`      | `apps/api/src/server/worker/worker-db.ts:55`   | Outbox worker pool. Falls back to `DATABASE_URL` when unset.                       | `unset` / optional / optional     | optional    | secret  | Its own `app_worker` login role                                  | not needed locally                           |
-| `DATABASE_REPLICA_URL`     | `backend-config.ts:32` (validated, never read) | Accepted so topology can be expressed. **Deliberately inert** — no replica exists. | `unset` / `unset` / `unset`       | optional    | secret  | Nothing to set; no replica is provisioned                        | not needed locally                           |
-| `DB_POOL_MAX`              | `apps/api/src/server/db/pool.ts:33`            | Pool size. Default 10, bounded 1..50.                                              | `default` / `default` / `default` | optional    | n/a     | Override only with a measured reason                             | not needed locally                           |
-| `DB_POOL_IDLE_TIMEOUT_MS`  | `apps/api/src/server/db/pool.ts:34`            | Idle connection reaping. Default 30000, bounded 1000..300000.                      | `default` / `default` / `default` | optional    | n/a     | Override only with a measured reason                             | not needed locally                           |
-| `DB_CONNECTION_TIMEOUT_MS` | `apps/api/src/server/db/pool.ts:35`            | Connect timeout. Default 5000, bounded 500..60000.                                 | `default` / `default` / `default` | optional    | n/a     | Override only with a measured reason                             | not needed locally                           |
-| `DB_STATEMENT_TIMEOUT_MS`  | `apps/api/src/server/db/pool.ts:38`            | Server-side statement timeout. Default 15000, bounded 100..120000.                 | `default` / `default` / `default` | optional    | n/a     | Override only with a measured reason                             | not needed locally                           |
+| Name                       | Consumer (path:line)                         | Purpose                                                                        | local / staging / production      | Requirement | Secret? | Valid source and how to set it                                   | Local value available?                       |
+| -------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------- | ----------- | ------- | ---------------------------------------------------------------- | -------------------------------------------- |
+| `DATABASE_URL`             | `apps/api/src/server/db/pool.ts:70`          | Request-path pool. Login role: `app_runtime` member, no BYPASSRLS.             | `set` / `required` / `required`   | required    | secret  | Composed from `supabase status`; from the provider in production | yes (present by name in apps/api/.env.local) |
+| `PLATFORM_DATABASE_URL`    | `apps/api/src/server/db/pool.ts:130`         | Control plane. NO fallback to `DATABASE_URL` — the platform path fails closed. | `set` / `required` / `required`   | required    | secret  | Composed from `supabase status`; from the provider in production | yes (present by name in apps/api/.env.local) |
+| `WORKER_DATABASE_URL`      | `apps/api/src/server/worker/worker-db.ts:55` | Outbox worker pool. Falls back to `DATABASE_URL` when unset.                   | `unset` / optional / optional     | optional    | secret  | Its own `app_worker` login role                                  | not needed locally                           |
+| `DATABASE_REPLICA_URL`     | **none — RESERVED** (`backend-config.ts:45`) | Accepted so topology can be expressed. Setting it has NO effect (section 3).   | `unset` / `unset` / `unset`       | reserved    | secret  | Nothing to set; no replica is provisioned                        | not needed locally                           |
+| `DB_POOL_MAX`              | `apps/api/src/server/db/pool.ts:33`          | Pool size. Default 10, bounded 1..50.                                          | `default` / `default` / `default` | optional    | n/a     | Override only with a measured reason                             | not needed locally                           |
+| `DB_POOL_IDLE_TIMEOUT_MS`  | `apps/api/src/server/db/pool.ts:34`          | Idle connection reaping. Default 30000, bounded 1000..300000.                  | `default` / `default` / `default` | optional    | n/a     | Override only with a measured reason                             | not needed locally                           |
+| `DB_CONNECTION_TIMEOUT_MS` | `apps/api/src/server/db/pool.ts:35`          | Connect timeout. Default 5000, bounded 500..60000.                             | `default` / `default` / `default` | optional    | n/a     | Override only with a measured reason                             | not needed locally                           |
+| `DB_STATEMENT_TIMEOUT_MS`  | `apps/api/src/server/db/pool.ts:38`          | Server-side statement timeout. Default 15000, bounded 100..120000.             | `default` / `default` / `default` | optional    | n/a     | Override only with a measured reason                             | not needed locally                           |
 
-## 6. Inventory — API tier, outbox worker
+## 8. Inventory — API tier, outbox worker
 
 | Name                       | Consumer (path:line)                                                         | Purpose                                                                                  | local / staging / production      | Requirement | Secret? | Valid source and how to set it                 | Local value available? |
 | -------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------- | ----------- | ------- | ---------------------------------------------- | ---------------------- |
@@ -124,14 +214,14 @@ would buy nothing.
 | `OUTBOX_SHUTDOWN_GRACE_MS` | `apps/api/src/server/worker/outbox-worker.ts:329`                            | Drain window on shutdown. Default 15000, bounded 0..120000.                              | `default` / `default` / `default` | optional    | n/a     | Override only with a measured reason           | not needed locally     |
 | `WORKER_ID`                | `apps/api/src/server/worker/outbox-worker.ts:204`                            | Queue claimant identity. Default `outbox_worker`; must match `^[a-z][a-z0-9_.-]{1,62}$`. | `default` / optional / optional   | optional    | n/a     | Set per process when more than one worker runs | not needed locally     |
 
-## 7. Inventory — API tier, HTTP edge and authentication
+## 9. Inventory — API tier, HTTP edge and authentication
 
 | Name                               | Consumer (path:line)                                                 | Purpose                                                                                          | local / staging / production      | Requirement                           | Secret? | Valid source and how to set it                                               | Local value available?                       |
 | ---------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------- | ------------------------------------- | ------- | ---------------------------------------------------------------------------- | -------------------------------------------- |
 | `TRUSTED_PROXY_IPS`                | `apps/api/src/server/http/trusted-proxy.ts`                          | Exact remote addresses whose `X-Forwarded-For` may be believed. Empty ignores the header.        | `unset` / `required` / `required` | required when deployed behind a proxy | n/a     | The hosting topology, once one exists                                        | not needed locally                           |
-| `CORS_ALLOWED_ORIGINS`             | **none — validated and inert** (`backend-config.ts:157`)             | Intended allow-list of cross-origin callers. **No CORS layer reads it today.**                   | `unset` / `required` / `required` | required (recorded intent)            | n/a     | The public web origin (Owner decision)                                       | not needed locally                           |
+| `CORS_ALLOWED_ORIGINS`             | **none — RESERVED** (`backend-config.ts:185`)                        | Intended allow-list of cross-origin callers. Setting it has NO effect (section 3).               | `unset` / `unset` / `unset`       | reserved                              | n/a     | Nothing to set until a CORS layer exists                                     | not needed locally                           |
 | `RATE_LIMIT_ENABLED`               | `apps/api/src/server/http/route-handler.ts:312`                      | Master switch for the limiter. Default `true`. `false` is refused in a deployed environment.     | `default` / `true` / `true`       | required                              | n/a     | Leave at the default                                                         | not needed locally                           |
-| `CACHE_DEFAULT_TTL_SECONDS`        | **none — validated and inert** (`backend-config.ts:89`)              | Intended default cache TTL. No caller reads it.                                                  | `default` / `default` / `default` | optional                              | n/a     | Nothing to set                                                               | not needed locally                           |
+| `CACHE_DEFAULT_TTL_SECONDS`        | **none — RESERVED** (`backend-config.ts:108`)                        | Intended default cache TTL. Setting it has NO effect (section 3).                                | `default` / `default` / `default` | reserved                              | n/a     | Nothing to set; every caller passes its own TTL                              | not needed locally                           |
 | `CACHE_MAX_ENTRIES`                | `apps/api/src/server/cache/cache.ts:172`                             | In-process cache ceiling. Default 5000, bounded 16..100000.                                      | `default` / `default` / `default` | optional                              | n/a     | Override only with a measured reason                                         | not needed locally                           |
 | `SUPABASE_SERVICE_ROLE_KEY`        | `apps/api/src/config/env.ts:102`, `modules/iam/index.ts:137`         | Privileged provider key. **Bypasses RLS entirely.** iam refuses to compose without it.           | `set` / `required` / `required`   | required                              | secret  | `supabase status` locally; the hosted project in production                  | yes (present by name in apps/api/.env.local) |
 | `AUTH_IDENTITY_PROVIDER`           | `apps/api/src/modules/iam/index.ts:156`                              | Written to and matched against `iam.user_accounts.identity_provider`. Default `supabase`.        | `default` / `default` / `default` | optional                              | n/a     | Leave at the default unless a second provider exists                         | not needed locally                           |
@@ -146,7 +236,7 @@ would buy nothing.
 | `LOGIN_MAX_FAILED_ATTEMPTS`        | `apps/api/src/modules/iam/application/authentication-service.ts:413` | Consecutive failures before lockout. Default 5, bounded 1..100.                                  | `default` / `default` / `default` | optional                              | n/a     | A policy decision, once one is made                                          | not needed locally                           |
 | `LOGIN_FAILURE_WINDOW_MINUTES`     | `apps/api/src/modules/iam/application/authentication-service.ts:409` | Window over which failures are counted. Default 15, bounded 1..1440.                             | `default` / `default` / `default` | optional                              | n/a     | A policy decision, once one is made                                          | not needed locally                           |
 
-## 8. Inventory — API tier, object storage
+## 10. Inventory — API tier, object storage
 
 | Name                               | Consumer (path:line)                                                         | Purpose                                                                              | local / staging / production      | Requirement       | Secret? | Valid source and how to set it                            | Local value available?        |
 | ---------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | --------------------------------- | ----------------- | ------- | --------------------------------------------------------- | ----------------------------- |
@@ -161,7 +251,7 @@ would buy nothing.
 | `STORAGE_DOWNLOAD_URL_TTL_SECONDS` | `apps/api/src/modules/shared-services/application/attachment-service.ts:730` | Signed download lifetime. Default 120, bounded 15..600.                              | `default` / `default` / `default` | optional          | n/a     | Override only with a measured reason                      | not needed locally            |
 | `STORAGE_MAX_UPLOAD_BYTES`         | `apps/api/src/modules/shared-services/application/attachment-service.ts:323` | Platform CEILING per object, 25 MiB default. The per-category limit still applies.   | `default` / `default` / `default` | optional          | n/a     | Override only with a measured reason                      | not needed locally            |
 
-## 9. Inventory — API tier, message delivery and budgets
+## 11. Inventory — API tier, message delivery and budgets
 
 | Name                               | Consumer (path:line)                                                           | Purpose                                                                                    | local / staging / production      | Requirement       | Secret? | Valid source and how to set it                      | Local value available? |
 | ---------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ | --------------------------------- | ----------------- | ------- | --------------------------------------------------- | ---------------------- |
@@ -173,7 +263,7 @@ would buy nothing.
 | `LOG_LEVEL`                        | `apps/api/src/server/observability/logger.ts:55`                               | Server verbosity. Unset or unrecognised falls back to `warn` under test, `info` otherwise. | `unset` / optional / optional     | optional          | n/a     | Set explicitly if a deployment wants something else | not needed locally     |
 | `NODE_ENV`                         | `apps/api/src/config/env.ts:104`, `server/cache/keys.ts`, `logger.ts`          | Runtime mode. Provided by the toolchain; never written into a template.                    | `default` / `default` / `default` | provided          | n/a     | The toolchain sets it                               | not needed locally     |
 
-## 10. Inventory — scripts, CI and the database harness
+## 12. Inventory — scripts, CI and the database harness
 
 None of these is read by application code, and none is loaded from a dotenv file. They are shell
 inputs to a command you run by hand or that CI runs for you.
@@ -196,7 +286,7 @@ inputs to a command you run by hand or that CI runs for you.
 | `P1_29_*` `P1_30_*` `P1_31_*` `P1_23_BASE_REF` `*_CLASSIFICATION_REGISTRY` `UPDATE_OPENAPI`                                                    | `tests/**`, `scripts/**`                            | Regeneration and pinning switches for phase inventories and registries.                                                                                    | optional                  | n/a                                        | Your shell, when regenerating an artefact          | not needed locally     |
 | `GITHUB_*` `GH_TOKEN` `BASE_REF` `HEAD_REF` `HEAD_BRANCH` `CI`                                                                                 | `scripts/ci/**`                                     | Provided by GitHub Actions. Never written into a template.                                                                                                 | provided in CI            | secret (`GH_TOKEN`, `GITHUB_TOKEN`)        | The Actions runner                                 | not needed locally     |
 
-## 11. Inventory — values that are not the application's
+## 13. Inventory — values that are not the application's
 
 | Name                                                                                             | Where                              | Status                                                                                                         |
 | ------------------------------------------------------------------------------------------------ | ---------------------------------- | -------------------------------------------------------------------------------------------------------------- |
@@ -208,7 +298,7 @@ inputs to a command you run by hand or that CI runs for you.
 
 ---
 
-## 12. What startup validation refuses today
+## 14. What startup validation refuses today
 
 1. **`apps/web/src/lib/env.ts:150`** parses at MODULE LOAD, so a bad public value stops the boot
    rather than the first request. It refuses an `NEXT_PUBLIC_APP_ENV` outside
@@ -226,13 +316,16 @@ inputs to a command you run by hand or that CI runs for you.
 4. **`productionConfigurationProblems()`** (same file) is the new part. When `NEXT_PUBLIC_APP_ENV`
    is `staging` or `production` it returns the NAMES of the values a deployment is missing:
    `DATABASE_URL`, `PLATFORM_DATABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `AUTH_JWT_SECRET`,
-   `AUTH_JWT_ISSUER`, `AUTH_REDIRECT_ALLOWLIST`, `CORS_ALLOWED_ORIGINS`, a `STORAGE_PROVIDER` that
-   cannot serve, the S3 credentials when `s3_compatible` is selected, and `RATE_LIMIT_ENABLED` when
-   it has been switched off. Outside those two environments it returns nothing, so local and test
-   behaviour is unchanged. `apps/api/src/server/health/readiness.ts` reports it as
-   `configuration.production-required` and the verdict becomes `unavailable` when it fails. The
-   HTTP projection in `health-service.ts` drops every `detail`, so the names reach an operator's
-   log and never the response body.
+   `AUTH_JWT_ISSUER`, `AUTH_REDIRECT_ALLOWLIST`, a `STORAGE_PROVIDER` that cannot serve, the S3
+   credentials when `s3_compatible` is selected, and `RATE_LIMIT_ENABLED` when it has been switched
+   off. Every one of those has a consumer that its absence would break. Outside those two
+   environments it returns nothing, so local and test behaviour is unchanged.
+   `apps/api/src/server/health/readiness.ts` reports it as `configuration.production-required` and
+   the verdict becomes `unavailable` when it fails. The HTTP projection in `health-service.ts` drops
+   every `detail`, so the names reach an operator's log and never the response body.
+   **`CORS_ALLOWED_ORIGINS` is deliberately not in that list.** It was, and it should not have been:
+   nothing reads it, so a deployment could have been held out of rotation for omitting a value that
+   would have changed nothing. Section 3 has the reasoning and the guard.
 5. **Readiness refuses a BYPASSRLS pool role.** `readiness.ts` reports
    `database.role.no-bypassrls` from `preflightPrivileges()`, and a failure there is blocking. A
    connection that can see every tenant's rows is not a working deployment, it is a breach waiting
@@ -247,11 +340,23 @@ inputs to a command you run by hand or that CI runs for you.
 8. **`scripts/ci/check-env-contract.mjs`** compares the names the code reads against the two tracked
    templates and fails the build on an undocumented one. It now reads BOTH sources of truth:
    `process.env.NAME` literals and the zod schema's keys.
+9. **`tests/foundation/reserved-settings.test.ts`** refuses the failure mode this whole section is
+   about: a name that is validated while nothing reads it, silently. It derives the accepted names
+   from `schema.shape` and fails when one is neither consumed in `apps/api/src` nor declared in
+   `RESERVED_SETTINGS`, when a reserved name gains a consumer, or when a reserved name appears in
+   the production-required set.
 
-## 13. What must come from the Owner or a provider
+## 15. What must come from the Owner or a provider
+
+**This is the one list of genuinely external inputs — values only the Platform Owner or a provider
+can supply.** Every other list in this document, in `apps/api/.env.production.example` and in
+`apps/web/.env.production.example` refers here rather than repeating it, so there is exactly one
+place to keep correct. Names only: no value, no shape, no example.
 
 Nothing below exists today. Each line is a value or a decision that has to be supplied before any
-deployment is possible; none of it can be invented in this repository.
+deployment is possible; none of it can be invented in this repository. A name that is merely
+_accepted_ by a schema is not an external input — if nothing reads it there is nothing to supply,
+which is why the three names in section 3 do not appear here.
 
 - **Two production PostgreSQL login roles, as two connection strings.** `DATABASE_URL` for a role
   that is a member of `app_runtime` and holds no BYPASSRLS, and `PLATFORM_DATABASE_URL` for a role
@@ -263,8 +368,6 @@ deployment is possible; none of it can be invented in this repository.
   `AUTH_JWT_ISSUER`, and `AUTH_JWT_AUDIENCE` if it is not `authenticated`.
 - **`AUTH_REDIRECT_ALLOWLIST`** — the exact, absolute password-reset and invitation URLs on the
   public web origin. Empty means every reset and every invitation fails.
-- **`CORS_ALLOWED_ORIGINS`** — the public web origin. Note the gap in section 14: no code reads this
-  yet, so supplying it records the intent rather than emitting a header.
 - **`TRUSTED_PROXY_IPS`** — the exact remote addresses of whatever reverse proxies sit in front of
   the API. This cannot be guessed, and guessing it hands every caller its own rate-limit identity.
 - **Object storage**: an S3-compatible endpoint and region, an access key id and secret access key,
@@ -281,19 +384,20 @@ deployment is possible; none of it can be invented in this repository.
 - **The Platform Owner's email address**, which the genesis bootstrap requires
   (`GENESIS_OPERATOR_EMAIL`) and which becomes the first operator identity.
 
-## 14. Known gaps
+## 16. Known gaps
 
-- **`CORS_ALLOWED_ORIGINS` is validated and read by nothing.** `backend-config.ts:157` parses it
-  into a list and no consumer exists. A deployment that sets it correctly gets no CORS header.
-- **`CACHE_DEFAULT_TTL_SECONDS` is validated and read by nothing** (`backend-config.ts:89`). Every
-  cache caller passes its own TTL.
-- **`DATABASE_REPLICA_URL` is accepted and deliberately inert** — this one is documented as such in
-  the schema and is not a defect, but it is easy to misread as a working feature.
-- **`SUPABASE_INTERNAL_URL` is set by compose and read by nothing** (`docker-compose.yml:53`).
-- **The two `NEXT_PUBLIC_APP_ENV` vocabularies disagree.** `staging` and `development` are valid on
-  the API tier and invalid on the web tier; `preview` is valid on the web tier and invalid on the
-  API tier. Nothing compares them, so a deployment can set a value one tier accepts and the other
-  refuses to boot on.
+- **Three settings are accepted and read by nothing.** No longer stated here one by one: section 3
+  is the list, with the reason for each, and a test derives it from the schema. What remains a gap
+  is the underlying capability rather than the variable — there is no CORS layer on the API tier and
+  no read-replica routing — and neither is a thing a value in a template can supply.
+- **`SUPABASE_INTERNAL_URL` is set by compose and read by nothing** (`docker-compose.yml:53`). It is
+  not in section 3 because it is not in any application schema: compose substitutes it, and no code
+  accepts it either.
+- **The two `NEXT_PUBLIC_APP_ENV` vocabularies disagree, and nothing compares them.** The difference
+  is now documented rather than merely noted — section 2 has the mapping, the valid pairs and what a
+  value with no equivalent does at runtime. The gap that remains is the absence of a cross-tier
+  check: a deployment can still set `local` on the web tier and `production` on the API tier, and
+  both processes boot.
 - **`scripts/ci/check-env-contract.mjs` is in no npm script.** It runs from
   `.github/workflows/_reusable-node-quality.yml` only, so a local `npm run verify:repository` does
   not exercise it. `tests/foundation/env-contract.test.ts` covers the extraction and the set comparison in
