@@ -234,9 +234,9 @@ new vehicle** <!-- vehicles.create.openCreated --> . **Restrictions:**
 
 - No customer number is issued at creation: _"No customer number has been issued yet."_ <!-- crm.customers.create.noNumberYet -->
 - A new vehicle is a draft: _"A new vehicle is created as a draft. Details can be completed later."_ <!-- vehicles.create.draftNote -->
-- You cannot search customers by telephone number or email address, and vehicle search matches VIN,
-  plate and reference **exactly** — _"VIN, plate and reference are matched exactly — partial values
-  return nothing. Plate matches the current plate only."_ <!-- vehicles.search.exactMatchNote -->
+- You can search customers by telephone number but not by email address, and vehicle search matches
+  VIN and reference **exactly** — _"VIN and vehicle reference are matched exactly. A plate also finds
+  a vehicle by a plate it carried before."_ <!-- vehicles.search.exactMatchNote -->
 - **Merging two records is NOT AVAILABLE**, for customers and for vehicles alike: _"Merging two
   customer records is not available yet. The rules for it are pending an Owner decision."_ <!-- crm.duplicates.mergePendingDecision -->
   The duplicate queues let you dismiss a pair, nothing more.
@@ -351,8 +351,8 @@ appears on the **Reception queue** <!-- receptions.queue.title --> for that bran
   be opened without one."_ <!-- receptions.checkIn.fuelEmpty --> and _"The warning-light catalogue
   has no entries, so no lamp can be recorded. This is the catalogue answering correctly, not a
   failure."_
-- Searching for the customer by telephone number is not available: _"Searching by phone number is
-  not available yet."_ <!-- receptions.intake.phone.title -->
+- Search for the customer by telephone number in the **Phone number** <!-- customerSelector.phone -->
+  box: the whole number, or at least its last seven digits.
 
 **If it goes wrong:**
 

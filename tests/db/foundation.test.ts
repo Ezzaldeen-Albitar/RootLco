@@ -457,6 +457,10 @@ const ALLOWED_ROUTINES = new Set([
   'shared.document_deletion_eligibility',
   'shared.document_ids_for_entity',
   'shared.fail_outbox_event',
+  // P1-32 friendly search: the digit and name folding authorities. Both IMMUTABLE,
+  // SECURITY INVOKER, empty search_path, and they read no table.
+  'shared.fold_digits',
+  'shared.fold_search_text',
   'shared.guard_comment_parent',
   'shared.guard_document_category_scope',
   'shared.guard_document_initial_state',

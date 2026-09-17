@@ -42,7 +42,7 @@ A cross-tenant INSERT is refused on every `sal`, `wty` and `rpt` table by `tests
 | `wty.warranty_status_history`           | `supabase/migrations/20260724095000_wty_warranty.sql`                              | `tests/db/p1-11-isolation.test.ts:58`   | `tests/db/wty-warranty.test.ts:216`                                              |
 | `rpt.report_configurations`             | `supabase/migrations/20260724096000_rpt_reporting.sql`                             | `tests/db/p1-11-isolation.test.ts:58`   | `tests/db/rpt-reporting.test.ts:156`, and `tests/db/p1-11-isolation.test.ts:117` |
 | `rpt.report_configuration_versions`     | `supabase/migrations/20260724096000_rpt_reporting.sql`                             | `tests/db/p1-11-isolation.test.ts:58`   | `tests/db/rpt-reporting.test.ts:156`                                             |
-| `org.employees`                         | `supabase/migrations/20260910090000_org_employees.sql`                             | `tests/db/shared-hardening.test.ts:329` | `tests/db/org-employees.test.ts:180`                                             |
+| `org.employees`                         | `supabase/migrations/20260910090000_org_employees.sql`                             | `tests/db/shared-hardening.test.ts:336` | `tests/db/org-employees.test.ts:180`                                             |
 
 ## Layer 2 — the application
 
@@ -107,7 +107,7 @@ The five that carry no application-layer refusal are named below with the reason
 
 - `tests/db/sal-delivery.test.ts` and `tests/db/wty-warranty.test.ts` are CONSTRAINT suites. Every case in them ran as tenant A inside a rolled-back transaction and neither drove a cross-tenant negative of any kind. An index entry that read them as isolation evidence was reading the fixture tenant and not an assertion. Both now carry one — `tests/db/sal-delivery.test.ts:319` and `tests/db/wty-warranty.test.ts:216` — and the correction to the index is recorded in the change-control register rather than applied here, because the final integration owns that document.
 - `rpt.report_configuration_versions` had no read negative anywhere. `tests/db/rpt-reporting.test.ts:156` adds one, alongside the `rpt.report_configurations` negative `tests/db/p1-11-isolation.test.ts:117` already carried.
-- `org.employees` was already proved at both layers before this slice — structurally at `tests/db/shared-hardening.test.ts:329` and behaviourally at `tests/db/org-employees.test.ts:180` — and is listed here for completeness rather than because anything was added.
+- `org.employees` was already proved at both layers before this slice — structurally at `tests/db/shared-hardening.test.ts:336` and behaviourally at `tests/db/org-employees.test.ts:180` — and is listed here for completeness rather than because anything was added.
 - `wty.warranty_status_history` gained its first READER in the same closure queue: `wty.warranty-status-history`, the 46th operation (P-18, § 65). The table was already inside this matrix's Layer 1 — the behavioural negative `tests/db/wty-warranty.test.ts:216` enumerates it — so publishing the operation added a Layer 2 row and moved no Layer 1 proof.
 
 ## Counts

@@ -795,8 +795,12 @@ function LinkStep({
  * Session expiry deliberately gets no Retry: re-issuing the same request with
  * the same dead session fails identically, and the button would promise
  * otherwise.
+ *
+ * Exported because the customer-first work-order step beside this file lists
+ * the same read with the same six outcomes. A second copy of this mapping would
+ * be a second opinion about what an ended session looks like.
  */
-function ListStates<Row>({
+export function ListStates<Row>({
   messages,
   status,
   correlationId,
@@ -859,7 +863,7 @@ function ListStates<Row>({
 }
 
 /** Previous/Next with no invented range — the operations publish no count. */
-function Pager<Row>({
+export function Pager<Row>({
   messages,
   table,
 }: {

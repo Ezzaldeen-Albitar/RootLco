@@ -143,6 +143,21 @@ describe('listWorkOrders maps a published page onto table rows', () => {
     // `.strict()` at the backend means an empty-but-present parameter is a 422,
     // not a silent ignore, so "not sent" has to mean not sent.
     expect(path).not.toContain('customerId=');
+    expect(path).not.toContain('number=');
+    expect(path).not.toContain('q=');
+  });
+
+  it('sends the P1-32 number and free-text criteria as typed, beside the target', async () => {
+    get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
+
+    await listWorkOrders(TARGET, { number: '١٢٣', q: 'Nadia' }, REQUEST, null);
+
+    const url = new URL(`https://api.invalid${String(get.mock.calls[0]?.[0])}`);
+    expect(url.searchParams.get('companyId')).toBe(TARGET.companyId);
+    expect(url.searchParams.get('branchId')).toBe(TARGET.branchId);
+    // Not folded here: the backend folds Arabic-Indic digits itself.
+    expect(url.searchParams.get('number')).toBe('١٢٣');
+    expect(url.searchParams.get('q')).toBe('Nadia');
   });
 
   it('a REFUSAL is a refusal, never an empty board', async () => {

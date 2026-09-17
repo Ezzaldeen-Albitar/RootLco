@@ -23,6 +23,12 @@
  * a table and is reconciled against it by test.
  */
 import { AppFailure } from '@/server/errors/app-failure';
+import {
+  foldDigits,
+  foldSearchText,
+  normalizePlate,
+  normalizeVin,
+} from '@/shared/text/normalization';
 
 /**
  * Frozen `ck_work_orders_kind` vocabulary — exactly two values.
@@ -310,4 +316,81 @@ export function assertTransitionReason(requiresReason: boolean, reason: string |
       safeDetails: { violations: [{ path: 'body.reason', rule: 'max_length' }] },
     });
   }
+}
+
+/**
+ * The longest work-order number or free-text fragment accepted at the edge. A
+ * longer input is a payload, not a query.
+ */
+export const MAX_WORK_ORDER_SEARCH_FRAGMENT = 80;
+
+/**
+ * The shortest free-text fragment accepted. A one-character fragment matches
+ * nearly every work order in a branch, so the page it returns says nothing.
+ */
+export const MIN_WORK_ORDER_SEARCH_FRAGMENT = 2;
+
+/**
+ * A work-order search, reduced to the differently-normalised forms each column
+ * needs (P1-32).
+ *
+ * One free-text box is compared against four columns that were normalised by four
+ * different rules, so the fragment is reduced four ways HERE, once, by the shared
+ * rules — never re-derived in SQL, and never by a second implementation:
+ *
+ *   `numberFragment` digits folded, trimmed, LIKE-escaped — for the work-order number
+ *   `nameFragment`   the NAME rule, LIKE-escaped — for the customer's display name
+ *   `plateFragment`  the plate rule — for any plate the vehicle has carried
+ *   `vinFragment`    the VIN rule — for the vehicle's VIN
+ *
+ * An empty `plateFragment` or `vinFragment` means that arm cannot match anything
+ * the caller typed, and the repository skips it rather than appending `LIKE '%%'`,
+ * which would match every row.
+ */
+export interface WorkOrderSearchTerms {
+  /** Exact work-order number with digits folded, or null when none was supplied. */
+  readonly number: string | null;
+  /** Whether a free-text fragment was supplied at all. */
+  readonly hasFreeText: boolean;
+  readonly numberFragment: string;
+  readonly nameFragment: string;
+  readonly plateFragment: string;
+  readonly vinFragment: string;
+}
+
+/** Escapes LIKE metacharacters so the `%` the repository appends is the only wildcard. */
+function escapeLikeFragment(value: string): string {
+  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
+}
+
+/**
+ * Reduces the caller's `number` and `q` to `WorkOrderSearchTerms`.
+ *
+ * A work-order number is issued by a number sequence in ASCII, but a person
+ * reading it off a job card may type it on an Arabic keyboard, so its digits are
+ * folded; nothing else about it is changed, because it is an identifier.
+ */
+export function toWorkOrderSearchTerms(input: {
+  readonly number?: string | undefined;
+  readonly q?: string | undefined;
+}): WorkOrderSearchTerms {
+  const number = input.number === undefined ? null : foldDigits(input.number.trim());
+  if (input.q === undefined) {
+    return {
+      number,
+      hasFreeText: false,
+      numberFragment: '',
+      nameFragment: '',
+      plateFragment: '',
+      vinFragment: '',
+    };
+  }
+  return {
+    number,
+    hasFreeText: true,
+    numberFragment: escapeLikeFragment(foldDigits(input.q.trim())),
+    nameFragment: escapeLikeFragment(foldSearchText(input.q) ?? ''),
+    plateFragment: normalizePlate(input.q) ?? '',
+    vinFragment: normalizeVin(input.q) ?? '',
+  };
 }

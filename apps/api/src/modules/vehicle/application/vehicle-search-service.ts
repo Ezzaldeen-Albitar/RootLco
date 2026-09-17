@@ -40,6 +40,9 @@ export class VehicleSearchService extends ApplicationService {
     const vinNormalized = input.vin !== undefined ? normalizeVin(input.vin).normalized : null;
     const filter = toVehicleSearchFilter(input, vinNormalized);
     const page = pageRequest(VEHICLE_SEARCH_ORDERING, pageInput);
-    return this.vehicles.search(db, page, filter);
+    // Asked ONCE per request, not once per row: it is a property of the caller,
+    // and it decides whether the query joins CRM at all.
+    const mayReadCustomers = await this.vehicles.mayReadCustomers(db);
+    return this.vehicles.search(db, page, filter, mayReadCustomers);
   }
 }
