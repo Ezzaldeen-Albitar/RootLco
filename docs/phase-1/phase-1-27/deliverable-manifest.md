@@ -1002,7 +1002,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: commands required = 97 -->
 <!-- derived: commands reachable = 97 -->
 <!-- derived: commands hosted-ci = 97 -->
-<!-- derived: cases vehicle-screens.dom.test.tsx = 43 -->
+<!-- derived: cases vehicle-screens.dom.test.tsx = 51 -->
 <!-- derived: cases tailwind-theme-gate.test.ts = 8 -->
 <!-- derived: cases navigation.test.ts = 22 -->
 <!-- LINE-COUNT MARKERS. Regenerated, never typed. -->
