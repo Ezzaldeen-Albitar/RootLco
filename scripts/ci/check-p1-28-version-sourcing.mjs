@@ -355,6 +355,11 @@ export const OUT_OF_SUBJECT_ADAPTERS = Object.freeze({
     'wty.warranty-policy-status-set — P1-31 FE-008, not an apt/rec operation',
   setCoverageWindowStatus:
     'wty.warranty-coverage-status-set — P1-31 FE-008, not an apt/rec operation',
+  // P1-32 stock operations: the first guards the RECEIPT's record version and the
+  // second the COUNT's, each sourced from the read or the write answer on screen.
+  postGoodsReceipt: 'inv.goods-receipt-post — P1-32 stock operations, not an apt/rec operation',
+  recordStockCountLine:
+    'inv.stock-count-line-record — P1-32 stock operations, not an apt/rec operation',
 });
 
 export function expectedAdapterOperations(guarded, manifest, decisions) {

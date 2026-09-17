@@ -90,6 +90,8 @@ export const INVENTORY_PERMISSIONS = {
   itemManage: 'inv.item.manage',
   /** W10: opening-batch approval (`inv.adjustment.approve`, a second person — maker ≠ checker). */
   approve: 'inv.adjustment.approve',
+  /** P1-32: the cost history, and a unit cost on a goods-receipt line (the server refuses it otherwise). */
+  costView: 'inv.cost.view',
 } as const;
 
 /** `ck_item_master_type`, mirrored. */
@@ -200,6 +202,12 @@ export interface StockAvailability {
   readonly onHand: string;
   readonly reserved: string;
   readonly available: string;
+  /**
+   * What this item has in transit in the branch, repeated on every cell of the
+   * item (P1-32). Part of neither `onHand` nor `available`: a dispatched
+   * transfer has left its source and not reached its destination.
+   */
+  readonly inTransitQty: string;
 }
 
 /** One row of `inv.stock-reservation-list` — `ReservationListView`. */
@@ -520,4 +528,289 @@ export interface OpeningBatchLineDetail extends OpeningBatchLine {
 export interface OpeningBatchDetail {
   readonly batch: OpeningBatchSummary;
   readonly lines: readonly OpeningBatchLineDetail[];
+}
+
+/* ------------------------------------------------------------------ *
+ * P1-32 — stock operations: transfers, goods receipts, adjustments and counts
+ *
+ * | operation                                | method | path                                                   | permission               |
+ * | ---------------------------------------- | ------ | ------------------------------------------------------ | ------------------------ |
+ * | `inv.stock-transfer-list`                | GET    | `/stock-transfers`                                     | `inv.stock.read`         |
+ * | `inv.stock-transfer-create`              | POST   | `/stock-transfers`                                     | `inv.stock.operate`      |
+ * | `inv.stock-transfer-receive`             | POST   | `/stock-transfers/{transferId}/receipt`                | `inv.stock.operate`      |
+ * | `inv.stock-transfer-cancel`              | POST   | `/stock-transfers/{transferId}/cancellation`           | `inv.stock.operate`      |
+ * | `inv.stock-transfer-discrepancy-resolve` | POST   | `/stock-transfers/{transferId}/discrepancy-resolution` | `inv.stock.operate`      |
+ * | `inv.goods-receipt-list`                 | GET    | `/goods-receipts`                                      | `inv.stock.read`         |
+ * | `inv.goods-receipt-read`                 | GET    | `/goods-receipts/{receiptId}`                          | `inv.stock.read`         |
+ * | `inv.goods-receipt-create`               | POST   | `/goods-receipts`                                      | `inv.stock.operate`      |
+ * | `inv.goods-receipt-post`                 | POST   | `/goods-receipts/{receiptId}/posting` (If-Match)       | `inv.stock.operate`      |
+ * | `inv.item-cost-history-read`             | GET    | `/items/{itemId}/cost-history`                         | `inv.cost.view`          |
+ * | `inv.stock-adjustment-list`              | GET    | `/stock-adjustments`                                   | `inv.stock.read`         |
+ * | `inv.stock-adjustment-create`            | POST   | `/stock-adjustments`                                   | `inv.stock.operate`      |
+ * | `inv.stock-adjustment-approve`           | POST   | `/stock-adjustments/{adjustmentId}/approval`           | `inv.adjustment.approve` |
+ * | `inv.stock-count-list`                   | GET    | `/stock-counts`                                        | `inv.stock.read`         |
+ * | `inv.stock-count-read`                   | GET    | `/stock-counts/{countId}`                              | `inv.stock.read`         |
+ * | `inv.stock-count-open`                   | POST   | `/stock-counts`                                        | `inv.stock.operate`      |
+ * | `inv.stock-count-line-record`            | PUT    | `/stock-counts/{countId}/lines/{itemId}` (If-Match)    | `inv.stock.operate`      |
+ * | `inv.stock-count-reconcile`              | POST   | `/stock-counts/{countId}/reconciliation`               | `inv.stock.operate`      |
+ * | `inv.stock-count-cancel`                 | POST   | `/stock-counts/{countId}/cancellation`                 | `inv.stock.operate`      |
+ *
+ * Typed from the views in `apps/api/src/modules/inventory/application/`
+ * (`inventory-transfer-service.ts`, `inventory-receipt-service.ts`,
+ * `inventory-adjustment-service.ts`, `inventory-count-service.ts`). Every
+ * quantity and every cost is the exact decimal string the server sent; nothing
+ * here or on the screens adds or subtracts figures to derive another.
+ *
+ * ## A write-off decision has no read to reach it from
+ *
+ * `inv.stock-transfer-write-off-decide` names a SETTLEMENT, and no operation
+ * lists or reads settlements: the pending write-off's identifier exists only in
+ * the answer the requester received. The person who may decide it — someone
+ * other than the requester — therefore cannot find it in their own session, so
+ * no screen offers the decision yet and its mirror stays pending.
+ * ------------------------------------------------------------------ */
+
+/** `TRANSFER_STATES`, mirrored. `received`, `settled` and `cancelled` are terminal. */
+export const TRANSFER_STATES = [
+  'dispatched',
+  'partially_received',
+  'received',
+  'settled',
+  'cancelled',
+] as const;
+export type TransferState = (typeof TRANSFER_STATES)[number];
+
+/** Which side of a transfer the branch is read as (`inv.stock-transfer-list`). */
+export const TRANSFER_DIRECTIONS = ['outbound', 'inbound'] as const;
+export type TransferDirection = (typeof TRANSFER_DIRECTIONS)[number];
+
+/** `TRANSFER_DISCREPANCY_KINDS`, mirrored: the two acts that settle units that did not arrive. */
+export const TRANSFER_DISCREPANCY_KINDS = ['return_to_origin', 'write_off'] as const;
+export type TransferDiscrepancyKind = (typeof TRANSFER_DISCREPANCY_KINDS)[number];
+
+/** `GOODS_RECEIPT_STATES`, mirrored. */
+export const GOODS_RECEIPT_STATES = ['draft', 'posted', 'cancelled'] as const;
+export type GoodsReceiptState = (typeof GOODS_RECEIPT_STATES)[number];
+
+/** `STOCK_COUNT_STATES`, mirrored. `reconciled` and `cancelled` are terminal. */
+export const STOCK_COUNT_STATES = ['open', 'counting', 'reconciled', 'cancelled'] as const;
+export type StockCountState = (typeof STOCK_COUNT_STATES)[number];
+
+/** `ADJUSTMENT_STATES`, mirrored. */
+export const ADJUSTMENT_STATES = ['pending', 'approved', 'rejected'] as const;
+export type AdjustmentState = (typeof ADJUSTMENT_STATES)[number];
+
+/** `ADJUSTMENT_DECISIONS`, mirrored: what a second person may record on a pending adjustment. */
+export const ADJUSTMENT_DECISIONS = ['approved', 'rejected'] as const;
+export type AdjustmentDecision = (typeof ADJUSTMENT_DECISIONS)[number];
+
+/** `MATERIAL_DRAW_REFUSAL_REASONS`, mirrored: why a work-order draw was refused (`ERR-INV-001`). */
+export const MATERIAL_DRAW_REASONS = [
+  'exceeds_requirement',
+  'approval_required',
+  'missing_conversion',
+  'missing_specification',
+  'no_requirement',
+] as const;
+export type MaterialDrawReason = (typeof MATERIAL_DRAW_REASONS)[number];
+
+/** A unit cost as `numeric(18,4)` accepts it: non-negative, up to four decimals. */
+export const UNIT_COST = /^\d{1,14}(\.\d{1,4})?$/;
+/** An ISO-4217 alphabetic currency code. */
+export const CURRENCY_CODE = /^[A-Z]{3}$/;
+
+/** The echo of every transfer write (`TransferView`). */
+export interface TransferEcho {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly itemId: string;
+  readonly fromLocationId: string;
+  readonly transitLocationId: string;
+  readonly toBranchId: string;
+  readonly toLocationId: string;
+  readonly quantity: string;
+  readonly receivedQuantity: string | null;
+  /** Units that did not arrive and were returned to the origin or written off. */
+  readonly resolvedQuantity: string;
+  /** The server's figure for what is still in transit. Never derived here. */
+  readonly outstandingQuantity: string;
+  readonly status: TransferState;
+  readonly inTransit: boolean;
+  readonly reason: string | null;
+  readonly cancelReason: string | null;
+  readonly dispatchedAt: string;
+  readonly receivedAt: string | null;
+  readonly cancelledAt: string | null;
+  readonly recordVersion: number;
+  readonly replayed: boolean;
+}
+
+/** One row of `inv.stock-transfer-list` (`TransferListView`). */
+export interface StockTransfer extends Omit<TransferEcho, 'replayed'> {
+  readonly sku: string;
+  /** Null when that end's location is outside what the reader may see. */
+  readonly fromLocationCode: string | null;
+  readonly toLocationCode: string | null;
+  readonly createdAt: string;
+}
+
+/** The echo of `inv.stock-transfer-discrepancy-resolve` (`TransferSettlementWriteView`). */
+export interface TransferSettlementEcho {
+  readonly id: string;
+  readonly transferId: string;
+  readonly kind: 'receipt' | TransferDiscrepancyKind;
+  readonly quantity: string;
+  readonly reason: string | null;
+  /** `posted`, or `pending` for a write-off awaiting a second person. */
+  readonly status: 'pending' | 'posted' | 'rejected';
+  readonly requestedBy: string;
+  readonly createdAt: string;
+  readonly recordVersion: number;
+  readonly transfer: TransferEcho;
+  readonly replayed: boolean;
+}
+
+/** One row of `inv.goods-receipt-list` (`GoodsReceiptView`). */
+export interface GoodsReceiptSummary {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly reference: string | null;
+  readonly supplierReference: string | null;
+  /** A plain ISO date. */
+  readonly receivedOn: string;
+  readonly status: GoodsReceiptState;
+  readonly notes: string | null;
+  readonly postedAt: string | null;
+  readonly lineCount: number;
+  readonly recordVersion: number;
+  readonly createdAt: string;
+}
+
+/** One line of a receipt as read back. Whether it is priced, never the figure. */
+export interface GoodsReceiptLine {
+  readonly id: string;
+  readonly lineNo: number;
+  readonly itemId: string;
+  readonly sku: string;
+  readonly locationId: string;
+  readonly locationCode: string;
+  readonly quantity: string;
+  readonly hasUnitCost: boolean;
+}
+
+/** `inv.goods-receipt-read`, and the echo of posting (`GoodsReceiptDetailView`). */
+export interface GoodsReceiptDetail extends GoodsReceiptSummary {
+  readonly lines: readonly GoodsReceiptLine[];
+  /** Present on the create echo only. */
+  readonly replayed?: boolean;
+}
+
+/** One appended cost layer (`CostLayerView`). */
+export interface CostLayer {
+  readonly id: string;
+  readonly sourceKind: string;
+  readonly sourceId: string;
+  readonly quantity: string;
+  readonly unitCost: string;
+  readonly currencyCode: string;
+  readonly effectiveAt: string;
+}
+
+/** `inv.item-cost-history-read` (`ItemCostHistoryView`). */
+export interface ItemCostHistory {
+  readonly itemId: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  /** Null when nothing has ever been priced. */
+  readonly latestUnitCost: string | null;
+  /** Null when there are no layers, and when the layers span more than one currency. */
+  readonly weightedAverageCost: string | null;
+  readonly currencyCode: string | null;
+  readonly mixedCurrencies: boolean;
+  readonly layerCount: number;
+  readonly totalQuantity: string;
+  readonly layers: {
+    readonly items: readonly CostLayer[];
+    readonly nextCursor: string | null;
+    readonly hasMore: boolean;
+  };
+}
+
+/** The echo of the adjustment writes (`AdjustmentView`). */
+export interface AdjustmentEcho {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly itemId: string;
+  readonly locationId: string;
+  readonly direction: Direction;
+  readonly quantity: string;
+  readonly reason: string;
+  readonly status: AdjustmentState;
+  readonly requestedBy: string;
+  readonly approvedBy: string | null;
+  readonly approvedAt: string | null;
+  readonly recordVersion: number;
+  readonly createdAt: string;
+}
+
+/** One row of `inv.stock-adjustment-list` (`AdjustmentListView`). */
+export interface StockAdjustment extends AdjustmentEcho {
+  readonly sku: string;
+  readonly locationCode: string;
+}
+
+/** One line of a stock count (`StockCountLineView`). */
+export interface StockCountLine {
+  readonly id: string;
+  readonly itemId: string;
+  readonly sku: string;
+  /** What the location held when the count was opened. */
+  readonly snapshotQty: string;
+  /** Null until the line is counted. */
+  readonly countedQty: string | null;
+  /** The net of the movements posted at the location after the snapshot. */
+  readonly movementDeltaDuringCount: string;
+  /** The database's generated variance; null until counted. */
+  readonly varianceQty: string | null;
+  readonly adjustmentId: string | null;
+  readonly adjustmentStatus: AdjustmentState | null;
+}
+
+/** One row of `inv.stock-count-list` (`StockCountListView`). */
+export interface StockCountSummary {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly locationId: string;
+  readonly locationCode: string;
+  readonly status: StockCountState;
+  readonly snapshotAt: string;
+  readonly countedBy: string;
+  readonly reconciledAt: string | null;
+  readonly cancelledAt: string | null;
+  readonly cancelReason: string | null;
+  readonly notes: string | null;
+  readonly recordVersion: number;
+  readonly createdAt: string;
+  readonly lineCount: number;
+  readonly countedLineCount: number;
+  readonly varianceLineCount: number;
+  /** The server's sum of absolute variances. */
+  readonly absoluteVarianceQty: string;
+}
+
+/**
+ * `inv.stock-count-read` and the echo of every count write
+ * (`StockCountDetailView`). The detail carries no location code; the screen
+ * keeps the one it chose the count by.
+ */
+export interface StockCountDetail extends Omit<StockCountSummary, 'locationCode'> {
+  readonly lines: readonly StockCountLine[];
+  /** Present on the open echo only. */
+  readonly replayed?: boolean;
+  /** Present on the reconcile echo only: how many PENDING adjustments were raised. */
+  readonly adjustmentsRaised?: number;
 }

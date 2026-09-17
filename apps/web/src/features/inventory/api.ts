@@ -12,42 +12,66 @@ import {
   type ItemsOnly,
   type ReadState,
 } from '@/lib/api/read-operation';
+import { VIOLATION_KEY_PREFIX, type ApiFailure } from '@/lib/api/client';
 import { fromFailure, success, type ActionState } from '@/lib/forms/action-result';
 import type {
+  GoodsReceiptCreateBody,
   ItemCategoryCreateBody,
   ItemCreateBody,
   OpeningBatchCreateBody,
   OpeningBatchLineCreateBody,
+  StockAdjustmentApproveBody,
+  StockAdjustmentCreateBody,
+  StockCountCancelBody,
+  StockCountLineRecordBody,
+  StockCountOpenBody,
   StockIssueCreateBody,
   StockLocationCreateBody,
   StockReservationCreateBody,
   StockReservationReleaseBody,
   StockReturnCreateBody,
+  StockTransferCancelBody,
+  StockTransferCreateBody,
+  StockTransferDiscrepancyResolveBody,
+  StockTransferReceiveBody,
 } from '@/lib/contracts/inventory-contract';
 import type { BranchOption } from '@/features/services/services-contract';
-import type {
-  AvailabilityCriteria,
-  CreatedStockLocation,
-  InventoryItem,
-  IssueEcho,
-  ItemCategory,
-  ItemSearchCriteria,
-  MovementCriteria,
-  OpeningBatch,
-  OpeningBatchDetail,
-  OpeningBatchLine,
-  OpeningBatchSummary,
-  PartIssue,
-  RequiredPart,
-  ReservationCriteria,
-  ReservationEcho,
-  ReturnEcho,
-  StockAvailability,
-  StockLocation,
-  StockMovement,
-  StockReservation,
-  StockTarget,
-  UnitOfMeasureOption,
+import {
+  MATERIAL_DRAW_REASONS,
+  type AdjustmentEcho,
+  type AdjustmentState,
+  type AvailabilityCriteria,
+  type CreatedStockLocation,
+  type GoodsReceiptDetail,
+  type GoodsReceiptSummary,
+  type InventoryItem,
+  type IssueEcho,
+  type ItemCategory,
+  type ItemCostHistory,
+  type ItemSearchCriteria,
+  type MovementCriteria,
+  type OpeningBatch,
+  type OpeningBatchDetail,
+  type OpeningBatchLine,
+  type OpeningBatchSummary,
+  type PartIssue,
+  type RequiredPart,
+  type ReservationCriteria,
+  type ReservationEcho,
+  type ReturnEcho,
+  type StockAdjustment,
+  type StockAvailability,
+  type StockCountDetail,
+  type StockCountSummary,
+  type StockLocation,
+  type StockMovement,
+  type StockReservation,
+  type StockTarget,
+  type StockTransfer,
+  type TransferDirection,
+  type TransferEcho,
+  type TransferSettlementEcho,
+  type UnitOfMeasureOption,
 } from './inventory-contract';
 
 /**
@@ -276,7 +300,7 @@ export async function createReservation(
   const client = await authorizedClient();
   if (!client) return { state: expired(attempt), created: null };
   const result = await client.send<ReservationEcho>('POST', '/api/v1/stock-reservations', body);
-  if (!result.ok) return { state: fromFailure(result, attempt), created: null };
+  if (!result.ok) return { state: refusalOf(result, attempt), created: null };
   return {
     state: {
       ...success('inventory.reserve.success', attempt),
@@ -299,7 +323,7 @@ export async function createIssue(
   const client = await authorizedClient();
   if (!client) return { state: expired(attempt), created: null };
   const result = await client.send<IssueEcho>('POST', '/api/v1/stock-issues', body);
-  if (!result.ok) return { state: fromFailure(result, attempt), created: null };
+  if (!result.ok) return { state: refusalOf(result, attempt), created: null };
   return {
     state: { ...success('inventory.issue.success', attempt), correlationId: result.correlationId },
     created: result.data,
@@ -556,4 +580,391 @@ export async function approveOpeningBatch(
     },
     created: result.data,
   };
+}
+
+/* ------------------------------------------------------------------ *
+ * P1-32 — stock operations: transfers, goods receipts, cost history,
+ * adjustments and counts
+ * ------------------------------------------------------------------ */
+
+/** The server's catalogue code for a refused state change. */
+const STATE_REFUSED = 'ERR-TRN-001';
+/** The server's catalogue code for a work-order draw its material requirement does not allow. */
+const DRAW_REFUSED = 'ERR-INV-001';
+
+/**
+ * A failure as the operator should read it.
+ *
+ * `fromFailure` maps a failure KIND to a sentence, and every 409 is one kind.
+ * The server's own message never reaches the wire (`problemFor` publishes the
+ * catalogue entry and the safe details only), so the reason an operator needs
+ * is recovered from what IS published:
+ *
+ * - `ERR-INV-001` carries `materialDraw.reason`, one of five published values,
+ *   and each has its own sentence naming the remedy;
+ * - `ERR-TRN-001` means the record's state refuses the act, and the act is
+ *   known here, so the caller names the sentence that says what the state
+ *   refuses (`stateRefusedKey`).
+ *
+ * A banner that already names a specific violation keeps it: that is the more
+ * precise reason, and replacing it would downgrade the message.
+ */
+function refusalOf(failure: ApiFailure, attempt: number, stateRefusedKey?: string): ActionState {
+  const state = fromFailure(failure, attempt);
+  if (state.messageKey?.startsWith(VIOLATION_KEY_PREFIX) === true) return state;
+  const code = failure.problem?.code;
+  const draw = failure.problem?.materialDraw;
+  if (
+    code === DRAW_REFUSED &&
+    draw !== undefined &&
+    (MATERIAL_DRAW_REASONS as readonly string[]).includes(draw.reason)
+  ) {
+    return { ...state, messageKey: `inventory.refusal.materialDraw.${draw.reason}` };
+  }
+  if (code === STATE_REFUSED && stateRefusedKey !== undefined) {
+    return { ...state, messageKey: stateRefusedKey };
+  }
+  return state;
+}
+
+/**
+ * One unguarded POST or PUT whose answer the screen holds on to, with the refusal
+ * said plainly. The two version-guarded writes below do NOT go through here: a
+ * guarded send is written out with its literal path so the version-sourcing
+ * gates can attribute it.
+ */
+async function write<T>(
+  method: 'POST' | 'PUT',
+  path: string,
+  body: unknown,
+  successKey: string,
+  attempt: number,
+  options: { readonly stateRefusedKey?: string; readonly idempotencyKey?: string } = {}
+): Promise<CreateOutcome<T>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<T>(
+    method,
+    path,
+    body,
+    options.idempotencyKey === undefined ? {} : { idempotencyKey: options.idempotencyKey }
+  );
+  if (!result.ok) {
+    return { state: refusalOf(result, attempt, options.stateRefusedKey), created: null };
+  }
+  return {
+    state: { ...success(successKey, attempt), correlationId: result.correlationId },
+    created: result.data,
+  };
+}
+
+/**
+ * A branch's transfers (`inv.stock-transfer-list`), newest first, read as the
+ * sender (`outbound`) or as the destination (`inbound`). One page of fifty; the
+ * screen says so when `hasMore` is set.
+ */
+export async function listTransfers(
+  target: StockTarget,
+  direction: TransferDirection
+): Promise<ReadState<CursorPage<StockTransfer>>> {
+  return readOperation<CursorPage<StockTransfer>>(
+    '/api/v1/stock-transfers' + branchTargetQuery(target, { direction, limit: 50 })
+  );
+}
+
+/**
+ * Dispatch a transfer (`inv.stock-transfer-create`): the quantity leaves the
+ * source and sits in transit. A replay of the body key answers the transfer
+ * already made with `replayed: true`.
+ */
+export async function createTransfer(
+  body: StockTransferCreateBody,
+  attempt = 1
+): Promise<CreateOutcome<TransferEcho>> {
+  return write<TransferEcho>(
+    'POST',
+    '/api/v1/stock-transfers',
+    body,
+    'inventory.transfers.create.success',
+    attempt,
+    { stateRefusedKey: 'inventory.transfers.create.refused' }
+  );
+}
+
+/**
+ * Receive what arrived (`inv.stock-transfer-receive`). Less than is still in
+ * transit leaves the transfer partly received; the echo carries the server's
+ * `outstandingQuantity`, which the screen shows as stated.
+ */
+export async function receiveTransfer(
+  transferId: string,
+  body: StockTransferReceiveBody,
+  attempt = 1
+): Promise<CreateOutcome<TransferEcho>> {
+  return write<TransferEcho>(
+    'POST',
+    `/api/v1/stock-transfers/${encodeURIComponent(transferId)}/receipt`,
+    body,
+    'inventory.transfers.receive.success',
+    attempt,
+    { stateRefusedKey: 'inventory.transfers.receive.refused' }
+  );
+}
+
+/** Cancel a dispatched transfer (`inv.stock-transfer-cancel`); the quantity returns to the origin. */
+export async function cancelTransfer(
+  transferId: string,
+  body: StockTransferCancelBody,
+  attempt = 1
+): Promise<CreateOutcome<TransferEcho>> {
+  return write<TransferEcho>(
+    'POST',
+    `/api/v1/stock-transfers/${encodeURIComponent(transferId)}/cancellation`,
+    body,
+    'inventory.transfers.cancel.success',
+    attempt,
+    { stateRefusedKey: 'inventory.transfers.cancel.refused' }
+  );
+}
+
+/**
+ * Settle units that did not arrive (`inv.stock-transfer-discrepancy-resolve`):
+ * back to the origin at once, or a write-off that waits for a second person.
+ *
+ * The settlement keeps the HEADER key for its whole life (there is no body key),
+ * so the screen passes one key per opened form: pressing the button again after
+ * a lost answer replays the first settlement instead of returning the units twice.
+ */
+export async function resolveTransferDiscrepancy(
+  transferId: string,
+  body: StockTransferDiscrepancyResolveBody,
+  idempotencyKey: string,
+  attempt = 1
+): Promise<CreateOutcome<TransferSettlementEcho>> {
+  return write<TransferSettlementEcho>(
+    'POST',
+    `/api/v1/stock-transfers/${encodeURIComponent(transferId)}/discrepancy-resolution`,
+    body,
+    body.kind === 'write_off'
+      ? 'inventory.transfers.resolve.writeOffRequested'
+      : 'inventory.transfers.resolve.returned',
+    attempt,
+    { stateRefusedKey: 'inventory.transfers.resolve.refused', idempotencyKey }
+  );
+}
+
+/** A branch's goods receipts (`inv.goods-receipt-list`), newest first, one page of fifty. */
+export async function listGoodsReceipts(
+  target: StockTarget
+): Promise<ReadState<CursorPage<GoodsReceiptSummary>>> {
+  return readOperation<CursorPage<GoodsReceiptSummary>>(
+    '/api/v1/goods-receipts' + branchTargetQuery(target, { limit: 50 })
+  );
+}
+
+/** One receipt with its lines (`inv.goods-receipt-read`); lines say whether they are priced, never the figure. */
+export async function readGoodsReceipt(receiptId: string): Promise<ReadState<GoodsReceiptDetail>> {
+  return readOperation<GoodsReceiptDetail>(
+    `/api/v1/goods-receipts/${encodeURIComponent(receiptId)}`
+  );
+}
+
+/** Create a DRAFT receipt with its lines (`inv.goods-receipt-create`). Nothing is on hand until it is posted. */
+export async function createGoodsReceipt(
+  body: GoodsReceiptCreateBody,
+  attempt = 1
+): Promise<CreateOutcome<GoodsReceiptDetail>> {
+  return write<GoodsReceiptDetail>(
+    'POST',
+    '/api/v1/goods-receipts',
+    body,
+    'inventory.receipts.create.success',
+    attempt,
+    { stateRefusedKey: 'inventory.receipts.create.refused' }
+  );
+}
+
+/**
+ * Post a draft receipt (`inv.goods-receipt-post`). Bodyless; `ifMatch` is the
+ * RECEIPT's `recordVersion` exactly as the last read or write answered it.
+ */
+export async function postGoodsReceipt(
+  receiptId: string,
+  ifMatch: number,
+  attempt = 1
+): Promise<CreateOutcome<GoodsReceiptDetail>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<GoodsReceiptDetail>(
+    'POST',
+    `/api/v1/goods-receipts/${encodeURIComponent(receiptId)}/posting`,
+    undefined,
+    { ifMatch }
+  );
+  if (!result.ok) {
+    return {
+      state: refusalOf(result, attempt, 'inventory.receipts.post.refused'),
+      created: null,
+    };
+  }
+  return {
+    state: {
+      ...success('inventory.receipts.post.success', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/**
+ * An item's cost history in one branch (`inv.item-cost-history-read`,
+ * `inv.cost.view`): the latest unit cost, the weighted average the server
+ * computed, and the newest layers.
+ */
+export async function readItemCostHistory(
+  itemId: string,
+  target: StockTarget
+): Promise<ReadState<ItemCostHistory>> {
+  return readOperation<ItemCostHistory>(
+    `/api/v1/items/${encodeURIComponent(itemId)}/cost-history` +
+      branchTargetQuery(target, { limit: 20 })
+  );
+}
+
+/** A branch's stock adjustments (`inv.stock-adjustment-list`), newest first, optionally one status. */
+export async function listAdjustments(
+  target: StockTarget,
+  status: AdjustmentState | null
+): Promise<ReadState<CursorPage<StockAdjustment>>> {
+  return readOperation<CursorPage<StockAdjustment>>(
+    '/api/v1/stock-adjustments' + branchTargetQuery(target, { status, limit: 50 })
+  );
+}
+
+/** Request an adjustment (`inv.stock-adjustment-create`): pending, no stock effect, until a second person approves. */
+export async function createAdjustment(
+  body: StockAdjustmentCreateBody,
+  attempt = 1
+): Promise<CreateOutcome<AdjustmentEcho>> {
+  return write<AdjustmentEcho>(
+    'POST',
+    '/api/v1/stock-adjustments',
+    body,
+    'inventory.adjustments.create.success',
+    attempt,
+    { stateRefusedKey: 'inventory.adjustments.create.refused' }
+  );
+}
+
+/**
+ * Approve or reject a pending adjustment (`inv.stock-adjustment-approve`).
+ * Refused (409) for the requester and for an adjustment already decided.
+ */
+export async function decideAdjustment(
+  adjustmentId: string,
+  body: StockAdjustmentApproveBody,
+  attempt = 1
+): Promise<CreateOutcome<AdjustmentEcho>> {
+  return write<AdjustmentEcho>(
+    'POST',
+    `/api/v1/stock-adjustments/${encodeURIComponent(adjustmentId)}/approval`,
+    body,
+    body.decision === 'approved'
+      ? 'inventory.adjustments.decide.approved'
+      : 'inventory.adjustments.decide.rejected',
+    attempt,
+    { stateRefusedKey: 'inventory.adjustments.decide.refused' }
+  );
+}
+
+/** A branch's stock counts (`inv.stock-count-list`) with the server's variance figures, newest first. */
+export async function listStockCounts(
+  target: StockTarget
+): Promise<ReadState<CursorPage<StockCountSummary>>> {
+  return readOperation<CursorPage<StockCountSummary>>(
+    '/api/v1/stock-counts' + branchTargetQuery(target, { limit: 50 })
+  );
+}
+
+/** One count with its lines, movements during the count and variances (`inv.stock-count-read`). */
+export async function readStockCount(countId: string): Promise<ReadState<StockCountDetail>> {
+  return readOperation<StockCountDetail>(`/api/v1/stock-counts/${encodeURIComponent(countId)}`);
+}
+
+/** Open a count of one location (`inv.stock-count-open`), snapshotting what it holds. */
+export async function openStockCount(
+  body: StockCountOpenBody,
+  attempt = 1
+): Promise<CreateOutcome<StockCountDetail>> {
+  return write<StockCountDetail>(
+    'POST',
+    '/api/v1/stock-counts',
+    body,
+    'inventory.counts.open.success',
+    attempt,
+    { stateRefusedKey: 'inventory.counts.open.refused' }
+  );
+}
+
+/**
+ * Record the counted quantity of one item (`inv.stock-count-line-record`).
+ * `ifMatch` is the COUNT's `recordVersion` as the last read or write answered it;
+ * the answer is the whole count again, with the server's new variance.
+ */
+export async function recordStockCountLine(
+  countId: string,
+  itemId: string,
+  body: StockCountLineRecordBody,
+  ifMatch: number,
+  attempt = 1
+): Promise<CreateOutcome<StockCountDetail>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<StockCountDetail>(
+    'PUT',
+    `/api/v1/stock-counts/${encodeURIComponent(countId)}/lines/${encodeURIComponent(itemId)}`,
+    body,
+    { ifMatch }
+  );
+  if (!result.ok) {
+    return { state: refusalOf(result, attempt, 'inventory.counts.closed'), created: null };
+  }
+  return {
+    state: {
+      ...success('inventory.counts.line.success', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/** Reconcile a count (`inv.stock-count-reconcile`): each variance raises a PENDING adjustment; nothing posts. */
+export async function reconcileStockCount(
+  countId: string,
+  attempt = 1
+): Promise<CreateOutcome<StockCountDetail>> {
+  return write<StockCountDetail>(
+    'POST',
+    `/api/v1/stock-counts/${encodeURIComponent(countId)}/reconciliation`,
+    undefined,
+    'inventory.counts.reconcile.success',
+    attempt,
+    { stateRefusedKey: 'inventory.counts.closed' }
+  );
+}
+
+/** Cancel an open count (`inv.stock-count-cancel`) without raising any adjustment. */
+export async function cancelStockCount(
+  countId: string,
+  body: StockCountCancelBody,
+  attempt = 1
+): Promise<CreateOutcome<StockCountDetail>> {
+  return write<StockCountDetail>(
+    'POST',
+    `/api/v1/stock-counts/${encodeURIComponent(countId)}/cancellation`,
+    body,
+    'inventory.counts.cancel.success',
+    attempt,
+    { stateRefusedKey: 'inventory.counts.closed' }
+  );
 }

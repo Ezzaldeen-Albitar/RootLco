@@ -150,27 +150,9 @@ export const PENDING_MIRRORS = Object.freeze({
     'PENDING: no P1-30 screen sends this (outside FE-008…FE-013); a later phase owes the mirror',
   'inv.external-purchase-part-create':
     'PENDING: no P1-30 screen sends this (outside FE-008…FE-013); a later phase owes the mirror',
-  // The P1-32 preparatory inventory writes. They entered this scope the moment they
-  // were registered; their screens are the next slice on the same branch, which
-  // must declare each mirror and delete its entry in that same change.
-  'inv.goods-receipt-create':
-    'PENDING: P1-32 preparatory inventory slice 1 is Backend and Database only; the inventory screens that send this (slice 2, same branch) owe the mirror',
-  'inv.stock-adjustment-approve':
-    'PENDING: P1-32 preparatory inventory slice 1 is Backend and Database only; the inventory screens that send this (slice 2, same branch) owe the mirror',
-  'inv.stock-adjustment-create':
-    'PENDING: P1-32 preparatory inventory slice 1 is Backend and Database only; the inventory screens that send this (slice 2, same branch) owe the mirror',
-  'inv.stock-count-cancel':
-    'PENDING: P1-32 preparatory inventory slice 1 is Backend and Database only; the inventory screens that send this (slice 2, same branch) owe the mirror',
-  'inv.stock-count-line-record':
-    'PENDING: P1-32 preparatory inventory slice 1 is Backend and Database only; the inventory screens that send this (slice 2, same branch) owe the mirror',
-  'inv.stock-count-open':
-    'PENDING: P1-32 preparatory inventory slice 1 is Backend and Database only; the inventory screens that send this (slice 2, same branch) owe the mirror',
-  'inv.stock-transfer-cancel':
-    'PENDING: P1-32 preparatory inventory slice 1 is Backend and Database only; the inventory screens that send this (slice 2, same branch) owe the mirror',
-  'inv.stock-transfer-create':
-    'PENDING: P1-32 preparatory inventory slice 1 is Backend and Database only; the inventory screens that send this (slice 2, same branch) owe the mirror',
-  'inv.stock-transfer-receive':
-    'PENDING: P1-32 preparatory inventory slice 1 is Backend and Database only; the inventory screens that send this (slice 2, same branch) owe the mirror',
+  // The P1-32 preparatory inventory writes entered this scope the moment they were
+  // registered. The stock-operation screens (transfers, goods receipts, adjustments
+  // and counts) declared ten mirrors and deleted their entries in that same change.
   // P1-32 preparatory slice 2 (item identifiers) is Backend and Database only; the
   // barcode screens owe this mirror and must delete this entry in that change.
   'inv.item-identifier-add':
@@ -195,10 +177,8 @@ export const PENDING_MIRRORS = Object.freeze({
     'PENDING: P1-32 preparatory slice 3b is Backend only; the unit conversion screen that sends this owes the mirror',
   'inv.vehicle-specification-create':
     'PENDING: P1-32 preparatory slice 3b is Backend only; the vehicle specification screen that sends this owes the mirror',
-  'inv.stock-transfer-discrepancy-resolve':
-    'PENDING: P1-32 preparatory slice 3b is Backend only; the transfer receipt screen that sends this owes the mirror',
   'inv.stock-transfer-write-off-decide':
-    'PENDING: P1-32 preparatory slice 3b is Backend only; the transfer receipt screen that sends this owes the mirror',
+    'PENDING: no read lists or reads a transfer settlement, so the second person who must decide a write-off cannot reach it; the screen that sends this owes the mirror once that read exists',
   // P1-32 preparatory slice 3c: cancelling a requirement, and closing or cancelling a
   // material request. Backend only; the slice-3 screens owe every mirror.
   'inv.material-requirement-cancel':

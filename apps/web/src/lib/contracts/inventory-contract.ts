@@ -154,3 +154,124 @@ export interface OpeningBatchLineCreateBody {
   readonly locationId: string;
   readonly quantity: string;
 }
+
+/* ------------------------------------------------------------------ *
+ * P1-32 — the stock-operation screens (transfers, goods receipts,
+ * adjustments, counts). Each interface below is sent by a screen under
+ * `app/[locale]/(dashboard)/inventory/**`; the write-off decision is not,
+ * because no read reaches a pending settlement, and stays PENDING in the gate.
+ * ------------------------------------------------------------------ */
+
+/**
+ * `inv.stock-transfer-create` — `POST /stock-transfers`. The locations decide
+ * both branches. `idempotencyKey` is kept for the transfer's whole life, so a
+ * retry after it was received still resolves to it (`replayed`).
+ */
+export interface StockTransferCreateBody {
+  readonly itemId: string;
+  readonly fromLocationId: string;
+  readonly toLocationId: string;
+  /** A decimal string, up to nine integer digits and three decimals. */
+  readonly quantity: string;
+  readonly reason?: string;
+  readonly idempotencyKey?: string;
+}
+
+/**
+ * `inv.stock-transfer-receive` — `POST /stock-transfers/{transferId}/receipt`.
+ * `quantity` is what physically arrived, up to what is still in transit; less
+ * leaves the remainder in transit.
+ */
+export interface StockTransferReceiveBody {
+  readonly quantity: string;
+}
+
+/** `inv.stock-transfer-cancel` — `POST /stock-transfers/{transferId}/cancellation`. A dispatched transfer only. */
+export interface StockTransferCancelBody {
+  readonly reason: string;
+}
+
+/**
+ * `inv.stock-transfer-discrepancy-resolve` —
+ * `POST /stock-transfers/{transferId}/discrepancy-resolution`. A return to the
+ * origin posts at once; a write-off waits for a second person.
+ */
+export interface StockTransferDiscrepancyResolveBody {
+  readonly kind: 'return_to_origin' | 'write_off';
+  readonly quantity: string;
+  readonly reason: string;
+}
+
+/**
+ * One line of `inv.goods-receipt-create`. `unitCost` and `currencyCode` travel
+ * together, and only a holder of `inv.cost.view` may send them — the server
+ * refuses the field otherwise rather than dropping it.
+ */
+export interface GoodsReceiptCreateLine {
+  readonly itemId: string;
+  readonly locationId: string;
+  readonly quantity: string;
+  /** A non-negative decimal string of at most four places. */
+  readonly unitCost?: string;
+  readonly currencyCode?: string;
+}
+
+/** `inv.goods-receipt-create` — `POST /goods-receipts`. Creates a DRAFT; posting is a separate act. */
+export interface GoodsReceiptCreateBody {
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly reference?: string;
+  readonly supplierReference?: string;
+  /** A plain ISO date. */
+  readonly receivedOn: string;
+  readonly notes?: string;
+  readonly idempotencyKey?: string;
+  readonly lines: readonly GoodsReceiptCreateLine[];
+}
+
+/**
+ * `inv.stock-adjustment-create` — `POST /stock-adjustments`. Pending, with no
+ * stock effect, until a different person approves it. `valueImpact` (with its
+ * currency) is recorded only by a holder of `inv.cost.view`; the screen does
+ * not send it.
+ */
+export interface StockAdjustmentCreateBody {
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly itemId: string;
+  readonly locationId: string;
+  readonly direction: 'in' | 'out';
+  readonly quantity: string;
+  readonly reason: string;
+  readonly valueImpact?: string;
+  readonly currencyCode?: string;
+}
+
+/**
+ * `inv.stock-adjustment-approve` — `POST /stock-adjustments/{adjustmentId}/approval`.
+ * The requester may not decide; the server refuses them (409).
+ */
+export interface StockAdjustmentApproveBody {
+  readonly decision: 'approved' | 'rejected';
+  readonly reason: string;
+}
+
+/** `inv.stock-count-open` — `POST /stock-counts`. Snapshots what the location holds. */
+export interface StockCountOpenBody {
+  readonly locationId: string;
+  readonly notes?: string;
+  readonly idempotencyKey?: string;
+}
+
+/**
+ * `inv.stock-count-line-record` — `PUT /stock-counts/{countId}/lines/{itemId}`,
+ * with the COUNT's record version as If-Match.
+ */
+export interface StockCountLineRecordBody {
+  readonly countedQty: string;
+}
+
+/** `inv.stock-count-cancel` — `POST /stock-counts/{countId}/cancellation`. Raises no adjustment. */
+export interface StockCountCancelBody {
+  readonly reason: string;
+}
