@@ -256,36 +256,53 @@
  * `wty.warranty-generate` still declares it and an administrator that could not
  * hold it could not delegate a warranty clerk.
  *
- * ## The five P1-32 slice-3a material codes are NOT carried yet
+ * ## The five P1-32 material codes (slice 3c, P1-32-PRE-134)
  *
  * Slice 3a minted `inv.material.request`, `inv.material.approve`,
  * `inv.material.exception.approve`, `inv.unit_conversion.manage` and
- * `inv.specification.manage` together with their schema, and published no
- * operation. Every one of them is therefore excluded on the same "nothing declares
- * it" rule CC-01 and CC-02 were excluded on, and the slice that publishes the
- * material operations owns the widening, exactly as #322, P-10 and P-11 did.
+ * `inv.specification.manage` together with their schema; slice 3b published the
+ * operations that declare them. They were withheld until slice 3c on the "nothing
+ * declares it" rule — and slice 3c made the withholding a CLOSURE rather than a
+ * delay: since P1-32-PRE-132 EVERY reservation and issue for a work order draws on an
+ * approved material requirement, so a freshly provisioned organisation whose
+ * administrator could not ask for, approve or delegate one could never issue a part
+ * to a job at all. The sequence is the one `inv.item.manage`, `wty.policy.manage` and
+ * `rpt.report.configure` went through: carried on the day the rule that required
+ * withholding stopped being true.
  *
- * The split that widening must keep is decided now, because the database already
- * enforces it:
+ * The split, as the codes are held and delegated:
  *
- *  - REQUESTERS (the service advisor or technician who asks for material for a
- *    job) hold `inv.material.request` and nothing else of the five.
- *  - APPROVERS (the workshop controller who decides how much a job may take) hold
- *    `inv.material.approve`. The requester of a requirement can never approve it —
- *    `ck_material_requirements_separation` refuses it whatever codes they hold — so
- *    one person holding both codes gains nothing but the ability to approve other
- *    people's requests.
- *  - EXCEPTION approvers hold `inv.material.exception.approve`, a stronger authority
- *    than approving the allowance; the requester of an exception can never decide
- *    it (`ck_material_requirement_exceptions_separation`).
+ *  - REQUESTERS hold `inv.material.request`: asking for material on a service line,
+ *    asking for an exception, re-checking a requirement once its missing fact exists,
+ *    cancelling a requirement nothing is committed against, and closing or cancelling
+ *    a material request. It is added to every bundle that already REQUESTS parts —
+ *    i.e. that holds `inv.stock.operate`, the authority to reserve and issue.
+ *  - APPROVERS hold `inv.material.approve` (how much a job may take) and EXCEPTION
+ *    approvers `inv.material.exception.approve` (a finite quantity beyond it). They
+ *    are added only to a bundle that already APPROVES — one that holds
+ *    `inv.adjustment.approve`, the existing second-person inventory authority. The
+ *    requester of a requirement or an exception can never decide it
+ *    (`ck_material_requirements_separation`,
+ *    `ck_material_requirement_exceptions_separation`), so holding both halves confers
+ *    nothing but the ability to decide OTHER people's requests.
  *  - `inv.unit_conversion.manage` and `inv.specification.manage` belong to whoever
- *    maintains parts reference data, not to requesters or approvers, because they
- *    change what every later requirement is measured against.
+ *    maintains parts reference data: a bundle that already holds `inv.item.manage`.
+ *    They change what every later requirement is measured against, so they are not a
+ *    requester's or an approver's codes.
  *
- * The administrator bundle will need all five so it can DELEGATE them, on the P-1
- * rule; holding them does not let the administrator approve their own request, for
- * the reason above. The transfer write-off the same slice added needs no new code:
- * it is approved under `inv.adjustment.approve`, which this bundle already carries.
+ * Measured against the bundles this file ships: `first_owner` holds none of
+ * `inv.stock.operate`, `inv.adjustment.approve` or `inv.item.manage` and gains
+ * nothing. `tenant_administrator` holds all three, so it carries all five — to be
+ * exercised, and above all to be DELEGATED, because a service-advisor, parts-keeper
+ * or workshop-controller role is one the Owner builds from codes the administrator
+ * holds. No other shipped bundle exists: those roles are tenant configuration, and
+ * the split above is the rule an Owner-built role follows.
+ *
+ * Organisations provisioned before this slice keep the set they were given;
+ * `scripts/platform/backfill-tenant-administrator-bundle.mjs` owes them one operator
+ * run covering the five codes, and that run is not performed by this slice. The
+ * transfer write-off slice 3a added needs no new code: it is approved under
+ * `inv.adjustment.approve`.
  */
 
 export interface BootstrapRoleDefinition {
@@ -307,7 +324,7 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
   code: 'tenant_administrator',
   name: 'Tenant Administrator',
   description:
-    'Tenant administration established at provisioning: session reachability, IAM administration, the organisation reads the workshop screens require, and every code the P1-29, P1-30 and P1-31 personas need, so that they can be delegated.',
+    'Tenant administration established at provisioning: session reachability, IAM administration, the organisation reads the workshop screens require, and every code the P1-29, P1-30, P1-31 and P1-32 personas need, so that they can be delegated.',
   permissionCodes: Object.freeze([
     // Session reachability and IAM administration (direct).
     'iam.user.read',
@@ -401,6 +418,18 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     // fresh organisation — the F-02 remeasurement of 2026-09-06 found this
     // the one AUTHORIZATION gap left after PR #321.
     'inv.adjustment.approve',
+    // P1-32 slice 3c (P1-32-PRE-134): the material codes, on the split recorded above.
+    // Every reservation and issue for a work order now draws on an approved material
+    // requirement, so without these no part could be issued to a job in a freshly
+    // provisioned organisation, and no requester, approver or reference-data role
+    // could be delegated. REQUESTER: held because the bundle holds inv.stock.operate.
+    'inv.material.request',
+    // APPROVERS: held because the bundle already approves (inv.adjustment.approve).
+    'inv.material.approve',
+    'inv.material.exception.approve',
+    // REFERENCE DATA: held because the bundle maintains the catalogue (inv.item.manage).
+    'inv.unit_conversion.manage',
+    'inv.specification.manage',
     'sal.invoice.manage',
     'sal.invoice.issue',
     'sal.finance.view',

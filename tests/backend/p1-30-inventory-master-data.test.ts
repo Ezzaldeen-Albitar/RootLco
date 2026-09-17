@@ -417,8 +417,10 @@ describe('declarations', () => {
     // `rpt.report.configure` with it (CC-02, now closed); the two inventory codes
     // and 78 since P1-31 P-17 minted the two employee-register codes and carried
     // both, because a delivery cannot be created without an employee to name;
-    // the two inventory codes this case owns are unaffected by all five.
-    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(78);
+    // the two inventory codes this case owns are unaffected by all five; and 83
+    // since P1-32-PRE-134 carried the five material codes, without which no part
+    // could be issued to a job once every work-order draw needs approved demand.
+    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(83);
   });
 });
 

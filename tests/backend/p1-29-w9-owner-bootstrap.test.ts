@@ -458,7 +458,11 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
     // fresh administrator unable to record ANY handover, because
     // `sal.delivery-create` refuses an employee that does not exist and nothing
     // else in the product can create one.
-    expect(expected).toHaveLength(78);
+    // 83 with the five P1-32 material codes (P1-32-PRE-134): since every reservation
+    // and issue for a work order draws on an approved material requirement, a fresh
+    // administrator that could not ask for, approve or delegate one could never issue
+    // a part to a job. All five are catalogue rows minted by slice 3a.
+    expect(expected).toHaveLength(83);
     expect(expected.some((c) => c.includes('*'))).toBe(false);
     expect(expected.some((c) => c.startsWith('platform.'))).toBe(false);
     expect(new Set(expected).size).toBe(expected.length);
