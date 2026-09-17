@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import Link from 'next/link';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
@@ -10,6 +10,8 @@ import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import { listCustomerVehicles } from '@/lib/customers/vehicles';
 import type { CustomerVehicleEntry } from '@/lib/customers/vehicles-contract';
+import { listPlates } from '@/features/vehicles/history-api';
+import { readVehicleSummary, type CheckInVehicleSummary } from '../../support-api';
 import { checkInWizardHref } from '../intake-handoff';
 import { IntakeVehicleStep, ListStates, Pager, type ChosenVehicle } from './IntakeVehicleStep';
 import type { ChosenCustomer } from './WalkInIntakeScreen';
@@ -143,7 +145,13 @@ export function CustomerWorkOrderStartScreen({
         />
       )}
 
-      <ContinueBar locale={locale} messages={messages} customer={customer} chosen={chosen} />
+      <ContinueBar
+        locale={locale}
+        messages={messages}
+        customer={customer}
+        chosen={chosen}
+        canReadVehicle={canSearchVehicles}
+      />
     </div>
   );
 }
@@ -367,17 +375,24 @@ function CurrentVehicleChoice({
  * Without a vehicle this is a disabled button and not a link: a link that is
  * merely styled as unavailable is still followable, and the one rule this step
  * enforces is that nothing proceeds without a vehicle.
+ *
+ * With a vehicle, the link sits beside the identity of the vehicle it will
+ * carry. After registering or linking a vehicle in the sub-flow the operator
+ * is returned here with no list row selected, so without this the only
+ * statement of WHICH vehicle Continue carries was a uuid inside its address.
  */
 function ContinueBar({
   locale,
   messages,
   customer,
   chosen,
+  canReadVehicle,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly customer: ChosenCustomer;
   readonly chosen: ChosenVehicle | null;
+  readonly canReadVehicle: boolean;
 }) {
   if (chosen === null) {
     return (
@@ -400,7 +415,7 @@ function ContinueBar({
   }
 
   return (
-    <div>
+    <div className="flex flex-wrap items-center gap-4">
       <Link
         data-testid="work-order-start-continue"
         href={checkInWizardHref(locale, { customerId: customer.id, vehicleId: chosen.id })}
@@ -408,6 +423,118 @@ function ContinueBar({
       >
         {translate(messages, 'receptions.workOrderStart.continue')}
       </Link>
+      <SelectedVehicleIdentity messages={messages} chosen={chosen} canRead={canReadVehicle} />
+    </div>
+  );
+}
+
+interface IdentityRead {
+  readonly vehicleId: string;
+  readonly vehicle: CheckInVehicleSummary | null;
+  readonly plate: string | null;
+}
+
+/**
+ * Who the chosen vehicle is, read now rather than trusted from the moment it
+ * was picked.
+ *
+ * The record is read through `veh.vehicle-read` and its current plate through
+ * `veh.vehicle-plate-history` — both `veh.vehicle.read`. An operator without
+ * that permission is not sent to discover the refusal, and a refused or failed
+ * read is not a blank: the block still says "Selected vehicle" with the vehicle
+ * number the step already holds, and shows nothing it could not read.
+ */
+function SelectedVehicleIdentity({
+  messages,
+  chosen,
+  canRead,
+}: {
+  readonly messages: Messages;
+  readonly chosen: ChosenVehicle;
+  readonly canRead: boolean;
+}) {
+  const [read, setRead] = useState<IdentityRead | null>(null);
+
+  useEffect(() => {
+    if (!canRead) return;
+    let cancelled = false;
+    const vehicleId = chosen.id;
+    Promise.all([
+      readVehicleSummary(vehicleId).catch(() => null),
+      listPlates(vehicleId, { ...INITIAL_REQUEST, pageSize: 10 }, null).catch(() => null),
+    ]).then(([vehicle, plates]) => {
+      if (cancelled) return;
+      const current =
+        plates !== null && plates.status === 'ok'
+          ? (plates.rows.find((entry) => entry.active) ?? null)
+          : null;
+      setRead({
+        vehicleId,
+        vehicle: vehicle !== null && vehicle.status === 'ok' ? vehicle.data : null,
+        plate: current !== null ? current.plate : null,
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [canRead, chosen.id]);
+
+  const identity = canRead && read !== null && read.vehicleId === chosen.id ? read : null;
+  const vehicle = identity?.vehicle ?? null;
+  const displayNumber = vehicle !== null ? vehicle.displayNumber : chosen.displayNumber;
+  const makeModel =
+    vehicle !== null
+      ? [vehicle.makeName, vehicle.modelName].filter((part) => part !== null).join(' ')
+      : '';
+
+  return (
+    <div
+      className="flex flex-col gap-1 text-caption text-text-secondary"
+      data-testid="work-order-start-selected-vehicle"
+      aria-live="polite"
+    >
+      <span className="font-medium text-text-primary">
+        {translate(messages, 'receptions.workOrderStart.selectedVehicle')}
+      </span>
+      <span className="flex flex-wrap items-center gap-2">
+        <span>{translate(messages, 'vehicles.column.reference')}</span>
+        {displayNumber ? (
+          <code className="font-mono" dir="ltr" data-testid="work-order-start-selected-number">
+            {displayNumber}
+          </code>
+        ) : (
+          <span className="text-text-muted">
+            {translate(messages, 'vehicles.column.noReference')}
+          </span>
+        )}
+      </span>
+      {identity !== null && identity.plate !== null ? (
+        <span className="flex flex-wrap items-center gap-2">
+          <span>{translate(messages, 'vehicles.column.plate')}</span>
+          <span className="font-mono" dir="ltr" data-testid="work-order-start-selected-plate">
+            {identity.plate}
+          </span>
+        </span>
+      ) : null}
+      {vehicle !== null && vehicle.vin !== null ? (
+        <span className="flex flex-wrap items-center gap-2">
+          <span>{translate(messages, 'vehicles.column.vin')}</span>
+          <span className="font-mono" dir="ltr" data-testid="work-order-start-selected-vin">
+            {vehicle.vin}
+          </span>
+        </span>
+      ) : null}
+      {makeModel.length > 0 || (vehicle !== null && vehicle.modelYear !== null) ? (
+        <span
+          className="flex flex-wrap items-center gap-2"
+          data-testid="work-order-start-selected-model"
+        >
+          {makeModel.length > 0 ? <span dir="auto">{makeModel}</span> : null}
+          {vehicle !== null && vehicle.modelYear !== null ? (
+            <span dir="ltr">{vehicle.modelYear}</span>
+          ) : null}
+        </span>
+      ) : null}
     </div>
   );
 }

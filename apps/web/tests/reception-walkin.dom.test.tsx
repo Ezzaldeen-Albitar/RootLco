@@ -56,6 +56,19 @@ vi.mock('@/features/vehicles/relations-api', () => ({
 }));
 
 /*
+ * The two reads the customer-first step makes to state WHICH vehicle Continue
+ * carries: the vehicle record and its current plate (both `veh.vehicle.read`).
+ */
+const readVehicleSummary = vi.fn();
+vi.mock('@/features/receptions/support-api', () => ({
+  readVehicleSummary: (...args: unknown[]) => readVehicleSummary(...args),
+}));
+const listPlates = vi.fn();
+vi.mock('@/features/vehicles/history-api', () => ({
+  listPlates: (...args: unknown[]) => listPlates(...args),
+}));
+
+/*
  * The customer profile's own reads, mocked because the last three blocks of
  * this file exercise the entry point the profile offers into this same flow
  * (`P1-32-PRE-077`). A mock that is missing an export throws asynchronously
@@ -160,6 +173,45 @@ const SEARCH_HIT = {
   mergedIntoId: null,
 };
 
+/** What `veh.vehicle-read` answers for each fixture vehicle. */
+function vehicleSummary(vehicleId: string) {
+  const known: Record<string, { displayNumber: string | null; vin: string | null }> = {
+    [VEHICLE_ID]: { displayNumber: 'V-0007', vin: '1HGCM82633A004352' },
+    [SEARCHED_VEHICLE_ID]: { displayNumber: 'V-0100', vin: '2HGCM82633A004999' },
+    [CREATED_VEHICLE_ID]: { displayNumber: 'V-0200', vin: '2HGCM82633A004999' },
+  };
+  return {
+    id: vehicleId,
+    displayNumber: known[vehicleId]?.displayNumber ?? null,
+    vin: known[vehicleId]?.vin ?? null,
+    makeName: 'Honda',
+    modelName: 'Accord',
+    modelYear: 2021,
+    color: null,
+    lifecycleStatus: 'active',
+    workshopStatus: 'none',
+    mergedIntoId: null,
+  };
+}
+
+/** A plate that is still open, and one that was closed; only the first is current. */
+const CURRENT_PLATE = {
+  id: '5d6e7f80-6666-4666-8666-666666666666',
+  countryCode: 'JO',
+  plate: '12-34567',
+  validFrom: '2026-02-01',
+  validTo: null,
+  active: true,
+  createdAt: '2026-02-01T00:00:00.000Z',
+};
+const ENDED_PLATE = {
+  ...CURRENT_PLATE,
+  id: '6e7f8091-7777-4777-8777-777777777777',
+  plate: '99-00001',
+  validTo: '2026-02-01',
+  active: false,
+};
+
 function page(rows: readonly unknown[], overrides: Record<string, unknown> = {}) {
   return {
     status: 'ok',
@@ -210,6 +262,8 @@ beforeEach(() => {
   searchVehicles.mockReset();
   createVehicleAction.mockReset();
   linkCustomerAction.mockReset();
+  readVehicleSummary.mockReset();
+  listPlates.mockReset();
 
   searchCustomerDirectory.mockResolvedValue(page([CUSTOMER_HIT]));
   listCustomerVehicles.mockResolvedValue(page([OWN_VEHICLE, DEAD_VEHICLE_ROW]));
@@ -232,6 +286,12 @@ beforeEach(() => {
     messageKey: 'vehicles.relationships.linked',
     attempt: 1,
   });
+  readVehicleSummary.mockImplementation(async (vehicleId: string) => ({
+    status: 'ok',
+    data: vehicleSummary(vehicleId),
+    correlationId: 'fixed-correlation-id',
+  }));
+  listPlates.mockResolvedValue(page([ENDED_PLATE, CURRENT_PLATE]));
 });
 
 /** Search for the fixture customer and choose them. */
@@ -1095,5 +1155,130 @@ describe('continuing from the customer profile into the existing check-in flow',
 
     expect(createVehicleAction).not.toHaveBeenCalled();
     expect(linkCustomerAction).not.toHaveBeenCalled();
+  });
+
+  /** The identity block beside Continue. */
+  async function selectedIdentity(messages: typeof en = en) {
+    const block = await screen.findByTestId('work-order-start-selected-vehicle');
+    expect(block).toHaveTextContent(messages['receptions.workOrderStart.selectedVehicle']);
+    return block;
+  }
+
+  /** Find the fixture vehicle by VIN in the sub-flow, choose it, and record the link. */
+  async function searchAndLink(user: ReturnType<typeof userEvent.setup>) {
+    const search = await screen.findByTestId('intake-vehicle-search');
+    await user.type(within(search).getByLabelText(en['vehicles.search.vin']), SEARCH_HIT.vin);
+    await user.click(within(search).getByRole('button', { name: en['vehicles.search.submit'] }));
+    const results = await screen.findByTestId('intake-vehicle-search-results');
+    await within(results).findByText('V-0100');
+    await user.click(
+      within(results).getByRole('button', { name: en['receptions.intake.vehicle.choose'] })
+    );
+    await recordTheRelationship(user);
+  }
+
+  it('names the registered vehicle beside Continue after the create return path', async () => {
+    const user = userEvent.setup();
+    await addFromEmptyState(user);
+
+    const create = await screen.findByTestId('intake-vehicle-create');
+    await user.type(
+      within(create).getByLabelText(en['vehicles.create.vin'], { exact: false }),
+      '2hgcm82633a004999'
+    );
+    await user.click(within(create).getByRole('button', { name: en['vehicles.create.submit'] }));
+    await recordTheRelationship(user);
+
+    const block = await selectedIdentity();
+    expect(await within(block).findByTestId('work-order-start-selected-plate')).toHaveTextContent(
+      '12-34567'
+    );
+    expect(within(block).queryByText('99-00001')).not.toBeInTheDocument();
+    expect(within(block).getByTestId('work-order-start-selected-number')).toHaveTextContent(
+      'V-0200'
+    );
+    expect(within(block).getByTestId('work-order-start-selected-vin')).toHaveTextContent(
+      '2HGCM82633A004999'
+    );
+    expect(within(block).getByTestId('work-order-start-selected-model')).toHaveTextContent(
+      'Honda Accord'
+    );
+    expect(readVehicleSummary).toHaveBeenCalledWith(CREATED_VEHICLE_ID);
+    expect(listPlates.mock.calls[0]?.[0]).toBe(CREATED_VEHICLE_ID);
+    // The identity and the link describe the same vehicle.
+    expect(screen.getByTestId('work-order-start-continue').getAttribute('href')).toContain(
+      CREATED_VEHICLE_ID
+    );
+  });
+
+  it('names the searched and linked vehicle beside Continue after the link return path', async () => {
+    const user = userEvent.setup();
+    await addFromEmptyState(user);
+    await searchAndLink(user);
+
+    const block = await selectedIdentity();
+    expect(await within(block).findByTestId('work-order-start-selected-plate')).toHaveTextContent(
+      '12-34567'
+    );
+    expect(within(block).getByTestId('work-order-start-selected-number')).toHaveTextContent(
+      'V-0100'
+    );
+    expect(within(block).getByTestId('work-order-start-selected-vin')).toHaveTextContent(
+      SEARCH_HIT.vin
+    );
+    const model = within(block).getByTestId('work-order-start-selected-model');
+    expect(within(model).getByText('Honda Accord')).toBeInTheDocument();
+    expect(within(model).getByText('2021')).toBeInTheDocument();
+    expect(readVehicleSummary).toHaveBeenCalledWith(SEARCHED_VEHICLE_ID);
+  });
+
+  it('falls back to a neutral label and the vehicle number when the vehicle read is refused', async () => {
+    readVehicleSummary.mockResolvedValue({ status: 'denied', correlationId: 'refused-ref' });
+    listPlates.mockResolvedValue(page([], { status: 'denied' }));
+    const user = userEvent.setup();
+    await addFromEmptyState(user);
+    await searchAndLink(user);
+
+    const block = await selectedIdentity();
+    await vi.waitFor(() => expect(readVehicleSummary).toHaveBeenCalledWith(SEARCHED_VEHICLE_ID));
+    await vi.waitFor(() => expect(listPlates).toHaveBeenCalled());
+    expect(within(block).getByTestId('work-order-start-selected-number')).toHaveTextContent(
+      'V-0100'
+    );
+    expect(within(block).queryByTestId('work-order-start-selected-plate')).not.toBeInTheDocument();
+    expect(within(block).queryByTestId('work-order-start-selected-vin')).not.toBeInTheDocument();
+    expect(within(block).queryByTestId('work-order-start-selected-model')).not.toBeInTheDocument();
+  });
+
+  it('does not read the vehicle for an operator without vehicle read access, and stays neutral', async () => {
+    const user = userEvent.setup();
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps({ canSearchVehicles: false })} />);
+
+    await user.click(await screen.findByRole('radio'));
+
+    const block = await selectedIdentity();
+    expect(within(block).getByTestId('work-order-start-selected-number')).toHaveTextContent(
+      'V-0007'
+    );
+    expect(within(block).queryByTestId('work-order-start-selected-vin')).not.toBeInTheDocument();
+    expect(readVehicleSummary).not.toHaveBeenCalled();
+    expect(listPlates).not.toHaveBeenCalled();
+  });
+
+  it('names the selected vehicle in Arabic too', async () => {
+    const user = userEvent.setup();
+    renderRtl(<CustomerWorkOrderStartScreen {...stepProps({ locale: 'ar', messages: ar })} />);
+
+    await user.click(await screen.findByRole('radio'));
+
+    const block = await selectedIdentity(ar);
+    expect(await within(block).findByTestId('work-order-start-selected-plate')).toHaveTextContent(
+      '12-34567'
+    );
+    expect(block).toHaveTextContent(ar['vehicles.column.plate']);
+    expect(block).toHaveTextContent(ar['vehicles.column.vin']);
+    expect(within(block).getByTestId('work-order-start-selected-number')).toHaveTextContent(
+      'V-0007'
+    );
   });
 });
