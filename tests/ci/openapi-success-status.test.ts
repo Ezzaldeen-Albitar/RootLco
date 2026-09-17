@@ -62,7 +62,9 @@ describe('every operation publishes the success status it returns', () => {
     // 412 with the P1-31 warranty status-history read (P-18), one further route
     // module whose single literal status the scanner resolves from the handler.
     // P1-31 P-12 adds one 200 export response.
-    expect(actual.size).toBe(413);
+    // 431 with the P1-32 preparatory inventory slice: eighteen more route
+    // handlers, each resolved from its own literal status or its absence.
+    expect(actual.size).toBe(431);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -103,7 +105,12 @@ describe('every operation publishes the success status it returns', () => {
     // The P1-31 employee register (P-17) publishes four operations: the create
     // returns 201 (114 -> 115) and the other three — the list, the detail and the
     // status command — return 200.
-    expect(counts[201]).toBe(115);
+    // The P1-32 preparatory inventory slice publishes eighteen operations and
+    // exactly ONE literal 201: the adjustment request. The three creates that can
+    // replay — transfer dispatch, goods receipt, count open — return
+    // `replayed ? 200 : 201`, which the scanner cannot read as a literal and so
+    // publishes as 200, exactly as `inv.stock-reservation-create` already does.
+    expect(counts[201]).toBe(116);
     expect(counts[202]).toBe(1);
     // The two P1-30 opening-batch reads (S-17) are GETs returning 200, so
     // 264 -> 266 while 201 and 202 are unchanged.
@@ -134,7 +141,11 @@ describe('every operation publishes the success status it returns', () => {
     // GET returning 200 with the 201 and 202 counts unchanged. That pair not
     // moving is the assertion carrying weight: a ledger read that had shipped an
     // append beside it would show up here and nowhere else in this file.
-    expect(counts[200]).toBe(297);
+    // 297 -> 314 with the P1-32 preparatory inventory slice: seventeen of its
+    // eighteen operations publish 200 — the seven reads, the seven state changes,
+    // and the three replayable creates whose status is not a literal — and the
+    // adjustment request is the one 201 counted above.
+    expect(counts[200]).toBe(314);
   });
 
   it('reads the handler, not the declaration', () => {

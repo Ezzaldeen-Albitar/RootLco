@@ -3061,6 +3061,116 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'isolation', 'pagination'],
     note: 'P1-30 A2 seam S-16, class B, and the read every other stock operation depended on. The location is the SCOPE ANCHOR: inv.post_stock_movement derives company_id and branch_id from it rather than from anything the caller sends, and reserving, issuing, returning, adjusting and recording damage all take a locationId — so before this route every one of those commands required an id the product could not produce, while readLocation existed as an internal scope resolver with no list in front of it. companyId and branchId are REQUIRED and are the authorizationTarget: a branch-blind location list would be a directory of which branches exist and how they are laid out. INACTIVE locations are listed rather than hidden, because stock already sitting in a location that was later deactivated still has to be findable and a picker that omitted it would strand that stock; status is on every row and offered as a filter instead. Ordered by location_code ascending, which uq_stock_locations_code makes total within a branch and which is the string an operator actually reads; name and parentLocationId are carried because two bins in different warehouses can be indistinguishable otherwise. No amount and no quantity crosses — a location is reference data. Falsifiability measured: neutralising the company/branch predicate is RED on three cases with no change to the suite, because the location fixtures already span both branches',
   },
+  // P1-32 preparatory inventory slice: transfers, goods receipts, cost history,
+  // adjustments and counts. The assertions rest on balances, movement rows, cost
+  // layers and adjustment states rather than on HTTP statuses.
+  'inv.stock-transfer-create': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'audit', 'outbox', 'idempotency', 'isolation'],
+    note: 'dispatch moves the quantity out of the source and into the branch transit location under the balance lock; the source loses it, the destination does not yet have it, availability never lists the transit cell and reports inTransitQty instead; availability is CHECKED, not freed, so reserved stock refuses the dispatch; a replayed body key returns the same transfer with replayed true and a different request under that key is a conflict',
+  },
+  'inv.stock-transfer-list': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'isolation'],
+    note: 'companyId and branchId are the authorizationTarget; direction=inbound matches the destination branch, which reads the row through sel_stock_transfers_destination',
+  },
+  'inv.stock-transfer-receive': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'idempotency', 'isolation'],
+    note: 'received whole or not at all (ck_stock_transfers_received_quantity); the row is locked before its status is re-read so a second receipt is refused; a cross-branch receipt settles the source transit AND the destination, so it is authorized at both ends and a destination-only caller who can list the transfer is refused',
+  },
+  'inv.stock-transfer-cancel': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'idempotency', 'isolation'],
+    note: 'returns the quantity from transit to the origin through the settlement pair; four movements remain with zero net effect; only a dispatched transfer can be cancelled',
+  },
+  'inv.goods-receipt-create': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'a draft moves nothing; a unit cost is accepted only from a caller holding inv.cost.view in the branch and is otherwise refused on the field rather than silently dropped',
+  },
+  'inv.goods-receipt-list': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'isolation'],
+    note: 'branch-scoped by the required companyId/branchId authorizationTarget',
+  },
+  'inv.goods-receipt-read': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'cross-tenant', 'isolation'],
+    note: 'lines carry hasUnitCost and never the figure, so an inv.stock.read caller cannot use this read to see cost',
+  },
+  'inv.goods-receipt-post': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'stale-version',
+      'audit',
+      'outbox',
+      'idempotency',
+      'isolation',
+    ],
+    note: 'one receipt movement per line and one APPENDED cost layer per priced line; an earlier layer keeps its row and figure after a later receipt at a different price, and inv.item_cost_details is never written; a priced posting without inv.cost.view is refused before the gated insert',
+  },
+  'inv.item-cost-history-read': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'latest and quantity-weighted average cost are derived in SQL numeric from the layers on every read and stored nowhere; the operation declares inv.cost.view and RLS on the layers requires it again',
+  },
+  'inv.stock-adjustment-create': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'pending and moves nothing; the restricted value impact needs inv.cost.view; the table has no idempotency column, so replay is the Idempotency-Key header and no second adjustment is written',
+  },
+  'inv.stock-adjustment-list': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'isolation'],
+    note: 'branch-scoped list with status, item and location filters',
+  },
+  'inv.stock-adjustment-approve': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'idempotency', 'isolation'],
+    note: 'inv.adjustment.approve; the requester may not decide their own request (trigger for approvals, inv.reject_adjustment for rejections); only an approval posts a movement and a rejection moves nothing',
+  },
+  'inv.stock-count-open': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'snapshots on-hand for every item at the location without freezing the ledger; one open count per location (uq_stock_counts_open_location)',
+  },
+  'inv.stock-count-list': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'isolation'],
+    note: 'every row carries varianceLineCount and absoluteVarianceQty so a discrepancy is visible without opening the count',
+  },
+  'inv.stock-count-read': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'cross-tenant', 'isolation'],
+    note: 'lines carry snapshot, movements during the count, counted quantity, the GENERATED variance and the raised adjustment status',
+  },
+  'inv.stock-count-line-record': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'stale-version',
+      'audit',
+      'idempotency',
+      'isolation',
+    ],
+    note: 'If-Match on the COUNT version, the aggregate two counters race on; zero is a legal count',
+  },
+  'inv.stock-count-reconcile': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'movements posted after the snapshot are folded into the expected quantity, so a transfer mid-count is not reported as a loss; each non-zero variance raises a PENDING adjustment and nothing is posted until a second person approves it',
+  },
+  'inv.stock-count-cancel': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'only an open or counting count; raises no adjustment and moves no stock',
+  },
 };
 
 // ---------------------------------------------------------------------------

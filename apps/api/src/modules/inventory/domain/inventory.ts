@@ -31,6 +31,8 @@ export const MOVEMENT_TYPES = Object.freeze([
   'return',
   'damage',
   'adjustment',
+  'transfer',
+  'receipt',
 ] as const);
 export type MovementType = (typeof MOVEMENT_TYPES)[number];
 
@@ -41,6 +43,9 @@ export const REFERENCE_KINDS = Object.freeze([
   'part_return',
   'damage',
   'adjustment',
+  'transfer_dispatch',
+  'transfer_receipt',
+  'goods_receipt_line',
 ] as const);
 export type ReferenceKind = (typeof REFERENCE_KINDS)[number];
 
@@ -57,9 +62,76 @@ export const RESERVATION_STATES = Object.freeze([
 ] as const);
 export type ReservationState = (typeof RESERVATION_STATES)[number];
 
-/** `ck_stock_locations_type`. `quarantine` holds damaged stock. */
-export const LOCATION_TYPES = Object.freeze(['warehouse', 'storage', 'quarantine'] as const);
+/**
+ * `ck_stock_locations_type`. `quarantine` holds damaged stock; `transit` holds the
+ * quantity of a dispatched transfer until it is received.
+ *
+ * Neither is sellable, and neither is a flag: a unit leaves availability because it
+ * SITS somewhere else, which no application filter can forget to apply. A `transit`
+ * location is branch-level and parentless (`inv.guard_stock_location_hierarchy`),
+ * created on first use by `inv.ensure_transit_location`, and never created through
+ * the location-catalogue write path.
+ */
+export const LOCATION_TYPES = Object.freeze([
+  'warehouse',
+  'storage',
+  'quarantine',
+  'transit',
+] as const);
 export type LocationType = (typeof LOCATION_TYPES)[number];
+
+/**
+ * The location types an operator may create.
+ *
+ * `transit` is absent on purpose. It is system-owned: exactly one per branch, named
+ * by `inv.dispatch_transfer`, and a second one an operator created by hand would
+ * hold transfers that no transfer row points at.
+ */
+export const OPERATOR_LOCATION_TYPES = Object.freeze([
+  'warehouse',
+  'storage',
+  'quarantine',
+] as const);
+export type OperatorLocationType = (typeof OPERATOR_LOCATION_TYPES)[number];
+
+/** `ck_stock_transfers_status`. `received` and `cancelled` are both terminal. */
+export const TRANSFER_STATES = Object.freeze(['dispatched', 'received', 'cancelled'] as const);
+export type TransferState = (typeof TRANSFER_STATES)[number];
+
+/** `ck_goods_receipts_status`. */
+export const GOODS_RECEIPT_STATES = Object.freeze(['draft', 'posted', 'cancelled'] as const);
+export type GoodsReceiptState = (typeof GOODS_RECEIPT_STATES)[number];
+
+/** `ck_stock_counts_status`. */
+export const STOCK_COUNT_STATES = Object.freeze([
+  'open',
+  'counting',
+  'reconciled',
+  'cancelled',
+] as const);
+export type StockCountState = (typeof STOCK_COUNT_STATES)[number];
+
+/** `ck_stock_adjustments_status`. */
+export const ADJUSTMENT_STATES = Object.freeze(['pending', 'approved', 'rejected'] as const);
+export type AdjustmentState = (typeof ADJUSTMENT_STATES)[number];
+
+/**
+ * The two decisions a checker may record on a pending adjustment.
+ *
+ * Deliberately not `ADJUSTMENT_STATES`: `pending` is a state no decision can
+ * produce, and offering it as one would make "decide nothing" a request the API
+ * accepts and silently drops.
+ */
+export const ADJUSTMENT_DECISIONS = Object.freeze(['approved', 'rejected'] as const);
+export type AdjustmentDecision = (typeof ADJUSTMENT_DECISIONS)[number];
+
+/** `ck_item_cost_layers_source_kind`. */
+export const COST_LAYER_SOURCE_KINDS = Object.freeze([
+  'goods_receipt_line',
+  'opening_line',
+  'external_purchase',
+] as const);
+export type CostLayerSourceKind = (typeof COST_LAYER_SOURCE_KINDS)[number];
 
 /** `ck_item_master_type`. */
 export const ITEM_TYPES = Object.freeze([
@@ -140,6 +212,15 @@ export const MOVEMENT_REFERENCE_MATRIX: readonly {
   { movementType: 'damage', referenceKind: 'damage', direction: 'in' },
   { movementType: 'adjustment', referenceKind: 'adjustment', direction: 'in' },
   { movementType: 'adjustment', referenceKind: 'adjustment', direction: 'out' },
+  // A transfer posts two pairs separated in time: the dispatch takes the quantity
+  // out of the source cell and into transit, and the settlement takes it out of
+  // transit and into either the destination (received) or the origin (cancelled).
+  // Four rows, because each leg is a separate movement the ledger keeps forever.
+  { movementType: 'transfer', referenceKind: 'transfer_dispatch', direction: 'out' },
+  { movementType: 'transfer', referenceKind: 'transfer_dispatch', direction: 'in' },
+  { movementType: 'transfer', referenceKind: 'transfer_receipt', direction: 'out' },
+  { movementType: 'transfer', referenceKind: 'transfer_receipt', direction: 'in' },
+  { movementType: 'receipt', referenceKind: 'goods_receipt_line', direction: 'in' },
 ]);
 
 /** True when the triple is one the protected schema will accept. */
@@ -386,5 +467,72 @@ export function assertQuarantineDestination(
   }
   if (from.locationType === 'quarantine') {
     throw new InventoryRuleError('stock already in quarantine cannot be damaged again');
+  }
+  // The quantity in a transit location is exactly what its open transfers will take
+  // out on receipt. Damaging part of it would leave a transfer that can never be
+  // received, because `inv.receive_transfer` must move the whole dispatched amount.
+  if (from.locationType === 'transit') {
+    throw new InventoryRuleError(
+      'stock in transit cannot be recorded as damaged; receive or cancel the transfer first'
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Transfer and count rules the protected functions state less readably.
+// ---------------------------------------------------------------------------
+
+/**
+ * A transfer moves stock between two sellable locations of ONE company.
+ *
+ * `inv.dispatch_transfer` refuses a cross-company pair too, but as a
+ * `check_violation` whose message is not a caller-safe contract. The company rule
+ * is not a convenience either: `inv.stock_transfers` carries ONE `company_id` for
+ * both ends, so a cross-company transfer is unrepresentable rather than merely
+ * refused.
+ *
+ * Quarantine and transit are excluded at both ends. Quarantined stock leaves
+ * through an approved adjustment and a second person, so letting a transfer move it
+ * to a sellable location in another branch would be a way around that rule; and a
+ * transit location is the interval between two places, not a place.
+ */
+export function assertTransferEndpoints(
+  from: { readonly id: string; readonly companyId: string; readonly locationType: string },
+  to: { readonly id: string; readonly companyId: string; readonly locationType: string }
+): void {
+  if (from.id === to.id) {
+    throw new InventoryRuleError('a transfer must move stock between two different locations');
+  }
+  if (from.companyId !== to.companyId) {
+    throw new InventoryRuleError(
+      'a transfer may not cross a company boundary; move the stock within one company'
+    );
+  }
+  if (from.locationType === 'transit' || to.locationType === 'transit') {
+    throw new InventoryRuleError(
+      'a transit location holds transfers already under way and cannot be an endpoint of one'
+    );
+  }
+  if (from.locationType === 'quarantine' || to.locationType === 'quarantine') {
+    throw new InventoryRuleError(
+      'quarantined stock leaves through an approved adjustment, not through a transfer'
+    );
+  }
+}
+
+/**
+ * A stock count addresses a location whose quantities describe a shelf.
+ *
+ * Counting a transit location would compare a shelf against quantities that are by
+ * definition on no shelf, and every line would read as a shortage.
+ */
+export function assertCountableLocation(location: {
+  readonly locationCode: string;
+  readonly locationType: string;
+}): void {
+  if (location.locationType === 'transit') {
+    throw new InventoryRuleError(
+      `stock location ${location.locationCode} holds transfers in transit and cannot be counted`
+    );
   }
 }

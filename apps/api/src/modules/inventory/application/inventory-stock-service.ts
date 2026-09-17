@@ -23,12 +23,11 @@
 import { AppFailure } from '@/server/errors/app-failure';
 import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
-import { isSqlState, SQLSTATE } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import type { InventoryRepository, StockLocationRow } from '../data/inventory-repository';
+import { parseQuantity, toDomainFailure } from './inventory-failures';
 import {
-  InventoryRuleError,
   Quantity,
   assertLegalMovementReference,
   assertQuarantineDestination,
@@ -78,60 +77,6 @@ export interface DamageView {
   readonly quarantineLocationId: string;
   readonly quantity: string;
   readonly disposition: string;
-}
-
-/**
- * Translates the protected schema's refusals into the controlled error catalog.
- *
- * The SQLSTATE is the contract, not the message text: `23514` from
- * `ck_stock_balances_available` and `23514` from `inv.reserve_stock` are the same
- * class of answer — the database refused because the invariant would break — and a
- * caller needs `ERR-TRN-001` for both. Constraint names and SQL are never echoed.
- */
-function toDomainFailure(error: unknown, what: string): never {
-  if (error instanceof InventoryRuleError) {
-    throw new AppFailure('ERR-TRN-001', { message: error.message });
-  }
-  if (isSqlState(error, SQLSTATE.checkViolation)) {
-    throw new AppFailure('ERR-TRN-001', {
-      message: `${what} was refused because it would break a stock invariant`,
-    });
-  }
-  if (isSqlState(error, SQLSTATE.foreignKeyViolation)) {
-    throw new AppFailure('ERR-RES-001', {
-      message: `${what} names an item, location, or work order that does not exist in scope`,
-    });
-  }
-  if (isSqlState(error, SQLSTATE.uniqueViolation)) {
-    throw new AppFailure('ERR-INT-001', {
-      message: `${what} has already been recorded`,
-    });
-  }
-  throw error;
-}
-
-/**
- * Parses a quantity and maps a domain refusal onto the error catalog.
- *
- * The parse and the postable check BOTH throw `InventoryRuleError`, and an
- * unmapped domain error surfaces as `ERR-SYS-001` — a 500 that tells a caller its
- * request broke the server when in fact the server refused it. The Zod schema
- * catches most malformed shapes at the edge, but not every one: `"0"` is a
- * well-formed decimal string and only the `> 0` rule refuses it, so this wrapper is
- * the difference between a 409 and a 500 for the zero case.
- */
-function parseQuantity(raw: string, field = 'quantity'): Quantity {
-  try {
-    return Quantity.parse(raw, field).assertPostable(field);
-  } catch (error) {
-    if (error instanceof InventoryRuleError) {
-      throw new AppFailure('ERR-VAL-001', {
-        message: error.message,
-        safeDetails: { violations: [{ path: `body.${field}`, rule: 'custom' }] },
-      });
-    }
-    throw error;
-  }
 }
 
 export class InventoryStockService {
@@ -773,7 +718,7 @@ export class InventoryStockService {
   // Shared preconditions.
   // -------------------------------------------------------------------------
 
-  private async requireLocation(db: DbHandle, locationId: string): Promise<StockLocationRow> {
+  public async requireLocation(db: DbHandle, locationId: string): Promise<StockLocationRow> {
     const location = await this.repository.readLocation(db, locationId);
     if (!location) {
       throw new AppFailure('ERR-RES-001', {
@@ -805,7 +750,7 @@ export class InventoryStockService {
    * `inv.stock_adjustments` and `inv.approve_adjustment`, which need
    * `inv.adjustment.approve` and a second person — not through `inv.stock.operate`.
    */
-  private async requireSellableLocation(
+  public async requireSellableLocation(
     db: DbHandle,
     locationId: string
   ): Promise<StockLocationRow> {
@@ -815,6 +760,16 @@ export class InventoryStockService {
         message:
           `Stock location ${location.locationCode} is a quarantine location; damaged stock ` +
           'cannot be reserved or issued. Dispose of it through an approved adjustment.',
+      });
+    }
+    // Transit for the same reason quarantine is excluded: the quantity there belongs
+    // to a transfer under way, and reserving or issuing it would take a part out of a
+    // delivery that has not arrived at either end.
+    if (location.locationType === 'transit') {
+      throw new AppFailure('ERR-TRN-001', {
+        message:
+          `Stock location ${location.locationCode} holds transfers in transit; that stock ` +
+          'cannot be reserved or issued until the transfer is received.',
       });
     }
     return location;
@@ -828,7 +783,7 @@ export class InventoryStockService {
    * quantity means nothing. An archived item is refused for the same reason its
    * lifecycle is terminal.
    */
-  private async requireStockTrackedItem(db: DbHandle, itemId: string): Promise<void> {
+  public async requireStockTrackedItem(db: DbHandle, itemId: string): Promise<void> {
     const item = await this.repository.readItem(db, itemId);
     if (!item) {
       throw new AppFailure('ERR-RES-001', { message: `Item ${itemId} was not found` });

@@ -344,6 +344,21 @@ import '@/app/api/v1/stock-returns/route';
 import '@/app/api/v1/damaged-stock/route';
 import '@/app/api/v1/customer-supplied-parts/route';
 import '@/app/api/v1/external-purchase-parts/route';
+// P1-32 preparatory slice — transfers, goods receipts, adjustments and counts.
+import '@/app/api/v1/stock-transfers/route';
+import '@/app/api/v1/stock-transfers/[transferId]/receipt/route';
+import '@/app/api/v1/stock-transfers/[transferId]/cancellation/route';
+import '@/app/api/v1/goods-receipts/route';
+import '@/app/api/v1/goods-receipts/[receiptId]/route';
+import '@/app/api/v1/goods-receipts/[receiptId]/posting/route';
+import '@/app/api/v1/items/[itemId]/cost-history/route';
+import '@/app/api/v1/stock-adjustments/route';
+import '@/app/api/v1/stock-adjustments/[adjustmentId]/approval/route';
+import '@/app/api/v1/stock-counts/route';
+import '@/app/api/v1/stock-counts/[countId]/route';
+import '@/app/api/v1/stock-counts/[countId]/lines/[itemId]/route';
+import '@/app/api/v1/stock-counts/[countId]/reconciliation/route';
+import '@/app/api/v1/stock-counts/[countId]/cancellation/route';
 
 // Phase 1-22 — billing, payment, delivery and warranty.
 //

@@ -765,6 +765,14 @@ export async function cleanP1_21Fixtures(): Promise<void> {
     `DELETE FROM inv.part_returns WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.part_issues WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.damaged_stock WHERE tenant_id IN ($1,$2)`,
+    // P1-32 preparatory slice: count lines cite adjustments, receipt lines their
+    // receipts, and every one of these cites an item or a location below.
+    `DELETE FROM inv.stock_count_lines WHERE tenant_id IN ($1,$2)`,
+    `DELETE FROM inv.stock_counts WHERE tenant_id IN ($1,$2)`,
+    `DELETE FROM inv.goods_receipt_lines WHERE tenant_id IN ($1,$2)`,
+    `DELETE FROM inv.goods_receipts WHERE tenant_id IN ($1,$2)`,
+    `DELETE FROM inv.item_cost_layers WHERE tenant_id IN ($1,$2)`,
+    `DELETE FROM inv.stock_transfers WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.stock_movements WHERE tenant_id IN ($1,$2)`,
     // After the movements that cite them: a top-up seed approves an adjustment,
     // and a leftover row would keep the item and location rows below undeletable.

@@ -415,6 +415,16 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('inv.customer_supplied_parts');
   await deleteFrom('inv.external_purchase_part_details');
   await deleteFrom('inv.external_purchase_parts');
+  // P1-32 preparatory slice. Count lines cite the adjustments their variances
+  // raised, so they go before `inv.stock_adjustments`; receipt lines before their
+  // receipts; the append-only cost layers and the transfers cite items and
+  // locations and carry no child of their own.
+  await deleteFrom('inv.stock_count_lines');
+  await deleteFrom('inv.stock_counts');
+  await deleteFrom('inv.goods_receipt_lines');
+  await deleteFrom('inv.goods_receipts');
+  await deleteFrom('inv.item_cost_layers');
+  await deleteFrom('inv.stock_transfers');
   await deleteFrom('inv.stock_adjustment_details');
   await deleteFrom('inv.stock_adjustments');
   await deleteFrom('inv.opening_inventory_lines');

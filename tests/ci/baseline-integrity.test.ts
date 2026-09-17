@@ -508,7 +508,9 @@ describe('the coverage include lists are pinned, because they are the denominato
     );
     expect(files.filter((file) => file.endsWith('.d.ts'))).toEqual([]);
     // P1-31 P-12 adds ReportExportService to the measured backend population.
-    expect(files.length).toBe(291);
+    // 296 with the P1-32 preparatory inventory slice: the transfer, receipt,
+    // adjustment and count services and the shared failure mapper.
+    expect(files.length).toBe(296);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -585,7 +587,11 @@ describe('the coverage include lists are pinned, because they are the denominato
      * include list admits and `exclude` then removes; the two numbers moving
      * together by the same count is what says no file slipped in behind the
      * exclusion.
+     *
+     * 295 with the P1-32 preparatory inventory slice, and 296 above: five new
+     * inventory application files, none under `server/openapi/`, so both numbers
+     * move by five. The floors are untouched for the same reason.
      */
-    expect(instrumented.length).toBe(290);
+    expect(instrumented.length).toBe(295);
   });
 });

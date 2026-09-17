@@ -4303,6 +4303,154 @@ Generated from the live catalog (svc / quo / inv). Money is `numeric(18,4)`; qua
 | 13  | `deleted_at`         | timestamp with time zone | yes      |
 | 14  | `deleted_by`         | uuid                     | yes      |
 
+### Inventory operations (`inv`, P1-32 preparatory slice)
+
+Generated from the live catalog after `20260917090000_inv_transfers_receipts_counts.sql`. Transfers hold stock in a branch-level `transit` location between dispatch and receipt; goods receipts append restricted cost layers and never rewrite earlier ones; stock counts raise pending adjustments and post nothing. Restricted columns: `inv.item_cost_layers.unit_cost` (every policy gated by `inv.cost.view`) and `inv.goods_receipt_lines.unit_cost` (the posting input, never returned by any read).
+
+#### inv.goods_receipt_lines
+
+| #   | Column           | Type                     | Nullable |
+| --- | ---------------- | ------------------------ | -------- |
+| 1   | `id`             | uuid                     | no       |
+| 2   | `tenant_id`      | uuid                     | no       |
+| 3   | `company_id`     | uuid                     | no       |
+| 4   | `branch_id`      | uuid                     | no       |
+| 5   | `receipt_id`     | uuid                     | no       |
+| 6   | `line_no`        | integer                  | no       |
+| 7   | `item_id`        | uuid                     | no       |
+| 8   | `location_id`    | uuid                     | no       |
+| 9   | `quantity`       | numeric                  | no       |
+| 10  | `unit_cost`      | numeric                  | yes      |
+| 11  | `currency_code`  | text                     | yes      |
+| 12  | `record_version` | integer                  | no       |
+| 13  | `created_at`     | timestamp with time zone | no       |
+| 14  | `created_by`     | uuid                     | no       |
+| 15  | `updated_at`     | timestamp with time zone | yes      |
+| 16  | `updated_by`     | uuid                     | yes      |
+
+#### inv.goods_receipts
+
+| #   | Column               | Type                     | Nullable |
+| --- | -------------------- | ------------------------ | -------- |
+| 1   | `id`                 | uuid                     | no       |
+| 2   | `tenant_id`          | uuid                     | no       |
+| 3   | `company_id`         | uuid                     | no       |
+| 4   | `branch_id`          | uuid                     | no       |
+| 5   | `reference`          | text                     | yes      |
+| 6   | `supplier_reference` | text                     | yes      |
+| 7   | `received_on`        | date                     | no       |
+| 8   | `status`             | text                     | no       |
+| 9   | `notes`              | text                     | yes      |
+| 10  | `posted_at`          | timestamp with time zone | yes      |
+| 11  | `posted_by`          | uuid                     | yes      |
+| 12  | `cancelled_at`       | timestamp with time zone | yes      |
+| 13  | `cancelled_by`       | uuid                     | yes      |
+| 14  | `correlation_id`     | uuid                     | yes      |
+| 15  | `idempotency_key`    | text                     | yes      |
+| 16  | `record_version`     | integer                  | no       |
+| 17  | `created_at`         | timestamp with time zone | no       |
+| 18  | `created_by`         | uuid                     | no       |
+| 19  | `updated_at`         | timestamp with time zone | yes      |
+| 20  | `updated_by`         | uuid                     | yes      |
+
+#### inv.item_cost_layers
+
+| #   | Column           | Type                     | Nullable |
+| --- | ---------------- | ------------------------ | -------- |
+| 1   | `id`             | uuid                     | no       |
+| 2   | `tenant_id`      | uuid                     | no       |
+| 3   | `company_id`     | uuid                     | no       |
+| 4   | `branch_id`      | uuid                     | no       |
+| 5   | `item_id`        | uuid                     | no       |
+| 6   | `source_kind`    | text                     | no       |
+| 7   | `source_id`      | uuid                     | no       |
+| 8   | `quantity`       | numeric                  | no       |
+| 9   | `unit_cost`      | numeric                  | no       |
+| 10  | `currency_code`  | text                     | no       |
+| 11  | `effective_at`   | timestamp with time zone | no       |
+| 12  | `classification` | text                     | no       |
+| 13  | `created_at`     | timestamp with time zone | no       |
+| 14  | `created_by`     | uuid                     | no       |
+
+#### inv.stock_count_lines
+
+| #   | Column                        | Type                     | Nullable |
+| --- | ----------------------------- | ------------------------ | -------- |
+| 1   | `id`                          | uuid                     | no       |
+| 2   | `tenant_id`                   | uuid                     | no       |
+| 3   | `company_id`                  | uuid                     | no       |
+| 4   | `branch_id`                   | uuid                     | no       |
+| 5   | `count_id`                    | uuid                     | no       |
+| 6   | `item_id`                     | uuid                     | no       |
+| 7   | `snapshot_qty`                | numeric                  | no       |
+| 8   | `counted_qty`                 | numeric                  | yes      |
+| 9   | `movement_delta_during_count` | numeric                  | no       |
+| 10  | `variance_qty`                | numeric                  | yes      |
+| 11  | `adjustment_id`               | uuid                     | yes      |
+| 12  | `record_version`              | integer                  | no       |
+| 13  | `created_at`                  | timestamp with time zone | no       |
+| 14  | `created_by`                  | uuid                     | no       |
+| 15  | `updated_at`                  | timestamp with time zone | yes      |
+| 16  | `updated_by`                  | uuid                     | yes      |
+
+#### inv.stock_counts
+
+| #   | Column            | Type                     | Nullable |
+| --- | ----------------- | ------------------------ | -------- |
+| 1   | `id`              | uuid                     | no       |
+| 2   | `tenant_id`       | uuid                     | no       |
+| 3   | `company_id`      | uuid                     | no       |
+| 4   | `branch_id`       | uuid                     | no       |
+| 5   | `location_id`     | uuid                     | no       |
+| 6   | `status`          | text                     | no       |
+| 7   | `snapshot_at`     | timestamp with time zone | no       |
+| 8   | `counted_by`      | uuid                     | no       |
+| 9   | `reconciled_at`   | timestamp with time zone | yes      |
+| 10  | `reconciled_by`   | uuid                     | yes      |
+| 11  | `cancelled_at`    | timestamp with time zone | yes      |
+| 12  | `cancelled_by`    | uuid                     | yes      |
+| 13  | `cancel_reason`   | text                     | yes      |
+| 14  | `notes`           | text                     | yes      |
+| 15  | `correlation_id`  | uuid                     | yes      |
+| 16  | `idempotency_key` | text                     | yes      |
+| 17  | `record_version`  | integer                  | no       |
+| 18  | `created_at`      | timestamp with time zone | no       |
+| 19  | `created_by`      | uuid                     | no       |
+| 20  | `updated_at`      | timestamp with time zone | yes      |
+| 21  | `updated_by`      | uuid                     | yes      |
+
+#### inv.stock_transfers
+
+| #   | Column                | Type                     | Nullable |
+| --- | --------------------- | ------------------------ | -------- |
+| 1   | `id`                  | uuid                     | no       |
+| 2   | `tenant_id`           | uuid                     | no       |
+| 3   | `company_id`          | uuid                     | no       |
+| 4   | `branch_id`           | uuid                     | no       |
+| 5   | `item_id`             | uuid                     | no       |
+| 6   | `from_location_id`    | uuid                     | no       |
+| 7   | `transit_location_id` | uuid                     | no       |
+| 8   | `to_branch_id`        | uuid                     | no       |
+| 9   | `to_location_id`      | uuid                     | no       |
+| 10  | `quantity`            | numeric                  | no       |
+| 11  | `received_quantity`   | numeric                  | yes      |
+| 12  | `status`              | text                     | no       |
+| 13  | `reason`              | text                     | yes      |
+| 14  | `cancel_reason`       | text                     | yes      |
+| 15  | `dispatched_at`       | timestamp with time zone | no       |
+| 16  | `dispatched_by`       | uuid                     | no       |
+| 17  | `received_at`         | timestamp with time zone | yes      |
+| 18  | `received_by`         | uuid                     | yes      |
+| 19  | `cancelled_at`        | timestamp with time zone | yes      |
+| 20  | `cancelled_by`        | uuid                     | yes      |
+| 21  | `correlation_id`      | uuid                     | yes      |
+| 22  | `idempotency_key`     | text                     | yes      |
+| 23  | `record_version`      | integer                  | no       |
+| 24  | `created_at`          | timestamp with time zone | no       |
+| 25  | `created_by`          | uuid                     | no       |
+| 26  | `updated_at`          | timestamp with time zone | yes      |
+| 27  | `updated_by`          | uuid                     | yes      |
+
 ---
 
 # Phase 1-11 — SAL / WTY / RPT (Billing, Payment, Delivery, Warranty, Reporting)

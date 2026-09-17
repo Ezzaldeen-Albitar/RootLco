@@ -1552,6 +1552,95 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'Stored stock balances were re-derived from the movement ledger and compared. A non-zero incoherent count is evidence that inv.guard_stock_balance_coherence was bypassed rather than a routine finding, which is why the result is reported and never silently repaired.',
   },
 
+  // P1-32 preparatory slice: transfers, goods receipts, adjustments and counts.
+  // Quantity movements stay `privileged`, for the reason stated at the head of
+  // this block. The adjustment DECISIONS are `approval`, like the opening-batch
+  // approval, because the fact each records is a second person's decision.
+  {
+    code: 'inv.stock_transfer.dispatched',
+    class: 'privileged',
+    entityType: 'inv.stock_transfer',
+    description:
+      'A stock transfer was dispatched: the quantity left its source location and entered the branch transit location. It is at neither end until received, so it is excluded from available stock at both and reported as in transit.',
+  },
+  {
+    code: 'inv.stock_transfer.received',
+    class: 'privileged',
+    entityType: 'inv.stock_transfer',
+    description:
+      'A dispatched stock transfer was received in full: the quantity left transit and entered the destination location. Partial receipt is unrepresentable, so a transfer is received whole or cancelled.',
+  },
+  {
+    code: 'inv.stock_transfer.cancelled',
+    class: 'privileged',
+    entityType: 'inv.stock_transfer',
+    description:
+      'A dispatched stock transfer was cancelled and its quantity returned from transit to the origin. The four movements remain in the ledger with a zero net effect; nothing is deleted or reversed in place.',
+  },
+  {
+    code: 'inv.goods_receipt.created',
+    class: 'privileged',
+    entityType: 'inv.goods_receipt',
+    description:
+      'A draft goods receipt was created with its counted lines. Creates no stock and no cost history: both appear only when the receipt is posted.',
+  },
+  {
+    code: 'inv.goods_receipt.posted',
+    class: 'privileged',
+    entityType: 'inv.goods_receipt',
+    description:
+      'A goods receipt was posted, adding one receipt movement per line and appending one restricted cost layer per priced line. Earlier cost layers and the item standard cost are never rewritten.',
+  },
+  {
+    code: 'inv.stock_adjustment.requested',
+    class: 'privileged',
+    entityType: 'inv.stock_adjustment',
+    description:
+      'A stock adjustment was requested. It stays pending and moves no stock until a different person approves it; any value impact is held in the restricted adjustment detail.',
+  },
+  {
+    code: 'inv.stock_adjustment.approved',
+    class: 'approval',
+    entityType: 'inv.stock_adjustment',
+    description:
+      'A pending stock adjustment was approved by someone other than its requester, posting its adjustment movement. Reservations the correction made unsatisfiable are released and recorded separately.',
+  },
+  {
+    code: 'inv.stock_adjustment.rejected',
+    class: 'approval',
+    entityType: 'inv.stock_adjustment',
+    description:
+      'A pending stock adjustment was rejected by someone other than its requester. Moves no stock; the decision reason is recorded here because the adjustment row has no column for it.',
+  },
+  {
+    code: 'inv.stock_count.opened',
+    class: 'privileged',
+    entityType: 'inv.stock_count',
+    description:
+      'A stock count of one location was opened, snapshotting the on-hand quantity of every item held there. Trading continues during the count; the ledger is not frozen.',
+  },
+  {
+    code: 'inv.stock_count.line_recorded',
+    class: 'privileged',
+    entityType: 'inv.stock_count',
+    description:
+      'The physically counted quantity of one item was recorded on an open stock count. Moves no stock.',
+  },
+  {
+    code: 'inv.stock_count.reconciled',
+    class: 'privileged',
+    entityType: 'inv.stock_count',
+    description:
+      'A stock count was reconciled: movements posted during the count were folded into the expected quantity and a pending adjustment was raised for each non-zero variance. Posts no stock; each adjustment still needs a second person to approve it.',
+  },
+  {
+    code: 'inv.stock_count.cancelled',
+    class: 'privileged',
+    entityType: 'inv.stock_count',
+    description:
+      'An open stock count was cancelled with a reason. Raises no adjustment and moves no stock.',
+  },
+
   // ---- Phase 1-22 — Billing and payment (sal) ----
   //
   // Every action in this block is `financial` except the credit-note approval,

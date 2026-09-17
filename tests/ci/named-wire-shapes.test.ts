@@ -137,8 +137,12 @@ describe('every route body serialises a named type', () => {
     // be named `WarrantyStatusHistoryEntryView` as well — so `named` moves by one
     // and `composed` does not.
     // P1-31 P-12 adds the named ReportExportView response.
-    expect(summary.bodies).toBe(413);
-    expect(summary.named).toBe(360);
+    // 431 with the P1-32 preparatory inventory slice: eighteen operations —
+    // transfers, goods receipts, the cost history, adjustments and counts — and
+    // every one serialises a NAMED view or `Page<…>` of one, so `named` moves by
+    // eighteen and `composed` does not.
+    expect(summary.bodies).toBe(431);
+    expect(summary.named).toBe(378);
     expect(summary.composed).toBe(53);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

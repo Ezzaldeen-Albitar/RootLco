@@ -104,16 +104,35 @@ export type ItemLifecycleState = (typeof ITEM_LIFECYCLE_STATES)[number];
 export const RESERVATION_STATES = ['active', 'released', 'consumed', 'expired'] as const;
 export type ReservationState = (typeof RESERVATION_STATES)[number];
 
-/** `ck_stock_locations_type`, mirrored. Quarantine is excluded from availability unless asked for. */
-export const LOCATION_TYPES = ['warehouse', 'storage', 'quarantine'] as const;
+/**
+ * `ck_stock_locations_type`, mirrored. Quarantine is excluded from availability
+ * unless asked for; `transit` holds dispatched transfers and is never listed as
+ * availability at all.
+ */
+export const LOCATION_TYPES = ['warehouse', 'storage', 'quarantine', 'transit'] as const;
 export type LocationType = (typeof LOCATION_TYPES)[number];
+
+/**
+ * The location types an operator may create. `transit` is system-owned — one per
+ * branch, created by the first transfer — and the create operation refuses it.
+ */
+export const OPERATOR_LOCATION_TYPES = ['warehouse', 'storage', 'quarantine'] as const;
+export type OperatorLocationType = (typeof OPERATOR_LOCATION_TYPES)[number];
 
 /** `ck_stock_locations_status`, mirrored. Inactive locations are listed, not hidden. */
 export const ACTIVATION_STATES = ['active', 'inactive'] as const;
 export type ActivationState = (typeof ACTIVATION_STATES)[number];
 
 /** `MOVEMENT_TYPES` of the inventory domain, mirrored (W5). */
-export const MOVEMENT_TYPES = ['opening', 'issue', 'return', 'damage', 'adjustment'] as const;
+export const MOVEMENT_TYPES = [
+  'opening',
+  'issue',
+  'return',
+  'damage',
+  'adjustment',
+  'transfer',
+  'receipt',
+] as const;
 export type MovementType = (typeof MOVEMENT_TYPES)[number];
 
 /** `REFERENCE_KINDS` of the inventory domain, mirrored (W5): what a movement points back at. */
@@ -123,6 +142,9 @@ export const REFERENCE_KINDS = [
   'part_return',
   'damage',
   'adjustment',
+  'transfer_dispatch',
+  'transfer_receipt',
+  'goods_receipt_line',
 ] as const;
 export type ReferenceKind = (typeof REFERENCE_KINDS)[number];
 

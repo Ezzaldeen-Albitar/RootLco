@@ -10,7 +10,7 @@
  * The backend requires an `Idempotency-Key` header on every operation it
  * registers as idempotent, and answers `400 ERR-INT-002` without one — before
  * authorization is evaluated. That set is NOT "the POST operations": it is
- * currently 174 operations (PATCH 3, POST 165, PUT 6).
+ * currently 185 operations (PATCH 3, POST 175, PUT 7).
  *
  * The client used to infer the answer from the HTTP method, which was wrong for
  * every non-POST member of that set. This table is the contract instead of a
@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 13, export 2, financial 14, none 179, privileged 192, security 13.
+ * Currently approval 14, export 2, financial 14, none 186, privileged 202, security 13.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 413 of them. */
+/** Every operation the contract publishes. 431 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -780,6 +780,34 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'financial',
   },
   {
+    template: '/goods-receipts',
+    method: 'GET',
+    operationId: 'inv.goods-receipt-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/goods-receipts',
+    method: 'POST',
+    operationId: 'inv.goods-receipt-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/goods-receipts/{receiptId}',
+    method: 'GET',
+    operationId: 'inv.goods-receipt-read',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/goods-receipts/{receiptId}/posting',
+    method: 'POST',
+    operationId: 'inv.goods-receipt-post',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
     template: '/health/live',
     method: 'GET',
     operationId: 'shared.health-live',
@@ -1156,6 +1184,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     operationId: 'inv.item-create',
     idempotent: true,
     auditClass: 'privileged',
+  },
+  {
+    template: '/items/{itemId}/cost-history',
+    method: 'GET',
+    operationId: 'inv.item-cost-history-read',
+    idempotent: false,
+    auditClass: 'none',
   },
   {
     template: '/jobs',
@@ -2278,11 +2313,74 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'privileged',
   },
   {
+    template: '/stock-adjustments',
+    method: 'GET',
+    operationId: 'inv.stock-adjustment-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/stock-adjustments',
+    method: 'POST',
+    operationId: 'inv.stock-adjustment-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/stock-adjustments/{adjustmentId}/approval',
+    method: 'POST',
+    operationId: 'inv.stock-adjustment-approve',
+    idempotent: true,
+    auditClass: 'approval',
+  },
+  {
     template: '/stock-availability',
     method: 'GET',
     operationId: 'inv.stock-availability-read',
     idempotent: false,
     auditClass: 'none',
+  },
+  {
+    template: '/stock-counts',
+    method: 'GET',
+    operationId: 'inv.stock-count-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/stock-counts',
+    method: 'POST',
+    operationId: 'inv.stock-count-open',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/stock-counts/{countId}',
+    method: 'GET',
+    operationId: 'inv.stock-count-read',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/stock-counts/{countId}/cancellation',
+    method: 'POST',
+    operationId: 'inv.stock-count-cancel',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/stock-counts/{countId}/lines/{itemId}',
+    method: 'PUT',
+    operationId: 'inv.stock-count-line-record',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/stock-counts/{countId}/reconciliation',
+    method: 'POST',
+    operationId: 'inv.stock-count-reconcile',
+    idempotent: true,
+    auditClass: 'privileged',
   },
   {
     template: '/stock-issues',
@@ -2337,6 +2435,34 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     template: '/stock-returns',
     method: 'POST',
     operationId: 'inv.stock-return-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/stock-transfers',
+    method: 'GET',
+    operationId: 'inv.stock-transfer-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/stock-transfers',
+    method: 'POST',
+    operationId: 'inv.stock-transfer-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/stock-transfers/{transferId}/cancellation',
+    method: 'POST',
+    operationId: 'inv.stock-transfer-cancel',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/stock-transfers/{transferId}/receipt',
+    method: 'POST',
+    operationId: 'inv.stock-transfer-receive',
     idempotent: true,
     auditClass: 'privileged',
   },

@@ -22,6 +22,7 @@ import {
   ITEM_TYPES,
   InventoryRuleError,
   LOCATION_TYPES,
+  OPERATOR_LOCATION_TYPES,
   MOVEMENT_REFERENCE_MATRIX,
   MOVEMENT_TYPES,
   OPENING_BATCH_STATES,
@@ -42,18 +43,31 @@ describe('inventory vocabularies mirror the frozen inv CHECK constraints', () =>
     // Transcribed from ck_stock_movements_type / _reference_kind / _direction and
     // the sibling status CHECKs. The database suite asserts these same arrays
     // against the live catalog, so a drift fails there; here the point is that
-    // nothing extra has been added — particularly `transfer`, which P1-10 dropped.
-    expect([...MOVEMENT_TYPES]).toEqual(['opening', 'issue', 'return', 'damage', 'adjustment']);
+    // nothing extra has been added. `transfer` and `receipt`, with their three
+    // reference kinds, arrived with the P1-32 preparatory slice together with the
+    // CHECKs and provenance branches that make them real.
+    expect([...MOVEMENT_TYPES]).toEqual([
+      'opening',
+      'issue',
+      'return',
+      'damage',
+      'adjustment',
+      'transfer',
+      'receipt',
+    ]);
     expect([...REFERENCE_KINDS]).toEqual([
       'opening_line',
       'part_issue',
       'part_return',
       'damage',
       'adjustment',
+      'transfer_dispatch',
+      'transfer_receipt',
+      'goods_receipt_line',
     ]);
     expect([...DIRECTIONS]).toEqual(['in', 'out']);
     expect([...RESERVATION_STATES]).toEqual(['active', 'released', 'consumed', 'expired']);
-    expect([...LOCATION_TYPES]).toEqual(['warehouse', 'storage', 'quarantine']);
+    expect([...LOCATION_TYPES]).toEqual(['warehouse', 'storage', 'quarantine', 'transit']);
     expect([...ITEM_TYPES]).toEqual(['part', 'material', 'consumable', 'fluid', 'kit']);
     expect([...ITEM_LIFECYCLE_STATES]).toEqual(['active', 'archived']);
     expect([...OPENING_BATCH_STATES]).toEqual(['draft', 'approved']);
@@ -62,21 +76,22 @@ describe('inventory vocabularies mirror the frozen inv CHECK constraints', () =>
     expect([...EXTERNAL_PURCHASE_STATES]).toEqual(['recorded', 'linked', 'cancelled']);
   });
 
-  it('has no movement kind for a transfer, a customer-supplied part, or a purchase', () => {
-    // These three absences are load-bearing. A `transfer` kind would let stock move
-    // between locations with no primitive behind it; a `customer_supplied` or
-    // `external_purchase` kind would let either record inflate company stock.
-    expect(MOVEMENT_TYPES).not.toContain('transfer');
+  it('has no movement kind for a customer-supplied part or an external purchase', () => {
+    // These absences are load-bearing: a `customer_supplied` or `external_purchase`
+    // kind would let either record inflate company stock. A transfer now exists, but
+    // only as the dispatch/receipt PAIR bound to an `inv.stock_transfers` row — never
+    // as a bare `transfer` reference kind a movement could cite on its own.
     expect(REFERENCE_KINDS).not.toContain('transfer');
     expect(REFERENCE_KINDS).not.toContain('customer_supplied');
     expect(REFERENCE_KINDS).not.toContain('external_purchase');
-    expect(LOCATION_TYPES).not.toContain('transit');
+    // Transit exists, and an operator may still not create one.
+    expect(OPERATOR_LOCATION_TYPES).not.toContain('transit');
   });
 });
 
 describe('the movement/reference matrix (P1-21-BE-015)', () => {
-  it('accepts exactly the seven legal triples and nothing else', () => {
-    expect(MOVEMENT_REFERENCE_MATRIX).toHaveLength(7);
+  it('accepts exactly the twelve legal triples and nothing else', () => {
+    expect(MOVEMENT_REFERENCE_MATRIX).toHaveLength(12);
     // Every legal triple is accepted.
     for (const row of MOVEMENT_REFERENCE_MATRIX) {
       expect(isLegalMovementReference(row.movementType, row.referenceKind, row.direction)).toBe(
@@ -106,8 +121,8 @@ describe('the movement/reference matrix (P1-21-BE-015)', () => {
         }
       }
     }
-    // 5 types x 5 kinds x 2 directions = 50 combinations, 7 of which are legal.
-    expect(refused).toBe(43);
+    // 7 types x 8 kinds x 2 directions = 112 combinations, 12 of which are legal.
+    expect(refused).toBe(100);
   });
 
   it('refuses a movement type that does not exist at all', () => {

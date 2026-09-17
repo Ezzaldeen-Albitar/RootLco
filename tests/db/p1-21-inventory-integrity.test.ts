@@ -254,7 +254,7 @@ describe('P1-21-BE-015 — every movement carries a valid business reference', (
       const { item } = await seedItem(c, 'ref1');
       const { warehouse } = await seedLocations(c, 'ref1');
 
-      // Walk the whole product. The 7 legal triples are excluded; every other one
+      // Walk the whole product. The 12 legal triples are excluded; every other one
       // must be refused by ck_stock_movements_type_direction or the provenance guard,
       // even with a well-formed row and a real item and location.
       let refused = 0;
@@ -291,7 +291,10 @@ describe('P1-21-BE-015 — every movement carries a valid business reference', (
           }
         }
       }
-      expect(refused).toBe(43);
+      // 7 movement types x 8 reference kinds x 2 directions = 112, less the 12
+      // legal triples. It was 5 x 5 x 2 - 7 = 43 before the P1-32 preparatory slice
+      // added `transfer` and `receipt` and their three reference kinds.
+      expect(refused).toBe(100);
     });
   }, 60_000);
 

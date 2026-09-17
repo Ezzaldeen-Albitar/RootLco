@@ -131,6 +131,56 @@ export const OPENING_BATCH_ORDER: OrderingContract = Object.freeze({
   direction: 'desc',
 });
 
+/**
+ * Transfers are listed newest-first by `created_at`.
+ *
+ * Not `dispatched_at`, even though `inv.dispatch_transfer` writes both from one
+ * `now()` today: `dispatched_at` is a business column a later slice could backdate,
+ * and a cursor over a backdatable column repeats or skips rows across a page
+ * boundary. The key is qualified, so a cursor minted here cannot be replayed
+ * against another list that happens to sort on a column of the same name.
+ */
+export const TRANSFER_ORDER: OrderingContract = Object.freeze({
+  key: 'inv.stock_transfers:created_at_desc',
+  direction: 'desc',
+});
+
+/** Goods receipts are listed newest-first by `created_at`, like every other draft. */
+export const GOODS_RECEIPT_ORDER: OrderingContract = Object.freeze({
+  key: 'inv.goods_receipts:created_at_desc',
+  direction: 'desc',
+});
+
+/**
+ * Stock counts are listed newest-first by `created_at`.
+ *
+ * Not `snapshot_at`, for the same reason: the two are written from one `now()`
+ * today, and a count that later recorded an earlier snapshot instant would reorder
+ * a list a reader has already paged through.
+ */
+export const STOCK_COUNT_ORDER: OrderingContract = Object.freeze({
+  key: 'inv.stock_counts:created_at_desc',
+  direction: 'desc',
+});
+
+/** Adjustments are listed newest-first by `created_at`. */
+export const ADJUSTMENT_ORDER: OrderingContract = Object.freeze({
+  key: 'inv.stock_adjustments:created_at_desc',
+  direction: 'desc',
+});
+
+/**
+ * Cost layers are listed newest-effective-first.
+ *
+ * `effective_at` rather than `created_at`, because the question a cost history
+ * answers is what something cost WHEN, and the two differ the moment a receipt is
+ * drafted on one day and posted on another.
+ */
+export const COST_LAYER_ORDER: OrderingContract = Object.freeze({
+  key: 'inv.item_cost_layers:effective_at_desc',
+  direction: 'desc',
+});
+
 /** Escapes LIKE metacharacters. Binding a value does not neutralise `%` or `_`. */
 function escapeLikeTerm(term: string): string {
   return term.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
@@ -199,6 +249,17 @@ export interface StockBalanceRow {
   readonly onHandQty: string;
   readonly reservedQty: string;
   readonly availableQty: string;
+  /**
+   * What this ITEM has in transit in this branch, as an exact decimal string.
+   *
+   * Repeated on every cell of the item rather than returned once, because the read
+   * is paged per cell and a reader who landed on the second page of an item's
+   * locations would otherwise see the transfer disappear. It is a real balance —
+   * `inv.stock_balances` at the branch's `transit` location — and deliberately NOT
+   * part of `available`: stock in transit belongs to neither end until the receipt
+   * posts, so adding it to either would let the same unit be promised twice.
+   */
+  readonly inTransitQty: string;
 }
 
 export interface StockLocationRow {
@@ -244,6 +305,369 @@ export interface ReservationRow {
   readonly expiresAt: Date | null;
   readonly recordVersion: number;
 }
+
+/** One stock transfer, as both the detail read and the list need it. */
+export interface TransferRow {
+  readonly id: string;
+  readonly companyId: string;
+  /** The SOURCE branch, which owns the row. */
+  readonly branchId: string;
+  readonly itemId: string;
+  readonly fromLocationId: string;
+  readonly transitLocationId: string;
+  readonly toBranchId: string;
+  readonly toLocationId: string;
+  readonly quantity: string;
+  readonly receivedQuantity: string | null;
+  readonly status: string;
+  readonly reason: string | null;
+  readonly cancelReason: string | null;
+  readonly dispatchedAt: Date;
+  readonly receivedAt: Date | null;
+  readonly cancelledAt: Date | null;
+  readonly idempotencyKey: string | null;
+  readonly recordVersion: number;
+  readonly createdAt: Date;
+}
+
+/** A transfer with the labels a list must show instead of ids. */
+export interface TransferListRow extends TransferRow {
+  readonly sku: string;
+  /**
+   * Null when the reader cannot see that end's location. A destination-branch
+   * reader sees the transfer through `sel_stock_transfers_destination` but not the
+   * source branch's locations, and an inner join would silently drop the row.
+   */
+  readonly fromLocationCode: string | null;
+  readonly toLocationCode: string | null;
+}
+
+export interface GoodsReceiptRow {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly reference: string | null;
+  readonly supplierReference: string | null;
+  readonly receivedOn: string;
+  readonly status: string;
+  readonly notes: string | null;
+  readonly postedAt: Date | null;
+  readonly cancelledAt: Date | null;
+  readonly idempotencyKey: string | null;
+  readonly recordVersion: number;
+  readonly createdAt: Date;
+  readonly lineCount: number;
+}
+
+/**
+ * One goods-receipt line WITHOUT its cost.
+ *
+ * `unit_cost` and `currency_code` are deliberately absent. They are the input a
+ * cost layer is built from at posting time, and the durable, readable cost record
+ * is `inv.item_cost_layers`, whose every policy is gated on `inv.cost.view`.
+ * Selecting them here would publish cost through a read that is not gated, which
+ * is the whole reason cost lives in its own table in this schema.
+ */
+export interface GoodsReceiptLineRow {
+  readonly id: string;
+  readonly lineNo: number;
+  readonly itemId: string;
+  readonly sku: string;
+  readonly locationId: string;
+  readonly locationCode: string;
+  readonly quantity: string;
+  /** Whether posting this line will append a cost layer — not what the figure is. */
+  readonly hasUnitCost: boolean;
+}
+
+export interface CostLayerRow {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly sourceKind: string;
+  readonly sourceId: string;
+  readonly quantity: string;
+  readonly unitCost: string;
+  readonly currencyCode: string;
+  readonly effectiveAt: Date;
+}
+
+/**
+ * The derived reference costs of one item.
+ *
+ * Both figures are computed IN SQL over `numeric` and cross as exact decimal
+ * strings. Neither is stored anywhere, which is the point: a later receipt appends
+ * a layer and the derived figures move, and there is no column an append could
+ * overwrite. `null` when the item has no priced layer at all — an item nobody has
+ * ever costed has no cost, and returning zero would assert that it is free.
+ */
+export interface ItemCostSummaryRow {
+  readonly latestUnitCost: string | null;
+  readonly weightedAverageCost: string | null;
+  readonly currencyCode: string | null;
+  /** More than one means the average is not a figure anyone should read. */
+  readonly currencyCount: number;
+  readonly layerCount: number;
+  readonly totalQuantity: string;
+}
+
+export interface AdjustmentRow {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly itemId: string;
+  readonly locationId: string;
+  readonly direction: string;
+  readonly quantity: string;
+  readonly reason: string;
+  readonly status: string;
+  readonly requestedBy: string;
+  readonly approvedBy: string | null;
+  readonly approvedAt: Date | null;
+  readonly recordVersion: number;
+  readonly createdAt: Date;
+}
+
+export interface AdjustmentListRow extends AdjustmentRow {
+  readonly sku: string;
+  readonly locationCode: string;
+}
+
+export interface StockCountRow {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly locationId: string;
+  readonly status: string;
+  readonly snapshotAt: Date;
+  readonly countedBy: string;
+  readonly reconciledAt: Date | null;
+  readonly cancelledAt: Date | null;
+  readonly cancelReason: string | null;
+  readonly notes: string | null;
+  readonly idempotencyKey: string | null;
+  readonly recordVersion: number;
+  readonly createdAt: Date;
+}
+
+/**
+ * A count with the two discrepancy figures a later dashboard needs.
+ *
+ * Computed in SQL over the GENERATED `variance_qty` column, so they cannot drift
+ * from the lines they summarise, and both cross as exact decimal strings. They are
+ * on the LIST as well as the detail so a discrepancy can be seen without opening
+ * every count, which is what stops a dashboard needing a read of its own.
+ */
+export interface StockCountListRow extends StockCountRow {
+  readonly locationCode: string;
+  readonly lineCount: number;
+  readonly countedLineCount: number;
+  readonly varianceLineCount: number;
+  readonly absoluteVarianceQty: string;
+}
+
+export interface StockCountLineRow {
+  readonly id: string;
+  readonly itemId: string;
+  readonly sku: string;
+  readonly snapshotQty: string;
+  readonly countedQty: string | null;
+  readonly movementDeltaDuringCount: string;
+  readonly varianceQty: string | null;
+  readonly adjustmentId: string | null;
+  readonly adjustmentStatus: string | null;
+}
+
+/**
+ * SQL projections shared by a detail read and its list.
+ *
+ * One string per table, so a column added to the detail cannot be forgotten on the
+ * list. The two drifting apart is how a field ends up present on one screen and
+ * absent on the other with every test still green.
+ */
+interface TransferSqlRow {
+  id: string;
+  company_id: string;
+  branch_id: string;
+  item_id: string;
+  from_location_id: string;
+  transit_location_id: string;
+  to_branch_id: string;
+  to_location_id: string;
+  quantity: string;
+  received_quantity: string | null;
+  status: string;
+  reason: string | null;
+  cancel_reason: string | null;
+  dispatched_at: Date;
+  received_at: Date | null;
+  cancelled_at: Date | null;
+  idempotency_key: string | null;
+  record_version: number;
+  created_at: Date;
+}
+
+const TRANSFER_COLUMNS = `SELECT t.id, t.company_id, t.branch_id, t.item_id, t.from_location_id,
+              t.transit_location_id, t.to_branch_id, t.to_location_id, t.quantity,
+              t.received_quantity, t.status, t.reason, t.cancel_reason, t.dispatched_at,
+              t.received_at, t.cancelled_at, t.idempotency_key, t.record_version, t.created_at`;
+
+const toTransferRow = (row: TransferSqlRow): TransferRow => ({
+  id: row.id,
+  companyId: row.company_id,
+  branchId: row.branch_id,
+  itemId: row.item_id,
+  fromLocationId: row.from_location_id,
+  transitLocationId: row.transit_location_id,
+  toBranchId: row.to_branch_id,
+  toLocationId: row.to_location_id,
+  quantity: row.quantity,
+  receivedQuantity: row.received_quantity,
+  status: row.status,
+  reason: row.reason,
+  cancelReason: row.cancel_reason,
+  dispatchedAt: row.dispatched_at,
+  receivedAt: row.received_at,
+  cancelledAt: row.cancelled_at,
+  idempotencyKey: row.idempotency_key,
+  recordVersion: row.record_version,
+  createdAt: row.created_at,
+});
+
+interface GoodsReceiptSqlRow {
+  id: string;
+  company_id: string;
+  branch_id: string;
+  reference: string | null;
+  supplier_reference: string | null;
+  received_on: string;
+  status: string;
+  notes: string | null;
+  posted_at: Date | null;
+  cancelled_at: Date | null;
+  idempotency_key: string | null;
+  record_version: number;
+  created_at: Date;
+  line_count: string;
+}
+
+const GOODS_RECEIPT_COLUMNS = `SELECT r.id, r.company_id, r.branch_id, r.reference,
+              r.supplier_reference, r.received_on::text AS received_on, r.status, r.notes,
+              r.posted_at, r.cancelled_at, r.idempotency_key, r.record_version, r.created_at,
+              (SELECT count(*)::text FROM inv.goods_receipt_lines gl
+                WHERE gl.tenant_id = r.tenant_id AND gl.receipt_id = r.id) AS line_count`;
+
+const toGoodsReceiptRow = (row: GoodsReceiptSqlRow): GoodsReceiptRow => ({
+  id: row.id,
+  companyId: row.company_id,
+  branchId: row.branch_id,
+  reference: row.reference,
+  supplierReference: row.supplier_reference,
+  receivedOn: row.received_on,
+  status: row.status,
+  notes: row.notes,
+  postedAt: row.posted_at,
+  cancelledAt: row.cancelled_at,
+  idempotencyKey: row.idempotency_key,
+  recordVersion: row.record_version,
+  createdAt: row.created_at,
+  lineCount: Number.parseInt(row.line_count, 10),
+});
+
+interface AdjustmentSqlRow {
+  id: string;
+  company_id: string;
+  branch_id: string;
+  item_id: string;
+  location_id: string;
+  direction: string;
+  quantity: string;
+  reason: string;
+  status: string;
+  requested_by: string;
+  approved_by: string | null;
+  approved_at: Date | null;
+  record_version: number;
+  created_at: Date;
+}
+
+const ADJUSTMENT_COLUMNS = `SELECT a.id, a.company_id, a.branch_id, a.item_id, a.location_id,
+              a.direction, a.quantity, a.reason, a.status, a.requested_by, a.approved_by,
+              a.approved_at, a.record_version, a.created_at`;
+
+const toAdjustmentRow = (row: AdjustmentSqlRow): AdjustmentRow => ({
+  id: row.id,
+  companyId: row.company_id,
+  branchId: row.branch_id,
+  itemId: row.item_id,
+  locationId: row.location_id,
+  direction: row.direction,
+  quantity: row.quantity,
+  reason: row.reason,
+  status: row.status,
+  requestedBy: row.requested_by,
+  approvedBy: row.approved_by,
+  approvedAt: row.approved_at,
+  recordVersion: row.record_version,
+  createdAt: row.created_at,
+});
+
+interface StockCountSqlRow {
+  id: string;
+  company_id: string;
+  branch_id: string;
+  location_id: string;
+  status: string;
+  snapshot_at: Date;
+  counted_by: string;
+  reconciled_at: Date | null;
+  cancelled_at: Date | null;
+  cancel_reason: string | null;
+  notes: string | null;
+  idempotency_key: string | null;
+  record_version: number;
+  created_at: Date;
+}
+
+const STOCK_COUNT_COLUMNS = `SELECT c.id, c.company_id, c.branch_id, c.location_id, c.status,
+              c.snapshot_at, c.counted_by, c.reconciled_at, c.cancelled_at, c.cancel_reason,
+              c.notes, c.idempotency_key, c.record_version, c.created_at`;
+
+/**
+ * The discrepancy figures, as SQL rather than as a second query.
+ *
+ * `absolute_variance_qty` sums `abs(variance_qty)`: summing the SIGNED variances
+ * would let a surplus of ten hide a shortage of ten and report a count with two
+ * errors as a count with none.
+ */
+const STOCK_COUNT_VARIANCE_COLUMNS = `(SELECT count(*)::text FROM inv.stock_count_lines v
+                WHERE v.tenant_id = c.tenant_id AND v.count_id = c.id) AS line_count,
+              (SELECT count(*)::text FROM inv.stock_count_lines v
+                WHERE v.tenant_id = c.tenant_id AND v.count_id = c.id
+                  AND v.counted_qty IS NOT NULL) AS counted_line_count,
+              (SELECT count(*)::text FROM inv.stock_count_lines v
+                WHERE v.tenant_id = c.tenant_id AND v.count_id = c.id
+                  AND v.variance_qty IS NOT NULL AND v.variance_qty <> 0) AS variance_line_count,
+              (SELECT COALESCE(SUM(abs(v.variance_qty)), 0)::numeric(12, 3)::text
+                 FROM inv.stock_count_lines v
+                WHERE v.tenant_id = c.tenant_id AND v.count_id = c.id) AS absolute_variance_qty`;
+
+const toStockCountRow = (row: StockCountSqlRow): StockCountRow => ({
+  id: row.id,
+  companyId: row.company_id,
+  branchId: row.branch_id,
+  locationId: row.location_id,
+  status: row.status,
+  snapshotAt: row.snapshot_at,
+  countedBy: row.counted_by,
+  reconciledAt: row.reconciled_at,
+  cancelledAt: row.cancelled_at,
+  cancelReason: row.cancel_reason,
+  notes: row.notes,
+  idempotencyKey: row.idempotency_key,
+  recordVersion: row.record_version,
+  createdAt: row.created_at,
+});
 
 export interface WorkOrderStateRow {
   readonly workOrderId: string;
@@ -735,6 +1159,12 @@ export class InventoryRepository extends Repository {
     if (filter.includeQuarantine !== true) {
       clauses.push(`l.location_type <> 'quarantine'`);
     }
+    // ALWAYS excluded, with no opt-in. A transit cell is not a place stock can be
+    // picked from, so listing it beside the shelves would make a dispatched
+    // transfer read as available stock in the branch that has already given it up.
+    // The quantity is still reported — as `in_transit_qty` on every cell of the
+    // item, below — so it is hidden from availability without being hidden.
+    clauses.push(`l.location_type <> 'transit'`);
 
     const keyset = keysetFragment(
       request,
@@ -753,11 +1183,21 @@ export class InventoryRepository extends Repository {
       on_hand_qty: string;
       reserved_qty: string;
       available_qty: string;
+      in_transit_qty: string;
       id: string;
     }>(
       db,
       `SELECT b.id, b.item_id, i.sku, b.location_id, l.location_code, l.location_type,
-              b.company_id, b.branch_id, b.on_hand_qty, b.reserved_qty, b.available_qty
+              b.company_id, b.branch_id, b.on_hand_qty, b.reserved_qty, b.available_qty,
+              COALESCE((SELECT SUM(tb.on_hand_qty)
+                          FROM inv.stock_balances tb
+                          JOIN inv.stock_locations tl
+                            ON tl.tenant_id = tb.tenant_id AND tl.company_id = tb.company_id
+                           AND tl.branch_id = tb.branch_id AND tl.id = tb.location_id
+                         WHERE tb.tenant_id = b.tenant_id AND tb.company_id = b.company_id
+                           AND tb.branch_id = b.branch_id AND tb.item_id = b.item_id
+                           AND tl.location_type = 'transit'), 0)::numeric(12, 3)
+                AS in_transit_qty
          FROM inv.stock_balances b
          JOIN inv.item_master i ON i.tenant_id = b.tenant_id AND i.id = b.item_id
          JOIN inv.stock_locations l
@@ -779,6 +1219,7 @@ export class InventoryRepository extends Repository {
       onHandQty: r.on_hand_qty,
       reservedQty: r.reserved_qty,
       availableQty: r.available_qty,
+      inTransitQty: r.in_transit_qty,
     }));
     return buildPage(items, request, ITEM_ORDER, (row) => ({
       sortValue: row.sku,
@@ -2656,6 +3097,969 @@ export class InventoryRepository extends Repository {
       [context.principal.tenantId, workOrderId]
     );
     return row ? { companyId: row.company_id, branchId: row.branch_id } : null;
+  }
+
+  // -------------------------------------------------------------------------
+  // Stock transfers (P1-32-PRE-040…042).
+  //
+  // Every quantity change below goes through `inv.dispatch_transfer`,
+  // `inv.receive_transfer` or `inv.cancel_transfer`, which take the balance-row
+  // `FOR UPDATE` lock and post the movements themselves. Nothing here reads a
+  // balance and then writes based on the read.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Looks a transfer up by its idempotency key, BEFORE the dispatch is attempted.
+   *
+   * The same reason `readReservationByIdempotencyKey` exists:
+   * `inv.dispatch_transfer` resolves a replay inside the balance lock and returns
+   * the transfer that already exists, which is correct but indistinguishable from a
+   * fresh dispatch once it returns — so a retrying client could not tell whether it
+   * had moved the stock twice.
+   */
+  public async readTransferByIdempotencyKey(
+    db: DbHandle,
+    idempotencyKey: string
+  ): Promise<TransferRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `SELECT id FROM inv.stock_transfers WHERE tenant_id = $1 AND idempotency_key = $2`,
+      [context.principal.tenantId, idempotencyKey]
+    );
+    return row ? this.readTransfer(db, row.id) : null;
+  }
+
+  public async readTransfer(db: DbHandle, transferId: string): Promise<TransferRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<TransferSqlRow>(
+      db,
+      `${TRANSFER_COLUMNS} FROM inv.stock_transfers t WHERE t.tenant_id = $1 AND t.id = $2`,
+      [context.principal.tenantId, transferId]
+    );
+    return row ? toTransferRow(row) : null;
+  }
+
+  /**
+   * Reads the transfer under `FOR UPDATE`.
+   *
+   * Used by the receipt and cancellation paths so the scope check, the status
+   * check, and the state change are one atomic decision. An unlocked pre-read would
+   * let a concurrent receipt land between the check and the call, and this module
+   * would then audit a state change that the other transaction actually made.
+   */
+  public async lockTransfer(db: DbHandle, transferId: string): Promise<TransferRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<TransferSqlRow>(
+      db,
+      `${TRANSFER_COLUMNS} FROM inv.stock_transfers t
+        WHERE t.tenant_id = $1 AND t.id = $2
+        FOR UPDATE`,
+      [context.principal.tenantId, transferId]
+    );
+    return row ? toTransferRow(row) : null;
+  }
+
+  public async dispatchTransfer(
+    db: DbHandle,
+    input: {
+      readonly itemId: string;
+      readonly fromLocationId: string;
+      readonly toLocationId: string;
+      readonly quantity: string;
+      readonly reason: string | null;
+      readonly idempotencyKey: string | null;
+      readonly correlationId: string | null;
+    }
+  ): Promise<{ readonly id: string }> {
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `SELECT inv.dispatch_transfer($1, $2, $3, $4::numeric, $5, $6, $7) AS id`,
+      [
+        input.itemId,
+        input.fromLocationId,
+        input.toLocationId,
+        input.quantity,
+        input.reason,
+        input.idempotencyKey,
+        input.correlationId,
+      ]
+    );
+    if (!row?.id) throw new Error('inventory: dispatch_transfer returned no id');
+    return { id: row.id };
+  }
+
+  public async receiveTransfer(
+    db: DbHandle,
+    input: {
+      readonly transferId: string;
+      readonly quantity: string;
+      readonly correlationId: string | null;
+    }
+  ): Promise<void> {
+    await this.run(db, `SELECT inv.receive_transfer($1, $2::numeric, $3)`, [
+      input.transferId,
+      input.quantity,
+      input.correlationId,
+    ]);
+  }
+
+  public async cancelTransfer(
+    db: DbHandle,
+    input: {
+      readonly transferId: string;
+      readonly reason: string;
+      readonly correlationId: string | null;
+    }
+  ): Promise<void> {
+    await this.run(db, `SELECT inv.cancel_transfer($1, $2, $3)`, [
+      input.transferId,
+      input.reason,
+      input.correlationId,
+    ]);
+  }
+
+  /**
+   * One branch's transfers, newest first.
+   *
+   * `direction` selects which side of the branch the list is about. The two are
+   * genuinely different questions — what this branch sent, and what is coming to
+   * it — and `inv.stock_transfers` answers both from one row because the
+   * destination reads it through `sel_stock_transfers_destination`. The predicate
+   * is explicit rather than left to RLS, for the reason recorded on
+   * `listMovements`: `app.branch_ids` is the permission-blind union of every active
+   * grant, so without it a caller with any grant in a second branch would see that
+   * branch's transfers here too.
+   */
+  public async listTransfers(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly direction: 'outbound' | 'inbound';
+      readonly status?: string | undefined;
+      readonly itemId?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<TransferListRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.status ?? null,
+      filter.itemId ?? null,
+    ];
+    const branchColumn = filter.direction === 'inbound' ? 't.to_branch_id' : 't.branch_id';
+    const keyset = keysetFragment(
+      request,
+      { sort: 't.created_at', id: 't.id' },
+      TRANSFER_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<
+      TransferSqlRow & {
+        sku: string;
+        from_location_code: string | null;
+        to_location_code: string | null;
+        sort_value: string;
+      }
+    >(
+      db,
+      `${TRANSFER_COLUMNS}, i.sku, fl.location_code AS from_location_code,
+              tl.location_code AS to_location_code,
+              ${cursorTimestamp('t.created_at')} AS sort_value
+         FROM inv.stock_transfers t
+         JOIN inv.item_master i ON i.tenant_id = t.tenant_id AND i.id = t.item_id
+         LEFT JOIN inv.stock_locations fl ON fl.tenant_id = t.tenant_id AND fl.id = t.from_location_id
+         LEFT JOIN inv.stock_locations tl ON tl.tenant_id = t.tenant_id AND tl.id = t.to_location_id
+        WHERE t.tenant_id = $1 AND t.company_id = $2 AND ${branchColumn} = $3
+          AND ($4::text IS NULL OR t.status = $4)
+          AND ($5::uuid IS NULL OR t.item_id = $5)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: {
+          ...toTransferRow(row),
+          sku: row.sku,
+          fromLocationCode: row.from_location_code,
+          toLocationCode: row.to_location_code,
+        },
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      TRANSFER_ORDER
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Goods receipts (P1-32-PRE-043…045).
+  // -------------------------------------------------------------------------
+
+  public async readGoodsReceiptByIdempotencyKey(
+    db: DbHandle,
+    idempotencyKey: string
+  ): Promise<GoodsReceiptRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `SELECT id FROM inv.goods_receipts WHERE tenant_id = $1 AND idempotency_key = $2`,
+      [context.principal.tenantId, idempotencyKey]
+    );
+    return row ? this.readGoodsReceipt(db, row.id) : null;
+  }
+
+  /**
+   * Inserts the draft header.
+   *
+   * A plain INSERT, unlike every stock path in this file, and legitimately so: a
+   * draft receipt moves nothing. Stock appears only when `inv.post_goods_receipt`
+   * runs, and that goes through `inv.post_stock_movement` like everything else.
+   */
+  public async createGoodsReceipt(
+    db: DbHandle,
+    input: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly reference: string | null;
+      readonly supplierReference: string | null;
+      readonly receivedOn: string;
+      readonly notes: string | null;
+      readonly idempotencyKey: string | null;
+      readonly correlationId: string | null;
+    }
+  ): Promise<{ readonly id: string }> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `INSERT INTO inv.goods_receipts
+         (tenant_id, company_id, branch_id, reference, supplier_reference, received_on,
+          status, notes, correlation_id, idempotency_key, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6::date, 'draft', $7, $8, $9, $10)
+       RETURNING id`,
+      [
+        context.principal.tenantId,
+        input.companyId,
+        input.branchId,
+        input.reference,
+        input.supplierReference,
+        input.receivedOn,
+        input.notes,
+        input.correlationId,
+        input.idempotencyKey,
+        context.principal.userId,
+      ]
+    );
+    if (!row?.id) throw new Error('inventory: goods receipt insert returned no id');
+    return { id: row.id };
+  }
+
+  public async insertGoodsReceiptLine(
+    db: DbHandle,
+    input: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly receiptId: string;
+      readonly lineNo: number;
+      readonly itemId: string;
+      readonly locationId: string;
+      readonly quantity: string;
+      readonly unitCost: string | null;
+      readonly currencyCode: string | null;
+    }
+  ): Promise<{ readonly id: string }> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `INSERT INTO inv.goods_receipt_lines
+         (tenant_id, company_id, branch_id, receipt_id, line_no, item_id, location_id,
+          quantity, unit_cost, currency_code, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::numeric, $9::numeric, $10, $11)
+       RETURNING id`,
+      [
+        context.principal.tenantId,
+        input.companyId,
+        input.branchId,
+        input.receiptId,
+        input.lineNo,
+        input.itemId,
+        input.locationId,
+        input.quantity,
+        input.unitCost,
+        input.currencyCode,
+        context.principal.userId,
+      ]
+    );
+    if (!row?.id) throw new Error('inventory: goods receipt line insert returned no id');
+    return { id: row.id };
+  }
+
+  public async readGoodsReceipt(db: DbHandle, receiptId: string): Promise<GoodsReceiptRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<GoodsReceiptSqlRow>(
+      db,
+      `${GOODS_RECEIPT_COLUMNS}
+         FROM inv.goods_receipts r
+        WHERE r.tenant_id = $1 AND r.id = $2`,
+      [context.principal.tenantId, receiptId]
+    );
+    return row ? toGoodsReceiptRow(row) : null;
+  }
+
+  public async lockGoodsReceipt(db: DbHandle, receiptId: string): Promise<GoodsReceiptRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<GoodsReceiptSqlRow>(
+      db,
+      `${GOODS_RECEIPT_COLUMNS}
+         FROM inv.goods_receipts r
+        WHERE r.tenant_id = $1 AND r.id = $2
+        FOR UPDATE OF r`,
+      [context.principal.tenantId, receiptId]
+    );
+    return row ? toGoodsReceiptRow(row) : null;
+  }
+
+  /**
+   * The lines of one receipt, by line number — WITHOUT their unit cost.
+   *
+   * `has_unit_cost` says whether a line will produce a cost layer without saying
+   * what the figure is, so an operator who may not see cost can still tell a priced
+   * line from an unpriced one. The figure itself is readable only through the
+   * `inv.cost.view`-gated `inv.item_cost_layers`.
+   */
+  public async listGoodsReceiptLines(
+    db: DbHandle,
+    receiptId: string
+  ): Promise<readonly GoodsReceiptLineRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      line_no: number;
+      item_id: string;
+      sku: string;
+      location_id: string;
+      location_code: string;
+      quantity: string;
+      has_unit_cost: boolean;
+    }>(
+      db,
+      `SELECT l.id, l.line_no, l.item_id, i.sku, l.location_id, loc.location_code,
+              l.quantity, (l.unit_cost IS NOT NULL) AS has_unit_cost
+         FROM inv.goods_receipt_lines l
+         JOIN inv.item_master i ON i.tenant_id = l.tenant_id AND i.id = l.item_id
+         JOIN inv.stock_locations loc ON loc.tenant_id = l.tenant_id AND loc.id = l.location_id
+        WHERE l.tenant_id = $1 AND l.receipt_id = $2
+        ORDER BY l.line_no`,
+      [context.principal.tenantId, receiptId]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      lineNo: row.line_no,
+      itemId: row.item_id,
+      sku: row.sku,
+      locationId: row.location_id,
+      locationCode: row.location_code,
+      quantity: row.quantity,
+      hasUnitCost: row.has_unit_cost,
+    }));
+  }
+
+  public async postGoodsReceipt(
+    db: DbHandle,
+    receiptId: string,
+    correlationId: string | null
+  ): Promise<number> {
+    const row = await this.runOne<{ lines: string }>(
+      db,
+      `SELECT inv.post_goods_receipt($1, $2)::text AS lines`,
+      [receiptId, correlationId]
+    );
+    return Number.parseInt(row?.lines ?? '0', 10);
+  }
+
+  public async listGoodsReceipts(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly status?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<GoodsReceiptRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.status ?? null,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'r.created_at', id: 'r.id' },
+      GOODS_RECEIPT_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<GoodsReceiptSqlRow & { sort_value: string }>(
+      db,
+      `${GOODS_RECEIPT_COLUMNS}, ${cursorTimestamp('r.created_at')} AS sort_value
+         FROM inv.goods_receipts r
+        WHERE r.tenant_id = $1 AND r.company_id = $2 AND r.branch_id = $3
+          AND ($4::text IS NULL OR r.status = $4)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: toGoodsReceiptRow(row),
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      GOODS_RECEIPT_ORDER
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Cost history (P1-32-PRE-045).
+  // -------------------------------------------------------------------------
+
+  /**
+   * One item's cost layers in this branch, newest effective first.
+   *
+   * Every row is behind `sel_item_cost_layers_gated`, so a caller without
+   * `inv.cost.view` reads an empty page from the DATABASE rather than from an `if`
+   * in this file. That is the whole reason the layers live in their own table.
+   */
+  public async listItemCostLayers(
+    db: DbHandle,
+    itemId: string,
+    scope: { readonly companyId: string; readonly branchId: string },
+    request: PageRequest
+  ): Promise<Page<CostLayerRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [context.principal.tenantId, itemId, scope.companyId, scope.branchId];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'c.effective_at', id: 'c.id' },
+      COST_LAYER_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<{
+      id: string;
+      company_id: string;
+      branch_id: string;
+      source_kind: string;
+      source_id: string;
+      quantity: string;
+      unit_cost: string;
+      currency_code: string;
+      effective_at: Date;
+      sort_value: string;
+    }>(
+      db,
+      `SELECT c.id, c.company_id, c.branch_id, c.source_kind, c.source_id, c.quantity,
+              c.unit_cost, c.currency_code, c.effective_at,
+              ${cursorTimestamp('c.effective_at')} AS sort_value
+         FROM inv.item_cost_layers c
+        WHERE c.tenant_id = $1 AND c.item_id = $2 AND c.company_id = $3 AND c.branch_id = $4
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: {
+          id: row.id,
+          companyId: row.company_id,
+          branchId: row.branch_id,
+          sourceKind: row.source_kind,
+          sourceId: row.source_id,
+          quantity: row.quantity,
+          unitCost: row.unit_cost,
+          currencyCode: row.currency_code,
+          effectiveAt: row.effective_at,
+        },
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      COST_LAYER_ORDER
+    );
+  }
+
+  /**
+   * The two derived reference costs, computed in SQL over `numeric`.
+   *
+   * `SUM(quantity * unit_cost) / SUM(quantity)` never leaves the database, and is
+   * rounded there to the `numeric(18,4)` scale every stored cost has — a division
+   * carries sixteen fractional digits that no column could hold. Doing the same
+   * division in JavaScript would be the floating-point arithmetic the money rule
+   * forbids, and would be wrong in the third decimal place of a real cost.
+   *
+   * `currency_count` is returned rather than hidden: layers in two currencies
+   * cannot be averaged into one figure, and the caller must be told that instead of
+   * being handed a number that means nothing.
+   */
+  public async readItemCostSummary(
+    db: DbHandle,
+    itemId: string,
+    scope: { readonly companyId: string; readonly branchId: string }
+  ): Promise<ItemCostSummaryRow> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{
+      latest_unit_cost: string | null;
+      weighted_average_cost: string | null;
+      currency_code: string | null;
+      currency_count: string;
+      layer_count: string;
+      total_quantity: string;
+    }>(
+      db,
+      `SELECT
+         (SELECT l.unit_cost FROM inv.item_cost_layers l
+           WHERE l.tenant_id = $1 AND l.item_id = $2 AND l.company_id = $3 AND l.branch_id = $4
+           ORDER BY l.effective_at DESC, l.id DESC LIMIT 1) AS latest_unit_cost,
+         (SELECT CASE WHEN SUM(l.quantity) > 0
+                      THEN round(SUM(l.quantity * l.unit_cost) / SUM(l.quantity), 4)::numeric(18, 4)
+                 END
+            FROM inv.item_cost_layers l
+           WHERE l.tenant_id = $1 AND l.item_id = $2 AND l.company_id = $3 AND l.branch_id = $4)
+           AS weighted_average_cost,
+         (SELECT l.currency_code FROM inv.item_cost_layers l
+           WHERE l.tenant_id = $1 AND l.item_id = $2 AND l.company_id = $3 AND l.branch_id = $4
+           ORDER BY l.effective_at DESC, l.id DESC LIMIT 1) AS currency_code,
+         (SELECT count(DISTINCT l.currency_code)::text FROM inv.item_cost_layers l
+           WHERE l.tenant_id = $1 AND l.item_id = $2 AND l.company_id = $3 AND l.branch_id = $4)
+           AS currency_count,
+         (SELECT count(*)::text FROM inv.item_cost_layers l
+           WHERE l.tenant_id = $1 AND l.item_id = $2 AND l.company_id = $3 AND l.branch_id = $4)
+           AS layer_count,
+         (SELECT COALESCE(SUM(l.quantity), 0)::numeric(12, 3)::text FROM inv.item_cost_layers l
+           WHERE l.tenant_id = $1 AND l.item_id = $2 AND l.company_id = $3 AND l.branch_id = $4)
+           AS total_quantity`,
+      [context.principal.tenantId, itemId, scope.companyId, scope.branchId]
+    );
+    return {
+      latestUnitCost: row?.latest_unit_cost ?? null,
+      weightedAverageCost: row?.weighted_average_cost ?? null,
+      currencyCode: row?.currency_code ?? null,
+      currencyCount: Number.parseInt(row?.currency_count ?? '0', 10),
+      layerCount: Number.parseInt(row?.layer_count ?? '0', 10),
+      totalQuantity: row?.total_quantity ?? '0.000',
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Stock adjustments (P1-32-PRE-046).
+  // -------------------------------------------------------------------------
+
+  public async createAdjustment(
+    db: DbHandle,
+    input: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly itemId: string;
+      readonly locationId: string;
+      readonly direction: string;
+      readonly quantity: string;
+      readonly reason: string;
+    }
+  ): Promise<{ readonly id: string }> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `INSERT INTO inv.stock_adjustments
+         (tenant_id, company_id, branch_id, item_id, location_id, direction, quantity,
+          reason, status, requested_by, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::numeric, $8, 'pending', $9, $9)
+       RETURNING id`,
+      [
+        context.principal.tenantId,
+        input.companyId,
+        input.branchId,
+        input.itemId,
+        input.locationId,
+        input.direction,
+        input.quantity,
+        input.reason,
+        context.principal.userId,
+      ]
+    );
+    if (!row?.id) throw new Error('inventory: adjustment insert returned no id');
+    return { id: row.id };
+  }
+
+  /**
+   * Writes the RESTRICTED value impact of an adjustment.
+   *
+   * `ins_stock_adjustment_details_gated` requires `inv.cost.view`, so a caller
+   * without it is refused by the DATABASE — this method does not check, because a
+   * second check in application code would be a second definition of who may see
+   * cost, and the two would eventually disagree.
+   */
+  public async createAdjustmentDetail(
+    db: DbHandle,
+    input: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly adjustmentId: string;
+      readonly valueImpact: string;
+      readonly currencyCode: string;
+    }
+  ): Promise<void> {
+    const context = this.assertContext(db);
+    await this.run(
+      db,
+      `INSERT INTO inv.stock_adjustment_details
+         (tenant_id, company_id, branch_id, adjustment_id, value_impact, currency_code, created_by)
+       VALUES ($1, $2, $3, $4, $5::numeric, $6, $7)`,
+      [
+        context.principal.tenantId,
+        input.companyId,
+        input.branchId,
+        input.adjustmentId,
+        input.valueImpact,
+        input.currencyCode,
+        context.principal.userId,
+      ]
+    );
+  }
+
+  public async readAdjustment(db: DbHandle, adjustmentId: string): Promise<AdjustmentRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<AdjustmentSqlRow>(
+      db,
+      `${ADJUSTMENT_COLUMNS} FROM inv.stock_adjustments a
+        WHERE a.tenant_id = $1 AND a.id = $2 AND a.deleted_at IS NULL`,
+      [context.principal.tenantId, adjustmentId]
+    );
+    return row ? toAdjustmentRow(row) : null;
+  }
+
+  public async lockAdjustment(db: DbHandle, adjustmentId: string): Promise<AdjustmentRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<AdjustmentSqlRow>(
+      db,
+      `${ADJUSTMENT_COLUMNS} FROM inv.stock_adjustments a
+        WHERE a.tenant_id = $1 AND a.id = $2 AND a.deleted_at IS NULL
+        FOR UPDATE`,
+      [context.principal.tenantId, adjustmentId]
+    );
+    return row ? toAdjustmentRow(row) : null;
+  }
+
+  public async approveAdjustment(db: DbHandle, adjustmentId: string): Promise<void> {
+    await this.run(db, `SELECT inv.approve_adjustment($1)`, [adjustmentId]);
+  }
+
+  public async rejectAdjustment(db: DbHandle, adjustmentId: string): Promise<void> {
+    await this.run(db, `SELECT inv.reject_adjustment($1)`, [adjustmentId]);
+  }
+
+  public async listAdjustments(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly status?: string | undefined;
+      readonly itemId?: string | undefined;
+      readonly locationId?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<AdjustmentListRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.status ?? null,
+      filter.itemId ?? null,
+      filter.locationId ?? null,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'a.created_at', id: 'a.id' },
+      ADJUSTMENT_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<
+      AdjustmentSqlRow & { sku: string; location_code: string; sort_value: string }
+    >(
+      db,
+      `${ADJUSTMENT_COLUMNS}, i.sku, l.location_code,
+              ${cursorTimestamp('a.created_at')} AS sort_value
+         FROM inv.stock_adjustments a
+         JOIN inv.item_master i ON i.tenant_id = a.tenant_id AND i.id = a.item_id
+         JOIN inv.stock_locations l ON l.tenant_id = a.tenant_id AND l.id = a.location_id
+        WHERE a.tenant_id = $1 AND a.company_id = $2 AND a.branch_id = $3
+          AND a.deleted_at IS NULL
+          AND ($4::text IS NULL OR a.status = $4)
+          AND ($5::uuid IS NULL OR a.item_id = $5)
+          AND ($6::uuid IS NULL OR a.location_id = $6)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: { ...toAdjustmentRow(row), sku: row.sku, locationCode: row.location_code },
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      ADJUSTMENT_ORDER
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Stock counts (P1-32-PRE-047…049).
+  // -------------------------------------------------------------------------
+
+  public async readStockCountByIdempotencyKey(
+    db: DbHandle,
+    idempotencyKey: string
+  ): Promise<StockCountRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `SELECT id FROM inv.stock_counts WHERE tenant_id = $1 AND idempotency_key = $2`,
+      [context.principal.tenantId, idempotencyKey]
+    );
+    return row ? this.readStockCount(db, row.id) : null;
+  }
+
+  public async openStockCount(
+    db: DbHandle,
+    input: {
+      readonly locationId: string;
+      readonly notes: string | null;
+      readonly idempotencyKey: string | null;
+      readonly correlationId: string | null;
+    }
+  ): Promise<{ readonly id: string }> {
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `SELECT inv.open_stock_count($1, $2, $3, $4) AS id`,
+      [input.locationId, input.notes, input.idempotencyKey, input.correlationId]
+    );
+    if (!row?.id) throw new Error('inventory: open_stock_count returned no id');
+    return { id: row.id };
+  }
+
+  public async readStockCount(db: DbHandle, countId: string): Promise<StockCountRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<StockCountSqlRow>(
+      db,
+      `${STOCK_COUNT_COLUMNS} FROM inv.stock_counts c WHERE c.tenant_id = $1 AND c.id = $2`,
+      [context.principal.tenantId, countId]
+    );
+    return row ? toStockCountRow(row) : null;
+  }
+
+  public async lockStockCount(db: DbHandle, countId: string): Promise<StockCountRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<StockCountSqlRow>(
+      db,
+      `${STOCK_COUNT_COLUMNS} FROM inv.stock_counts c
+        WHERE c.tenant_id = $1 AND c.id = $2
+        FOR UPDATE`,
+      [context.principal.tenantId, countId]
+    );
+    return row ? toStockCountRow(row) : null;
+  }
+
+  public async recordStockCountLine(
+    db: DbHandle,
+    input: {
+      readonly countId: string;
+      readonly itemId: string;
+      readonly countedQuantity: string;
+    }
+  ): Promise<void> {
+    await this.run(db, `SELECT inv.record_stock_count_line($1, $2, $3::numeric)`, [
+      input.countId,
+      input.itemId,
+      input.countedQuantity,
+    ]);
+  }
+
+  /** Returns the number of PENDING adjustments the reconciliation raised. */
+  public async reconcileStockCount(
+    db: DbHandle,
+    countId: string,
+    correlationId: string | null
+  ): Promise<number> {
+    const row = await this.runOne<{ raised: string }>(
+      db,
+      `SELECT inv.reconcile_stock_count($1, $2)::text AS raised`,
+      [countId, correlationId]
+    );
+    return Number.parseInt(row?.raised ?? '0', 10);
+  }
+
+  public async cancelStockCount(db: DbHandle, countId: string, reason: string): Promise<void> {
+    await this.run(db, `SELECT inv.cancel_stock_count($1, $2)`, [countId, reason]);
+  }
+
+  /**
+   * One count's lines, by SKU, with the adjustment each variance raised.
+   *
+   * `variance_qty` is read from the GENERATED column rather than recomputed, so
+   * the figure a reader sees is the figure the database derived from the three
+   * inputs beside it.
+   */
+  public async listStockCountLines(
+    db: DbHandle,
+    countId: string
+  ): Promise<readonly StockCountLineRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      item_id: string;
+      sku: string;
+      snapshot_qty: string;
+      counted_qty: string | null;
+      movement_delta_during_count: string;
+      variance_qty: string | null;
+      adjustment_id: string | null;
+      adjustment_status: string | null;
+    }>(
+      db,
+      `SELECT ln.id, ln.item_id, i.sku, ln.snapshot_qty, ln.counted_qty,
+              ln.movement_delta_during_count, ln.variance_qty, ln.adjustment_id,
+              a.status AS adjustment_status
+         FROM inv.stock_count_lines ln
+         JOIN inv.item_master i ON i.tenant_id = ln.tenant_id AND i.id = ln.item_id
+         LEFT JOIN inv.stock_adjustments a
+           ON a.tenant_id = ln.tenant_id AND a.id = ln.adjustment_id
+        WHERE ln.tenant_id = $1 AND ln.count_id = $2
+        ORDER BY i.sku, ln.id`,
+      [context.principal.tenantId, countId]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      itemId: row.item_id,
+      sku: row.sku,
+      snapshotQty: row.snapshot_qty,
+      countedQty: row.counted_qty,
+      movementDeltaDuringCount: row.movement_delta_during_count,
+      varianceQty: row.variance_qty,
+      adjustmentId: row.adjustment_id,
+      adjustmentStatus: row.adjustment_status,
+    }));
+  }
+
+  public async listStockCounts(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly status?: string | undefined;
+      readonly locationId?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<StockCountListRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.status ?? null,
+      filter.locationId ?? null,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'c.created_at', id: 'c.id' },
+      STOCK_COUNT_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<
+      StockCountSqlRow & {
+        location_code: string;
+        line_count: string;
+        counted_line_count: string;
+        variance_line_count: string;
+        absolute_variance_qty: string;
+        sort_value: string;
+      }
+    >(
+      db,
+      `${STOCK_COUNT_COLUMNS}, l.location_code,
+              ${STOCK_COUNT_VARIANCE_COLUMNS},
+              ${cursorTimestamp('c.created_at')} AS sort_value
+         FROM inv.stock_counts c
+         JOIN inv.stock_locations l ON l.tenant_id = c.tenant_id AND l.id = c.location_id
+        WHERE c.tenant_id = $1 AND c.company_id = $2 AND c.branch_id = $3
+          AND ($4::text IS NULL OR c.status = $4)
+          AND ($5::uuid IS NULL OR c.location_id = $5)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: {
+          ...toStockCountRow(row),
+          locationCode: row.location_code,
+          lineCount: Number.parseInt(row.line_count, 10),
+          countedLineCount: Number.parseInt(row.counted_line_count, 10),
+          varianceLineCount: Number.parseInt(row.variance_line_count, 10),
+          absoluteVarianceQty: row.absolute_variance_qty,
+        },
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      STOCK_COUNT_ORDER
+    );
+  }
+
+  /**
+   * The discrepancy figures for ONE count.
+   *
+   * The same SQL the list uses, so the detail screen and the list cannot disagree
+   * about how many lines varied. `absolute_variance_qty` sums `abs(variance_qty)`
+   * in `numeric` and crosses as a decimal string: summing signed variances would
+   * let a surplus of ten hide a shortage of ten and report a perfect count.
+   */
+  public async readStockCountVariance(
+    db: DbHandle,
+    countId: string
+  ): Promise<{
+    readonly lineCount: number;
+    readonly countedLineCount: number;
+    readonly varianceLineCount: number;
+    readonly absoluteVarianceQty: string;
+  }> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{
+      line_count: string;
+      counted_line_count: string;
+      variance_line_count: string;
+      absolute_variance_qty: string;
+    }>(
+      db,
+      `SELECT ${STOCK_COUNT_VARIANCE_COLUMNS}
+         FROM inv.stock_counts c
+        WHERE c.tenant_id = $1 AND c.id = $2`,
+      [context.principal.tenantId, countId]
+    );
+    return {
+      lineCount: Number.parseInt(row?.line_count ?? '0', 10),
+      countedLineCount: Number.parseInt(row?.counted_line_count ?? '0', 10),
+      varianceLineCount: Number.parseInt(row?.variance_line_count ?? '0', 10),
+      absoluteVarianceQty: row?.absolute_variance_qty ?? '0.000',
+    };
   }
 
   public async countOpenCommitments(

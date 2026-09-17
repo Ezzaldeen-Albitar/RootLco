@@ -43,7 +43,9 @@ describe('p1-10 tenant isolation', () => {
         [SCHEMAS]
       )
     ).rows;
-    expect(tables.length).toBe(35);
+    // 41 with the P1-32 preparatory inventory slice: stock transfers, goods receipts
+    // and their lines, the restricted cost layers, and stock counts and their lines.
+    expect(tables.length).toBe(41);
     for (const t of tables) {
       const fq = `${t.table_schema}.${t.table_name}`;
       const pol = (
