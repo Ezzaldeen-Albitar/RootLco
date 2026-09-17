@@ -118,9 +118,98 @@ export const OPERATOR_LOCATION_TYPES = Object.freeze([
 ] as const);
 export type OperatorLocationType = (typeof OPERATOR_LOCATION_TYPES)[number];
 
-/** `ck_stock_transfers_status`. `received` and `cancelled` are both terminal. */
-export const TRANSFER_STATES = Object.freeze(['dispatched', 'received', 'cancelled'] as const);
+/**
+ * `ck_stock_transfers_status`. `received`, `settled` and `cancelled` are terminal.
+ * `partially_received` holds a short delivery whose remainder is still in transit;
+ * `settled` is a transfer with nothing outstanding whose shortfall was returned to
+ * the origin or written off.
+ */
+export const TRANSFER_STATES = Object.freeze([
+  'dispatched',
+  'partially_received',
+  'received',
+  'settled',
+  'cancelled',
+] as const);
 export type TransferState = (typeof TRANSFER_STATES)[number];
+
+/**
+ * The two acts that take an undelivered remainder out of transit
+ * (`ck_stock_transfer_settlements_kind` less `receipt`, which is the receipt route).
+ */
+export const TRANSFER_DISCREPANCY_KINDS = Object.freeze(['return_to_origin', 'write_off'] as const);
+export type TransferDiscrepancyKind = (typeof TRANSFER_DISCREPANCY_KINDS)[number];
+
+/** `ck_stock_transfer_settlements_status`. Only a write-off is ever `pending`. */
+export const TRANSFER_SETTLEMENT_STATES = Object.freeze(['pending', 'posted', 'rejected'] as const);
+export type TransferSettlementState = (typeof TRANSFER_SETTLEMENT_STATES)[number];
+
+/** `ck_material_requirements_status`. */
+export const MATERIAL_REQUIREMENT_STATES = Object.freeze([
+  'approval_required',
+  'pending_approval',
+  'approved',
+  'rejected',
+  'cancelled',
+] as const);
+export type MaterialRequirementState = (typeof MATERIAL_REQUIREMENT_STATES)[number];
+
+/** `ck_material_requirements_basis`: a confirmed specification, or an entered value. */
+export const MATERIAL_REQUIREMENT_BASES = Object.freeze(['specification', 'entered'] as const);
+export type MaterialRequirementBasis = (typeof MATERIAL_REQUIREMENT_BASES)[number];
+
+/** `ck_material_requirements_reason`. */
+export const MATERIAL_APPROVAL_REQUIRED_REASONS = Object.freeze([
+  'missing_specification',
+  'missing_unit_conversion',
+] as const);
+export type MaterialApprovalRequiredReason = (typeof MATERIAL_APPROVAL_REQUIRED_REASONS)[number];
+
+/** `ck_material_requirement_exceptions_status`. */
+export const MATERIAL_EXCEPTION_STATES = Object.freeze([
+  'pending',
+  'approved',
+  'rejected',
+] as const);
+export type MaterialExceptionState = (typeof MATERIAL_EXCEPTION_STATES)[number];
+
+/**
+ * Why a work-order draw on a requirement was refused. Every one is a state a person
+ * can act on: approve the requirement, add the conversion or the specification, or
+ * request an exception for the excess.
+ */
+export const MATERIAL_DRAW_REFUSAL_REASONS = Object.freeze([
+  'exceeds_requirement',
+  'approval_required',
+  'missing_conversion',
+  'missing_specification',
+] as const);
+export type MaterialDrawRefusalReason = (typeof MATERIAL_DRAW_REFUSAL_REASONS)[number];
+
+/** `ck_item_unit_conversions_status`. */
+export const UNIT_CONVERSION_STATES = Object.freeze(['active', 'retired'] as const);
+export type UnitConversionState = (typeof UNIT_CONVERSION_STATES)[number];
+
+/** `ck_vehicle_fluid_specifications_status`. Only `confirmed` resolves. */
+export const VEHICLE_SPECIFICATION_STATES = Object.freeze([
+  'recorded',
+  'confirmed',
+  'retired',
+] as const);
+export type VehicleSpecificationState = (typeof VEHICLE_SPECIFICATION_STATES)[number];
+
+/** `ck_vehicle_fluid_specifications_condition_format` and its requirement twin. */
+export const SERVICE_CONDITION_FORMAT = /^[a-z][a-z0-9_]{1,62}$/;
+
+/**
+ * An exact conversion factor as a decimal string: `numeric(24,12)`, so at most twelve
+ * integer and twelve fractional digits. Positivity is checked by the database.
+ */
+export const CONVERSION_FACTOR_FORMAT = /^\d{1,12}(\.\d{1,12})?$/;
+
+/** Upper bounds on free text the reference data and requirements carry. */
+export const MAX_SOURCE_REFERENCE = 500;
+export const MAX_ENGINE_VARIANT = 100;
 
 /** `ck_goods_receipts_status`. */
 export const GOODS_RECEIPT_STATES = Object.freeze(['draft', 'posted', 'cancelled'] as const);

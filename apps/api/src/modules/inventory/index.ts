@@ -35,8 +35,15 @@
  * - **It transfers stock, but never in one step.** Since P1-32 a transfer is two
  *   paired postings separated in time — dispatch into the branch's `transit`
  *   location, then receipt out of it (or cancellation back to the origin) — so the
- *   ledger can express the interval in which stock is at neither end. Partial
- *   receipt is unrepresentable (`ck_stock_transfers_received_quantity`).
+ *   ledger can express the interval in which stock is at neither end. Since
+ *   slice 3 a receipt records what arrived: a short delivery leaves the remainder
+ *   in transit until a further receipt, a return to origin, or a write-off a
+ *   second person approves.
+ * - **It governs what a job may draw, but does not plan the job.** A material
+ *   requirement on a work-order service line bounds every reservation and issue
+ *   for the item it covers (`MaterialDrawGovernor`); the requirement itself is
+ *   asked for and approved by people, from a confirmed vehicle specification or
+ *   an entered value with its source.
  * - **It receives goods, but does not run procurement.** A goods receipt adds stock
  *   against a supplier reference; there is still no purchase order, no matching,
  *   and no accounts-payable posting. `inv.external_purchase_parts` remains a
@@ -70,6 +77,8 @@ import { InventoryAdjustmentService } from './application/inventory-adjustment-s
 import { InventoryCountService } from './application/inventory-count-service';
 import { InventoryIdentifierService } from './application/inventory-identifier-service';
 import { InventorySalesReturnService } from './application/inventory-sales-return-service';
+import { InventoryMaterialService } from './application/inventory-material-service';
+import { InventoryReferenceDataService } from './application/inventory-reference-data-service';
 
 export type {
   AdjustmentListRow,
@@ -84,6 +93,8 @@ export type {
   ItemListFilter,
   ItemRow,
   ItemSalePriceRow,
+  MaterialExceptionRow,
+  MaterialRequirementRow,
   MovementListFilter,
   MovementReportFilter,
   MovementRow,
@@ -101,11 +112,32 @@ export type {
   StockLocationRow,
   TransferListRow,
   TransferRow,
+  TransferSettlementRow,
+  UnitConversionRow,
   UnitOfMeasureRow,
+  VehicleSpecificationRow,
   WorkOrderStateRow,
 } from './data/inventory-repository';
 
-export type { TransferListView, TransferView } from './application/inventory-transfer-service';
+export type {
+  TransferListView,
+  TransferSettlementView,
+  TransferSettlementWriteView,
+  TransferView,
+} from './application/inventory-transfer-service';
+
+export type {
+  MaterialExceptionView,
+  MaterialRequirementListView,
+  MaterialRequirementView,
+} from './application/inventory-material-service';
+
+export type {
+  UnitConversionView,
+  UnitConversionWriteView,
+  VehicleSpecificationView,
+  VehicleSpecificationWriteView,
+} from './application/inventory-reference-data-service';
 
 export type {
   BarcodeResolutionView,
@@ -196,6 +228,7 @@ export {
   ADJUSTMENT_STATES,
   BARCODE_SYMBOLOGIES,
   CATEGORY_CODE_FORMAT,
+  CONVERSION_FACTOR_FORMAT,
   COST_LAYER_SOURCE_KINDS,
   CUSTODY_STATES,
   DAMAGE_DISPOSITIONS,
@@ -209,10 +242,17 @@ export {
   InventoryRuleError,
   LOCATION_CODE_FORMAT,
   LOCATION_TYPES,
+  MATERIAL_APPROVAL_REQUIRED_REASONS,
+  MATERIAL_DRAW_REFUSAL_REASONS,
+  MATERIAL_EXCEPTION_STATES,
+  MATERIAL_REQUIREMENT_BASES,
+  MATERIAL_REQUIREMENT_STATES,
   MAX_DESCRIPTION,
+  MAX_ENGINE_VARIANT,
   MAX_IDENTIFIER_VALUE,
   MAX_NAME,
   MAX_REASON,
+  MAX_SOURCE_REFERENCE,
   MOVEMENT_REFERENCE_MATRIX,
   MOVEMENT_TYPES,
   OPENING_BATCH_STATES,
@@ -227,9 +267,14 @@ export {
   RETURN_CONDITIONS,
   SALES_RETURN_SOURCE_KINDS,
   SALES_RETURN_STATES,
+  SERVICE_CONDITION_FORMAT,
   SKU_FORMAT,
   STOCK_COUNT_STATES,
+  TRANSFER_DISCREPANCY_KINDS,
+  TRANSFER_SETTLEMENT_STATES,
   TRANSFER_STATES,
+  UNIT_CONVERSION_STATES,
+  VEHICLE_SPECIFICATION_STATES,
   assertCountableLocation,
   assertLegalMovementReference,
   assertQuarantineDestination,
@@ -252,6 +297,11 @@ export {
   type ItemLifecycleState,
   type ItemType,
   type LocationType,
+  type MaterialApprovalRequiredReason,
+  type MaterialDrawRefusalReason,
+  type MaterialExceptionState,
+  type MaterialRequirementBasis,
+  type MaterialRequirementState,
   type MovementType,
   type OpeningBatchState,
   type OperatorLocationType,
@@ -261,7 +311,11 @@ export {
   type SalesReturnSourceKind,
   type SalesReturnState,
   type StockCountState,
+  type TransferDiscrepancyKind,
+  type TransferSettlementState,
   type TransferState,
+  type UnitConversionState,
+  type VehicleSpecificationState,
 } from './domain/inventory';
 
 /**
@@ -312,6 +366,13 @@ export const inventoryModule = composeModule({
       // location preconditions and for publishing the `in` leg, exactly as the
       // transfer and receipt services do.
       salesReturns: new InventorySalesReturnService(repository, stock),
+      // P1-32 preparatory slice 3b. Material requirements and their exceptions. The
+      // draw governance itself lives inside `stock`, on the two stock paths it
+      // bounds, so no draw can reach the ledger around it.
+      materials: new InventoryMaterialService(repository),
+      // P1-32 preparatory slice 3b. Tenant-wide unit conversions and vehicle service
+      // specifications: the facts every allowance is measured against.
+      referenceData: new InventoryReferenceDataService(repository),
     };
   },
 });

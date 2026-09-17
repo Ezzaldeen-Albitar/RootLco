@@ -277,6 +277,66 @@ export const INV_TENANT_B_COUNTER: Principal = {
   permissions: [...ALL_INVENTORY, ITEM_MANAGE, INVOICE_MANAGE, INVOICE_ISSUE, FINANCE_VIEW],
 };
 
+/**
+ * P1-32 preparatory slice 3b. The five material-demand codes on top of every
+ * inventory code, UNRESTRICTED — a requester who can also operate stock, and the
+ * tenant-wide authority reference-data writes require.
+ */
+export const MATERIAL_REQUEST = 'inv.material.request';
+export const MATERIAL_APPROVE = 'inv.material.approve';
+export const MATERIAL_EXCEPTION_APPROVE = 'inv.material.exception.approve';
+export const UNIT_CONVERSION_MANAGE = 'inv.unit_conversion.manage';
+export const SPECIFICATION_MANAGE = 'inv.specification.manage';
+const ALL_MATERIAL = [
+  ...ALL_INVENTORY,
+  MATERIAL_REQUEST,
+  MATERIAL_APPROVE,
+  MATERIAL_EXCEPTION_APPROVE,
+  UNIT_CONVERSION_MANAGE,
+  SPECIFICATION_MANAGE,
+];
+
+export const INV_MATERIAL: Principal = {
+  roleId: 'e1000000-0000-4000-8000-0000000001d1',
+  userId: 'e1000000-0000-4000-8000-0000000001d2',
+  subject: 'fx_p1_21_material',
+  tenantId: TENANT_A,
+  permissions: ALL_MATERIAL,
+};
+
+/** The same codes held by a second person, so requester <> approver is satisfiable. */
+export const INV_MATERIAL_APPROVER: Principal = {
+  roleId: 'e1000000-0000-4000-8000-0000000001e1',
+  userId: 'e1000000-0000-4000-8000-0000000001e2',
+  subject: 'fx_p1_21_material_approver',
+  tenantId: TENANT_A,
+  permissions: ALL_MATERIAL,
+};
+
+/**
+ * The same codes scoped to branch A2. A2 is a real branch of the same company, so a
+ * refusal of an A1 request is the scoped check; a reference-data write is refused
+ * because the authority is not held tenant-wide.
+ */
+export const INV_MATERIAL_SCOPED_A2: Principal = {
+  roleId: 'e1000000-0000-4000-8000-0000000001d3',
+  userId: 'e1000000-0000-4000-8000-0000000001d4',
+  subject: 'fx_p1_21_material_scoped_a2',
+  tenantId: TENANT_A,
+  permissions: ALL_MATERIAL,
+  scope: { companyId: COMPANY_A1, branchId: BRANCH_A2 },
+  grantId: 'e1000000-0000-4000-8000-0000000001f5',
+};
+
+/** Tenant B with the same authority: a refusal is the tenant boundary. */
+export const INV_TENANT_B_MATERIAL: Principal = {
+  roleId: 'e1000000-0000-4000-8000-0000000001e3',
+  userId: 'e1000000-0000-4000-8000-0000000001e4',
+  subject: 'fx_p1_21_tenant_b_material',
+  tenantId: TENANT_B,
+  permissions: ALL_MATERIAL,
+};
+
 export const P1_21_PRINCIPALS: readonly Principal[] = [
   INV_FULL,
   INV_APPROVER,
@@ -292,6 +352,10 @@ export const P1_21_PRINCIPALS: readonly Principal[] = [
   INV_COUNTER,
   INV_COUNTER_SCOPED_A2,
   INV_TENANT_B_COUNTER,
+  INV_MATERIAL,
+  INV_MATERIAL_APPROVER,
+  INV_MATERIAL_SCOPED_A2,
+  INV_TENANT_B_MATERIAL,
 ];
 
 let admin: Pool;
@@ -903,6 +967,14 @@ async function removeCounterSales(): Promise<void> {
 export async function cleanP1_21Fixtures(): Promise<void> {
   await removeCounterSales();
   for (const statement of [
+    // P1-32 preparatory slice 3b: a fulfillment cites a reservation or an issue, a
+    // request its requirement, a requirement a specification, a unit and an item.
+    `DELETE FROM inv.material_request_fulfillments WHERE tenant_id IN ($1,$2)`,
+    `DELETE FROM inv.material_requests WHERE tenant_id IN ($1,$2)`,
+    `DELETE FROM inv.material_requirement_exceptions WHERE tenant_id IN ($1,$2)`,
+    `DELETE FROM inv.material_requirements WHERE tenant_id IN ($1,$2)`,
+    `DELETE FROM inv.vehicle_fluid_specifications WHERE tenant_id IN ($1,$2)`,
+    `DELETE FROM inv.item_unit_conversions WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.external_purchase_part_details WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.external_purchase_parts WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.customer_supplied_parts WHERE tenant_id IN ($1,$2)`,
@@ -916,6 +988,7 @@ export async function cleanP1_21Fixtures(): Promise<void> {
     `DELETE FROM inv.goods_receipt_lines WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.goods_receipts WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.item_cost_layers WHERE tenant_id IN ($1,$2)`,
+    `DELETE FROM inv.stock_transfer_settlements WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.stock_transfers WHERE tenant_id IN ($1,$2)`,
     // P1-32 preparatory slice 2: identifiers cite an item and a unit below.
     `DELETE FROM inv.item_identifiers WHERE tenant_id IN ($1,$2)`,

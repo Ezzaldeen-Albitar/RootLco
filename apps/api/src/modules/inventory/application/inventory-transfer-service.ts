@@ -16,6 +16,16 @@
  * quantity and locations. This service adds only what those functions cannot state
  * readably — which endpoints are legal, and who may act at each end.
  *
+ * ## A receipt records what arrived (P1-32-PRE-130)
+ *
+ * A receipt states the quantity that physically arrived, which may be less than was
+ * dispatched. The remainder stays in transit — a real balance in the source branch's
+ * transit location, out of the origin's availability and not yet in the
+ * destination's — until a further receipt, a return to the origin with a reason, or
+ * a write-off with a reason that posts only when a second person approves it
+ * (`inv.stock_transfer_settlements`). Units that arrived damaged were received; they
+ * go to quarantine through the damage path, not through a write-off.
+ *
  * ## Who may receive
  *
  * The row is owned by the SOURCE branch, and the settlement posts an `out` leg in
@@ -37,6 +47,7 @@ import {
   type InventoryRepository,
   type TransferListRow,
   type TransferRow,
+  type TransferSettlementRow,
 } from '../data/inventory-repository';
 import {
   Quantity,
@@ -58,8 +69,12 @@ export interface TransferView {
   /** Exact decimal strings, never numbers. */
   readonly quantity: string;
   readonly receivedQuantity: string | null;
+  /** Units that did not arrive and were returned to the origin or written off. */
+  readonly resolvedQuantity: string;
+  /** Dispatched less received less resolved: what is still in the transit location. */
+  readonly outstandingQuantity: string;
   readonly status: string;
-  /** True while the quantity sits in the transit location. */
+  /** True while any of the quantity sits in the transit location. */
   readonly inTransit: boolean;
   readonly reason: string | null;
   readonly cancelReason: string | null;
@@ -93,8 +108,10 @@ function toTransferView(row: TransferRow, replayed: boolean): TransferView {
     toLocationId: row.toLocationId,
     quantity: row.quantity,
     receivedQuantity: row.receivedQuantity,
+    resolvedQuantity: row.resolvedQuantity,
+    outstandingQuantity: row.outstandingQuantity,
     status: row.status,
-    inTransit: row.status === 'dispatched',
+    inTransit: row.status === 'dispatched' || row.status === 'partially_received',
     reason: row.reason,
     cancelReason: row.cancelReason,
     dispatchedAt: row.dispatchedAt.toISOString(),
@@ -112,6 +129,56 @@ function toTransferListView(row: TransferListRow): TransferListView {
     sku: row.sku,
     fromLocationCode: row.fromLocationCode,
     toLocationCode: row.toLocationCode,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+/** One act that took units of a transfer out of transit. */
+export interface TransferSettlementView {
+  readonly id: string;
+  readonly transferId: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly toBranchId: string;
+  /** `receipt`, `return_to_origin` or `write_off`. */
+  readonly kind: string;
+  readonly quantity: string;
+  readonly reason: string | null;
+  /** `posted`, or `pending` / `rejected` for a write-off awaiting or refused a decision. */
+  readonly status: string;
+  readonly requestedBy: string;
+  readonly approvedBy: string | null;
+  readonly approvedAt: string | null;
+  readonly rejectedBy: string | null;
+  readonly rejectedAt: string | null;
+  readonly recordVersion: number;
+  readonly createdAt: string;
+}
+
+/** A settlement with the transfer as it stands after it. */
+export interface TransferSettlementWriteView extends TransferSettlementView {
+  readonly transfer: TransferView;
+  /** True when an idempotent replay returned the settlement that already existed. */
+  readonly replayed: boolean;
+}
+
+function toSettlementView(row: TransferSettlementRow): TransferSettlementView {
+  return {
+    id: row.id,
+    transferId: row.transferId,
+    companyId: row.companyId,
+    branchId: row.branchId,
+    toBranchId: row.toBranchId,
+    kind: row.kind,
+    quantity: row.quantity,
+    reason: row.reason,
+    status: row.status,
+    requestedBy: row.requestedBy,
+    approvedBy: row.approvedBy,
+    approvedAt: iso(row.approvedAt),
+    rejectedBy: row.rejectedBy,
+    rejectedAt: iso(row.rejectedAt),
+    recordVersion: row.recordVersion,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -218,12 +285,15 @@ export class InventoryTransferService {
   }
 
   /**
-   * Receives a dispatched transfer in full: transit -> destination.
+   * Receives what arrived of a transfer: transit -> destination.
    *
-   * The transfer is LOCKED before the status is read, so two concurrent receipts
-   * of one transfer resolve to one winner — the second finds `received` and is
-   * refused rather than posting a second settlement pair that the unique movement
-   * source index would then reject mid-transaction.
+   * The whole dispatched quantity of an untouched transfer settles it as one pair,
+   * exactly as before. Any other quantity up to what is still outstanding is a part
+   * settlement, and the transfer is `partially_received` while anything remains.
+   *
+   * The transfer is LOCKED before the status is read, so two concurrent receipts of
+   * one transfer serialize and the second sees the first — neither can take units
+   * the other already received.
    */
   public async receive(
     db: DbHandle,
@@ -243,17 +313,16 @@ export class InventoryTransferService {
     await authorizeScope({ companyId: visible.companyId, branchId: visible.toBranchId });
     const before = await this.lockTransferOrFail(db, transferId);
 
-    if (before.status !== 'dispatched') {
+    if (before.status !== 'dispatched' && before.status !== 'partially_received') {
       throw new AppFailure('ERR-TRN-001', {
         message: `Transfer ${transferId} is ${before.status} and can no longer be received`,
       });
     }
-    if (!Quantity.fromDatabase(before.quantity, 'quantity').equals(quantity)) {
+    if (quantity.isGreaterThan(Quantity.fromDatabase(before.outstandingQuantity, 'outstanding'))) {
       throw new AppFailure('ERR-TRN-001', {
         message:
-          `The received quantity ${quantity.toString()} must equal the dispatched ` +
-          `${before.quantity}. Partial receipt is not supported: receive the full ` +
-          'quantity, or cancel the transfer and dispatch what actually travels.',
+          `The received quantity ${quantity.toString()} exceeds the ${before.outstandingQuantity} ` +
+          'still in transit. Record only what arrived.',
       });
     }
 
@@ -268,7 +337,10 @@ export class InventoryTransferService {
     }
 
     const after = await this.requireTransfer(db, transferId);
-    await this.stock.publishPostedMovements(db, 'transfer_receipt', after.id);
+    // A whole-transfer receipt cites the transfer; a part receipt cites the
+    // settlement row it wrote, and its movements are published under that id.
+    const settlement = await this.repository.readReceiptSettlementOfThisTransaction(db, transferId);
+    await this.stock.publishPostedMovements(db, 'transfer_receipt', settlement?.id ?? after.id);
     await appendAudit(db, {
       action: 'inv.stock_transfer.received',
       entityType: 'inv.stock_transfer',
@@ -283,11 +355,206 @@ export class InventoryTransferService {
           previousValue: before.status,
           value: after.status,
         },
+        { field: 'quantity', classification: 'internal', value: quantity.toString() },
         { field: 'receivedQuantity', classification: 'internal', value: after.receivedQuantity },
+        {
+          field: 'outstandingQuantity',
+          classification: 'internal',
+          value: after.outstandingQuantity,
+        },
+        { field: 'settlementId', classification: 'internal', value: settlement?.id ?? null },
         { field: 'toLocationId', classification: 'internal', value: after.toLocationId },
       ],
     });
     return toTransferView(after, false);
+  }
+
+  /**
+   * Settles units that did not arrive: back to the origin, or a write-off.
+   *
+   * A return to the origin posts at once. A write-off is born PENDING and moves
+   * nothing until a second person approves it, but it claims its quantity at once, so
+   * the same units cannot also be received or returned meanwhile. Both legs of either
+   * act post in the SOURCE branch — out of its transit location, and for a return
+   * back into the origin — so the source branch is the one authorized.
+   */
+  public async resolveDiscrepancy(
+    db: DbHandle,
+    transferId: string,
+    input: {
+      readonly kind: 'return_to_origin' | 'write_off';
+      readonly quantity: string;
+      readonly reason: string;
+      readonly idempotencyKey?: string | undefined;
+    },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<TransferSettlementWriteView> {
+    const quantity = parseQuantity(input.quantity);
+    const visible = await this.readTransferOrFail(db, transferId);
+    await authorizeScope({ companyId: visible.companyId, branchId: visible.branchId });
+
+    const existing =
+      input.idempotencyKey === undefined
+        ? null
+        : await this.repository.readTransferSettlementByIdempotencyKey(db, input.idempotencyKey);
+    if (existing) {
+      if (
+        existing.transferId !== transferId ||
+        existing.kind !== input.kind ||
+        !Quantity.fromDatabase(existing.quantity, 'quantity').equals(quantity)
+      ) {
+        throw new AppFailure('ERR-INT-001', {
+          message:
+            'This idempotency key already settled a different discrepancy. Reuse a key only ' +
+            'for an identical request.',
+        });
+      }
+      const transfer = await this.requireTransfer(db, transferId);
+      return {
+        ...toSettlementView(existing),
+        transfer: toTransferView(transfer, true),
+        replayed: true,
+      };
+    }
+
+    const before = await this.lockTransferOrFail(db, transferId);
+    if (before.status !== 'dispatched' && before.status !== 'partially_received') {
+      throw new AppFailure('ERR-TRN-001', {
+        message: `Transfer ${transferId} is ${before.status} and has nothing in transit`,
+      });
+    }
+    if (quantity.isGreaterThan(Quantity.fromDatabase(before.outstandingQuantity, 'outstanding'))) {
+      throw new AppFailure('ERR-TRN-001', {
+        message: `${quantity.toString()} exceeds the ${before.outstandingQuantity} still in transit`,
+      });
+    }
+
+    let settlementId: string;
+    try {
+      const request = {
+        transferId,
+        quantity: quantity.toString(),
+        reason: input.reason,
+        idempotencyKey: input.idempotencyKey ?? null,
+      };
+      settlementId =
+        input.kind === 'return_to_origin'
+          ? await this.repository.returnTransferRemainder(db, request)
+          : await this.repository.requestTransferWriteOff(db, request);
+    } catch (error) {
+      // `transfer_settlement_exceeded` counts a PENDING write-off too, which the
+      // outstanding figure above does not subtract until it is approved.
+      toDomainFailure(error, 'Transfer settlement');
+    }
+
+    const settlement = await this.requireSettlement(db, settlementId);
+    if (settlement.status === 'posted') {
+      await this.stock.publishPostedMovements(db, 'transfer_receipt', settlement.id);
+    }
+    const after = await this.requireTransfer(db, transferId);
+    await appendAudit(db, {
+      action: 'inv.stock_transfer.discrepancy_resolved',
+      entityType: 'inv.stock_transfer_settlement',
+      entityId: settlement.id,
+      companyId: settlement.companyId,
+      branchId: settlement.branchId,
+      requestRef: 'inv.stock-transfer-discrepancy-resolve',
+      details: [
+        { field: 'transferId', classification: 'internal', value: transferId },
+        { field: 'kind', classification: 'internal', value: settlement.kind },
+        { field: 'quantity', classification: 'internal', value: settlement.quantity },
+        { field: 'reason', classification: 'internal', value: settlement.reason },
+        { field: 'settlementStatus', classification: 'internal', value: settlement.status },
+        {
+          field: 'transferStatus',
+          classification: 'internal',
+          previousValue: before.status,
+          value: after.status,
+        },
+      ],
+    });
+    return {
+      ...toSettlementView(settlement),
+      transfer: toTransferView(after, false),
+      replayed: false,
+    };
+  }
+
+  /**
+   * A second person decides a pending write-off. Approval takes the units out of
+   * transit; rejection leaves them there and frees the quantity for a receipt or a
+   * return. `inv.adjustment.approve`, because a write-off is a stock loss and every
+   * other stock loss is approved under that authority.
+   */
+  public async decideWriteOff(
+    db: DbHandle,
+    settlementId: string,
+    input: { readonly decision: 'approved' | 'rejected'; readonly reason: string },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<TransferSettlementWriteView> {
+    const before = await this.repository.readTransferSettlement(db, settlementId);
+    if (!before) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Transfer settlement ${settlementId} was not found`,
+      });
+    }
+    await authorizeScope({ companyId: before.companyId, branchId: before.branchId });
+    if (before.kind !== 'write_off' || before.status !== 'pending') {
+      throw new AppFailure('ERR-TRN-001', {
+        message: `Settlement ${settlementId} is a ${before.kind} in status ${before.status}; only a pending write-off is decided`,
+      });
+    }
+    if (before.requestedBy === db.context.principal.userId) {
+      throw new AppFailure('ERR-TRN-001', {
+        message:
+          'The person who requested a write-off may not decide it. Ask another approver to ' +
+          'review the request.',
+      });
+    }
+    const transferBefore = await this.requireTransfer(db, before.transferId);
+    try {
+      await this.repository.decideTransferWriteOff(db, settlementId, input.decision === 'approved');
+    } catch (error) {
+      toDomainFailure(error, 'Write-off decision');
+    }
+    const settlement = await this.requireSettlement(db, settlementId);
+    if (settlement.status === 'posted') {
+      await this.stock.publishPostedMovements(db, 'transfer_receipt', settlement.id);
+    }
+    const after = await this.requireTransfer(db, before.transferId);
+    await appendAudit(db, {
+      action:
+        input.decision === 'approved'
+          ? 'inv.stock_transfer.write_off_approved'
+          : 'inv.stock_transfer.write_off_rejected',
+      entityType: 'inv.stock_transfer_settlement',
+      entityId: settlement.id,
+      companyId: settlement.companyId,
+      branchId: settlement.branchId,
+      requestRef: 'inv.stock-transfer-write-off-decide',
+      details: [
+        {
+          field: 'status',
+          classification: 'internal',
+          previousValue: before.status,
+          value: settlement.status,
+        },
+        { field: 'quantity', classification: 'internal', value: settlement.quantity },
+        { field: 'decisionReason', classification: 'internal', value: input.reason },
+        { field: 'requestedBy', classification: 'internal', value: settlement.requestedBy },
+        {
+          field: 'transferStatus',
+          classification: 'internal',
+          previousValue: transferBefore.status,
+          value: after.status,
+        },
+      ],
+    });
+    return {
+      ...toSettlementView(settlement),
+      transfer: toTransferView(after, false),
+      replayed: false,
+    };
   }
 
   /**
@@ -383,6 +650,19 @@ export class InventoryTransferService {
     const row = await this.repository.lockTransfer(db, transferId);
     if (!row) {
       throw new AppFailure('ERR-RES-001', { message: `Transfer ${transferId} was not found` });
+    }
+    return row;
+  }
+
+  private async requireSettlement(
+    db: DbHandle,
+    settlementId: string
+  ): Promise<TransferSettlementRow> {
+    const row = await this.repository.readTransferSettlement(db, settlementId);
+    if (!row) {
+      throw new AppFailure('ERR-SYS-001', {
+        message: 'Transfer settlement vanished after it was written',
+      });
     }
     return row;
   }

@@ -319,6 +319,10 @@ export interface TransferRow {
   readonly toLocationId: string;
   readonly quantity: string;
   readonly receivedQuantity: string | null;
+  /** Units that did not arrive and were returned to the origin or written off. */
+  readonly resolvedQuantity: string;
+  /** Dispatched less received less resolved: what is still in transit. */
+  readonly outstandingQuantity: string;
   readonly status: string;
   readonly reason: string | null;
   readonly cancelReason: string | null;
@@ -496,6 +500,8 @@ interface TransferSqlRow {
   to_location_id: string;
   quantity: string;
   received_quantity: string | null;
+  resolved_quantity: string;
+  outstanding_quantity: string;
   status: string;
   reason: string | null;
   cancel_reason: string | null;
@@ -509,7 +515,9 @@ interface TransferSqlRow {
 
 const TRANSFER_COLUMNS = `SELECT t.id, t.company_id, t.branch_id, t.item_id, t.from_location_id,
               t.transit_location_id, t.to_branch_id, t.to_location_id, t.quantity,
-              t.received_quantity, t.status, t.reason, t.cancel_reason, t.dispatched_at,
+              t.received_quantity, t.resolved_quantity::text AS resolved_quantity,
+              t.outstanding_quantity::text AS outstanding_quantity, t.status, t.reason,
+              t.cancel_reason, t.dispatched_at,
               t.received_at, t.cancelled_at, t.idempotency_key, t.record_version, t.created_at`;
 
 const toTransferRow = (row: TransferSqlRow): TransferRow => ({
@@ -523,6 +531,8 @@ const toTransferRow = (row: TransferSqlRow): TransferRow => ({
   toLocationId: row.to_location_id,
   quantity: row.quantity,
   receivedQuantity: row.received_quantity,
+  resolvedQuantity: row.resolved_quantity,
+  outstandingQuantity: row.outstanding_quantity,
   status: row.status,
   reason: row.reason,
   cancelReason: row.cancel_reason,
@@ -1217,6 +1227,460 @@ const toSalesReturn = (r: SalesReturnSql): SalesReturnRow => ({
   reason: r.reason,
   creditNoteId: r.credit_note_id,
   status: r.status,
+  recordVersion: r.record_version,
+  createdAt: r.created_at,
+});
+
+// ---------------------------------------------------------------------------
+// P1-32 preparatory slice 3b — material demand control, reference data and
+// transfer settlements.
+// ---------------------------------------------------------------------------
+
+/**
+ * An exact quantity in a requirement unit, as text.
+ *
+ * A stock quantity (three places) times a conversion factor (twelve places) is
+ * exact at fifteen places. It is printed at the quantity scale when that loses
+ * nothing, and with every significant digit when it would — never rounded, because
+ * a figure a person is held to must be the figure the database compared.
+ */
+const exactQuantityText = (expression: string): string =>
+  `CASE WHEN (${expression}) IS NULL THEN NULL
+        WHEN (${expression}) = round((${expression}), 3) THEN round((${expression}), 3)::numeric(18, 3)::text
+        ELSE trim_scale(${expression})::text END`;
+
+/** One exact, attributable unit conversion (`inv.item_unit_conversions`). */
+export interface UnitConversionRow {
+  readonly id: string;
+  readonly itemId: string | null;
+  readonly itemSku: string | null;
+  readonly fromUomId: string;
+  readonly fromUomCode: string;
+  readonly toUomId: string;
+  readonly toUomCode: string;
+  /** Exact decimal string, trailing zeros trimmed. */
+  readonly factor: string;
+  readonly sourceReference: string;
+  readonly status: string;
+  readonly createdBy: string;
+  readonly createdAt: Date;
+  readonly retiredBy: string | null;
+  readonly retiredAt: Date | null;
+  readonly recordVersion: number;
+}
+
+export const UNIT_CONVERSION_ORDER: OrderingContract = Object.freeze({
+  key: 'inv.item_unit_conversions:created_at_desc',
+  direction: 'desc',
+});
+
+const UNIT_CONVERSION_COLUMNS = `c.id, c.item_id, i.sku AS item_sku, c.from_uom_id, fu.code AS from_uom_code,
+  c.to_uom_id, tu.code AS to_uom_code, trim_scale(c.factor)::text AS factor, c.source_reference,
+  c.status, c.created_by, c.created_at, c.retired_by, c.retired_at, c.record_version`;
+
+const UNIT_CONVERSION_FROM = `FROM inv.item_unit_conversions c
+  JOIN inv.units_of_measure fu ON fu.id = c.from_uom_id
+  JOIN inv.units_of_measure tu ON tu.id = c.to_uom_id
+  LEFT JOIN inv.item_master i ON i.tenant_id = c.tenant_id AND i.id = c.item_id`;
+
+interface UnitConversionSql {
+  id: string;
+  item_id: string | null;
+  item_sku: string | null;
+  from_uom_id: string;
+  from_uom_code: string;
+  to_uom_id: string;
+  to_uom_code: string;
+  factor: string;
+  source_reference: string;
+  status: string;
+  created_by: string;
+  created_at: Date;
+  retired_by: string | null;
+  retired_at: Date | null;
+  record_version: number;
+}
+
+const toUnitConversion = (r: UnitConversionSql): UnitConversionRow => ({
+  id: r.id,
+  itemId: r.item_id,
+  itemSku: r.item_sku,
+  fromUomId: r.from_uom_id,
+  fromUomCode: r.from_uom_code,
+  toUomId: r.to_uom_id,
+  toUomCode: r.to_uom_code,
+  factor: r.factor,
+  sourceReference: r.source_reference,
+  status: r.status,
+  createdBy: r.created_by,
+  createdAt: r.created_at,
+  retiredBy: r.retired_by,
+  retiredAt: r.retired_at,
+  recordVersion: r.record_version,
+});
+
+/** One attributable service capacity (`inv.vehicle_fluid_specifications`). */
+export interface VehicleSpecificationRow {
+  readonly id: string;
+  readonly makeId: string;
+  readonly modelId: string | null;
+  readonly modelYearFrom: number | null;
+  readonly modelYearTo: number | null;
+  readonly engineVariant: string | null;
+  readonly serviceCondition: string;
+  readonly itemCategoryId: string | null;
+  /** Exact decimal string. */
+  readonly capacity: string;
+  readonly uomId: string;
+  readonly uomCode: string;
+  readonly sourceReference: string;
+  readonly status: string;
+  readonly createdBy: string;
+  readonly createdAt: Date;
+  readonly confirmedBy: string | null;
+  readonly confirmedAt: Date | null;
+  readonly retiredBy: string | null;
+  readonly retiredAt: Date | null;
+  readonly recordVersion: number;
+}
+
+export const VEHICLE_SPECIFICATION_ORDER: OrderingContract = Object.freeze({
+  key: 'inv.vehicle_fluid_specifications:created_at_desc',
+  direction: 'desc',
+});
+
+const VEHICLE_SPECIFICATION_COLUMNS = `s.id, s.make_id, s.model_id, s.model_year_from, s.model_year_to,
+  s.engine_variant, s.service_condition, s.item_category_id, s.capacity::text AS capacity, s.uom_id,
+  u.code AS uom_code, s.source_reference, s.status, s.created_by, s.created_at, s.confirmed_by,
+  s.confirmed_at, s.retired_by, s.retired_at, s.record_version`;
+
+interface VehicleSpecificationSql {
+  id: string;
+  make_id: string;
+  model_id: string | null;
+  model_year_from: number | null;
+  model_year_to: number | null;
+  engine_variant: string | null;
+  service_condition: string;
+  item_category_id: string | null;
+  capacity: string;
+  uom_id: string;
+  uom_code: string;
+  source_reference: string;
+  status: string;
+  created_by: string;
+  created_at: Date;
+  confirmed_by: string | null;
+  confirmed_at: Date | null;
+  retired_by: string | null;
+  retired_at: Date | null;
+  record_version: number;
+}
+
+const toVehicleSpecification = (r: VehicleSpecificationSql): VehicleSpecificationRow => ({
+  id: r.id,
+  makeId: r.make_id,
+  modelId: r.model_id,
+  modelYearFrom: r.model_year_from,
+  modelYearTo: r.model_year_to,
+  engineVariant: r.engine_variant,
+  serviceCondition: r.service_condition,
+  itemCategoryId: r.item_category_id,
+  capacity: r.capacity,
+  uomId: r.uom_id,
+  uomCode: r.uom_code,
+  sourceReference: r.source_reference,
+  status: r.status,
+  createdBy: r.created_by,
+  createdAt: r.created_at,
+  confirmedBy: r.confirmed_by,
+  confirmedAt: r.confirmed_at,
+  retiredBy: r.retired_by,
+  retiredAt: r.retired_at,
+  recordVersion: r.record_version,
+});
+
+/**
+ * A material requirement with its usage, every figure in the requirement unit
+ * (`inv.material_requirement_usage`). The usage figures are advisory when read here;
+ * they bind only when the ceiling guard reads them under the requirement lock.
+ */
+export interface MaterialRequirementRow {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly workOrderId: string;
+  readonly serviceLineId: string;
+  readonly itemId: string | null;
+  readonly itemCategoryId: string | null;
+  readonly basis: string;
+  readonly specificationId: string | null;
+  readonly serviceCondition: string | null;
+  readonly engineVariant: string | null;
+  readonly allowanceQuantity: string | null;
+  readonly uomId: string | null;
+  readonly sourceReference: string | null;
+  readonly status: string;
+  readonly approvalRequiredReason: string | null;
+  readonly requestedBy: string;
+  readonly approvedBy: string | null;
+  readonly approvedAt: Date | null;
+  readonly rejectedBy: string | null;
+  readonly rejectedAt: Date | null;
+  readonly rejectionReason: string | null;
+  readonly cancelledAt: Date | null;
+  readonly cancelReason: string | null;
+  readonly recordVersion: number;
+  readonly createdAt: Date;
+  readonly approvedExceptionQuantity: string;
+  readonly effectiveAllowance: string | null;
+  readonly openRequestQuantity: string;
+  readonly reservedQuantity: string;
+  readonly issuedQuantity: string;
+  readonly returnedQuantity: string;
+  readonly committedQuantity: string;
+  readonly remainingQuantity: string | null;
+}
+
+export const MATERIAL_REQUIREMENT_ORDER: OrderingContract = Object.freeze({
+  key: 'inv.material_requirements:created_at_desc',
+  direction: 'desc',
+});
+
+const MATERIAL_REQUIREMENT_COLUMNS = `r.id, r.company_id, r.branch_id, r.work_order_id, r.service_line_id,
+  r.item_id, r.item_category_id, r.basis, r.specification_id, r.service_condition, r.engine_variant,
+  r.allowance_quantity::text AS allowance_quantity, r.uom_id, r.source_reference, r.status,
+  r.approval_required_reason, r.requested_by, r.approved_by, r.approved_at, r.rejected_by,
+  r.rejected_at, r.rejection_reason, r.cancelled_at, r.cancel_reason, r.record_version, r.created_at,
+  ${exactQuantityText('u.approved_exception_quantity')} AS approved_exception_quantity,
+  ${exactQuantityText('u.effective_allowance')} AS effective_allowance,
+  ${exactQuantityText('u.open_request_quantity')} AS open_request_quantity,
+  ${exactQuantityText('u.reserved_quantity')} AS reserved_quantity,
+  ${exactQuantityText('u.issued_quantity')} AS issued_quantity,
+  ${exactQuantityText('u.returned_quantity')} AS returned_quantity,
+  ${exactQuantityText('u.committed_quantity')} AS committed_quantity,
+  ${exactQuantityText('u.remaining_quantity')} AS remaining_quantity`;
+
+const MATERIAL_REQUIREMENT_FROM = `FROM inv.material_requirements r
+  LEFT JOIN LATERAL inv.material_requirement_usage(r.tenant_id, r.id) u ON true`;
+
+interface MaterialRequirementSql {
+  id: string;
+  company_id: string;
+  branch_id: string;
+  work_order_id: string;
+  service_line_id: string;
+  item_id: string | null;
+  item_category_id: string | null;
+  basis: string;
+  specification_id: string | null;
+  service_condition: string | null;
+  engine_variant: string | null;
+  allowance_quantity: string | null;
+  uom_id: string | null;
+  source_reference: string | null;
+  status: string;
+  approval_required_reason: string | null;
+  requested_by: string;
+  approved_by: string | null;
+  approved_at: Date | null;
+  rejected_by: string | null;
+  rejected_at: Date | null;
+  rejection_reason: string | null;
+  cancelled_at: Date | null;
+  cancel_reason: string | null;
+  record_version: number;
+  created_at: Date;
+  approved_exception_quantity: string | null;
+  effective_allowance: string | null;
+  open_request_quantity: string | null;
+  reserved_quantity: string | null;
+  issued_quantity: string | null;
+  returned_quantity: string | null;
+  committed_quantity: string | null;
+  remaining_quantity: string | null;
+}
+
+const toMaterialRequirement = (r: MaterialRequirementSql): MaterialRequirementRow => ({
+  id: r.id,
+  companyId: r.company_id,
+  branchId: r.branch_id,
+  workOrderId: r.work_order_id,
+  serviceLineId: r.service_line_id,
+  itemId: r.item_id,
+  itemCategoryId: r.item_category_id,
+  basis: r.basis,
+  specificationId: r.specification_id,
+  serviceCondition: r.service_condition,
+  engineVariant: r.engine_variant,
+  allowanceQuantity: r.allowance_quantity,
+  uomId: r.uom_id,
+  sourceReference: r.source_reference,
+  status: r.status,
+  approvalRequiredReason: r.approval_required_reason,
+  requestedBy: r.requested_by,
+  approvedBy: r.approved_by,
+  approvedAt: r.approved_at,
+  rejectedBy: r.rejected_by,
+  rejectedAt: r.rejected_at,
+  rejectionReason: r.rejection_reason,
+  cancelledAt: r.cancelled_at,
+  cancelReason: r.cancel_reason,
+  recordVersion: r.record_version,
+  createdAt: r.created_at,
+  approvedExceptionQuantity: r.approved_exception_quantity ?? '0.000',
+  effectiveAllowance: r.effective_allowance,
+  openRequestQuantity: r.open_request_quantity ?? '0.000',
+  reservedQuantity: r.reserved_quantity ?? '0.000',
+  issuedQuantity: r.issued_quantity ?? '0.000',
+  returnedQuantity: r.returned_quantity ?? '0.000',
+  committedQuantity: r.committed_quantity ?? '0.000',
+  remainingQuantity: r.remaining_quantity,
+});
+
+/** A finite exception on an approved requirement. */
+export interface MaterialExceptionRow {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly requirementId: string;
+  readonly additionalQuantity: string;
+  readonly resultingAllowance: string | null;
+  readonly reason: string;
+  readonly status: string;
+  readonly requestedBy: string;
+  readonly decidedBy: string | null;
+  readonly decidedAt: Date | null;
+  readonly decisionNote: string | null;
+  readonly recordVersion: number;
+  readonly createdAt: Date;
+}
+
+const MATERIAL_EXCEPTION_COLUMNS = `e.id, e.company_id, e.branch_id, e.requirement_id,
+  e.additional_quantity::text AS additional_quantity, e.resulting_allowance::text AS resulting_allowance,
+  e.reason, e.status, e.requested_by, e.decided_by, e.decided_at, e.decision_note, e.record_version,
+  e.created_at`;
+
+interface MaterialExceptionSql {
+  id: string;
+  company_id: string;
+  branch_id: string;
+  requirement_id: string;
+  additional_quantity: string;
+  resulting_allowance: string | null;
+  reason: string;
+  status: string;
+  requested_by: string;
+  decided_by: string | null;
+  decided_at: Date | null;
+  decision_note: string | null;
+  record_version: number;
+  created_at: Date;
+}
+
+const toMaterialException = (r: MaterialExceptionSql): MaterialExceptionRow => ({
+  id: r.id,
+  companyId: r.company_id,
+  branchId: r.branch_id,
+  requirementId: r.requirement_id,
+  additionalQuantity: r.additional_quantity,
+  resultingAllowance: r.resulting_allowance,
+  reason: r.reason,
+  status: r.status,
+  requestedBy: r.requested_by,
+  decidedBy: r.decided_by,
+  decidedAt: r.decided_at,
+  decisionNote: r.decision_note,
+  recordVersion: r.record_version,
+  createdAt: r.created_at,
+});
+
+/**
+ * What a draw on a requirement would do, read under the requirement lock: whether
+ * the requirement covers the item, whether a conversion exists, and the figures a
+ * refusal must state.
+ */
+export interface MaterialDrawCheckRow {
+  readonly status: string;
+  readonly approvalRequiredReason: string | null;
+  readonly workOrderId: string;
+  readonly coversItem: boolean;
+  readonly hasFactor: boolean;
+  readonly allowance: string | null;
+  readonly committed: string;
+  readonly requested: string | null;
+  readonly exceeds: boolean;
+}
+
+/** The material request a reservation fulfills, when it fulfills one. */
+export interface MaterialReservationLinkRow {
+  readonly requestId: string;
+  readonly requirementId: string;
+  readonly requestStatus: string;
+  readonly hasIssue: boolean;
+}
+
+/** One act that took units of a transfer out of transit. */
+export interface TransferSettlementRow {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly transferId: string;
+  readonly toBranchId: string;
+  readonly kind: string;
+  readonly quantity: string;
+  readonly reason: string | null;
+  readonly status: string;
+  readonly requestedBy: string;
+  readonly approvedBy: string | null;
+  readonly approvedAt: Date | null;
+  readonly rejectedBy: string | null;
+  readonly rejectedAt: Date | null;
+  readonly idempotencyKey: string | null;
+  readonly recordVersion: number;
+  readonly createdAt: Date;
+}
+
+const TRANSFER_SETTLEMENT_COLUMNS = `s.id, s.company_id, s.branch_id, s.transfer_id, s.to_branch_id,
+  s.settlement_kind, s.quantity::text AS quantity, s.reason, s.status, s.requested_by, s.approved_by,
+  s.approved_at, s.rejected_by, s.rejected_at, s.idempotency_key, s.record_version, s.created_at`;
+
+interface TransferSettlementSql {
+  id: string;
+  company_id: string;
+  branch_id: string;
+  transfer_id: string;
+  to_branch_id: string;
+  settlement_kind: string;
+  quantity: string;
+  reason: string | null;
+  status: string;
+  requested_by: string;
+  approved_by: string | null;
+  approved_at: Date | null;
+  rejected_by: string | null;
+  rejected_at: Date | null;
+  idempotency_key: string | null;
+  record_version: number;
+  created_at: Date;
+}
+
+const toTransferSettlement = (r: TransferSettlementSql): TransferSettlementRow => ({
+  id: r.id,
+  companyId: r.company_id,
+  branchId: r.branch_id,
+  transferId: r.transfer_id,
+  toBranchId: r.to_branch_id,
+  kind: r.settlement_kind,
+  quantity: r.quantity,
+  reason: r.reason,
+  status: r.status,
+  requestedBy: r.requested_by,
+  approvedBy: r.approved_by,
+  approvedAt: r.approved_at,
+  rejectedBy: r.rejected_by,
+  rejectedAt: r.rejected_at,
+  idempotencyKey: r.idempotency_key,
   recordVersion: r.record_version,
   createdAt: r.created_at,
 });
@@ -4633,5 +5097,766 @@ export class InventoryRepository extends Repository {
       request,
       SALES_RETURN_ORDER
     );
+  }
+
+  // -------------------------------------------------------------------------
+  // P1-32 preparatory slice 3b — unit conversions (P1-32-PRE-125).
+  // -------------------------------------------------------------------------
+
+  public async listUnitConversions(
+    db: DbHandle,
+    filter: { readonly itemId?: string | undefined; readonly includeRetired: boolean },
+    request: PageRequest
+  ): Promise<Page<UnitConversionRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.itemId ?? null,
+      filter.includeRetired,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'c.created_at', id: 'c.id' },
+      UNIT_CONVERSION_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<UnitConversionSql & { sort_value: string }>(
+      db,
+      `SELECT ${UNIT_CONVERSION_COLUMNS}, ${cursorTimestamp('c.created_at')} AS sort_value
+         ${UNIT_CONVERSION_FROM}
+        WHERE c.tenant_id = $1
+          AND ($2::uuid IS NULL OR c.item_id = $2 OR c.item_id IS NULL)
+          AND ($3::boolean OR c.status = 'active')
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: toUnitConversion(row),
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      UNIT_CONVERSION_ORDER
+    );
+  }
+
+  public async readUnitConversion(
+    db: DbHandle,
+    conversionId: string
+  ): Promise<UnitConversionRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<UnitConversionSql>(
+      db,
+      `SELECT ${UNIT_CONVERSION_COLUMNS} ${UNIT_CONVERSION_FROM}
+        WHERE c.tenant_id = $1 AND c.id = $2`,
+      [context.principal.tenantId, conversionId]
+    );
+    return row ? toUnitConversion(row) : null;
+  }
+
+  /** `inv.set_item_unit_conversion` — retires the live row of the signature, then states the new one. */
+  public async setUnitConversion(
+    db: DbHandle,
+    input: {
+      readonly itemId: string | null;
+      readonly fromUomId: string;
+      readonly toUomId: string;
+      readonly factor: string;
+      readonly sourceReference: string;
+    }
+  ): Promise<string> {
+    this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `SELECT inv.set_item_unit_conversion($1, $2, $3, $4::numeric, $5) AS id`,
+      [input.itemId, input.fromUomId, input.toUomId, input.factor, input.sourceReference]
+    );
+    if (!row) throw new Error('inventory: inv.set_item_unit_conversion returned no row');
+    return row.id;
+  }
+
+  public async retireUnitConversion(db: DbHandle, conversionId: string): Promise<void> {
+    await this.run(db, `SELECT inv.retire_item_unit_conversion($1)`, [conversionId]);
+  }
+
+  // -------------------------------------------------------------------------
+  // P1-32 preparatory slice 3b — vehicle service specifications (P1-32-PRE-126).
+  // -------------------------------------------------------------------------
+
+  public async listVehicleSpecifications(
+    db: DbHandle,
+    filter: {
+      readonly makeId?: string | undefined;
+      readonly modelId?: string | undefined;
+      readonly serviceCondition?: string | undefined;
+      readonly status?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<VehicleSpecificationRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.makeId ?? null,
+      filter.modelId ?? null,
+      filter.serviceCondition ?? null,
+      filter.status ?? null,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 's.created_at', id: 's.id' },
+      VEHICLE_SPECIFICATION_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<VehicleSpecificationSql & { sort_value: string }>(
+      db,
+      `SELECT ${VEHICLE_SPECIFICATION_COLUMNS}, ${cursorTimestamp('s.created_at')} AS sort_value
+         FROM inv.vehicle_fluid_specifications s
+         JOIN inv.units_of_measure u ON u.id = s.uom_id
+        WHERE s.tenant_id = $1
+          AND ($2::uuid IS NULL OR s.make_id = $2)
+          AND ($3::uuid IS NULL OR s.model_id = $3)
+          AND ($4::text IS NULL OR s.service_condition = $4)
+          AND ($5::text IS NULL OR s.status = $5)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: toVehicleSpecification(row),
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      VEHICLE_SPECIFICATION_ORDER
+    );
+  }
+
+  public async readVehicleSpecification(
+    db: DbHandle,
+    specificationId: string
+  ): Promise<VehicleSpecificationRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<VehicleSpecificationSql>(
+      db,
+      `SELECT ${VEHICLE_SPECIFICATION_COLUMNS}
+         FROM inv.vehicle_fluid_specifications s
+         JOIN inv.units_of_measure u ON u.id = s.uom_id
+        WHERE s.tenant_id = $1 AND s.id = $2`,
+      [context.principal.tenantId, specificationId]
+    );
+    return row ? toVehicleSpecification(row) : null;
+  }
+
+  public async recordVehicleSpecification(
+    db: DbHandle,
+    input: {
+      readonly makeId: string;
+      readonly modelId: string | null;
+      readonly modelYearFrom: number | null;
+      readonly modelYearTo: number | null;
+      readonly engineVariant: string | null;
+      readonly serviceCondition: string;
+      readonly itemCategoryId: string | null;
+      readonly capacity: string;
+      readonly uomId: string;
+      readonly sourceReference: string;
+    }
+  ): Promise<string> {
+    this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `SELECT inv.record_vehicle_fluid_specification(
+                $1, $2, $3::integer, $4::integer, $5, $6, $7, $8::numeric, $9, $10) AS id`,
+      [
+        input.makeId,
+        input.modelId,
+        input.modelYearFrom,
+        input.modelYearTo,
+        input.engineVariant,
+        input.serviceCondition,
+        input.itemCategoryId,
+        input.capacity,
+        input.uomId,
+        input.sourceReference,
+      ]
+    );
+    if (!row) throw new Error('inventory: inv.record_vehicle_fluid_specification returned no row');
+    return row.id;
+  }
+
+  public async confirmVehicleSpecification(db: DbHandle, specificationId: string): Promise<void> {
+    await this.run(db, `SELECT inv.confirm_vehicle_fluid_specification($1)`, [specificationId]);
+  }
+
+  public async retireVehicleSpecification(db: DbHandle, specificationId: string): Promise<void> {
+    await this.run(db, `SELECT inv.retire_vehicle_fluid_specification($1)`, [specificationId]);
+  }
+
+  // -------------------------------------------------------------------------
+  // P1-32 preparatory slice 3b — material requirements (P1-32-PRE-127…129).
+  // -------------------------------------------------------------------------
+
+  /** The company, branch and work order a service line belongs to, as the caller sees it. */
+  public async readServiceLineScope(
+    db: DbHandle,
+    serviceLineId: string
+  ): Promise<{ companyId: string; branchId: string; workOrderId: string } | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ company_id: string; branch_id: string; work_order_id: string }>(
+      db,
+      `SELECT l.company_id, l.branch_id, l.work_order_id
+         FROM wo.work_order_service_lines l
+        WHERE l.tenant_id = $1 AND l.id = $2 AND l.deleted_at IS NULL`,
+      [context.principal.tenantId, serviceLineId]
+    );
+    return row
+      ? { companyId: row.company_id, branchId: row.branch_id, workOrderId: row.work_order_id }
+      : null;
+  }
+
+  /** `inv.propose_material_requirement` — an ENTERED allowance with its source. */
+  public async proposeMaterialRequirement(
+    db: DbHandle,
+    input: {
+      readonly serviceLineId: string;
+      readonly itemId: string | null;
+      readonly itemCategoryId: string | null;
+      readonly allowanceQuantity: string;
+      readonly uomId: string;
+      readonly sourceReference: string;
+    }
+  ): Promise<string> {
+    this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `SELECT inv.propose_material_requirement($1, $2, $3, $4::numeric, $5, $6) AS id`,
+      [
+        input.serviceLineId,
+        input.itemId,
+        input.itemCategoryId,
+        input.allowanceQuantity,
+        input.uomId,
+        input.sourceReference,
+      ]
+    );
+    if (!row) throw new Error('inventory: inv.propose_material_requirement returned no row');
+    return row.id;
+  }
+
+  /**
+   * `inv.derive_material_requirement` — the allowance a confirmed specification
+   * states, or none.
+   *
+   * One case is written here instead. For a vehicle with NO make the function never
+   * assigns its resolution record and then reads a field of it, which PostgreSQL
+   * refuses (`record "s" is not assigned yet`), so the call fails for exactly the
+   * vehicles no specification can answer for. That outcome is not in doubt: a
+   * specification is keyed on a make, so the requirement is `approval_required` /
+   * `missing_specification` with no allowance — the row the function's own
+   * no-specification branch writes, column for column, and
+   * `inv.guard_material_requirement` validates it the same way. Every vehicle WITH a
+   * make still goes through the function.
+   */
+  public async deriveMaterialRequirement(
+    db: DbHandle,
+    input: {
+      readonly serviceLineId: string;
+      readonly itemId: string | null;
+      readonly itemCategoryId: string | null;
+      readonly serviceCondition: string;
+      readonly engineVariant: string | null;
+    }
+  ): Promise<string> {
+    const context = this.assertContext(db);
+    const vehicle = await this.runOne<{ has_make: boolean }>(
+      db,
+      `SELECT v.make_id IS NOT NULL AS has_make
+         FROM wo.work_order_service_lines l
+         JOIN wo.work_orders w ON w.tenant_id = l.tenant_id AND w.company_id = l.company_id
+                              AND w.branch_id = l.branch_id AND w.id = l.work_order_id
+         JOIN veh.vehicles v ON v.tenant_id = w.tenant_id AND v.id = w.vehicle_id
+        WHERE l.tenant_id = $1 AND l.id = $2 AND l.deleted_at IS NULL`,
+      [context.principal.tenantId, input.serviceLineId]
+    );
+    if (vehicle && !vehicle.has_make) {
+      const row = await this.runOne<{ id: string }>(
+        db,
+        `INSERT INTO inv.material_requirements (
+           tenant_id, company_id, branch_id, work_order_id, service_line_id, item_id,
+           item_category_id, basis, service_condition, engine_variant, status,
+           approval_required_reason, requested_by, created_by)
+         SELECT l.tenant_id, l.company_id, l.branch_id, l.work_order_id, l.id, $3, $4,
+                'specification', $5, NULLIF(btrim($6), ''), 'approval_required',
+                'missing_specification', $7, $7
+           FROM wo.work_order_service_lines l
+          WHERE l.tenant_id = $1 AND l.id = $2 AND l.deleted_at IS NULL
+         RETURNING id`,
+        [
+          context.principal.tenantId,
+          input.serviceLineId,
+          input.itemId,
+          input.itemCategoryId,
+          input.serviceCondition,
+          input.engineVariant,
+          context.principal.userId,
+        ]
+      );
+      if (!row) throw new Error('inventory: the missing-specification requirement was not written');
+      return row.id;
+    }
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `SELECT inv.derive_material_requirement($1, $2, $3, $4, $5) AS id`,
+      [
+        input.serviceLineId,
+        input.itemId,
+        input.itemCategoryId,
+        input.serviceCondition,
+        input.engineVariant,
+      ]
+    );
+    if (!row) throw new Error('inventory: inv.derive_material_requirement returned no row');
+    return row.id;
+  }
+
+  public async readMaterialRequirement(
+    db: DbHandle,
+    requirementId: string
+  ): Promise<MaterialRequirementRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<MaterialRequirementSql>(
+      db,
+      `SELECT ${MATERIAL_REQUIREMENT_COLUMNS} ${MATERIAL_REQUIREMENT_FROM}
+        WHERE r.tenant_id = $1 AND r.id = $2`,
+      [context.principal.tenantId, requirementId]
+    );
+    return row ? toMaterialRequirement(row) : null;
+  }
+
+  public async listMaterialRequirements(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly workOrderId?: string | undefined;
+      readonly status?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<MaterialRequirementRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.workOrderId ?? null,
+      filter.status ?? null,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'r.created_at', id: 'r.id' },
+      MATERIAL_REQUIREMENT_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<MaterialRequirementSql & { sort_value: string }>(
+      db,
+      `SELECT ${MATERIAL_REQUIREMENT_COLUMNS}, ${cursorTimestamp('r.created_at')} AS sort_value
+         ${MATERIAL_REQUIREMENT_FROM}
+        WHERE r.tenant_id = $1 AND r.company_id = $2 AND r.branch_id = $3
+          AND ($4::uuid IS NULL OR r.work_order_id = $4)
+          AND ($5::text IS NULL OR r.status = $5)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: toMaterialRequirement(row),
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      MATERIAL_REQUIREMENT_ORDER
+    );
+  }
+
+  public async approveMaterialRequirement(db: DbHandle, requirementId: string): Promise<void> {
+    await this.run(db, `SELECT inv.approve_material_requirement($1)`, [requirementId]);
+  }
+
+  public async rejectMaterialRequirement(
+    db: DbHandle,
+    requirementId: string,
+    reason: string
+  ): Promise<void> {
+    await this.run(db, `SELECT inv.reject_material_requirement($1, $2)`, [requirementId, reason]);
+  }
+
+  public async listMaterialExceptions(
+    db: DbHandle,
+    requirementId: string
+  ): Promise<readonly MaterialExceptionRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<MaterialExceptionSql>(
+      db,
+      `SELECT ${MATERIAL_EXCEPTION_COLUMNS}
+         FROM inv.material_requirement_exceptions e
+        WHERE e.tenant_id = $1 AND e.requirement_id = $2
+        ORDER BY e.created_at, e.id`,
+      [context.principal.tenantId, requirementId]
+    );
+    return result.rows.map(toMaterialException);
+  }
+
+  public async readMaterialException(
+    db: DbHandle,
+    exceptionId: string
+  ): Promise<MaterialExceptionRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<MaterialExceptionSql>(
+      db,
+      `SELECT ${MATERIAL_EXCEPTION_COLUMNS}
+         FROM inv.material_requirement_exceptions e
+        WHERE e.tenant_id = $1 AND e.id = $2`,
+      [context.principal.tenantId, exceptionId]
+    );
+    return row ? toMaterialException(row) : null;
+  }
+
+  public async requestMaterialException(
+    db: DbHandle,
+    input: {
+      readonly requirementId: string;
+      readonly additionalQuantity: string;
+      readonly reason: string;
+    }
+  ): Promise<string> {
+    this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `SELECT inv.request_material_exception($1, $2::numeric, $3) AS id`,
+      [input.requirementId, input.additionalQuantity, input.reason]
+    );
+    if (!row) throw new Error('inventory: inv.request_material_exception returned no row');
+    return row.id;
+  }
+
+  public async decideMaterialException(
+    db: DbHandle,
+    input: { readonly exceptionId: string; readonly approve: boolean; readonly note: string | null }
+  ): Promise<void> {
+    await this.run(db, `SELECT inv.decide_material_exception($1, $2, $3)`, [
+      input.exceptionId,
+      input.approve,
+      input.note,
+    ]);
+  }
+
+  /**
+   * The requirements on a work order that cover an item, by the item itself or by
+   * its family, in ANY state. A rejected or cancelled requirement still governs: the
+   * absence of an approval is a refusal, never a return to an unlimited draw.
+   */
+  public async findCoveringMaterialRequirements(
+    db: DbHandle,
+    workOrderId: string,
+    itemId: string
+  ): Promise<readonly string[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{ id: string }>(
+      db,
+      `SELECT r.id
+         FROM inv.material_requirements r
+         JOIN inv.item_master i ON i.tenant_id = r.tenant_id AND i.id = $3
+        WHERE r.tenant_id = $1 AND r.work_order_id = $2
+          AND (r.item_id = i.id OR r.item_category_id = i.item_category_id)
+        ORDER BY r.created_at, r.id`,
+      [context.principal.tenantId, workOrderId, itemId]
+    );
+    return result.rows.map((row) => row.id);
+  }
+
+  /**
+   * Locks the requirement, then reads what a draw of `quantity` of `itemId` would
+   * do to it — in the lock order every material writer uses (requirement first).
+   */
+  public async checkMaterialDraw(
+    db: DbHandle,
+    input: { readonly requirementId: string; readonly itemId: string; readonly quantity: string }
+  ): Promise<MaterialDrawCheckRow | null> {
+    const context = this.assertContext(db);
+    const locked = await this.runOne<{ id: string }>(
+      db,
+      `SELECT id FROM inv.material_requirements WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+      [context.principal.tenantId, input.requirementId]
+    );
+    if (!locked) return null;
+    const row = await this.runOne<{
+      status: string;
+      approval_required_reason: string | null;
+      work_order_id: string;
+      covers_item: boolean;
+      has_factor: boolean;
+      allowance: string | null;
+      committed: string | null;
+      requested: string | null;
+      exceeds: boolean;
+    }>(
+      db,
+      `SELECT r.status, r.approval_required_reason, r.work_order_id,
+              (COALESCE(r.item_id = i.id, false)
+                OR COALESCE(r.item_category_id = i.item_category_id, false)) AS covers_item,
+              f.factor IS NOT NULL AS has_factor,
+              ${exactQuantityText('u.effective_allowance')} AS allowance,
+              ${exactQuantityText('u.committed_quantity')} AS committed,
+              ${exactQuantityText('$3::numeric * f.factor')} AS requested,
+              COALESCE(u.committed_quantity + $3::numeric * f.factor > u.effective_allowance, false)
+                AS exceeds
+         FROM inv.material_requirements r
+         JOIN inv.item_master i ON i.tenant_id = r.tenant_id AND i.id = $4
+        CROSS JOIN LATERAL (
+              SELECT inv.unit_conversion_factor(r.tenant_id, i.id, i.uom_id, r.uom_id) AS factor) f
+         LEFT JOIN LATERAL inv.material_requirement_usage(r.tenant_id, r.id) u ON true
+        WHERE r.tenant_id = $1 AND r.id = $2`,
+      [context.principal.tenantId, input.requirementId, input.quantity, input.itemId]
+    );
+    return row
+      ? {
+          status: row.status,
+          approvalRequiredReason: row.approval_required_reason,
+          workOrderId: row.work_order_id,
+          coversItem: row.covers_item,
+          hasFactor: row.has_factor,
+          allowance: row.allowance,
+          committed: row.committed ?? '0.000',
+          requested: row.requested,
+          exceeds: row.exceeds,
+        }
+      : null;
+  }
+
+  /** `inv.create_material_request` — bounded by the ceiling guard under the requirement lock. */
+  public async createMaterialRequest(
+    db: DbHandle,
+    input: { readonly requirementId: string; readonly itemId: string; readonly quantity: string }
+  ): Promise<string> {
+    this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `SELECT inv.create_material_request($1, $2, $3::numeric, NULL, $4) AS id`,
+      [input.requirementId, input.itemId, input.quantity, db.context.correlationId]
+    );
+    if (!row) throw new Error('inventory: inv.create_material_request returned no row');
+    return row.id;
+  }
+
+  /**
+   * Links a reservation or an issue to the request it fulfilled.
+   * `inv.guard_material_request_fulfillment` bounds the link by the request itself.
+   */
+  public async linkMaterialFulfillment(
+    db: DbHandle,
+    input: {
+      readonly requestId: string;
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly reservationId: string | null;
+      readonly partIssueId: string | null;
+    }
+  ): Promise<void> {
+    const context = this.assertContext(db);
+    await this.run(
+      db,
+      `INSERT INTO inv.material_request_fulfillments
+         (tenant_id, company_id, branch_id, material_request_id, fulfillment_kind,
+          reservation_id, part_issue_id, created_by)
+       VALUES ($1, $2, $3, $4, CASE WHEN $5::uuid IS NULL THEN 'issue' ELSE 'reservation' END,
+               $5, $6, $7)`,
+      [
+        context.principal.tenantId,
+        input.companyId,
+        input.branchId,
+        input.requestId,
+        input.reservationId,
+        input.partIssueId,
+        context.principal.userId,
+      ]
+    );
+  }
+
+  /** `inv.lock_material_request` — the requirement row, then the request row. */
+  public async lockMaterialRequest(db: DbHandle, requestId: string): Promise<void> {
+    const context = this.assertContext(db);
+    await this.run(db, `SELECT (inv.lock_material_request($1, $2)).id`, [
+      context.principal.tenantId,
+      requestId,
+    ]);
+  }
+
+  /** `inv.finish_material_request` — releases the request's active reservations explicitly. */
+  public async finishMaterialRequest(
+    db: DbHandle,
+    input: {
+      readonly requestId: string;
+      readonly outcome: 'closed' | 'cancelled';
+      readonly reason: string | null;
+    }
+  ): Promise<void> {
+    await this.run(db, `SELECT inv.finish_material_request($1, $2, $3)`, [
+      input.requestId,
+      input.outcome,
+      input.reason,
+    ]);
+  }
+
+  public async readMaterialLinkForReservation(
+    db: DbHandle,
+    reservationId: string
+  ): Promise<MaterialReservationLinkRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{
+      request_id: string;
+      requirement_id: string;
+      status: string;
+      has_issue: boolean;
+    }>(
+      db,
+      `SELECT q.id AS request_id, q.requirement_id, q.status,
+              EXISTS (SELECT 1 FROM inv.material_request_fulfillments fi
+                       WHERE fi.tenant_id = q.tenant_id AND fi.material_request_id = q.id
+                         AND fi.fulfillment_kind = 'issue') AS has_issue
+         FROM inv.material_request_fulfillments f
+         JOIN inv.material_requests q ON q.tenant_id = f.tenant_id AND q.id = f.material_request_id
+        WHERE f.tenant_id = $1 AND f.reservation_id = $2`,
+      [context.principal.tenantId, reservationId]
+    );
+    return row
+      ? {
+          requestId: row.request_id,
+          requirementId: row.requirement_id,
+          requestStatus: row.status,
+          hasIssue: row.has_issue,
+        }
+      : null;
+  }
+
+  // -------------------------------------------------------------------------
+  // P1-32 preparatory slice 3b — transfer settlements (P1-32-PRE-130).
+  // -------------------------------------------------------------------------
+
+  public async readTransferSettlement(
+    db: DbHandle,
+    settlementId: string
+  ): Promise<TransferSettlementRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<TransferSettlementSql>(
+      db,
+      `SELECT ${TRANSFER_SETTLEMENT_COLUMNS}
+         FROM inv.stock_transfer_settlements s
+        WHERE s.tenant_id = $1 AND s.id = $2`,
+      [context.principal.tenantId, settlementId]
+    );
+    return row ? toTransferSettlement(row) : null;
+  }
+
+  public async readTransferSettlementByIdempotencyKey(
+    db: DbHandle,
+    key: string
+  ): Promise<TransferSettlementRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<TransferSettlementSql>(
+      db,
+      `SELECT ${TRANSFER_SETTLEMENT_COLUMNS}
+         FROM inv.stock_transfer_settlements s
+        WHERE s.tenant_id = $1 AND s.idempotency_key = $2`,
+      [context.principal.tenantId, key]
+    );
+    return row ? toTransferSettlement(row) : null;
+  }
+
+  /**
+   * The receipt settlement `inv.receive_transfer` wrote in THIS transaction, when
+   * the receipt was a part settlement. `created_at` defaults to `now()`, which is the
+   * transaction's start time, so a row of an earlier receipt can never match.
+   */
+  public async readReceiptSettlementOfThisTransaction(
+    db: DbHandle,
+    transferId: string
+  ): Promise<TransferSettlementRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<TransferSettlementSql>(
+      db,
+      `SELECT ${TRANSFER_SETTLEMENT_COLUMNS}
+         FROM inv.stock_transfer_settlements s
+        WHERE s.tenant_id = $1 AND s.transfer_id = $2 AND s.settlement_kind = 'receipt'
+          AND s.created_at = now()
+        ORDER BY s.id
+        LIMIT 1`,
+      [context.principal.tenantId, transferId]
+    );
+    return row ? toTransferSettlement(row) : null;
+  }
+
+  public async returnTransferRemainder(
+    db: DbHandle,
+    input: {
+      readonly transferId: string;
+      readonly quantity: string;
+      readonly reason: string;
+      readonly idempotencyKey: string | null;
+    }
+  ): Promise<string> {
+    this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `SELECT inv.return_transfer_remainder($1, $2::numeric, $3, $4, $5) AS id`,
+      [
+        input.transferId,
+        input.quantity,
+        input.reason,
+        input.idempotencyKey,
+        db.context.correlationId,
+      ]
+    );
+    if (!row) throw new Error('inventory: inv.return_transfer_remainder returned no row');
+    return row.id;
+  }
+
+  public async requestTransferWriteOff(
+    db: DbHandle,
+    input: {
+      readonly transferId: string;
+      readonly quantity: string;
+      readonly reason: string;
+      readonly idempotencyKey: string | null;
+    }
+  ): Promise<string> {
+    this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `SELECT inv.request_transfer_write_off($1, $2::numeric, $3, $4, $5) AS id`,
+      [
+        input.transferId,
+        input.quantity,
+        input.reason,
+        input.idempotencyKey,
+        db.context.correlationId,
+      ]
+    );
+    if (!row) throw new Error('inventory: inv.request_transfer_write_off returned no row');
+    return row.id;
+  }
+
+  public async decideTransferWriteOff(
+    db: DbHandle,
+    settlementId: string,
+    approve: boolean
+  ): Promise<void> {
+    await this.run(db, `SELECT inv.decide_transfer_write_off($1, $2)`, [settlementId, approve]);
   }
 }

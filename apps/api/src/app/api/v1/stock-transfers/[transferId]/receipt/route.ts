@@ -1,19 +1,20 @@
 /**
- * /api/v1/stock-transfers/{transferId}/receipt — receive a dispatched transfer
- * (P1-32-PRE-041).
+ * /api/v1/stock-transfers/{transferId}/receipt — receive what arrived of a transfer
+ * (P1-32-PRE-041, P1-32-PRE-130).
  *
  * Moves the transfer's quantity out of transit and into its destination through
  * `inv.receive_transfer`, which locks the transfer row before reading its status —
  * so two concurrent receipts of one transfer produce exactly one winner, and the
  * second is refused with `ERR-TRN-001` rather than posting stock twice.
  *
- * ## The quantity must match
+ * ## The quantity is what arrived
  *
- * `quantity` must equal the dispatched quantity. Partial receipt is out of scope
- * and unrepresentable (`ck_stock_transfers_received_quantity`): a short delivery
- * needs a disposition for the missing units — lost, damaged, still travelling —
- * that no column can record yet. The body still carries the quantity so the
- * receiver states what they counted rather than confirming by default.
+ * `quantity` is what the receiver counted, up to what is still in transit. The
+ * whole dispatched quantity settles the transfer in one step; less leaves it
+ * `partially_received`, with the remainder still in transit until a further
+ * receipt, or `POST /stock-transfers/{transferId}/discrepancy-resolution` returns
+ * it to the origin or puts it forward for write-off. Nothing that did not arrive
+ * enters the destination's stock.
  *
  * ## Authority at both ends
  *
@@ -48,7 +49,7 @@ export const STOCK_TRANSFER_RECEIVE_OPERATION = defineOperation({
   module: 'inventory',
   method: 'POST',
   path: '/stock-transfers/{transferId}/receipt',
-  summary: 'Receive a dispatched stock transfer in full at its destination.',
+  summary: 'Receive what arrived of a stock transfer at its destination, in full or in part.',
   permissions: ['inv.stock.operate'],
   scope: 'branch',
   auditClass: 'privileged',

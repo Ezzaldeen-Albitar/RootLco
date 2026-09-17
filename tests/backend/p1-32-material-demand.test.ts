@@ -1,0 +1,1266 @@
+/**
+ * P1-32 preparatory slice 3b — material demand control, its reference data and
+ * truthful transfer receipts, end to end through the route handlers
+ * (P1-32-PRE-125…130).
+ *
+ * Every case counts a side effect — a requirement's usage, a balance, a settlement,
+ * an audit row — because a status alone cannot tell a draw that was measured from
+ * one that was waved through. The properties this suite exists to hold:
+ *
+ *  - a reservation or an issue for a work order whose requirement covers the item
+ *    must name the requirement, and is refused with ERR-INV-001 — stating the
+ *    allowance, what is already committed and what was asked for — when the
+ *    requirement is not approved, lacks a specification or a conversion, or would be
+ *    exceeded; nothing moves when it is refused;
+ *  - one quantity is counted once: an issue that consumes a governed reservation
+ *    spends no more allowance, and releasing a governed reservation gives it back;
+ *  - two draws racing for the last of an allowance produce exactly one winner;
+ *  - a requirement and an exception are decided by someone other than the person who
+ *    asked, and an approved exception is what lets a further draw through;
+ *  - unit conversions and specifications are tenant-wide facts, written only under a
+ *    tenant-wide grant, and a specification resolves only once confirmed;
+ *  - a transfer receipt records what arrived; the remainder stays in transit until it
+ *    is received, returned to the origin, or written off by a second person.
+ *
+ * COVERAGE-EVIDENCE (parsed by scripts/check-operation-test-coverage.mjs):
+ *   inv.material-requirement-create: route service authorization success denial audit idempotency isolation
+ *   inv.material-requirement-list: route service authorization success isolation
+ *   inv.material-requirement-read: route service authorization success cross-tenant isolation
+ *   inv.material-requirement-approve: route service authorization success denial cross-tenant audit idempotency isolation
+ *   inv.material-exception-create: route service authorization success denial cross-tenant audit idempotency isolation
+ *   inv.material-exception-decide: route service authorization success denial cross-tenant audit idempotency isolation
+ *   inv.unit-conversion-list: route service authorization success isolation
+ *   inv.unit-conversion-set: route service authorization success denial audit idempotency isolation
+ *   inv.unit-conversion-retire: route service authorization success cross-tenant audit idempotency isolation
+ *   inv.vehicle-specification-list: route service authorization success isolation
+ *   inv.vehicle-specification-create: route service authorization success denial audit idempotency isolation
+ *   inv.vehicle-specification-confirm: route service authorization success denial cross-tenant audit idempotency isolation
+ *   inv.vehicle-specification-retire: route service authorization success cross-tenant audit idempotency isolation
+ *   inv.stock-transfer-discrepancy-resolve: route service authorization success denial cross-tenant audit idempotency isolation
+ *   inv.stock-transfer-write-off-decide: route service authorization success denial cross-tenant audit idempotency isolation
+ */
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { Pool } from 'pg';
+import { randomUUID } from 'node:crypto';
+import {
+  adminPool,
+  cleanBackendFixtures,
+  ensureBackendFixtures,
+  ensureTestLogins,
+  BRANCH_A1,
+  COMPANY_A1,
+  TENANT_A,
+  USER_A,
+} from './helpers';
+import { createOpenWorkOrder, establishP1_19Fixtures } from './p1-19-helpers';
+import {
+  CATEGORY_A,
+  INV_APPROVER,
+  INV_FULL,
+  INV_MATERIAL,
+  INV_MATERIAL_APPROVER,
+  INV_MATERIAL_SCOPED_A2,
+  INV_READER,
+  INV_TENANT_B,
+  INV_TENANT_B_MATERIAL,
+  ITEM_A,
+  ITEM_A_ALT,
+  UOM_EACH,
+  auditCountFor,
+  authAs,
+  balanceOf,
+  cleanP1_21Fixtures,
+  countRowsOf,
+  establishP1_21Fixtures,
+  freshLocation,
+  seedStock,
+} from './p1-21-helpers';
+import {
+  GET as REQUIREMENT_LIST,
+  POST as REQUIREMENT_CREATE,
+} from '@/app/api/v1/material-requirements/route';
+import { GET as REQUIREMENT_READ } from '@/app/api/v1/material-requirements/[requirementId]/route';
+import { Quantity } from '@/modules/inventory';
+import { POST as REQUIREMENT_DECIDE } from '@/app/api/v1/material-requirements/[requirementId]/approval/route';
+import { POST as EXCEPTION_CREATE } from '@/app/api/v1/material-requirements/[requirementId]/exceptions/route';
+import { POST as EXCEPTION_DECIDE } from '@/app/api/v1/material-exceptions/[exceptionId]/decision/route';
+import {
+  GET as CONVERSION_LIST,
+  POST as CONVERSION_SET,
+} from '@/app/api/v1/unit-conversions/route';
+import { POST as CONVERSION_RETIRE } from '@/app/api/v1/unit-conversions/[conversionId]/retirement/route';
+import {
+  GET as SPECIFICATION_LIST,
+  POST as SPECIFICATION_CREATE,
+} from '@/app/api/v1/vehicle-fluid-specifications/route';
+import { POST as SPECIFICATION_CONFIRM } from '@/app/api/v1/vehicle-fluid-specifications/[specificationId]/confirmation/route';
+import { POST as SPECIFICATION_RETIRE } from '@/app/api/v1/vehicle-fluid-specifications/[specificationId]/retirement/route';
+import { POST as RESERVE } from '@/app/api/v1/stock-reservations/route';
+import { POST as RELEASE } from '@/app/api/v1/stock-reservations/[reservationId]/release/route';
+import { POST as ISSUE } from '@/app/api/v1/stock-issues/route';
+import { POST as TRANSFER_CREATE } from '@/app/api/v1/stock-transfers/route';
+import { POST as TRANSFER_RECEIVE } from '@/app/api/v1/stock-transfers/[transferId]/receipt/route';
+import { POST as DISCREPANCY } from '@/app/api/v1/stock-transfers/[transferId]/discrepancy-resolution/route';
+import { POST as WRITE_OFF_DECIDE } from '@/app/api/v1/stock-transfer-settlements/[settlementId]/decision/route';
+
+let admin: Pool;
+/** A tenant-A unit of VOLUME, so a pack-to-litre conversion crosses dimensions. */
+let LITRE = '';
+
+type Handler = (request: Request) => Promise<Response>;
+type ParamHandler<P> = (request: Request, route: { params: Promise<P> }) => Promise<Response>;
+
+const request = (method: string, path: string, body: unknown, key: string): Request =>
+  new Request(`http://localhost${path}`, {
+    method,
+    headers: { 'content-type': 'application/json', 'idempotency-key': key },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+
+const post = (handler: Handler, path: string, body: unknown, key: string = randomUUID()) =>
+  handler(request('POST', path, body, key));
+
+const postAt = <P>(
+  handler: ParamHandler<P>,
+  path: string,
+  params: P,
+  body: unknown,
+  key: string = randomUUID()
+) => handler(request('POST', path, body, key), { params: Promise.resolve(params) });
+
+const get = (handler: Handler, path: string) =>
+  handler(new Request(`http://localhost${path}`, { method: 'GET' }));
+
+const getAt = <P>(handler: ParamHandler<P>, path: string, params: P) =>
+  handler(new Request(`http://localhost${path}`, { method: 'GET' }), {
+    params: Promise.resolve(params),
+  });
+
+const bodyOf = async <T>(response: Response): Promise<T> => (await response.json()) as T;
+
+interface Problem {
+  readonly code: string;
+  readonly violations?: readonly { path: string; rule: string }[];
+  readonly materialDraw?: {
+    readonly allowance: string | null;
+    readonly alreadyCommitted: string;
+    readonly requested: string | null;
+    readonly reason: string;
+  };
+}
+
+interface RequirementBody {
+  readonly id: string;
+  readonly status: string;
+  readonly approvalRequiredReason: string | null;
+  readonly basis: string;
+  readonly specificationId: string | null;
+  readonly allowanceQuantity: string | null;
+  readonly effectiveAllowance: string | null;
+  readonly requestedQuantity: string;
+  readonly reservedQuantity: string;
+  readonly issuedQuantity: string;
+  readonly committedQuantity: string;
+  readonly remainingQuantity: string | null;
+  readonly uomId: string | null;
+  readonly requestedBy: string;
+  readonly approvedBy: string | null;
+  readonly exceptions: readonly { id: string; status: string }[];
+}
+
+interface ExceptionBody {
+  readonly id: string;
+  readonly status: string;
+  readonly additionalQuantity: string;
+  readonly resultingAllowance: string | null;
+}
+
+interface TransferBody {
+  readonly id: string;
+  readonly status: string;
+  readonly inTransit: boolean;
+  readonly receivedQuantity: string | null;
+  readonly resolvedQuantity: string;
+  readonly outstandingQuantity: string;
+  readonly transitLocationId: string;
+}
+
+interface SettlementBody {
+  readonly id: string;
+  readonly kind: string;
+  readonly status: string;
+  readonly quantity: string;
+  readonly transfer: TransferBody;
+  readonly replayed: boolean;
+}
+
+const onHandAt = async (itemId: string, locationId: string): Promise<string> =>
+  (await balanceOf(itemId, locationId))?.onHand ?? '0.000';
+
+/** An open work order with one service line, and the cell its stock is drawn from. */
+async function job(stock = '20'): Promise<{
+  readonly workOrderId: string;
+  readonly vehicleId: string;
+  readonly lineId: string;
+  readonly cell: string;
+}> {
+  const workOrder = await createOpenWorkOrder();
+  const line = await admin.query<{ id: string }>(
+    `INSERT INTO wo.work_order_service_lines
+       (tenant_id, company_id, branch_id, work_order_id, description, created_by)
+     VALUES ($1,$2,$3,$4,'Material slice fixture line',$5) RETURNING id`,
+    [TENANT_A, workOrder.companyId, workOrder.branchId, workOrder.workOrderId, USER_A]
+  );
+  const cell = await freshLocation();
+  await seedStock({ itemId: ITEM_A, locationId: cell, quantity: stock });
+  return {
+    workOrderId: workOrder.workOrderId,
+    vehicleId: workOrder.vehicleId,
+    lineId: line.rows[0]?.id ?? '',
+    cell,
+  };
+}
+
+async function enteredRequirement(
+  lineId: string,
+  allowance: string,
+  options: { readonly uomId?: string; readonly itemId?: string; readonly key?: string } = {}
+): Promise<Response> {
+  authAs(INV_MATERIAL);
+  return post(
+    REQUIREMENT_CREATE,
+    '/api/v1/material-requirements',
+    {
+      basis: 'entered',
+      serviceLineId: lineId,
+      itemId: options.itemId ?? ITEM_A,
+      allowanceQuantity: allowance,
+      uomId: options.uomId ?? UOM_EACH,
+      sourceReference: 'Service manual table 4',
+    },
+    options.key
+  );
+}
+
+const decide = (requirementId: string, body: unknown, key?: string) =>
+  postAt(
+    REQUIREMENT_DECIDE,
+    `/api/v1/material-requirements/${requirementId}/approval`,
+    { requirementId },
+    body,
+    key
+  );
+
+const readRequirement = (requirementId: string) =>
+  getAt(REQUIREMENT_READ, `/api/v1/material-requirements/${requirementId}`, { requirementId });
+
+/** An entered requirement for ITEM_A, approved by a second person. */
+async function approvedRequirement(lineId: string, allowance: string): Promise<string> {
+  const created = await bodyOf<RequirementBody>(await enteredRequirement(lineId, allowance));
+  authAs(INV_MATERIAL_APPROVER);
+  const approved = await decide(created.id, { decision: 'approved' });
+  expect(approved.status).toBe(200);
+  return created.id;
+}
+
+const issue = (body: Record<string, unknown>) => post(ISSUE, '/api/v1/stock-issues', body);
+const reserve = (body: Record<string, unknown>) =>
+  post(RESERVE, '/api/v1/stock-reservations', body);
+
+beforeAll(async () => {
+  admin = adminPool();
+  await ensureTestLogins(admin);
+  await ensureBackendFixtures(admin);
+  await establishP1_19Fixtures(admin);
+  await establishP1_21Fixtures(admin);
+  const litre = await admin.query<{ id: string }>(
+    `INSERT INTO inv.units_of_measure (scope, tenant_id, code, name, dimension, created_by)
+     VALUES ('tenant',$1,'fx_p132_litre','Fixture litre','volume',$2) RETURNING id`,
+    [TENANT_A, USER_A]
+  );
+  LITRE = litre.rows[0]?.id ?? '';
+}, 180_000);
+
+afterAll(async () => {
+  await cleanP1_21Fixtures();
+  await cleanBackendFixtures(admin);
+  await admin.end();
+});
+
+// ---------------------------------------------------------------------------
+// Unit conversions.
+// ---------------------------------------------------------------------------
+
+describe('inv.unit-conversion-set, inv.unit-conversion-list, inv.unit-conversion-retire', () => {
+  it('states an exact conversion, restates it as a new row, and retires it once', async () => {
+    authAs(INV_MATERIAL);
+    const key = randomUUID();
+    const body = {
+      itemId: ITEM_A_ALT,
+      fromUomId: UOM_EACH,
+      toUomId: LITRE,
+      factor: '0.946000',
+      sourceReference: 'Pack label',
+    };
+    const first = await post(CONVERSION_SET, '/api/v1/unit-conversions', body, key);
+    expect(first.status).toBe(201);
+    const created = await bodyOf<{ id: string; factor: string; status: string }>(first);
+    expect(created.factor).toBe('0.946');
+    expect(created.status).toBe('active');
+    expect(await auditCountFor('inv.unit_conversion.set', created.id)).toBe(1);
+
+    // The same key replays the first answer rather than stating the factor twice.
+    const replay = await post(CONVERSION_SET, '/api/v1/unit-conversions', body, key);
+    expect(replay.status).toBe(200);
+    expect((await bodyOf<{ id: string }>(replay)).id).toBe(created.id);
+    expect(
+      await countRowsOf(
+        `SELECT count(*)::text AS n FROM inv.item_unit_conversions WHERE tenant_id = $1 AND item_id = $2`,
+        [TENANT_A, ITEM_A_ALT]
+      )
+    ).toBe(1);
+
+    // A changed factor is a NEW row; the old one is retired, not rewritten.
+    const restated = await bodyOf<{ id: string }>(
+      await post(CONVERSION_SET, '/api/v1/unit-conversions', { ...body, factor: '1.5' })
+    );
+    const live = await bodyOf<{ items: readonly { id: string; status: string }[] }>(
+      await get(CONVERSION_LIST, `/api/v1/unit-conversions?itemId=${ITEM_A_ALT}`)
+    );
+    expect(live.items.map((row) => row.id)).toEqual([restated.id]);
+    const all = await bodyOf<{ items: readonly { id: string; status: string }[] }>(
+      await get(
+        CONVERSION_LIST,
+        `/api/v1/unit-conversions?itemId=${ITEM_A_ALT}&includeRetired=true`
+      )
+    );
+    expect(all.items.find((row) => row.id === created.id)?.status).toBe('retired');
+
+    const path = `/api/v1/unit-conversions/${restated.id}/retirement`;
+    const retired = await postAt(CONVERSION_RETIRE, path, { conversionId: restated.id }, undefined);
+    expect(retired.status).toBe(200);
+    expect((await bodyOf<{ status: string; replayed: boolean }>(retired)).replayed).toBe(false);
+    const again = await postAt(CONVERSION_RETIRE, path, { conversionId: restated.id }, undefined);
+    expect((await bodyOf<{ replayed: boolean }>(again)).replayed).toBe(true);
+    expect(await auditCountFor('inv.unit_conversion.retired', restated.id)).toBe(1);
+
+    // Another tenant cannot retire it: not found, not refused.
+    authAs(INV_TENANT_B_MATERIAL);
+    expect(
+      (await postAt(CONVERSION_RETIRE, path, { conversionId: restated.id }, undefined)).status
+    ).toBe(404);
+  });
+
+  it('refuses a caller without the code, a branch-scoped grant, and a cross-dimension tenant-wide row', async () => {
+    const body = {
+      fromUomId: UOM_EACH,
+      toUomId: LITRE,
+      factor: '2',
+      sourceReference: 'Data sheet',
+    };
+    authAs(INV_FULL);
+    expect((await post(CONVERSION_SET, '/api/v1/unit-conversions', body)).status).toBe(403);
+    // Held, but only in branch A2: a conversion holds in every branch.
+    authAs(INV_MATERIAL_SCOPED_A2);
+    expect((await post(CONVERSION_SET, '/api/v1/unit-conversions', body)).status).toBe(403);
+    // Held tenant-wide, but a pack is a number of litres only for a particular item.
+    authAs(INV_MATERIAL);
+    const crossing = await post(CONVERSION_SET, '/api/v1/unit-conversions', body);
+    expect(crossing.status).toBe(422);
+    expect((await bodyOf<Problem>(crossing)).violations?.[0]?.path).toBe('body.itemId');
+    expect(
+      await countRowsOf(
+        `SELECT count(*)::text AS n FROM inv.item_unit_conversions
+          WHERE tenant_id = $1 AND item_id IS NULL AND to_uom_id = $2`,
+        [TENANT_A, LITRE]
+      )
+    ).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Vehicle service specifications.
+// ---------------------------------------------------------------------------
+
+async function tenantMake(): Promise<{ makeId: string; modelId: string }> {
+  const tag = randomUUID().slice(0, 8);
+  const make = await admin.query<{ id: string }>(
+    `INSERT INTO veh.makes (scope, tenant_id, code, name, created_by)
+     VALUES ('tenant',$1,$2,$3,$4) RETURNING id`,
+    [TENANT_A, `fx_p132_mk_${tag}`, `Fixture make ${tag}`, USER_A]
+  );
+  const makeId = make.rows[0]?.id ?? '';
+  const model = await admin.query<{ id: string }>(
+    `INSERT INTO veh.models (scope, tenant_id, make_id, code, name, created_by)
+     VALUES ('tenant',$1,$2,$3,$4,$5) RETURNING id`,
+    [TENANT_A, makeId, `fx_p132_md_${tag}`, `Fixture model ${tag}`, USER_A]
+  );
+  return { makeId, modelId: model.rows[0]?.id ?? '' };
+}
+
+const specificationBody = (makeId: string, modelId: string) => ({
+  makeId,
+  modelId,
+  modelYearFrom: 2018,
+  modelYearTo: 2022,
+  serviceCondition: 'oil_change_with_filter',
+  itemCategoryId: CATEGORY_A,
+  capacity: '4.5',
+  uomId: LITRE,
+  sourceReference: 'Owner manual, section 8',
+});
+
+describe('inv.vehicle-specification-create, inv.vehicle-specification-confirm, inv.vehicle-specification-retire, inv.vehicle-specification-list', () => {
+  it('records a capacity unconfirmed, confirms it once, refuses an overlapping confirmation, and retires it', async () => {
+    const { makeId, modelId } = await tenantMake();
+    authAs(INV_MATERIAL);
+    const createKey = randomUUID();
+    const created = await post(
+      SPECIFICATION_CREATE,
+      '/api/v1/vehicle-fluid-specifications',
+      specificationBody(makeId, modelId),
+      createKey
+    );
+    expect(created.status).toBe(201);
+    const spec = await bodyOf<{ id: string; status: string; capacity: string }>(created);
+    expect(spec).toMatchObject({ status: 'recorded', capacity: '4.500' });
+    expect(await auditCountFor('inv.vehicle_specification.recorded', spec.id)).toBe(1);
+    // A doubled frame replays the record instead of recording the capacity twice.
+    const replayed = await post(
+      SPECIFICATION_CREATE,
+      '/api/v1/vehicle-fluid-specifications',
+      specificationBody(makeId, modelId),
+      createKey
+    );
+    expect(replayed.status).toBe(200);
+    expect((await bodyOf<{ id: string }>(replayed)).id).toBe(spec.id);
+    expect(
+      await countRowsOf(
+        `SELECT count(*)::text AS n FROM inv.vehicle_fluid_specifications WHERE make_id = $1`,
+        [makeId]
+      )
+    ).toBe(1);
+
+    const confirmPath = `/api/v1/vehicle-fluid-specifications/${spec.id}/confirmation`;
+    const confirmed = await postAt(
+      SPECIFICATION_CONFIRM,
+      confirmPath,
+      { specificationId: spec.id },
+      undefined
+    );
+    expect(confirmed.status).toBe(200);
+    expect(await bodyOf<{ status: string; confirmedBy: string }>(confirmed)).toMatchObject({
+      status: 'confirmed',
+      confirmedBy: INV_MATERIAL.userId,
+    });
+    const twice = await postAt(
+      SPECIFICATION_CONFIRM,
+      confirmPath,
+      { specificationId: spec.id },
+      undefined
+    );
+    expect((await bodyOf<{ replayed: boolean }>(twice)).replayed).toBe(true);
+    expect(await auditCountFor('inv.vehicle_specification.confirmed', spec.id)).toBe(1);
+
+    // A second capacity for the same vehicle and service over overlapping years may be
+    // RECORDED, but not confirmed while the first stands.
+    const rival = await bodyOf<{ id: string }>(
+      await post(SPECIFICATION_CREATE, '/api/v1/vehicle-fluid-specifications', {
+        ...specificationBody(makeId, modelId),
+        modelYearFrom: 2021,
+        modelYearTo: 2024,
+        capacity: '5',
+      })
+    );
+    const overlap = await postAt(
+      SPECIFICATION_CONFIRM,
+      `/api/v1/vehicle-fluid-specifications/${rival.id}/confirmation`,
+      { specificationId: rival.id },
+      undefined
+    );
+    expect(overlap.status).toBe(409);
+
+    const listed = await bodyOf<{ items: readonly { id: string }[] }>(
+      await get(
+        SPECIFICATION_LIST,
+        `/api/v1/vehicle-fluid-specifications?makeId=${makeId}&status=confirmed`
+      )
+    );
+    expect(listed.items.map((row) => row.id)).toEqual([spec.id]);
+
+    // Another tenant: not found.
+    authAs(INV_TENANT_B_MATERIAL);
+    expect(
+      (await postAt(SPECIFICATION_CONFIRM, confirmPath, { specificationId: rival.id }, undefined))
+        .status
+    ).toBe(404);
+    expect(
+      (
+        await postAt(
+          SPECIFICATION_RETIRE,
+          `/api/v1/vehicle-fluid-specifications/${spec.id}/retirement`,
+          { specificationId: spec.id },
+          undefined
+        )
+      ).status
+    ).toBe(404);
+
+    authAs(INV_MATERIAL);
+    const retirePath = `/api/v1/vehicle-fluid-specifications/${spec.id}/retirement`;
+    const retired = await postAt(
+      SPECIFICATION_RETIRE,
+      retirePath,
+      { specificationId: spec.id },
+      undefined
+    );
+    expect(retired.status).toBe(200);
+    expect((await bodyOf<{ status: string }>(retired)).status).toBe('retired');
+    const again = await postAt(
+      SPECIFICATION_RETIRE,
+      retirePath,
+      { specificationId: spec.id },
+      undefined
+    );
+    expect((await bodyOf<{ replayed: boolean }>(again)).replayed).toBe(true);
+    expect(await auditCountFor('inv.vehicle_specification.retired', spec.id)).toBe(1);
+  });
+
+  it('refuses a caller without the code and a branch-scoped grant', async () => {
+    const { makeId, modelId } = await tenantMake();
+    authAs(INV_FULL);
+    expect(
+      (
+        await post(
+          SPECIFICATION_CREATE,
+          '/api/v1/vehicle-fluid-specifications',
+          specificationBody(makeId, modelId)
+        )
+      ).status
+    ).toBe(403);
+    authAs(INV_MATERIAL_SCOPED_A2);
+    expect(
+      (
+        await post(
+          SPECIFICATION_CREATE,
+          '/api/v1/vehicle-fluid-specifications',
+          specificationBody(makeId, modelId)
+        )
+      ).status
+    ).toBe(403);
+    expect(
+      await countRowsOf(
+        `SELECT count(*)::text AS n FROM inv.vehicle_fluid_specifications WHERE make_id = $1`,
+        [makeId]
+      )
+    ).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Material requirements.
+// ---------------------------------------------------------------------------
+
+describe('inv.material-requirement-create, inv.material-requirement-approve, inv.material-requirement-read, inv.material-requirement-list', () => {
+  it('asks, refuses the requester as approver, approves by a second person, and reports usage', async () => {
+    const { lineId, workOrderId } = await job();
+    const key = randomUUID();
+    const created = await enteredRequirement(lineId, '4', { key });
+    expect(created.status).toBe(201);
+    const requirement = await bodyOf<RequirementBody>(created);
+    expect(requirement).toMatchObject({
+      status: 'pending_approval',
+      basis: 'entered',
+      allowanceQuantity: '4.000',
+      effectiveAllowance: '4.000',
+      remainingQuantity: '4.000',
+      requestedBy: INV_MATERIAL.userId,
+    });
+    expect(await auditCountFor('inv.material_requirement.requested', requirement.id)).toBe(1);
+
+    // A doubled frame replays the first requirement.
+    const replay = await enteredRequirement(lineId, '4', { key });
+    expect(replay.status).toBe(200);
+    expect((await bodyOf<RequirementBody>(replay)).id).toBe(requirement.id);
+    // A second active requirement for the same need on the same line is refused.
+    expect((await enteredRequirement(lineId, '2')).status).toBe(409);
+    expect(
+      await countRowsOf(
+        `SELECT count(*)::text AS n FROM inv.material_requirements WHERE service_line_id = $1`,
+        [lineId]
+      )
+    ).toBe(1);
+
+    // The requester may not approve, and a caller without the code may not either.
+    authAs(INV_MATERIAL);
+    expect((await decide(requirement.id, { decision: 'approved' })).status).toBe(409);
+    authAs(INV_FULL);
+    expect((await decide(requirement.id, { decision: 'approved' })).status).toBe(403);
+    authAs(INV_TENANT_B_MATERIAL);
+    expect((await decide(requirement.id, { decision: 'approved' })).status).toBe(404);
+
+    authAs(INV_MATERIAL_APPROVER);
+    const approveKey = randomUUID();
+    const approved = await decide(requirement.id, { decision: 'approved' }, approveKey);
+    expect(approved.status).toBe(200);
+    expect(await bodyOf<RequirementBody>(approved)).toMatchObject({
+      status: 'approved',
+      approvedBy: INV_MATERIAL_APPROVER.userId,
+    });
+    const approvedReplay = await decide(requirement.id, { decision: 'approved' }, approveKey);
+    expect(approvedReplay.status).toBe(200);
+    expect(await auditCountFor('inv.material_requirement.approved', requirement.id)).toBe(1);
+
+    const read = await readRequirement(requirement.id);
+    expect(read.status).toBe(200);
+    expect((await bodyOf<RequirementBody>(read)).status).toBe('approved');
+
+    const listed = await bodyOf<{ items: readonly { id: string }[] }>(
+      await get(
+        REQUIREMENT_LIST,
+        `/api/v1/material-requirements?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&workOrderId=${workOrderId}`
+      )
+    );
+    expect(listed.items.map((row) => row.id)).toEqual([requirement.id]);
+
+    // Isolation: the authority held in branch A2 does not read branch A1, and another
+    // tenant cannot see the requirement at all.
+    authAs(INV_MATERIAL_SCOPED_A2);
+    expect(
+      (
+        await get(
+          REQUIREMENT_LIST,
+          `/api/v1/material-requirements?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}`
+        )
+      ).status
+    ).toBe(403);
+    authAs(INV_TENANT_B_MATERIAL);
+    expect((await readRequirement(requirement.id)).status).toBe(404);
+  });
+
+  it('rejects with a reason, and refuses a caller without the request code', async () => {
+    const { lineId } = await job();
+    authAs(INV_FULL);
+    expect(
+      (
+        await post(REQUIREMENT_CREATE, '/api/v1/material-requirements', {
+          basis: 'entered',
+          serviceLineId: lineId,
+          itemId: ITEM_A,
+          allowanceQuantity: '1',
+          uomId: UOM_EACH,
+          sourceReference: 'Manual',
+        })
+      ).status
+    ).toBe(403);
+
+    const requirement = await bodyOf<RequirementBody>(await enteredRequirement(lineId, '3'));
+    authAs(INV_MATERIAL_APPROVER);
+    expect((await decide(requirement.id, { decision: 'rejected' })).status).toBe(422);
+    const rejected = await decide(requirement.id, {
+      decision: 'rejected',
+      reason: 'Not needed for this service',
+    });
+    expect(rejected.status).toBe(200);
+    expect((await bodyOf<RequirementBody>(rejected)).status).toBe('rejected');
+    expect(await auditCountFor('inv.material_requirement.rejected', requirement.id)).toBe(1);
+  });
+
+  it('stores a missing specification as approval required, and derives the allowance once one is confirmed', async () => {
+    const { lineId, vehicleId } = await job();
+    authAs(INV_MATERIAL);
+    const body = {
+      basis: 'specification',
+      serviceLineId: lineId,
+      itemCategoryId: CATEGORY_A,
+      serviceCondition: 'oil_change_with_filter',
+    };
+    const missing = await bodyOf<RequirementBody>(
+      await post(REQUIREMENT_CREATE, '/api/v1/material-requirements', body)
+    );
+    expect(missing).toMatchObject({
+      status: 'approval_required',
+      approvalRequiredReason: 'missing_specification',
+      allowanceQuantity: null,
+      remainingQuantity: null,
+    });
+    // Nothing to approve.
+    authAs(INV_MATERIAL_APPROVER);
+    expect((await decide(missing.id, { decision: 'approved' })).status).toBe(409);
+
+    // A confirmed specification for this vehicle, on a second line.
+    const { makeId, modelId } = await tenantMake();
+    const client = await admin.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `SELECT set_config('app.user_id',$1,true), set_config('app.tenant_id',$2,true)`,
+        [USER_A, TENANT_A]
+      );
+      await client.query(
+        `UPDATE veh.vehicles SET make_id = $1, model_id = $2, model_year = 2020 WHERE id = $3`,
+        [makeId, modelId, vehicleId]
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    authAs(INV_MATERIAL);
+    const spec = await bodyOf<{ id: string }>(
+      await post(
+        SPECIFICATION_CREATE,
+        '/api/v1/vehicle-fluid-specifications',
+        specificationBody(makeId, modelId)
+      )
+    );
+    await postAt(
+      SPECIFICATION_CONFIRM,
+      `/api/v1/vehicle-fluid-specifications/${spec.id}/confirmation`,
+      { specificationId: spec.id },
+      undefined
+    );
+    const line = await admin.query<{ id: string }>(
+      `INSERT INTO wo.work_order_service_lines
+         (tenant_id, company_id, branch_id, work_order_id, description, created_by)
+       SELECT tenant_id, company_id, branch_id, work_order_id, 'Second fixture line', $2
+         FROM wo.work_order_service_lines WHERE id = $1 RETURNING id`,
+      [lineId, USER_A]
+    );
+    const derived = await bodyOf<RequirementBody>(
+      await post(REQUIREMENT_CREATE, '/api/v1/material-requirements', {
+        ...body,
+        serviceLineId: line.rows[0]?.id,
+      })
+    );
+    expect(derived).toMatchObject({
+      status: 'pending_approval',
+      basis: 'specification',
+      specificationId: spec.id,
+      allowanceQuantity: '4.500',
+      uomId: LITRE,
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Draws: the existing reservation and issue paths, governed.
+// ---------------------------------------------------------------------------
+
+describe('work-order draws measured against the approved requirement', () => {
+  it('requires the link, issues within the allowance, and refuses the excess with the figures', async () => {
+    const { workOrderId, lineId, cell } = await job();
+    const requirementId = await approvedRequirement(lineId, '4');
+    authAs(INV_MATERIAL);
+
+    const unlinked = await issue({ workOrderId, itemId: ITEM_A, locationId: cell, quantity: '1' });
+    expect(unlinked.status).toBe(422);
+    expect((await bodyOf<Problem>(unlinked)).violations?.[0]).toEqual({
+      path: 'body.materialRequirementId',
+      rule: 'required',
+    });
+
+    const first = await issue({
+      workOrderId,
+      itemId: ITEM_A,
+      locationId: cell,
+      quantity: '3',
+      materialRequirementId: requirementId,
+    });
+    expect(first.status).toBe(201);
+    expect((await bodyOf<{ materialRequestId: string | null }>(first)).materialRequestId).not.toBe(
+      null
+    );
+    expect(await bodyOf<RequirementBody>(await readRequirement(requirementId))).toMatchObject({
+      issuedQuantity: '3.000',
+      requestedQuantity: '0.000',
+      committedQuantity: '3.000',
+      remainingQuantity: '1.000',
+    });
+
+    const before = await onHandAt(ITEM_A, cell);
+    const excess = await issue({
+      workOrderId,
+      itemId: ITEM_A,
+      locationId: cell,
+      quantity: '2',
+      materialRequirementId: requirementId,
+    });
+    expect(excess.status).toBe(409);
+    const problem = await bodyOf<Problem>(excess);
+    expect(problem.code).toBe('ERR-INV-001');
+    expect(problem.materialDraw).toEqual({
+      allowance: '4.000',
+      alreadyCommitted: '3.000',
+      requested: '2.000',
+      reason: 'exceeds_requirement',
+    });
+    // Nothing moved.
+    expect(await onHandAt(ITEM_A, cell)).toBe(before);
+
+    // The same excess as a RESERVATION is refused the same way.
+    const reserved = await reserve({
+      workOrderId,
+      itemId: ITEM_A,
+      locationId: cell,
+      quantity: '2',
+      materialRequirementId: requirementId,
+    });
+    expect(reserved.status).toBe(409);
+    expect((await bodyOf<Problem>(reserved)).materialDraw?.reason).toBe('exceeds_requirement');
+  });
+
+  it('counts a reserved unit once when it is issued, and gives it back when released', async () => {
+    const { workOrderId, lineId, cell } = await job();
+    const requirementId = await approvedRequirement(lineId, '5');
+    authAs(INV_MATERIAL);
+
+    const held = await bodyOf<{ id: string; materialRequestId: string | null }>(
+      await reserve({
+        workOrderId,
+        itemId: ITEM_A,
+        locationId: cell,
+        quantity: '2',
+        materialRequirementId: requirementId,
+      })
+    );
+    expect(held.materialRequestId).not.toBe(null);
+    expect(await bodyOf<RequirementBody>(await readRequirement(requirementId))).toMatchObject({
+      reservedQuantity: '2.000',
+      committedQuantity: '2.000',
+    });
+
+    // Issuing the reservation spends nothing more: the units move from reserved to issued.
+    const issued = await issue({
+      workOrderId,
+      itemId: ITEM_A,
+      locationId: cell,
+      quantity: '2',
+      reservationId: held.id,
+    });
+    expect(issued.status).toBe(201);
+    expect((await bodyOf<{ materialRequestId: string | null }>(issued)).materialRequestId).toBe(
+      held.materialRequestId
+    );
+    expect(await bodyOf<RequirementBody>(await readRequirement(requirementId))).toMatchObject({
+      reservedQuantity: '0.000',
+      issuedQuantity: '2.000',
+      committedQuantity: '2.000',
+      remainingQuantity: '3.000',
+    });
+
+    // A second reservation, released: the allowance comes back by the act.
+    const second = await bodyOf<{ id: string }>(
+      await reserve({
+        workOrderId,
+        itemId: ITEM_A,
+        locationId: cell,
+        quantity: '3',
+        materialRequirementId: requirementId,
+      })
+    );
+    expect(
+      (await bodyOf<RequirementBody>(await readRequirement(requirementId))).remainingQuantity
+    ).toBe('0.000');
+    const released = await postAt(
+      RELEASE,
+      `/api/v1/stock-reservations/${second.id}/release`,
+      { reservationId: second.id },
+      { reason: 'Customer postponed' }
+    );
+    expect(released.status).toBe(200);
+    expect(await bodyOf<RequirementBody>(await readRequirement(requirementId))).toMatchObject({
+      reservedQuantity: '0.000',
+      committedQuantity: '2.000',
+      remainingQuantity: '3.000',
+    });
+  });
+
+  it('refuses a draw on a requirement that is pending, missing a specification, or missing a conversion', async () => {
+    const { workOrderId, lineId, cell } = await job();
+    authAs(INV_MATERIAL);
+    const pending = await bodyOf<RequirementBody>(await enteredRequirement(lineId, '2'));
+    const onPending = await issue({
+      workOrderId,
+      itemId: ITEM_A,
+      locationId: cell,
+      quantity: '1',
+      materialRequirementId: pending.id,
+    });
+    expect(onPending.status).toBe(409);
+    expect((await bodyOf<Problem>(onPending)).materialDraw).toMatchObject({
+      allowance: '2.000',
+      alreadyCommitted: '0.000',
+      requested: '1.000',
+      reason: 'approval_required',
+    });
+
+    // An item requirement stated in litres for an item stocked in each, with no
+    // conversion between them.
+    const second = await job();
+    const unconverted = await bodyOf<RequirementBody>(
+      await enteredRequirement(second.lineId, '4', { uomId: LITRE })
+    );
+    expect(unconverted).toMatchObject({
+      status: 'approval_required',
+      approvalRequiredReason: 'missing_unit_conversion',
+    });
+    const onUnconverted = await issue({
+      workOrderId: second.workOrderId,
+      itemId: ITEM_A,
+      locationId: second.cell,
+      quantity: '1',
+      materialRequirementId: unconverted.id,
+    });
+    expect(onUnconverted.status).toBe(409);
+    expect((await bodyOf<Problem>(onUnconverted)).materialDraw).toMatchObject({
+      requested: null,
+      reason: 'missing_conversion',
+    });
+
+    const third = await job();
+    authAs(INV_MATERIAL);
+    const unspecified = await bodyOf<RequirementBody>(
+      await post(REQUIREMENT_CREATE, '/api/v1/material-requirements', {
+        basis: 'specification',
+        serviceLineId: third.lineId,
+        itemId: ITEM_A,
+        serviceCondition: 'brake_service',
+      })
+    );
+    const onUnspecified = await reserve({
+      workOrderId: third.workOrderId,
+      itemId: ITEM_A,
+      locationId: third.cell,
+      quantity: '1',
+      materialRequirementId: unspecified.id,
+    });
+    expect(onUnspecified.status).toBe(409);
+    expect((await bodyOf<Problem>(onUnspecified)).materialDraw).toMatchObject({
+      allowance: null,
+      reason: 'missing_specification',
+    });
+    expect(
+      await countRowsOf(
+        `SELECT count(*)::text AS n FROM inv.material_requests WHERE requirement_id = ANY($1)`,
+        [[pending.id, unconverted.id, unspecified.id]]
+      )
+    ).toBe(0);
+  });
+
+  it('lets exactly one of two concurrent draws take the last of an allowance', async () => {
+    const { workOrderId, lineId, cell } = await job();
+    const requirementId = await approvedRequirement(lineId, '1');
+    authAs(INV_MATERIAL);
+    const draw = () =>
+      reserve({
+        workOrderId,
+        itemId: ITEM_A,
+        locationId: cell,
+        quantity: '1',
+        materialRequirementId: requirementId,
+      });
+    const statuses = (await Promise.all([draw(), draw()])).map((response) => response.status);
+    expect([...statuses].sort()).toEqual([201, 409]);
+    expect(
+      await countRowsOf(
+        `SELECT count(*)::text AS n FROM inv.material_requests WHERE requirement_id = $1`,
+        [requirementId]
+      )
+    ).toBe(1);
+    expect(
+      (await bodyOf<RequirementBody>(await readRequirement(requirementId))).committedQuantity
+    ).toBe('1.000');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Exceptions.
+// ---------------------------------------------------------------------------
+
+describe('inv.material-exception-create, inv.material-exception-decide', () => {
+  it('asks for more with a reason, is decided by a different person, and then allows the draw', async () => {
+    const { workOrderId, lineId, cell } = await job();
+    const requirementId = await approvedRequirement(lineId, '2');
+    authAs(INV_MATERIAL);
+    await issue({
+      workOrderId,
+      itemId: ITEM_A,
+      locationId: cell,
+      quantity: '2',
+      materialRequirementId: requirementId,
+    });
+
+    const path = `/api/v1/material-requirements/${requirementId}/exceptions`;
+    authAs(INV_FULL);
+    expect(
+      (
+        await postAt(
+          EXCEPTION_CREATE,
+          path,
+          { requirementId },
+          {
+            additionalQuantity: '2',
+            reason: 'Filter housing leaked',
+          }
+        )
+      ).status
+    ).toBe(403);
+
+    authAs(INV_MATERIAL);
+    const key = randomUUID();
+    const body = { additionalQuantity: '2', reason: 'Filter housing leaked' };
+    const created = await postAt(EXCEPTION_CREATE, path, { requirementId }, body, key);
+    expect(created.status).toBe(201);
+    const exception = await bodyOf<ExceptionBody>(created);
+    expect(exception).toMatchObject({ status: 'pending', resultingAllowance: null });
+    expect(await auditCountFor('inv.material_exception.requested', exception.id)).toBe(1);
+    const replay = await postAt(EXCEPTION_CREATE, path, { requirementId }, body, key);
+    expect((await bodyOf<ExceptionBody>(replay)).id).toBe(exception.id);
+    authAs(INV_TENANT_B_MATERIAL);
+    expect((await postAt(EXCEPTION_CREATE, path, { requirementId }, body)).status).toBe(404);
+    expect(
+      await countRowsOf(
+        `SELECT count(*)::text AS n FROM inv.material_requirement_exceptions WHERE requirement_id = $1`,
+        [requirementId]
+      )
+    ).toBe(1);
+    authAs(INV_MATERIAL);
+
+    // Pending adds nothing.
+    const early = await issue({
+      workOrderId,
+      itemId: ITEM_A,
+      locationId: cell,
+      quantity: '1',
+      materialRequirementId: requirementId,
+    });
+    expect(early.status).toBe(409);
+
+    const decisionPath = `/api/v1/material-exceptions/${exception.id}/decision`;
+    const decideAs = (key?: string) =>
+      postAt(
+        EXCEPTION_DECIDE,
+        decisionPath,
+        { exceptionId: exception.id },
+        { decision: 'approved' },
+        key
+      );
+    expect((await decideAs()).status).toBe(409);
+    authAs(INV_FULL);
+    expect((await decideAs()).status).toBe(403);
+    authAs(INV_TENANT_B_MATERIAL);
+    expect((await decideAs()).status).toBe(404);
+    authAs(INV_MATERIAL_SCOPED_A2);
+    expect((await decideAs()).status).toBe(404);
+
+    authAs(INV_MATERIAL_APPROVER);
+    const decisionKey = randomUUID();
+    const decided = await decideAs(decisionKey);
+    expect(decided.status).toBe(200);
+    expect(await bodyOf<ExceptionBody>(decided)).toMatchObject({
+      status: 'approved',
+      resultingAllowance: '4.000',
+    });
+    // The retried decision replays; the exception is not approved twice.
+    const redecided = await decideAs(decisionKey);
+    expect(redecided.status).toBe(200);
+    expect((await bodyOf<ExceptionBody>(redecided)).resultingAllowance).toBe('4.000');
+    expect(await auditCountFor('inv.material_exception.approved', exception.id)).toBe(1);
+
+    authAs(INV_MATERIAL);
+    const after = await issue({
+      workOrderId,
+      itemId: ITEM_A,
+      locationId: cell,
+      quantity: '2',
+      materialRequirementId: requirementId,
+    });
+    expect(after.status).toBe(201);
+    const read = await bodyOf<RequirementBody>(await readRequirement(requirementId));
+    expect(read).toMatchObject({
+      effectiveAllowance: '4.000',
+      issuedQuantity: '4.000',
+      remainingQuantity: '0.000',
+    });
+    expect(read.exceptions.map((row) => row.status)).toEqual(['approved']);
+  });
+
+  it('refuses an exception on a requirement that is not approved', async () => {
+    const { lineId } = await job();
+    const pending = await bodyOf<RequirementBody>(await enteredRequirement(lineId, '1'));
+    const refused = await postAt(
+      EXCEPTION_CREATE,
+      `/api/v1/material-requirements/${pending.id}/exceptions`,
+      { requirementId: pending.id },
+      { additionalQuantity: '1', reason: 'More' }
+    );
+    expect(refused.status).toBe(409);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Transfers: what arrived, and what did not.
+// ---------------------------------------------------------------------------
+
+describe('inv.stock-transfer-receive (partial), inv.stock-transfer-discrepancy-resolve, inv.stock-transfer-write-off-decide', () => {
+  async function dispatched(quantity: string): Promise<{
+    readonly transfer: TransferBody;
+    readonly from: string;
+    readonly to: string;
+  }> {
+    const from = await freshLocation();
+    const to = await freshLocation();
+    await seedStock({ itemId: ITEM_A, locationId: from, quantity: '10' });
+    authAs(INV_FULL);
+    const transfer = await bodyOf<TransferBody>(
+      await post(TRANSFER_CREATE, '/api/v1/stock-transfers', {
+        itemId: ITEM_A,
+        fromLocationId: from,
+        toLocationId: to,
+        quantity,
+      })
+    );
+    return { transfer, from, to };
+  }
+
+  const receive = (transferId: string, quantity: string) =>
+    postAt(
+      TRANSFER_RECEIVE,
+      `/api/v1/stock-transfers/${transferId}/receipt`,
+      { transferId },
+      { quantity }
+    );
+
+  const resolve = (transferId: string, body: unknown, key?: string) =>
+    postAt(
+      DISCREPANCY,
+      `/api/v1/stock-transfers/${transferId}/discrepancy-resolution`,
+      { transferId },
+      body,
+      key
+    );
+
+  const decideWriteOff = (settlementId: string, decision: string, key?: string) =>
+    postAt(
+      WRITE_OFF_DECIDE,
+      `/api/v1/stock-transfer-settlements/${settlementId}/decision`,
+      { settlementId },
+      { decision, reason: 'Counted twice at the dock' },
+      key
+    );
+
+  it('receives a short delivery, returns part to the origin, and writes off the rest by a second person', async () => {
+    const { transfer, from, to } = await dispatched('5');
+    const originAfterDispatch = await onHandAt(ITEM_A, from);
+    // The transit location is the BRANCH's, shared with every other transfer in it, so
+    // what this transfer holds there is asserted as a delta.
+    const transitAfterDispatch = await onHandAt(ITEM_A, transfer.transitLocationId);
+
+    const short = await receive(transfer.id, '3');
+    expect(short.status).toBe(200);
+    expect(await bodyOf<TransferBody>(short)).toMatchObject({
+      status: 'partially_received',
+      receivedQuantity: '3.000',
+      outstandingQuantity: '2.000',
+      inTransit: true,
+    });
+    expect(await onHandAt(ITEM_A, to)).toBe('3.000');
+    expect(await auditCountFor('inv.stock_transfer.received', transfer.id)).toBe(1);
+
+    // More than is still in transit is refused.
+    expect((await receive(transfer.id, '3')).status).toBe(409);
+
+    const key = randomUUID();
+    const returnBody = { kind: 'return_to_origin', quantity: '1', reason: 'Wrong item packed' };
+    const returned = await resolve(transfer.id, returnBody, key);
+    expect(returned.status).toBe(201);
+    const settlement = await bodyOf<SettlementBody>(returned);
+    expect(settlement).toMatchObject({ kind: 'return_to_origin', status: 'posted' });
+    expect(settlement.transfer.outstandingQuantity).toBe('1.000');
+    expect(await onHandAt(ITEM_A, from)).toBe(
+      Quantity.parse(originAfterDispatch).plus(Quantity.parse('1')).toString()
+    );
+    expect(await auditCountFor('inv.stock_transfer.discrepancy_resolved', settlement.id)).toBe(1);
+    // A doubled frame replays the settlement instead of returning the unit twice.
+    const replay = await resolve(transfer.id, returnBody, key);
+    expect(replay.status).toBe(200);
+    expect((await bodyOf<SettlementBody>(replay)).id).toBe(settlement.id);
+    expect(
+      await countRowsOf(
+        `SELECT count(*)::text AS n FROM inv.stock_transfer_settlements
+          WHERE transfer_id = $1 AND settlement_kind = 'return_to_origin'`,
+        [transfer.id]
+      )
+    ).toBe(1);
+
+    const writeOff = await bodyOf<SettlementBody>(
+      await resolve(transfer.id, { kind: 'write_off', quantity: '1', reason: 'Lost in transit' })
+    );
+    expect(writeOff).toMatchObject({ kind: 'write_off', status: 'pending' });
+    // Pending, it still claims the unit: a receipt of it is refused.
+    expect((await receive(transfer.id, '1')).status).toBe(409);
+
+    // The requester may not decide it; a reader may not; another tenant sees nothing.
+    expect((await decideWriteOff(writeOff.id, 'approved')).status).toBe(409);
+    authAs(INV_READER);
+    expect((await decideWriteOff(writeOff.id, 'approved')).status).toBe(403);
+    authAs(INV_TENANT_B);
+    expect((await decideWriteOff(writeOff.id, 'approved')).status).toBe(404);
+
+    authAs(INV_APPROVER);
+    const writeOffKey = randomUUID();
+    const approved = await decideWriteOff(writeOff.id, 'approved', writeOffKey);
+    expect(approved.status).toBe(200);
+    // A retried approval replays: the units leave transit once.
+    const reapproved = await decideWriteOff(writeOff.id, 'approved', writeOffKey);
+    expect(reapproved.status).toBe(200);
+    expect(
+      await countRowsOf(
+        `SELECT count(*)::text AS n FROM inv.stock_movements
+          WHERE reference_kind = 'transfer_receipt' AND reference_id = $1`,
+        [writeOff.id]
+      )
+    ).toBe(1);
+    const decided = await bodyOf<SettlementBody>(approved);
+    expect(decided.status).toBe('posted');
+    expect(decided.transfer).toMatchObject({
+      status: 'settled',
+      outstandingQuantity: '0.000',
+      inTransit: false,
+    });
+    expect(await onHandAt(ITEM_A, transfer.transitLocationId)).toBe(
+      Quantity.parse(transitAfterDispatch).minus(Quantity.parse('5')).toString()
+    );
+    expect(await onHandAt(ITEM_A, to)).toBe('3.000');
+    expect(await auditCountFor('inv.stock_transfer.write_off_approved', writeOff.id)).toBe(1);
+  });
+
+  it('leaves a rejected write-off in transit and refuses another tenant and a reader', async () => {
+    const { transfer } = await dispatched('2');
+    const transitAfterDispatch = await onHandAt(ITEM_A, transfer.transitLocationId);
+    authAs(INV_TENANT_B);
+    expect(
+      (await resolve(transfer.id, { kind: 'return_to_origin', quantity: '1', reason: 'X' })).status
+    ).toBe(404);
+    authAs(INV_READER);
+    expect(
+      (await resolve(transfer.id, { kind: 'return_to_origin', quantity: '1', reason: 'X' })).status
+    ).toBe(403);
+
+    authAs(INV_FULL);
+    const writeOff = await bodyOf<SettlementBody>(
+      await resolve(transfer.id, { kind: 'write_off', quantity: '2', reason: 'Not found' })
+    );
+    authAs(INV_APPROVER);
+    const rejected = await bodyOf<SettlementBody>(await decideWriteOff(writeOff.id, 'rejected'));
+    expect(rejected.status).toBe('rejected');
+    expect(rejected.transfer).toMatchObject({
+      status: 'dispatched',
+      outstandingQuantity: '2.000',
+    });
+    expect(await auditCountFor('inv.stock_transfer.write_off_rejected', writeOff.id)).toBe(1);
+    expect(await onHandAt(ITEM_A, transfer.transitLocationId)).toBe(transitAfterDispatch);
+  });
+});

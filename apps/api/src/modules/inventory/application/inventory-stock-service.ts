@@ -27,6 +27,7 @@ import type { DbHandle } from '@/server/db/transaction';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import type { InventoryRepository, StockLocationRow } from '../data/inventory-repository';
 import { parseQuantity, toDomainFailure } from './inventory-failures';
+import { MaterialDrawGovernor, mapMaterialFailure } from './inventory-material-service';
 import {
   Quantity,
   assertLegalMovementReference,
@@ -46,6 +47,11 @@ export interface ReservationView {
   readonly status: string;
   readonly expiresAt: string | null;
   readonly recordVersion: number;
+  /**
+   * The material request this reservation fulfills, when the draw was governed by a
+   * material requirement; null for an ungoverned reservation.
+   */
+  readonly materialRequestId: string | null;
   /** True when an idempotent replay returned the reservation that already existed. */
   readonly replayed: boolean;
 }
@@ -60,6 +66,8 @@ export interface IssueView {
   readonly branchId: string;
   readonly quantity: string;
   readonly reservationId: string | null;
+  /** The material request the issue fulfilled; null for an ungoverned issue. */
+  readonly materialRequestId: string | null;
 }
 
 export interface ReturnView {
@@ -80,7 +88,11 @@ export interface DamageView {
 }
 
 export class InventoryStockService {
-  public constructor(private readonly repository: InventoryRepository) {}
+  private readonly governor: MaterialDrawGovernor;
+
+  public constructor(private readonly repository: InventoryRepository) {
+    this.governor = new MaterialDrawGovernor(repository);
+  }
 
   // -------------------------------------------------------------------------
   // P1-21-BE-004 / BE-013 — reservation and concurrent-reservation protection.
@@ -108,6 +120,7 @@ export class InventoryStockService {
       readonly workOrderId?: string;
       readonly idempotencyKey?: string;
       readonly expiresAt?: string;
+      readonly materialRequirementId?: string;
     },
     authorizeScope: ScopeAuthorizer
   ): Promise<ReservationView> {
@@ -116,8 +129,22 @@ export class InventoryStockService {
     await authorizeScope({ companyId: location.companyId, branchId: location.branchId });
     await this.requireStockTrackedItem(db, input.itemId);
 
+    if (input.materialRequirementId !== undefined && input.workOrderId === undefined) {
+      throw new AppFailure('ERR-VAL-001', {
+        message: 'A material requirement governs a draw for a work order; name the work order',
+        safeDetails: { violations: [{ path: 'body.workOrderId', rule: 'required' }] },
+      });
+    }
+    // P1-32-PRE-128: a reservation for a work order is a draw on its approved demand
+    // whenever a requirement covers the item.
+    let requirementId: string | null = null;
     if (input.workOrderId !== undefined) {
       await this.requireWorkOrderAcceptingParts(db, input.workOrderId, location);
+      requirementId = await this.governor.resolve(db, {
+        workOrderId: input.workOrderId,
+        itemId: input.itemId,
+        materialRequirementId: input.materialRequirementId,
+      });
     }
 
     /**
@@ -149,7 +176,24 @@ export class InventoryStockService {
             'only for an identical request.',
         });
       }
-      return this.toReservationView(existing, true);
+      const link = await this.repository.readMaterialLinkForReservation(db, existing.id);
+      return this.toReservationView(existing, true, link?.requestId ?? null);
+    }
+
+    // Measured under the requirement lock, BEFORE any stock is touched, so a refusal
+    // states the allowance and nothing is reserved.
+    let materialRequestId: string | null = null;
+    if (requirementId !== null) {
+      await this.governor.assertDrawable(db, {
+        requirementId,
+        itemId: input.itemId,
+        quantity: quantity.toString(),
+      });
+      materialRequestId = await this.governor.openRequest(db, {
+        requirementId,
+        itemId: input.itemId,
+        quantity: quantity.toString(),
+      });
     }
 
     let reservationId: string;
@@ -172,6 +216,19 @@ export class InventoryStockService {
     if (!reservation) {
       throw new AppFailure('ERR-SYS-001', { message: 'Reservation vanished after creation' });
     }
+    if (materialRequestId !== null) {
+      try {
+        await this.repository.linkMaterialFulfillment(db, {
+          requestId: materialRequestId,
+          companyId: reservation.companyId,
+          branchId: reservation.branchId,
+          reservationId: reservation.id,
+          partIssueId: null,
+        });
+      } catch (error) {
+        mapMaterialFailure(error, 'Material reservation');
+      }
+    }
 
     await appendAudit(db, {
       action: 'inv.stock.reserved',
@@ -185,6 +242,7 @@ export class InventoryStockService {
         { field: 'locationId', classification: 'internal', value: reservation.locationId },
         { field: 'quantity', classification: 'internal', value: reservation.quantity },
         { field: 'workOrderId', classification: 'internal', value: reservation.workOrderId },
+        { field: 'materialRequestId', classification: 'internal', value: materialRequestId },
       ],
     });
 
@@ -207,7 +265,7 @@ export class InventoryStockService {
       },
     });
 
-    return this.toReservationView(reservation, false);
+    return this.toReservationView(reservation, false, materialRequestId);
   }
 
   // -------------------------------------------------------------------------
@@ -249,8 +307,21 @@ export class InventoryStockService {
     await authorizeScope({ companyId: before.companyId, branchId: before.branchId });
 
     const wasActive = before.status === 'active';
+    // A reservation that fulfills an open material request is released by finishing
+    // the request, which releases it explicitly AND stops its remainder counting
+    // against the allowance. Releasing the reservation alone would leave the units
+    // committed to the job with nothing held on the shelf for them.
+    const link = await this.repository.readMaterialLinkForReservation(db, reservationId);
     try {
-      await this.repository.releaseReservation(db, reservationId, reason);
+      if (wasActive && link !== null && link.requestStatus === 'open') {
+        await this.repository.finishMaterialRequest(db, {
+          requestId: link.requestId,
+          outcome: link.hasIssue ? 'closed' : 'cancelled',
+          reason,
+        });
+      } else {
+        await this.repository.releaseReservation(db, reservationId, reason);
+      }
     } catch (error) {
       toDomainFailure(error, 'Reservation release');
     }
@@ -300,7 +371,7 @@ export class InventoryStockService {
       });
     }
 
-    return this.toReservationView(after, !wasActive);
+    return this.toReservationView(after, !wasActive, link?.requestId ?? null);
   }
 
   // -------------------------------------------------------------------------
@@ -325,6 +396,7 @@ export class InventoryStockService {
       readonly quantity: string;
       readonly reservationId?: string;
       readonly requiredPartRef?: string;
+      readonly materialRequirementId?: string;
     },
     authorizeScope: ScopeAuthorizer
   ): Promise<IssueView> {
@@ -369,6 +441,52 @@ export class InventoryStockService {
       }
     }
 
+    // P1-32-PRE-128: the material request this issue fulfills. An issue against a
+    // reservation that already fulfills a request draws on THAT request: its units
+    // were measured against the allowance when they were reserved, and counting them
+    // again would spend the allowance twice. Any other governed issue opens a request
+    // of its own, measured under the requirement lock before stock moves.
+    let materialRequestId: string | null = null;
+    const reservationLink =
+      input.reservationId === undefined
+        ? null
+        : await this.repository.readMaterialLinkForReservation(db, input.reservationId);
+    if (reservationLink !== null && reservationLink.requestStatus === 'open') {
+      if (
+        input.materialRequirementId !== undefined &&
+        input.materialRequirementId !== reservationLink.requirementId
+      ) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: 'The reservation was drawn on a different material requirement',
+          safeDetails: {
+            violations: [{ path: 'body.materialRequirementId', rule: 'other_requirement' }],
+          },
+        });
+      }
+      // Requirement, then request, then (inside the issue) the balance row: the lock
+      // order every material writer in the database uses.
+      await this.repository.lockMaterialRequest(db, reservationLink.requestId);
+      materialRequestId = reservationLink.requestId;
+    } else {
+      const requirementId = await this.governor.resolve(db, {
+        workOrderId: input.workOrderId,
+        itemId: input.itemId,
+        materialRequirementId: input.materialRequirementId,
+      });
+      if (requirementId !== null) {
+        await this.governor.assertDrawable(db, {
+          requirementId,
+          itemId: input.itemId,
+          quantity: quantity.toString(),
+        });
+        materialRequestId = await this.governor.openRequest(db, {
+          requirementId,
+          itemId: input.itemId,
+          quantity: quantity.toString(),
+        });
+      }
+    }
+
     let issued: { issueId: string; movementId: string };
     try {
       issued = await this.repository.issuePart(db, {
@@ -384,6 +502,27 @@ export class InventoryStockService {
       });
     } catch (error) {
       toDomainFailure(error, 'Part issue');
+    }
+
+    if (materialRequestId !== null) {
+      try {
+        await this.repository.linkMaterialFulfillment(db, {
+          requestId: materialRequestId,
+          companyId: location.companyId,
+          branchId: location.branchId,
+          reservationId: null,
+          partIssueId: issued.issueId,
+        });
+        // The request is closed once it has issued: what it asked for and did not
+        // issue stops counting against the allowance, by an act rather than a filter.
+        await this.repository.finishMaterialRequest(db, {
+          requestId: materialRequestId,
+          outcome: 'closed',
+          reason: null,
+        });
+      } catch (error) {
+        mapMaterialFailure(error, 'Material issue');
+      }
     }
 
     await appendAudit(db, {
@@ -403,6 +542,7 @@ export class InventoryStockService {
           classification: 'internal',
           value: input.reservationId ?? null,
         },
+        { field: 'materialRequestId', classification: 'internal', value: materialRequestId },
       ],
     });
 
@@ -429,6 +569,7 @@ export class InventoryStockService {
       branchId: location.branchId,
       quantity: quantity.toString(),
       reservationId: input.reservationId ?? null,
+      materialRequestId,
     };
   }
 
@@ -970,7 +1111,8 @@ export class InventoryStockService {
       readonly expiresAt: Date | null;
       readonly recordVersion: number;
     },
-    replayed: boolean
+    replayed: boolean,
+    materialRequestId: string | null
   ): ReservationView {
     return {
       id: row.id,
@@ -983,6 +1125,7 @@ export class InventoryStockService {
       status: row.status,
       expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
       recordVersion: row.recordVersion,
+      materialRequestId,
       replayed,
     };
   }

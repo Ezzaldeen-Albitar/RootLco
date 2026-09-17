@@ -1678,6 +1678,105 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'A part came back and was taken into stock: into a sellable location when restockable, into a quarantine location when damaged. Bounded by inv.guard_sales_return_ceiling, which locks the source and counts the legacy inv.part_returns rows too. A return against an issued counter sale also raises a pending credit note, whose identity is recorded here and whose amount is not.',
   },
+  // ---- P1-32 preparatory slice 3b — material demand control ----
+  {
+    code: 'inv.material_requirement.requested',
+    class: 'privileged',
+    entityType: 'inv.material_requirement',
+    description:
+      'Material was asked for on a work-order service line: an entered allowance with its source, or one derived from the confirmed vehicle specification. A derivation that found no confirmed specification, or an item with no exact conversion into the allowance unit, is recorded as approval_required with the reason and no usable allowance.',
+  },
+  {
+    code: 'inv.material_requirement.approved',
+    class: 'approval',
+    entityType: 'inv.material_requirement',
+    description:
+      'A person other than the requester approved a material requirement, so reservations and issues for the work order may draw on it up to its allowance plus approved exceptions.',
+  },
+  {
+    code: 'inv.material_requirement.rejected',
+    class: 'approval',
+    entityType: 'inv.material_requirement',
+    description:
+      'A person other than the requester rejected a material requirement with a reason. It still governs the item on its work order, so nothing may be drawn on it.',
+  },
+  {
+    code: 'inv.material_exception.requested',
+    class: 'privileged',
+    entityType: 'inv.material_requirement_exception',
+    description:
+      'A finite additional quantity beyond an approved material allowance was asked for, with a reason. It adds nothing until a different person approves it.',
+  },
+  {
+    code: 'inv.material_exception.approved',
+    class: 'approval',
+    entityType: 'inv.material_requirement_exception',
+    description:
+      'A person other than the requester approved a material exception under inv.material.exception.approve, and the resulting allowance was recorded on the exception.',
+  },
+  {
+    code: 'inv.material_exception.rejected',
+    class: 'approval',
+    entityType: 'inv.material_requirement_exception',
+    description:
+      'A person other than the requester rejected a material exception. The allowance is unchanged.',
+  },
+  {
+    code: 'inv.unit_conversion.set',
+    class: 'privileged',
+    entityType: 'inv.item_unit_conversion',
+    description:
+      'An exact unit conversion was stated with its source, tenant-wide within one kind of unit or for one item across kinds. A live conversion with the same signature was retired in the same transaction, so a changed factor is a new row and the old one remains.',
+  },
+  {
+    code: 'inv.unit_conversion.retired',
+    class: 'privileged',
+    entityType: 'inv.item_unit_conversion',
+    description:
+      'A unit conversion was retired. Requirements and draws that need it are refused as missing a conversion until another is stated.',
+  },
+  {
+    code: 'inv.vehicle_specification.recorded',
+    class: 'privileged',
+    entityType: 'inv.vehicle_fluid_specification',
+    description:
+      'A service capacity was recorded for a make, an optional model, model years and engine variant, with its unit and the source it was read from. A recorded specification resolves nothing until it is confirmed.',
+  },
+  {
+    code: 'inv.vehicle_specification.confirmed',
+    class: 'privileged',
+    entityType: 'inv.vehicle_fluid_specification',
+    description:
+      'A recorded service capacity was confirmed by an attributable person, so material requirements derived for matching vehicles take their allowance from it.',
+  },
+  {
+    code: 'inv.vehicle_specification.retired',
+    class: 'privileged',
+    entityType: 'inv.vehicle_fluid_specification',
+    description:
+      'A service capacity was retired. It no longer resolves; requirements already derived from it keep the figure they were approved with.',
+  },
+  {
+    code: 'inv.stock_transfer.discrepancy_resolved',
+    class: 'privileged',
+    entityType: 'inv.stock_transfer_settlement',
+    description:
+      'Units of a transfer that did not arrive were settled with a reason: returned to the origin at once, or put forward for write-off, which moves nothing until a different person approves it.',
+  },
+  {
+    code: 'inv.stock_transfer.write_off_approved',
+    class: 'approval',
+    entityType: 'inv.stock_transfer_settlement',
+    description:
+      'A person other than the requester approved a transfer write-off, and the written-off units left the transit location.',
+  },
+  {
+    code: 'inv.stock_transfer.write_off_rejected',
+    class: 'approval',
+    entityType: 'inv.stock_transfer_settlement',
+    description:
+      'A person other than the requester rejected a transfer write-off. The units stay in transit, to be received or returned.',
+  },
 
   // ---- Phase 1-22 — Billing and payment (sal) ----
   //

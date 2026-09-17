@@ -27,6 +27,21 @@ export interface SafeDetails {
   readonly contract?: string;
   /** Permission codes the operation requires. Safe: they are public API metadata. */
   readonly requiredPermissions?: readonly string[];
+  /**
+   * Why a work-order draw was refused by its material requirement (`ERR-INV-001`).
+   * Quantities are exact decimal strings in the REQUIREMENT unit; `allowance` and
+   * `requested` are null when no allowance or no exact conversion exists to state
+   * them in. Safe: the caller already sees the requirement these figures describe.
+   */
+  readonly materialDraw?: MaterialDrawDetails;
+}
+
+export interface MaterialDrawDetails {
+  readonly allowance: string | null;
+  readonly alreadyCommitted: string;
+  readonly requested: string | null;
+  readonly reason:
+    'exceeds_requirement' | 'approval_required' | 'missing_conversion' | 'missing_specification';
 }
 
 export interface AppFailureOptions {

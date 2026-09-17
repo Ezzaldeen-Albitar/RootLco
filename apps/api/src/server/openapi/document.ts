@@ -59,6 +59,26 @@ function problemSchema(): JsonObject {
       retryAfterSeconds: { type: 'integer', minimum: 0 },
       contract: { type: 'string' },
       requiredPermissions: { type: 'array', items: { type: 'string' } },
+      materialDraw: {
+        type: 'object',
+        description:
+          'ERR-INV-001 only. Quantities are exact decimal strings in the requirement unit.',
+        required: ['allowance', 'alreadyCommitted', 'requested', 'reason'],
+        properties: {
+          allowance: { type: ['string', 'null'] },
+          alreadyCommitted: { type: 'string' },
+          requested: { type: ['string', 'null'] },
+          reason: {
+            type: 'string',
+            enum: [
+              'exceeds_requirement',
+              'approval_required',
+              'missing_conversion',
+              'missing_specification',
+            ],
+          },
+        },
+      },
     },
   };
 }

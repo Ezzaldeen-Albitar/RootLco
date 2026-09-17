@@ -369,7 +369,7 @@ describe('inv.stock-transfer-receive', () => {
     expect(await onHandAt(ITEM_A, to)).toBe('2.500');
   });
 
-  it('refuses a partial receipt (denial) and replays a retried receipt by its key (idempotency)', async () => {
+  it('refuses a receipt beyond what is in transit (denial) and replays a retried receipt by its key (idempotency)', async () => {
     const from = await freshLocation();
     const to = await freshLocation();
     await seedStock({ itemId: ITEM_A, locationId: from, quantity: '3.000' });
@@ -381,15 +381,16 @@ describe('inv.stock-transfer-receive', () => {
     });
     authAs(INV_FULL);
     const path = `/api/v1/stock-transfers/${transfer.id}/receipt`;
-    const partial = await postAt(
+    // More than was dispatched: nothing that did not travel can be received.
+    const beyond = await postAt(
       TRANSFER_RECEIVE,
       path,
       { transferId: transfer.id },
       {
-        quantity: '2.000',
+        quantity: '4.000',
       }
     );
-    expect(partial.status).toBe(409);
+    expect(beyond.status).toBe(409);
     expect(await onHandAt(ITEM_A, to)).toBe('0.000');
 
     const key = randomUUID();
