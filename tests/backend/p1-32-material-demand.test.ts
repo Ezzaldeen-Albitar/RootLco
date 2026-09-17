@@ -1443,8 +1443,11 @@ describe('inv.stock-transfer-settlement-list, inv.stock-transfer-settlement-read
     expect((await list(own)).status).toBe(403);
     expect((await read(writeOff.id)).status).toBe(403);
 
-    // A2 is neither end: its own list does not carry the row, A1's is refused, and the
-    // row is not read.
+    // A2 is neither end: its own list does not carry the row, A1's list is refused by
+    // the scoped permission check, and the row itself answers NOT FOUND rather than
+    // forbidden — a settlement of a transfer between two A1 locations falls outside
+    // both SELECT policies for a caller whose branches are A2, so there is no row to
+    // refuse. The same answer another tenant gets, for the same reason.
     authAs(INV_SCOPED_A2);
     const elsewhere = await list(
       `companyId=${COMPANY_A1}&branchId=${BRANCH_A2}&transferId=${transferId}`
@@ -1452,7 +1455,7 @@ describe('inv.stock-transfer-settlement-list, inv.stock-transfer-settlement-read
     expect(elsewhere.status).toBe(200);
     expect(await itemsOf(elsewhere)).toEqual([]);
     expect((await list(own)).status).toBe(403);
-    expect((await read(writeOff.id)).status).toBe(403);
+    expect((await read(writeOff.id)).status).toBe(404);
 
     authAs(INV_TENANT_B);
     expect((await read(writeOff.id)).status).toBe(404);
