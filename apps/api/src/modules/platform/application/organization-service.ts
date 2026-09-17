@@ -1,5 +1,6 @@
 /**
- * Control-plane organisation service (PRE-P1-29 Wave B).
+ * Control-plane organisation service (PRE-P1-29 Wave B; extended by
+ * P1-32-PRE-022).
  *
  * Thin by design. The invariants that matter here are enforced in the database —
  * the bootstrap window, the transition graph, the append-only history, the
@@ -12,14 +13,26 @@ import { appendAudit } from '@/server/audit/audit';
 import { AppFailure } from '@/server/errors/app-failure';
 import { isSqlState, SQLSTATE } from '@/server/db/repository';
 import { type DbHandle, withPlatformTarget } from '@/server/db/transaction';
+import { type Page, pageRequest } from '@/server/db/pagination';
 import { type FirstOwnerInput, iamModule } from '@/modules/iam';
 import { paymentsModule } from '@/modules/payments';
 import { sharedServicesModule } from '@/modules/shared-services';
 import type {
+  OrganizationBranchRow,
+  OrganizationCompanyRow,
   OrganizationRow,
+  OrganizationSearchFilters,
   PlatformRepository,
   ProvisionedRoot,
+  TenantStatusHistoryRow,
 } from '../data/platform-repository';
+import { ORGANIZATION_ORDERING } from '../data/platform-repository';
+import type {
+  SubscriptionEventRow,
+  SubscriptionRepository,
+  TenantSubscriptionRow,
+} from '../data/subscription-repository';
+import { TARGET_TENANT_DETAIL_FIELD } from '../data/insight-repository';
 
 export interface OrganizationView {
   readonly id: string;
@@ -29,7 +42,50 @@ export interface OrganizationView {
   readonly defaultLocale: string;
   readonly defaultTimezone: string;
   readonly createdAt: string;
+  readonly activePlanCode: string | null;
+  readonly activePlanEffectiveTo: string | null;
+  readonly activeCompanyCount: number;
+  readonly activeBranchCount: number;
+  readonly activeUserCount: number;
 }
+
+/**
+ * How much of a plan's allowance an organisation is using, per kind.
+ *
+ * `limit` is null when the plan states none for that kind — which the console
+ * renders as unlimited. That is the honest reading: `capacity_limits` is an open
+ * document and an absent key is an absent rule, not a zero.
+ */
+export interface CapacityUsage {
+  readonly used: number;
+  readonly limit: number | null;
+}
+
+/** Everything the console's organisation screen shows about one tenant. */
+export interface OrganizationDetailView {
+  readonly id: string;
+  readonly tenantCode: string;
+  readonly displayName: string;
+  readonly status: string;
+  readonly defaultLocale: string;
+  readonly defaultTimezone: string;
+  readonly createdAt: string;
+  readonly companies: readonly OrganizationCompanyRow[];
+  readonly branches: readonly OrganizationBranchRow[];
+  /** Account counts by lifecycle state. Counts only — never an identity. */
+  readonly userCountsByStatus: readonly { readonly status: string; readonly count: number }[];
+  readonly subscriptions: readonly TenantSubscriptionRow[];
+  readonly subscriptionEvents: readonly SubscriptionEventRow[];
+  readonly statusHistory: readonly TenantStatusHistoryRow[];
+  readonly capacity: {
+    readonly companies: CapacityUsage;
+    readonly branches: CapacityUsage;
+    readonly users: CapacityUsage;
+  };
+}
+
+/** How many rows of each unbounded child list the detail publishes. */
+const DETAIL_HISTORY_LIMIT = 100;
 
 /**
  * What provisioning returns to the caller.
@@ -61,15 +117,95 @@ export interface ProvisionCommand {
 }
 
 export class OrganizationService {
-  constructor(private readonly repository: PlatformRepository) {}
+  constructor(
+    private readonly repository: PlatformRepository,
+    private readonly subscriptions: SubscriptionRepository
+  ) {}
 
-  /** §6.5 — the tenant root and nothing beneath it. */
+  /**
+   * §6.5 — the organisation list, searchable and paginated.
+   *
+   * Wave B returned the tenant root and nothing beneath it, capped by a bare
+   * LIMIT. The console needs to find an organisation by name and to see, without
+   * opening it, what plan it is on and how big it is — so the read carries a
+   * search fragment, a status filter and a keyset cursor, and each row carries
+   * the plan in force and three counts. The rows a caller may see are still
+   * decided by `sel_tenants_platform`, not by anything here.
+   */
   async read(
     db: DbHandle,
-    params: { readonly tenantId?: string; readonly limit: number }
-  ): Promise<readonly OrganizationView[]> {
-    const rows = await this.repository.listOrganizations(db, params);
-    return rows.map(toView);
+    filters: OrganizationSearchFilters,
+    page: { readonly cursor?: string | undefined; readonly limit?: number | undefined }
+  ): Promise<Page<OrganizationView>> {
+    const result = await this.repository.listOrganizations(
+      db,
+      filters,
+      pageRequest(ORGANIZATION_ORDERING, page)
+    );
+    return { ...result, items: result.items.map(toView) };
+  }
+
+  /**
+   * Everything the console shows about ONE organisation.
+   *
+   * Seven reads on one connection inside one transaction, so the document is
+   * internally consistent: a subscription assigned between two of them cannot
+   * appear in the trail and be missing from the list.
+   *
+   * A tenant the caller cannot see is `404`, not an empty document. The
+   * distinction matters here more than usual, because "no companies" is a real
+   * state for a tenant still provisioning and must not be confused with "no
+   * such tenant".
+   */
+  async detail(db: DbHandle, tenantId: string): Promise<OrganizationDetailView> {
+    const root = await this.repository.readTenantRoot(db, tenantId);
+    if (!root) {
+      throw new AppFailure('ERR-RES-001', { message: 'No such organization' });
+    }
+
+    // Sequential, not Promise.all: every read shares ONE connection, and `pg`
+    // deprecates issuing a query on a client that is still executing another.
+    const companies = await this.repository.listCompanies(db, tenantId);
+    const branches = await this.repository.listBranches(db, tenantId);
+    const userCounts = await this.repository.countUsersByStatus(db, tenantId);
+    const subscriptions = await this.subscriptions.listSubscriptions(db, tenantId);
+    const events = await this.subscriptions.listEvents(db, tenantId, DETAIL_HISTORY_LIMIT);
+    const statusHistory = await this.repository.listStatusHistory(
+      db,
+      tenantId,
+      DETAIL_HISTORY_LIMIT
+    );
+    const activePlan = await this.subscriptions.readActivePlanForTenant(db, tenantId);
+
+    const limits = activePlan?.capacityLimits ?? {};
+    const activeUsers = userCounts.find((row) => row.status === 'active')?.count ?? 0;
+
+    return {
+      id: root.id,
+      tenantCode: root.tenantCode,
+      displayName: root.displayName,
+      status: root.status,
+      defaultLocale: root.defaultLocale,
+      defaultTimezone: root.defaultTimezone,
+      createdAt: root.createdAt,
+      companies,
+      branches,
+      userCountsByStatus: userCounts,
+      subscriptions,
+      subscriptionEvents: events,
+      statusHistory,
+      capacity: {
+        companies: {
+          used: companies.filter((c) => c.status === 'active').length,
+          limit: capacityLimit(limits, 'companies'),
+        },
+        branches: {
+          used: branches.filter((b) => b.status === 'active').length,
+          limit: capacityLimit(limits, 'branches'),
+        },
+        users: { used: activeUsers, limit: capacityLimit(limits, 'users') },
+      },
+    };
   }
 
   /**
@@ -214,6 +350,35 @@ export class OrganizationService {
       });
     }
 
+    // The SECOND record, and it is not a duplicate of the one above.
+    //
+    // The record written inside `withPlatformTarget` lives in the NEW tenant and
+    // is that tenant's genesis. It is invisible to the operator's own trail,
+    // because `sel_audit_records_platform` is `tenant_id = current_tenant_id()`
+    // and the operator's current tenant is its home one — so before this call,
+    // the single most consequential act on the control plane left NOTHING an
+    // operator could find by searching its own audit trail. Measured: the
+    // platform audit search returned zero rows for every tenant ever
+    // provisioned.
+    //
+    // So the act is recorded a second time where the actor can see it, carrying
+    // `target_tenant_id` — the field every platform operation stamps and the
+    // field the audit search filters on. Identifiers only.
+    await appendAudit(db, {
+      action: 'org.tenant.provisioned',
+      entityType: 'org.tenant',
+      entityId: created.tenantId,
+      details: [
+        {
+          field: TARGET_TENANT_DETAIL_FIELD,
+          classification: 'internal',
+          value: created.tenantId,
+        },
+        { field: 'tenant_code', classification: 'public', value: String(tenant.code ?? '') },
+        { field: 'activated', classification: 'public', value: String(command.activate) },
+      ],
+    });
+
     return {
       tenantId: created.tenantId,
       ownerAccountId: bootstrap.ownerAccountId,
@@ -284,6 +449,13 @@ export class OrganizationService {
       readonly correlationId?: string;
     }
   ): Promise<void> {
+    // Read BEFORE the transition: `org.change_tenant_status` has already moved
+    // the row by the time it returns, so afterwards there is no way to tell
+    // whether a tenant arriving at `active` came back from suspension or was
+    // being activated for the first time — and those are different events.
+    const before = await this.repository.readTenantRoot(db, params.tenantId);
+    const liveSubscription = await this.subscriptions.readLiveSubscriptionRef(db, params.tenantId);
+
     await this.repository.changeStatus(db, params);
 
     // Appended AFTER the transition, so a refusal by the M4 graph guard leaves
@@ -296,11 +468,78 @@ export class OrganizationService {
       entityType: 'org.tenant',
       entityId: params.tenantId,
       details: [
+        {
+          field: TARGET_TENANT_DETAIL_FIELD,
+          classification: 'internal',
+          value: params.tenantId,
+        },
         { field: 'to_status', classification: 'public', value: params.toState },
         { field: 'reason', classification: 'internal', value: params.reason },
       ],
     });
+
+    // A suspension and a reactivation are SUBSCRIPTION events as much as
+    // lifecycle ones: they are what an operator is asked to explain when a
+    // customer disputes a period. org.tenant_status_history records the
+    // transition, but nothing joined it to the subscription it interrupted, so
+    // the subscription trail read straight through a suspension as if service
+    // had been continuous. The event is appended only when there IS a live
+    // assignment to attach it to — an unsubscribed tenant being suspended is a
+    // lifecycle fact and nothing more.
+    const eventKind = subscriptionEventKindFor(before?.status ?? null, params.toState);
+    if (eventKind !== null && liveSubscription !== null) {
+      await this.subscriptions.appendEvent(db, {
+        tenantId: params.tenantId,
+        subscriptionId: liveSubscription.id,
+        eventKind,
+        fromPlanId: liveSubscription.planId,
+        toPlanId: liveSubscription.planId,
+        effectiveFrom: today(db),
+        effectiveTo: null,
+        reason: params.reason,
+        correlationId: db.context.correlationId,
+      });
+    }
   }
+}
+
+/**
+ * Which subscription event, if any, a lifecycle transition produces.
+ *
+ * Only two transitions do. Everything else — provisioning to active, active to
+ * closed — is a lifecycle fact that the subscription trail has no opinion about,
+ * and inventing an event for it would put rows in an append-only table that
+ * nobody could later justify.
+ */
+function subscriptionEventKindFor(fromState: string | null, toState: string): string | null {
+  if (toState === 'suspended' && fromState !== 'suspended') return 'suspended';
+  if (toState === 'active' && fromState === 'suspended') return 'reactivated';
+  return null;
+}
+
+/**
+ * Today, as `YYYY-MM-DD`, from the request's own start time.
+ *
+ * `context.startedAt` rather than a fresh `new Date()`: every row this request
+ * writes should agree about what day it is, and a request that straddles
+ * midnight would otherwise record two different ones.
+ */
+function today(db: DbHandle): string {
+  return db.context.startedAt.toISOString().slice(0, 10);
+}
+
+/**
+ * Reads one capacity limit out of a plan's open `capacity_limits` document.
+ *
+ * Returns null — meaning "the plan states no limit", which the console renders
+ * as unlimited — when the key is absent or is not a finite number. It is NOT
+ * coerced to zero: an absent rule and a rule of zero are opposite statements,
+ * and conflating them would report every organisation as over its allowance the
+ * moment a plan forgot a key.
+ */
+function capacityLimit(limits: Record<string, unknown>, key: string): number | null {
+  const raw = limits[key];
+  return typeof raw === 'number' && Number.isFinite(raw) ? raw : null;
 }
 
 function toView(row: OrganizationRow): OrganizationView {
@@ -312,5 +551,10 @@ function toView(row: OrganizationRow): OrganizationView {
     defaultLocale: row.defaultLocale,
     defaultTimezone: row.defaultTimezone,
     createdAt: row.createdAt,
+    activePlanCode: row.activePlanCode,
+    activePlanEffectiveTo: row.activePlanEffectiveTo,
+    activeCompanyCount: row.activeCompanyCount,
+    activeBranchCount: row.activeBranchCount,
+    activeUserCount: row.activeUserCount,
   };
 }

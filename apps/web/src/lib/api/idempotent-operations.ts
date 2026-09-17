@@ -10,7 +10,7 @@
  * The backend requires an `Idempotency-Key` header on every operation it
  * registers as idempotent, and answers `400 ERR-INT-002` without one — before
  * authorization is evaluated. That set is NOT "the POST operations": it is
- * currently 174 operations (PATCH 3, POST 165, PUT 6).
+ * currently 181 operations (PATCH 4, POST 171, PUT 6).
  *
  * The client used to infer the answer from the HTTP method, which was wrong for
  * every non-POST member of that set. This table is the contract instead of a
@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 13, export 2, financial 14, none 179, privileged 192, security 13.
+ * Currently approval 13, export 2, financial 14, none 185, privileged 199, security 13.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 413 of them. */
+/** Every operation the contract publishes. 426 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -1578,6 +1578,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'financial',
   },
   {
+    template: '/platform/audit-events',
+    method: 'GET',
+    operationId: 'platform.audit-search',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
     template: '/platform/organizations',
     method: 'GET',
     operationId: 'platform.organization-read',
@@ -1592,11 +1599,95 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'privileged',
   },
   {
+    template: '/platform/organizations/{tenantId}',
+    method: 'GET',
+    operationId: 'platform.organization-detail',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/platform/organizations/{tenantId}/charges',
+    method: 'GET',
+    operationId: 'platform.charge-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/platform/organizations/{tenantId}/charges',
+    method: 'POST',
+    operationId: 'platform.charge-record',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/platform/organizations/{tenantId}/charges/{chargeId}/void',
+    method: 'POST',
+    operationId: 'platform.charge-void',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/platform/organizations/{tenantId}/receipts',
+    method: 'POST',
+    operationId: 'platform.receipt-record',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
     template: '/platform/organizations/{tenantId}/status',
     method: 'POST',
     operationId: 'platform.organization-lifecycle',
     idempotent: false,
     auditClass: 'privileged',
+  },
+  {
+    template: '/platform/organizations/{tenantId}/subscriptions',
+    method: 'POST',
+    operationId: 'platform.subscription-assign',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/platform/organizations/{tenantId}/subscriptions/{subscriptionId}/cancellation',
+    method: 'POST',
+    operationId: 'platform.subscription-cancel',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/platform/plans',
+    method: 'GET',
+    operationId: 'platform.plan-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/platform/plans',
+    method: 'POST',
+    operationId: 'platform.plan-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/platform/plans/{planId}',
+    method: 'PATCH',
+    operationId: 'platform.plan-update',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/platform/session',
+    method: 'GET',
+    operationId: 'platform.session-read',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/platform/statistics',
+    method: 'GET',
+    operationId: 'platform.statistics-read',
+    idempotent: false,
+    auditClass: 'none',
   },
   {
     template: '/price-list-assignments',
