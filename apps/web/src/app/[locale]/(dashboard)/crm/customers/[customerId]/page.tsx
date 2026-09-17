@@ -11,6 +11,7 @@ import { CustomerProfileScreen } from '@/features/crm/customers/components/Custo
 import { permittedWrites } from '@/features/crm/customers/governance-contract';
 import { readCustomer } from '@/features/crm/customers/profile-api';
 import { CRM_PERMISSIONS, holds } from '@/features/crm/permissions';
+import { RECEPTION_PERMISSIONS } from '@/features/receptions/receptions-contract';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 import { pageMetadata } from '@/lib/page-metadata';
@@ -134,6 +135,13 @@ export default async function CustomerProfilePage({
           // (`P1-27-SEC-001`). Visibility only — the server decides, and
           // `permittedWrites` cannot make a forged call succeed.
           writes={permittedWrites(session.permissions)}
+          // The Owner's required entry point into reception (2026-09-17),
+          // carrying the code the ACT requires rather than one invented for the
+          // button: `rec.reception-create` — opening a visit — declares
+          // `rec.reception.manage`, and the route the action leads to gates on
+          // the same code. An operator without it is not shown a path whose
+          // every step ends in the same denial.
+          canStartWorkOrder={holds(session.permissions, RECEPTION_PERMISSIONS.manage)}
         />
       </PageBody>
     </>

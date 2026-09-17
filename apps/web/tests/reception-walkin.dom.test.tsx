@@ -55,9 +55,44 @@ vi.mock('@/features/vehicles/relations-api', () => ({
   linkCustomerAction: (...args: unknown[]) => linkCustomerAction(...args),
 }));
 
+/*
+ * The customer profile's own reads, mocked because the last three blocks of
+ * this file exercise the entry point the profile offers into this same flow
+ * (`P1-32-PRE-077`). A mock that is missing an export throws asynchronously
+ * into an unrelated test, so this stays a superset of what the screen imports.
+ */
+const emptyProfilePage = async () => ({
+  status: 'ok',
+  rows: [],
+  nextCursor: null,
+  hasMore: false,
+  correlationId: 'fixed-correlation-id',
+});
+vi.mock('@/features/crm/customers/profile-api', () => ({
+  readCustomer: vi.fn(),
+  listContacts: emptyProfilePage,
+  listAddresses: emptyProfilePage,
+  listPreferences: emptyProfilePage,
+  listConsents: emptyProfilePage,
+  listNotes: async () => ({ ...(await emptyProfilePage()), includesRestricted: true }),
+  listAlerts: emptyProfilePage,
+  listTags: emptyProfilePage,
+  listRestrictions: emptyProfilePage,
+}));
+vi.mock('@/features/crm/customers/identity-api', () => ({
+  listTimeline: emptyProfilePage,
+  listDuplicates: emptyProfilePage,
+  reviewDuplicateAction: vi.fn(),
+}));
+
 const { WalkInIntakeScreen } =
   await import('@/features/receptions/intake/components/WalkInIntakeScreen');
 const { checkInWizardHref } = await import('@/features/receptions/intake/intake-handoff');
+const { CustomerWorkOrderStartScreen } =
+  await import('@/features/receptions/intake/components/CustomerWorkOrderStartScreen');
+const { CustomerProfileScreen } =
+  await import('@/features/crm/customers/components/CustomerProfileScreen');
+type CustomerDetail = Parameters<typeof CustomerProfileScreen>[0]['customer'];
 
 const CUSTOMER_ID = '9f8e7d6c-5b4a-4392-8172-0e02b2c3d479';
 const CREATED_CUSTOMER_ID = '0aa1b2c3-d4e5-4f60-8172-9e8d7c6b5a40';
@@ -635,5 +670,293 @@ describe('failure states carry the reference and offer only honest retries', () 
     listCustomerVehicles.mockResolvedValue(page([OWN_VEHICLE]));
     await user.click(within(list).getByRole('button', { name: en['state.retry'] }));
     await within(list).findByText('V-0007');
+  });
+});
+
+/**
+ * The customer-first route into the same flow (`P1-32-PRE-077`).
+ *
+ * The Owner's requirement of 2026-09-17: a customer already on screen should
+ * not have to be searched for again. The profile offers the entry point, the
+ * step that follows asks only for the vehicle, and nothing proceeds without
+ * one. The claims pinned below are that set, plus the two the step must not
+ * weaken — no work order or reception record is created here, and the way
+ * onward is the EXISTING handoff rather than a second one.
+ */
+
+const PROFILE_CUSTOMER: CustomerDetail = {
+  id: CUSTOMER_ID,
+  displayNumber: 'C-000482',
+  displayName: 'Layla Haddad',
+  partyType: 'individual',
+  lifecycleStatus: 'active',
+  commercialStatus: 'normal',
+  recordVersion: 1,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: null,
+  givenName: 'Layla',
+  familyName: 'Haddad',
+  preferredLocale: 'ar',
+  legalName: null,
+  tradeName: null,
+};
+
+/** An ENDED relationship to a vehicle that still exists — history, not a pick. */
+const ENDED_LINK = {
+  ...OWN_VEHICLE,
+  id: '7a8b9c0d-8888-4888-8888-888888888888',
+  vehicleId: '8b9c0d1e-9999-4999-8999-999999999999',
+  validTo: '2026-03-01',
+  active: false,
+  vehicleDisplayNumber: 'V-0008',
+};
+
+type StepProps = Parameters<typeof CustomerWorkOrderStartScreen>[0];
+
+function stepProps(overrides: Partial<StepProps> = {}): StepProps {
+  return {
+    locale: 'en',
+    messages: en,
+    customer: {
+      id: CUSTOMER_ID,
+      displayName: PROFILE_CUSTOMER.displayName,
+      displayNumber: PROFILE_CUSTOMER.displayNumber,
+      partyType: PROFILE_CUSTOMER.partyType,
+    },
+    canSearchVehicles: true,
+    canCreateVehicle: true,
+    canLinkVehicle: true,
+    ...overrides,
+  };
+}
+
+describe('the entry point on the customer profile', () => {
+  it('offers the action to a session that may open a reception visit', () => {
+    renderLtr(
+      <CustomerProfileScreen
+        locale="en"
+        messages={en}
+        customer={PROFILE_CUSTOMER}
+        canStartWorkOrder={true}
+      />
+    );
+
+    expect(
+      screen.getByRole('link', { name: en['crm.customers.profile.newWorkOrder'] })
+    ).toHaveAttribute('href', `/en/crm/customers/${CUSTOMER_ID}/work-order/new`);
+  });
+
+  it('hides the action from a session that may not', () => {
+    renderLtr(
+      <CustomerProfileScreen
+        locale="en"
+        messages={en}
+        customer={PROFILE_CUSTOMER}
+        canStartWorkOrder={false}
+      />
+    );
+
+    expect(
+      screen.queryByRole('link', { name: en['crm.customers.profile.newWorkOrder'] })
+    ).not.toBeInTheDocument();
+  });
+
+  it('hides the action when the caller states nothing at all', () => {
+    // The default is the safe one: no action rather than a route that denies.
+    renderLtr(<CustomerProfileScreen locale="en" messages={en} customer={PROFILE_CUSTOMER} />);
+
+    expect(screen.queryByTestId('customer-new-work-order')).not.toBeInTheDocument();
+  });
+
+  it('offers it in Arabic too', () => {
+    renderRtl(
+      <CustomerProfileScreen
+        locale="ar"
+        messages={ar}
+        customer={PROFILE_CUSTOMER}
+        canStartWorkOrder={true}
+      />
+    );
+
+    expect(
+      screen.getByRole('link', { name: ar['crm.customers.profile.newWorkOrder'] })
+    ).toHaveAttribute('href', `/ar/crm/customers/${CUSTOMER_ID}/work-order/new`);
+  });
+});
+
+describe('the vehicle step that follows the customer profile', () => {
+  it('states the preselected customer and offers no way to change them', async () => {
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+
+    const fixed = screen.getByTestId('work-order-start-customer');
+    expect(fixed).toHaveTextContent('Layla Haddad');
+    expect(fixed).toHaveTextContent('C-000482');
+    expect(fixed).toHaveTextContent(en['receptions.workOrderStart.customerFixed']);
+    expect(
+      screen.queryByRole('button', { name: en['receptions.intake.customer.change'] })
+    ).not.toBeInTheDocument();
+    // Never the identifier where a reference belongs.
+    expect(fixed).not.toHaveTextContent(CUSTOMER_ID);
+
+    await screen.findByRole('radio');
+  });
+
+  it('reads that customer and offers the CURRENT relationships only', async () => {
+    listCustomerVehicles.mockResolvedValue(page([OWN_VEHICLE, ENDED_LINK, DEAD_VEHICLE_ROW]));
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+
+    const choices = await screen.findAllByRole('radio');
+    expect(choices).toHaveLength(1);
+    expect(screen.getByText('V-0007')).toBeVisible();
+    expect(screen.queryByText('V-0008')).not.toBeInTheDocument();
+
+    const [customerId] = listCustomerVehicles.mock.calls[0] as [string];
+    expect(customerId).toBe(CUSTOMER_ID);
+  });
+
+  it('shows the loading state before the list answers', () => {
+    listCustomerVehicles.mockReturnValue(new Promise(() => {}));
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+
+    expect(screen.getByText(en['state.loading'])).toBeInTheDocument();
+  });
+
+  it('offers the existing find-or-add path when no vehicle fits', async () => {
+    listCustomerVehicles.mockResolvedValue(page([]));
+    const user = userEvent.setup();
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+
+    expect(await screen.findByTestId('work-order-start-empty')).toHaveTextContent(
+      en['receptions.workOrderStart.empty']
+    );
+
+    await user.click(screen.getByTestId('work-order-start-add'));
+
+    // The EXISTING intake step, not a second one: its own search and register
+    // panels are what appears.
+    expect(await screen.findByTestId('intake-vehicle-search')).toBeInTheDocument();
+    expect(screen.getByTestId('intake-vehicle-create')).toBeInTheDocument();
+  });
+
+  it('states the boundary instead of the add path when the operator may not add', async () => {
+    listCustomerVehicles.mockResolvedValue(page([]));
+    renderLtr(
+      <CustomerWorkOrderStartScreen
+        {...stepProps({ canSearchVehicles: false, canCreateVehicle: false, canLinkVehicle: false })}
+      />
+    );
+
+    expect(await screen.findByTestId('work-order-start-empty')).toBeInTheDocument();
+    expect(screen.queryByTestId('work-order-start-add')).not.toBeInTheDocument();
+    expect(screen.getByText(en['receptions.intake.vehicle.limitedAccess'])).toBeVisible();
+  });
+
+  it('offers the shared Pager, with no invented range, when a page is not the last', async () => {
+    listCustomerVehicles.mockResolvedValue(
+      page([OWN_VEHICLE], { hasMore: true, nextCursor: 'the-next-cursor' })
+    );
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+
+    expect(await screen.findByRole('button', { name: en['table.nextPage'] })).toBeEnabled();
+    expect(screen.getByRole('button', { name: en['table.previousPage'] })).toBeDisabled();
+  });
+
+  it('reports a failed read through the shared ListStates mapping, with its reference', async () => {
+    listCustomerVehicles.mockResolvedValue(
+      page([], { status: 'error', correlationId: 'step-correlation-id' })
+    );
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+
+    expect(await screen.findByText(en['state.error.title'])).toBeVisible();
+    expect(screen.getByText('step-correlation-id')).toBeVisible();
+    expect(screen.getByRole('button', { name: en['state.retry'] })).toBeVisible();
+  });
+
+  it('reports a denial without pretending the list is empty', async () => {
+    listCustomerVehicles.mockResolvedValue(
+      page([], { status: 'denied', correlationId: 'step-denied-id' })
+    );
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+
+    expect(await screen.findByText(en['state.denied.title'])).toBeVisible();
+    expect(screen.queryByTestId('work-order-start-empty')).not.toBeInTheDocument();
+  });
+});
+
+describe('continuing from the customer profile into the existing check-in flow', () => {
+  it('offers no way onward until exactly one vehicle is chosen', async () => {
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+    await screen.findByRole('radio');
+
+    const control = screen.getByTestId('work-order-start-continue');
+    expect(control).toBeDisabled();
+    // Disabled, not a link wearing a disabled look — a styled link is still
+    // followable, and nothing may proceed without a vehicle.
+    expect(control.tagName).not.toBe('A');
+    expect(control).not.toHaveAttribute('href');
+    expect(screen.getByText(en['receptions.workOrderStart.continueHint'])).toBeVisible();
+  });
+
+  it('links to the existing flow with both identifiers once a vehicle is chosen', async () => {
+    const user = userEvent.setup();
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+
+    await user.click(await screen.findByRole('radio'));
+
+    const control = screen.getByTestId('work-order-start-continue');
+    expect(control).toHaveAttribute(
+      'href',
+      checkInWizardHref('en', { customerId: CUSTOMER_ID, vehicleId: VEHICLE_ID })
+    );
+    expect(control.getAttribute('href')).toContain(CUSTOMER_ID);
+    expect(control.getAttribute('href')).toContain(VEHICLE_ID);
+    expect(control).toHaveTextContent(en['receptions.workOrderStart.continue']);
+  });
+
+  it('carries the locale into that link', async () => {
+    const user = userEvent.setup();
+    renderRtl(<CustomerWorkOrderStartScreen {...stepProps({ locale: 'ar', messages: ar })} />);
+
+    await user.click(await screen.findByRole('radio'));
+
+    expect(screen.getByTestId('work-order-start-continue')).toHaveAttribute(
+      'href',
+      checkInWizardHref('ar', { customerId: CUSTOMER_ID, vehicleId: VEHICLE_ID })
+    );
+    expect(screen.getByText(ar['receptions.workOrderStart.vehicleLegend'])).toBeVisible();
+  });
+
+  it('keeps exactly one vehicle chosen when a second is picked', async () => {
+    const SECOND = {
+      ...OWN_VEHICLE,
+      id: '9c0d1e2f-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      vehicleId: SEARCHED_VEHICLE_ID,
+      vehicleDisplayNumber: 'V-0009',
+    };
+    listCustomerVehicles.mockResolvedValue(page([OWN_VEHICLE, SECOND]));
+    const user = userEvent.setup();
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+
+    const choices = await screen.findAllByRole('radio');
+    await user.click(choices[0] as HTMLElement);
+    await user.click(choices[1] as HTMLElement);
+
+    expect(
+      screen.getAllByRole('radio').filter((input) => (input as HTMLInputElement).checked)
+    ).toHaveLength(1);
+    expect(screen.getByTestId('work-order-start-continue')).toHaveAttribute(
+      'href',
+      checkInWizardHref('en', { customerId: CUSTOMER_ID, vehicleId: SEARCHED_VEHICLE_ID })
+    );
+  });
+
+  it('creates nothing on its own — choosing a vehicle calls no write', async () => {
+    const user = userEvent.setup();
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+
+    await user.click(await screen.findByRole('radio'));
+
+    expect(createVehicleAction).not.toHaveBeenCalled();
+    expect(linkCustomerAction).not.toHaveBeenCalled();
   });
 });
