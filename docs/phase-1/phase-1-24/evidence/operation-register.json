@@ -5400,7 +5400,11 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/od-organization-administration.test.ts"],
+      "tests": [
+        "tests/backend/od-organization-administration.test.ts",
+        "tests/backend/p1-29-w9-owner-bootstrap.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/org/branches/route.ts"
     },
@@ -5545,7 +5549,11 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/od-organization-administration.test.ts"],
+      "tests": [
+        "tests/backend/od-organization-administration.test.ts",
+        "tests/backend/p1-29-w9-owner-bootstrap.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/org/companies/route.ts"
     },
