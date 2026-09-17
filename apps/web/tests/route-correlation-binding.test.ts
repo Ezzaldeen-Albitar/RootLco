@@ -115,8 +115,19 @@ const CRM_REFERENCE = 'corr-crm-7f3a';
 const VEHICLE_REFERENCE = 'corr-veh-91b2';
 const WORK_ORDER_REFERENCE = 'corr-wos-4d15';
 
-/** The codes the customer-first work-order step gates on, together. */
-const WORK_ORDER_PERMISSIONS = [CRM_PERMISSIONS.customerRead, RECEPTION_PERMISSIONS.manage];
+/**
+ * The codes the customer-first work-order step gates on, together.
+ *
+ * Three: the step's own read, the act it leads to, and the check-in page that
+ * act starts on — which denies and returns on `rec.reception.read` before it
+ * renders anything. A session holding the first two and not the third was
+ * walked through the vehicle choice and refused on arrival.
+ */
+const WORK_ORDER_PERMISSIONS = [
+  CRM_PERMISSIONS.customerRead,
+  RECEPTION_PERMISSIONS.manage,
+  RECEPTION_PERMISSIONS.read,
+];
 
 /**
  * Walks a rendered tree for the first node carrying a `correlationId` prop.

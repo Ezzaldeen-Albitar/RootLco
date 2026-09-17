@@ -10,6 +10,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import { formatDateTime } from '@/lib/format';
+import { customerWorkOrderStartHref } from '@/features/receptions/intake/intake-handoff';
 import {
   listAddresses,
   listAlerts,
@@ -528,10 +529,14 @@ function ProfileHeader({
          * It is a LINK to the vehicle step and not a form. Nothing is created
          * by pressing it — the customer alone is not enough to open a visit,
          * and the next screen is where the vehicle is settled.
+         *
+         * The address comes from the reception handoff module, which owns every
+         * way into that flow, rather than being spelled here: an entry point
+         * that states its own address can point at a screen that moved.
          */
         <div className="mt-4 border-t border-border pt-3">
           <Link
-            href={`/${locale}/crm/customers/${customer.id}/work-order/new`}
+            href={customerWorkOrderStartHref(locale, customer.id)}
             className="inline-block rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary"
             data-testid="customer-new-work-order"
           >

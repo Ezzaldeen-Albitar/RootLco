@@ -136,12 +136,24 @@ export default async function CustomerProfilePage({
           // `permittedWrites` cannot make a forged call succeed.
           writes={permittedWrites(session.permissions)}
           // The Owner's required entry point into reception (2026-09-17),
-          // carrying the code the ACT requires rather than one invented for the
-          // button: `rec.reception-create` — opening a visit — declares
-          // `rec.reception.manage`, and the route the action leads to gates on
-          // the same code. An operator without it is not shown a path whose
-          // every step ends in the same denial.
-          canStartWorkOrder={holds(session.permissions, RECEPTION_PERMISSIONS.manage)}
+          // carrying the codes the DESTINATION requires rather than ones
+          // invented for the button. Two, not one, and the second was missing:
+          //
+          //   - `rec.reception.manage` is what opening a visit needs
+          //     (`rec.reception-create`), which is where this path ends.
+          //   - `rec.reception.read` is what the check-in page the path ends at
+          //     DENIES on before it renders anything
+          //     (`receptions/check-in/page.tsx`). An operator holding manage
+          //     without read was offered the action, walked through the vehicle
+          //     choice, and refused on arrival.
+          //
+          // `crm.customer.read` is not repeated here: this page has already
+          // denied and returned without it, so an operator reading this profile
+          // holds it by construction.
+          canStartWorkOrder={
+            holds(session.permissions, RECEPTION_PERMISSIONS.manage) &&
+            holds(session.permissions, RECEPTION_PERMISSIONS.read)
+          }
         />
       </PageBody>
     </>

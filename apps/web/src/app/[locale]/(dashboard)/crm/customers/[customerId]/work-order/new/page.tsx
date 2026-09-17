@@ -26,23 +26,26 @@ import { pageMetadata } from '@/lib/page-metadata';
  * EXISTING check-in start screen, reached through the same query the walk-in
  * intake already uses (`intake-handoff.ts`).
  *
- * ## The gate is the code the act itself requires
+ * ## The gate is every code the way onward requires
  *
- * Opening a visit is `rec.reception-create`, and that operation declares
- * `rec.reception.manage`. So that is the code here: the whole purpose of this
- * route is to reach the form behind it, and walking somebody through a vehicle
- * choice into a denial is worse than not offering the route.
+ * Three, and each is the code some step of this path actually demands:
  *
- * `rec.reception.read` is deliberately NOT consulted. It gates the check-in
- * page's own resume path — finding an open visit — which is not what this route
- * leads to, and no operation reachable from here requires it; demanding a code
- * nothing reachable needs is the surplus privilege
- * `scripts/ci/check-p1-28-access.mjs` exists to catch.
+ *   - `rec.reception.manage` — opening a visit is `rec.reception-create`, and
+ *     that operation declares it. The whole purpose of this route is to reach
+ *     the form behind it.
+ *   - `rec.reception.read` — the check-in page this step's only way onward
+ *     leads to DENIES AND RETURNS on it before rendering anything
+ *     (`receptions/check-in/page.tsx`). This route once left it out on the
+ *     argument that it gates only the resume path, and the argument was wrong
+ *     about the page it was describing: an operator holding manage without read
+ *     was walked through the vehicle choice and then refused. A step whose exit
+ *     is a denial should not be entered.
+ *   - `crm.customer.read` — the step names the customer and lists that
+ *     customer's vehicles, and both are that code.
  *
- * `crm.customer.read` IS consulted, because the step names the customer and
- * lists that customer's vehicles, and both are that code. No permission is
- * invented here, and neither gate is the security boundary: the backend
- * re-checks every request.
+ * No permission is invented here: every one of the three is read off the
+ * operation or the page that demands it. Nor is any of them the security
+ * boundary — the backend re-checks every request.
  *
  * ## The customer is read HERE
  *
@@ -83,7 +86,8 @@ export default async function CustomerWorkOrderStartPage({
 
   if (
     !holds(session.permissions, CRM_PERMISSIONS.customerRead) ||
-    !holds(session.permissions, RECEPTION_PERMISSIONS.manage)
+    !holds(session.permissions, RECEPTION_PERMISSIONS.manage) ||
+    !holds(session.permissions, RECEPTION_PERMISSIONS.read)
   ) {
     return frame(<PermissionDeniedState messages={messages} />);
   }

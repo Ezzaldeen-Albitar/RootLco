@@ -857,6 +857,84 @@ describe('the derivations the rules stand on', () => {
     // nothing to any requirement set.
     expect(targets.some((path: string) => path.includes('administration'))).toBe(false);
   });
+
+  it('follows a link that carries a query string, and one whose path is a named constant', () => {
+    /*
+     * Both halves of `checkInWizardHref`, and the derivation could read neither.
+     * Its character class held no `?`, so a link with a parameter stopped
+     * matching ENTIRELY rather than matching its path; and collapsing every
+     * interpolation to `:p` erased `${CHECK_IN_WIZARD_PATH}`, which is the
+     * segment the link is FOR. The handoff into the check-in wizard is written
+     * with both, so the one link in these trees that names its destination
+     * through the shared seam was the one link nothing could follow.
+     *
+     * The consequence pointed the wrong way, which is why this is a case and
+     * not a note: the route that OFFERS the link is then reported as consulting
+     * surplus privilege for demanding exactly the permission its destination
+     * denies on, and the cheap way to a green gate is to drop the gate.
+     */
+    const bothHalves = linkedRoutes(
+      "const CHECK_IN_WIZARD_PATH = '/receptions/check-in';\n" +
+        'const href = `/${locale}${CHECK_IN_WIZARD_PATH}?${params.toString()}`;'
+    ).map((path: string) => posix(path));
+    expect(bothHalves.some((path: string) => path.endsWith('receptions/check-in/page.tsx'))).toBe(
+      true
+    );
+
+    // The query half alone, over a spelled-out path: the parse keeps what
+    // precedes the first `?` and discards the rest, exactly as a URL is read.
+    const queryOnly = linkedRoutes(
+      'const href = `/${locale}/receptions/check-in?customerId=${id}&vehicleId=${other}`;'
+    ).map((path: string) => posix(path));
+    expect(queryOnly.some((path: string) => path.endsWith('receptions/check-in/page.tsx'))).toBe(
+      true
+    );
+
+    // And a fragment, the other tail a URL can carry.
+    const fragment = linkedRoutes('const href = `/${locale}/receptions/check-in#vehicle`;').map(
+      (path: string) => posix(path)
+    );
+    expect(fragment.some((path: string) => path.endsWith('receptions/check-in/page.tsx'))).toBe(
+      true
+    );
+  });
+
+  it('does not let a query string smuggle in a route outside the phase', () => {
+    // The narrowing is to the TAIL, not to the rule: a query-carrying link to a
+    // segment this phase does not own is still nothing, and a constant that
+    // does not resolve to a literal still collapses rather than being guessed.
+    expect(linkedRoutes('const href = `/${locale}/administration/users?tab=roles`;')).toEqual([]);
+    expect(
+      linkedRoutes('const href = `/${locale}${somewhere(config)}?${params.toString()}`;')
+    ).toEqual([]);
+  });
+
+  it('puts the check-in wizard one link from the customer-first entry point', () => {
+    /*
+     * The shipped fact the two cases above exist for. The vehicle step reached
+     * from a customer profile ends in `checkInWizardHref`, so the check-in page
+     * IS one link away from it and from the profile that offers the action —
+     * which is what makes `rec.reception.read`, the code that page denies on,
+     * a requirement of both rather than surplus privilege on either.
+     */
+    const entryPoints = REAL.routes.filter(
+      (route: { route: string }) =>
+        route.route.endsWith('work-order/new/page.tsx') ||
+        route.route.endsWith('crm/customers/[customerId]/page.tsx')
+    );
+    expect(entryPoints).toHaveLength(2);
+    for (const route of entryPoints as {
+      consulted: string[];
+      required: string[];
+      linkedRoutes: string[];
+    }[]) {
+      expect(route.consulted).toContain('rec.reception.read');
+      expect(route.required).toContain('rec.reception.read');
+      expect(route.linkedRoutes).toContain(
+        'apps/web/src/app/[locale]/(dashboard)/receptions/check-in/page.tsx'
+      );
+    }
+  });
 });
 
 /* ------------------------------------------------------------------ *
