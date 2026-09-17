@@ -2,6 +2,7 @@
 
 import { z } from 'zod';
 import { authorizedClient } from '@/lib/api/server-client';
+import type { ApiFailure } from '@/lib/api/client';
 import { fromFailure, invalid, success, type ActionState } from '@/lib/forms/action-result';
 import { issueKeysByField } from '@/features/authentication/schemas/credentials';
 import { coerce, settingsPath, type SettingValueType, type SettingsScope } from './types';
@@ -154,4 +155,149 @@ function text(value: FormDataEntryValue | null): string | undefined {
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+// --- organisation structure ----------------------------------------------------
+
+const CODE = /^[a-z][a-z0-9_]{1,62}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const companySchema = z.object({
+  code: z.string().regex(CODE, 'organization.structure.codeHint'),
+  legalName: z.string().trim().min(1, 'field.required').max(200, 'field.tooLong'),
+  baseCurrency: z.string().regex(/^[A-Z]{3}$/, 'organization.company.currencyHint'),
+  registrationNumber: z.string().trim().min(1).max(100, 'field.tooLong').optional(),
+  taxRegistrationNumber: z.string().trim().min(1).max(100, 'field.tooLong').optional(),
+});
+
+/**
+ * `POST /api/v1/org/companies` — `org.company-create`, `org.company.manage`.
+ *
+ * No capacity pre-check. The database decides under a per-organisation lock,
+ * and its refusal (`ERR-CAP-001`) arrives through `fromFailure` naming the
+ * ceiling and the numbers. A client-side "is there room" check would be a second
+ * copy of the rule that is wrong the moment two administrators act at once.
+ */
+export async function createCompanyAction(
+  previous: ActionState,
+  form: FormData
+): Promise<ActionState> {
+  const attempt = (previous.attempt ?? 0) + 1;
+  const parsed = companySchema.safeParse({
+    code: String(form.get('code') ?? '').trim(),
+    legalName: String(form.get('legalName') ?? ''),
+    baseCurrency: String(form.get('baseCurrency') ?? '')
+      .trim()
+      .toUpperCase(),
+    registrationNumber: text(form.get('registrationNumber')),
+    taxRegistrationNumber: text(form.get('taxRegistrationNumber')),
+  });
+  if (!parsed.success) return invalid(issueKeysByField(parsed.error), attempt);
+
+  const client = await authorizedClient();
+  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+
+  const result = await client.send('POST', '/api/v1/org/companies', {
+    code: parsed.data.code,
+    legalName: parsed.data.legalName,
+    baseCurrency: parsed.data.baseCurrency,
+    ...(parsed.data.registrationNumber === undefined
+      ? {}
+      : { registrationNumber: parsed.data.registrationNumber }),
+    ...(parsed.data.taxRegistrationNumber === undefined
+      ? {}
+      : { taxRegistrationNumber: parsed.data.taxRegistrationNumber }),
+  });
+  if (!result.ok) return duplicateOr(result, attempt, 'organization.company.duplicateCode');
+  return success('organization.company.created', attempt);
+}
+
+/**
+ * `ERR-RES-002` on these two creates means exactly one thing — the service
+ * raises it only for the live-code unique index — so it gets its own sentence.
+ * Every other failure, capacity included, goes through `fromFailure`.
+ */
+function duplicateOr(failure: ApiFailure, attempt: number, duplicateKey: string): ActionState {
+  if (failure.kind === 'conflict' && failure.problem?.code === 'ERR-RES-002') {
+    return {
+      status: 'conflict',
+      messageKey: duplicateKey,
+      fieldErrors: { code: duplicateKey },
+      correlationId: failure.correlationId,
+      attempt,
+    };
+  }
+  return fromFailure(failure, attempt);
+}
+
+/**
+ * `POST /api/v1/org/companies/{companyId}/status` — `org.company-status-set`.
+ *
+ * Not version-guarded; the operation is idempotent and the client attaches the
+ * key. The reason becomes the history row, so an empty one is refused here.
+ */
+export async function setCompanyStatusAction(
+  companyId: string,
+  status: 'active' | 'inactive',
+  reasonText: string
+): Promise<ActionState> {
+  const reason = reasonText.trim();
+  if (reason.length === 0) {
+    return invalid({ reason: 'overlay.reasonRequired' }, 1, 'overlay.reasonRequired');
+  }
+  if (!UUID.test(companyId)) return invalid({}, 1, 'state.notFound.title');
+  const client = await authorizedClient();
+  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+
+  const result = await client.send(
+    'POST',
+    `/api/v1/org/companies/${encodeURIComponent(companyId)}/status`,
+    { status, reason: reason.slice(0, 512) }
+  );
+  if (!result.ok) return fromFailure(result, 1);
+  return success('admin.saved', 1);
+}
+
+const branchSchema = z.object({
+  companyId: z.string().regex(UUID, 'organization.branch.companyRequired'),
+  code: z.string().regex(CODE, 'organization.structure.codeHint'),
+  name: z.string().trim().min(1, 'field.required').max(200, 'field.tooLong'),
+  timezone: z.string().trim().min(3, 'organization.branch.timezoneHint').max(64, 'field.tooLong'),
+  city: z.string().trim().min(1).max(120, 'field.tooLong').optional(),
+  countryCode: z
+    .string()
+    .regex(/^[A-Z]{2}$/, 'organization.branch.countryHint')
+    .optional(),
+});
+
+/** `POST /api/v1/org/branches` — `org.branch-create`, `org.branch.manage`. */
+export async function createBranchAction(
+  previous: ActionState,
+  form: FormData
+): Promise<ActionState> {
+  const attempt = (previous.attempt ?? 0) + 1;
+  const country = text(form.get('countryCode'));
+  const parsed = branchSchema.safeParse({
+    companyId: String(form.get('companyId') ?? ''),
+    code: String(form.get('code') ?? '').trim(),
+    name: String(form.get('name') ?? ''),
+    timezone: String(form.get('timezone') ?? ''),
+    city: text(form.get('city')),
+    countryCode: country === undefined ? undefined : country.toUpperCase(),
+  });
+  if (!parsed.success) return invalid(issueKeysByField(parsed.error), attempt);
+
+  const client = await authorizedClient();
+  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+
+  const result = await client.send('POST', '/api/v1/org/branches', {
+    companyId: parsed.data.companyId,
+    code: parsed.data.code,
+    name: parsed.data.name,
+    timezone: parsed.data.timezone,
+    ...(parsed.data.city === undefined ? {} : { city: parsed.data.city }),
+    ...(parsed.data.countryCode === undefined ? {} : { countryCode: parsed.data.countryCode }),
+  });
+  if (!result.ok) return duplicateOr(result, attempt, 'organization.branch.duplicateCode');
+  return success('organization.branch.created', attempt);
 }

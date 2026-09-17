@@ -514,7 +514,9 @@ describe('the coverage include lists are pinned, because they are the denominato
     // sales-return service.
     // 300 with P1-32 preparatory slice 3b: the material service and the reference
     // data service.
-    expect(files.length).toBe(300);
+    // 301 with the Owner directive organisation administration merged in, which
+    // adds capacity-failure.ts.
+    expect(files.length).toBe(301);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -598,6 +600,10 @@ describe('the coverage include lists are pinned, because they are the denominato
      */
     // 297 with P1-32 preparatory slice 2, for the same two files.
     // 299 with P1-32 preparatory slice 3b, for the same two files.
-    expect(instrumented.length).toBe(299);
+    // 300 with the Owner directive organisation administration merged in: ONE
+    // more, `modules/iam/application/capacity-failure.ts`, the single reader of
+    // the database capacity refusal that both organisation creation and
+    // invitation share. The floors stay untouched for the same reason.
+    expect(instrumented.length).toBe(300);
   });
 });

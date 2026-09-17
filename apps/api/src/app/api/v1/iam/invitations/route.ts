@@ -13,6 +13,29 @@
  * key is bound to the resolved principal and the canonicalised body, so a
  * different user replaying the same key gets a conflict rather than the first
  * caller's result.
+ *
+ * ## A refused seat leaves nothing behind
+ *
+ * When the organisation's subscription seats are spent, `tg_user_accounts_capacity`
+ * refuses the account INSERT and the caller receives ERR-CAP-001 with the seat
+ * numbers. That refusal happens AFTER `provider.invite` has created the identity,
+ * and a transaction rollback cannot reach the provider — so the service undoes
+ * that one write itself: the identity this request created is removed again, by
+ * the subject the provider returned to this request. The seat count is unmoved,
+ * no account, membership, role grant or scope row exists, no audit record claims
+ * an invitation happened, and the address can be invited again the moment a seat
+ * is free. A compensation the provider refuses is logged and the caller still
+ * gets ERR-CAP-001, because the refusal is what is true.
+ *
+ * An identity that outlived an earlier refusal — from before this was so — is
+ * healed rather than blocked: an address the provider already knows is reused
+ * when it is bound to this organisation and no account references it, and is
+ * still refused as ERR-RES-002 when it belongs to anybody else. See
+ * `InvitationService.invite` for why that test needs no cross-tenant read.
+ *
+ * A seat pre-check is deliberately still absent: the trigger's per-tenant
+ * advisory lock is the only reading two concurrent invitations cannot both pass,
+ * so exactly one of them takes the last seat and the other is refused.
  */
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';

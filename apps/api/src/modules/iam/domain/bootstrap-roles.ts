@@ -59,10 +59,18 @@
  * delegate a code it does not hold. Both are held, and so is `org.tenant.read`
  * — the same screen's Workspace card (`iam.tenant-settings-read`), which the
  * production build refused to the first administrator of its own organization.
- * The settings WRITES (`org.settings.manage`, `org.company.manage`,
- * `org.branch.manage`) stay out: no walked route on the journey declares them,
- * and the card renders read-only without them (residual W9-R2, Owner
- * disposition requested in the derivation record).
+ * The settings WRITE `org.settings.manage` stays out: no walked route on the
+ * journey declares it, and the card renders read-only without it (residual
+ * W9-R2, Owner disposition requested in the derivation record).
+ * `org.company.manage` and `org.branch.manage` were withheld on that same ground
+ * until the Owner directive of 2026-09-16 shipped `org.company-create` and
+ * `org.branch-create`, which declare them. The Owner decided they are carried:
+ * without them the first administrator of an organisation could never add a
+ * second legal company or a second branch, and nobody else in the organisation
+ * could either, because nobody could be delegated a code nobody holds.
+ * Organisations provisioned before that decision are brought up to the bundle by
+ * `scripts/platform/backfill-tenant-administrator-bundle.mjs`, which reads this
+ * list rather than carrying a copy of it.
  *
  * `wo.job.transition` was excluded because no W1–W8 adapter calls it — and
  * that is exactly why it must be held: a job accepts labour, diagnostics and
@@ -337,6 +345,10 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     'org.tenant.read',
     'org.company.read',
     'org.branch.read',
+    // Owner directive 2026-09-16: `org.company-create` and `org.branch-create`
+    // declare these, and the Owner decided the first administrator holds them.
+    'org.company.manage',
+    'org.branch.manage',
     'org.department.read',
     'org.department.manage',
     // P1-31 prerequisite P-17. Both codes are MINTED by that slice and both are

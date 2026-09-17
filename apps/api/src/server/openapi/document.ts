@@ -59,6 +59,16 @@ function problemSchema(): JsonObject {
       retryAfterSeconds: { type: 'integer', minimum: 0 },
       contract: { type: 'string' },
       requiredPermissions: { type: 'array', items: { type: 'string' } },
+      capacity: {
+        type: 'object',
+        description: 'Which subscription ceiling a write ran into. Present on ERR-CAP-001 only.',
+        required: ['kind', 'limit', 'used'],
+        properties: {
+          kind: { type: 'string', enum: ['companies', 'branches', 'users'] },
+          limit: { type: 'integer', minimum: 0 },
+          used: { type: 'integer', minimum: 0 },
+        },
+      },
       materialDraw: {
         type: 'object',
         description:

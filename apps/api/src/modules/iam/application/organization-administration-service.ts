@@ -37,16 +37,23 @@ import { appendAudit } from '@/server/audit/audit';
 import { SQLSTATE, isSqlState } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 import type { AuthorizationTarget } from '@/server/auth/authorization';
+import { sharedServicesModule } from '@/modules/shared-services';
+import { throwCapacityFailure } from './capacity-failure';
 import type {
   BranchChanges,
+  BranchCreateInput,
   BranchReachRow,
   BranchRecordRow,
+  CapacityAllowanceRow,
+  CapacityUsageRow,
   CompanyChanges,
+  CompanyCreateInput,
   CompanyReachRow,
   CompanyRecordRow,
   DepartmentChanges,
   DepartmentRow,
   OrganizationAdministrationRepository,
+  SubscriptionSummaryRow,
 } from '../data/organization-administration-repository';
 
 /**
@@ -62,6 +69,9 @@ export type BranchReachView = BranchReachRow;
 export type CompanyRecordView = CompanyRecordRow;
 export type BranchRecordView = BranchRecordRow;
 export type DepartmentView = DepartmentRow;
+export type CapacityAllowanceView = CapacityAllowanceRow;
+export type CapacityUsageView = CapacityUsageRow;
+export type SubscriptionSummaryView = SubscriptionSummaryRow;
 
 /**
  * The response ENVELOPES, each named and exported.
@@ -90,6 +100,19 @@ export interface DepartmentResult {
   readonly department: DepartmentView;
 }
 
+/**
+ * What an administrator is told about their organisation's allowances.
+ *
+ * The subscription travels with the numbers deliberately. A ceiling with no
+ * plan beside it is a number nobody can act on: the administrator needs to know
+ * WHICH plan imposed it and until when, because the remedy is a plan change and
+ * not a retry.
+ */
+export interface CapacityResult {
+  readonly capacity: CapacityUsageView;
+  readonly subscription: SubscriptionSummaryView | null;
+}
+
 type ScopeAuthorizer = (target: AuthorizationTarget) => Promise<void>;
 
 export class OrganizationAdministrationService {
@@ -115,6 +138,63 @@ export class OrganizationAdministrationService {
   }
 
   // --- companies ------------------------------------------------------------
+
+  /**
+   * Adds a legal company to the organisation.
+   *
+   * ## The capacity rule is NOT checked here, and that is the design
+   *
+   * `tg_legal_companies_capacity` takes a per-tenant advisory lock, counts, and
+   * refuses inside the same transaction as the INSERT. A "is there room?" read
+   * in this method would be a second copy of the rule and a wrong one: two
+   * concurrent creations would both see room and both proceed. So the write is
+   * attempted and the refusal is MAPPED — which is also why the same mapper
+   * serves the invitation path, where the seat ceiling is enforced by the same
+   * trigger on a table this service never touches.
+   *
+   * ## There is no scope to authorize against
+   *
+   * Every other company operation resolves the row first and re-decides against
+   * that company. A company being created has no scope yet, so the authority is
+   * `org.company.manage` at tenant scope plus
+   * `ins_legal_companies_capacity_authority`, which additionally refuses a
+   * session narrowed to particular companies — a session scoped to one company
+   * has no standing over one that does not exist.
+   */
+  async createCompany(db: DbHandle, input: CompanyCreateInput): Promise<CompanyResult> {
+    let created: CompanyRecordView;
+    try {
+      created = await this.repository.createCompany(db, input);
+    } catch (error) {
+      // uq_legal_companies_tenant_code_active. A duplicate code is a caller
+      // conflict, not a server fault, and route-handler sends every 5xx to the
+      // exception monitor — so letting the 23505 through would be silent in the
+      // response and noisy in the wrong place.
+      if (isSqlState(error, SQLSTATE.uniqueViolation)) {
+        throw new AppFailure('ERR-RES-002', {
+          message: 'A company with that code already exists in this organisation',
+        });
+      }
+      throwCapacityFailure(error);
+    }
+
+    await appendAudit(db, {
+      action: 'org.company.created',
+      entityType: 'org.legal_company',
+      entityId: created.id,
+      details: [
+        { field: 'company_code', classification: 'public', value: created.companyCode },
+        { field: 'legal_name', classification: 'public', value: created.legalName },
+        {
+          field: 'base_currency_code',
+          classification: 'public',
+          value: created.baseCurrencyCode,
+        },
+      ],
+    });
+
+    return { company: created };
+  }
 
   async updateCompany(
     db: DbHandle,
@@ -194,6 +274,68 @@ export class OrganizationAdministrationService {
   }
 
   // --- branches -------------------------------------------------------------
+
+  /**
+   * Adds a branch to a legal company.
+   *
+   * ## Three things happen and all three must hold
+   *
+   *  1. the company is re-checked against what this session can SEE, so a
+   *     cross-tenant identifier is refused as a denial rather than arriving at
+   *     the composite foreign key as a 500 — the same measured defect the
+   *     department create fixed;
+   *  2. the branch is inserted, and `tg_branches_capacity` owns the ceiling;
+   *  3. the branch is given its own numbering runs.
+   *
+   * Step 3 is not decoration. Three of the registered runs — invoice, quotation
+   * and receipt — are configured per branch, and `shared.next_display_number`
+   * REFUSES rather than degrading when a row is missing. A branch committed
+   * without them is a branch that cannot issue an invoice, quote a job or
+   * receipt a payment, and the failure would surface later as an error the
+   * operator reads as a bug. The bootstrap throws if any run is still missing,
+   * so the whole create unwinds rather than committing a half-configured branch.
+   */
+  async createBranch(
+    db: DbHandle,
+    input: BranchCreateInput,
+    authorizeScope: ScopeAuthorizer
+  ): Promise<BranchResult> {
+    await authorizeScope({ companyId: input.companyId });
+    if (!(await this.repository.companyIsReachable(db, input.companyId))) {
+      throw notFound();
+    }
+
+    let created: BranchRecordView;
+    try {
+      created = await this.repository.createBranch(db, input);
+    } catch (error) {
+      // uq_branches_company_code_active.
+      if (isSqlState(error, SQLSTATE.uniqueViolation)) {
+        throw new AppFailure('ERR-RES-002', {
+          message: 'A branch with that code already exists in this company',
+        });
+      }
+      throwCapacityFailure(error);
+    }
+
+    await sharedServicesModule().sequenceBootstrap.provisionBranchSequences(db, {
+      companyId: created.companyId,
+      branchId: created.id,
+    });
+
+    await appendAudit(db, {
+      action: 'org.branch.created',
+      entityType: 'org.branch',
+      entityId: created.id,
+      details: [
+        { field: 'branch_code', classification: 'public', value: created.branchCode },
+        { field: 'name', classification: 'public', value: created.name },
+        { field: 'timezone_name', classification: 'public', value: created.timezoneName },
+      ],
+    });
+
+    return { branch: created };
+  }
 
   async updateBranch(
     db: DbHandle,
@@ -296,6 +438,23 @@ export class OrganizationAdministrationService {
     scope: { readonly companyId: string; readonly branchId: string }
   ): Promise<DepartmentListResult> {
     return { items: await this.repository.listDepartments(db, scope) };
+  }
+
+  // --- capacity -------------------------------------------------------------
+
+  /**
+   * What the organisation may hold, what it holds, and under which plan.
+   *
+   * Both halves come from the database in the same request, and the usage half
+   * comes from `org.capacity_usage` — the very function the refusal is computed
+   * from. A screen that explained a refusal with numbers assembled a second way
+   * would eventually explain it wrongly.
+   */
+  async readCapacity(db: DbHandle): Promise<CapacityResult> {
+    return {
+      capacity: await this.repository.readCapacityUsage(db),
+      subscription: await this.repository.readActiveSubscription(db),
+    };
   }
 
   async updateDepartment(

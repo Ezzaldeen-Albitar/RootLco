@@ -74,7 +74,10 @@ describe('every operation publishes the success status it returns', () => {
     // 463 with slice 3c: the requirement re-check and cancellation and the request
     // closure and cancellation.
     // 465 with P1-32-PRE-141: the transfer settlement list and read.
-    expect(actual.size).toBe(465);
+    // 468 with the Owner directive organisation administration merged in: the
+    // company and branch creates co-locate a POST on two existing route modules,
+    // and the capacity read is one new module.
+    expect(actual.size).toBe(468);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -131,7 +134,10 @@ describe('every operation publishes the success status it returns', () => {
     // discrepancy resolution — now resolve to the 201 they return on a create, and
     // publish their replay 200 beside it (`x-replay-status`). None of slice 3c's own
     // four operations creates anything, so none of them moves this count.
-    expect(counts[201]).toBe(129);
+    // 129 -> 131 with the Owner directive organisation administration merged in:
+    // the company and branch creates each return a literal 201; its capacity read
+    // returns 200 and moves the count below instead.
+    expect(counts[201]).toBe(131);
     expect(counts[202]).toBe(1);
     // The two P1-30 opening-batch reads (S-17) are GETs returning 200, so
     // 264 -> 266 while 201 and 202 are unchanged.
@@ -181,7 +187,9 @@ describe('every operation publishes the success status it returns', () => {
     // cancellation, the request closure and the request cancellation — all of which
     // change a row that already exists and return 200.
     // 333 -> 335 with P1-32-PRE-141: the transfer settlement list and read.
-    expect(counts[200]).toBe(335);
+    // 335 -> 336 with the Owner directive capacity read, a GET returning 200;
+    // its two sibling creates move the 201 count above instead.
+    expect(counts[200]).toBe(336);
   });
 
   it('reads the handler, not the declaration', () => {

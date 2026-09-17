@@ -1479,7 +1479,9 @@ describe('P-10 the provisioning bundle', () => {
     // carried both, because a delivery cannot be created without an employee to
     // name — which is why the assertion below is now a POSITIVE one; 83 once
     // P1-32-PRE-134 carried the five material codes every work-order draw now needs.
-    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(83);
+    // 85 since the Owner directive of 2026-09-16 carried org.company.manage and
+    // org.branch.manage for the two organisation creation operations.
+    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(85);
     expect(new Set(TENANT_ADMINISTRATOR_ROLE.permissionCodes).size).toBe(
       TENANT_ADMINISTRATOR_ROLE.permissionCodes.length
     );

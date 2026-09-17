@@ -462,7 +462,10 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
     // and issue for a work order draws on an approved material requirement, a fresh
     // administrator that could not ask for, approve or delegate one could never issue
     // a part to a job. All five are catalogue rows minted by slice 3a.
-    expect(expected).toHaveLength(83);
+    // 85 with the two codes the Owner directive of 2026-09-16 carries for
+    // `org.company-create` and `org.branch-create`: without them no one in a
+    // freshly provisioned organisation could add a company or a branch.
+    expect(expected).toHaveLength(85);
     expect(expected.some((c) => c.includes('*'))).toBe(false);
     expect(expected.some((c) => c.startsWith('platform.'))).toBe(false);
     expect(new Set(expected).size).toBe(expected.length);

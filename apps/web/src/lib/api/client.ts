@@ -117,10 +117,10 @@ export interface ProblemDetails {
   readonly violations?: readonly Violation[];
   /** Seconds until a retry is sensible. Throttling only. */
   readonly retryAfterSeconds?: number;
-  /** Contract-only service name. Not-implemented stubs only. */
-  readonly contract?: string;
+  readonly contract?: string; // Contract-only service name. Not-implemented stubs only.
   /** Permission codes the operation requires. Authorization failures only. */
   readonly requiredPermissions?: readonly string[];
+  readonly capacity?: CapacityDetail; // `ERR-CAP-001` only. See `CapacityDetail` below.
   /**
    * The allowance a work-order draw was measured against. `ERR-INV-001` only.
    * Quantities are exact decimal strings in the requirement unit; `allowance` and
@@ -824,4 +824,87 @@ export function failureMessageKey(failure: ApiFailure): string {
   return failure.problem?.code === CONCURRENT_CHANGE_CODE
     ? 'state.conflict.title'
     : 'state.conflict.blocked.title';
+}
+
+// --- subscription capacity refusals -------------------------------------------
+
+/**
+ * `ProblemDetails.capacity`: which subscription ceiling a write ran into,
+ * `ERR-CAP-001` only.
+ *
+ * Source: `apps/api/src/server/errors/problem.ts`, which copies it from the
+ * failure's `safeDetails`. Absent when the database refusal carried no readable
+ * detail, so every member is checked before it is trusted.
+ */
+export interface CapacityDetail {
+  readonly kind: string;
+  readonly limit: number;
+  readonly used: number;
+}
+
+/**
+ * The subscription allowance for this kind is spent (409).
+ *
+ * Unlike the other 409s this one CAN be explained exactly: the problem document
+ * names the ceiling, its size and how much of it is in use, so the operator is
+ * told the numbers and the remedy rather than "this record cannot take the
+ * change".
+ */
+export const CAPACITY_LIMIT_CODE = 'ERR-CAP-001';
+
+/** The organisation itself is suspended or closed, so it may not grow (409). */
+export const ORGANISATION_INACTIVE_CODE = 'ERR-CAP-002';
+
+/** The capacity kinds the database vocabulary admits (`org.capacity_limit`). */
+export const CAPACITY_KINDS: readonly string[] = Object.freeze(['companies', 'branches', 'users']);
+
+/**
+ * The capacity detail of an `ERR-CAP-001`, or null when it is absent, of an
+ * unknown kind, or malformed. A kind outside the vocabulary is null rather than
+ * rendered, because its message key would not exist.
+ */
+export function capacityDetailOf(failure: ApiFailure): CapacityDetail | null {
+  if (failure.problem?.code !== CAPACITY_LIMIT_CODE) return null;
+  const detail: unknown = failure.problem.capacity;
+  if (detail === undefined || detail === null || typeof detail !== 'object') return null;
+  const { kind, limit, used } = detail as Record<string, unknown>;
+  if (typeof kind !== 'string' || !CAPACITY_KINDS.includes(kind)) return null;
+  if (!Number.isInteger(limit) || !Number.isInteger(used)) return null;
+  return { kind, limit: limit as number, used: used as number };
+}
+
+/**
+ * The message key for a failure an operator must act on — `failureMessageKey`,
+ * except that the two capacity refusals get their own sentences.
+ *
+ * A separate function rather than a change inside `failureMessageKey`, so that
+ * function keeps exactly the two conflict sentences its callers and its
+ * citations were written against, and only the action-result path — the one
+ * that reaches a form — learns the capacity sentences.
+ */
+export function refusalMessageKey(failure: ApiFailure): string {
+  if (failure.kind === 'conflict') {
+    const code = failure.problem?.code;
+    if (code === CAPACITY_LIMIT_CODE) {
+      const detail = capacityDetailOf(failure);
+      return detail === null ? 'capacity.reached.unknown' : `capacity.reached.${detail.kind}`;
+    }
+    if (code === ORGANISATION_INACTIVE_CODE) return 'capacity.organisationInactive';
+  }
+  return failureMessageKey(failure);
+}
+
+/**
+ * The values the refusal message interpolates, or undefined when it takes none.
+ *
+ * Only numbers the backend published, and only for the capacity messages whose
+ * catalogue text has `{limit}` and `{used}` placeholders.
+ */
+export function failureMessageValues(
+  failure: ApiFailure
+): Readonly<Record<string, string>> | undefined {
+  if (failure.kind !== 'conflict') return undefined;
+  const detail = capacityDetailOf(failure);
+  if (detail === null) return undefined;
+  return { limit: String(detail.limit), used: String(detail.used) };
 }

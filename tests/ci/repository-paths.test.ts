@@ -277,7 +277,11 @@ describe('the API application lives in the workspace', () => {
     // 360 with P1-32 preparatory slice 3c: four operations over four new modules —
     // the requirement re-check and cancellation, the request closure and cancellation.
     // 362 with P1-32-PRE-141: the transfer settlement list and read, one module each.
-    expect(routeFiles.length).toBe(362);
+    // 363 with the Owner directive organisation administration merged in: three
+    // operations over ONE new route module. The company and branch creates are
+    // POSTs co-located on the existing collection modules; only `/org/capacity`
+    // is new.
+    expect(routeFiles.length).toBe(363);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -298,7 +302,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 437 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 468 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -370,7 +374,10 @@ describe('the API application lives in the workspace', () => {
     // modules, for the reason stated above the route-module count.
     // 463 with P1-32 preparatory slice 3c: four operations over four new modules.
     // 465 with P1-32-PRE-141: two operations over two new modules.
-    expect(report.operations).toHaveLength(465);
+    // 468 with the Owner directive organisation administration merged in: three
+    // operations over one new module, for the reason stated above the
+    // route-module count.
+    expect(report.operations).toHaveLength(468);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the

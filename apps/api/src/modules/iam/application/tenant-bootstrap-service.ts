@@ -47,6 +47,7 @@ import { AppFailure } from '@/server/errors/app-failure';
 import type { PlatformTargetHandle } from '@/server/db/transaction';
 import { SQLSTATE, isSqlState } from '@/server/db/repository';
 import { backendConfig } from '@/server/config/backend-config';
+import type { IdentityRepository } from '../data/identity-repository';
 import type { TenantBootstrapRepository } from '../data/tenant-bootstrap-repository';
 import type { CredentialPolicy } from '../domain/credential-policy';
 import type { IdentityProvider } from '../provider/identity-provider';
@@ -75,6 +76,7 @@ export interface FirstOwnerBootstrap {
 export class TenantBootstrapService {
   constructor(
     private readonly bootstrap: TenantBootstrapRepository,
+    private readonly identities: IdentityRepository,
     private readonly provider: IdentityProvider,
     private readonly credentialPolicy: CredentialPolicy
   ) {}
@@ -83,6 +85,16 @@ export class TenantBootstrapService {
     db: PlatformTargetHandle,
     input: FirstOwnerInput
   ): Promise<FirstOwnerBootstrap> {
+    // The provider is one directory for the whole platform, and this service
+    // reads, binds and invites identities in it exactly as an invitation does.
+    // Taking the same lower-cased address lock before the first identity read
+    // serializes a first-owner setup with every invitation of that address, in
+    // any tenant, so neither can act on a read the other is about to overturn —
+    // above all, a refused invitation cannot remove an identity this bootstrap
+    // has just bound. As in `iam.invitation-create`, it is taken before the
+    // per-tenant user capacity lock the account INSERT below takes.
+    await this.identities.lockInvitationAddress(db, input.email);
+
     const identity = await this.establishIdentity(db, db.targetTenantId, input);
 
     let ownerAccountId: string;

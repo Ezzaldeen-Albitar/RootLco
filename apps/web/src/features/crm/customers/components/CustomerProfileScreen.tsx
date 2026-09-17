@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
@@ -9,6 +10,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import { formatDateTime } from '@/lib/format';
+import { customerWorkOrderStartHref } from '@/features/receptions/intake/intake-handoff';
 import {
   listAddresses,
   listAlerts,
@@ -157,9 +159,28 @@ interface Props {
    * set of controls that 403.
    */
   readonly writes?: WritePermits;
+  /**
+   * Whether this session may open a reception visit for this customer —
+   * `rec.reception.manage`, the code `rec.reception-create` itself declares,
+   * resolved on the server by the route.
+   *
+   * A boolean rather than the codes themselves, because this component belongs
+   * to the CRM feature and the reception contract belongs to another one. The
+   * route that renders both is where the two meet.
+   *
+   * Defaults to false: a caller that forgets it shows a profile without the
+   * action rather than one offering a route that ends in a denial.
+   */
+  readonly canStartWorkOrder?: boolean;
 }
 
-export function CustomerProfileScreen({ locale, messages, customer, writes = NO_WRITES }: Props) {
+export function CustomerProfileScreen({
+  locale,
+  messages,
+  customer,
+  writes = NO_WRITES,
+  canStartWorkOrder = false,
+}: Props) {
   const [section, setSection] = useState<Section>('overview');
 
   return (
@@ -169,6 +190,7 @@ export function CustomerProfileScreen({ locale, messages, customer, writes = NO_
         messages={messages}
         customer={customer}
         canManageStatus={writes.status}
+        canStartWorkOrder={canStartWorkOrder}
       />
 
       <nav aria-label={translate(messages, 'crm.customers.profile.sections')}>
@@ -442,11 +464,13 @@ function ProfileHeader({
   messages,
   customer,
   canManageStatus,
+  canStartWorkOrder,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly customer: CustomerDetail;
   readonly canManageStatus: boolean;
+  readonly canStartWorkOrder: boolean;
 }) {
   return (
     <header className="rounded-lg border border-border bg-surface p-4">
@@ -495,6 +519,31 @@ function ProfileHeader({
           value={translateDynamic(messages, `crm.commercial.${customer.commercialStatus}`)}
         />
       </dl>
+
+      {canStartWorkOrder ? (
+        /*
+         * The Owner's required entry point (2026-09-17): the operator is
+         * already looking at the customer, so reception starts from here rather
+         * than from a screen that asks them to find the same person again.
+         *
+         * It is a LINK to the vehicle step and not a form. Nothing is created
+         * by pressing it — the customer alone is not enough to open a visit,
+         * and the next screen is where the vehicle is settled.
+         *
+         * The address comes from the reception handoff module, which owns every
+         * way into that flow, rather than being spelled here: an entry point
+         * that states its own address can point at a screen that moved.
+         */
+        <div className="mt-4 border-t border-border pt-3">
+          <Link
+            href={customerWorkOrderStartHref(locale, customer.id)}
+            className="inline-block rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary"
+            data-testid="customer-new-work-order"
+          >
+            {translate(messages, 'crm.customers.profile.newWorkOrder')}
+          </Link>
+        </div>
+      ) : null}
 
       {canManageStatus ? (
         <StatusChangeForm locale={locale} messages={messages} customer={customer} />

@@ -49,9 +49,33 @@ const runtime = runtimePool();
 const ctxA = { tenantId: TENANT_A, userId: USER_A };
 const ctxB = { tenantId: TENANT_B, userId: USER_B };
 
+/**
+ * The two codes the capacity policies demand of a runtime session that creates a
+ * company or a branch (`ins_legal_companies_capacity_authority`,
+ * `ins_branches_capacity_authority`, 20260916093000). Three cases below build a
+ * second branch — and one a second company — purely as SETUP for a transfer, so
+ * the fixture employee is given exactly these two for the life of this file.
+ * Nothing else is widened: the cost-layer cases in this same file still prove
+ * that USER_A holds no `inv.cost.view`, and `cleanFixtures` in `afterAll` clears
+ * `iam.role_permissions` for the tenant, so the grant does not outlive the file.
+ */
+const CAPACITY_SETUP_CODES = ['org.company.manage', 'org.branch.manage'];
+
 beforeAll(async () => {
   await ensureTestLogins(admin);
   await ensureOrgFixtures(admin);
+  await admin.query(
+    `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+     SELECT $1::uuid, r.id, p.id, 'allow', $2::uuid
+       FROM iam.roles r
+       JOIN iam.permissions p ON p.permission_code = ANY($3::text[])
+      WHERE r.tenant_id = $1::uuid AND r.role_code = 'fx_db_employee'
+        AND NOT EXISTS (
+          SELECT 1 FROM iam.role_permissions x
+           WHERE x.tenant_id = $1::uuid AND x.role_id = r.id AND x.permission_id = p.id
+        )`,
+    [TENANT_A, USER_A, CAPACITY_SETUP_CODES]
+  );
 });
 afterAll(async () => {
   await cleanFixtures(admin);

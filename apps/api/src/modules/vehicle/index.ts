@@ -94,12 +94,15 @@ export {
 } from './domain/vehicle-registration';
 export {
   MAX_PLATE_FRAGMENT,
+  MAX_VEHICLE_TEXT_FRAGMENT,
   MAX_VIN_FRAGMENT,
+  MIN_VEHICLE_FRAGMENT,
   POWERTRAIN_CATEGORIES,
   VEHICLE_LIFECYCLE_STATUSES,
   WORKSHOP_STATUSES,
   type PowertrainCategory,
   type VehicleLifecycleStatus,
+  type VehiclePlateMatch,
   type WorkshopStatus,
 } from './domain/vehicle-search';
 export {

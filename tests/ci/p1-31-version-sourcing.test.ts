@@ -108,22 +108,24 @@ describe('the scope is P1-31’s own, and the contract is what checks it', () =>
     }
   });
 
-  it('declares the seven with no consumer, and claims nothing outside the scope', () => {
+  it('declares the six with no consumer, and claims nothing outside the scope', () => {
     const pending = Object.keys(PENDING_CONSUMERS);
-    expect(pending.length).toBe(7);
+    expect(pending.length).toBe(6);
     for (const operation of pending) {
       expect(P1_31_GUARDED_OPERATIONS, `${operation} is in scope`).toContain(operation);
       const reason = (PENDING_CONSUMERS as Record<string, string | undefined>)[operation] ?? '';
       expect(reason.startsWith('PENDING: '), `${operation} states a reason`).toBe(true);
     }
-    // The four that are compared are exactly the ones not declared away, and
+    // The five that are compared are exactly the ones not declared away, and
     // there is at least one — a scope entirely declared pending compares nothing.
     const compared = P1_31_GUARDED_OPERATIONS.filter((operation) => !pending.includes(operation));
-    expect(compared.length).toBe(4);
+    expect(compared.length).toBe(5);
     expect(compared).toContain(id('sal', 'delivery-complete'));
     expect(compared).toContain(id('wty', 'warranty-policy-rename'));
     expect(compared).toContain(id('wty', 'warranty-policy-status-set'));
     expect(compared).toContain(id('wty', 'warranty-coverage-status-set'));
+    // The fifth arrived with the employee register's screen.
+    expect(compared).toContain(id('org', 'employee-status-set'));
   });
 
   it('is NOT scoped by the access gate’s allow-list, and the overlap is PINNED', () => {
@@ -157,11 +159,14 @@ describe('the tree as it stands passes, and the run is not vacuous', () => {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     expect(out).toContain(
+      // 75 -> 77 with the P1-32 preparatory inventory slice, which publishes two
+      // further If-Match-guarded operations.
       'P1-31 version sourcing: 11 guarded operation(s) in scope of 77 the contract guards, ' +
-        '4 with a consumer, 7 pending one, 5 in-scope send(s), 4 adapter call site(s), ' +
+        '5 with a consumer, 6 pending one, 6 in-scope send(s), 5 adapter call site(s), ' +
         // 23 -> 25 with the P1-32 stock-operation adapters: posting a goods receipt and
-        // recording a count line each send a version for an inv operation.
-        '25 versioned send(s) outside the subject.'
+        // recording a count line each send a version for an inv operation; 26 with the
+        // employee register's own screen.
+        '26 versioned send(s) outside the subject.'
     );
     expect(out).toContain(
       'OK: every version-guarded P1-31 command sources its If-Match from a read or a command ' +
@@ -404,11 +409,15 @@ export async function probeUpdateConfiguration(
   });
 
   it('an in-scope operation neither consumed nor declared is a violation, not a silence', () => {
+    // Any operation that is still without a consumer serves here. The employee
+    // transition used to, and cannot any more: it has a screen now, so deleting
+    // its entry is the correct state rather than the undeclared one this case
+    // needs.
     const pending = { ...PENDING_CONSUMERS } as Record<string, string>;
-    delete pending[id('org', 'employee-status-set')];
+    delete pending[id('sal', 'delivery-checklist-template-rename')];
     const { violations } = run({ sources: REAL, pending }) as { violations: string[] };
     expect(violations.join('\n')).toMatch(/Being unreachable must be a declared state/);
-    expect(violations.join('\n')).toContain(id('org', 'employee-status-set'));
+    expect(violations.join('\n')).toContain(id('sal', 'delivery-checklist-template-rename'));
   });
 });
 

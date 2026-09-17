@@ -45,6 +45,8 @@ export const ERROR_CODES = [
   'ERR-TECH-001',
   'ERR-DIA-001',
   'ERR-QMS-001',
+  'ERR-CAP-001',
+  'ERR-CAP-002',
   'ERR-SYS-001',
 ] as const;
 
@@ -76,6 +78,7 @@ export interface ErrorDefinition {
     | 'notification'
     | 'export'
     | 'transition'
+    | 'capacity'
     | 'platform';
   /** Advisory: may the same request succeed later without modification? */
   readonly retryable: boolean;
@@ -363,6 +366,26 @@ const DEFINITIONS: Readonly<Record<ErrorCode, ErrorDefinition>> = Object.freeze(
     class: 'conflict',
     description:
       'Covers the QMS refusals that are not closure blockers: an attempt to reopen a closed work order (BR-WO-002 — recorded as a rejected attempt in qms.reopen_attempts and never mutating the order), and a rework resolution lacking the independent sign-off BR-QMS-001 requires for safety-critical work. Distinct from ERR-WO-001, which is specifically the B1..B6 closure gate.',
+  },
+  'ERR-CAP-001': {
+    code: 'ERR-CAP-001',
+    title: 'Subscription capacity limit reached',
+    status: 409,
+    owner: 'capacity',
+    retryable: false,
+    class: 'conflict',
+    description:
+      'The organisation already holds as many companies, branches or user seats as its active subscription plan permits, so org.assert_capacity_available refused the write at the database. Deliberately NOT ERR-TEN-001: that code says the plan does not include a feature at all, while this one says the plan includes it and the allowance is spent. Deliberately not a validation failure either — the request was well formed and nothing about it can be corrected; either a seat is released or the plan changes. `capacity` carries which ceiling was reached, what it is and what is in use, because a refusal that cannot name the limit leaves the administrator with nothing to act on.',
+  },
+  'ERR-CAP-002': {
+    code: 'ERR-CAP-002',
+    title: 'Organisation is not active',
+    status: 409,
+    owner: 'capacity',
+    retryable: false,
+    class: 'conflict',
+    description:
+      'The write would have grown the organisation while the tenant is suspended or closed, and org.assert_capacity_available refused it. Distinct from ERR-CAP-001, which means the allowance is spent: here there is no allowance to spend, because the organisation itself is not running. A caller cannot fix this by retrying or by changing the request.',
   },
   'ERR-SYS-001': {
     code: 'ERR-SYS-001',

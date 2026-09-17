@@ -9,22 +9,22 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 465   |
+| Public operations        | 468   |
 | Domains (modules)        | 20    |
-| OpenAPI paths            | 362   |
-| OpenAPI operations       | 465   |
+| OpenAPI paths            | 363   |
+| OpenAPI operations       | 468   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 126   |
-| Audit actions catalogued | 271   |
+| Audit actions catalogued | 273   |
 | Domain events catalogued | 50    |
-| Structured error codes   | 29    |
+| Structured error codes   | 31    |
 
 ## Coverage classification
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 465        |
+| Covered           | 468        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -38,7 +38,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | crm             | 29         | 29      | 15     | 15      | 15         | 0               |
 | delivery        | 22         | 22      | 11     | 11      | 8          | 4               |
 | diagnostics     | 23         | 23      | 15     | 15      | 14         | 4               |
-| iam             | 50         | 50      | 31     | 29      | 13         | 10              |
+| iam             | 53         | 53      | 33     | 31      | 15         | 10              |
 | inventory       | 74         | 74      | 44     | 45      | 41         | 2               |
 | meta            | 1          | 1       | 0      | 0       | 0          | 0               |
 | payments        | 5          | 5       | 2      | 2       | 2          | 0               |
@@ -245,8 +245,11 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `inv.vehicle-specification-retire`                  | POST   | `/api/v1/vehicle-fluid-specifications/{specificationId}/retirement`                 | tenant  | `inv.specification.manage`                                           | inv.vehicle_specification.retired              | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `inv.work-order-part-issue-list`                    | GET    | `/api/v1/work-orders/{workOrderId}/part-issues`                                     | branch  | `inv.stock.read`                                                     | —                                              | —    | —   | authorization cross-tenant denial isolation pagination route service success                                                  | Covered |
 | `meta.ping`                                         | GET    | `/api/v1/meta/ping`                                                                 | tenant  | `org.tenant.read`                                                    | —                                              | —    | —   | authorization route service success                                                                                           | Covered |
+| `org.branch-create`                                 | POST   | `/api/v1/org/branches`                                                              | company | `org.branch.manage`                                                  | org.branch.created                             | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `org.branch-list`                                   | GET    | `/api/v1/org/branches`                                                              | tenant  | `org.branch.read`                                                    | —                                              | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
 | `org.branch-update`                                 | PATCH  | `/api/v1/org/branches/{branchId}`                                                   | branch  | `org.branch.manage`                                                  | org.branch.updated                             | —    | yes | audit authorization cross-tenant denial isolation route service stale-version success                                         | Covered |
+| `org.capacity-read`                                 | GET    | `/api/v1/org/capacity`                                                              | tenant  | `org.tenant.read`                                                    | —                                              | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
+| `org.company-create`                                | POST   | `/api/v1/org/companies`                                                             | tenant  | `org.company.manage`                                                 | org.company.created                            | yes  | —   | audit authorization denial idempotency route service success                                                                  | Covered |
 | `org.company-list`                                  | GET    | `/api/v1/org/companies`                                                             | tenant  | `org.company.read`                                                   | —                                              | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
 | `org.company-status-set`                            | POST   | `/api/v1/org/companies/{companyId}/status`                                          | company | `org.company.manage`                                                 | org.company.status_changed                     | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `org.company-update`                                | PATCH  | `/api/v1/org/companies/{companyId}`                                                 | company | `org.company.manage`                                                 | org.company.updated                            | —    | yes | audit authorization cross-tenant denial isolation route service stale-version success                                         | Covered |
@@ -543,7 +546,7 @@ individual event, and are proved once instead of fifty times:
 | Code        | Event type                           | v   | Aggregate                  | Owner           | Phase | Produced | Delivery-tested |
 | ----------- | ------------------------------------ | --- | -------------------------- | --------------- | ----- | -------- | --------------- |
 | EVT-IAM-001 | `access.grant.changed`               | 1   | iam.role_grant             | iam             | P1-14 | yes      | 3 file(s)       |
-| EVT-IAM-002 | `user.invited`                       | 1   | iam.user_account           | iam             | P1-14 | yes      | 3 file(s)       |
+| EVT-IAM-002 | `user.invited`                       | 1   | iam.user_account           | iam             | P1-14 | yes      | 4 file(s)       |
 | EVT-IAM-003 | `user.status.changed`                | 1   | iam.user_account           | iam             | P1-14 | yes      | 4 file(s)       |
 | EVT-IAM-004 | `session.revoked`                    | 1   | iam.user_session           | iam             | P1-14 | yes      | 2 file(s)       |
 | EVT-CRM-001 | `business-partner.merged`            | 1   | crm.business_partner       | crm             | P1-16 | yes      | 3 file(s)       |

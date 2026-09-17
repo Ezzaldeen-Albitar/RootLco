@@ -155,8 +155,12 @@ describe('every route body serialises a named type', () => {
     // request a NAMED request view, so `named` moves by four and `composed` does not.
     // 465 with P1-32-PRE-141: the settlement list answers a `Page<…>` of a NAMED
     // settlement view and the settlement read that view, so `named` moves by two.
-    expect(summary.bodies).toBe(465);
-    expect(summary.named).toBe(412);
+    // 468 with the Owner directive organisation administration merged in: the
+    // company create serialises `CompanyResult`, the branch create `BranchResult`
+    // and the capacity read `CapacityResult` — all NAMED — so `named` moves by
+    // three and `composed` does not.
+    expect(summary.bodies).toBe(468);
+    expect(summary.named).toBe(415);
     expect(summary.composed).toBe(53);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

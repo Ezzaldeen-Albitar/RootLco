@@ -135,6 +135,16 @@ const P1_31_ADDED = Object.freeze([
   'org.employee.manage',
 ]);
 
+/**
+ * The Owner directive of 2026-09-16 carries `org.company.manage` and
+ * `org.branch.manage`. The backfill reads the bundle, so it owes these two to every
+ * organisation as well, and a 67-code organisation is missing all thirteen.
+ */
+const OWNER_DIRECTIVE_ADDED = Object.freeze(['org.company.manage', 'org.branch.manage']);
+
+/** Every code a 67-code organisation is missing from the current bundle. */
+const BACKFILLED = Object.freeze([...P1_31_ADDED, ...OWNER_DIRECTIVE_ADDED]);
+
 /** The bundle before the five P1-31 widenings. Unchanged by all five. */
 const BUNDLE_BEFORE = 67;
 
@@ -154,7 +164,7 @@ const P1_32_ADDED = Object.freeze([
 ]);
 
 /** Every code widened onto the 67-code bundle since: what a stale organisation lacks. */
-const WIDENED = Object.freeze([...P1_31_ADDED, ...P1_32_ADDED]);
+const WIDENED = Object.freeze([...BACKFILLED, ...P1_32_ADDED]);
 
 /** A real catalogue code the bundle deliberately does NOT carry (P1-31 CC-04). */
 const CUSTOMISATION_CODE = 'rpt.export';
@@ -331,7 +341,7 @@ async function backfillAuditCount(tenantId: string): Promise<number> {
   return rows[0]?.n ?? 0;
 }
 
-/** Removes the sixteen widened codes, reproducing the 67-code bundle on a fresh role. */
+/** Removes the eighteen widened codes, reproducing the 67-code bundle on a fresh role. */
 async function makeStale(tenant: Provisioned): Promise<void> {
   await admin.query(
     `DELETE FROM iam.role_permissions
@@ -501,9 +511,9 @@ describe('P1-31 D-2 — the mechanism', () => {
     expect(parsedBundle).toHaveLength(TENANT_ADMINISTRATOR_ROLE.permissionCodes.length);
     // The eight this backfill exists to deliver are in it, and the withheld
     // export code is not: a backfill must never widen past the bundle.
-    for (const code of [...P1_31_ADDED, ...P1_32_ADDED]) expect(parsedBundle).toContain(code);
+    for (const code of WIDENED) expect(parsedBundle).toContain(code);
     expect(parsedBundle).not.toContain(CUSTOMISATION_CODE);
-    expect(parsedBundle).toHaveLength(BUNDLE_BEFORE + P1_31_ADDED.length + P1_32_ADDED.length);
+    expect(parsedBundle).toHaveLength(BUNDLE_BEFORE + WIDENED.length);
   });
 
   it('BF-8 additive only, structurally: the script issues no DELETE and no UPDATE', () => {

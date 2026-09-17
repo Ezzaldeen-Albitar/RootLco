@@ -54,10 +54,13 @@
  *           Owner, including the audit list the shipped Audit Log screen calls
  *   P31-B8  the SHIPPED export route refuses that same Owner with the registered
  *           refusal — the consequence CC-04 states, measured rather than assumed
+ *   P31-B9  that same freshly provisioned Owner adds a second branch through
+ *           `org.branch-create` (Owner directive 2026-09-16), and the branch
+ *           receives its per-branch numbering runs
  *
  * Operations exercised: platform.organization-provision, iam.role-create,
  * iam.role-permission-add, iam.audit-event-list, rpt.report-catalogue,
- * shared.export-catalogue.
+ * shared.export-catalogue, org.branch-create.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
@@ -89,6 +92,10 @@ import {
 import { __resetIdentityProviderForTests } from '@/modules/iam/provider/identity-provider';
 import { REPOSITORY_ROOT } from '../../scripts/lib/repository-paths.mjs';
 import { POST as organizationProvisionRoute } from '@/app/api/v1/platform/organizations/route';
+import {
+  BRANCH_CREATE_OPERATION,
+  POST as branchCreateRoute,
+} from '@/app/api/v1/org/branches/route';
 import { ROLE_CREATE_OPERATION, POST as roleCreateRoute } from '@/app/api/v1/iam/roles/route';
 import {
   ROLE_PERMISSION_ADD_OPERATION,
@@ -190,13 +197,20 @@ const ADDED_BY_P10 = Object.freeze(['wty.policy.manage']);
  */
 const ADDED_BY_P17 = Object.freeze(['org.employee.read', 'org.employee.manage']);
 
-/** Every code the five P1-31 widenings added. */
+/**
+ * Owner directive 2026-09-16: `org.company-create` and `org.branch-create` declare
+ * these two, and the Owner decided the first administrator holds them.
+ */
+const ADDED_BY_OWNER_DIRECTIVE = Object.freeze(['org.company.manage', 'org.branch.manage']);
+
+/** Every code the five P1-31 widenings and the Owner directive added. */
 const ADDED_ALL = Object.freeze([
   ...ADDED,
   ...ADDED_BY_P7,
   ...ADDED_BY_P10,
   ...ADDED_BY_P11,
   ...ADDED_BY_P17,
+  ...ADDED_BY_OWNER_DIRECTIVE,
 ]);
 
 /**
@@ -225,7 +239,7 @@ const EXCLUDED_BY_DECISION = Object.freeze(['rpt.export']);
 /** Every withheld code, whatever the ground: the bundle must carry none of them. */
 const EXCLUDED = Object.freeze([...EXCLUDED_UNDECLARED, ...EXCLUDED_BY_DECISION]);
 
-/** The bundle before this slice: 48 → 65 (#321) → 67 (#322). Eleven added: 78. */
+/** The bundle before this slice: 48 → 65 (#321) → 67 (#322). Eleven added: 78; two more: 80. */
 const BUNDLE_BEFORE = 67;
 
 /**
@@ -659,5 +673,40 @@ describe('P1-31 P-1 — an organisation created by the shipped provisioning oper
     expect(exports.body.code).toBe('ERR-IAM-001');
     expect(exports.body.requiredPermissions).toEqual(EXPORT_CATALOGUE_OPERATION.permissions);
     expect(exports.body.requiredPermissions).toEqual(['rpt.export']);
+  });
+  it('P31-B9 a freshly provisioned Owner adds a second branch through org.branch-create', async () => {
+    // The Owner directive of 2026-09-16 carried org.branch.manage in the bundle.
+    // This is the consequence measured on the shipped route: without the code, the
+    // first administrator of a new organisation would be refused here, and so
+    // would everyone else in it.
+    expect(BRANCH_CREATE_OPERATION.id).toBe('org.branch-create');
+    expect(await codesHeldBy(probe.ownerAccountId)).toContain('org.branch.manage');
+
+    const { rows } = await admin.query<{ id: string }>(
+      'SELECT id FROM org.legal_companies WHERE tenant_id = $1',
+      [probe.tenantId]
+    );
+    const companyId = rows[0]?.id;
+    if (companyId === undefined) throw new Error('provisioned organisation has no company');
+
+    asOwnerOf(probe);
+    const created = await call<{ branch?: { id: string; companyId: string } }>(branchCreateRoute, {
+      path: '/org/branches',
+      body: { companyId, code: 'second', name: 'Second Workshop', timezone: 'UTC' },
+      idempotencyKey: randomUUID(),
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.branch?.companyId).toBe(companyId);
+
+    const sequences = await admin.query<{ sequence_code: string }>(
+      `SELECT sequence_code FROM shared.number_sequences
+        WHERE tenant_id = $1 AND branch_id = $2 ORDER BY sequence_code`,
+      [probe.tenantId, created.body.branch?.id]
+    );
+    expect(sequences.rows.map((row) => row.sequence_code)).toEqual([
+      'invoice',
+      'quotation',
+      'receipt',
+    ]);
   });
 });

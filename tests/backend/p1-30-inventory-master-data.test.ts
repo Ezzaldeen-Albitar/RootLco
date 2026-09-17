@@ -420,7 +420,9 @@ describe('declarations', () => {
     // the two inventory codes this case owns are unaffected by all five; and 83
     // since P1-32-PRE-134 carried the five material codes, without which no part
     // could be issued to a job once every work-order draw needs approved demand.
-    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(83);
+    // 85 since the Owner directive of 2026-09-16 carried org.company.manage and
+    // org.branch.manage for the two organisation creation operations.
+    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(85);
   });
 });
 

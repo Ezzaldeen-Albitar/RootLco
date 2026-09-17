@@ -1,20 +1,20 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 465,
-    "openapiPaths": 362,
-    "openapiOperations": 465,
+    "operations": 468,
+    "openapiPaths": 363,
+    "openapiOperations": 468,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
     "eventsDeliveryTested": 50,
     "outboxForeignWriters": 0,
-    "errorCodes": 29,
+    "errorCodes": 31,
     "permissionCodes": 126,
-    "auditActions": 271
+    "auditActions": 273
   },
   "counts": {
-    "Covered": 465
+    "Covered": 468
   },
   "operations": [
     {
@@ -1336,7 +1336,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-16-customer-search.test.ts"],
+      "tests": [
+        "tests/backend/p1-16-customer-search.test.ts",
+        "tests/backend/p1-32-friendly-search.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/customers/route.ts"
     },
@@ -3162,6 +3165,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/iam-auth-provider.test.ts",
+        "tests/backend/od-invitation-capacity-recovery.test.ts",
         "tests/backend/p1-24-iam-route-depth.test.ts",
         "tests/backend/p1-29-w9-owner-bootstrap.test.ts",
         "tests/foundation/p1-14-authentication-units.test.ts",
@@ -3791,6 +3795,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/iam-auth-provider.test.ts",
+        "tests/backend/od-invitation-capacity-recovery.test.ts",
+        "tests/backend/od-organization-administration.test.ts",
         "tests/backend/p1-14-idempotency-replay.test.ts",
         "tests/backend/p1-24-iam-route-depth.test.ts",
         "tests/backend/p1-29-w9-owner-bootstrap.test.ts"
@@ -7322,6 +7328,52 @@
       "file": "apps/api/src/app/api/v1/meta/ping/route.ts"
     },
     {
+      "id": "org.branch-create",
+      "domain": "iam",
+      "method": "POST",
+      "route": "/api/v1/org/branches",
+      "permissions": ["org.branch.manage"],
+      "public": false,
+      "scope": "company",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "org.branch.created",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/org/branches",
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": [
+        "tests/backend/od-organization-administration.test.ts",
+        "tests/backend/p1-29-w9-owner-bootstrap.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
+      ],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/org/branches/route.ts"
+    },
+    {
       "id": "org.branch-list",
       "domain": "iam",
       "method": "GET",
@@ -7391,6 +7443,84 @@
       "tests": ["tests/backend/pre-p1-29-wave-c-company-rbac.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/org/branches/[branchId]/route.ts"
+    },
+    {
+      "id": "org.capacity-read",
+      "domain": "iam",
+      "method": "GET",
+      "route": "/api/v1/org/capacity",
+      "permissions": ["org.tenant.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/org/capacity",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "denial",
+        "cross-tenant"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/od-organization-administration.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/org/capacity/route.ts"
+    },
+    {
+      "id": "org.company-create",
+      "domain": "iam",
+      "method": "POST",
+      "route": "/api/v1/org/companies",
+      "permissions": ["org.company.manage"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "org.company.created",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/org/companies",
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": [
+        "tests/backend/od-organization-administration.test.ts",
+        "tests/backend/p1-29-w9-owner-bootstrap.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
+      ],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/org/companies/route.ts"
     },
     {
       "id": "org.company-list",
@@ -16659,7 +16789,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-17-vehicle-search.test.ts",
-        "tests/backend/p1-27-vehicle-catalogue-and-cursors.test.ts"
+        "tests/backend/p1-27-vehicle-catalogue-and-cursors.test.ts",
+        "tests/backend/p1-32-friendly-search.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/vehicles/route.ts"
@@ -18251,7 +18382,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/br-05-work-order-customer-context.test.ts",
-        "tests/backend/p1-19-work-order-reads.test.ts"
+        "tests/backend/p1-19-work-order-reads.test.ts",
+        "tests/backend/p1-32-friendly-search.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/work-orders/route.ts"

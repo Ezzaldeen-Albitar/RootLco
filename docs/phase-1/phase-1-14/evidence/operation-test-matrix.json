@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 465,
-    "publicApi": 465,
+    "registered": 468,
+    "publicApi": 468,
     "internal": 0,
-    "withRequiredEvidence": 465,
+    "withRequiredEvidence": 468,
     "invocationOnly": 0,
     "p1_15": {
       "registered": 28,
@@ -3249,7 +3249,8 @@
         "tests/backend/iam-auth-provider.test.ts",
         "tests/backend/p1-14-idempotency-replay.test.ts",
         "tests/backend/p1-24-iam-route-depth.test.ts",
-        "tests/backend/p1-29-w9-owner-bootstrap.test.ts"
+        "tests/backend/p1-29-w9-owner-bootstrap.test.ts",
+        "tests/backend/od-organization-administration.test.ts"
       ],
       "referenced": true,
       "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
@@ -6484,6 +6485,50 @@
       "unitOnly": false
     },
     {
+      "id": "org.branch-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/org/branches",
+      "public": false,
+      "files": ["tests/backend/od-organization-administration.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit", "idempotency"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "org.branch-list",
       "surface": "public-api",
       "method": "GET",
@@ -6538,6 +6583,54 @@
         "route",
         "service",
         "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "org.capacity-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/org/capacity",
+      "public": false,
+      "files": ["tests/backend/od-organization-administration.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["success", "denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "denial", "cross-tenant"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "org.company-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/org/companies",
+      "public": false,
+      "files": ["tests/backend/od-organization-administration.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
+      "declared": ["success", "denial", "audit", "idempotency"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
         "success"
       ],
       "missing": [],

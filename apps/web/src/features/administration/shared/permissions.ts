@@ -44,6 +44,16 @@ export const PERMISSIONS = {
   branchRead: 'org.branch.read',
   settingsManage: 'org.settings.manage',
   taxManage: 'org.tax.manage',
+  // Organisation structure (P1-32 preparation). Each is the code the operation
+  // behind the control declares: `org.company-create` and
+  // `org.company-status-set` take `companyManage`, `org.branch-create` takes
+  // `branchManage`, and the branch status change takes `settingsManage` above.
+  companyManage: 'org.company.manage',
+  branchManage: 'org.branch.manage',
+  departmentRead: 'org.department.read',
+  departmentManage: 'org.department.manage',
+  employeeRead: 'org.employee.read',
+  employeeManage: 'org.employee.manage',
 } as const;
 
 export type PermissionKey = keyof typeof PERMISSIONS;

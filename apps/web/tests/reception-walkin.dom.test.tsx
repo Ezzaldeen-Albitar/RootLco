@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
@@ -10,11 +10,10 @@ import { renderLtr, renderRtl } from './render';
  *
  * The claims that matter most here:
  *
- *   1. **The phone degradation is stated on screen, in both languages**
- *      (`G-CRM-PHONE`). The first thing a receptionist tries is the caller's
- *      phone number; the platform's customer directory cannot search by it,
- *      and a search that silently returns nothing teaches the operator the
- *      customer does not exist.
+ *   1. **Phone search is real** (P1-32, closing `G-CRM-PHONE`). The first thing
+ *      a receptionist tries is the caller's phone number; the picker sends it
+ *      as typed and shows the matched phone exactly as the backend returned
+ *      it, partly hidden when it is masked.
  *   2. **The customer-first vehicle pick is real** — the customer's own
  *      vehicle list is read through `crm.customer-vehicle-list`, a vehicle
  *      chosen from it needs no relationship step, and a relationship row
@@ -56,9 +55,57 @@ vi.mock('@/features/vehicles/relations-api', () => ({
   linkCustomerAction: (...args: unknown[]) => linkCustomerAction(...args),
 }));
 
+/*
+ * The two reads the customer-first step makes to state WHICH vehicle Continue
+ * carries: the vehicle record and its current plate (both `veh.vehicle.read`).
+ */
+const readVehicleSummary = vi.fn();
+vi.mock('@/features/receptions/support-api', () => ({
+  readVehicleSummary: (...args: unknown[]) => readVehicleSummary(...args),
+}));
+const listPlates = vi.fn();
+vi.mock('@/features/vehicles/history-api', () => ({
+  listPlates: (...args: unknown[]) => listPlates(...args),
+}));
+
+/*
+ * The customer profile's own reads, mocked because the last three blocks of
+ * this file exercise the entry point the profile offers into this same flow
+ * (`P1-32-PRE-077`). A mock that is missing an export throws asynchronously
+ * into an unrelated test, so this stays a superset of what the screen imports.
+ */
+const emptyProfilePage = async () => ({
+  status: 'ok',
+  rows: [],
+  nextCursor: null,
+  hasMore: false,
+  correlationId: 'fixed-correlation-id',
+});
+vi.mock('@/features/crm/customers/profile-api', () => ({
+  readCustomer: vi.fn(),
+  listContacts: emptyProfilePage,
+  listAddresses: emptyProfilePage,
+  listPreferences: emptyProfilePage,
+  listConsents: emptyProfilePage,
+  listNotes: async () => ({ ...(await emptyProfilePage()), includesRestricted: true }),
+  listAlerts: emptyProfilePage,
+  listTags: emptyProfilePage,
+  listRestrictions: emptyProfilePage,
+}));
+vi.mock('@/features/crm/customers/identity-api', () => ({
+  listTimeline: emptyProfilePage,
+  listDuplicates: emptyProfilePage,
+  reviewDuplicateAction: vi.fn(),
+}));
+
 const { WalkInIntakeScreen } =
   await import('@/features/receptions/intake/components/WalkInIntakeScreen');
 const { checkInWizardHref } = await import('@/features/receptions/intake/intake-handoff');
+const { CustomerWorkOrderStartScreen } =
+  await import('@/features/receptions/intake/components/CustomerWorkOrderStartScreen');
+const { CustomerProfileScreen } =
+  await import('@/features/crm/customers/components/CustomerProfileScreen');
+type CustomerDetail = Parameters<typeof CustomerProfileScreen>[0]['customer'];
 
 const CUSTOMER_ID = '9f8e7d6c-5b4a-4392-8172-0e02b2c3d479';
 const CREATED_CUSTOMER_ID = '0aa1b2c3-d4e5-4f60-8172-9e8d7c6b5a40';
@@ -126,6 +173,45 @@ const SEARCH_HIT = {
   mergedIntoId: null,
 };
 
+/** What `veh.vehicle-read` answers for each fixture vehicle. */
+function vehicleSummary(vehicleId: string) {
+  const known: Record<string, { displayNumber: string | null; vin: string | null }> = {
+    [VEHICLE_ID]: { displayNumber: 'V-0007', vin: '1HGCM82633A004352' },
+    [SEARCHED_VEHICLE_ID]: { displayNumber: 'V-0100', vin: '2HGCM82633A004999' },
+    [CREATED_VEHICLE_ID]: { displayNumber: 'V-0200', vin: '2HGCM82633A004999' },
+  };
+  return {
+    id: vehicleId,
+    displayNumber: known[vehicleId]?.displayNumber ?? null,
+    vin: known[vehicleId]?.vin ?? null,
+    makeName: 'Honda',
+    modelName: 'Accord',
+    modelYear: 2021,
+    color: null,
+    lifecycleStatus: 'active',
+    workshopStatus: 'none',
+    mergedIntoId: null,
+  };
+}
+
+/** A plate that is still open, and one that was closed; only the first is current. */
+const CURRENT_PLATE = {
+  id: '5d6e7f80-6666-4666-8666-666666666666',
+  countryCode: 'JO',
+  plate: '12-34567',
+  validFrom: '2026-02-01',
+  validTo: null,
+  active: true,
+  createdAt: '2026-02-01T00:00:00.000Z',
+};
+const ENDED_PLATE = {
+  ...CURRENT_PLATE,
+  id: '6e7f8091-7777-4777-8777-777777777777',
+  plate: '99-00001',
+  validTo: '2026-02-01',
+  active: false,
+};
+
 function page(rows: readonly unknown[], overrides: Record<string, unknown> = {}) {
   return {
     status: 'ok',
@@ -176,6 +262,8 @@ beforeEach(() => {
   searchVehicles.mockReset();
   createVehicleAction.mockReset();
   linkCustomerAction.mockReset();
+  readVehicleSummary.mockReset();
+  listPlates.mockReset();
 
   searchCustomerDirectory.mockResolvedValue(page([CUSTOMER_HIT]));
   listCustomerVehicles.mockResolvedValue(page([OWN_VEHICLE, DEAD_VEHICLE_ROW]));
@@ -198,6 +286,12 @@ beforeEach(() => {
     messageKey: 'vehicles.relationships.linked',
     attempt: 1,
   });
+  readVehicleSummary.mockImplementation(async (vehicleId: string) => ({
+    status: 'ok',
+    data: vehicleSummary(vehicleId),
+    correlationId: 'fixed-correlation-id',
+  }));
+  listPlates.mockResolvedValue(page([ENDED_PLATE, CURRENT_PLATE]));
 });
 
 /** Search for the fixture customer and choose them. */
@@ -209,25 +303,62 @@ async function chooseCustomer(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByText(en['receptions.intake.vehicle.ownListTitle']);
 }
 
-describe('the stated phone degradation (G-CRM-PHONE)', () => {
-  it('states beside the search controls, in English, that phone search is not available', () => {
+describe('searching for the caller by phone (P1-32, closing G-CRM-PHONE)', () => {
+  const MASKED_HIT = { ...CUSTOMER_HIT, primaryPhone: '*******4567', phoneMasked: true };
+
+  it('offers a phone box and no longer states that phone search is missing', () => {
     renderLtr(<WalkInIntakeScreen {...props()} />);
-    const notice = screen.getByTestId('phone-search-notice');
-    expect(notice).toHaveTextContent(en['receptions.intake.phone.title']);
-    expect(notice).toHaveTextContent(en['receptions.intake.phone.body']);
+    expect(screen.getByLabelText(en['customerSelector.phone'])).toBeInTheDocument();
+    expect(screen.queryByTestId('phone-search-notice')).not.toBeInTheDocument();
   });
 
-  it('states it in Arabic for the Arabic interface', () => {
+  it('sends the typed phone number as the phone criterion and shows the masked result', async () => {
+    searchCustomerDirectory.mockResolvedValue(page([MASKED_HIT]));
+    const user = userEvent.setup();
+    renderLtr(<WalkInIntakeScreen {...props()} />);
+
+    // Enter searches; it must not submit anything else.
+    await user.type(screen.getByLabelText(en['customerSelector.phone']), '0791234567{Enter}');
+
+    expect(await screen.findByText('*******4567')).toBeInTheDocument();
+    expect(searchCustomerDirectory).toHaveBeenCalledTimes(1);
+    const [, , criteria] = searchCustomerDirectory.mock.calls[0] as [
+      unknown,
+      unknown,
+      Record<string, unknown>,
+    ];
+    expect(criteria).toEqual({ phone: '0791234567' });
+    // Shown exactly as returned, with the plain-language hint beside it.
+    const choice = screen.getByRole('button', { name: /Layla Haddad/ });
+    expect(within(choice).getByText(en['crm.customers.search.phonePartlyHidden'])).toBeVisible();
+  });
+
+  it('sends Arabic-Indic digits as typed, and only echoes the Western form for reading', async () => {
+    const user = userEvent.setup();
     renderRtl(<WalkInIntakeScreen {...props({ locale: 'ar', messages: ar })} />);
-    const notice = screen.getByTestId('phone-search-notice');
-    expect(notice).toHaveTextContent(ar['receptions.intake.phone.title']);
-    expect(notice).toHaveTextContent(ar['receptions.intake.phone.body']);
+    const box = screen.getByLabelText(ar['customerSelector.phone']);
+    await user.type(box, '٠٧٩١٢٣٤٥٦٧');
+
+    expect(screen.getByTestId('digits-echo')).toHaveTextContent('0791234567');
+    await user.type(box, '{Enter}');
+    await screen.findByText('Layla Haddad');
+    const [, , criteria] = searchCustomerDirectory.mock.calls[0] as [
+      unknown,
+      unknown,
+      Record<string, unknown>,
+    ];
+    expect(criteria).toEqual({ phone: '٠٧٩١٢٣٤٥٦٧' });
   });
 
-  it('offers no phone search box to fail silently', () => {
+  it('does not show the partly-hidden hint when the phone is shown whole', async () => {
+    searchCustomerDirectory.mockResolvedValue(
+      page([{ ...CUSTOMER_HIT, primaryPhone: '0791234567', phoneMasked: false }])
+    );
+    const user = userEvent.setup();
     renderLtr(<WalkInIntakeScreen {...props()} />);
-    // The two search boxes are name and reference — nothing labelled phone.
-    expect(screen.queryByLabelText(en['field.phone'])).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText(en['customerSelector.phone']), '1234567{Enter}');
+    expect(await screen.findByText('0791234567')).toBeInTheDocument();
+    expect(screen.queryByText(en['crm.customers.search.phonePartlyHidden'])).toBeNull();
   });
 });
 
@@ -599,5 +730,620 @@ describe('failure states carry the reference and offer only honest retries', () 
     listCustomerVehicles.mockResolvedValue(page([OWN_VEHICLE]));
     await user.click(within(list).getByRole('button', { name: en['state.retry'] }));
     await within(list).findByText('V-0007');
+  });
+});
+
+/**
+ * The customer-first route into the same flow (`P1-32-PRE-077`).
+ *
+ * The Owner's requirement of 2026-09-17: a customer already on screen should
+ * not have to be searched for again. The profile offers the entry point, the
+ * step that follows asks only for the vehicle, and nothing proceeds without
+ * one. The claims pinned below are that set, plus the two the step must not
+ * weaken — no work order or reception record is created here, and the way
+ * onward is the EXISTING handoff rather than a second one.
+ */
+
+const PROFILE_CUSTOMER: CustomerDetail = {
+  id: CUSTOMER_ID,
+  displayNumber: 'C-000482',
+  displayName: 'Layla Haddad',
+  partyType: 'individual',
+  lifecycleStatus: 'active',
+  commercialStatus: 'normal',
+  recordVersion: 1,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: null,
+  givenName: 'Layla',
+  familyName: 'Haddad',
+  preferredLocale: 'ar',
+  legalName: null,
+  tradeName: null,
+};
+
+/** An ENDED relationship to a vehicle that still exists — history, not a pick. */
+const ENDED_LINK = {
+  ...OWN_VEHICLE,
+  id: '7a8b9c0d-8888-4888-8888-888888888888',
+  vehicleId: '8b9c0d1e-9999-4999-8999-999999999999',
+  validTo: '2026-03-01',
+  active: false,
+  vehicleDisplayNumber: 'V-0008',
+};
+
+type StepProps = Parameters<typeof CustomerWorkOrderStartScreen>[0];
+
+function stepProps(overrides: Partial<StepProps> = {}): StepProps {
+  return {
+    locale: 'en',
+    messages: en,
+    customer: {
+      id: CUSTOMER_ID,
+      displayName: PROFILE_CUSTOMER.displayName,
+      displayNumber: PROFILE_CUSTOMER.displayNumber,
+      partyType: PROFILE_CUSTOMER.partyType,
+    },
+    canSearchVehicles: true,
+    canCreateVehicle: true,
+    canLinkVehicle: true,
+    ...overrides,
+  };
+}
+
+describe('the entry point on the customer profile', () => {
+  it('offers the action to a session that may open a reception visit', () => {
+    renderLtr(
+      <CustomerProfileScreen
+        locale="en"
+        messages={en}
+        customer={PROFILE_CUSTOMER}
+        canStartWorkOrder={true}
+      />
+    );
+
+    expect(
+      screen.getByRole('link', { name: en['crm.customers.profile.newWorkOrder'] })
+    ).toHaveAttribute('href', `/en/crm/customers/${CUSTOMER_ID}/work-order/new`);
+  });
+
+  it('hides the action from a session that may not', () => {
+    renderLtr(
+      <CustomerProfileScreen
+        locale="en"
+        messages={en}
+        customer={PROFILE_CUSTOMER}
+        canStartWorkOrder={false}
+      />
+    );
+
+    expect(
+      screen.queryByRole('link', { name: en['crm.customers.profile.newWorkOrder'] })
+    ).not.toBeInTheDocument();
+  });
+
+  it('hides the action when the caller states nothing at all', () => {
+    // The default is the safe one: no action rather than a route that denies.
+    renderLtr(<CustomerProfileScreen locale="en" messages={en} customer={PROFILE_CUSTOMER} />);
+
+    expect(screen.queryByTestId('customer-new-work-order')).not.toBeInTheDocument();
+  });
+
+  it('offers it in Arabic too', () => {
+    renderRtl(
+      <CustomerProfileScreen
+        locale="ar"
+        messages={ar}
+        customer={PROFILE_CUSTOMER}
+        canStartWorkOrder={true}
+      />
+    );
+
+    expect(
+      screen.getByRole('link', { name: ar['crm.customers.profile.newWorkOrder'] })
+    ).toHaveAttribute('href', `/ar/crm/customers/${CUSTOMER_ID}/work-order/new`);
+  });
+});
+
+describe('the vehicle step that follows the customer profile', () => {
+  it('states the preselected customer and offers no way to change them', async () => {
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+
+    const fixed = screen.getByTestId('work-order-start-customer');
+    expect(fixed).toHaveTextContent('Layla Haddad');
+    expect(fixed).toHaveTextContent('C-000482');
+    expect(fixed).toHaveTextContent(en['receptions.workOrderStart.customerFixed']);
+    expect(
+      screen.queryByRole('button', { name: en['receptions.intake.customer.change'] })
+    ).not.toBeInTheDocument();
+    // Never the identifier where a reference belongs.
+    expect(fixed).not.toHaveTextContent(CUSTOMER_ID);
+
+    await screen.findByRole('radio');
+  });
+
+  it('reads that customer and offers the CURRENT relationships only', async () => {
+    listCustomerVehicles.mockResolvedValue(page([OWN_VEHICLE, ENDED_LINK, DEAD_VEHICLE_ROW]));
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+
+    const choices = await screen.findAllByRole('radio');
+    expect(choices).toHaveLength(1);
+    expect(screen.getByText('V-0007')).toBeVisible();
+    expect(screen.queryByText('V-0008')).not.toBeInTheDocument();
+
+    const [customerId] = listCustomerVehicles.mock.calls[0] as [string];
+    expect(customerId).toBe(CUSTOMER_ID);
+  });
+
+  it('shows the loading state before the list answers', () => {
+    listCustomerVehicles.mockReturnValue(new Promise(() => {}));
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+
+    expect(screen.getByText(en['state.loading'])).toBeInTheDocument();
+  });
+
+  it('offers the existing find-or-add path when no vehicle fits', async () => {
+    listCustomerVehicles.mockResolvedValue(page([]));
+    const user = userEvent.setup();
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+
+    expect(await screen.findByTestId('work-order-start-empty')).toHaveTextContent(
+      en['receptions.workOrderStart.empty']
+    );
+
+    await user.click(screen.getByTestId('work-order-start-add'));
+
+    // The EXISTING intake step, not a second one: its own search and register
+    // panels are what appears.
+    expect(await screen.findByTestId('intake-vehicle-search')).toBeInTheDocument();
+    expect(screen.getByTestId('intake-vehicle-create')).toBeInTheDocument();
+  });
+
+  it('states the boundary instead of the add path when the operator may not add', async () => {
+    listCustomerVehicles.mockResolvedValue(page([]));
+    renderLtr(
+      <CustomerWorkOrderStartScreen
+        {...stepProps({ canSearchVehicles: false, canCreateVehicle: false, canLinkVehicle: false })}
+      />
+    );
+
+    expect(await screen.findByTestId('work-order-start-empty')).toBeInTheDocument();
+    expect(screen.queryByTestId('work-order-start-add')).not.toBeInTheDocument();
+    expect(screen.getByText(en['receptions.intake.vehicle.limitedAccess'])).toBeVisible();
+  });
+
+  it('says an emptied page is an emptied page, and keeps the pager', async () => {
+    /*
+     * The filter runs on the fetched page, so a customer whose first page holds
+     * only history has an EMPTY page and not an empty history. The screen said
+     * "no vehicle is recorded for this customer" beside a Next button that
+     * would have found one, which is two wrong things at once: a claim about
+     * the customer made from one page, and an invitation to add a vehicle they
+     * may already have.
+     */
+    listCustomerVehicles.mockResolvedValue(
+      page([ENDED_LINK, DEAD_VEHICLE_ROW], { hasMore: true, nextCursor: 'the-next-cursor' })
+    );
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+
+    expect(await screen.findByTestId('work-order-start-empty')).toHaveTextContent(
+      en['receptions.workOrderStart.emptyOnThisPage']
+    );
+    expect(screen.queryByText(en['receptions.workOrderStart.empty'])).not.toBeInTheDocument();
+    // The way to the rest of the list stays where it was.
+    expect(screen.getByRole('button', { name: en['table.nextPage'] })).toBeEnabled();
+  });
+
+  it('says no vehicle is recorded only when there is no further page', async () => {
+    listCustomerVehicles.mockResolvedValue(page([ENDED_LINK]));
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+
+    expect(await screen.findByTestId('work-order-start-empty')).toHaveTextContent(
+      en['receptions.workOrderStart.empty']
+    );
+    expect(
+      screen.queryByText(en['receptions.workOrderStart.emptyOnThisPage'])
+    ).not.toBeInTheDocument();
+    // Nothing further to look at, so the shared Pager renders nothing at all.
+    expect(screen.queryByRole('button', { name: en['table.nextPage'] })).not.toBeInTheDocument();
+  });
+
+  it('offers the shared Pager, with no invented range, when a page is not the last', async () => {
+    listCustomerVehicles.mockResolvedValue(
+      page([OWN_VEHICLE], { hasMore: true, nextCursor: 'the-next-cursor' })
+    );
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+
+    expect(await screen.findByRole('button', { name: en['table.nextPage'] })).toBeEnabled();
+    expect(screen.getByRole('button', { name: en['table.previousPage'] })).toBeDisabled();
+  });
+
+  it('reports a failed read through the shared ListStates mapping, with its reference', async () => {
+    listCustomerVehicles.mockResolvedValue(
+      page([], { status: 'error', correlationId: 'step-correlation-id' })
+    );
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+
+    expect(await screen.findByText(en['state.error.title'])).toBeVisible();
+    expect(screen.getByText('step-correlation-id')).toBeVisible();
+    expect(screen.getByRole('button', { name: en['state.retry'] })).toBeVisible();
+  });
+
+  it('reports a denial without pretending the list is empty', async () => {
+    listCustomerVehicles.mockResolvedValue(
+      page([], { status: 'denied', correlationId: 'step-denied-id' })
+    );
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+
+    expect(await screen.findByText(en['state.denied.title'])).toBeVisible();
+    expect(screen.queryByTestId('work-order-start-empty')).not.toBeInTheDocument();
+  });
+});
+
+describe('continuing from the customer profile into the existing check-in flow', () => {
+  it('offers no way onward until exactly one vehicle is chosen', async () => {
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+    await screen.findByRole('radio');
+
+    const control = screen.getByTestId('work-order-start-continue');
+    expect(control).toBeDisabled();
+    // Disabled, not a link wearing a disabled look — a styled link is still
+    // followable, and nothing may proceed without a vehicle.
+    expect(control.tagName).not.toBe('A');
+    expect(control).not.toHaveAttribute('href');
+    expect(screen.getByText(en['receptions.workOrderStart.continueHint'])).toBeVisible();
+  });
+
+  it('links to the existing flow with both identifiers once a vehicle is chosen', async () => {
+    const user = userEvent.setup();
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+
+    await user.click(await screen.findByRole('radio'));
+
+    const control = screen.getByTestId('work-order-start-continue');
+    expect(control).toHaveAttribute(
+      'href',
+      checkInWizardHref('en', { customerId: CUSTOMER_ID, vehicleId: VEHICLE_ID })
+    );
+    expect(control.getAttribute('href')).toContain(CUSTOMER_ID);
+    expect(control.getAttribute('href')).toContain(VEHICLE_ID);
+    expect(control).toHaveTextContent(en['receptions.workOrderStart.continue']);
+  });
+
+  it('carries the locale into that link', async () => {
+    const user = userEvent.setup();
+    renderRtl(<CustomerWorkOrderStartScreen {...stepProps({ locale: 'ar', messages: ar })} />);
+
+    await user.click(await screen.findByRole('radio'));
+
+    expect(screen.getByTestId('work-order-start-continue')).toHaveAttribute(
+      'href',
+      checkInWizardHref('ar', { customerId: CUSTOMER_ID, vehicleId: VEHICLE_ID })
+    );
+    expect(screen.getByText(ar['receptions.workOrderStart.vehicleLegend'])).toBeVisible();
+  });
+
+  it('keeps exactly one vehicle chosen when a second is picked', async () => {
+    const SECOND = {
+      ...OWN_VEHICLE,
+      id: '9c0d1e2f-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      vehicleId: SEARCHED_VEHICLE_ID,
+      vehicleDisplayNumber: 'V-0009',
+    };
+    listCustomerVehicles.mockResolvedValue(page([OWN_VEHICLE, SECOND]));
+    const user = userEvent.setup();
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+
+    const choices = await screen.findAllByRole('radio');
+    await user.click(choices[0] as HTMLElement);
+    await user.click(choices[1] as HTMLElement);
+
+    expect(
+      screen.getAllByRole('radio').filter((input) => (input as HTMLInputElement).checked)
+    ).toHaveLength(1);
+    expect(screen.getByTestId('work-order-start-continue')).toHaveAttribute(
+      'href',
+      checkInWizardHref('en', { customerId: CUSTOMER_ID, vehicleId: SEARCHED_VEHICLE_ID })
+    );
+  });
+
+  /** Open the find-or-add sub-flow from a step whose list came back empty. */
+  async function addFromEmptyState(user: ReturnType<typeof userEvent.setup>) {
+    listCustomerVehicles.mockResolvedValue(page([]));
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+    await user.click(await screen.findByTestId('work-order-start-add'));
+  }
+
+  /** Record the relationship the sub-flow asks for, in the owner role. */
+  async function recordTheRelationship(user: ReturnType<typeof userEvent.setup>) {
+    await screen.findByTestId('intake-link-step');
+    await user.selectOptions(
+      screen.getByLabelText(en['vehicles.relationships.role'], { exact: false }),
+      'owner'
+    );
+    await user.click(screen.getByRole('button', { name: en['receptions.intake.link.submit'] }));
+  }
+
+  it('carries a vehicle registered from the empty state through to the check-in link', async () => {
+    /*
+     * The return path, end to end. A customer with nothing on record is the
+     * case this step exists for, and every earlier case stopped at the moment
+     * the sub-flow opened — so `settle` and `onLinkOutcome`, which are what
+     * turn that sub-flow's answer into the pair handed to check-in, were
+     * reachable only by reading the source.
+     */
+    const user = userEvent.setup();
+    await addFromEmptyState(user);
+
+    const create = await screen.findByTestId('intake-vehicle-create');
+    await user.type(
+      within(create).getByLabelText(en['vehicles.create.vin'], { exact: false }),
+      '2hgcm82633a004999'
+    );
+    await user.click(within(create).getByRole('button', { name: en['vehicles.create.submit'] }));
+
+    // A vehicle just registered is not yet related to the customer, so the
+    // EXISTING relationship step runs before this step settles.
+    await recordTheRelationship(user);
+    expect(linkCustomerAction.mock.calls[0]?.[0]).toBe(CREATED_VEHICLE_ID);
+
+    // Back on the customer's own step — the sub-flow is closed, not stacked.
+    await screen.findByTestId('work-order-start-vehicle');
+    expect(screen.queryByTestId('intake-vehicle-create')).not.toBeInTheDocument();
+
+    const control = screen.getByTestId('work-order-start-continue');
+    expect(control).toHaveAttribute(
+      'href',
+      checkInWizardHref('en', { customerId: CUSTOMER_ID, vehicleId: CREATED_VEHICLE_ID })
+    );
+    expect(control.getAttribute('href')).toContain(CUSTOMER_ID);
+    expect(control.getAttribute('href')).toContain(CREATED_VEHICLE_ID);
+  });
+
+  it('carries a vehicle found by search and linked from the empty state to the same link', async () => {
+    const user = userEvent.setup();
+    await addFromEmptyState(user);
+
+    const search = await screen.findByTestId('intake-vehicle-search');
+    await user.type(within(search).getByLabelText(en['vehicles.search.vin']), SEARCH_HIT.vin);
+    await user.click(within(search).getByRole('button', { name: en['vehicles.search.submit'] }));
+    const results = await screen.findByTestId('intake-vehicle-search-results');
+    await within(results).findByText('V-0100');
+    await user.click(
+      within(results).getByRole('button', { name: en['receptions.intake.vehicle.choose'] })
+    );
+
+    await recordTheRelationship(user);
+    expect(linkCustomerAction.mock.calls[0]?.[0]).toBe(SEARCHED_VEHICLE_ID);
+    const form = linkCustomerAction.mock.calls[0]?.[2] as FormData;
+    expect(form.get('partnerId')).toBe(CUSTOMER_ID);
+
+    await screen.findByTestId('work-order-start-vehicle');
+    const control = screen.getByTestId('work-order-start-continue');
+    expect(control).toHaveAttribute(
+      'href',
+      checkInWizardHref('en', { customerId: CUSTOMER_ID, vehicleId: SEARCHED_VEHICLE_ID })
+    );
+    expect(control.getAttribute('href')).toContain(CUSTOMER_ID);
+    expect(control.getAttribute('href')).toContain(SEARCHED_VEHICLE_ID);
+  });
+
+  it('leaves the way onward closed while the sub-flow is still open', async () => {
+    // The other direction of the same mechanism: a vehicle that has been
+    // chosen but whose relationship question is unanswered has NOT settled,
+    // and nothing may proceed on a half-finished answer.
+    const user = userEvent.setup();
+    await addFromEmptyState(user);
+
+    const create = await screen.findByTestId('intake-vehicle-create');
+    await user.type(
+      within(create).getByLabelText(en['vehicles.create.vin'], { exact: false }),
+      '2hgcm82633a004999'
+    );
+    await user.click(within(create).getByRole('button', { name: en['vehicles.create.submit'] }));
+    await screen.findByTestId('intake-link-step');
+
+    const control = screen.getByTestId('work-order-start-continue');
+    expect(control).toBeDisabled();
+    expect(control).not.toHaveAttribute('href');
+  });
+
+  it('creates nothing on its own — choosing a vehicle calls no write', async () => {
+    const user = userEvent.setup();
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+
+    await user.click(await screen.findByRole('radio'));
+
+    expect(createVehicleAction).not.toHaveBeenCalled();
+    expect(linkCustomerAction).not.toHaveBeenCalled();
+  });
+
+  /** The identity block beside Continue. */
+  async function selectedIdentity(messages: typeof en = en) {
+    const block = await screen.findByTestId('work-order-start-selected-vehicle');
+    expect(block).toHaveTextContent(messages['receptions.workOrderStart.selectedVehicle']);
+    return block;
+  }
+
+  /** Find the fixture vehicle by VIN in the sub-flow, choose it, and record the link. */
+  async function searchAndLink(user: ReturnType<typeof userEvent.setup>) {
+    const search = await screen.findByTestId('intake-vehicle-search');
+    await user.type(within(search).getByLabelText(en['vehicles.search.vin']), SEARCH_HIT.vin);
+    await user.click(within(search).getByRole('button', { name: en['vehicles.search.submit'] }));
+    const results = await screen.findByTestId('intake-vehicle-search-results');
+    await within(results).findByText('V-0100');
+    await user.click(
+      within(results).getByRole('button', { name: en['receptions.intake.vehicle.choose'] })
+    );
+    await recordTheRelationship(user);
+  }
+
+  it('names the registered vehicle beside Continue after the create return path', async () => {
+    const user = userEvent.setup();
+    await addFromEmptyState(user);
+
+    const create = await screen.findByTestId('intake-vehicle-create');
+    await user.type(
+      within(create).getByLabelText(en['vehicles.create.vin'], { exact: false }),
+      '2hgcm82633a004999'
+    );
+    await user.click(within(create).getByRole('button', { name: en['vehicles.create.submit'] }));
+    await recordTheRelationship(user);
+
+    const block = await selectedIdentity();
+    expect(await within(block).findByTestId('work-order-start-selected-plate')).toHaveTextContent(
+      '12-34567'
+    );
+    expect(within(block).queryByText('99-00001')).not.toBeInTheDocument();
+    expect(within(block).getByTestId('work-order-start-selected-number')).toHaveTextContent(
+      'V-0200'
+    );
+    expect(within(block).getByTestId('work-order-start-selected-vin')).toHaveTextContent(
+      '2HGCM82633A004999'
+    );
+    expect(within(block).getByTestId('work-order-start-selected-model')).toHaveTextContent(
+      'Honda Accord'
+    );
+    expect(readVehicleSummary).toHaveBeenCalledWith(CREATED_VEHICLE_ID);
+    expect(listPlates.mock.calls[0]?.[0]).toBe(CREATED_VEHICLE_ID);
+    // The identity and the link describe the same vehicle.
+    expect(screen.getByTestId('work-order-start-continue').getAttribute('href')).toContain(
+      CREATED_VEHICLE_ID
+    );
+  });
+
+  it('names the searched and linked vehicle beside Continue after the link return path', async () => {
+    const user = userEvent.setup();
+    await addFromEmptyState(user);
+    await searchAndLink(user);
+
+    const block = await selectedIdentity();
+    expect(await within(block).findByTestId('work-order-start-selected-plate')).toHaveTextContent(
+      '12-34567'
+    );
+    expect(within(block).getByTestId('work-order-start-selected-number')).toHaveTextContent(
+      'V-0100'
+    );
+    expect(within(block).getByTestId('work-order-start-selected-vin')).toHaveTextContent(
+      SEARCH_HIT.vin
+    );
+    const model = within(block).getByTestId('work-order-start-selected-model');
+    expect(within(model).getByText('Honda Accord')).toBeInTheDocument();
+    expect(within(model).getByText('2021')).toBeInTheDocument();
+    expect(readVehicleSummary).toHaveBeenCalledWith(SEARCHED_VEHICLE_ID);
+  });
+
+  it('falls back to a neutral label and the vehicle number when the vehicle read is refused', async () => {
+    readVehicleSummary.mockResolvedValue({ status: 'denied', correlationId: 'refused-ref' });
+    listPlates.mockResolvedValue(page([], { status: 'denied' }));
+    const user = userEvent.setup();
+    await addFromEmptyState(user);
+    await searchAndLink(user);
+
+    const block = await selectedIdentity();
+    // Wait until BOTH refused reads have resolved and the block has re-rendered
+    // from them — asserting before that would only prove the pre-read state.
+    await waitFor(() => expect(block).toHaveAttribute('data-read-state', 'settled'));
+    expect(readVehicleSummary).toHaveBeenCalledWith(SEARCHED_VEHICLE_ID);
+    expect(listPlates).toHaveBeenCalled();
+    expect(block).toHaveTextContent(en['receptions.workOrderStart.selectedVehicleNumber']);
+    expect(within(block).getByTestId('work-order-start-selected-number')).toHaveTextContent(
+      'V-0100'
+    );
+    expect(within(block).queryByTestId('work-order-start-selected-plate')).not.toBeInTheDocument();
+    expect(within(block).queryByTestId('work-order-start-selected-vin')).not.toBeInTheDocument();
+    expect(within(block).queryByTestId('work-order-start-selected-model')).not.toBeInTheDocument();
+  });
+
+  /** An open plate whose effective date has not arrived: `active`, and not in force. */
+  const FUTURE_OPEN_PLATE = {
+    ...CURRENT_PLATE,
+    id: '7f8091a2-8888-4888-8888-888888888888',
+    plate: '55-99999',
+    validFrom: '2999-01-01',
+    validTo: null,
+    active: true,
+  };
+  /** The plate in force today, closed on the day the future plate takes over. */
+  const IN_FORCE_PLATE = {
+    ...CURRENT_PLATE,
+    validFrom: '2000-01-01',
+    validTo: '2999-01-01',
+    active: false,
+  };
+
+  it('shows the plate in force today, not a future-dated open plate', async () => {
+    listPlates.mockResolvedValue(page([FUTURE_OPEN_PLATE, IN_FORCE_PLATE]));
+    const user = userEvent.setup();
+    await addFromEmptyState(user);
+    await searchAndLink(user);
+
+    const block = await selectedIdentity();
+    await waitFor(() => expect(block).toHaveAttribute('data-read-state', 'settled'));
+    expect(within(block).getByTestId('work-order-start-selected-plate')).toHaveTextContent(
+      '12-34567'
+    );
+    expect(within(block).queryByText('55-99999')).not.toBeInTheDocument();
+  });
+
+  it('walks past a first page without an in-force plate to find the one in force', async () => {
+    listPlates
+      .mockResolvedValueOnce(page([FUTURE_OPEN_PLATE], { hasMore: true, nextCursor: 'next-page' }))
+      .mockResolvedValueOnce(page([IN_FORCE_PLATE]));
+    const user = userEvent.setup();
+    await addFromEmptyState(user);
+    await searchAndLink(user);
+
+    const block = await selectedIdentity();
+    await waitFor(() => expect(block).toHaveAttribute('data-read-state', 'settled'));
+    expect(within(block).getByTestId('work-order-start-selected-plate')).toHaveTextContent(
+      '12-34567'
+    );
+    expect(listPlates).toHaveBeenCalledTimes(2);
+    expect(listPlates.mock.calls[1]?.[2]).toBe('next-page');
+  });
+
+  it('shows no plate when the only open plate is not yet in force', async () => {
+    listPlates.mockResolvedValue(page([FUTURE_OPEN_PLATE]));
+    const user = userEvent.setup();
+    await addFromEmptyState(user);
+    await searchAndLink(user);
+
+    const block = await selectedIdentity();
+    await waitFor(() => expect(block).toHaveAttribute('data-read-state', 'settled'));
+    expect(within(block).getByTestId('work-order-start-selected-vin')).toBeInTheDocument();
+    expect(within(block).queryByTestId('work-order-start-selected-plate')).not.toBeInTheDocument();
+    expect(within(block).queryByText('55-99999')).not.toBeInTheDocument();
+  });
+
+  it('does not read the vehicle for an operator without vehicle read access, and stays neutral', async () => {
+    const user = userEvent.setup();
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps({ canSearchVehicles: false })} />);
+
+    await user.click(await screen.findByRole('radio'));
+
+    const block = await selectedIdentity();
+    expect(within(block).getByTestId('work-order-start-selected-number')).toHaveTextContent(
+      'V-0007'
+    );
+    expect(within(block).queryByTestId('work-order-start-selected-vin')).not.toBeInTheDocument();
+    expect(readVehicleSummary).not.toHaveBeenCalled();
+    expect(listPlates).not.toHaveBeenCalled();
+  });
+
+  it('names the selected vehicle in Arabic too', async () => {
+    const user = userEvent.setup();
+    renderRtl(<CustomerWorkOrderStartScreen {...stepProps({ locale: 'ar', messages: ar })} />);
+
+    await user.click(await screen.findByRole('radio'));
+
+    const block = await selectedIdentity(ar);
+    expect(await within(block).findByTestId('work-order-start-selected-plate')).toHaveTextContent(
+      '12-34567'
+    );
+    expect(block).toHaveTextContent(ar['vehicles.column.plate']);
+    expect(block).toHaveTextContent(ar['vehicles.column.vin']);
+    expect(within(block).getByTestId('work-order-start-selected-number')).toHaveTextContent(
+      'V-0007'
+    );
   });
 });
