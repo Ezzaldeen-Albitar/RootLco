@@ -161,6 +161,34 @@ export class IdentityRepository extends Repository {
     return result.rows[0]?.allowed === true;
   }
 
+  /**
+   * Serializes every invitation of one address, across every tenant, for the
+   * rest of the caller's transaction.
+   *
+   * The provider is one directory for the whole platform, so two invitations of
+   * the same address — in one organisation or in two — would otherwise both read
+   * "no identity", both call the provider, and both be handed the SAME subject.
+   * If one of them is then refused, the identity it believes it created is the
+   * identity the other one's account now references, and removing it would strand
+   * that account. Holding this lock from before the first read until COMMIT or
+   * ROLLBACK means the second invitation reads the outcome of the first, never
+   * its middle.
+   *
+   * `pg_advisory_xact_lock` needs no table privilege and cannot outlive the
+   * transaction. The key is a hash of the lower-cased address: a collision only
+   * serializes two unrelated invitations, it never merges their outcomes. It is
+   * always taken before the per-tenant capacity lock `tg_user_accounts_capacity`
+   * takes at the INSERT, so the two locks have one order and cannot deadlock.
+   */
+  async lockInvitationAddress(db: DbHandle, email: string): Promise<void> {
+    await this.run(
+      db,
+      `SELECT pg_catalog.pg_advisory_xact_lock(
+                pg_catalog.hashtextextended('iam.invitation.address:' || pg_catalog.lower($1::text), 0))`,
+      [email]
+    );
+  }
+
   /** Reads an account by its provider identity within the context tenant. */
   async findByProviderSubject(
     db: DbHandle,

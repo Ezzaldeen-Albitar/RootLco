@@ -163,6 +163,10 @@ export class InvitationService extends ApplicationService {
       }
     }
 
+    // From here to the end of the transaction no other invitation of this address
+    // can run between a read and the write it justifies — see the repository.
+    await this.identities.lockInvitationAddress(db, input.email);
+
     const existing = await this.identities.findByEmail(db, this.provider.name, input.email);
     if (existing) {
       // Deterministic duplicate behaviour: an address already known in this
@@ -214,13 +218,21 @@ export class InvitationService extends ApplicationService {
       // provider write, which lives outside the transaction and which a
       // rollback therefore cannot reach. Compensating here is the only moment
       // the subject is known to belong to this request.
-      if (createdHere) await this.removeIdentityCreatedHere(db, identity.subject);
+      //
+      // Never on a unique violation: that refusal is itself the proof that a
+      // live account — possibly in an organisation this session cannot read —
+      // already references the address or the subject, so the identity is bound
+      // to somebody and is not this request's to remove.
+      const referenced = isSqlState(error, SQLSTATE.uniqueViolation);
+      if (createdHere && !referenced) {
+        await this.removeIdentityCreatedHere(db, identity.subject);
+      }
 
       // `uq_user_accounts_tenant_email_active` or the global provider-identity
       // index. A concurrent invite won, or the identity is referenced by an
       // account in an organisation this session may not read; the caller's
       // invitation did not happen either way.
-      if (isSqlState(error, SQLSTATE.uniqueViolation)) {
+      if (referenced) {
         throw new AppFailure('ERR-RES-002', {
           message: 'An account already exists for that address in this tenant',
         });
@@ -463,6 +475,24 @@ export class InvitationService extends ApplicationService {
       return;
     }
     try {
+      // Re-read at the provider immediately before removing. The invitation
+      // lock keeps other invitations out, but not every writer of the directory
+      // takes it — the first-owner bootstrap binds identities too. An identity
+      // no longer bound to this organisation, or already confirmed or disabled,
+      // has been adopted by something other than this request and is kept.
+      const current = await this.provider.findBySubject(subject);
+      if (current === null) return;
+      if (
+        current.tenantId !== db.context.principal.tenantId ||
+        current.confirmed ||
+        current.disabled
+      ) {
+        log.warn('Provider identity created by a refused invitation was adopted and is kept', {
+          ...entry,
+          context: { reason: 'identity-adopted-elsewhere' },
+        });
+        return;
+      }
       await this.provider.deleteIdentity(subject);
     } catch (error) {
       log.warn('Provider identity created by a refused invitation could not be removed', {

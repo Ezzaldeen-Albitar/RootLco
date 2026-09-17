@@ -389,6 +389,21 @@ describe('(a) an invitation the seat ceiling refuses', () => {
     expect(await fake.findByEmail(refusedEmail)).toBeNull();
   });
 
+  it('gives the refused address no way to sign in and no session', async () => {
+    const before = await footprintOf(ALPHA.tenantId);
+    asAnonymous();
+    const denied = await call<{ code: string; accessToken?: unknown }>(loginRoute, {
+      path: '/auth/login',
+      body: { email: refusedEmail, password: 'correct horse battery staple' },
+    });
+
+    expect(denied.status).toBe(401);
+    expect(denied.body.code).toBe('ERR-IAM-002');
+    expect(denied.body.accessToken).toBeUndefined();
+    expect(await footprintOf(ALPHA.tenantId)).toEqual(before);
+    expect(await fake.findByEmail(refusedEmail)).toBeNull();
+  });
+
   it('cannot be authenticated into the organisation while no account references it', async () => {
     // An identity in exactly the state a refusal used to leave behind — it exists
     // at the provider, it is confirmed, it has a password and it is bound to this
@@ -563,6 +578,42 @@ describe('(c) two invitations racing for the last seat', () => {
   });
 });
 
+describe('an identity the refused invitation found, rather than made, survives the refusal', () => {
+  const survivorEmail = address('survivor');
+
+  it('answers ERR-CAP-001 and leaves the pre-existing identity exactly as it was', async () => {
+    // The seats are all spent after the race above. The identity exists BEFORE
+    // the invitation, bound to this organisation and reusable — so the refusal
+    // arrives at the INSERT, after the reuse decision, which is the only place a
+    // compensation could reach it.
+    const seeded = fake.seed({
+      email: survivorEmail,
+      confirmed: false,
+      tenantId: ALPHA.tenantId,
+    });
+
+    const before = await footprintOf(ALPHA.tenantId);
+    expect(before.seatsUsed).toBe(5);
+    expect(await seatLimitOf(ALPHA.tenantId)).toBe(5);
+
+    asAdmin();
+    const refused = await invite({ email: survivorEmail, displayName: 'Survivor Invitee' });
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('ERR-CAP-001');
+    expect(await footprintOf(ALPHA.tenantId)).toEqual(before);
+    expect(
+      await count('SELECT count(*) FROM iam.user_accounts WHERE email = $1', [survivorEmail])
+    ).toBe(0);
+
+    const after = await fake.findBySubject(seeded.subject);
+    expect(after).not.toBeNull();
+    expect(after?.email).toBe(survivorEmail);
+    expect(after?.tenantId).toBe(ALPHA.tenantId);
+    expect(after?.disabled).toBe(false);
+    expect((await fake.findByEmail(survivorEmail))?.subject).toBe(seeded.subject);
+  });
+});
+
 describe('a compensation the provider refuses is reported, never hidden', () => {
   const strandedEmail = address('stranded');
 
@@ -598,5 +649,76 @@ describe('a compensation the provider refuses is reported, never hidden', () => 
         strandedEmail,
       ])
     ).toBe(stranded?.subject);
+  });
+});
+
+describe('two invitations of the SAME address racing for the last seat', () => {
+  const contestedEmail = address('contested');
+
+  it('admits one, refuses the other, and never removes the identity the winner holds', async () => {
+    // Six seats are held after the healed invitation above; seven frees one.
+    await assignSeatLimit(7);
+    const before = await footprintOf(ALPHA.tenantId);
+    expect(before.seatsUsed).toBe(6);
+    expect(await fake.findByEmail(contestedEmail)).toBeNull();
+
+    // Force the interleaving that makes the race dangerous: each directory read
+    // of this address waits (boundedly) for the other one to arrive, so without
+    // serialization BOTH requests read "no identity" and both believe they made
+    // the subject the provider hands them. With the address lock the second read
+    // cannot start until the first transaction has ended, the wait simply runs
+    // out, and the second request reads the committed outcome instead.
+    const original = fake.findByEmail.bind(fake);
+    let arrived = 0;
+    let release: () => void = () => undefined;
+    const bothArrived = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    fake.findByEmail = async (email: string) => {
+      if (email === contestedEmail) {
+        arrived += 1;
+        if (arrived >= 2) release();
+        await Promise.race([bothArrived, new Promise((resolve) => setTimeout(resolve, 750))]);
+      }
+      return original(email);
+    };
+
+    asAdmin();
+    let outcomes: Awaited<ReturnType<typeof invite>>[];
+    try {
+      outcomes = await Promise.all([
+        invite({ email: contestedEmail, displayName: 'Contested One' }),
+        invite({ email: contestedEmail, displayName: 'Contested Two' }),
+      ]);
+    } finally {
+      fake.findByEmail = original;
+    }
+
+    const admitted = outcomes.filter((result) => result.status === 200 || result.status === 201);
+    const refused = outcomes.filter((result) => result.status === 409);
+    expect(admitted).toHaveLength(1);
+    expect(refused).toHaveLength(1);
+    // Serialized on the address, the loser reads the winner's committed account
+    // and is told the address is taken; a seat refusal would also leave nothing.
+    expect(['ERR-RES-002', 'ERR-CAP-001']).toContain(refused[0]?.body.code);
+
+    const after = await footprintOf(ALPHA.tenantId);
+    expect(after.seatsUsed - before.seatsUsed).toBe(1);
+    expect(after.accounts - before.accounts).toBe(1);
+    expect(after.invitedAudit - before.invitedAudit).toBe(1);
+    expect(
+      await count('SELECT count(*) FROM iam.user_accounts WHERE email = $1', [contestedEmail])
+    ).toBe(1);
+
+    // The one account's identity is still at the provider: the refused request
+    // did not remove the subject the winner's account references.
+    const heldSubject = await scalar<string>(
+      'SELECT provider_subject FROM iam.user_accounts WHERE email = $1',
+      [contestedEmail]
+    );
+    const identity = await fake.findByEmail(contestedEmail);
+    expect(identity).not.toBeNull();
+    expect(identity?.subject).toBe(heldSubject);
+    expect(await fake.findBySubject(heldSubject as string)).not.toBeNull();
   });
 });
