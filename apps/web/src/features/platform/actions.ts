@@ -8,11 +8,21 @@ import {
   violationMessageKey,
   type ApiFailure,
 } from '@/lib/api/client';
+import type { TableRequest } from '@/components/data-table/table-state';
+import type { ServerPage } from '@/components/data-table/use-server-table';
+import { query } from '@/lib/api/read-operation';
 import { fromFailure, invalid, success, type ActionState } from '@/lib/forms/action-result';
-import type { ProvisionState } from './types';
+import { readPage } from './api';
+import type {
+  OrganizationRow,
+  PlatformAuditCriteria,
+  PlatformAuditEvent,
+  ProvisionState,
+} from './types';
 
 /**
- * The Platform Owner Console mutations (P1-32-PRE-063).
+ * The Platform Owner Console mutations (P1-32-PRE-063), and the two reads a
+ * client data table drives (P1-32-PRE-068).
  *
  * Each calls exactly one published platform operation, named beside it. None
  * re-checks a permission first: the server decides, and its refusal is what the
@@ -21,6 +31,17 @@ import type { ProvisionState } from './types';
  *
  * Money is a decimal string from the form to the wire. It is checked against the
  * same pattern the operation publishes and is never turned into a number.
+ *
+ * ## Why two READS live in the actions module
+ *
+ * Every other console read is server-only, in `api.ts`, reachable only from the
+ * page that gates it. These two are not: the organisation list and the activity
+ * search are paged and searched by a client data table AFTER render, so the
+ * browser has to be able to call them. They are the named, deliberate exception
+ * to "console reads are not Server Actions", and each is refused by its backend
+ * operation without the platform code it declares — `platform.organization.read`
+ * and `platform.audit.read` — which is what makes the exception safe rather than
+ * merely convenient.
  */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -67,6 +88,49 @@ async function send(
 
 const organizationPath = (tenantId: string) =>
   `/api/v1/platform/organizations/${encodeURIComponent(tenantId)}`;
+
+// --- the two browser-callable reads -------------------------------------------
+
+/** `platform.organization-read` — one page of organisations, searched and filtered. */
+export async function listOrganizations(
+  request: TableRequest,
+  cursor: string | null
+): Promise<ServerPage<OrganizationRow>> {
+  const status = request.filters.find((filter) => filter.key === 'status')?.value;
+  const q = request.search.trim();
+  return readPage<OrganizationRow>(
+    '/api/v1/platform/organizations' +
+      query({
+        q: q.length > 0 ? q.slice(0, 100) : undefined,
+        status,
+        cursor,
+        limit: request.pageSize,
+      })
+  );
+}
+
+/** `platform.audit-search` — one page of the operator's own trail in a bounded window. */
+export async function searchPlatformAudit(
+  criteria: PlatformAuditCriteria,
+  request: TableRequest,
+  cursor: string | null
+): Promise<ServerPage<PlatformAuditEvent>> {
+  const organizationId =
+    criteria.organizationId && UUID.test(criteria.organizationId)
+      ? criteria.organizationId
+      : undefined;
+  return readPage<PlatformAuditEvent>(
+    '/api/v1/platform/audit-events' +
+      query({
+        from: criteria.from,
+        to: criteria.to,
+        action: criteria.action || undefined,
+        targetTenantId: organizationId,
+        cursor,
+        limit: request.pageSize,
+      })
+  );
+}
 
 // --- provisioning -------------------------------------------------------------
 

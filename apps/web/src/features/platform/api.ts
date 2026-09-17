@@ -1,14 +1,9 @@
-'use server';
-
 import { authorizedClient } from '@/lib/api/server-client';
-import type { TableRequest } from '@/components/data-table/table-state';
 import type { ServerPage } from '@/components/data-table/use-server-table';
-import { query, STATUS_BY_KIND, type CursorPage, type ReadState } from '@/lib/api/read-operation';
+import { STATUS_BY_KIND, type CursorPage, type ReadState } from '@/lib/api/read-operation';
 import type {
   OrganizationDetail,
   OrganizationRow,
-  PlatformAuditCriteria,
-  PlatformAuditEvent,
   PlatformStatistics,
   SubscriptionCharge,
   SubscriptionPlan,
@@ -26,7 +21,26 @@ import type {
  *   - `platform.plan-list`           GET /platform/plans
  *   - `platform.charge-list`         GET /platform/organizations/{tenantId}/charges
  *   - `platform.statistics-read`     GET /platform/statistics
- *   - `platform.audit-search`        GET /platform/audit-events
+ *
+ * ## SERVER-ONLY, and why the directive was removed (P1-32-PRE-068)
+ *
+ * This module declared the Server Action directive, which made every read below
+ * a browser-callable endpoint: anyone with a session cookie could invoke the
+ * cross-organisation reads directly, bypassing the `holds(...)` checks the
+ * console layout and pages apply before rendering. The gate is on the backend
+ * operation, so this was never an authority hole — but a read reachable without
+ * the page that guards it is a surface nobody chose to publish.
+ *
+ * It is a server-only module now, in the same way as
+ * `features/platform/api/session.ts`: no directive, and `authorizedClient()`
+ * reads the `httpOnly` cookie through `next/headers`, which does not exist in a
+ * client bundle — so an import from a client component fails at build time
+ * rather than shipping. Every caller is a Server Component or a server module.
+ *
+ * The two reads a client data table drives — the organisation list and the
+ * activity search — genuinely must be browser-callable, because paging and
+ * searching happen after render. They live in `actions.ts` with the writes, and
+ * are the only console reads a browser can call.
  */
 
 const EMPTY = { rows: [], nextCursor: null, hasMore: false } as const;
@@ -40,7 +54,13 @@ async function read<T>(path: string): Promise<ReadState<T>> {
   return { status: STATUS_BY_KIND[result.kind], correlationId: result.correlationId };
 }
 
-async function readPage<Row>(path: string): Promise<ServerPage<Row>> {
+/**
+ * One page of a cursor-paged platform read.
+ *
+ * Exported for `actions.ts`, which holds the two paged reads a client data table
+ * drives and therefore cannot share this file's server-only home.
+ */
+export async function readPage<Row>(path: string): Promise<ServerPage<Row>> {
   const client = await authorizedClient();
   if (!client) return { ...EMPTY, status: 'expired', correlationId: null };
   const result = await client.get<CursorPage<Row>>(path);
@@ -54,24 +74,6 @@ async function readPage<Row>(path: string): Promise<ServerPage<Row>> {
     hasMore: result.data.hasMore,
     correlationId: result.correlationId,
   };
-}
-
-/** One page of organisations, searched by `q` and narrowed by status. */
-export async function listOrganizations(
-  request: TableRequest,
-  cursor: string | null
-): Promise<ServerPage<OrganizationRow>> {
-  const status = request.filters.find((filter) => filter.key === 'status')?.value;
-  const q = request.search.trim();
-  return readPage<OrganizationRow>(
-    '/api/v1/platform/organizations' +
-      query({
-        q: q.length > 0 ? q.slice(0, 100) : undefined,
-        status,
-        cursor,
-        limit: request.pageSize,
-      })
-  );
 }
 
 /** Organisations for a filter choice: the first hundred, by the server's order. */
@@ -107,27 +109,4 @@ export async function listCharges(
 
 export async function readStatistics(): Promise<ReadState<PlatformStatistics>> {
   return read<PlatformStatistics>('/api/v1/platform/statistics');
-}
-
-/** One page of the platform operator's audit trail within a bounded window. */
-export async function searchPlatformAudit(
-  criteria: PlatformAuditCriteria,
-  request: TableRequest,
-  cursor: string | null
-): Promise<ServerPage<PlatformAuditEvent>> {
-  const organizationId =
-    criteria.organizationId && UUID.test(criteria.organizationId)
-      ? criteria.organizationId
-      : undefined;
-  return readPage<PlatformAuditEvent>(
-    '/api/v1/platform/audit-events' +
-      query({
-        from: criteria.from,
-        to: criteria.to,
-        action: criteria.action || undefined,
-        targetTenantId: organizationId,
-        cursor,
-        limit: request.pageSize,
-      })
-  );
 }

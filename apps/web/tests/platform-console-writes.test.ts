@@ -505,7 +505,7 @@ describe('the console reads name their subject and carry only what was asked', (
   const request = tableRequest({});
 
   it('sends the search term and the status only once they have a value', async () => {
-    await reads.listOrganizations(request, null);
+    await actions.listOrganizations(request, null);
     const first = String(get.mock.calls[0]?.[0]);
     expect(first).toContain('/api/v1/platform/organizations');
     expect(first).not.toContain('q=');
@@ -513,7 +513,7 @@ describe('the console reads name their subject and carry only what was asked', (
     expect(first).toContain('limit=25');
 
     get.mockClear();
-    await reads.listOrganizations(
+    await actions.listOrganizations(
       tableRequest({
         search: '  northern  ',
         filters: [{ key: 'status', value: 'suspended' }],
@@ -528,14 +528,14 @@ describe('the console reads name their subject and carry only what was asked', (
 
   it('turns a page of rows into the shape the table reads, and a refusal into a denial', async () => {
     get.mockResolvedValue(okResult({ items: [{ id: TENANT }], nextCursor: 'c2', hasMore: true }));
-    const page = await reads.listOrganizations(request, null);
+    const page = await actions.listOrganizations(request, null);
     expect(page.status).toBe('ok');
     expect(page.rows).toHaveLength(1);
     expect(page.nextCursor).toBe('c2');
     expect(page.hasMore).toBe(true);
 
     get.mockResolvedValue({ ok: false, kind: 'forbidden', correlationId: 'corr-4' });
-    const denied = await reads.listOrganizations(request, null);
+    const denied = await actions.listOrganizations(request, null);
     expect(denied.status).toBe('denied');
     expect(denied.rows).toEqual([]);
   });
@@ -560,7 +560,7 @@ describe('the console reads name their subject and carry only what was asked', (
   });
 
   it('drops an organisation filter that is not an identifier rather than sending it', async () => {
-    await reads.searchPlatformAudit(
+    await actions.searchPlatformAudit(
       { from: '2026-08-18', to: '2026-09-17', action: '', organizationId: NOT_AN_ID },
       request,
       null
@@ -572,7 +572,7 @@ describe('the console reads name their subject and carry only what was asked', (
     expect(path).not.toContain('action=');
 
     get.mockClear();
-    await reads.searchPlatformAudit(
+    await actions.searchPlatformAudit(
       {
         from: '2026-08-18',
         to: '2026-09-17',
@@ -589,7 +589,7 @@ describe('the console reads name their subject and carry only what was asked', (
 
   it('answers an ended session as an ended session, not as an empty page', async () => {
     authorizedClient.mockResolvedValue(null as unknown);
-    const page = await reads.listOrganizations(request, null);
+    const page = await actions.listOrganizations(request, null);
     expect(page.status).toBe('expired');
     expect(page.rows).toEqual([]);
     expect(await reads.listOrganizationChoices()).toEqual([]);

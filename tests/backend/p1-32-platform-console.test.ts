@@ -1334,3 +1334,263 @@ describe('platform.audit-search', () => {
     ).toBe(403);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Every console operation, refused to a tenant principal and to a stranger
+// ---------------------------------------------------------------------------
+/**
+ * P1-32-PRE-068. The cases above prove each operation refuses a caller holding
+ * the WRONG platform code. This block asks the two questions none of them asks:
+ * what does a fully-privileged TENANT administrator receive, and what does a
+ * caller with no session at all receive — from every operation, not only from
+ * the ones that happened to be worth a denial case.
+ *
+ * It exists because the console reads were reachable as browser-callable Server
+ * Actions, so "the page would not have rendered for them" was never the answer.
+ * The answer has to come from the operation.
+ *
+ * Record identifiers below are invented uuids. Authorization is decided before
+ * any row is read, so a refusal here cannot be a disguised 404 — and an
+ * operation that started answering 404 to a tenant administrator would be
+ * telling that administrator whether the record exists.
+ */
+describe('every platform operation refuses a tenant principal and an unauthenticated caller', () => {
+  interface Probe {
+    readonly operation: string;
+    readonly handler: unknown;
+    readonly input: Parameters<typeof call>[1];
+  }
+
+  const auditWindow = (): Record<string, string> => ({
+    from: new Date(Date.now() - 86_400_000).toISOString(),
+    to: new Date(Date.now() + 86_400_000).toISOString(),
+  });
+
+  const REFUSED_CODE = `odpc_refused_${RUN}`;
+
+  /** Rebuilt per call, so every idempotency key is fresh. */
+  function probes(): readonly Probe[] {
+    const unknownPlan = randomUUID();
+    const unknownSubscription = randomUUID();
+    const unknownCharge = randomUUID();
+    const organization = `/platform/organizations/${tenantOne}`;
+    return [
+      {
+        operation: PLATFORM_SESSION_READ_OPERATION.id,
+        handler: sessionRoute,
+        input: { path: '/platform/session', method: 'GET' },
+      },
+      {
+        operation: 'platform.organization-read',
+        handler: organizationSearchRoute,
+        input: { path: '/platform/organizations', method: 'GET', query: { limit: '1' } },
+      },
+      {
+        operation: ORGANIZATION_DETAIL_OPERATION.id,
+        handler: organizationDetailRoute,
+        input: { path: organization, method: 'GET', params: { tenantId: tenantOne } },
+      },
+      {
+        operation: 'platform.organization-provision',
+        handler: organizationProvisionRoute,
+        input: {
+          path: '/platform/organizations',
+          idempotencyKey: randomUUID(),
+          body: {
+            tenant: {
+              code: REFUSED_CODE,
+              display_name: 'Refused',
+              locale: 'en',
+              timezone: 'UTC',
+            },
+          },
+        },
+      },
+      {
+        operation: ORGANIZATION_LIFECYCLE_OPERATION.id,
+        handler: organizationLifecycleRoute,
+        input: {
+          path: `${organization}/status`,
+          params: { tenantId: tenantOne },
+          idempotencyKey: randomUUID(),
+          body: { to: 'suspended', reason: 'Refusal probe' },
+        },
+      },
+      {
+        operation: PLAN_LIST_OPERATION.id,
+        handler: planListRoute,
+        input: { path: '/platform/plans', method: 'GET' },
+      },
+      {
+        operation: PLAN_CREATE_OPERATION.id,
+        handler: planCreateRoute,
+        input: {
+          path: '/platform/plans',
+          idempotencyKey: randomUUID(),
+          body: {
+            planCode: REFUSED_CODE,
+            displayName: 'Refused',
+            capacityLimits: {},
+            entitlementDocument: {},
+            effectiveFrom: day(0),
+          },
+        },
+      },
+      {
+        operation: PLAN_UPDATE_OPERATION.id,
+        handler: planUpdateRoute,
+        input: {
+          path: `/platform/plans/${unknownPlan}`,
+          method: 'PATCH',
+          params: { planId: unknownPlan },
+          idempotencyKey: randomUUID(),
+          ifMatch: '"1"',
+          body: { displayName: 'Refused' },
+        },
+      },
+      {
+        operation: SUBSCRIPTION_ASSIGN_OPERATION.id,
+        handler: subscriptionAssignRoute,
+        input: {
+          path: `${organization}/subscriptions`,
+          params: { tenantId: tenantOne },
+          idempotencyKey: randomUUID(),
+          body: {
+            planCode: REFUSED_CODE,
+            effectiveFrom: day(0),
+            kind: 'assigned',
+            reason: 'Refusal probe',
+          },
+        },
+      },
+      {
+        operation: SUBSCRIPTION_CANCEL_OPERATION.id,
+        handler: subscriptionCancelRoute,
+        input: {
+          path: `${organization}/subscriptions/${unknownSubscription}/cancellation`,
+          params: { tenantId: tenantOne, subscriptionId: unknownSubscription },
+          idempotencyKey: randomUUID(),
+          body: { effectiveTo: day(1), reason: 'Refusal probe' },
+        },
+      },
+      {
+        operation: CHARGE_LIST_OPERATION.id,
+        handler: chargeListRoute,
+        input: {
+          path: `${organization}/charges`,
+          method: 'GET',
+          params: { tenantId: tenantOne },
+          query: { limit: '1' },
+        },
+      },
+      {
+        operation: CHARGE_RECORD_OPERATION.id,
+        handler: chargeRecordRoute,
+        input: {
+          path: `${organization}/charges`,
+          params: { tenantId: tenantOne },
+          idempotencyKey: randomUUID(),
+          body: {
+            amount: '10.00',
+            currencyCode: 'USD',
+            dueOn: day(7),
+            description: 'Refusal probe',
+          },
+        },
+      },
+      {
+        operation: CHARGE_VOID_OPERATION.id,
+        handler: chargeVoidRoute,
+        input: {
+          path: `${organization}/charges/${unknownCharge}/void`,
+          params: { tenantId: tenantOne, chargeId: unknownCharge },
+          idempotencyKey: randomUUID(),
+          body: { reason: 'Refusal probe' },
+        },
+      },
+      {
+        operation: RECEIPT_RECORD_OPERATION.id,
+        handler: receiptRecordRoute,
+        input: {
+          path: `${organization}/receipts`,
+          params: { tenantId: tenantOne },
+          idempotencyKey: randomUUID(),
+          body: {
+            chargeId: unknownCharge,
+            amount: '10.00',
+            receivedOn: day(0),
+            method: 'transfer',
+          },
+        },
+      },
+      {
+        operation: PLATFORM_STATISTICS_READ_OPERATION.id,
+        handler: statisticsRoute,
+        input: { path: '/platform/statistics', method: 'GET' },
+      },
+      {
+        operation: PLATFORM_AUDIT_SEARCH_OPERATION.id,
+        handler: auditSearchRoute,
+        input: { path: '/platform/audit-events', method: 'GET', query: auditWindow() },
+      },
+    ];
+  }
+
+  it('probes all sixteen console operations, reads and writes alike', () => {
+    const probed = probes().map((probe) => probe.operation);
+    expect(new Set(probed).size).toBe(16);
+    for (const operation of [
+      PLATFORM_SESSION_READ_OPERATION,
+      ORGANIZATION_DETAIL_OPERATION,
+      ORGANIZATION_LIFECYCLE_OPERATION,
+      PLAN_LIST_OPERATION,
+      PLAN_CREATE_OPERATION,
+      PLAN_UPDATE_OPERATION,
+      SUBSCRIPTION_ASSIGN_OPERATION,
+      SUBSCRIPTION_CANCEL_OPERATION,
+      CHARGE_LIST_OPERATION,
+      CHARGE_RECORD_OPERATION,
+      CHARGE_VOID_OPERATION,
+      RECEIPT_RECORD_OPERATION,
+      PLATFORM_STATISTICS_READ_OPERATION,
+      PLATFORM_AUDIT_SEARCH_OPERATION,
+    ]) {
+      expect(probed, operation.id).toContain(operation.id);
+    }
+    expect(probed).toContain('platform.organization-read');
+    expect(probed).toContain('platform.organization-provision');
+  });
+
+  it('answers 403 ERR-IAM-001 to a tenant administrator on every one of them', async () => {
+    for (const probe of probes()) {
+      asTenantAdmin();
+      const result = await call<{ code?: string }>(probe.handler, probe.input);
+      expect(result.status, probe.operation).toBe(403);
+      expect(result.body?.code, probe.operation).toBe('ERR-IAM-001');
+    }
+  });
+
+  it('answers 401 ERR-IAM-002 to a caller with no session on every one of them', async () => {
+    for (const probe of probes()) {
+      __resetRateLimitForTests();
+      __resetAuthenticatorForTests();
+      const result = await call<{ code?: string }>(probe.handler, probe.input);
+      expect(result.status, probe.operation).toBe(401);
+      expect(result.body?.code, probe.operation).toBe('ERR-IAM-002');
+    }
+  });
+
+  it('wrote nothing at all while refusing', async () => {
+    expect(
+      await scalar<string>('SELECT count(*)::text FROM org.tenants WHERE tenant_code = $1', [
+        REFUSED_CODE,
+      ])
+    ).toBe('0');
+    expect(
+      await scalar<string>(
+        'SELECT count(*)::text FROM org.subscription_plans WHERE plan_code = $1',
+        [REFUSED_CODE]
+      )
+    ).toBe('0');
+  });
+});

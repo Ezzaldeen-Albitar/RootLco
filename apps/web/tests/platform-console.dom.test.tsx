@@ -57,7 +57,17 @@ const changeOrganizationStatusAction = vi.fn();
 const provisionOrganizationAction = vi.fn();
 const createPlanAction = vi.fn();
 const updatePlanAction = vi.fn();
-vi.mock('@/features/platform/actions', () => ({
+vi.mock('@/features/platform/actions', async () => ({
+  /*
+   * P1-32-PRE-068. The organisation list and the activity search are the two
+   * console reads a client table drives, so they are Server Actions and live
+   * beside the writes. They keep their REAL implementation here — this suite
+   * drives them through the replaced HTTP client above, exactly as it did when
+   * they lived in the server-only read module. Only the writes are stood in for.
+   */
+  ...(await vi.importActual<typeof import('@/features/platform/actions')>(
+    '@/features/platform/actions'
+  )),
   assignSubscriptionAction: (...args: unknown[]) => assignSubscriptionAction(...args),
   cancelSubscriptionAction: (...args: unknown[]) => cancelSubscriptionAction(...args),
   recordChargeAction: (...args: unknown[]) => recordChargeAction(...args),

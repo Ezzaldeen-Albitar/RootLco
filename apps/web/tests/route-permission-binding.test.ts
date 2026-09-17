@@ -113,8 +113,10 @@ vi.mock('@/features/platform/api', () => ({
   listPlans: (...args: unknown[]) => platformReads.listPlans(...args),
   listCharges: (...args: unknown[]) => platformReads.listCharges(...args),
   listOrganizationChoices: (...args: unknown[]) => platformReads.listOrganizationChoices(...args),
-  listOrganizations: vi.fn(),
-  searchPlatformAudit: vi.fn(),
+  // The paged helper the two browser-callable reads in `actions.ts` use. Those
+  // two are Server Actions a client table calls after render, so no route below
+  // reaches them; the export is stood in for so the actions module still loads.
+  readPage: vi.fn(),
 }));
 
 const { VEHICLE_PERMISSIONS, CRM_PERMISSIONS } = await import('@/features/crm/permissions');
