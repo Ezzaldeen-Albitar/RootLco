@@ -494,7 +494,7 @@ individual event, and are proved once instead of fifty times:
 | Code        | Event type                           | v   | Aggregate                  | Owner           | Phase | Produced | Delivery-tested |
 | ----------- | ------------------------------------ | --- | -------------------------- | --------------- | ----- | -------- | --------------- |
 | EVT-IAM-001 | `access.grant.changed`               | 1   | iam.role_grant             | iam             | P1-14 | yes      | 3 file(s)       |
-| EVT-IAM-002 | `user.invited`                       | 1   | iam.user_account           | iam             | P1-14 | yes      | 3 file(s)       |
+| EVT-IAM-002 | `user.invited`                       | 1   | iam.user_account           | iam             | P1-14 | yes      | 4 file(s)       |
 | EVT-IAM-003 | `user.status.changed`                | 1   | iam.user_account           | iam             | P1-14 | yes      | 4 file(s)       |
 | EVT-IAM-004 | `session.revoked`                    | 1   | iam.user_session           | iam             | P1-14 | yes      | 2 file(s)       |
 | EVT-CRM-001 | `business-partner.merged`            | 1   | crm.business_partner       | crm             | P1-16 | yes      | 3 file(s)       |

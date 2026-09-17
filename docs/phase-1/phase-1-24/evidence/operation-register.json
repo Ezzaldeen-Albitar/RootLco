@@ -3162,6 +3162,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/iam-auth-provider.test.ts",
+        "tests/backend/od-invitation-capacity-recovery.test.ts",
         "tests/backend/p1-24-iam-route-depth.test.ts",
         "tests/backend/p1-29-w9-owner-bootstrap.test.ts",
         "tests/foundation/p1-14-authentication-units.test.ts",
@@ -3791,6 +3792,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/iam-auth-provider.test.ts",
+        "tests/backend/od-invitation-capacity-recovery.test.ts",
         "tests/backend/od-organization-administration.test.ts",
         "tests/backend/p1-14-idempotency-replay.test.ts",
         "tests/backend/p1-24-iam-route-depth.test.ts",

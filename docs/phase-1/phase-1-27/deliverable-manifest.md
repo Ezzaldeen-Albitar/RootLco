@@ -989,8 +989,8 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files supabase/migrations = 142 -->
 <!-- derived: files tests/db = 148 -->
 <!-- derived: files tests/db:all = 152 -->
-<!-- derived: files tests/backend = 147 -->
-<!-- derived: files tests/backend:all = 156 -->
+<!-- derived: files tests/backend = 148 -->
+<!-- derived: files tests/backend:all = 157 -->
 <!-- derived: files apps/web/src/features/crm = 20 -->
 <!-- derived: files apps/web/src/features/vehicles = 23 -->
 <!-- derived: files p1-27-frontend-gate = 159 -->

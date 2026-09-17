@@ -118,6 +118,7 @@ function unavailable(cause: unknown): ProviderFailure {
 export class SupabaseIdentityProvider implements IdentityProvider {
   readonly name: string;
   readonly supportsDisable = true;
+  readonly supportsDelete = true;
 
   private readonly anon: SupabaseClient;
   private readonly admin: SupabaseClient;
@@ -561,5 +562,33 @@ export class SupabaseIdentityProvider implements IdentityProvider {
     }
     if (disabled) await this.revokeAllSessions(subject);
     return this.identityOf(result.data.user);
+  }
+
+  /**
+   * Capability 13 — remove one identity, addressed by its subject.
+   *
+   * `deleteUser` takes the provider's own user id and nothing else: there is no
+   * address, no filter and no batch form of this call, so the narrowness of the
+   * compensation is a property of the endpoint rather than a convention this
+   * adapter is trusting itself to keep. A 404 is the desired end state already
+   * reached — the identity is gone — and is not reported as a refusal, so a
+   * retried compensation is idempotent.
+   */
+  async deleteIdentity(subject: string): Promise<void> {
+    if (subject.trim() === '') {
+      throw new ProviderFailure('identity-unavailable', 'A subject is required.');
+    }
+    let result;
+    try {
+      result = await this.admin.auth.admin.deleteUser(subject);
+    } catch (cause) {
+      throw unavailable(cause);
+    }
+    if (result.error && statusOf(result.error) !== 404) {
+      throw translate(
+        result.error,
+        new ProviderFailure('identity-unavailable', 'The identity could not be removed.')
+      );
+    }
   }
 }
