@@ -250,13 +250,18 @@ async function establishProviderIdentity(input) {
  * Runs the genesis on an open client. Exported so the proof suite can drive it
  * against the real database without spawning a process; `main` below is the
  * only other caller.
+ *
+ * `grantCodes` is the platform grant set this run establishes, and the refusal below
+ * checks that same set. It defaults to every platform authority code, which is
+ * what `main` passes. The check used to read the module constant directly, so it
+ * compared a fixed list with itself and could never refuse (P1-32-PRE-068).
  */
-export async function runGenesis(client, input, identity) {
+export async function runGenesis(client, input, identity, grantCodes = PLATFORM_CODES) {
   const state = {};
   // The base-entitlement rule, checked before anything is written: this is one
   // of the two code paths that issue a platform grant, and both refuse the same
   // set for the same reason.
-  const refusal = platformGrantSetRefusal(PLATFORM_CODES);
+  const refusal = platformGrantSetRefusal(grantCodes);
   if (refusal) fail(refusal, 4);
   await client.query('BEGIN');
   try {
@@ -305,7 +310,7 @@ export async function runGenesis(client, input, identity) {
         [account.id]
       );
       const held = [...new Set(codes.rows.map((r) => r.permission_code))].sort();
-      const missing = PLATFORM_CODES.filter((c) => !held.includes(c));
+      const missing = grantCodes.filter((c) => !held.includes(c));
       if (missing.length === 0) {
         await client.query('ROLLBACK');
         return {
@@ -337,7 +342,7 @@ export async function runGenesis(client, input, identity) {
             {
               field: 'platform_grants',
               old: held.join(','),
-              new: PLATFORM_CODES.join(','),
+              new: grantCodes.join(','),
               class: 'public',
             },
             { field: 'home_tenant_id', old: null, new: account.tenant_id, class: 'internal' },
@@ -351,7 +356,7 @@ export async function runGenesis(client, input, identity) {
           outcome: 'dry-run',
           operatorAccountId: account.id,
           homeTenantId: account.tenant_id,
-          grants: [...PLATFORM_CODES],
+          grants: [...grantCodes],
           completedGrants: missing,
           auditRecordId: completion.rows[0].id,
           loginCreated: false,
@@ -362,7 +367,7 @@ export async function runGenesis(client, input, identity) {
         outcome: 'completed',
         operatorAccountId: account.id,
         homeTenantId: account.tenant_id,
-        grants: [...PLATFORM_CODES],
+        grants: [...grantCodes],
         completedGrants: missing,
         auditRecordId: completion.rows[0].id,
         loginCreated: false,
@@ -425,7 +430,7 @@ export async function runGenesis(client, input, identity) {
 
     // 3. The three grants. granted_by is the genesis actor, never the account
     //    itself: ck_platform_grants_no_self_grant.
-    for (const code of PLATFORM_CODES) {
+    for (const code of grantCodes) {
       await client.query(
         `INSERT INTO iam.platform_grants (account_id, permission_code, granted_by, created_by)
          VALUES ($1, $2, $3, $3)`,
@@ -454,7 +459,7 @@ export async function runGenesis(client, input, identity) {
         JSON.stringify([
           { field: 'email', old: null, new: input.operator.email, class: 'restricted' },
           { field: 'identity_provider', old: null, new: input.operator.provider, class: 'public' },
-          { field: 'platform_grants', old: null, new: PLATFORM_CODES.join(','), class: 'public' },
+          { field: 'platform_grants', old: null, new: grantCodes.join(','), class: 'public' },
           { field: 'home_tenant_id', old: null, new: homeTenantId, class: 'internal' },
           { field: 'environment', old: null, new: input.environment, class: 'public' },
         ]),
@@ -486,7 +491,7 @@ export async function runGenesis(client, input, identity) {
         outcome: 'dry-run',
         operatorAccountId,
         homeTenantId,
-        grants: [...PLATFORM_CODES],
+        grants: [...grantCodes],
         auditRecordId: audit.rows[0].id,
         loginCreated,
       };
@@ -496,7 +501,7 @@ export async function runGenesis(client, input, identity) {
       outcome: 'established',
       operatorAccountId,
       homeTenantId,
-      grants: [...PLATFORM_CODES],
+      grants: [...grantCodes],
       auditRecordId: audit.rows[0].id,
       loginCreated,
     };

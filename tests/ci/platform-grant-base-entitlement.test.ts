@@ -36,6 +36,7 @@ import {
   PLATFORM_AUTHORITY_CODES,
   PLATFORM_BASE_AUTHORITY_CODE,
   platformGrantSetRefusal,
+  runGenesis,
 } from '../../scripts/platform/genesis-platform-operator.mjs';
 import {
   readGrantInput,
@@ -243,5 +244,46 @@ describe('grant-platform-authority refuses an incompatible requested set instead
     expect(run.stderr).toContain('Platform authority grant refused');
     expect(run.stderr).toContain(PLATFORM_BASE_AUTHORITY_CODE);
     expect(run.stdout).toBe('');
+  });
+});
+
+describe('the genesis refuses a grant set without the base code before it writes', () => {
+  const WITHOUT_BASE = PLATFORM_AUTHORITY_CODES.filter(
+    (code: string) => code !== PLATFORM_BASE_AUTHORITY_CODE
+  );
+  const IDENTITY = { subject: 'subject-1', created: false };
+  const INPUT = { operator: { email: 'operator@example.test' } };
+
+  function recordingClient() {
+    const statements: string[] = [];
+    return {
+      statements,
+      async query(text: string) {
+        statements.push(text);
+        return { rowCount: 0, rows: [] };
+      },
+    };
+  }
+
+  it('checks the set it is asked to establish, not a fixed list compared with itself', async () => {
+    for (const codes of [WITHOUT_BASE, ['platform.audit.read'], []]) {
+      const client = recordingClient();
+      const refused = await runGenesis(client, INPUT, IDENTITY, codes).then(
+        () => null,
+        (error: unknown) => error as { message?: string; exitCode?: number }
+      );
+      expect(refused, codes.join(',')).not.toBeNull();
+      expect(refused?.exitCode, codes.join(',')).toBe(4);
+      expect(refused?.message, codes.join(',')).toBe(platformGrantSetRefusal(codes));
+      expect(client.statements, codes.join(',')).toEqual([]);
+    }
+  });
+
+  it('passes the refusal for the full set and goes on to open its transaction', async () => {
+    const client = recordingClient();
+    // The stand-in answers every read with no rows, so the run stops later for
+    // its own reasons; what matters here is that the base-code check admitted it.
+    await runGenesis(client, INPUT, IDENTITY).catch(() => undefined);
+    expect(client.statements[0]).toBe('BEGIN');
   });
 });
