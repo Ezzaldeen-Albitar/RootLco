@@ -421,6 +421,23 @@ describe('the frozen CODE candidate', () => {
     expect(executableChangesSince('deadbeef', ROOT, fake)).toEqual([]);
   });
 
+  it('counts an executable under docs/ as an executable change, and prose under docs/ as none', () => {
+    /*
+     * P1-32-PRE-001 gave `docs/**` executables their own `docsTooling` category.
+     * This check takes the repository's classification rather than its own, so a
+     * PDF builder under docs/ now stales a run record exactly as a script under
+     * scripts/ does — while a Markdown page beside it still stales nothing.
+     */
+    const fake = () =>
+      'docs/user-manual/tools/build-pdf.mjs\ndocs/user-manual/README.md\ndocs/a.md\n';
+    expect(executableChangesSince('deadbeef', ROOT, fake)).toEqual([
+      'docs/user-manual/tools/build-pdf.mjs',
+    ]);
+    expect(executableChangesSince('deadbeef', ROOT, () => 'docs/user-manual/guide.md\n')).toEqual(
+      []
+    );
+  });
+
   it('agrees with classify-changes.mjs rather than holding its own opinion', () => {
     /*
      * `DOCUMENTATION_CATEGORY` is a constant naming a policy, and this
