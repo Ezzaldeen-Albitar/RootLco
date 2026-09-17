@@ -455,6 +455,18 @@ function isBlank(value: string | undefined): boolean {
  * No value is inspected beyond "is it present" and, for the storage selection,
  * "is it one of the explicitly non-serving choices" — so nothing that reaches
  * the returned list can be a credential.
+ *
+ * **What this does NOT catch, stated here rather than left to be discovered.**
+ * The whole check is opt-in on `NEXT_PUBLIC_APP_ENV`, and that name DEFAULTS to
+ * `local` in this schema. A deployment that simply never sets it is therefore
+ * treated as local: nothing below runs, readiness reports
+ * `configuration.production-required: ok`, and every required value may be
+ * absent. It catches a deployment that declares itself staging or production and
+ * is missing something; it cannot catch one that declares nothing. Making the
+ * absence itself refuse would change what a fresh clone and the entire test tier
+ * do — the whole suite runs with no such variable set — so it is recorded as a
+ * known gap in `docs/platform/environment-configuration.md` section 16 rather
+ * than fixed here by widening a default.
  */
 export function productionConfigurationProblems(env: RawEnvironment): string[] {
   if (!PRODUCTION_LIKE.has(env['NEXT_PUBLIC_APP_ENV'] ?? '')) return [];
