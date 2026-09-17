@@ -14,11 +14,14 @@
  * service does **not** re-implement them, and deliberately never reads availability
  * and then writes based on the read: that is the race the lock exists to prevent.
  *
- * What it does own are the three rules the protected functions demonstrably do not
- * enforce (`P1-21-D-01…D-03`, each reproduced against a live database and recorded
- * in `docs/phase-1/phase-1-21/wave-1-contract-archaeology.md`): the order in which
- * an issue releases its reservation, the work-order lifecycle, and
- * reservation↔issue coherence.
+ * What it does own are the two rules the protected functions demonstrably do not
+ * enforce (`P1-21-D-02` and `D-03`, each reproduced against a live database and
+ * recorded in `docs/phase-1/phase-1-21/wave-1-contract-archaeology.md`): the
+ * work-order lifecycle and reservation↔issue coherence. The third, the order in which
+ * an issue releases its reservation (`D-01`), was fixed in `inv.issue_part` itself by
+ * `20260917099000`. Since the same migration every reservation and issue for a work
+ * order draws on an approved material requirement (P1-32-PRE-132), through
+ * `MaterialDrawGovernor`.
  */
 import { AppFailure } from '@/server/errors/app-failure';
 import { appendAudit } from '@/server/audit/audit';
@@ -27,7 +30,7 @@ import type { DbHandle } from '@/server/db/transaction';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import type { InventoryRepository, StockLocationRow } from '../data/inventory-repository';
 import { parseQuantity, toDomainFailure } from './inventory-failures';
-import { MaterialDrawGovernor, mapMaterialFailure } from './inventory-material-service';
+import { MaterialDrawGovernor } from './inventory-material-service';
 import {
   Quantity,
   assertLegalMovementReference,
@@ -135,8 +138,8 @@ export class InventoryStockService {
         safeDetails: { violations: [{ path: 'body.workOrderId', rule: 'required' }] },
       });
     }
-    // P1-32-PRE-128: a reservation for a work order is a draw on its approved demand
-    // whenever a requirement covers the item.
+    // P1-32-PRE-132: EVERY reservation for a work order is a draw on its approved
+    // demand; one with no requirement covering the item is refused.
     let requirementId: string | null = null;
     if (input.workOrderId !== undefined) {
       await this.requireWorkOrderAcceptingParts(db, input.workOrderId, location);
@@ -180,54 +183,47 @@ export class InventoryStockService {
       return this.toReservationView(existing, true, link?.requestId ?? null);
     }
 
-    // Measured under the requirement lock, BEFORE any stock is touched, so a refusal
-    // states the allowance and nothing is reserved.
+    // A work-order reservation is a draw on its approved demand: the database opens a
+    // material request on the requirement and reserves against it under the
+    // requirement lock, and refuses anything the allowance does not cover. Nothing
+    // is reserved and no request remains when it refuses.
+    let reservationId: string;
     let materialRequestId: string | null = null;
     if (requirementId !== null) {
-      await this.governor.assertDrawable(db, {
-        requirementId,
-        itemId: input.itemId,
-        quantity: quantity.toString(),
-      });
-      materialRequestId = await this.governor.openRequest(db, {
-        requirementId,
-        itemId: input.itemId,
-        quantity: quantity.toString(),
-      });
-    }
-
-    let reservationId: string;
-    try {
-      const created = await this.repository.reserveStock(db, {
-        itemId: input.itemId,
-        locationId: input.locationId,
-        quantity: quantity.toString(),
-        workOrderId: input.workOrderId ?? null,
-        idempotencyKey: input.idempotencyKey ?? null,
-        expiresAt: input.expiresAt ?? null,
-        correlationId: db.context.correlationId,
-      });
-      reservationId = created.id;
-    } catch (error) {
-      toDomainFailure(error, 'Reservation');
+      const drawn = await this.governor.draw(
+        db,
+        { requirementId, itemId: input.itemId, quantity: quantity.toString() },
+        (nested, requestId) =>
+          this.repository.reserveMaterialRequest(nested, {
+            requestId,
+            locationId: input.locationId,
+            quantity: quantity.toString(),
+            idempotencyKey: input.idempotencyKey ?? null,
+            expiresAt: input.expiresAt ?? null,
+          }),
+        'Reservation'
+      );
+      reservationId = drawn.result.id;
+      materialRequestId = drawn.requestId;
+    } else {
+      try {
+        const created = await this.repository.reserveStock(db, {
+          itemId: input.itemId,
+          locationId: input.locationId,
+          quantity: quantity.toString(),
+          idempotencyKey: input.idempotencyKey ?? null,
+          expiresAt: input.expiresAt ?? null,
+          correlationId: db.context.correlationId,
+        });
+        reservationId = created.id;
+      } catch (error) {
+        toDomainFailure(error, 'Reservation');
+      }
     }
 
     const reservation = await this.repository.readReservation(db, reservationId);
     if (!reservation) {
       throw new AppFailure('ERR-SYS-001', { message: 'Reservation vanished after creation' });
-    }
-    if (materialRequestId !== null) {
-      try {
-        await this.repository.linkMaterialFulfillment(db, {
-          requestId: materialRequestId,
-          companyId: reservation.companyId,
-          branchId: reservation.branchId,
-          reservationId: reservation.id,
-          partIssueId: null,
-        });
-      } catch (error) {
-        mapMaterialFailure(error, 'Material reservation');
-      }
     }
 
     await appendAudit(db, {
@@ -384,8 +380,8 @@ export class InventoryStockService {
    * Three checks the protected function does not make happen here first: the work
    * order must be accepting parts (`D-02`), the reservation must belong to this
    * item, location, and work order (`D-03`), and the location must be in the work
-   * order's own company and branch. The repository then performs the issue in the
-   * only order the constraints permit (`D-01`).
+   * order's own company and branch. The issue itself is a draw on an approved
+   * material requirement, performed by `inv.issue_material_request`.
    */
   public async issue(
     db: DbHandle,
@@ -441,16 +437,36 @@ export class InventoryStockService {
       }
     }
 
-    // P1-32-PRE-128: the material request this issue fulfills. An issue against a
-    // reservation that already fulfills a request draws on THAT request: its units
-    // were measured against the allowance when they were reserved, and counting them
-    // again would spend the allowance twice. Any other governed issue opens a request
-    // of its own, measured under the requirement lock before stock moves.
-    let materialRequestId: string | null = null;
+    // P1-32-PRE-132: EVERY issue to a work order draws on a material request. An issue
+    // against a reservation that already fulfills an open request draws on THAT request:
+    // its units were measured against the allowance when they were reserved, and
+    // counting them again would spend the allowance twice. Any other issue opens a
+    // request of its own on the requirement it names. The database performs both
+    // under the requirement lock and refuses whatever the allowance does not cover;
+    // the request is then closed, so what it asked for and did not issue stops
+    // counting, by an act rather than a filter.
     const reservationLink =
       input.reservationId === undefined
         ? null
         : await this.repository.readMaterialLinkForReservation(db, input.reservationId);
+    const issueOn = async (nested: DbHandle, requestId: string) => {
+      const result = await this.repository.issuePart(nested, {
+        requestId,
+        locationId: input.locationId,
+        quantity: quantity.toString(),
+        reservationId: input.reservationId ?? null,
+        requiredPartRef: input.requiredPartRef ?? null,
+      });
+      await this.repository.finishMaterialRequest(nested, {
+        requestId,
+        outcome: 'closed',
+        reason: null,
+      });
+      return result;
+    };
+
+    let issued: { issueId: string; movementId: string };
+    let materialRequestId: string;
     if (reservationLink !== null && reservationLink.requestStatus === 'open') {
       if (
         input.materialRequirementId !== undefined &&
@@ -463,66 +479,31 @@ export class InventoryStockService {
           },
         });
       }
-      // Requirement, then request, then (inside the issue) the balance row: the lock
-      // order every material writer in the database uses.
-      await this.repository.lockMaterialRequest(db, reservationLink.requestId);
       materialRequestId = reservationLink.requestId;
+      issued = await this.governor.drawOnRequest(
+        db,
+        {
+          requirementId: reservationLink.requirementId,
+          itemId: input.itemId,
+          quantity: quantity.toString(),
+        },
+        (nested) => issueOn(nested, reservationLink.requestId),
+        'Part issue'
+      );
     } else {
       const requirementId = await this.governor.resolve(db, {
         workOrderId: input.workOrderId,
         itemId: input.itemId,
         materialRequirementId: input.materialRequirementId,
       });
-      if (requirementId !== null) {
-        await this.governor.assertDrawable(db, {
-          requirementId,
-          itemId: input.itemId,
-          quantity: quantity.toString(),
-        });
-        materialRequestId = await this.governor.openRequest(db, {
-          requirementId,
-          itemId: input.itemId,
-          quantity: quantity.toString(),
-        });
-      }
-    }
-
-    let issued: { issueId: string; movementId: string };
-    try {
-      issued = await this.repository.issuePart(db, {
-        workOrderId: input.workOrderId,
-        companyId: location.companyId,
-        branchId: location.branchId,
-        itemId: input.itemId,
-        locationId: input.locationId,
-        quantity: quantity.toString(),
-        reservationId: input.reservationId ?? null,
-        requiredPartRef: input.requiredPartRef ?? null,
-        correlationId: db.context.correlationId,
-      });
-    } catch (error) {
-      toDomainFailure(error, 'Part issue');
-    }
-
-    if (materialRequestId !== null) {
-      try {
-        await this.repository.linkMaterialFulfillment(db, {
-          requestId: materialRequestId,
-          companyId: location.companyId,
-          branchId: location.branchId,
-          reservationId: null,
-          partIssueId: issued.issueId,
-        });
-        // The request is closed once it has issued: what it asked for and did not
-        // issue stops counting against the allowance, by an act rather than a filter.
-        await this.repository.finishMaterialRequest(db, {
-          requestId: materialRequestId,
-          outcome: 'closed',
-          reason: null,
-        });
-      } catch (error) {
-        mapMaterialFailure(error, 'Material issue');
-      }
+      const drawn = await this.governor.draw(
+        db,
+        { requirementId, itemId: input.itemId, quantity: quantity.toString() },
+        issueOn,
+        'Part issue'
+      );
+      materialRequestId = drawn.requestId;
+      issued = drawn.result;
     }
 
     await appendAudit(db, {

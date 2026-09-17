@@ -257,6 +257,12 @@ const CATEGORY_I = 'f1330000-0000-4000-8000-0000000002c1';
  */
 const ITEM_BOLT = 'f1330000-0000-4000-8000-0000000002a1';
 const ITEM_OIL = 'f1330000-0000-4000-8000-0000000002a2';
+/**
+ * The second person who approves the bolt requirement the issue draws on: a requester
+ * may never approve their own (ck_material_requirements_separation). A bare id, like
+ * every actor column here; no account is needed to be named as an approver.
+ */
+const SECOND_ACTOR = 'f1330000-0000-4000-8000-0000000002e1';
 const SKU_BOLT = 'FX-P131-INV-BOLT';
 const SKU_OIL = 'FX-P131-INV-OIL';
 /** The platform unit ids, read back in `beforeAll` rather than written down. */
@@ -789,13 +795,57 @@ beforeAll(async () => {
   await advance(workOrderId, [{ toState: 'open' }], FULL);
   __resetAuthenticatorForTests();
 
-  const issue = await admin.query<{ id: string }>(
-    `INSERT INTO inv.part_issues
-       (tenant_id, company_id, branch_id, work_order_id, item_id, location_id, quantity, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7::numeric,$8) RETURNING id`,
-    [TENANT_A, COMPANY_I, BRANCH_I1, workOrderId, ITEM_BOLT, WAREHOUSE_I1, '4.000', USER_A]
-  );
-  partIssueRef = issue.rows[0]?.id ?? '';
+  // Since P1-32-PRE-132 a part issue for a work order is refused unless it draws on a
+  // material request against an APPROVED requirement covering the item. The fixture
+  // owes that demand as a fact, not an exemption: a service line, an entered
+  // requirement in the item's own unit asked for by USER_A and approved by a second
+  // person, and a request for the four bolts that the issue row is linked to as it is
+  // inserted. The movement is still seeded at its own instant below.
+  const draw = await admin.connect();
+  let issuedRow: string;
+  try {
+    await draw.query('BEGIN');
+    await draw.query(
+      `SELECT set_config('app.tenant_id',$1,true), set_config('app.user_id',$2,true)`,
+      [TENANT_A, USER_A]
+    );
+    const line = await draw.query<{ id: string }>(
+      `INSERT INTO wo.work_order_service_lines
+         (tenant_id, company_id, branch_id, work_order_id, description, created_by)
+       VALUES ($1,$2,$3,$4,'Bolts for the job',$5) RETURNING id`,
+      [TENANT_A, COMPANY_I, BRANCH_I1, workOrderId, USER_A]
+    );
+    const requirement = await draw.query<{ id: string }>(
+      `SELECT inv.propose_material_requirement($1,$2,NULL,4,
+                (SELECT uom_id FROM inv.item_master WHERE id = $2),'Job card parts list') AS id`,
+      [line.rows[0]?.id ?? '', ITEM_BOLT]
+    );
+    const requirementId = requirement.rows[0]?.id ?? '';
+    await draw.query(`SELECT set_config('app.user_id',$1,true)`, [SECOND_ACTOR]);
+    await draw.query(`SELECT inv.approve_material_requirement($1)`, [requirementId]);
+    await draw.query(`SELECT set_config('app.user_id',$1,true)`, [USER_A]);
+    const request = await draw.query<{ id: string }>(
+      `SELECT inv.create_material_request($1,$2,4) AS id`,
+      [requirementId, ITEM_BOLT]
+    );
+    await draw.query(`SELECT set_config('inv.material_request_id',$1,true)`, [
+      request.rows[0]?.id ?? '',
+    ]);
+    const issue = await draw.query<{ id: string }>(
+      `INSERT INTO inv.part_issues
+         (tenant_id, company_id, branch_id, work_order_id, item_id, location_id, quantity, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::numeric,$8) RETURNING id`,
+      [TENANT_A, COMPANY_I, BRANCH_I1, workOrderId, ITEM_BOLT, WAREHOUSE_I1, '4.000', USER_A]
+    );
+    issuedRow = issue.rows[0]?.id ?? '';
+    await draw.query('COMMIT');
+  } catch (error) {
+    await draw.query('ROLLBACK');
+    throw error;
+  } finally {
+    draw.release();
+  }
+  partIssueRef = issuedRow;
   issueId = await seedMovement({
     branchId: BRANCH_I1,
     itemId: ITEM_BOLT,

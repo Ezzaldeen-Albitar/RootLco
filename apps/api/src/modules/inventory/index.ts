@@ -128,6 +128,7 @@ export type {
 
 export type {
   MaterialExceptionView,
+  MaterialRequestView,
   MaterialRequirementListView,
   MaterialRequirementView,
 } from './application/inventory-material-service';
@@ -245,6 +246,7 @@ export {
   MATERIAL_APPROVAL_REQUIRED_REASONS,
   MATERIAL_DRAW_REFUSAL_REASONS,
   MATERIAL_EXCEPTION_STATES,
+  MATERIAL_REQUEST_STATES,
   MATERIAL_REQUIREMENT_BASES,
   MATERIAL_REQUIREMENT_STATES,
   MAX_DESCRIPTION,
@@ -300,6 +302,7 @@ export {
   type MaterialApprovalRequiredReason,
   type MaterialDrawRefusalReason,
   type MaterialExceptionState,
+  type MaterialRequestState,
   type MaterialRequirementBasis,
   type MaterialRequirementState,
   type MovementType,

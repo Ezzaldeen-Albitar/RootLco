@@ -23,19 +23,23 @@
  *    is received, returned to the origin, or written off by a second person.
  *
  * COVERAGE-EVIDENCE (parsed by scripts/check-operation-test-coverage.mjs):
- *   inv.material-requirement-create: route service authorization success denial audit idempotency isolation
- *   inv.material-requirement-list: route service authorization success isolation
- *   inv.material-requirement-read: route service authorization success cross-tenant isolation
+ *   inv.material-requirement-create: route service authorization success denial cross-tenant audit idempotency isolation
+ *   inv.material-requirement-list: route service authorization success denial cross-tenant isolation
+ *   inv.material-requirement-read: route service authorization success denial cross-tenant isolation
  *   inv.material-requirement-approve: route service authorization success denial cross-tenant audit idempotency isolation
  *   inv.material-exception-create: route service authorization success denial cross-tenant audit idempotency isolation
  *   inv.material-exception-decide: route service authorization success denial cross-tenant audit idempotency isolation
- *   inv.unit-conversion-list: route service authorization success isolation
- *   inv.unit-conversion-set: route service authorization success denial audit idempotency isolation
- *   inv.unit-conversion-retire: route service authorization success cross-tenant audit idempotency isolation
- *   inv.vehicle-specification-list: route service authorization success isolation
- *   inv.vehicle-specification-create: route service authorization success denial audit idempotency isolation
+ *   inv.unit-conversion-list: route service authorization success denial cross-tenant isolation
+ *   inv.unit-conversion-set: route service authorization success denial cross-tenant audit idempotency isolation
+ *   inv.unit-conversion-retire: route service authorization success denial cross-tenant audit idempotency isolation
+ *   inv.vehicle-specification-list: route service authorization success denial cross-tenant isolation
+ *   inv.vehicle-specification-create: route service authorization success denial cross-tenant audit idempotency isolation
  *   inv.vehicle-specification-confirm: route service authorization success denial cross-tenant audit idempotency isolation
- *   inv.vehicle-specification-retire: route service authorization success cross-tenant audit idempotency isolation
+ *   inv.vehicle-specification-retire: route service authorization success denial cross-tenant audit idempotency isolation
+ *   inv.material-requirement-recheck: route service authorization success denial cross-tenant audit idempotency isolation
+ *   inv.material-requirement-cancel: route service authorization success denial cross-tenant audit idempotency isolation
+ *   inv.material-request-close: route service authorization success denial cross-tenant audit idempotency isolation
+ *   inv.material-request-cancel: route service authorization success denial cross-tenant audit outbox idempotency isolation
  *   inv.stock-transfer-discrepancy-resolve: route service authorization success denial cross-tenant audit idempotency isolation
  *   inv.stock-transfer-write-off-decide: route service authorization success denial cross-tenant audit idempotency isolation
  */
@@ -52,7 +56,7 @@ import {
   TENANT_A,
   USER_A,
 } from './helpers';
-import { createOpenWorkOrder, establishP1_19Fixtures } from './p1-19-helpers';
+import { FULL, createOpenWorkOrder, establishP1_19Fixtures, type Principal } from './p1-19-helpers';
 import {
   CATEGORY_A,
   INV_APPROVER,
@@ -73,6 +77,8 @@ import {
   countRowsOf,
   establishP1_21Fixtures,
   freshLocation,
+  outboxCountFor,
+  reservationStatusOf,
   seedStock,
 } from './p1-21-helpers';
 import {
@@ -82,6 +88,10 @@ import {
 import { GET as REQUIREMENT_READ } from '@/app/api/v1/material-requirements/[requirementId]/route';
 import { Quantity } from '@/modules/inventory';
 import { POST as REQUIREMENT_DECIDE } from '@/app/api/v1/material-requirements/[requirementId]/approval/route';
+import { POST as REQUIREMENT_RECHECK } from '@/app/api/v1/material-requirements/[requirementId]/recheck/route';
+import { POST as REQUIREMENT_CANCEL } from '@/app/api/v1/material-requirements/[requirementId]/cancellation/route';
+import { POST as REQUEST_CLOSE } from '@/app/api/v1/material-requests/[requestId]/closure/route';
+import { POST as REQUEST_CANCEL } from '@/app/api/v1/material-requests/[requestId]/cancellation/route';
 import { POST as EXCEPTION_CREATE } from '@/app/api/v1/material-requirements/[requirementId]/exceptions/route';
 import { POST as EXCEPTION_DECIDE } from '@/app/api/v1/material-exceptions/[exceptionId]/decision/route';
 import {
@@ -1262,5 +1272,616 @@ describe('inv.stock-transfer-receive (partial), inv.stock-transfer-discrepancy-r
     });
     expect(await auditCountFor('inv.stock_transfer.write_off_rejected', writeOff.id)).toBe(1);
     expect(await onHandAt(ITEM_A, transfer.transitLocationId)).toBe(transitAfterDispatch);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P1-32-PRE-132 — every work-order draw is governed.
+// ---------------------------------------------------------------------------
+
+describe('a work-order draw with no approved requirement (P1-32-PRE-132)', () => {
+  it('refuses a reservation and an issue for an item no requirement covers, with no_requirement, and moves nothing', async () => {
+    const { workOrderId, cell } = await job('6');
+    authAs(INV_MATERIAL);
+    const before = await balanceOf(ITEM_A, cell);
+    const figures = {
+      allowance: null,
+      alreadyCommitted: '0.000',
+      requested: null,
+      reason: 'no_requirement',
+    };
+
+    const reserved = await reserve({
+      workOrderId,
+      itemId: ITEM_A,
+      locationId: cell,
+      quantity: '1',
+    });
+    expect(reserved.status).toBe(409);
+    const reservedProblem = await bodyOf<Problem>(reserved);
+    expect(reservedProblem.code).toBe('ERR-INV-001');
+    expect(reservedProblem.materialDraw).toEqual(figures);
+
+    const issued = await issue({ workOrderId, itemId: ITEM_A, locationId: cell, quantity: '1' });
+    expect(issued.status).toBe(409);
+    expect((await bodyOf<Problem>(issued)).materialDraw).toEqual(figures);
+
+    // The draw that used to go straight through: no reservation, no issue, no request,
+    // and the shelf untouched.
+    expect(await balanceOf(ITEM_A, cell)).toEqual(before);
+    expect(
+      await countRowsOf(
+        `SELECT ((SELECT count(*) FROM inv.stock_reservations WHERE work_order_id = $1)
+               + (SELECT count(*) FROM inv.part_issues WHERE work_order_id = $1)
+               + (SELECT count(*) FROM inv.material_requests WHERE work_order_id = $1))::text AS n`,
+        [workOrderId]
+      )
+    ).toBe(0);
+
+    // A hold with no work order is not a draw on a job and is outside the rule.
+    const counterHold = await reserve({ itemId: ITEM_A, locationId: cell, quantity: '1' });
+    expect(counterHold.status).toBe(201);
+    expect(
+      (await bodyOf<{ materialRequestId: string | null }>(counterHold)).materialRequestId
+    ).toBe(null);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P1-32-PRE-133 — re-check and cancel a requirement; close and cancel a request.
+// ---------------------------------------------------------------------------
+
+const recheck = (requirementId: string, key?: string) =>
+  postAt(
+    REQUIREMENT_RECHECK,
+    `/api/v1/material-requirements/${requirementId}/recheck`,
+    { requirementId },
+    undefined,
+    key
+  );
+
+const cancelRequirement = (requirementId: string, body: unknown, key?: string) =>
+  postAt(
+    REQUIREMENT_CANCEL,
+    `/api/v1/material-requirements/${requirementId}/cancellation`,
+    { requirementId },
+    body,
+    key
+  );
+
+const closeRequest = (requestId: string, body: unknown, key?: string) =>
+  postAt(REQUEST_CLOSE, `/api/v1/material-requests/${requestId}/closure`, { requestId }, body, key);
+
+const cancelRequest = (requestId: string, body: unknown, key?: string) =>
+  postAt(
+    REQUEST_CANCEL,
+    `/api/v1/material-requests/${requestId}/cancellation`,
+    { requestId },
+    body,
+    key
+  );
+
+interface RequestBody {
+  readonly id: string;
+  readonly requirementId: string;
+  readonly status: string;
+  readonly quantity: string;
+  readonly cancelReason: string | null;
+  readonly closeReason: string | null;
+  readonly releasedReservationIds: readonly string[];
+  readonly replayed: boolean;
+}
+
+describe('inv.material-requirement-recheck', () => {
+  it('re-derives a requirement once the specification it lacked is confirmed, and changes nothing when called again', async () => {
+    const { lineId, vehicleId } = await job();
+    authAs(INV_MATERIAL);
+    // The fixture vehicle has no make: the derivation goes through the database
+    // function for it too, and stores the missing specification.
+    const missing = await bodyOf<RequirementBody>(
+      await post(REQUIREMENT_CREATE, '/api/v1/material-requirements', {
+        basis: 'specification',
+        serviceLineId: lineId,
+        itemCategoryId: CATEGORY_A,
+        serviceCondition: 'oil_change_with_filter',
+      })
+    );
+    expect(missing).toMatchObject({
+      status: 'approval_required',
+      approvalRequiredReason: 'missing_specification',
+      allowanceQuantity: null,
+    });
+
+    authAs(FULL);
+    expect((await recheck(missing.id)).status).toBe(403);
+    authAs(INV_FULL);
+    expect((await recheck(missing.id)).status).toBe(403);
+    authAs(INV_TENANT_B_MATERIAL);
+    expect((await recheck(missing.id)).status).toBe(404);
+    authAs(INV_MATERIAL_SCOPED_A2);
+    expect((await recheck(missing.id)).status).toBe(404);
+
+    // Nothing has changed yet: the answer is the same state, and nothing is audited.
+    authAs(INV_MATERIAL);
+    const unchanged = await recheck(missing.id);
+    expect(unchanged.status).toBe(200);
+    expect(await bodyOf<RequirementBody>(unchanged)).toMatchObject({
+      status: 'approval_required',
+      approvalRequiredReason: 'missing_specification',
+    });
+    expect(await auditCountFor('inv.material_requirement.rechecked', missing.id)).toBe(0);
+
+    // The fact arrives: the vehicle is identified and a specification is confirmed.
+    const { makeId, modelId } = await tenantMake();
+    const client = await admin.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `SELECT set_config('app.user_id',$1,true), set_config('app.tenant_id',$2,true)`,
+        [USER_A, TENANT_A]
+      );
+      await client.query(
+        `UPDATE veh.vehicles SET make_id = $1, model_id = $2, model_year = 2020 WHERE id = $3`,
+        [makeId, modelId, vehicleId]
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    const spec = await bodyOf<{ id: string }>(
+      await post(
+        SPECIFICATION_CREATE,
+        '/api/v1/vehicle-fluid-specifications',
+        specificationBody(makeId, modelId)
+      )
+    );
+    await postAt(
+      SPECIFICATION_CONFIRM,
+      `/api/v1/vehicle-fluid-specifications/${spec.id}/confirmation`,
+      { specificationId: spec.id },
+      undefined
+    );
+
+    const key = randomUUID();
+    const moved = await recheck(missing.id, key);
+    expect(moved.status).toBe(200);
+    expect(await bodyOf<RequirementBody>(moved)).toMatchObject({
+      status: 'pending_approval',
+      approvalRequiredReason: null,
+      specificationId: spec.id,
+      allowanceQuantity: '4.500',
+      uomId: LITRE,
+    });
+    expect(await auditCountFor('inv.material_requirement.rechecked', missing.id)).toBe(1);
+    // The doubled frame replays; a later call finds nothing to re-check.
+    expect((await recheck(missing.id, key)).status).toBe(200);
+    const again = await recheck(missing.id);
+    expect(again.status).toBe(200);
+    expect((await bodyOf<RequirementBody>(again)).status).toBe('pending_approval');
+    expect(await auditCountFor('inv.material_requirement.rechecked', missing.id)).toBe(1);
+  });
+});
+
+describe('inv.material-requirement-cancel', () => {
+  it('refuses while quantity is committed, cancels once it is not, and allows no draw after', async () => {
+    const { workOrderId, lineId, cell } = await job();
+    const requirementId = await approvedRequirement(lineId, '5');
+    authAs(INV_MATERIAL);
+    const held = await bodyOf<{ id: string; materialRequestId: string }>(
+      await reserve({
+        workOrderId,
+        itemId: ITEM_A,
+        locationId: cell,
+        quantity: '2',
+        materialRequirementId: requirementId,
+      })
+    );
+
+    const reason = { reason: 'Customer declined the service' };
+    expect((await cancelRequirement(requirementId, {})).status).toBe(422);
+    authAs(INV_FULL);
+    expect((await cancelRequirement(requirementId, reason)).status).toBe(403);
+    authAs(INV_TENANT_B_MATERIAL);
+    expect((await cancelRequirement(requirementId, reason)).status).toBe(404);
+
+    // Two units are reserved against it: the cancellation is refused and nothing moves.
+    authAs(INV_MATERIAL);
+    const refused = await cancelRequirement(requirementId, reason);
+    expect(refused.status).toBe(409);
+    expect((await bodyOf<RequirementBody>(await readRequirement(requirementId))).status).toBe(
+      'approved'
+    );
+    expect(await reservationStatusOf(held.id)).toBe('active');
+
+    // Released, nothing is committed any more, and the cancellation goes through once.
+    await postAt(
+      RELEASE,
+      `/api/v1/stock-reservations/${held.id}/release`,
+      { reservationId: held.id },
+      { reason: 'Customer declined' }
+    );
+    const key = randomUUID();
+    const cancelled = await cancelRequirement(requirementId, reason, key);
+    expect(cancelled.status).toBe(200);
+    expect(await bodyOf<RequirementBody>(cancelled)).toMatchObject({
+      status: 'cancelled',
+      committedQuantity: '0.000',
+    });
+    expect((await cancelRequirement(requirementId, reason, key)).status).toBe(200);
+    expect((await cancelRequirement(requirementId, reason)).status).toBe(200);
+    expect(await auditCountFor('inv.material_requirement.cancelled', requirementId)).toBe(1);
+
+    // A cancelled requirement still governs the item and allows no draw.
+    const draw = await issue({
+      workOrderId,
+      itemId: ITEM_A,
+      locationId: cell,
+      quantity: '1',
+      materialRequirementId: requirementId,
+    });
+    expect(draw.status).toBe(409);
+    expect((await bodyOf<Problem>(draw)).materialDraw?.reason).toBe('approval_required');
+  });
+});
+
+describe('inv.material-request-close, inv.material-request-cancel', () => {
+  it('cancels a request with a reason, releasing its reservation once, and closes another', async () => {
+    const { workOrderId, lineId, cell } = await job();
+    const requirementId = await approvedRequirement(lineId, '5');
+    authAs(INV_MATERIAL);
+    const first = await bodyOf<{ id: string; materialRequestId: string }>(
+      await reserve({
+        workOrderId,
+        itemId: ITEM_A,
+        locationId: cell,
+        quantity: '3',
+        materialRequirementId: requirementId,
+      })
+    );
+    const requestId = first.materialRequestId;
+    expect(
+      (await bodyOf<RequirementBody>(await readRequirement(requirementId))).committedQuantity
+    ).toBe('3.000');
+
+    const reason = { reason: 'Job re-scoped' };
+    expect((await cancelRequest(requestId, {})).status).toBe(422);
+    authAs(INV_FULL);
+    expect((await cancelRequest(requestId, reason)).status).toBe(403);
+    expect((await closeRequest(requestId, {})).status).toBe(403);
+    authAs(INV_TENANT_B_MATERIAL);
+    expect((await cancelRequest(requestId, reason)).status).toBe(404);
+    expect((await closeRequest(requestId, {})).status).toBe(404);
+    authAs(INV_MATERIAL_SCOPED_A2);
+    expect((await cancelRequest(requestId, reason)).status).toBe(404);
+    expect(await reservationStatusOf(first.id)).toBe('active');
+
+    authAs(INV_MATERIAL);
+    const key = randomUUID();
+    const cancelled = await cancelRequest(requestId, reason, key);
+    expect(cancelled.status).toBe(200);
+    expect(await bodyOf<RequestBody>(cancelled)).toMatchObject({
+      id: requestId,
+      requirementId,
+      status: 'cancelled',
+      cancelReason: 'Job re-scoped',
+      releasedReservationIds: [first.id],
+      replayed: false,
+    });
+    expect(await reservationStatusOf(first.id)).toBe('released');
+    expect(await balanceOf(ITEM_A, cell)).toMatchObject({ reserved: '0.000' });
+    expect(await bodyOf<RequirementBody>(await readRequirement(requirementId))).toMatchObject({
+      committedQuantity: '0.000',
+      remainingQuantity: '5.000',
+    });
+    expect(await auditCountFor('inv.material_request.cancelled', requestId)).toBe(1);
+    expect(await auditCountFor('inv.stock.reservation_released', first.id)).toBe(1);
+    expect(await outboxCountFor(`stock.reservation.released:${first.id}`)).toBe(1);
+
+    // The doubled frame replays; a fresh call says nothing changed; closing it now is refused.
+    expect((await cancelRequest(requestId, reason, key)).status).toBe(200);
+    const again = await cancelRequest(requestId, reason);
+    expect(again.status).toBe(200);
+    expect(await bodyOf<RequestBody>(again)).toMatchObject({
+      status: 'cancelled',
+      releasedReservationIds: [],
+      replayed: true,
+    });
+    expect(await auditCountFor('inv.material_request.cancelled', requestId)).toBe(1);
+    expect((await closeRequest(requestId, {})).status).toBe(409);
+
+    // Closing a second request releases what it holds the same way.
+    const second = await bodyOf<{ id: string; materialRequestId: string }>(
+      await reserve({
+        workOrderId,
+        itemId: ITEM_A,
+        locationId: cell,
+        quantity: '2',
+        materialRequirementId: requirementId,
+      })
+    );
+    const closeKey = randomUUID();
+    const closeBody = { reason: 'Part fitted from stock' };
+    const closed = await closeRequest(second.materialRequestId, closeBody, closeKey);
+    expect(closed.status).toBe(200);
+    expect(await bodyOf<RequestBody>(closed)).toMatchObject({
+      status: 'closed',
+      closeReason: 'Part fitted from stock',
+      releasedReservationIds: [second.id],
+      replayed: false,
+    });
+    expect(await reservationStatusOf(second.id)).toBe('released');
+    // The doubled frame replays the first answer and releases nothing twice.
+    const closedAgain = await closeRequest(second.materialRequestId, closeBody, closeKey);
+    expect(closedAgain.status).toBe(200);
+    expect((await bodyOf<RequestBody>(closedAgain)).releasedReservationIds).toEqual([second.id]);
+    expect(await auditCountFor('inv.material_request.closed', second.materialRequestId)).toBe(1);
+    expect(await auditCountFor('inv.stock.reservation_released', second.id)).toBe(1);
+    expect(
+      (await bodyOf<RequirementBody>(await readRequirement(requirementId))).committedQuantity
+    ).toBe('0.000');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Authorization and tenant isolation, operation by operation.
+// ---------------------------------------------------------------------------
+
+describe('every material, conversion and specification operation refuses a caller without its code and another tenant', () => {
+  it('answers 403 without the code and 404 or nothing across the tenant boundary, and writes nothing', async () => {
+    const { workOrderId, lineId, cell } = await job();
+    const approvedId = await approvedRequirement(lineId, '4');
+    authAs(INV_MATERIAL);
+    const secondLine = await admin.query<{ id: string }>(
+      `INSERT INTO wo.work_order_service_lines
+         (tenant_id, company_id, branch_id, work_order_id, description, created_by)
+       SELECT tenant_id, company_id, branch_id, work_order_id, 'Isolation fixture line', $2
+         FROM wo.work_order_service_lines WHERE id = $1 RETURNING id`,
+      [lineId, USER_A]
+    );
+    const pending = await bodyOf<RequirementBody>(
+      await enteredRequirement(secondLine.rows[0]?.id ?? '', '1', { itemId: ITEM_A_ALT })
+    );
+    const exception = await bodyOf<ExceptionBody>(
+      await postAt(
+        EXCEPTION_CREATE,
+        `/api/v1/material-requirements/${approvedId}/exceptions`,
+        { requirementId: approvedId },
+        { additionalQuantity: '1', reason: 'Seal replaced as well' }
+      )
+    );
+    const held = await bodyOf<{ materialRequestId: string }>(
+      await reserve({
+        workOrderId,
+        itemId: ITEM_A,
+        locationId: cell,
+        quantity: '1',
+        materialRequirementId: approvedId,
+      })
+    );
+    const { makeId, modelId } = await tenantMake();
+    const spec = await bodyOf<{ id: string }>(
+      await post(
+        SPECIFICATION_CREATE,
+        '/api/v1/vehicle-fluid-specifications',
+        specificationBody(makeId, modelId)
+      )
+    );
+    const conversion = await bodyOf<{ id: string }>(
+      await post(CONVERSION_SET, '/api/v1/unit-conversions', {
+        itemId: ITEM_A_ALT,
+        fromUomId: UOM_EACH,
+        toUomId: LITRE,
+        factor: '0.5',
+        sourceReference: 'Isolation fixture label',
+      })
+    );
+    expect(conversion.id).toBeDefined();
+
+    const scope = `companyId=${COMPANY_A1}&branchId=${BRANCH_A1}`;
+    const cases: readonly {
+      readonly id: string;
+      readonly call: () => Promise<Response>;
+      readonly noCode: Principal;
+      /** The status tenant B receives; `list` means 200 with none of tenant A's rows. */
+      readonly otherTenant: number | 'list';
+      readonly tenantARow?: string;
+    }[] = [
+      {
+        id: 'inv.unit-conversion-list',
+        call: () => get(CONVERSION_LIST, `/api/v1/unit-conversions?itemId=${ITEM_A_ALT}`),
+        noCode: FULL,
+        otherTenant: 'list',
+        tenantARow: conversion.id,
+      },
+      {
+        id: 'inv.unit-conversion-set',
+        call: () =>
+          post(CONVERSION_SET, '/api/v1/unit-conversions', {
+            itemId: ITEM_A_ALT,
+            fromUomId: UOM_EACH,
+            toUomId: LITRE,
+            factor: '0.25',
+            sourceReference: 'Refused label',
+          }),
+        noCode: INV_FULL,
+        otherTenant: 404,
+      },
+      {
+        id: 'inv.unit-conversion-retire',
+        call: () =>
+          postAt(
+            CONVERSION_RETIRE,
+            `/api/v1/unit-conversions/${conversion.id}/retirement`,
+            { conversionId: conversion.id },
+            undefined
+          ),
+        noCode: INV_FULL,
+        otherTenant: 404,
+      },
+      {
+        id: 'inv.vehicle-specification-list',
+        call: () =>
+          get(SPECIFICATION_LIST, `/api/v1/vehicle-fluid-specifications?makeId=${makeId}`),
+        noCode: FULL,
+        otherTenant: 'list',
+        tenantARow: spec.id,
+      },
+      {
+        id: 'inv.vehicle-specification-create',
+        call: () =>
+          post(
+            SPECIFICATION_CREATE,
+            '/api/v1/vehicle-fluid-specifications',
+            specificationBody(makeId, modelId)
+          ),
+        noCode: INV_FULL,
+        otherTenant: 404,
+      },
+      {
+        id: 'inv.vehicle-specification-confirm',
+        call: () =>
+          postAt(
+            SPECIFICATION_CONFIRM,
+            `/api/v1/vehicle-fluid-specifications/${spec.id}/confirmation`,
+            { specificationId: spec.id },
+            undefined
+          ),
+        noCode: INV_FULL,
+        otherTenant: 404,
+      },
+      {
+        id: 'inv.vehicle-specification-retire',
+        call: () =>
+          postAt(
+            SPECIFICATION_RETIRE,
+            `/api/v1/vehicle-fluid-specifications/${spec.id}/retirement`,
+            { specificationId: spec.id },
+            undefined
+          ),
+        noCode: INV_FULL,
+        otherTenant: 404,
+      },
+      {
+        id: 'inv.material-requirement-list',
+        call: () => get(REQUIREMENT_LIST, `/api/v1/material-requirements?${scope}`),
+        noCode: FULL,
+        otherTenant: 403,
+      },
+      {
+        id: 'inv.material-requirement-read',
+        call: () => readRequirement(approvedId),
+        noCode: FULL,
+        otherTenant: 404,
+      },
+      {
+        id: 'inv.material-requirement-create',
+        // Posted directly: `enteredRequirement` authenticates as the requester itself.
+        call: () =>
+          post(REQUIREMENT_CREATE, '/api/v1/material-requirements', {
+            basis: 'entered',
+            serviceLineId: secondLine.rows[0]?.id,
+            itemId: ITEM_A,
+            allowanceQuantity: '2',
+            uomId: UOM_EACH,
+            sourceReference: 'Refused manual',
+          }),
+        noCode: INV_FULL,
+        otherTenant: 404,
+      },
+      {
+        id: 'inv.material-requirement-approve',
+        call: () => decide(pending.id, { decision: 'approved' }),
+        noCode: INV_FULL,
+        otherTenant: 404,
+      },
+      {
+        id: 'inv.material-requirement-recheck',
+        call: () => recheck(pending.id),
+        noCode: INV_FULL,
+        otherTenant: 404,
+      },
+      {
+        id: 'inv.material-requirement-cancel',
+        call: () => cancelRequirement(pending.id, { reason: 'Refused' }),
+        noCode: INV_FULL,
+        otherTenant: 404,
+      },
+      {
+        id: 'inv.material-exception-create',
+        call: () =>
+          postAt(
+            EXCEPTION_CREATE,
+            `/api/v1/material-requirements/${approvedId}/exceptions`,
+            { requirementId: approvedId },
+            { additionalQuantity: '9', reason: 'Refused' }
+          ),
+        noCode: INV_FULL,
+        otherTenant: 404,
+      },
+      {
+        id: 'inv.material-exception-decide',
+        call: () =>
+          postAt(
+            EXCEPTION_DECIDE,
+            `/api/v1/material-exceptions/${exception.id}/decision`,
+            { exceptionId: exception.id },
+            { decision: 'approved' }
+          ),
+        noCode: INV_FULL,
+        otherTenant: 404,
+      },
+      {
+        id: 'inv.material-request-close',
+        call: () => closeRequest(held.materialRequestId, {}),
+        noCode: INV_FULL,
+        otherTenant: 404,
+      },
+      {
+        id: 'inv.material-request-cancel',
+        call: () => cancelRequest(held.materialRequestId, { reason: 'Refused' }),
+        noCode: INV_FULL,
+        otherTenant: 404,
+      },
+    ];
+
+    // Every row an operation above could write or change, with its state.
+    const footprint = async (): Promise<string> =>
+      (
+        await admin.query<{ snapshot: string }>(
+          `SELECT concat_ws(' | ',
+                    (SELECT string_agg(status, ',' ORDER BY id) FROM inv.material_requirements WHERE work_order_id = $1),
+                    (SELECT string_agg(e.status, ',' ORDER BY e.id) FROM inv.material_requirement_exceptions e
+                       JOIN inv.material_requirements r ON r.id = e.requirement_id WHERE r.work_order_id = $1),
+                    (SELECT string_agg(status, ',' ORDER BY id) FROM inv.material_requests WHERE work_order_id = $1),
+                    (SELECT string_agg(status, ',' ORDER BY id) FROM inv.vehicle_fluid_specifications WHERE make_id = $2),
+                    (SELECT string_agg(status || ':' || factor::text, ',' ORDER BY id)
+                       FROM inv.item_unit_conversions WHERE item_id = $3 AND status = 'active')) AS snapshot`,
+          [workOrderId, makeId, ITEM_A_ALT]
+        )
+      ).rows[0]?.snapshot ?? '';
+    const before = await footprint();
+    expect(before.split(' | ')).toHaveLength(5);
+
+    for (const operation of cases) {
+      authAs(operation.noCode);
+      expect((await operation.call()).status, `${operation.id} without its code`).toBe(403);
+
+      authAs(INV_TENANT_B_MATERIAL);
+      const crossing = await operation.call();
+      if (operation.otherTenant === 'list') {
+        expect(crossing.status, `${operation.id} from another tenant`).toBe(200);
+        const listed = await bodyOf<{ items: readonly { id: string }[] }>(crossing);
+        expect(
+          listed.items.map((row) => row.id),
+          `${operation.id} leaked`
+        ).not.toContain(operation.tenantARow);
+      } else {
+        expect(crossing.status, `${operation.id} from another tenant`).toBe(operation.otherTenant);
+      }
+    }
+    expect(await footprint()).toBe(before);
   });
 });

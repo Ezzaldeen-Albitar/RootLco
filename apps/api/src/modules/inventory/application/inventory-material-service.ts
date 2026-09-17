@@ -1,5 +1,5 @@
 /**
- * Material demand control (P1-32-PRE-127…129).
+ * Material demand control (P1-32-PRE-127…129, PRE-132).
  *
  * A work order could take any quantity of any item: the only ceiling on what a job
  * consumed was what the shelf held. Slice 3a made the database able to answer the
@@ -8,46 +8,81 @@
  *
  *  - a REQUIREMENT binds one service line and one item or item family to an
  *    allowance, taken from a confirmed vehicle specification or entered with its
- *    source, and is approved by a person other than the one who asked for it;
+ *    source, and is approved by a person other than the one who asked for it; it is
+ *    re-checked once a missing specification or conversion exists, and cancelled with
+ *    a reason only while nothing is committed against it;
  *  - an EXCEPTION adds a finite quantity with a reason, decided by a third party's
  *    authority (`inv.material.exception.approve`) and never by its requester;
- *  - a DRAW — a reservation or an issue for the work order — is measured against it
- *    by `MaterialDrawGovernor`, which the stock service calls on the two existing
- *    stock paths.
+ *  - a DRAW — a reservation or an issue for the work order — opens a material REQUEST
+ *    on the requirement through `MaterialDrawGovernor`, which the stock service calls
+ *    on the two stock paths; a request is closed or cancelled explicitly, which
+ *    releases what it still holds.
  *
  * ## Where the guarantees live
  *
- * In `inv.guard_material_requirement`, `inv.guard_material_request_ceiling` and
- * `inv.guard_material_request_fulfillment`, which lock the requirement row and
- * re-read the committed quantity inside that lock. This service asks the same
- * question first, under the same lock, only so a refusal can state the allowance,
- * what is already committed and what was asked for — the database stays the
- * guarantee, and a refusal it raises that the pre-check did not foresee is still a
- * refusal.
+ * In the database, and only there. `inv.guard_material_request_ceiling` measures a
+ * request against the approved allowance under the requirement row lock;
+ * `inv.guard_material_request_fulfillment` bounds each reservation and issue by its
+ * request under the same lock; and since `20260917099000` a reservation or part issue
+ * for a work order cannot be written at all — by function, primitive or raw INSERT —
+ * without that link (`inv.govern_work_order_draw`). This service does not re-ask the
+ * question first: it performs the draw through `inv.reserve_material_request` or
+ * `inv.issue_material_request` and, when the database refuses, reads the figures a
+ * person needs after the refused draw has been rolled back.
  *
  * ## Which draws are governed
  *
- * A draw for a work order is governed when the request names a requirement, or when
- * ANY requirement on that work order covers the item — by the item itself or by its
- * family, in any state. A covered item drawn without naming its requirement is
- * refused rather than let through, and a requirement that was rejected or cancelled
- * still governs: the absence of an approval is a refusal, never a return to an
- * unlimited draw. A work order with no requirement for an item draws exactly as it
- * did before this slice.
+ * EVERY draw for a work order (P1-32-PRE-132). It names the requirement it is taken
+ * against; a covered item drawn without naming it is refused, and an item that NO
+ * requirement on the work order covers is refused with `no_requirement`. A rejected or
+ * cancelled requirement still governs. Counter sales and reservations with no work
+ * order are outside the rule.
  */
 import { AppFailure, type MaterialDrawDetails } from '@/server/errors/app-failure';
 import { appendAudit } from '@/server/audit/audit';
+import { publishEvent } from '@/server/events/publisher';
 import { isSqlState, SQLSTATE } from '@/server/db/repository';
 import { pageRequest, type Page } from '@/server/db/pagination';
-import type { DbHandle } from '@/server/db/transaction';
+import { withSavepoint, type DbHandle } from '@/server/db/transaction';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import {
   MATERIAL_REQUIREMENT_ORDER,
   type InventoryRepository,
   type MaterialExceptionRow,
+  type MaterialRequestRow,
   type MaterialRequirementRow,
 } from '../data/inventory-repository';
-import { parseQuantity } from './inventory-failures';
+import { parseQuantity, toDomainFailure } from './inventory-failures';
+
+/**
+ * A material request and what finishing it released. Quantities are exact decimal
+ * strings in the item's stock unit; `requirementUnitFactor` converts one stock unit
+ * into the requirement unit.
+ */
+export interface MaterialRequestView {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly requirementId: string;
+  readonly workOrderId: string;
+  readonly itemId: string;
+  readonly quantity: string;
+  readonly requirementUnitFactor: string;
+  readonly status: string;
+  readonly requestedBy: string;
+  readonly closedBy: string | null;
+  readonly closedAt: string | null;
+  readonly closeReason: string | null;
+  readonly cancelledBy: string | null;
+  readonly cancelledAt: string | null;
+  readonly cancelReason: string | null;
+  readonly recordVersion: number;
+  readonly createdAt: string;
+  /** The reservations this call released; empty on a replay. */
+  readonly releasedReservationIds: readonly string[];
+  /** True when the request was already in the state asked for and nothing changed. */
+  readonly replayed: boolean;
+}
 
 export interface MaterialExceptionView {
   readonly id: string;
@@ -172,6 +207,35 @@ function toRequirementListView(row: MaterialRequirementRow): MaterialRequirement
   };
 }
 
+function toRequestView(
+  row: MaterialRequestRow,
+  releasedReservationIds: readonly string[],
+  replayed: boolean
+): MaterialRequestView {
+  return {
+    id: row.id,
+    companyId: row.companyId,
+    branchId: row.branchId,
+    requirementId: row.requirementId,
+    workOrderId: row.workOrderId,
+    itemId: row.itemId,
+    quantity: row.quantity,
+    requirementUnitFactor: row.requirementUnitFactor,
+    status: row.status,
+    requestedBy: row.requestedBy,
+    closedBy: row.closedBy,
+    closedAt: iso(row.closedAt),
+    closeReason: row.closeReason,
+    cancelledBy: row.cancelledBy,
+    cancelledAt: iso(row.cancelledAt),
+    cancelReason: row.cancelReason,
+    recordVersion: row.recordVersion,
+    createdAt: row.createdAt.toISOString(),
+    releasedReservationIds,
+    replayed,
+  };
+}
+
 /** The raw text of a database refusal, for the few messages that carry a rule name. */
 function databaseMessage(error: unknown): string {
   if (typeof error === 'object' && error !== null && 'message' in error) {
@@ -193,18 +257,26 @@ function refuseDraw(details: MaterialDrawDetails, message: string): never {
 }
 
 /**
- * Measures a work-order draw against its material requirement. Used by the stock
- * service on `POST /stock-reservations` and `POST /stock-issues`.
+ * Governs a work-order draw on `POST /stock-reservations` and `POST /stock-issues`.
+ *
+ * It decides nothing the database does not. Since P1-32-PRE-132 a reservation or an
+ * issue for a work order cannot be written without a material request on an approved
+ * requirement: `inv.reserve_material_request` and `inv.issue_material_request` open
+ * and fill it under the requirement lock, and every refusal is theirs. What this
+ * class owns is naming the requirement, and turning a refusal into one a person can
+ * act on — the allowance, what is already committed and what was asked for, read
+ * after the refused draw has been rolled back to its savepoint.
  */
 export class MaterialDrawGovernor {
   public constructor(private readonly repository: InventoryRepository) {}
 
   /**
-   * The requirement a draw is governed by, or null for an ungoverned draw.
+   * The requirement a work-order draw is taken against.
    *
-   * Refuses a named requirement that is not visible, that belongs to another work
-   * order, or that does not cover the item; and refuses a covered item drawn
-   * without naming its requirement.
+   * Refuses a named requirement that is not visible or that belongs to another work
+   * order; a covered item drawn without naming its requirement; and a draw for an
+   * item NO requirement on the work order covers — the absence of a requirement is a
+   * refusal (`no_requirement`), never an unlimited draw.
    */
   public async resolve(
     db: DbHandle,
@@ -213,7 +285,7 @@ export class MaterialDrawGovernor {
       readonly itemId: string;
       readonly materialRequirementId?: string | undefined;
     }
-  ): Promise<string | null> {
+  ): Promise<string> {
     if (input.materialRequirementId !== undefined) {
       const requirement = await this.repository.readMaterialRequirement(
         db,
@@ -246,80 +318,98 @@ export class MaterialDrawGovernor {
           'draw is taken against'
       );
     }
-    return null;
+    refuseDraw(
+      { allowance: null, alreadyCommitted: '0.000', requested: null, reason: 'no_requirement' },
+      'This work order has no approved material requirement for the item; ask for one and have ' +
+        'it approved before drawing stock for the job'
+    );
   }
 
   /**
-   * Refuses a draw the requirement does not allow, stating the figures, under the
-   * requirement lock. Returns normally when the draw fits.
+   * Opens a material request on `requirementId` and performs the draw on it, as one
+   * unit: both happen under a savepoint, so a refusal leaves no request behind.
    */
-  public async assertDrawable(
+  public async draw<T>(
     db: DbHandle,
-    input: { readonly requirementId: string; readonly itemId: string; readonly quantity: string }
-  ): Promise<void> {
-    const check = await this.repository.checkMaterialDraw(db, input);
-    if (!check) {
-      throw new AppFailure('ERR-RES-001', {
-        message: `Material requirement ${input.requirementId} was not found`,
+    input: { readonly requirementId: string; readonly itemId: string; readonly quantity: string },
+    act: (nested: DbHandle, requestId: string) => Promise<T>,
+    what: string
+  ): Promise<{ readonly requestId: string; readonly result: T }> {
+    try {
+      return await withSavepoint(db, async (nested) => {
+        const requestId = await this.repository.createMaterialRequest(nested, input);
+        return { requestId, result: await act(nested, requestId) };
       });
+    } catch (error) {
+      return this.refuse(db, error, input, what);
     }
-    if (!check.coversItem) {
+  }
+
+  /** Performs a draw on a request that already exists (an issue of its reservation). */
+  public async drawOnRequest<T>(
+    db: DbHandle,
+    input: { readonly requirementId: string; readonly itemId: string; readonly quantity: string },
+    act: (nested: DbHandle) => Promise<T>,
+    what: string
+  ): Promise<T> {
+    try {
+      return await withSavepoint(db, act);
+    } catch (error) {
+      return this.refuse(db, error, input, what);
+    }
+  }
+
+  /**
+   * Reports a refused draw. A material rule the database named becomes
+   * `ERR-INV-001` with the figures, read after the savepoint rolled the draw back;
+   * anything else — no stock, a closed work order, a reservation that is not the
+   * request's — is the shared stock mapping.
+   */
+  private async refuse(
+    db: DbHandle,
+    error: unknown,
+    input: { readonly requirementId: string; readonly itemId: string; readonly quantity: string },
+    what: string
+  ): Promise<never> {
+    const message = databaseMessage(error);
+    if (!isSqlState(error, SQLSTATE.checkViolation) || !message.startsWith('material_')) {
+      toDomainFailure(error, what);
+    }
+    if (message.startsWith('material_item_not_covered')) {
       refuseField(
         'body.materialRequirementId',
         'item_not_covered',
         'The material requirement does not cover this item or its family'
       );
     }
-    const figures = {
-      allowance: check.allowance,
-      alreadyCommitted: check.committed,
-      requested: check.requested,
-    };
-    if (check.status === 'approval_required') {
-      const reason =
+    if (!message.startsWith('material_approval_required') && !message.includes('_exceeded')) {
+      mapMaterialFailure(error, what);
+    }
+    const check = await this.repository.checkMaterialDraw(db, input);
+    let reason: MaterialDrawDetails['reason'];
+    if (message.includes('no_requirement')) reason = 'no_requirement';
+    else if (message.includes('_exceeded')) reason = 'exceeds_requirement';
+    else if (message.includes('missing_unit_conversion')) reason = 'missing_conversion';
+    else if (check?.status === 'approval_required') {
+      reason =
         check.approvalRequiredReason === 'missing_specification'
           ? 'missing_specification'
           : 'missing_conversion';
-      refuseDraw(
-        { ...figures, reason },
-        `The material requirement cannot be drawn on until it is resolved (${reason})`
-      );
-    }
-    if (check.status !== 'approved') {
-      refuseDraw(
-        { ...figures, reason: 'approval_required' },
-        `The material requirement is ${check.status}; only an approved requirement allows a draw`
-      );
-    }
-    if (!check.hasFactor) {
-      refuseDraw(
-        { ...figures, reason: 'missing_conversion' },
-        'The item has no exact conversion into the unit the requirement is stated in'
-      );
-    }
-    if (check.exceeds) {
-      refuseDraw(
-        { ...figures, reason: 'exceeds_requirement' },
-        `Drawing ${check.requested ?? input.quantity} would exceed the ${check.allowance ?? '0'} ` +
-          `allowed (${check.committed} already committed); an approved exception is required`
-      );
-    }
-  }
-
-  /**
-   * Opens the material request a governed draw fulfills. A refusal the pre-check did
-   * not foresee — a concurrent draw committed in between is impossible under the
-   * lock, but a guard is the guarantee — is reported by the rule it names.
-   */
-  public async openRequest(
-    db: DbHandle,
-    input: { readonly requirementId: string; readonly itemId: string; readonly quantity: string }
-  ): Promise<string> {
-    try {
-      return await this.repository.createMaterialRequest(db, input);
-    } catch (error) {
-      mapMaterialFailure(error, 'Material draw');
-    }
+    } else reason = 'approval_required';
+    const figures = {
+      allowance: check?.allowance ?? null,
+      alreadyCommitted: check?.committed ?? '0.000',
+      requested: check?.requested ?? null,
+    };
+    refuseDraw(
+      { ...figures, reason },
+      reason === 'exceeds_requirement'
+        ? `Drawing ${figures.requested ?? input.quantity} would exceed the ${figures.allowance ?? '0'} ` +
+            `allowed (${figures.alreadyCommitted} already committed); an approved exception is required`
+        : reason === 'approval_required'
+          ? `The material requirement is ${check?.status ?? 'not approved'}; only an approved requirement allows a draw`
+          : `The material requirement cannot be drawn on until it is resolved (${reason})`
+    );
   }
 }
 
@@ -703,6 +793,278 @@ export class InventoryMaterialService {
       ],
     });
     return toExceptionView(after);
+  }
+
+  /**
+   * Re-checks a requirement that is `approval_required` once the fact it lacked
+   * exists — a specification confirmed since, or a unit conversion stated since — and
+   * returns where it now stands.
+   *
+   * A requirement that is already awaiting a decision or approved has nothing to
+   * re-check and is returned as it is, so a repeated call changes nothing. A rejected
+   * or cancelled one is closed, and is refused.
+   */
+  public async recheck(
+    db: DbHandle,
+    requirementId: string,
+    authorizeScope: ScopeAuthorizer
+  ): Promise<MaterialRequirementView> {
+    const before = await this.repository.readMaterialRequirement(db, requirementId);
+    if (!before) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Material requirement ${requirementId} was not found`,
+      });
+    }
+    await authorizeScope({ companyId: before.companyId, branchId: before.branchId });
+    if (before.status === 'rejected' || before.status === 'cancelled') {
+      throw new AppFailure('ERR-TRN-001', {
+        message: `Material requirement ${requirementId} is ${before.status} and has nothing to re-check`,
+      });
+    }
+    if (before.status !== 'approval_required') return this.detail(db, before);
+
+    try {
+      await this.repository.recheckMaterialRequirement(db, requirementId);
+    } catch (error) {
+      mapMaterialFailure(error, 'Material requirement re-check');
+    }
+    const after = await this.requireRequirement(db, requirementId);
+    if (after.status !== before.status || after.allowanceQuantity !== before.allowanceQuantity) {
+      await appendAudit(db, {
+        action: 'inv.material_requirement.rechecked',
+        entityType: 'inv.material_requirement',
+        entityId: after.id,
+        companyId: after.companyId,
+        branchId: after.branchId,
+        requestRef: 'inv.material-requirement-recheck',
+        details: [
+          {
+            field: 'status',
+            classification: 'internal',
+            previousValue: before.status,
+            value: after.status,
+          },
+          {
+            field: 'approvalRequiredReason',
+            classification: 'internal',
+            previousValue: before.approvalRequiredReason,
+            value: after.approvalRequiredReason,
+          },
+          { field: 'specificationId', classification: 'internal', value: after.specificationId },
+          {
+            field: 'allowanceQuantity',
+            classification: 'internal',
+            previousValue: before.allowanceQuantity,
+            value: after.allowanceQuantity,
+          },
+          { field: 'uomId', classification: 'internal', value: after.uomId },
+        ],
+      });
+    }
+    return this.detail(db, after);
+  }
+
+  /**
+   * Cancels a requirement with a reason. Refused while it has an open request or any
+   * quantity reserved, or issued and not returned, against it: what was drawn on a
+   * requirement stays accounted to it. Cancelling a cancelled requirement changes
+   * nothing.
+   */
+  public async cancel(
+    db: DbHandle,
+    requirementId: string,
+    input: { readonly reason: string },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<MaterialRequirementView> {
+    const before = await this.repository.readMaterialRequirement(db, requirementId);
+    if (!before) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Material requirement ${requirementId} was not found`,
+      });
+    }
+    await authorizeScope({ companyId: before.companyId, branchId: before.branchId });
+    if (before.status === 'cancelled') return this.detail(db, before);
+    if (before.status === 'rejected') {
+      throw new AppFailure('ERR-TRN-001', {
+        message: `Material requirement ${requirementId} was rejected and cannot be cancelled`,
+      });
+    }
+    try {
+      await this.repository.cancelMaterialRequirement(db, requirementId, input.reason);
+    } catch (error) {
+      if (databaseMessage(error).startsWith('material_requirement_committed')) {
+        throw new AppFailure('ERR-TRN-001', {
+          message:
+            'Material is still requested, reserved, or issued and not returned against this ' +
+            'requirement. Close or cancel its requests and return what was issued first.',
+        });
+      }
+      mapMaterialFailure(error, 'Material requirement cancellation');
+    }
+    const after = await this.requireRequirement(db, requirementId);
+    await appendAudit(db, {
+      action: 'inv.material_requirement.cancelled',
+      entityType: 'inv.material_requirement',
+      entityId: after.id,
+      companyId: after.companyId,
+      branchId: after.branchId,
+      requestRef: 'inv.material-requirement-cancel',
+      details: [
+        {
+          field: 'status',
+          classification: 'internal',
+          previousValue: before.status,
+          value: after.status,
+        },
+        { field: 'reason', classification: 'internal', value: after.cancelReason },
+        { field: 'allowanceQuantity', classification: 'internal', value: after.allowanceQuantity },
+      ],
+    });
+    return this.detail(db, after);
+  }
+
+  /**
+   * Closes a material request: what it issued stays counted, and what it still asks
+   * for or holds stops counting against the allowance. Its active reservations are
+   * released by the same act.
+   */
+  public async closeRequest(
+    db: DbHandle,
+    requestId: string,
+    input: { readonly reason?: string | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<MaterialRequestView> {
+    return this.finishRequest(db, requestId, 'closed', input.reason ?? null, authorizeScope);
+  }
+
+  /**
+   * Cancels a material request that issued nothing, with a reason, releasing its
+   * active reservations. A request that issued stock is closed, not cancelled.
+   */
+  public async cancelRequest(
+    db: DbHandle,
+    requestId: string,
+    input: { readonly reason: string },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<MaterialRequestView> {
+    return this.finishRequest(db, requestId, 'cancelled', input.reason, authorizeScope);
+  }
+
+  private async finishRequest(
+    db: DbHandle,
+    requestId: string,
+    outcome: 'closed' | 'cancelled',
+    reason: string | null,
+    authorizeScope: ScopeAuthorizer
+  ): Promise<MaterialRequestView> {
+    const before = await this.repository.readMaterialRequest(db, requestId);
+    if (!before) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Material request ${requestId} was not found`,
+      });
+    }
+    await authorizeScope({ companyId: before.companyId, branchId: before.branchId });
+    if (before.status === outcome) return toRequestView(before, [], true);
+    if (before.status !== 'open') {
+      throw new AppFailure('ERR-TRN-001', {
+        message: `Material request ${requestId} is ${before.status} and cannot be ${outcome}`,
+      });
+    }
+
+    const holding = await this.repository.activeReservationsOfRequest(db, requestId);
+    try {
+      await this.repository.finishMaterialRequest(db, { requestId, outcome, reason });
+    } catch (error) {
+      if (databaseMessage(error).includes('closed, not cancelled')) {
+        throw new AppFailure('ERR-TRN-001', {
+          message: 'This material request issued stock, so it is closed rather than cancelled',
+        });
+      }
+      toDomainFailure(error, 'Material request');
+    }
+    const after = await this.repository.readMaterialRequest(db, requestId);
+    if (!after) {
+      throw new AppFailure('ERR-SYS-001', {
+        message: 'The material request vanished after it was finished',
+      });
+    }
+
+    // Each reservation the act released is recorded exactly as a release is, so the
+    // same state change is attributable however it was caused.
+    for (const held of holding) {
+      const reservation = (await this.repository.readReservation(db, held.id)) ?? held;
+      await appendAudit(db, {
+        action: 'inv.stock.reservation_released',
+        entityType: 'inv.stock_reservation',
+        entityId: reservation.id,
+        companyId: reservation.companyId,
+        branchId: reservation.branchId,
+        requestRef:
+          outcome === 'closed' ? 'inv.material-request-close' : 'inv.material-request-cancel',
+        details: [
+          {
+            field: 'status',
+            classification: 'internal',
+            previousValue: 'active',
+            value: 'released',
+          },
+          { field: 'reason', classification: 'internal', value: `material request ${outcome}` },
+          { field: 'quantity', classification: 'internal', value: reservation.quantity },
+          { field: 'materialRequestId', classification: 'internal', value: requestId },
+        ],
+      });
+      await publishEvent(db, {
+        eventType: 'stock.reservation.released',
+        aggregateId: reservation.id,
+        aggregateVersion: reservation.recordVersion,
+        producer: 'inventory.inventory-material-service',
+        companyId: reservation.companyId,
+        branchId: reservation.branchId,
+        eventKey: `stock.reservation.released:${reservation.id}`,
+        payload: {
+          reservationId: reservation.id,
+          itemId: reservation.itemId,
+          locationId: reservation.locationId,
+          quantity: reservation.quantity,
+          reason: `material request ${outcome}`,
+        },
+      });
+    }
+
+    await appendAudit(db, {
+      action:
+        outcome === 'closed' ? 'inv.material_request.closed' : 'inv.material_request.cancelled',
+      entityType: 'inv.material_request',
+      entityId: after.id,
+      companyId: after.companyId,
+      branchId: after.branchId,
+      requestRef:
+        outcome === 'closed' ? 'inv.material-request-close' : 'inv.material-request-cancel',
+      details: [
+        {
+          field: 'status',
+          classification: 'internal',
+          previousValue: before.status,
+          value: after.status,
+        },
+        { field: 'requirementId', classification: 'internal', value: after.requirementId },
+        {
+          field: 'reason',
+          classification: 'internal',
+          value: outcome === 'closed' ? after.closeReason : after.cancelReason,
+        },
+        {
+          field: 'releasedReservationIds',
+          classification: 'internal',
+          value: holding.map((reservation) => reservation.id).join(','),
+        },
+      ],
+    });
+    return toRequestView(
+      after,
+      holding.map((reservation) => reservation.id),
+      false
+    );
   }
 
   private async detail(

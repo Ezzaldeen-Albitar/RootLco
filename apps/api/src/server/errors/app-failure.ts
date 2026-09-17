@@ -41,7 +41,11 @@ export interface MaterialDrawDetails {
   readonly alreadyCommitted: string;
   readonly requested: string | null;
   readonly reason:
-    'exceeds_requirement' | 'approval_required' | 'missing_conversion' | 'missing_specification';
+    | 'exceeds_requirement'
+    | 'approval_required'
+    | 'missing_conversion'
+    | 'missing_specification'
+    | 'no_requirement';
 }
 
 export interface AppFailureOptions {

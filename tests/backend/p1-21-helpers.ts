@@ -914,6 +914,61 @@ export async function seedStock(input: {
   }
 }
 
+/**
+ * The approved demand a work-order draw needs (P1-32-PRE-132).
+ *
+ * Since `20260917099000_inv_material_draw_enforcement.sql` every reservation and
+ * issue for a work order draws on an APPROVED material requirement that covers the
+ * item, and one with none is refused — by the API with `ERR-INV-001`
+ * (`no_requirement`) and by the database whatever the path. A suite that exercises
+ * stock rather than material demand still owes that fact, and it is created here the
+ * way the product creates it, never by exempting the draw: a service line on the
+ * work order, an ENTERED allowance in the item's own stock unit with its source,
+ * proposed by `USER_A` and approved by a second person (`INV_APPROVER`) through
+ * `inv.approve_material_requirement`. Returns the requirement a draw names in
+ * `materialRequirementId`.
+ */
+export async function seedApprovedMaterialRequirement(input: {
+  readonly workOrderId: string;
+  readonly itemId: string;
+  readonly allowance?: string;
+  readonly tenantId?: string;
+}): Promise<string> {
+  const tenantId = input.tenantId ?? TENANT_A;
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `SELECT set_config('app.user_id',$1,true), set_config('app.tenant_id',$2,true)`,
+      [USER_A, tenantId]
+    );
+    const line = await client.query<{ id: string }>(
+      `INSERT INTO wo.work_order_service_lines
+         (tenant_id, company_id, branch_id, work_order_id, description, created_by)
+       SELECT tenant_id, company_id, branch_id, id, 'Parts for the job', $3
+         FROM wo.work_orders WHERE tenant_id = $1 AND id = $2
+       RETURNING id`,
+      [tenantId, input.workOrderId, USER_A]
+    );
+    const requirement = await client.query<{ id: string }>(
+      `SELECT inv.propose_material_requirement($1, $2, NULL, $3::numeric,
+                (SELECT uom_id FROM inv.item_master WHERE tenant_id = $4 AND id = $2),
+                'Job card parts list') AS id`,
+      [line.rows[0]?.id ?? '', input.itemId, input.allowance ?? '1000', tenantId]
+    );
+    const requirementId = requirement.rows[0]?.id ?? '';
+    await client.query(`SELECT set_config('app.user_id',$1,true)`, [INV_APPROVER.userId]);
+    await client.query(`SELECT inv.approve_material_requirement($1)`, [requirementId]);
+    await client.query('COMMIT');
+    return requirementId;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 /** Removes only what this file created, newest dependency first. */
 /**
  * Removes the counter sales this slice's suites create, and the returns that cite

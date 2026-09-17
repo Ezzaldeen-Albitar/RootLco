@@ -1620,6 +1620,31 @@ export interface MaterialReservationLinkRow {
   readonly hasIssue: boolean;
 }
 
+/**
+ * A material request: a quantity of one item in its stock unit drawn on a
+ * requirement, with the exact factor into the requirement unit it was measured by.
+ */
+export interface MaterialRequestRow {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly requirementId: string;
+  readonly workOrderId: string;
+  readonly itemId: string;
+  readonly quantity: string;
+  readonly requirementUnitFactor: string;
+  readonly status: string;
+  readonly requestedBy: string;
+  readonly closedBy: string | null;
+  readonly closedAt: Date | null;
+  readonly closeReason: string | null;
+  readonly cancelledBy: string | null;
+  readonly cancelledAt: Date | null;
+  readonly cancelReason: string | null;
+  readonly recordVersion: number;
+  readonly createdAt: Date;
+}
+
 /** One act that took units of a transfer out of transit. */
 export interface TransferSettlementRow {
   readonly id: string;
@@ -2754,6 +2779,10 @@ export class InventoryRepository extends Repository {
    * Idempotency spans the reservation's whole lifetime via
    * `uq_stock_reservations_idempotency`, and the function resolves a replay inside
    * the lock by returning the existing id.
+   *
+   * This form names NO work order. A reservation for a work order is a draw on its
+   * approved demand and goes through `reserveMaterialRequest`; the database refuses
+   * one written here.
    */
   public async reserveStock(
     db: DbHandle,
@@ -2761,7 +2790,6 @@ export class InventoryRepository extends Repository {
       readonly itemId: string;
       readonly locationId: string;
       readonly quantity: string;
-      readonly workOrderId: string | null;
       readonly idempotencyKey: string | null;
       readonly expiresAt: string | null;
       readonly correlationId: string | null;
@@ -2769,18 +2797,46 @@ export class InventoryRepository extends Repository {
   ): Promise<{ readonly id: string }> {
     const row = await this.runOne<{ id: string }>(
       db,
-      `SELECT inv.reserve_stock($1, $2, $3::numeric, $4, $5, $6::timestamptz, $7) AS id`,
+      `SELECT inv.reserve_stock($1, $2, $3::numeric, NULL, $4, $5::timestamptz, $6) AS id`,
       [
         input.itemId,
         input.locationId,
         input.quantity,
-        input.workOrderId,
         input.idempotencyKey,
         input.expiresAt,
         input.correlationId,
       ]
     );
     if (!row?.id) throw new Error('inventory: reserve_stock returned no id');
+    return { id: row.id };
+  }
+
+  /**
+   * Reserves stock for a work order, drawn on an open material request
+   * (`inv.reserve_material_request`, P1-32-PRE-132).
+   *
+   * The same single-winner primitive runs underneath, with the request named for the
+   * duration of the call, so the reservation row is linked to the request as it is
+   * inserted — under the requirement then request lock, and bounded by the request.
+   * A reservation for a work order written any other way is refused by the database.
+   */
+  public async reserveMaterialRequest(
+    db: DbHandle,
+    input: {
+      readonly requestId: string;
+      readonly locationId: string;
+      readonly quantity: string;
+      readonly idempotencyKey: string | null;
+      readonly expiresAt: string | null;
+    }
+  ): Promise<{ readonly id: string }> {
+    this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `SELECT inv.reserve_material_request($1, $2, $3::numeric, $4, $5::timestamptz) AS id`,
+      [input.requestId, input.locationId, input.quantity, input.idempotencyKey, input.expiresAt]
+    );
+    if (!row?.id) throw new Error('inventory: inv.reserve_material_request returned no id');
     return { id: row.id };
   }
 
@@ -2870,71 +2926,52 @@ export class InventoryRepository extends Repository {
   // -------------------------------------------------------------------------
 
   /**
-   * Issues stock to a work order in the ONLY order the constraints permit.
+   * Issues stock to a work order, drawn on an open material request
+   * (`inv.issue_material_request`, P1-32-PRE-132).
    *
-   * `inv.issue_part` posts the `out` movement before consuming the reservation, so
-   * `on_hand` drops while `reserved` is still held and
-   * `ck_stock_balances_available` (`on_hand − reserved >= 0`) rejects the write
-   * whenever the reservation covers the stock being issued. That is finding
-   * `P1-21-D-01`, reproduced against a live database: the natural
-   * reserve-exactly-then-issue flow fails inside the protected function.
+   * Every part issue names a work order, and since `20260917099000` the database
+   * links it at insert to the material request the function names, under the
+   * requirement then request lock, or refuses it. The request is the draw's measure:
+   * it was bounded by the approved allowance when it was opened, and the link is
+   * bounded by the request.
    *
-   * The fix is ordering, not privilege. The same three granted operations run here
-   * as `part_issues` insert → `consume_reservation` → `post_stock_movement`, so
-   * `reserved` is released before `on_hand` falls and the invariant never dips
-   * below zero. Every guard still applies: the provenance trigger binds the
-   * movement to the issue row's quantity, and the balance coherence guard re-derives
-   * both sums.
+   * The same migration fixed the ordering this method used to perform by hand
+   * (`P1-21-D-01`): `inv.issue_part` now inserts the issue row, consumes the
+   * reservation, and only then posts the `out` movement, so `reserved` falls before
+   * `on_hand` does and `ck_stock_balances_available` never sees the same units
+   * twice. There is no second path.
    */
   public async issuePart(
     db: DbHandle,
     input: {
-      readonly workOrderId: string;
-      readonly companyId: string;
-      readonly branchId: string;
-      readonly itemId: string;
+      readonly requestId: string;
       readonly locationId: string;
       readonly quantity: string;
       readonly reservationId: string | null;
       readonly requiredPartRef: string | null;
-      readonly correlationId: string | null;
     }
   ): Promise<{ readonly issueId: string; readonly movementId: string }> {
     const context = this.assertContext(db);
     const issue = await this.runOne<{ id: string }>(
       db,
-      `INSERT INTO inv.part_issues
-         (tenant_id, company_id, branch_id, work_order_id, item_id, location_id,
-          reservation_id, required_part_ref, quantity, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::numeric, $10)
-       RETURNING id`,
+      `SELECT inv.issue_material_request($1, $2, $3::numeric, $4, $5) AS id`,
       [
-        context.principal.tenantId,
-        input.companyId,
-        input.branchId,
-        input.workOrderId,
-        input.itemId,
+        input.requestId,
         input.locationId,
+        input.quantity,
         input.reservationId,
         input.requiredPartRef,
-        input.quantity,
-        context.principal.userId,
       ]
     );
-    if (!issue) throw new Error('inventory: part issue insert returned no row');
-
-    // Release the reservation FIRST. See the ordering note above.
-    if (input.reservationId !== null) {
-      await this.run(db, `SELECT inv.consume_reservation($1)`, [input.reservationId]);
-    }
-
+    if (!issue?.id) throw new Error('inventory: inv.issue_material_request returned no id');
     const movement = await this.runOne<{ id: string }>(
       db,
-      `SELECT inv.post_stock_movement($1, $2, 'issue', 'out', $3::numeric,
-                                      'part_issue', $4, $5) AS id`,
-      [input.itemId, input.locationId, input.quantity, issue.id, input.correlationId]
+      `SELECT id FROM inv.stock_movements
+        WHERE tenant_id = $1 AND reference_kind = 'part_issue' AND reference_id = $2
+          AND direction = 'out'`,
+      [context.principal.tenantId, issue.id]
     );
-    if (!movement?.id) throw new Error('inventory: issue movement returned no id');
+    if (!movement?.id) throw new Error('inventory: the issue posted no movement');
     return { issueId: issue.id, movementId: movement.id };
   }
 
@@ -5350,17 +5387,10 @@ export class InventoryRepository extends Repository {
 
   /**
    * `inv.derive_material_requirement` — the allowance a confirmed specification
-   * states, or none.
-   *
-   * One case is written here instead. For a vehicle with NO make the function never
-   * assigns its resolution record and then reads a field of it, which PostgreSQL
-   * refuses (`record "s" is not assigned yet`), so the call fails for exactly the
-   * vehicles no specification can answer for. That outcome is not in doubt: a
-   * specification is keyed on a make, so the requirement is `approval_required` /
-   * `missing_specification` with no allowance — the row the function's own
-   * no-specification branch writes, column for column, and
-   * `inv.guard_material_requirement` validates it the same way. Every vehicle WITH a
-   * make still goes through the function.
+   * states, or none. The function is the single path, for every vehicle: one with no
+   * make resolves no specification and is stored as `approval_required` /
+   * `missing_specification` with no allowance (`20260917099000` fixed the function,
+   * which used to fail for exactly that vehicle).
    */
   public async deriveMaterialRequirement(
     db: DbHandle,
@@ -5372,43 +5402,7 @@ export class InventoryRepository extends Repository {
       readonly engineVariant: string | null;
     }
   ): Promise<string> {
-    const context = this.assertContext(db);
-    const vehicle = await this.runOne<{ has_make: boolean }>(
-      db,
-      `SELECT v.make_id IS NOT NULL AS has_make
-         FROM wo.work_order_service_lines l
-         JOIN wo.work_orders w ON w.tenant_id = l.tenant_id AND w.company_id = l.company_id
-                              AND w.branch_id = l.branch_id AND w.id = l.work_order_id
-         JOIN veh.vehicles v ON v.tenant_id = w.tenant_id AND v.id = w.vehicle_id
-        WHERE l.tenant_id = $1 AND l.id = $2 AND l.deleted_at IS NULL`,
-      [context.principal.tenantId, input.serviceLineId]
-    );
-    if (vehicle && !vehicle.has_make) {
-      const row = await this.runOne<{ id: string }>(
-        db,
-        `INSERT INTO inv.material_requirements (
-           tenant_id, company_id, branch_id, work_order_id, service_line_id, item_id,
-           item_category_id, basis, service_condition, engine_variant, status,
-           approval_required_reason, requested_by, created_by)
-         SELECT l.tenant_id, l.company_id, l.branch_id, l.work_order_id, l.id, $3, $4,
-                'specification', $5, NULLIF(btrim($6), ''), 'approval_required',
-                'missing_specification', $7, $7
-           FROM wo.work_order_service_lines l
-          WHERE l.tenant_id = $1 AND l.id = $2 AND l.deleted_at IS NULL
-         RETURNING id`,
-        [
-          context.principal.tenantId,
-          input.serviceLineId,
-          input.itemId,
-          input.itemCategoryId,
-          input.serviceCondition,
-          input.engineVariant,
-          context.principal.userId,
-        ]
-      );
-      if (!row) throw new Error('inventory: the missing-specification requirement was not written');
-      return row.id;
-    }
+    this.assertContext(db);
     const row = await this.runOne<{ id: string }>(
       db,
       `SELECT inv.derive_material_requirement($1, $2, $3, $4, $5) AS id`,
@@ -5656,46 +5650,111 @@ export class InventoryRepository extends Repository {
   }
 
   /**
-   * Links a reservation or an issue to the request it fulfilled.
-   * `inv.guard_material_request_fulfillment` bounds the link by the request itself.
+   * `inv.recheck_material_requirement` — moves an `approval_required` requirement on
+   * once the fact it was missing exists, and returns the status that resulted.
    */
-  public async linkMaterialFulfillment(
-    db: DbHandle,
-    input: {
-      readonly requestId: string;
-      readonly companyId: string;
-      readonly branchId: string;
-      readonly reservationId: string | null;
-      readonly partIssueId: string | null;
-    }
-  ): Promise<void> {
-    const context = this.assertContext(db);
-    await this.run(
+  public async recheckMaterialRequirement(db: DbHandle, requirementId: string): Promise<string> {
+    this.assertContext(db);
+    const row = await this.runOne<{ status: string }>(
       db,
-      `INSERT INTO inv.material_request_fulfillments
-         (tenant_id, company_id, branch_id, material_request_id, fulfillment_kind,
-          reservation_id, part_issue_id, created_by)
-       VALUES ($1, $2, $3, $4, CASE WHEN $5::uuid IS NULL THEN 'issue' ELSE 'reservation' END,
-               $5, $6, $7)`,
-      [
-        context.principal.tenantId,
-        input.companyId,
-        input.branchId,
-        input.requestId,
-        input.reservationId,
-        input.partIssueId,
-        context.principal.userId,
-      ]
+      `SELECT inv.recheck_material_requirement($1) AS status`,
+      [requirementId]
     );
+    if (!row) throw new Error('inventory: inv.recheck_material_requirement returned no row');
+    return row.status;
   }
 
-  /** `inv.lock_material_request` — the requirement row, then the request row. */
-  public async lockMaterialRequest(db: DbHandle, requestId: string): Promise<void> {
+  /**
+   * `inv.cancel_material_requirement` — refused while the requirement has an open
+   * request or any committed quantity.
+   */
+  public async cancelMaterialRequirement(
+    db: DbHandle,
+    requirementId: string,
+    reason: string
+  ): Promise<void> {
+    await this.run(db, `SELECT inv.cancel_material_requirement($1, $2)`, [requirementId, reason]);
+  }
+
+  public async readMaterialRequest(
+    db: DbHandle,
+    requestId: string
+  ): Promise<MaterialRequestRow | null> {
     const context = this.assertContext(db);
-    await this.run(db, `SELECT (inv.lock_material_request($1, $2)).id`, [
-      context.principal.tenantId,
-      requestId,
-    ]);
+    const row = await this.runOne<{
+      id: string;
+      company_id: string;
+      branch_id: string;
+      requirement_id: string;
+      work_order_id: string;
+      item_id: string;
+      quantity: string;
+      requirement_unit_factor: string;
+      status: string;
+      requested_by: string;
+      closed_by: string | null;
+      closed_at: Date | null;
+      close_reason: string | null;
+      cancelled_by: string | null;
+      cancelled_at: Date | null;
+      cancel_reason: string | null;
+      record_version: number;
+      created_at: Date;
+    }>(
+      db,
+      `SELECT q.id, q.company_id, q.branch_id, q.requirement_id, q.work_order_id, q.item_id,
+              q.quantity::text AS quantity, q.requirement_unit_factor::text AS requirement_unit_factor,
+              q.status, q.requested_by, q.closed_by, q.closed_at, q.close_reason, q.cancelled_by,
+              q.cancelled_at, q.cancel_reason, q.record_version, q.created_at
+         FROM inv.material_requests q
+        WHERE q.tenant_id = $1 AND q.id = $2`,
+      [context.principal.tenantId, requestId]
+    );
+    return row
+      ? {
+          id: row.id,
+          companyId: row.company_id,
+          branchId: row.branch_id,
+          requirementId: row.requirement_id,
+          workOrderId: row.work_order_id,
+          itemId: row.item_id,
+          quantity: row.quantity,
+          requirementUnitFactor: row.requirement_unit_factor,
+          status: row.status,
+          requestedBy: row.requested_by,
+          closedBy: row.closed_by,
+          closedAt: row.closed_at,
+          closeReason: row.close_reason,
+          cancelledBy: row.cancelled_by,
+          cancelledAt: row.cancelled_at,
+          cancelReason: row.cancel_reason,
+          recordVersion: row.record_version,
+          createdAt: row.created_at,
+        }
+      : null;
+  }
+
+  /** The active reservations fulfilling a request: what finishing it will release. */
+  public async activeReservationsOfRequest(
+    db: DbHandle,
+    requestId: string
+  ): Promise<readonly ReservationRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{ id: string }>(
+      db,
+      `SELECT sr.id
+         FROM inv.material_request_fulfillments f
+         JOIN inv.stock_reservations sr ON sr.tenant_id = f.tenant_id AND sr.id = f.reservation_id
+        WHERE f.tenant_id = $1 AND f.material_request_id = $2 AND sr.status = 'active'
+        ORDER BY sr.item_id, sr.location_id, sr.id`,
+      [context.principal.tenantId, requestId]
+    );
+    const rows: ReservationRow[] = [];
+    for (const { id } of result.rows) {
+      const reservation = await this.readReservation(db, id);
+      if (reservation) rows.push(reservation);
+    }
+    return rows;
   }
 
   /** `inv.finish_material_request` — releases the request's active reservations explicitly. */

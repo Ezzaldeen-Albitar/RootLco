@@ -51,6 +51,7 @@ import {
   countRowsOf,
   establishP1_21Fixtures,
   freshLocation,
+  seedApprovedMaterialRequirement,
   seedStock,
 } from './p1-21-helpers';
 import { POST as SALE_PRICE_SET } from '@/app/api/v1/items/[itemId]/sale-prices/route';
@@ -182,10 +183,16 @@ async function issuedSale(
 async function issuedPart(cell: string, quantity: string): Promise<string> {
   // `open` is the first state that accepts parts (`assertWorkOrderAcceptsParts`).
   const workOrder = await createOpenWorkOrder();
+  // Every issue for a work order draws on an approved material requirement.
+  const materialRequirementId = await seedApprovedMaterialRequirement({
+    workOrderId: workOrder.workOrderId,
+    itemId: ITEM_A,
+  });
   authAs(INV_COUNTER);
   const issue = await bodyOf<{ id: string }>(
     await post(ISSUE_PART, '/api/v1/stock-issues', {
       workOrderId: workOrder.workOrderId,
+      materialRequirementId,
       itemId: ITEM_A,
       locationId: cell,
       quantity,

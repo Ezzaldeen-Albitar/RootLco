@@ -75,6 +75,7 @@ function problemSchema(): JsonObject {
               'approval_required',
               'missing_conversion',
               'missing_specification',
+              'no_requirement',
             ],
           },
         },

@@ -173,16 +173,23 @@ export const MATERIAL_EXCEPTION_STATES = Object.freeze([
 ] as const);
 export type MaterialExceptionState = (typeof MATERIAL_EXCEPTION_STATES)[number];
 
+/** `ck_material_requests_status`. `closed` and `cancelled` are terminal. */
+export const MATERIAL_REQUEST_STATES = Object.freeze(['open', 'closed', 'cancelled'] as const);
+export type MaterialRequestState = (typeof MATERIAL_REQUEST_STATES)[number];
+
 /**
  * Why a work-order draw on a requirement was refused. Every one is a state a person
- * can act on: approve the requirement, add the conversion or the specification, or
- * request an exception for the excess.
+ * can act on: ask for and approve a requirement, approve the one there is, add the
+ * conversion or the specification, or request an exception for the excess.
+ * `no_requirement` (P1-32-PRE-132): the work order has no requirement covering the
+ * item at all — the absence of a requirement is a refusal, never an unlimited draw.
  */
 export const MATERIAL_DRAW_REFUSAL_REASONS = Object.freeze([
   'exceeds_requirement',
   'approval_required',
   'missing_conversion',
   'missing_specification',
+  'no_requirement',
 ] as const);
 export type MaterialDrawRefusalReason = (typeof MATERIAL_DRAW_REFUSAL_REASONS)[number];
 

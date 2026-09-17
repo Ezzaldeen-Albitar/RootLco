@@ -71,6 +71,7 @@ import {
   balanceOf,
   cleanP1_21Fixtures,
   establishP1_21Fixtures,
+  seedApprovedMaterialRequirement,
   seedStock,
 } from './p1-21-helpers';
 import type { Principal } from './p1-19-helpers';
@@ -85,6 +86,8 @@ import { POST as RELEASE } from '@/app/api/v1/stock-reservations/[reservationId]
 let admin: Pool;
 let runtime: Pool;
 let workOrderId: string;
+/** The approved requirement every reservation for the work order draws on (P1-32-PRE-132). */
+let materialRequirementId: string;
 
 interface PageBody<T> {
   readonly items: readonly T[];
@@ -187,6 +190,13 @@ beforeAll(async () => {
   await seedStock({ itemId: ITEM_A, locationId: QUARANTINE_A1, quantity: '5.000' });
   await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '500.000' });
   workOrderId = (await createOpenWorkOrder()).workOrderId;
+  // A reservation for a work order draws on its approved material demand, so the work
+  // order is given an approved requirement for the item, asked for and approved by two
+  // different people.
+  materialRequirementId = await seedApprovedMaterialRequirement({
+    workOrderId,
+    itemId: ITEM_A_ALT,
+  });
 }, 180_000);
 
 afterEach(() => __resetAuthenticatorForTests());
@@ -328,6 +338,7 @@ describe('FE-010 reservations', () => {
     locationId: STORAGE_A1,
     quantity: '2.500',
     workOrderId,
+    materialRequirementId,
     idempotencyKey: bodyKey,
   });
 

@@ -80,6 +80,7 @@ import {
   countRowsOf,
   establishP1_21Fixtures,
   freshLocation,
+  seedApprovedMaterialRequirement,
   seedStock,
 } from './p1-21-helpers';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
@@ -394,9 +395,15 @@ describe('inv.opening-batch-approve — one opening count per cell', () => {
     // routes: a second `in` movement lands in a cell that already holds an
     // `opening` `in`, which a total index would have refused.
     const wo = await createOpenWorkOrder();
+    // Every issue for a work order draws on an approved material requirement.
+    const materialRequirementId = await seedApprovedMaterialRequirement({
+      workOrderId: wo.workOrderId,
+      itemId: ITEM_A,
+    });
     authAs(INV_FULL);
     const issued = await post(ISSUE, '/api/v1/stock-issues', {
       workOrderId: wo.workOrderId,
+      materialRequirementId,
       itemId: ITEM_A,
       locationId: cell,
       quantity: '4.000',

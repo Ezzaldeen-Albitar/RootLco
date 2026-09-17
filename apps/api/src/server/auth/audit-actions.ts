@@ -1722,6 +1722,34 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'A person other than the requester rejected a material exception. The allowance is unchanged.',
   },
   {
+    code: 'inv.material_requirement.rechecked',
+    class: 'privileged',
+    entityType: 'inv.material_requirement',
+    description:
+      'A material requirement that was waiting on a missing specification or unit conversion was checked again once the fact existed, and moved on: it took the confirmed specification capacity and is awaiting a decision, or it still records the reason nothing can be approved.',
+  },
+  {
+    code: 'inv.material_requirement.cancelled',
+    class: 'privileged',
+    entityType: 'inv.material_requirement',
+    description:
+      'A material requirement was cancelled with a reason while nothing was requested, reserved, or issued and not returned against it. It allows no draw and still governs the item on its work order.',
+  },
+  {
+    code: 'inv.material_request.closed',
+    class: 'privileged',
+    entityType: 'inv.material_request',
+    description:
+      'A material request was closed: what it issued stays counted against the requirement, and what it still asked for or held stopped counting. Its active reservations were released by the same act and each release is recorded on its own.',
+  },
+  {
+    code: 'inv.material_request.cancelled',
+    class: 'privileged',
+    entityType: 'inv.material_request',
+    description:
+      'A material request that issued nothing was cancelled with a reason, releasing its active reservations and giving its whole quantity back to the requirement allowance.',
+  },
+  {
     code: 'inv.unit_conversion.set',
     class: 'privileged',
     entityType: 'inv.item_unit_conversion',
