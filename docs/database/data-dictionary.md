@@ -4421,35 +4421,39 @@ Generated from the live catalog after `20260917090000_inv_transfers_receipts_cou
 
 #### inv.stock_transfers
 
-| #   | Column                | Type                     | Nullable |
-| --- | --------------------- | ------------------------ | -------- |
-| 1   | `id`                  | uuid                     | no       |
-| 2   | `tenant_id`           | uuid                     | no       |
-| 3   | `company_id`          | uuid                     | no       |
-| 4   | `branch_id`           | uuid                     | no       |
-| 5   | `item_id`             | uuid                     | no       |
-| 6   | `from_location_id`    | uuid                     | no       |
-| 7   | `transit_location_id` | uuid                     | no       |
-| 8   | `to_branch_id`        | uuid                     | no       |
-| 9   | `to_location_id`      | uuid                     | no       |
-| 10  | `quantity`            | numeric                  | no       |
-| 11  | `received_quantity`   | numeric                  | yes      |
-| 12  | `status`              | text                     | no       |
-| 13  | `reason`              | text                     | yes      |
-| 14  | `cancel_reason`       | text                     | yes      |
-| 15  | `dispatched_at`       | timestamp with time zone | no       |
-| 16  | `dispatched_by`       | uuid                     | no       |
-| 17  | `received_at`         | timestamp with time zone | yes      |
-| 18  | `received_by`         | uuid                     | yes      |
-| 19  | `cancelled_at`        | timestamp with time zone | yes      |
-| 20  | `cancelled_by`        | uuid                     | yes      |
-| 21  | `correlation_id`      | uuid                     | yes      |
-| 22  | `idempotency_key`     | text                     | yes      |
-| 23  | `record_version`      | integer                  | no       |
-| 24  | `created_at`          | timestamp with time zone | no       |
-| 25  | `created_by`          | uuid                     | no       |
-| 26  | `updated_at`          | timestamp with time zone | yes      |
-| 27  | `updated_by`          | uuid                     | yes      |
+| #   | Column                 | Type                     | Nullable |
+| --- | ---------------------- | ------------------------ | -------- |
+| 1   | `id`                   | uuid                     | no       |
+| 2   | `tenant_id`            | uuid                     | no       |
+| 3   | `company_id`           | uuid                     | no       |
+| 4   | `branch_id`            | uuid                     | no       |
+| 5   | `item_id`              | uuid                     | no       |
+| 6   | `from_location_id`     | uuid                     | no       |
+| 7   | `transit_location_id`  | uuid                     | no       |
+| 8   | `to_branch_id`         | uuid                     | no       |
+| 9   | `to_location_id`       | uuid                     | no       |
+| 10  | `quantity`             | numeric                  | no       |
+| 11  | `received_quantity`    | numeric                  | yes      |
+| 12  | `status`               | text                     | no       |
+| 13  | `reason`               | text                     | yes      |
+| 14  | `cancel_reason`        | text                     | yes      |
+| 15  | `dispatched_at`        | timestamp with time zone | no       |
+| 16  | `dispatched_by`        | uuid                     | no       |
+| 17  | `received_at`          | timestamp with time zone | yes      |
+| 18  | `received_by`          | uuid                     | yes      |
+| 19  | `cancelled_at`         | timestamp with time zone | yes      |
+| 20  | `cancelled_by`         | uuid                     | yes      |
+| 21  | `correlation_id`       | uuid                     | yes      |
+| 22  | `idempotency_key`      | text                     | yes      |
+| 23  | `record_version`       | integer                  | no       |
+| 24  | `created_at`           | timestamp with time zone | no       |
+| 25  | `created_by`           | uuid                     | no       |
+| 26  | `updated_at`           | timestamp with time zone | yes      |
+| 27  | `updated_by`           | uuid                     | yes      |
+| 28  | `resolved_quantity`    | numeric                  | no       |
+| 29  | `outstanding_quantity` | numeric                  | yes      |
+
+Since `20260917098000_inv_transfer_partial_receipt.sql` a receipt records only what arrived: `received_quantity` may be less than `quantity`, `resolved_quantity` counts units settled without arriving (returned to origin or written off), and `outstanding_quantity` is GENERATED from the three. Status adds `partially_received` and `settled`; each part settlement is a row of `inv.stock_transfer_settlements`.
 
 ### Item identifiers (`inv`, P1-32 preparatory slice 2)
 
@@ -4529,6 +4533,187 @@ Generated from the live catalog after `20260917094000_inv_sales_returns.sql`. A 
 | 18  | `created_by`             | uuid                     | no       |
 | 19  | `updated_at`             | timestamp with time zone | yes      |
 | 20  | `updated_by`             | uuid                     | yes      |
+
+### Material demand control (`inv`, P1-32 preparatory slice 3a)
+
+Generated from the live catalog after `20260917095000_inv_item_unit_conversions.sql`, `20260917096000_inv_vehicle_fluid_specifications.sql`, `20260917097000_inv_material_requirements.sql` and `20260917098000_inv_transfer_partial_receipt.sql`. A work-order material draw needs an APPROVED requirement for its service line and item or item family; a missing specification or a missing unit conversion is stored as `approval_required` with its reason and no allowance is assumed. `inv.material_requirement_usage` counts each unit once across open requests, active reservations, issues and restockable returns, and `inv.guard_material_request_ceiling` enforces the allowance plus approved exceptions under the requirement row lock. Exceptions are finite and decided by a person other than the requester. Conversions are exact numeric factors in one direction; specifications resolve only once confirmed and never as zero. No column in this section is restricted: none is a cost or a price.
+
+#### inv.item_unit_conversions
+
+| #   | Column             | Type                     | Nullable |
+| --- | ------------------ | ------------------------ | -------- |
+| 1   | `id`               | uuid                     | no       |
+| 2   | `tenant_id`        | uuid                     | no       |
+| 3   | `item_id`          | uuid                     | yes      |
+| 4   | `from_uom_id`      | uuid                     | no       |
+| 5   | `to_uom_id`        | uuid                     | no       |
+| 6   | `factor`           | numeric                  | no       |
+| 7   | `source_reference` | text                     | no       |
+| 8   | `status`           | text                     | no       |
+| 9   | `retired_at`       | timestamp with time zone | yes      |
+| 10  | `retired_by`       | uuid                     | yes      |
+| 11  | `record_version`   | integer                  | no       |
+| 12  | `created_at`       | timestamp with time zone | no       |
+| 13  | `created_by`       | uuid                     | no       |
+| 14  | `updated_at`       | timestamp with time zone | yes      |
+| 15  | `updated_by`       | uuid                     | yes      |
+
+#### inv.vehicle_fluid_specifications
+
+| #   | Column              | Type                     | Nullable |
+| --- | ------------------- | ------------------------ | -------- |
+| 1   | `id`                | uuid                     | no       |
+| 2   | `tenant_id`         | uuid                     | no       |
+| 3   | `make_id`           | uuid                     | no       |
+| 4   | `model_id`          | uuid                     | yes      |
+| 5   | `model_year_from`   | integer                  | yes      |
+| 6   | `model_year_to`     | integer                  | yes      |
+| 7   | `engine_variant`    | text                     | yes      |
+| 8   | `service_condition` | text                     | no       |
+| 9   | `item_category_id`  | uuid                     | yes      |
+| 10  | `capacity`          | numeric                  | no       |
+| 11  | `uom_id`            | uuid                     | no       |
+| 12  | `source_reference`  | text                     | no       |
+| 13  | `status`            | text                     | no       |
+| 14  | `confirmed_by`      | uuid                     | yes      |
+| 15  | `confirmed_at`      | timestamp with time zone | yes      |
+| 16  | `retired_by`        | uuid                     | yes      |
+| 17  | `retired_at`        | timestamp with time zone | yes      |
+| 18  | `record_version`    | integer                  | no       |
+| 19  | `created_at`        | timestamp with time zone | no       |
+| 20  | `created_by`        | uuid                     | no       |
+| 21  | `updated_at`        | timestamp with time zone | yes      |
+| 22  | `updated_by`        | uuid                     | yes      |
+
+#### inv.material_requirements
+
+| #   | Column                     | Type                     | Nullable |
+| --- | -------------------------- | ------------------------ | -------- |
+| 1   | `id`                       | uuid                     | no       |
+| 2   | `tenant_id`                | uuid                     | no       |
+| 3   | `company_id`               | uuid                     | no       |
+| 4   | `branch_id`                | uuid                     | no       |
+| 5   | `work_order_id`            | uuid                     | no       |
+| 6   | `service_line_id`          | uuid                     | no       |
+| 7   | `item_id`                  | uuid                     | yes      |
+| 8   | `item_category_id`         | uuid                     | yes      |
+| 9   | `basis`                    | text                     | no       |
+| 10  | `specification_id`         | uuid                     | yes      |
+| 11  | `service_condition`        | text                     | yes      |
+| 12  | `engine_variant`           | text                     | yes      |
+| 13  | `allowance_quantity`       | numeric                  | yes      |
+| 14  | `uom_id`                   | uuid                     | yes      |
+| 15  | `source_reference`         | text                     | yes      |
+| 16  | `status`                   | text                     | no       |
+| 17  | `approval_required_reason` | text                     | yes      |
+| 18  | `requested_by`             | uuid                     | no       |
+| 19  | `approved_by`              | uuid                     | yes      |
+| 20  | `approved_at`              | timestamp with time zone | yes      |
+| 21  | `rejected_by`              | uuid                     | yes      |
+| 22  | `rejected_at`              | timestamp with time zone | yes      |
+| 23  | `rejection_reason`         | text                     | yes      |
+| 24  | `cancelled_by`             | uuid                     | yes      |
+| 25  | `cancelled_at`             | timestamp with time zone | yes      |
+| 26  | `cancel_reason`            | text                     | yes      |
+| 27  | `record_version`           | integer                  | no       |
+| 28  | `created_at`               | timestamp with time zone | no       |
+| 29  | `created_by`               | uuid                     | no       |
+| 30  | `updated_at`               | timestamp with time zone | yes      |
+| 31  | `updated_by`               | uuid                     | yes      |
+
+#### inv.material_requirement_exceptions
+
+| #   | Column                | Type                     | Nullable |
+| --- | --------------------- | ------------------------ | -------- |
+| 1   | `id`                  | uuid                     | no       |
+| 2   | `tenant_id`           | uuid                     | no       |
+| 3   | `company_id`          | uuid                     | no       |
+| 4   | `branch_id`           | uuid                     | no       |
+| 5   | `requirement_id`      | uuid                     | no       |
+| 6   | `additional_quantity` | numeric                  | no       |
+| 7   | `resulting_allowance` | numeric                  | yes      |
+| 8   | `reason`              | text                     | no       |
+| 9   | `status`              | text                     | no       |
+| 10  | `requested_by`        | uuid                     | no       |
+| 11  | `decided_by`          | uuid                     | yes      |
+| 12  | `decided_at`          | timestamp with time zone | yes      |
+| 13  | `decision_note`       | text                     | yes      |
+| 14  | `record_version`      | integer                  | no       |
+| 15  | `created_at`          | timestamp with time zone | no       |
+| 16  | `created_by`          | uuid                     | no       |
+| 17  | `updated_at`          | timestamp with time zone | yes      |
+| 18  | `updated_by`          | uuid                     | yes      |
+
+#### inv.material_requests
+
+| #   | Column                    | Type                     | Nullable |
+| --- | ------------------------- | ------------------------ | -------- |
+| 1   | `id`                      | uuid                     | no       |
+| 2   | `tenant_id`               | uuid                     | no       |
+| 3   | `company_id`              | uuid                     | no       |
+| 4   | `branch_id`               | uuid                     | no       |
+| 5   | `requirement_id`          | uuid                     | no       |
+| 6   | `work_order_id`           | uuid                     | no       |
+| 7   | `item_id`                 | uuid                     | no       |
+| 8   | `quantity`                | numeric                  | no       |
+| 9   | `requirement_unit_factor` | numeric                  | no       |
+| 10  | `status`                  | text                     | no       |
+| 11  | `requested_by`            | uuid                     | no       |
+| 12  | `closed_by`               | uuid                     | yes      |
+| 13  | `closed_at`               | timestamp with time zone | yes      |
+| 14  | `close_reason`            | text                     | yes      |
+| 15  | `cancelled_by`            | uuid                     | yes      |
+| 16  | `cancelled_at`            | timestamp with time zone | yes      |
+| 17  | `cancel_reason`           | text                     | yes      |
+| 18  | `idempotency_key`         | text                     | yes      |
+| 19  | `correlation_id`          | uuid                     | yes      |
+| 20  | `record_version`          | integer                  | no       |
+| 21  | `created_at`              | timestamp with time zone | no       |
+| 22  | `created_by`              | uuid                     | no       |
+| 23  | `updated_at`              | timestamp with time zone | yes      |
+| 24  | `updated_by`              | uuid                     | yes      |
+
+#### inv.material_request_fulfillments
+
+| #   | Column                | Type                     | Nullable |
+| --- | --------------------- | ------------------------ | -------- |
+| 1   | `id`                  | uuid                     | no       |
+| 2   | `tenant_id`           | uuid                     | no       |
+| 3   | `company_id`          | uuid                     | no       |
+| 4   | `branch_id`           | uuid                     | no       |
+| 5   | `material_request_id` | uuid                     | no       |
+| 6   | `fulfillment_kind`    | text                     | no       |
+| 7   | `reservation_id`      | uuid                     | yes      |
+| 8   | `part_issue_id`       | uuid                     | yes      |
+| 9   | `created_at`          | timestamp with time zone | no       |
+| 10  | `created_by`          | uuid                     | no       |
+
+#### inv.stock_transfer_settlements
+
+| #   | Column            | Type                     | Nullable |
+| --- | ----------------- | ------------------------ | -------- |
+| 1   | `id`              | uuid                     | no       |
+| 2   | `tenant_id`       | uuid                     | no       |
+| 3   | `company_id`      | uuid                     | no       |
+| 4   | `branch_id`       | uuid                     | no       |
+| 5   | `transfer_id`     | uuid                     | no       |
+| 6   | `to_branch_id`    | uuid                     | no       |
+| 7   | `settlement_kind` | text                     | no       |
+| 8   | `quantity`        | numeric                  | no       |
+| 9   | `reason`          | text                     | yes      |
+| 10  | `status`          | text                     | no       |
+| 11  | `requested_by`    | uuid                     | no       |
+| 12  | `approved_by`     | uuid                     | yes      |
+| 13  | `approved_at`     | timestamp with time zone | yes      |
+| 14  | `rejected_by`     | uuid                     | yes      |
+| 15  | `rejected_at`     | timestamp with time zone | yes      |
+| 16  | `idempotency_key` | text                     | yes      |
+| 17  | `correlation_id`  | uuid                     | yes      |
+| 18  | `record_version`  | integer                  | no       |
+| 19  | `created_at`      | timestamp with time zone | no       |
+| 20  | `created_by`      | uuid                     | no       |
+| 21  | `updated_at`      | timestamp with time zone | yes      |
+| 22  | `updated_by`      | uuid                     | yes      |
 
 ---
 

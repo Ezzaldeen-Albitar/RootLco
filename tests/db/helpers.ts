@@ -414,6 +414,14 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('wo.customer_approvals');
   await deleteFrom('quo.quotation_revisions');
   await deleteFrom('quo.quotations');
+  // P1-32 preparatory slice 3a: a fulfillment link cites the part issue and the
+  // reservation it names, a request cites its requirement, and a requirement cites
+  // the work order, its service line and the specification it was derived from —
+  // so the four go, children first, before any of those parents below.
+  await deleteFrom('inv.material_request_fulfillments');
+  await deleteFrom('inv.material_requests');
+  await deleteFrom('inv.material_requirement_exceptions');
+  await deleteFrom('inv.material_requirements');
   await deleteFrom('inv.part_returns');
   await deleteFrom('inv.part_issues');
   await deleteFrom('inv.damaged_stock');
@@ -429,6 +437,8 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('inv.goods_receipt_lines');
   await deleteFrom('inv.goods_receipts');
   await deleteFrom('inv.item_cost_layers');
+  // Slice 3a: a settlement cites its transfer.
+  await deleteFrom('inv.stock_transfer_settlements');
   await deleteFrom('inv.stock_transfers');
   await deleteFrom('inv.stock_adjustment_details');
   await deleteFrom('inv.stock_adjustments');
@@ -518,6 +528,10 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('inv.item_identifiers');
   // Selling prices cite the item, a company, a branch and a tax class.
   await deleteFrom('inv.item_sale_prices');
+  // Slice 3a: conversions cite the item and two units; specifications cite a unit,
+  // an item family and a vehicle make and model (removed further below).
+  await deleteFrom('inv.item_unit_conversions');
+  await deleteFrom('inv.vehicle_fluid_specifications');
   await deleteFrom('inv.item_master');
   await deleteFrom('inv.stock_locations');
   await deleteFrom('inv.item_categories');

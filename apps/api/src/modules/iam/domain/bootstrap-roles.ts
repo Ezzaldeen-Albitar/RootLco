@@ -255,6 +255,37 @@
  * Nothing is withdrawn: `wty.warranty.issue` stays, because
  * `wty.warranty-generate` still declares it and an administrator that could not
  * hold it could not delegate a warranty clerk.
+ *
+ * ## The five P1-32 slice-3a material codes are NOT carried yet
+ *
+ * Slice 3a minted `inv.material.request`, `inv.material.approve`,
+ * `inv.material.exception.approve`, `inv.unit_conversion.manage` and
+ * `inv.specification.manage` together with their schema, and published no
+ * operation. Every one of them is therefore excluded on the same "nothing declares
+ * it" rule CC-01 and CC-02 were excluded on, and the slice that publishes the
+ * material operations owns the widening, exactly as #322, P-10 and P-11 did.
+ *
+ * The split that widening must keep is decided now, because the database already
+ * enforces it:
+ *
+ *  - REQUESTERS (the service advisor or technician who asks for material for a
+ *    job) hold `inv.material.request` and nothing else of the five.
+ *  - APPROVERS (the workshop controller who decides how much a job may take) hold
+ *    `inv.material.approve`. The requester of a requirement can never approve it —
+ *    `ck_material_requirements_separation` refuses it whatever codes they hold — so
+ *    one person holding both codes gains nothing but the ability to approve other
+ *    people's requests.
+ *  - EXCEPTION approvers hold `inv.material.exception.approve`, a stronger authority
+ *    than approving the allowance; the requester of an exception can never decide
+ *    it (`ck_material_requirement_exceptions_separation`).
+ *  - `inv.unit_conversion.manage` and `inv.specification.manage` belong to whoever
+ *    maintains parts reference data, not to requesters or approvers, because they
+ *    change what every later requirement is measured against.
+ *
+ * The administrator bundle will need all five so it can DELEGATE them, on the P-1
+ * rule; holding them does not let the administrator approve their own request, for
+ * the reason above. The transfer write-off the same slice added needs no new code:
+ * it is approved under `inv.adjustment.approve`, which this bundle already carries.
  */
 
 export interface BootstrapRoleDefinition {

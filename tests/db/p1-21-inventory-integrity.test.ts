@@ -291,10 +291,13 @@ describe('P1-21-BE-015 — every movement carries a valid business reference', (
           }
         }
       }
-      // 7 movement types x 8 reference kinds x 2 directions = 112, less the 12
+      // 8 movement types x 10 reference kinds x 2 directions = 160, less the 14
       // legal triples. It was 5 x 5 x 2 - 7 = 43 before the P1-32 preparatory slice
-      // added `transfer` and `receipt` and their three reference kinds.
-      expect(refused).toBe(100);
+      // added `transfer` and `receipt` and their three reference kinds, and
+      // 7 x 8 x 2 - 12 = 100 before slice 2 added the `sale` type and the
+      // `invoice_line` and `sales_return` kinds. Slice 3a adds no vocabulary: its
+      // part settlements cite the existing `transfer_receipt` kind.
+      expect(refused).toBe(146);
     });
   }, 60_000);
 

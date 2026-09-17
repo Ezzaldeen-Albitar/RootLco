@@ -2,7 +2,7 @@
   "$schema": "./classification.schema.json",
   "description": "P1-10-SEC — Service Catalog / Pricing / Quotation / Inventory personal-and-financial-data classification registry. Restricted = cost/margin fields gated by inv.cost.view. Prices and quotation totals are operational (internal). No restricted column is searchable.",
   "allowedClassifications": ["public", "internal", "restricted", "secret"],
-  "columnCount": 748,
+  "columnCount": 892,
   "columns": {
     "inv.customer_supplied_parts.branch_id": {
       "classification": "internal",
@@ -1010,6 +1010,496 @@
       "dataType": "timestamp with time zone"
     },
     "inv.item_sale_prices.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_unit_conversions.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.item_unit_conversions.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_unit_conversions.factor": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "inv.item_unit_conversions.from_uom_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_unit_conversions.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_unit_conversions.item_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_unit_conversions.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "inv.item_unit_conversions.retired_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.item_unit_conversions.retired_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_unit_conversions.source_reference": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.item_unit_conversions.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.item_unit_conversions.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_unit_conversions.to_uom_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_unit_conversions.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.item_unit_conversions.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_request_fulfillments.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_request_fulfillments.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_request_fulfillments.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.material_request_fulfillments.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_request_fulfillments.fulfillment_kind": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.material_request_fulfillments.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_request_fulfillments.material_request_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_request_fulfillments.part_issue_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_request_fulfillments.reservation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_request_fulfillments.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requests.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requests.cancel_reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.material_requests.cancelled_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.material_requests.cancelled_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requests.close_reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.material_requests.closed_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.material_requests.closed_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requests.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requests.correlation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requests.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.material_requests.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requests.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requests.idempotency_key": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.material_requests.item_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requests.quantity": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "inv.material_requests.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "inv.material_requests.requested_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requests.requirement_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requests.requirement_unit_factor": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "inv.material_requests.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.material_requests.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requests.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.material_requests.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requests.work_order_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requirement_exceptions.additional_quantity": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "inv.material_requirement_exceptions.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requirement_exceptions.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requirement_exceptions.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.material_requirement_exceptions.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requirement_exceptions.decided_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.material_requirement_exceptions.decided_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requirement_exceptions.decision_note": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.material_requirement_exceptions.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requirement_exceptions.reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.material_requirement_exceptions.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "inv.material_requirement_exceptions.requested_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requirement_exceptions.requirement_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requirement_exceptions.resulting_allowance": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "inv.material_requirement_exceptions.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.material_requirement_exceptions.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requirement_exceptions.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.material_requirement_exceptions.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requirements.allowance_quantity": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "inv.material_requirements.approval_required_reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.material_requirements.approved_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.material_requirements.approved_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requirements.basis": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.material_requirements.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requirements.cancel_reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.material_requirements.cancelled_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.material_requirements.cancelled_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requirements.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requirements.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.material_requirements.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requirements.engine_variant": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.material_requirements.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requirements.item_category_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requirements.item_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requirements.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "inv.material_requirements.rejected_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.material_requirements.rejected_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requirements.rejection_reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.material_requirements.requested_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requirements.service_condition": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.material_requirements.service_line_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requirements.source_reference": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.material_requirements.specification_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requirements.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.material_requirements.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requirements.uom_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requirements.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.material_requirements.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.material_requirements.work_order_id": {
       "classification": "internal",
       "searchable": false,
       "dataType": "uuid"
@@ -2134,6 +2624,116 @@
       "searchable": false,
       "dataType": "uuid"
     },
+    "inv.stock_transfer_settlements.approved_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.stock_transfer_settlements.approved_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.stock_transfer_settlements.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.stock_transfer_settlements.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.stock_transfer_settlements.correlation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.stock_transfer_settlements.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.stock_transfer_settlements.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.stock_transfer_settlements.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.stock_transfer_settlements.idempotency_key": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.stock_transfer_settlements.quantity": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "inv.stock_transfer_settlements.reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.stock_transfer_settlements.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "inv.stock_transfer_settlements.rejected_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.stock_transfer_settlements.rejected_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.stock_transfer_settlements.requested_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.stock_transfer_settlements.settlement_kind": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.stock_transfer_settlements.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.stock_transfer_settlements.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.stock_transfer_settlements.to_branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.stock_transfer_settlements.transfer_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.stock_transfer_settlements.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.stock_transfer_settlements.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
     "inv.stock_transfers.branch_id": {
       "classification": "internal",
       "searchable": false,
@@ -2204,6 +2804,11 @@
       "searchable": false,
       "dataType": "uuid"
     },
+    "inv.stock_transfers.outstanding_quantity": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
     "inv.stock_transfers.quantity": {
       "classification": "internal",
       "searchable": false,
@@ -2233,6 +2838,11 @@
       "classification": "internal",
       "searchable": false,
       "dataType": "integer"
+    },
+    "inv.stock_transfers.resolved_quantity": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
     },
     "inv.stock_transfers.status": {
       "classification": "internal",
@@ -2335,6 +2945,116 @@
       "dataType": "timestamp with time zone"
     },
     "inv.units_of_measure.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.vehicle_fluid_specifications.capacity": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "inv.vehicle_fluid_specifications.confirmed_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.vehicle_fluid_specifications.confirmed_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.vehicle_fluid_specifications.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.vehicle_fluid_specifications.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.vehicle_fluid_specifications.engine_variant": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.vehicle_fluid_specifications.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.vehicle_fluid_specifications.item_category_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.vehicle_fluid_specifications.make_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.vehicle_fluid_specifications.model_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.vehicle_fluid_specifications.model_year_from": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "inv.vehicle_fluid_specifications.model_year_to": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "inv.vehicle_fluid_specifications.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "inv.vehicle_fluid_specifications.retired_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.vehicle_fluid_specifications.retired_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.vehicle_fluid_specifications.service_condition": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.vehicle_fluid_specifications.source_reference": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.vehicle_fluid_specifications.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.vehicle_fluid_specifications.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.vehicle_fluid_specifications.uom_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.vehicle_fluid_specifications.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.vehicle_fluid_specifications.updated_by": {
       "classification": "internal",
       "searchable": false,
       "dataType": "uuid"

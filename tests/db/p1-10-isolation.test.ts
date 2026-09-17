@@ -47,7 +47,11 @@ describe('p1-10 tenant isolation', () => {
     // and their lines, the restricted cost layers, and stock counts and their lines.
     // 44 with P1-32 preparatory slice 2: inv.item_identifiers, inv.item_sale_prices
     // and inv.sales_returns.
-    expect(tables.length).toBe(44);
+    // 51 with P1-32 preparatory slice 3a: inv.item_unit_conversions,
+    // inv.vehicle_fluid_specifications, inv.material_requirements,
+    // inv.material_requirement_exceptions, inv.material_requests,
+    // inv.material_request_fulfillments and inv.stock_transfer_settlements.
+    expect(tables.length).toBe(51);
     for (const t of tables) {
       const fq = `${t.table_schema}.${t.table_name}`;
       const pol = (
