@@ -199,7 +199,10 @@ beforeEach(() => {
   refresh.mockReset();
   push.mockReset();
   assignSubscriptionAction.mockReset();
+  cancelSubscriptionAction.mockReset();
+  recordChargeAction.mockReset();
   recordReceiptAction.mockReset();
+  voidChargeAction.mockReset();
   changeOrganizationStatusAction.mockReset();
   provisionOrganizationAction.mockReset();
   createPlanAction.mockReset();
@@ -357,6 +360,60 @@ describe('the organisation detail', () => {
     );
   });
 
+  it('draws a refused billing read as a refusal, not as an organisation with no charges', async () => {
+    renderLtr(
+      <OrganizationDetailScreen
+        locale="en"
+        messages={messages}
+        organization={detail}
+        plans={null}
+        charges={{ status: 'denied', correlationId: 'corr-9' }}
+        capabilities={{ ...NONE, canReadBilling: true }}
+        today="2026-09-16"
+      />
+    );
+    // The section is still there — the operator may read billing — and it says
+    // the read was refused. "No charges" would be a false statement about the
+    // organisation rather than about the read.
+    expect(screen.getByText(L('platform.billing.title'))).toBeInTheDocument();
+    expect(screen.getByText(L('state.denied.title') as string)).toBeInTheDocument();
+    expect(screen.queryByTestId('platform-charge')).toBeNull();
+  });
+
+  it('lists the status history, with the first entry arriving from no earlier state', () => {
+    renderLtr(
+      <OrganizationDetailScreen
+        locale="en"
+        messages={messages}
+        organization={{
+          ...detail,
+          statusHistory: [
+            {
+              occurredAt: '2026-09-10T09:00:00.000Z',
+              fromState: null,
+              toState: 'active',
+              reason: null,
+            },
+            {
+              occurredAt: '2026-09-14T09:00:00.000Z',
+              fromState: 'active',
+              toState: 'suspended',
+              reason: 'Payment overdue',
+            },
+          ],
+        }}
+        plans={null}
+        charges={null}
+        capabilities={NONE}
+        today="2026-09-16"
+      />
+    );
+    const history = screen.getByRole('table', { name: L('platform.detail.statusHistory') });
+    expect(within(history).getByText('Payment overdue')).toBeInTheDocument();
+    expect(within(history).getAllByText('—').length).toBeGreaterThanOrEqual(2);
+    expect(within(history).getAllByText(L('platform.status.suspended')).length).toBe(1);
+  });
+
   it('shows the server refusal of a lifecycle change inside the dialog', async () => {
     changeOrganizationStatusAction.mockResolvedValue({
       status: 'denied',
@@ -498,6 +555,49 @@ describe('the subscription dialog', () => {
     expect(input).toMatchObject({ kind: 'renewed', termMonths: 18, planCode: 'test_plan' });
     expect(typeof input.termMonths).toBe('number');
   });
+
+  it('cancels the subscription the operator was looking at, on the date and reason given', async () => {
+    cancelSubscriptionAction.mockResolvedValue({
+      status: 'success',
+      messageKey: 'platform.subscription.cancelled',
+      attempt: 1,
+    });
+    renderLtr(
+      <OrganizationDetailScreen
+        locale="en"
+        messages={messages}
+        organization={detail}
+        plans={[plan]}
+        charges={null}
+        capabilities={{ ...NONE, canManageSubscription: true }}
+        today="2026-09-16"
+      />
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: L('platform.subscription.act.cancel') })
+    );
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(
+      within(dialog).getByLabelText(new RegExp(`^${L('platform.subscription.ends')}`)),
+      { target: { value: '2026-12-31' } }
+    );
+    await userEvent.type(
+      within(dialog).getByLabelText(new RegExp(`^${L('platform.reason')}`)),
+      'Not renewing'
+    );
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: L('platform.subscription.act.cancel') })
+    );
+
+    await waitFor(() => expect(cancelSubscriptionAction).toHaveBeenCalledTimes(1));
+    // The identifier comes from the subscription the panel was showing, never
+    // from anything typed: there is no control here that could carry one.
+    expect(cancelSubscriptionAction).toHaveBeenCalledWith(TENANT, SUBSCRIPTION, {
+      effectiveTo: '2026-12-31',
+      reason: 'Not renewing',
+    });
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+  });
 });
 
 describe('billing', () => {
@@ -554,6 +654,92 @@ describe('billing', () => {
       receivedOn: '2026-09-16',
       method: 'Bank transfer',
     });
+  });
+
+  it('records a charge as a decimal string, in the currency typed, against the subscription chosen', async () => {
+    recordChargeAction.mockResolvedValue({
+      status: 'success',
+      messageKey: 'platform.billing.chargeDone',
+      attempt: 1,
+    });
+    renderLtr(
+      <BillingPanel
+        locale="en"
+        messages={messages}
+        tenantId={TENANT}
+        charges={[charge]}
+        subscriptions={[subscription]}
+        canManage
+        defaultCurrency="SAR"
+      />
+    );
+    await userEvent.click(screen.getByRole('button', { name: L('platform.billing.recordCharge') }));
+    const dialog = await screen.findByRole('dialog');
+    // The currency opens on the one the current plan is priced in, rather than
+    // on nothing or on an invented default.
+    expect(
+      within(dialog).getByLabelText(new RegExp(`^${L('platform.billing.currency')}`))
+    ).toHaveValue('SAR');
+    const amount = within(dialog).getByLabelText(new RegExp(`^${L('platform.billing.amount')}`));
+    await userEvent.type(amount, '1200');
+    fireEvent.blur(amount);
+    fireEvent.change(within(dialog).getByLabelText(new RegExp(`^${L('platform.billing.due')}`)), {
+      target: { value: '2026-10-15' },
+    });
+    await userEvent.type(
+      within(dialog).getByLabelText(new RegExp(`^${L('platform.billing.description')}`)),
+      'Annual subscription'
+    );
+    await userEvent.selectOptions(
+      within(dialog).getByLabelText(new RegExp(`^${L('platform.billing.subscription')}`)),
+      SUBSCRIPTION
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: L('platform.save') }));
+
+    await waitFor(() => expect(recordChargeAction).toHaveBeenCalledTimes(1));
+    const [tenantId, input] = recordChargeAction.mock.calls[0] as [string, Record<string, unknown>];
+    expect(tenantId).toBe(TENANT);
+    expect(input.amount).toBe('1200.0000');
+    expect(typeof input.amount).toBe('string');
+    expect(input).toMatchObject({
+      currencyCode: 'SAR',
+      dueOn: '2026-10-15',
+      description: 'Annual subscription',
+      subscriptionId: SUBSCRIPTION,
+    });
+  });
+
+  it('voids a charge under the reason given, and shows the server refusal in place', async () => {
+    voidChargeAction.mockResolvedValue({
+      status: 'denied',
+      messageKey: 'state.denied.title',
+      correlationId: 'corr-1',
+      attempt: 1,
+    });
+    renderLtr(
+      <BillingPanel
+        locale="en"
+        messages={messages}
+        tenantId={TENANT}
+        charges={[charge]}
+        subscriptions={[subscription]}
+        canManage
+        defaultCurrency="SAR"
+      />
+    );
+    await userEvent.click(screen.getByRole('button', { name: L('platform.billing.void') }));
+    const dialog = await screen.findByRole('alertdialog');
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Raised against the wrong term');
+    await userEvent.click(within(dialog).getByRole('button', { name: L('platform.billing.void') }));
+
+    await waitFor(() =>
+      expect(voidChargeAction).toHaveBeenCalledWith(TENANT, CHARGE, 'Raised against the wrong term')
+    );
+    // A refusal keeps the dialog open and says so there, rather than closing as
+    // though the charge had been voided.
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      L('state.denied.title') as string
+    );
   });
 
   it('offers no write to a billing reader', () => {

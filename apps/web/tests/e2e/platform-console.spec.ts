@@ -19,6 +19,20 @@ import { expect, test } from '@playwright/test';
  * shape `playwright.config.ts` uses for `ROOTLCO_E2E_AUTH`. The anonymous
  * refusal case needs no credentials and always runs.
  *
+ * ## What that costs, stated rather than left to be discovered
+ *
+ * NEITHER VARIABLE IS SET BY ANY JOB UNDER `.github/` TODAY. So on every hosted
+ * run of this branch the signed-in journey SKIPS, and the only case this file
+ * executes anywhere is the anonymous refusal. The browser evidence that a
+ * platform operator signs in and lands on the console is therefore PENDING an
+ * environment that holds such an operator — it is not evidence this branch
+ * carries. What does run meanwhile is the vitest proof of the same decision at
+ * the seam that makes it: `apps/web/tests/platform-login-routing.test.ts` drives
+ * the real `loginAction`, `requireSession` and `requirePlatformSession` against a
+ * stand-in for the backend. That is a narrower claim — it proves the routing
+ * rule, not the journey through a running product — and the difference is the
+ * reason this paragraph exists instead of a green tick.
+ *
  * The journey reads whatever organisations the environment holds. It creates
  * nothing, and when the environment holds no organisation it says so and stops
  * at the list rather than inventing one.

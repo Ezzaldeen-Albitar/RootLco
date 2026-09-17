@@ -12,7 +12,7 @@ import { fromFailure, invalid, success, type ActionState } from '@/lib/forms/act
 import type { ProvisionState } from './types';
 
 /**
- * The Platform Owner Console mutations (P1-32-PRE-064).
+ * The Platform Owner Console mutations (P1-32-PRE-063).
  *
  * Each calls exactly one published platform operation, named beside it. None
  * re-checks a permission first: the server decides, and its refusal is what the

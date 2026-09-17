@@ -52,6 +52,8 @@ const { requireSession } = await import('@/features/authentication/api/session')
 const { destinationAfterSignIn, readPlatformSession, requirePlatformSession } =
   await import('@/features/platform/api/session');
 const { ApiClient } = await import('@/lib/api/client');
+const { default: PlatformLayout } = await import('@/app/[locale]/(platform)/layout');
+const { PLATFORM_NAVIGATION } = await import('@/config/platform-navigation');
 
 const USER = '2f1c5b3e-6a4d-4b21-9c8e-1f2a3b4c5d6e';
 
@@ -270,5 +272,54 @@ describe('the console admits only a platform session with authority', () => {
       '/en/login?reason=signed-out'
     );
     expect(calls).toEqual([]);
+  });
+});
+
+describe('the console route group refuses at the LAYOUT, not only at the helper', () => {
+  /**
+   * The cases above call `requirePlatformSession` directly, which proves the
+   * decision and not the wiring: a layout that forgot to call it would pass
+   * every one of them. So the real layout is invoked here, with the same stubbed
+   * backend, and it is the layout's own return that is asserted.
+   */
+  it('refuses a tenant operator before any console markup exists', async () => {
+    backend({ tenant: 200, platform: 403 });
+    expect(
+      await redirectTarget(() =>
+        PlatformLayout({ children: null, params: Promise.resolve({ locale: 'ar' }) })
+      )
+    ).toBe('/ar/login?reason=forbidden');
+  });
+
+  it('sends a visitor who is not signed in to sign in', async () => {
+    jar.token = null;
+    backend({ tenant: 200, platform: 200 });
+    expect(
+      await redirectTarget(() =>
+        PlatformLayout({ children: null, params: Promise.resolve({ locale: 'en' }) })
+      )
+    ).toBe('/en/login?reason=signed-out');
+  });
+
+  it('admits a platform operator, under the console shell rather than the workspace one', async () => {
+    backend({ tenant: 403, platform: 200 });
+    const tree = (await PlatformLayout({
+      children: null,
+      params: Promise.resolve({ locale: 'en' }),
+    })) as { props: Record<string, unknown> };
+    expect((tree.props.capabilities as { permissions: string[] }).permissions).toEqual(
+      PLATFORM_SESSION.platformPermissions
+    );
+    expect(tree.props.contextLabel).toBe('Platform Owner Console');
+    // The navigation model is the console's own, so no workspace destination can
+    // reach the sidebar of an account that holds no tenant role at all.
+    expect(tree.props.navigation).toBe(PLATFORM_NAVIGATION);
+  });
+
+  it('is not a route at all for a locale this application does not publish', async () => {
+    backend({ tenant: 403, platform: 200 });
+    await expect(
+      PlatformLayout({ children: null, params: Promise.resolve({ locale: 'fr' }) })
+    ).rejects.toThrow('NEXT_NOT_FOUND');
   });
 });
