@@ -568,6 +568,33 @@ describe('the instrumented surface is what it claims to be', () => {
     }
   });
 
+  it('covers the Platform Owner Console, feature tree AND route group', () => {
+    // Same hole as H-2, one surface later: a tree missing from the include list
+    // is not measured badly, it is measured NOWHERE — so the baseline's
+    // touched-file floor skips every file in it, because coverage-gate.mjs
+    // iterates the report rather than the tree.
+    //
+    // The route group is asserted beside the feature tree because it carries the
+    // console's server-side gate, and because `(platform)` is subject to exactly
+    // the escaping trap the case above records for `(dashboard)`.
+    for (const file of [
+      'apps/web/src/features/platform/actions.ts',
+      'apps/web/src/features/platform/api.ts',
+      'apps/web/src/features/platform/api/session.ts',
+      'apps/web/src/features/platform/components/OrganizationDetailScreen.tsx',
+      'apps/web/src/app/[locale]/(platform)/layout.tsx',
+      'apps/web/src/app/[locale]/(platform)/platform/organizations/page.tsx',
+    ]) {
+      expect(INSTRUMENTED, `${file} is outside the measurement`).toContain(file);
+    }
+    const consolePattern = COVERAGE_INCLUDE.find(
+      (p) => p.startsWith('src/app/') && p.includes('platform')
+    );
+    expect(consolePattern).toBeDefined();
+    const unescaped = (consolePattern as string).split('\\').join('');
+    expect(globSync([unescaped], { cwd: join(__dirname, '..') })).toEqual([]);
+  });
+
   it('refuses an exclusion pattern that matches nothing', () => {
     // The exclusion list is empty today, and that is a recorded decision rather
     // than an omission — see the comment above COVERAGE_EXCLUDE. This case is
