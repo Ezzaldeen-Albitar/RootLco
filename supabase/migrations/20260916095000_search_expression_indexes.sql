@@ -38,7 +38,7 @@
 --   falls back to a filtered scan bounded by the page limit.
 --
 -- Dependencies
---   The functions redefined in 20260916090000_shared_text_folding.sql;
+--   The functions redefined in 20260916094000_shared_text_folding.sql;
 --   the `extensions` schema holding pg_trgm.
 --
 -- Security implications
