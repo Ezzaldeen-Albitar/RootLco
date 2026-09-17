@@ -332,6 +332,77 @@ describe('recording and reconciling', () => {
     );
   });
 
+  it('cancelling sends its reason, and a cancelled count takes no more records', async () => {
+    const user = userEvent.setup();
+    cancelStockCount.mockResolvedValue(
+      succeeded(
+        'inventory.counts.cancel.success',
+        detail({
+          status: 'cancelled',
+          recordVersion: 7,
+          cancelledAt: '2026-09-17T09:00:00Z',
+          cancelReason: 'Shelf is being rebuilt',
+        })
+      )
+    );
+    renderScreen();
+    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    const panel = await openCount(user);
+    await user.click(
+      within(panel).getByRole('button', { name: EN['inventory.counts.cancel.action'] as string })
+    );
+    const form = within(panel).getByRole('form', {
+      name: EN['inventory.counts.cancel.heading'] as string,
+    });
+    // Nothing is sent without a reason.
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.counts.cancel.submit'] as string })
+    );
+    expect(cancelStockCount).not.toHaveBeenCalled();
+    await user.type(
+      within(form).getByLabelText(labelled('inventory.stockOps.reason')),
+      'Shelf is being rebuilt'
+    );
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.counts.cancel.submit'] as string })
+    );
+    await waitFor(() =>
+      expect(cancelStockCount).toHaveBeenCalledWith(COUNT_ID, { reason: 'Shelf is being rebuilt' })
+    );
+    expect(
+      await within(panel).findByText(EN['inventory.countStatus.cancelled'] as string)
+    ).toBeVisible();
+    expect(within(panel).getByText('Shelf is being rebuilt')).toBeVisible();
+    expect(
+      within(panel).queryByRole('button', { name: EN['inventory.counts.cancel.action'] as string })
+    ).toBeNull();
+    expect(
+      within(panel).queryByLabelText(labelled('inventory.counts.line.countedField'))
+    ).toBeNull();
+  });
+
+  it('a refused cancel is said in words and leaves the count open', async () => {
+    const user = userEvent.setup();
+    cancelStockCount.mockResolvedValue(refusedWith('inventory.counts.closed'));
+    renderScreen();
+    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    const panel = await openCount(user);
+    await user.click(
+      within(panel).getByRole('button', { name: EN['inventory.counts.cancel.action'] as string })
+    );
+    const form = within(panel).getByRole('form', {
+      name: EN['inventory.counts.cancel.heading'] as string,
+    });
+    await user.type(within(form).getByLabelText(labelled('inventory.stockOps.reason')), 'Mistake');
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.counts.cancel.submit'] as string })
+    );
+    expect(await within(form).findByRole('alert')).toHaveTextContent(
+      EN['inventory.counts.closed'] as string
+    );
+    expect(within(panel).getByText(EN['inventory.countStatus.counting'] as string)).toBeVisible();
+  });
+
   it('opens a count of a chosen location with one key per form', async () => {
     const user = userEvent.setup();
     openStockCount.mockResolvedValue(

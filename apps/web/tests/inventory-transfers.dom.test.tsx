@@ -348,6 +348,95 @@ describe('settling what did not arrive', () => {
     ).toBeVisible();
   });
 
+  it('a return to origin is sent as one and says the units went back at once', async () => {
+    const user = userEvent.setup();
+    listTransfers.mockResolvedValue(
+      okPage([
+        transfer({
+          status: 'partially_received',
+          receivedQuantity: '1.500',
+          outstandingQuantity: '1.000',
+        }),
+      ])
+    );
+    resolveTransferDiscrepancy.mockResolvedValue(
+      succeeded('inventory.transfers.resolve.returned', {
+        id: 'settlement-2',
+        transferId: TRANSFER_ID,
+        kind: 'return_to_origin',
+        quantity: '1.000',
+        reason: 'Sent back',
+        status: 'posted',
+        requestedBy: 'user-1',
+        createdAt: '2026-09-17T09:00:00Z',
+        recordVersion: 1,
+        transfer: transfer({ status: 'received', outstandingQuantity: '0.000' }),
+        replayed: false,
+      })
+    );
+    renderScreen();
+    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await openAction(user, 'inventory.transfers.resolve.action');
+    const form = screen.getByRole('form', { name: /Settle missing units of/ });
+    // Return to origin is the preselected choice.
+    expect(
+      within(form).getByLabelText(EN['inventory.transfers.resolve.kind.return_to_origin'] as string)
+    ).toBeChecked();
+    await user.type(
+      within(form).getByLabelText(labelled('inventory.transfers.resolve.quantity')),
+      '1.000'
+    );
+    await user.type(
+      within(form).getByLabelText(labelled('inventory.stockOps.reason')),
+      'Sent back'
+    );
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.transfers.resolve.submit'] as string })
+    );
+    await waitFor(() => expect(resolveTransferDiscrepancy).toHaveBeenCalledTimes(1));
+    expect(resolveTransferDiscrepancy.mock.calls[0]?.[1]).toEqual({
+      kind: 'return_to_origin',
+      quantity: '1.000',
+      reason: 'Sent back',
+    });
+    expect(
+      await screen.findByText(EN['inventory.transfers.resolve.returnedDone'] as string, {
+        exact: false,
+      })
+    ).toBeVisible();
+    expect(
+      screen.queryByText(EN['inventory.transfers.resolve.writeOffNoDecision'] as string)
+    ).toBeNull();
+  });
+
+  it('a refused settlement is said in words, with its reference', async () => {
+    const user = userEvent.setup();
+    listTransfers.mockResolvedValue(
+      okPage([transfer({ status: 'partially_received', receivedQuantity: '1.500' })])
+    );
+    resolveTransferDiscrepancy.mockResolvedValue(
+      refusedWith('inventory.transfers.resolve.refused')
+    );
+    renderScreen();
+    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await openAction(user, 'inventory.transfers.resolve.action');
+    const form = screen.getByRole('form', { name: /Settle missing units of/ });
+    await user.type(
+      within(form).getByLabelText(labelled('inventory.transfers.resolve.quantity')),
+      '9.000'
+    );
+    await user.type(within(form).getByLabelText(labelled('inventory.stockOps.reason')), 'Too many');
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.transfers.resolve.submit'] as string })
+    );
+    const alert = await within(form).findByRole('alert');
+    expect(alert).toHaveTextContent(EN['inventory.transfers.resolve.refused'] as string);
+    expect(alert).toHaveTextContent('corr-refused');
+    expect(
+      screen.queryByText(EN['inventory.transfers.resolve.returnedDone'] as string, { exact: false })
+    ).toBeNull();
+  });
+
   it('cancel is offered only while nothing has been received', async () => {
     const user = userEvent.setup();
     listTransfers.mockResolvedValue(

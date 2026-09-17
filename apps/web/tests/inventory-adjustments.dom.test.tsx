@@ -176,10 +176,47 @@ describe('the adjustments of a branch', () => {
     expect(within(mine).getByText(EN['inventory.adjustments.byYou'] as string)).toBeVisible();
   });
 
-  it('a decision sends its reason and reads the list again', async () => {
+  it('approving someone else’s request sends the approval and says the stock moved', async () => {
     const user = userEvent.setup();
     decideAdjustment.mockResolvedValue(
       succeeded('inventory.adjustments.decide.approved', adjustment({ status: 'approved' }))
+    );
+    renderScreen();
+    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    const table = await within(listRegion()).findByRole('table');
+    await user.click(
+      within(table).getByRole('button', {
+        name: `${EN['inventory.adjustments.decide.action'] as string} BRK-001`,
+      })
+    );
+    const form = screen.getByRole('form', { name: /Decide the adjustment for/ });
+    await user.type(
+      within(form).getByLabelText(labelled('inventory.adjustments.decide.reason')),
+      'Counted it myself'
+    );
+    await user.click(
+      within(form).getByRole('button', {
+        name: EN['inventory.adjustments.decide.approve'] as string,
+      })
+    );
+    await waitFor(() =>
+      expect(decideAdjustment).toHaveBeenCalledWith(THEIRS_ID, {
+        decision: 'approved',
+        reason: 'Counted it myself',
+      })
+    );
+    expect(
+      await screen.findByText(EN['inventory.adjustments.decide.approvedDone'] as string)
+    ).toBeVisible();
+    expect(
+      screen.queryByText(EN['inventory.adjustments.decide.rejectedDone'] as string)
+    ).toBeNull();
+  });
+
+  it('rejecting sends the rejection with its reason and reads the list again', async () => {
+    const user = userEvent.setup();
+    decideAdjustment.mockResolvedValue(
+      succeeded('inventory.adjustments.decide.rejected', adjustment({ status: 'rejected' }))
     );
     renderScreen();
     await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
