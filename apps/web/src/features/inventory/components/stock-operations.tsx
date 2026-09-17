@@ -262,6 +262,10 @@ export function StockOperationLinks({
     { href: '/inventory/goods-receipts', key: 'inventory.stockOps.links.receipts' },
     { href: '/inventory/adjustments', key: 'inventory.stockOps.links.adjustments' },
     { href: '/inventory/counts', key: 'inventory.stockOps.links.counts' },
+    // P1-32: the counter, the returns desk and the label printer.
+    { href: '/inventory/counter-sales', key: 'inventory.stockOps.links.counterSales' },
+    { href: '/inventory/customer-returns', key: 'inventory.stockOps.links.returns' },
+    { href: '/inventory/labels', key: 'inventory.stockOps.links.labels' },
   ];
   return (
     <nav aria-label={translate(messages, 'inventory.stockOps.links.label')} lang={locale}>

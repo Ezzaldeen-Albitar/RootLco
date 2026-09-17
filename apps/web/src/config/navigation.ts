@@ -430,6 +430,41 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
             status: 'available',
             scope: 'branch',
           },
+          /*
+           * P1-32: the counter, the returns desk and the label printer. Each
+           * entry carries the code its PAGE gates on, which is not the same code
+           * for all three: labels are `inv.item.read` (a label carries no stock
+           * figure and no price), a customer return is `inv.stock.read`, and a
+           * counter sale is `sal.invoice.manage` — it is an invoice, and the
+           * authority to write one is the authority the entry must name.
+           */
+          {
+            key: 'inventory.counterSales',
+            labelKey: 'nav.inventoryCounterSales',
+            icon: 'inventory',
+            href: '/inventory/counter-sales',
+            permission: 'sal.invoice.manage',
+            status: 'available',
+            scope: 'branch',
+          },
+          {
+            key: 'inventory.customerReturns',
+            labelKey: 'nav.inventoryCustomerReturns',
+            icon: 'inventory',
+            href: '/inventory/customer-returns',
+            permission: 'inv.stock.read',
+            status: 'available',
+            scope: 'branch',
+          },
+          {
+            key: 'inventory.labels',
+            labelKey: 'nav.inventoryLabels',
+            icon: 'inventory',
+            href: '/inventory/labels',
+            permission: 'inv.item.read',
+            status: 'available',
+            scope: 'branch',
+          },
         ],
       },
       {

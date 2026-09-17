@@ -88,8 +88,18 @@ describe('the navigation model', () => {
       // parent carries no current-page marker), and the four screens, each gated
       // on `inv.stock.read`.
       'inventory.adjustments',
+      /*
+       * P1-32 barcodes and the counter: selling over the counter, taking a part
+       * back, and printing labels. Each names the code its own PAGE gates on,
+       * which is deliberately not one code for all three — a counter sale is an
+       * invoice (`sal.invoice.manage`), a customer return is stock
+       * (`inv.stock.read`), and a label is the catalogue (`inv.item.read`).
+       */
+      'inventory.counterSales',
       'inventory.counts',
+      'inventory.customerReturns',
       'inventory.goods-receipts',
+      'inventory.labels',
       'inventory.stock',
       'inventory.transfers',
       'overview',

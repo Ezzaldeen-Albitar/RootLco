@@ -58,6 +58,7 @@ import {
   type BranchPair,
   type Locations,
 } from './shared';
+import { LINK } from './stock-operations';
 
 /**
  * Inventory (P1-30, `W4`): item search (FE-008), stock balance (FE-009) and
@@ -398,10 +399,17 @@ function ItemResults({
       {
         id: 'sku',
         headerKey: 'inventory.items.column.sku',
+        /*
+         * The stock code is the way into the item's own page (P1-32), where its
+         * barcodes and its selling prices live. A code with nowhere to go is how
+         * that surface would have stayed unreachable from the catalogue.
+         */
         cell: (row) => (
-          <code className="font-mono text-caption" dir="ltr">
-            {row.sku}
-          </code>
+          <Link href={`/${locale}/inventory/items/${row.id}`} className={LINK}>
+            <code className="font-mono text-caption" dir="ltr">
+              {row.sku}
+            </code>
+          </Link>
         ),
       },
       {
@@ -456,7 +464,7 @@ function ItemResults({
         ),
       },
     ],
-    [messages]
+    [messages, locale]
   );
 
   return (

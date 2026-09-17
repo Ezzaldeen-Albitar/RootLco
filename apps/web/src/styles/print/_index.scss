@@ -86,3 +86,69 @@
   size: a4;
   margin: 16mm;
 }
+
+// Label sheets (P1-32).
+//
+// A shelf label is the one document in this application whose PHYSICAL size is
+// part of its correctness: a 50 x 25 mm label printed at any other size does not
+// fit the stock it is stuck to, and a barcode printed at the wrong scale stops
+// scanning. So the geometry is stated in millimetres here rather than in
+// viewport units or utilities, and it is stated once — the screen chooses a
+// preset, and this stylesheet owns what each preset means.
+//
+// What this canNOT do, and the screen says so rather than pretending: choose the
+// paper. A page cannot set the operator's printer media; the print dialog does.
+// These rules size the labels correctly on whatever sheet is chosen, and the two
+// single-label presets put one label on each printed page so a roll printer
+// advances once per label.
+[data-label-sheet] {
+  display: grid;
+  gap: 2mm;
+  justify-content: start;
+}
+
+[data-label-sheet] [data-label='cell'] {
+  display: flex;
+  overflow: hidden;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2mm;
+  gap: 1mm;
+  border: 1px solid var(--color-border);
+  text-align: center;
+}
+
+[data-label-sheet='50x25'] [data-label='cell'] {
+  inline-size: 50mm;
+  block-size: 25mm;
+}
+
+[data-label-sheet='70x40'] [data-label='cell'] {
+  inline-size: 70mm;
+  block-size: 40mm;
+}
+
+// Three across an A4 page inside the 16 mm margins the `@page` rule sets.
+[data-label-sheet='a4'] {
+  grid-template-columns: repeat(3, 59mm);
+}
+
+[data-label-sheet='a4'] [data-label='cell'] {
+  inline-size: 59mm;
+  block-size: 36mm;
+}
+
+@media print {
+  // One label per page for the roll presets, and no cutting guide on paper —
+  // the label stock already has edges.
+  [data-label-sheet='50x25'] [data-label='cell'],
+  [data-label-sheet='70x40'] [data-label='cell'] {
+    border: 0;
+    break-after: page;
+  }
+
+  [data-label-sheet='a4'] [data-label='cell'] {
+    break-inside: avoid;
+  }
+}
