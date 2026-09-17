@@ -1,9 +1,9 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 72,
-    "publicApi": 72,
-    "operationDepth": 72,
+    "registered": 74,
+    "publicApi": 74,
+    "operationDepth": 74,
     "invocationOnly": 0,
     "pending": 0,
     "unitOnly": 0,
@@ -2268,6 +2268,70 @@
         "idempotency",
         "isolation",
         "outbox",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "inv.stock-transfer-settlement-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/stock-transfer-settlements",
+      "public": false,
+      "files": ["tests/backend/p1-32-material-demand.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "inv.stock-transfer-settlement-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/stock-transfer-settlements/{settlementId}",
+      "public": false,
+      "files": ["tests/backend/p1-32-material-demand.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
         "route",
         "service",
         "success"

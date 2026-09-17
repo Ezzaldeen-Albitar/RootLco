@@ -153,8 +153,10 @@ describe('every route body serialises a named type', () => {
     // 463 with P1-32 preparatory slice 3c: the re-check and cancellation of a
     // requirement answer its NAMED view, and the closure and cancellation of a
     // request a NAMED request view, so `named` moves by four and `composed` does not.
-    expect(summary.bodies).toBe(463);
-    expect(summary.named).toBe(410);
+    // 465 with P1-32-PRE-141: the settlement list answers a `Page<…>` of a NAMED
+    // settlement view and the settlement read that view, so `named` moves by two.
+    expect(summary.bodies).toBe(465);
+    expect(summary.named).toBe(412);
     expect(summary.composed).toBe(53);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

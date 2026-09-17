@@ -276,7 +276,8 @@ describe('the API application lives in the workspace', () => {
     // each co-locate a GET and a POST.
     // 360 with P1-32 preparatory slice 3c: four operations over four new modules —
     // the requirement re-check and cancellation, the request closure and cancellation.
-    expect(routeFiles.length).toBe(360);
+    // 362 with P1-32-PRE-141: the transfer settlement list and read, one module each.
+    expect(routeFiles.length).toBe(362);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -368,7 +369,8 @@ describe('the API application lives in the workspace', () => {
     // 459 with P1-32 preparatory slice 3b: fifteen operations over twelve new
     // modules, for the reason stated above the route-module count.
     // 463 with P1-32 preparatory slice 3c: four operations over four new modules.
-    expect(report.operations).toHaveLength(463);
+    // 465 with P1-32-PRE-141: two operations over two new modules.
+    expect(report.operations).toHaveLength(465);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the

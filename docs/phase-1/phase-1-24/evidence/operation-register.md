@@ -9,10 +9,10 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 463   |
+| Public operations        | 465   |
 | Domains (modules)        | 20    |
-| OpenAPI paths            | 360   |
-| OpenAPI operations       | 463   |
+| OpenAPI paths            | 362   |
+| OpenAPI operations       | 465   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 126   |
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 463        |
+| Covered           | 465        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -39,7 +39,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | delivery        | 22         | 22      | 11     | 11      | 8          | 4               |
 | diagnostics     | 23         | 23      | 15     | 15      | 14         | 4               |
 | iam             | 50         | 50      | 31     | 29      | 13         | 10              |
-| inventory       | 72         | 72      | 44     | 45      | 41         | 2               |
+| inventory       | 74         | 74      | 44     | 45      | 41         | 2               |
 | meta            | 1          | 1       | 0      | 0       | 0          | 0               |
 | payments        | 5          | 5       | 2      | 2       | 2          | 0               |
 | platform        | 3          | 3       | 2      | 2       | 1          | 0               |
@@ -232,6 +232,8 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `inv.stock-transfer-discrepancy-resolve`            | POST   | `/api/v1/stock-transfers/{transferId}/discrepancy-resolution`                       | branch  | `inv.stock.operate`                                                  | inv.stock_transfer.discrepancy_resolved        | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `inv.stock-transfer-list`                           | GET    | `/api/v1/stock-transfers`                                                           | branch  | `inv.stock.read`                                                     | —                                              | —    | —   | authorization isolation route service success                                                                                 | Covered |
 | `inv.stock-transfer-receive`                        | POST   | `/api/v1/stock-transfers/{transferId}/receipt`                                      | branch  | `inv.stock.operate`                                                  | inv.stock_transfer.received                    | yes  | —   | audit authorization cross-tenant denial idempotency isolation outbox route service success                                    | Covered |
+| `inv.stock-transfer-settlement-list`                | GET    | `/api/v1/stock-transfer-settlements`                                                | branch  | `inv.stock.read`                                                     | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
+| `inv.stock-transfer-settlement-read`                | GET    | `/api/v1/stock-transfer-settlements/{settlementId}`                                 | branch  | `inv.stock.read`                                                     | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `inv.stock-transfer-write-off-decide`               | POST   | `/api/v1/stock-transfer-settlements/{settlementId}/decision`                        | branch  | `inv.adjustment.approve`                                             | inv.stock_transfer.write_off_approved          | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `inv.unit-conversion-list`                          | GET    | `/api/v1/unit-conversions`                                                          | tenant  | `inv.item.read`                                                      | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `inv.unit-conversion-retire`                        | POST   | `/api/v1/unit-conversions/{conversionId}/retirement`                                | tenant  | `inv.unit_conversion.manage`                                         | inv.unit_conversion.retired                    | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |

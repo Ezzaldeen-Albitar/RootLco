@@ -3319,6 +3319,17 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'audit', 'isolation'],
     note: 'the requester, a reader and another tenant are refused; approval takes the units out of transit and settles the transfer; rejection leaves them in transit',
   },
+  // P1-32-PRE-141: the reads that publish a settlement id to the person who decides it.
+  'inv.stock-transfer-settlement-list': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'lists returns to origin and write-offs, never a receipt, for the sending branch and for the destination branch; narrowed by decision, kind and transfer; a caller without inv.stock.read, a branch that is neither end and another tenant see nothing',
+  },
+  'inv.stock-transfer-settlement-read': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'readable by a reader of the source branch and by a reader of the destination branch only, with who decided it and when; a caller without the code is refused and another tenant answers 404',
+  },
   // P1-32 preparatory slice 3c: re-check and cancel a requirement; close and cancel
   // a material request. Asserted on the requirement's status and usage, the released
   // reservations, and audit and outbox rows.

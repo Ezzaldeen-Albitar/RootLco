@@ -73,7 +73,8 @@ describe('every operation publishes the success status it returns', () => {
     // transfer discrepancy acts.
     // 463 with slice 3c: the requirement re-check and cancellation and the request
     // closure and cancellation.
-    expect(actual.size).toBe(463);
+    // 465 with P1-32-PRE-141: the transfer settlement list and read.
+    expect(actual.size).toBe(465);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -179,7 +180,8 @@ describe('every operation publishes the success status it returns', () => {
     // 201 (see above), plus its four operations — the re-check, the requirement
     // cancellation, the request closure and the request cancellation — all of which
     // change a row that already exists and return 200.
-    expect(counts[200]).toBe(333);
+    // 333 -> 335 with P1-32-PRE-141: the transfer settlement list and read.
+    expect(counts[200]).toBe(335);
   });
 
   it('reads the handler, not the declaration', () => {
