@@ -236,6 +236,13 @@ describe('module security posture', () => {
       'shared.complete_document_scan',
       'shared.document_deletion_eligibility',
       'shared.document_ids_for_entity',
+      // P1-32 friendly search. Pure IMMUTABLE SECURITY INVOKER text folding that
+      // reads no table. The grant is REQUIRED rather than convenient:
+      // crm.normalize_name, crm.normalize_phone, veh.normalize_vin and
+      // veh.normalize_plate are INVOKER functions that call these, so a runtime
+      // caller without EXECUTE here could no longer normalize a name or a phone.
+      'shared.fold_digits',
+      'shared.fold_search_text',
       'shared.missing_translations',
       'shared.next_display_number',
       'shared.resolve_setting',

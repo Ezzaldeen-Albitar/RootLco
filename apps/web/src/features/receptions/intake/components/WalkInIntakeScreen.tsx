@@ -4,7 +4,6 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { CustomerSelector, type SelectedCustomer } from '@/components/party/CustomerSelector';
 import { PartyLabel } from '@/components/party/PartyLabel';
-import { Icon } from '@/components/primitives/Icon';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
@@ -36,15 +35,14 @@ import { IntakeVehicleStep, type ChosenVehicle } from './IntakeVehicleStep';
  * act, which is why the import direction is honest here where it would not be
  * between the CRM and Vehicle features themselves.
  *
- * ## One stated degradation, on screen (`G-CRM-PHONE`)
+ * ## Phone search is real (P1-32, closing `G-CRM-PHONE`)
  *
- * Customer search by PHONE NUMBER is not supported by the platform's customer
- * directory (remediation `R7` is open with the Backend). The first thing a
- * receptionist will try is the caller's phone number, so the search step SAYS
- * the capability is missing, beside the boxes where the number would be typed
- * — in both languages — instead of silently returning nothing. No disabled
- * phone box is offered: a control that cannot work advertises a capability
- * the product does not have.
+ * The first thing a receptionist tries is the caller's phone number. Until
+ * P1-32 the customer directory could not search by it and this step said so in
+ * a notice. The directory now accepts a phone number (the whole number or its
+ * last seven digits or more) and one free-text box, so the notice is gone and
+ * `CustomerSelector` offers both boxes. A matched customer's phone is shown as
+ * the backend returned it — partly hidden unless the operator may see it whole.
  *
  * ## The handoff is truthful about the wizard's existence
  *
@@ -291,36 +289,6 @@ function ChosenCustomerSummary({
 }
 
 /**
- * The stated phone degradation (`G-CRM-PHONE`).
- *
- * Rendered BESIDE the search controls — where a receptionist would type the
- * caller's number — not in a help page. It is a statement about a capability
- * the platform does not have yet, so it names the alternative that works
- * rather than apologising in general.
- */
-function PhoneSearchNotice({ messages }: { readonly messages: Messages }) {
-  return (
-    <div
-      role="note"
-      data-testid="phone-search-notice"
-      className="flex items-start gap-2 rounded-md border border-warning bg-surface p-3"
-    >
-      <span aria-hidden="true" className="mt-0.5 text-warning">
-        <Icon name="reports" size={18} />
-      </span>
-      <div>
-        <p className="text-body font-medium text-text-primary">
-          {translate(messages, 'receptions.intake.phone.title')}
-        </p>
-        <p className="mt-0.5 text-caption text-text-secondary">
-          {translate(messages, 'receptions.intake.phone.body')}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-/**
  * Find or create the customer.
  *
  * The search is `CustomerSelector` — the one customer-search surface, reused,
@@ -392,8 +360,6 @@ function CustomerStep({
         required
         attempt={0}
       />
-
-      <PhoneSearchNotice messages={messages} />
 
       {canCreateCustomer ? (
         <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">

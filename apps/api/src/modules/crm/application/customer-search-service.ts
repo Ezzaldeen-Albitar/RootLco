@@ -6,6 +6,12 @@
  * the repository. It opens no transaction (a read runs on the pipeline-provided
  * read handle), and the operation's permission (`crm.customer.read`) was already
  * enforced by the request pipeline before this method runs.
+ *
+ * One extra question is asked here (P1-32): whether the caller additionally holds
+ * `iam.sensitive.view`, which decides whether the projected phone number is
+ * masked. It is NOT an operation permission — a caller without it still gets the
+ * page, with the phone masked to its last four digits — so it cannot be declared
+ * on the operation and has to be evaluated inside the use case.
  */
 import { ApplicationService } from '@/server/layering';
 import type { DbHandle } from '@/server/db/transaction';
@@ -34,6 +40,10 @@ export class CustomerSearchService extends ApplicationService {
   ): Promise<Page<CustomerSearchHit>> {
     const filter = toCustomerSearchFilter(input);
     const page = pageRequest(CUSTOMER_SEARCH_ORDERING, pageInput);
-    return this.customers.search(db, page, filter);
+    // Asked ONCE per request, not once per row: the answer is a property of the
+    // caller, and asking it inside the projection would run one authorization
+    // query per hit for a value that cannot change between them.
+    const unmaskedPhone = await this.customers.mayViewContactDetail(db);
+    return this.customers.search(db, page, filter, unmaskedPhone);
   }
 }
