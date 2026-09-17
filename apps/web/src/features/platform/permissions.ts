@@ -15,6 +15,7 @@ export const PLATFORM_PERMISSIONS = {
   organizationRead: 'platform.organization.read',
   organizationProvision: 'platform.organization.provision',
   organizationLifecycle: 'platform.organization.lifecycle',
+  organizationManage: 'platform.organization.manage',
   subscriptionManage: 'platform.subscription.manage',
   billingRead: 'platform.billing.read',
   billingManage: 'platform.billing.manage',

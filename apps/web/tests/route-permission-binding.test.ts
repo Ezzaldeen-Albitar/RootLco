@@ -338,7 +338,10 @@ describe('the Platform Owner Console routes decide on their own platform code be
   ] as const;
 
   it('found distinct platform codes to test with', () => {
-    expect(new Set(ALL_PLATFORM_CODES).size).toBe(8);
+    // Nine with platform.organization.manage, which the console gained when it
+    // learned to add a company, open a branch and establish an administrator
+    // inside an organisation that is already running.
+    expect(new Set(ALL_PLATFORM_CODES).size).toBe(9);
   });
 
   for (const gate of GATES) {

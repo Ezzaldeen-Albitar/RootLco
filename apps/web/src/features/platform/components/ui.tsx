@@ -23,6 +23,9 @@ export const PRIMARY_BUTTON =
 export const SECONDARY_BUTTON =
   'rounded-md border border-border bg-surface px-3 py-1.5 text-caption text-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-subtle hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring';
 
+/** Explanatory line under a section heading. One class list, one voice. */
+export const SECTION_HINT = 'text-supporting text-text-muted';
+
 export function Section({
   title,
   actions,

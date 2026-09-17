@@ -187,6 +187,7 @@ const charge = {
 
 const ALL = {
   canChangeLifecycle: true,
+  canManageOrganization: true,
   canManageSubscription: true,
   canReadBilling: true,
   canManageBilling: true,
@@ -194,6 +195,7 @@ const ALL = {
 };
 const NONE = {
   canChangeLifecycle: false,
+  canManageOrganization: false,
   canManageSubscription: false,
   canReadBilling: false,
   canManageBilling: false,

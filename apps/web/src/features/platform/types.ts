@@ -6,7 +6,10 @@
  * `formatMoney` and submitted exactly as the operator typed it after
  * canonicalisation, never converted to a JavaScript number.
  */
+import type { OverCapacityEntry } from '@/lib/api/client';
 import type { ActionState } from '@/lib/forms/action-result';
+
+export type { OverCapacityEntry };
 
 export const ORGANIZATION_STATUSES = ['provisioning', 'active', 'suspended', 'closed'] as const;
 export type OrganizationStatus = (typeof ORGANIZATION_STATUSES)[number];
@@ -222,6 +225,18 @@ export interface PlatformAuditCriteria {
   readonly organizationId?: string | undefined;
 }
 
+/**
+ * A subscription change outcome: the ordinary action state, plus the per-kind
+ * account of what the plan would leave over its ceiling.
+ *
+ * The list is what turns a refusal into something an operator can act on — every
+ * kind at once, rather than the first one the database met — and it is what the
+ * dialog needs in order to offer the deliberate acceptance.
+ */
+export interface SubscriptionAssignState extends ActionState {
+  readonly overCapacity?: readonly OverCapacityEntry[] | undefined;
+}
+
 /** A provisioning outcome: the ordinary action state plus the new organisation. */
 export interface ProvisionState extends ActionState {
   readonly tenantId?: string | undefined;
@@ -237,6 +252,12 @@ export const PLATFORM_AUDIT_ACTIONS = [
   'org.subscription_charge.recorded',
   'org.subscription_charge.voided',
   'org.subscription_receipt.recorded',
+  // The three acts the console performs INSIDE an organisation. They are
+  // recorded in the operator's own trail carrying the organisation they were
+  // about, which is why they are searchable here at all.
+  'org.company.created',
+  'org.branch.created',
+  'iam.tenant_administrator.invited',
 ] as const;
 
 /**
@@ -253,6 +274,19 @@ export function usagePercent(usage: CapacityUsage): number | null {
   if (usage.limit === null) return null;
   if (usage.limit === 0) return usage.used > 0 ? 100 : 0;
   return Math.min(100, Math.floor((usage.used * 100) / usage.limit));
+}
+
+/**
+ * Whether usage is ABOVE the ceiling, which is a different statement from being
+ * at it.
+ *
+ * It happens when a plan below the organisation's current usage was assigned
+ * deliberately: nothing is removed, and nothing new may be added until the
+ * organisation is back inside the limit. A screen that showed only "near the
+ * limit" would understate a state the operator chose and has to manage.
+ */
+export function usageExceeds(usage: CapacityUsage): boolean {
+  return usage.limit !== null && usage.used > usage.limit;
 }
 
 /** Whether usage has reached the warning threshold. Unlimited never warns. */

@@ -137,7 +137,7 @@ sit in the tree looking like coverage while running nowhere.
 
 ## Current tree
 
-The live web suite holds **153 web test files**, every one matched by a `vitest`
+The live web suite holds **154 web test files**, every one matched by a `vitest`
 project, and the current tree executes **4275** tests. Both are derived on every
 run of `npm run validate:p1-27-closing-values` rather than recorded by hand.
 
@@ -160,14 +160,14 @@ what marks it hosted.
 
 | measure                                    | value | the command that decides it                                       |
 | ------------------------------------------ | ----- | ------------------------------------------------------------------ |
-| Web test files under `apps/web/tests`       | 153    | a walk of the tree                                                 |
+| Web test files under `apps/web/tests`       | 154    | a walk of the tree                                                 |
 | Web tier — tests executed                   | 4275  | `--record web`, from the `vitest` JSON report                      |
 | Web tier — files the run reported           | 149    | the same report, cross-checked against the walk above              |
 | Root unit tier — tests executed             | 3567  | `--record unit`, from the `vitest` JSON report                     |
 | Root unit tier — files the run reported     | 137   | the same report, cross-checked against the tier's include rule      |
 | Committed web floor (`minTests`)            | 3700  | `.github/ci-baselines/test-count-baseline.json`                    |
 | Committed unit floor (`minTests`)           | 1050  | the same baseline                                                  |
-| Migrations on disk                          | 147   | a walk of `supabase/migrations`                                    |
+| Migrations on disk                          | 148   | a walk of `supabase/migrations`                                    |
 
 The floor and the measurement are different questions and they have different
 authorities. The baseline file defines the FLOOR, so binding "the floor is 3700"
@@ -181,7 +181,7 @@ the tree was running.
 | --------------------------------------------------- | ------------------------------------------- |
 | Tracked files under `docs/phase-1/phase-1-27`        | 42                                          |
 | Tracked `.md` files under the same directory         | 32                                          |
-| Migrations tracked by git at `HEAD`                  | 147                                         |
+| Migrations tracked by git at `HEAD`                  | 148                                         |
 | `CODE_CANDIDATE_SHA`                                 | `501f5f0d48d7b8cafc12dad51f6c501534b66a18`  |
 | Executable paths changed, candidate to accepted `develop` | 0                                      |
 

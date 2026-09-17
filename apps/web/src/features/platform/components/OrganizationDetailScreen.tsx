@@ -10,6 +10,7 @@ import { formatDate, formatDateTime, formatInteger } from '@/lib/format';
 import type { ReadState, CursorPage } from '@/lib/api/read-operation';
 import { changeOrganizationStatusAction } from '../actions';
 import {
+  usageExceeds,
   usagePercent,
   usageWarns,
   type CapacityUsage,
@@ -18,6 +19,7 @@ import {
   type SubscriptionPlan,
 } from '../types';
 import { BillingPanel } from './BillingPanel';
+import { OrganizationGrowthPanel } from './OrganizationGrowthPanel';
 import { SubscriptionPanel, currentSubscription } from './SubscriptionPanel';
 import { Cell, ReadFailure, SECONDARY_BUTTON, Section, SimpleTable, StatusBadge } from './ui';
 import { useConsoleAction } from './use-console-action';
@@ -48,6 +50,8 @@ export function lifecycleActs(status: string): readonly LifecycleAct[] {
 
 export interface DetailCapabilities {
   readonly canChangeLifecycle: boolean;
+  /** `platform.organization.manage`: add a company or branch, invite an administrator. */
+  readonly canManageOrganization: boolean;
   readonly canManageSubscription: boolean;
   readonly canReadBilling: boolean;
   readonly canManageBilling: boolean;
@@ -129,6 +133,12 @@ export function OrganizationDetailScreen({
           ))}
         </ul>
       </Section>
+
+      <OrganizationGrowthPanel
+        messages={messages}
+        organization={organization}
+        canManage={capabilities.canManageOrganization}
+      />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Section title={t('platform.detail.companies')}>
@@ -328,10 +338,15 @@ function UsageBar({
   const t = (key: string) => translateDynamic(messages, key);
   const percent = usagePercent(usage);
   const warns = usageWarns(usage);
+  // Above the ceiling, not merely near it. It happens when a plan below the
+  // organisation's usage was assigned deliberately, and an operator shown only
+  // "near the limit" would not know that nothing new can be added at all.
+  const over = usageExceeds(usage);
   return (
     <li
       data-testid={`platform-usage-${kind}`}
       data-warning={warns ? 'true' : 'false'}
+      data-over={over ? 'true' : 'false'}
       className="flex flex-col gap-1"
     >
       <div className="flex flex-wrap items-center justify-between gap-2 text-supporting">
@@ -340,7 +355,9 @@ function UsageBar({
           {usage.limit === null
             ? `${formatInteger(usage.used, locale)} · ${t('platform.usage.unlimited')}`
             : `${formatInteger(usage.used, locale)} / ${formatInteger(usage.limit, locale)}`}
-          {warns ? (
+          {over ? (
+            <span className="ms-2 font-medium text-error">{t('platform.usage.over')}</span>
+          ) : warns ? (
             <span className="ms-2 font-medium text-warning">{t('platform.usage.warning')}</span>
           ) : null}
         </span>
@@ -357,7 +374,7 @@ function UsageBar({
           <div
             data-percent={percent}
             className={`h-full rounded-full ${BAR_WIDTH[Math.round(percent / 5)] ?? 'w-full'} ${
-              warns ? 'bg-warning' : 'bg-primary'
+              over ? 'bg-error' : warns ? 'bg-warning' : 'bg-primary'
             }`}
           />
         </div>

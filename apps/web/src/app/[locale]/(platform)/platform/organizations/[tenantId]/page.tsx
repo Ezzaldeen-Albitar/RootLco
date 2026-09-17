@@ -96,6 +96,7 @@ export default async function PlatformOrganizationPage({
           today={new Date().toISOString().slice(0, 10)}
           capabilities={{
             canChangeLifecycle: holds(permissions, PLATFORM_PERMISSIONS.organizationLifecycle),
+            canManageOrganization: holds(permissions, PLATFORM_PERMISSIONS.organizationManage),
             canManageSubscription,
             canReadBilling,
             canManageBilling: holds(permissions, PLATFORM_PERMISSIONS.billingManage),

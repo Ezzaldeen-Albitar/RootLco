@@ -1,22 +1,31 @@
 'use client';
 
 import { useState } from 'react';
-import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
+import { CheckboxField, SelectField, TextAreaField, TextField } from '@/components/forms/Field';
 import { Dialog } from '@/components/overlays/Overlays';
 import { FormFeedback } from '@/features/authentication/components/FormFeedback';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translateDynamic } from '@/i18n/get-messages';
-import { formatDate, formatDateTime } from '@/lib/format';
+import { translateDynamic, translateWithValues } from '@/i18n/get-messages';
+import { formatDate, formatDateTime, formatInteger } from '@/lib/format';
 import { assignSubscriptionAction, cancelSubscriptionAction } from '../actions';
 import {
   TERM_PRESETS,
   type AssignmentKind,
+  type OverCapacityEntry,
   type OrganizationDetail,
   type OrganizationSubscription,
   type SubscriptionPlan,
 } from '../types';
-import { Cell, PRIMARY_BUTTON, SECONDARY_BUTTON, Section, SimpleTable, StatusBadge } from './ui';
+import {
+  Cell,
+  PRIMARY_BUTTON,
+  SECONDARY_BUTTON,
+  SECTION_HINT,
+  Section,
+  SimpleTable,
+  StatusBadge,
+} from './ui';
 import { useConsoleAction } from './use-console-action';
 
 /**
@@ -216,6 +225,7 @@ export function SubscriptionPanel({
 }
 
 function AssignDialog({
+  locale,
   messages,
   tenantId,
   kind,
@@ -239,15 +249,32 @@ function AssignDialog({
   const [preset, setPreset] = useState<string>('12');
   const [customTerm, setCustomTerm] = useState('');
   const [reason, setReason] = useState('');
+  const [accepted, setAccepted] = useState(false);
+  const [acceptedReason, setAcceptedReason] = useState('');
   const errors = action.state.fieldErrors ?? {};
   const error = (name: string) => (errors[name] ? t(errors[name] as string) : undefined);
+  // What the backend refused with, kind by kind. It appears only after a
+  // refusal: the console never predicts a ceiling, because the numbers that
+  // decide one are the database's and are counted at the moment of the write.
+  const overCapacity: readonly OverCapacityEntry[] =
+    ('overCapacity' in action.state
+      ? ((action.state as { readonly overCapacity?: readonly OverCapacityEntry[] }).overCapacity ??
+        [])
+      : []) ?? [];
 
   const submit = () => {
     const termText = preset === 'other' ? customTerm.trim() : preset;
     const termMonths = /^\d{1,3}$/.test(termText) ? Number.parseInt(termText, 10) : Number.NaN;
     action.run(
       () =>
-        assignSubscriptionAction(tenantId, { planCode, effectiveFrom, termMonths, kind, reason }),
+        assignSubscriptionAction(tenantId, {
+          planCode,
+          effectiveFrom,
+          termMonths,
+          kind,
+          reason,
+          ...(accepted ? { acceptOverCapacity: true, overCapacityReason: acceptedReason } : {}),
+        }),
       onClose
     );
   };
@@ -326,6 +353,48 @@ function AssignDialog({
           onChange={(event) => setReason(event.target.value)}
           error={error('reason')}
         />
+        {overCapacity.length > 0 ? (
+          <div
+            data-testid="platform-over-capacity"
+            className="rounded-lg border border-warning-border bg-warning-subtle p-3"
+          >
+            <p className="text-body font-medium text-text-primary">
+              {t('platform.overCapacity.title')}
+            </p>
+            <ul className="mt-2 flex flex-col gap-1">
+              {overCapacity.map((entry) => (
+                <li key={entry.kind} className="text-supporting text-text-secondary">
+                  <span className="font-medium text-text-primary">
+                    {t(`platform.capacity.${entry.kind}`)}
+                  </span>{' '}
+                  {translateWithValues(messages, 'platform.overCapacity.entry', {
+                    used: formatInteger(entry.used, locale),
+                    limit: formatInteger(entry.newLimit, locale),
+                  })}
+                </li>
+              ))}
+            </ul>
+            <p className={`mt-2 ${SECTION_HINT}`}>{t('platform.overCapacity.body')}</p>
+            <div className="mt-3 flex flex-col gap-3">
+              <CheckboxField
+                name="acceptOverCapacity"
+                label={t('platform.overCapacity.accept')}
+                checked={accepted}
+                onChange={(event) => setAccepted(event.target.checked)}
+              />
+              {accepted ? (
+                <TextAreaField
+                  name="overCapacityReason"
+                  label={t('platform.overCapacity.reason')}
+                  required
+                  value={acceptedReason}
+                  onChange={(event) => setAcceptedReason(event.target.value)}
+                  error={error('overCapacityReason')}
+                />
+              ) : null}
+            </div>
+          </div>
+        ) : null}
         <div className="flex justify-end gap-2">
           <button type="button" className={SECONDARY_BUTTON} onClick={onClose}>
             {t('overlay.cancel')}

@@ -5,11 +5,12 @@ import { authorizedClient } from '@/lib/api/server-client';
 import {
   VIOLATION_FALLBACK_KEY,
   failureMessageKey,
+  overCapacityOf,
   violationMessageKey,
   type ApiFailure,
 } from '@/lib/api/client';
 import { fromFailure, invalid, success, type ActionState } from '@/lib/forms/action-result';
-import type { ProvisionState } from './types';
+import type { ProvisionState, SubscriptionAssignState } from './types';
 
 /**
  * The Platform Owner Console mutations (P1-32-PRE-063). This module holds
@@ -297,6 +298,8 @@ export async function changeOrganizationStatusAction(
 const assignSchema = z.object({
   planCode: z.string().regex(CODE, 'platform.error.plan'),
   effectiveFrom: z.string().regex(DATE, 'platform.error.date'),
+  acceptOverCapacity: z.boolean().optional(),
+  overCapacityReason: reasonSchema.optional(),
   termMonths: z
     .number({ message: 'platform.error.term' })
     .int('platform.error.term')
@@ -309,19 +312,169 @@ const assignSchema = z.object({
 
 export type AssignSubscriptionInput = z.input<typeof assignSchema>;
 
-/** `platform.subscription-assign` — POST /platform/organizations/{tenantId}/subscriptions. */
+/**
+ * `platform.subscription-assign` — POST /platform/organizations/{tenantId}/subscriptions.
+ *
+ * A plan smaller than the organisation is refused by the backend, per kind, and
+ * the refusal is handed back to the dialog rather than flattened into one
+ * sentence: the operator has to see WHICH ceilings would be breached before
+ * deciding whether to accept the change deliberately. Accepting takes a reason,
+ * and the flag and the reason travel together — the operation refuses either one
+ * without the other.
+ */
 export async function assignSubscriptionAction(
   tenantId: string,
   input: AssignSubscriptionInput
-): Promise<ActionState> {
+): Promise<SubscriptionAssignState> {
   if (!UUID.test(tenantId)) return invalid({}, 1, 'state.notFound.title');
   const parsed = assignSchema.safeParse(input);
   if (!parsed.success) return invalid(keysOf(parsed.error), 1);
-  return send(
+  if (
+    (parsed.data.acceptOverCapacity === true) !==
+    (parsed.data.overCapacityReason !== undefined)
+  ) {
+    return invalid({ overCapacityReason: 'overlay.reasonRequired' }, 1);
+  }
+  const client = await authorizedClient();
+  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+  const result = await client.send(
     'POST',
     `${organizationPath(tenantId)}/subscriptions`,
-    parsed.data,
-    'platform.subscription.done'
+    parsed.data
+  );
+  if (result.ok) return success('platform.subscription.done', 1);
+  const overCapacity = overCapacityOf(result);
+  return {
+    ...fromFailure(result, 1),
+    ...(overCapacity.length > 0 ? { overCapacity } : {}),
+  };
+}
+
+// --- growing an existing organisation (P1-32-PRE-151) --------------------------
+
+const companySchema = z.object({
+  code: z.string().regex(CODE, 'platform.error.required'),
+  legalName: z.string().trim().min(1, 'platform.error.required').max(200, 'platform.error.tooLong'),
+  baseCurrency: z.string().regex(CURRENCY, 'platform.error.currency'),
+  registrationNumber: z.string().trim().max(100, 'platform.error.tooLong').optional(),
+  taxRegistrationNumber: z.string().trim().max(100, 'platform.error.tooLong').optional(),
+});
+
+/** `platform.organization-company-create` — POST …/{tenantId}/companies. */
+export async function addCompanyAction(
+  tenantId: string,
+  input: z.input<typeof companySchema>
+): Promise<ActionState> {
+  if (!UUID.test(tenantId)) return invalid({}, 1, 'state.notFound.title');
+  const parsed = companySchema.safeParse(input);
+  if (!parsed.success) return invalid(keysOf(parsed.error), 1);
+  const { registrationNumber, taxRegistrationNumber, ...rest } = parsed.data;
+  return send(
+    'POST',
+    `${organizationPath(tenantId)}/companies`,
+    {
+      ...rest,
+      ...(registrationNumber ? { registrationNumber } : {}),
+      ...(taxRegistrationNumber ? { taxRegistrationNumber } : {}),
+    },
+    'platform.growth.companyDone'
+  );
+}
+
+const branchSchema = z.object({
+  companyId: z.string().regex(UUID, 'platform.error.required'),
+  code: z.string().regex(CODE, 'platform.error.required'),
+  name: z.string().trim().min(1, 'platform.error.required').max(200, 'platform.error.tooLong'),
+  timezone: z.string().trim().min(3, 'platform.error.required').max(64, 'platform.error.tooLong'),
+  city: z.string().trim().max(120, 'platform.error.tooLong').optional(),
+  countryCode: z
+    .string()
+    .trim()
+    .regex(/^([A-Z]{2})?$/, 'platform.error.country')
+    .optional(),
+});
+
+/** `platform.organization-branch-create` — POST …/{tenantId}/branches. */
+export async function addBranchAction(
+  tenantId: string,
+  input: z.input<typeof branchSchema>
+): Promise<ActionState> {
+  if (!UUID.test(tenantId)) return invalid({}, 1, 'state.notFound.title');
+  const parsed = branchSchema.safeParse(input);
+  if (!parsed.success) return invalid(keysOf(parsed.error), 1);
+  const { city, countryCode, ...rest } = parsed.data;
+  return send(
+    'POST',
+    `${organizationPath(tenantId)}/branches`,
+    {
+      ...rest,
+      ...(city ? { city } : {}),
+      ...(countryCode ? { countryCode } : {}),
+    },
+    'platform.growth.branchDone'
+  );
+}
+
+const administratorSchema = z.object({
+  email: z.string().trim().min(3, 'platform.error.email').max(320, 'platform.error.tooLong'),
+  displayName: z
+    .string()
+    .trim()
+    .min(1, 'platform.error.required')
+    .max(200, 'platform.error.tooLong'),
+  additionalAdministrator: z.boolean().optional(),
+  reason: reasonSchema.optional(),
+});
+
+/**
+ * `platform.organization-administrator-invite` — POST …/{tenantId}/administrators.
+ *
+ * Two acts on one address. Establishing an administrator needs a name and, when
+ * the organisation already has one, a reason; sending the link again needs
+ * neither, and writes nothing at all.
+ */
+export async function inviteAdministratorAction(
+  tenantId: string,
+  input: z.input<typeof administratorSchema>
+): Promise<ActionState> {
+  if (!UUID.test(tenantId)) return invalid({}, 1, 'state.notFound.title');
+  const parsed = administratorSchema.safeParse(input);
+  if (!parsed.success) return invalid(keysOf(parsed.error), 1);
+  if ((parsed.data.additionalAdministrator === true) !== (parsed.data.reason !== undefined)) {
+    return invalid({ reason: 'overlay.reasonRequired' }, 1);
+  }
+  const { additionalAdministrator, reason, ...rest } = parsed.data;
+  return send(
+    'POST',
+    `${organizationPath(tenantId)}/administrators`,
+    {
+      mode: 'invite',
+      ...rest,
+      ...(additionalAdministrator ? { additionalAdministrator: true } : {}),
+      ...(reason ? { reason } : {}),
+    },
+    'platform.growth.inviteDone'
+  );
+}
+
+/** The same operation in `resend` mode: a fresh link, and nothing written. */
+export async function resendAdministratorInvitationAction(
+  tenantId: string,
+  email: string
+): Promise<ActionState> {
+  if (!UUID.test(tenantId)) return invalid({}, 1, 'state.notFound.title');
+  const parsed = z
+    .string()
+    .trim()
+    .min(3, 'platform.error.email')
+    .max(320, 'platform.error.tooLong')
+    .safeParse(email);
+  if (!parsed.success) return invalid({ email: 'platform.error.email' }, 1);
+  return send(
+    'POST',
+    `${organizationPath(tenantId)}/administrators`,
+    { mode: 'resend', email: parsed.data },
+    'platform.growth.resendDone'
   );
 }
 
