@@ -18,8 +18,11 @@ import type {
   GoodsReceiptCreateBody,
   ItemCategoryCreateBody,
   ItemCreateBody,
+  ItemIdentifierAddBody,
+  ItemSalePriceSetBody,
   OpeningBatchCreateBody,
   OpeningBatchLineCreateBody,
+  SalesReturnCreateBody,
   StockAdjustmentApproveBody,
   StockAdjustmentCreateBody,
   StockCountCancelBody,
@@ -42,6 +45,7 @@ import {
   type AdjustmentEcho,
   type AdjustmentState,
   type AvailabilityCriteria,
+  type BarcodeResolution,
   type CreatedStockLocation,
   type GoodsReceiptDetail,
   type GoodsReceiptSummary,
@@ -49,6 +53,11 @@ import {
   type IssueEcho,
   type ItemCategory,
   type ItemCostHistory,
+  type ItemIdentifierEcho,
+  type ItemIdentifierList,
+  type ItemLabel,
+  type ItemSalePrice,
+  type ItemSalePriceList,
   type ItemSearchCriteria,
   type MovementCriteria,
   type OpeningBatch,
@@ -59,7 +68,12 @@ import {
   type RequiredPart,
   type ReservationCriteria,
   type ReservationEcho,
+  type ReturnCondition,
   type ReturnEcho,
+  type ReturnableQuantity,
+  type SalesReturnEcho,
+  type SalesReturnRow,
+  type SalesReturnSourceKind,
   type StockAdjustment,
   type StockAvailability,
   type StockCountDetail,
@@ -1005,5 +1019,227 @@ export async function cancelStockCount(
     'inventory.counts.cancel.success',
     attempt,
     { stateRefusedKey: 'inventory.counts.closed' }
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * P1-32 — identifiers, scanning, labels, selling prices and returns.
+ *
+ * Three of these reads name the ITEM in the path and take no query at all:
+ * `inv.item_master` has no company or branch column, so an identifier, a label
+ * and a price list are tenant-wide and the item is the authorization subject.
+ * `inv.barcode-resolve` is tenant-wide too and takes a branch ONLY when the
+ * caller also wants the item's stock there — which the server additionally
+ * gates on `inv.stock.read` at that concrete branch, because holding
+ * `inv.item.read` is not authority to read stock.
+ *
+ * The two returns reads are branch-shaped in different ways.
+ * `inv.sales-return-list` is addressed to a branch like every other stock list.
+ * `inv.returnable-quantity-read` names a SOURCE, not a branch: the server
+ * resolves the company and branch from the source row itself, so a caller
+ * cannot learn what a branch it holds no authority in has sold.
+ *
+ * Nothing here is version-guarded. The identifier and return writes are marked
+ * idempotent, so the transport attaches the header key — and the screens derive
+ * that key ONCE per user confirmation, which is what makes a doubled scanner
+ * frame replay the first write instead of writing twice.
+ * ------------------------------------------------------------------ */
+
+const itemPath = (itemId: string, suffix: string) =>
+  `/api/v1/items/${encodeURIComponent(itemId)}${suffix}`;
+
+/**
+ * An item's codes (`inv.item-identifier-list`), live ones first.
+ *
+ * `includeRetired` asks for the retired rows as well, so a person can see that a
+ * code was withdrawn rather than wonder where it went.
+ */
+export async function listIdentifiers(
+  itemId: string,
+  includeRetired = false
+): Promise<ReadState<ItemIdentifierList>> {
+  return readOperation<ItemIdentifierList>(
+    itemPath(itemId, '/identifiers') + query({ includeRetired: includeRetired ? 'true' : null })
+  );
+}
+
+/**
+ * What a label printer needs for one item (`inv.item-label-data`): the stock
+ * code, the name, the code to print with its symbology hint, and the unit and
+ * pack quantity that code stands for. No price — the read is tenant-wide and a
+ * price is narrowed to a branch, so there is no single figure it could publish.
+ */
+export async function readItemLabel(itemId: string): Promise<ReadState<ItemLabel>> {
+  return readOperation<ItemLabel>(itemPath(itemId, '/label'));
+}
+
+/**
+ * Resolve a scanned code to its item (`inv.barcode-resolve`).
+ *
+ * `at` asks for the item's stock at one branch as well; omit it and
+ * `availability` comes back null. A code carried by more than one item is
+ * REFUSED rather than resolved to either — the screen says which, and offers no
+ * choice, because choosing would put the wrong part on a customer's bill in
+ * exactly the case the operator cannot see.
+ */
+export async function resolveBarcode(
+  value: string,
+  at: (StockTarget & { readonly locationId?: string }) | null = null
+): Promise<ReadState<BarcodeResolution>> {
+  const path = `/api/v1/barcodes/${encodeURIComponent(value)}`;
+  return readOperation<BarcodeResolution>(
+    at === null ? path : path + branchTargetQuery(at, { locationId: at.locationId ?? null })
+  );
+}
+
+/**
+ * An item's configured selling prices (`inv.item-sale-price-list`), most
+ * specific first: branch rows, then company rows, then the tenant-wide row. Each
+ * is the server's exact decimal string, labelled with what it applies to.
+ */
+export async function listSalePrices(itemId: string): Promise<ReadState<ItemSalePriceList>> {
+  return readOperation<ItemSalePriceList>(itemPath(itemId, '/sale-prices'));
+}
+
+/**
+ * How much of a source may still come back (`inv.returnable-quantity-read`).
+ *
+ * Three figures, always: what left, what has already come back, and the
+ * remainder. ADVISORY — the binding ceiling is re-checked under the source row
+ * lock when the return is received, so two counters reading the same remainder
+ * still produce one winner.
+ */
+export async function readReturnable(
+  sourceKind: SalesReturnSourceKind,
+  sourceId: string
+): Promise<ReadState<ReturnableQuantity>> {
+  return readOperation<ReturnableQuantity>(
+    '/api/v1/returnable-quantities' + query({ sourceKind, sourceId })
+  );
+}
+
+/** A branch's received returns (`inv.sales-return-list`), newest first. */
+export async function listSalesReturns(
+  target: StockTarget,
+  filter: { readonly condition?: ReturnCondition | undefined } = {}
+): Promise<ReadState<CursorPage<SalesReturnRow>>> {
+  return readOperation<CursorPage<SalesReturnRow>>(
+    '/api/v1/sales-returns' +
+      branchTargetQuery(target, { condition: filter.condition ?? null, limit: 50 })
+  );
+}
+
+/**
+ * Attach a code to an item (`inv.item-identifier-add`).
+ *
+ * The value is the code printed on the part or its packaging; nothing here
+ * invents a manufacturer code. The database generates the normalised form and
+ * checks the retail check digit, so a mistyped GTIN is refused with the field
+ * named rather than stored. `idempotencyKey` is derived once per user
+ * confirmation, so a doubled scanner frame replays the first write.
+ */
+export async function addIdentifier(
+  itemId: string,
+  body: ItemIdentifierAddBody,
+  idempotencyKey: string,
+  attempt = 1
+): Promise<CreateOutcome<ItemIdentifierEcho>> {
+  return write<ItemIdentifierEcho>(
+    'POST',
+    itemPath(itemId, '/identifiers'),
+    body,
+    'inventory.identifiers.add.success',
+    attempt,
+    { stateRefusedKey: 'inventory.identifiers.add.refused', idempotencyKey }
+  );
+}
+
+/**
+ * Withdraw a code (`inv.item-identifier-retire`). No body: the item and the
+ * identifier are the path, and the caller is the actor. A retired code stops
+ * matching a scan and stays visible as withdrawn.
+ */
+export async function retireIdentifier(
+  itemId: string,
+  identifierId: string,
+  attempt = 1
+): Promise<CreateOutcome<ItemIdentifierEcho>> {
+  return write<ItemIdentifierEcho>(
+    'POST',
+    itemPath(itemId, `/identifiers/${encodeURIComponent(identifierId)}/retirement`),
+    undefined,
+    'inventory.identifiers.retire.success',
+    attempt,
+    { stateRefusedKey: 'inventory.identifiers.retire.refused' }
+  );
+}
+
+/**
+ * Allocate this tenant's next internal code for an item
+ * (`inv.item-barcode-assign`). No body at all: the code comes from the tenant's
+ * own counter under an advisory lock, never from the client — which is why an
+ * internal code can never collide with, or be mistaken for, a manufacturer one.
+ */
+export async function assignInternalBarcode(
+  itemId: string,
+  attempt = 1
+): Promise<CreateOutcome<ItemIdentifierEcho>> {
+  return write<ItemIdentifierEcho>(
+    'POST',
+    itemPath(itemId, '/internal-barcode'),
+    undefined,
+    'inventory.identifiers.internal.success',
+    attempt,
+    { stateRefusedKey: 'inventory.identifiers.internal.refused' }
+  );
+}
+
+/**
+ * Set what the tenant sells an item for (`inv.item-sale-price-set`).
+ *
+ * Exactly one live row exists per (item, company, branch) signature, so this
+ * SETS rather than appends and a repeated call changes nothing. The price is the
+ * exact decimal string the operator typed; nothing on this side rounds, scales
+ * or reformats it.
+ */
+export async function setSalePrice(
+  itemId: string,
+  body: ItemSalePriceSetBody,
+  attempt = 1
+): Promise<CreateOutcome<ItemSalePrice>> {
+  return write<ItemSalePrice>(
+    'POST',
+    itemPath(itemId, '/sale-prices'),
+    body,
+    'inventory.prices.set.success',
+    attempt,
+    { stateRefusedKey: 'inventory.prices.set.refused' }
+  );
+}
+
+/**
+ * Receive a returned part (`inv.sales-return-create`).
+ *
+ * The source bounds the quantity — the server re-checks the ceiling under the
+ * source row lock and refuses a return beyond it (409) — and the condition
+ * decides the shelf: `restockable` goes back into sellable stock, `damaged` into
+ * the quarantine location the body names, where it is unavailable because of
+ * where it sits. A return against an issued counter sale raises a PENDING credit
+ * note, which a second person still approves; the echo carries its identifier.
+ * `idempotencyKey` is derived once per confirmation, so a repeated scan of the
+ * part being handed back replays the first receipt.
+ */
+export async function createSalesReturn(
+  body: SalesReturnCreateBody,
+  idempotencyKey: string,
+  attempt = 1
+): Promise<CreateOutcome<SalesReturnEcho>> {
+  return write<SalesReturnEcho>(
+    'POST',
+    '/api/v1/sales-returns',
+    body,
+    'inventory.returns.create.success',
+    attempt,
+    { stateRefusedKey: 'inventory.returns.create.refused', idempotencyKey }
   );
 }

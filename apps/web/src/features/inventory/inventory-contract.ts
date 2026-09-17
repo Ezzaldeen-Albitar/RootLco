@@ -92,6 +92,18 @@ export const INVENTORY_PERMISSIONS = {
   approve: 'inv.adjustment.approve',
   /** P1-32: the cost history, and a unit cost on a goods-receipt line (the server refuses it otherwise). */
   costView: 'inv.cost.view',
+  /** P1-32: listing and drafting a counter sale, and voiding a draft. */
+  invoiceManage: 'sal.invoice.manage',
+  /**
+   * P1-32: required BY CONSTRUCTION wherever amounts are written or read — the
+   * counter-sale draft writes invoice and line amounts, and a customer return
+   * against a sale raises a credit note from the sold line's amount.
+   */
+  financeView: 'sal.finance.view',
+  /** P1-32: issuing a counter sale, which is the act that moves the stock. */
+  invoiceIssue: 'sal.invoice.issue',
+  /** P1-32: finding the buyer of a counter sale in the customer directory. */
+  customerRead: 'crm.customer.read',
 } as const;
 
 /** `ck_item_master_type`, mirrored. */
@@ -841,4 +853,271 @@ export interface StockCountDetail extends Omit<StockCountSummary, 'locationCode'
   readonly replayed?: boolean;
   /** Present on the reconcile echo only: how many PENDING adjustments were raised. */
   readonly adjustmentsRaised?: number;
+}
+
+/* ------------------------------------------------------------------ *
+ * P1-32 — barcodes, labels, counter sales and customer returns.
+ *
+ * | operation                      | method | path                                  | permissions (ALL required)                 |
+ * | ------------------------------ | ------ | ------------------------------------- | ------------------------------------------ |
+ * | `inv.item-identifier-list`     | GET    | `/items/{itemId}/identifiers`         | `inv.item.read`                            |
+ * | `inv.item-identifier-add`      | POST   | `/items/{itemId}/identifiers`         | `inv.item.manage` (tenant-wide)            |
+ * | `inv.item-identifier-retire`   | POST   | `/items/{itemId}/identifiers/{id}/retirement` | `inv.item.manage` (tenant-wide)     |
+ * | `inv.item-barcode-assign`      | POST   | `/items/{itemId}/internal-barcode`    | `inv.item.manage` (tenant-wide)            |
+ * | `inv.barcode-resolve`          | GET    | `/barcodes/{value}`                   | `inv.item.read` (+ `inv.stock.read` to see stock) |
+ * | `inv.item-label-data`          | GET    | `/items/{itemId}/label`               | `inv.item.read`                            |
+ * | `inv.item-sale-price-list`     | GET    | `/items/{itemId}/sale-prices`         | `inv.item.read`                            |
+ * | `inv.item-sale-price-set`      | POST   | `/items/{itemId}/sale-prices`         | `inv.item.manage`                          |
+ * | `sal.counter-sale-list`        | GET    | `/counter-sales`                      | `sal.invoice.manage`                       |
+ * | `sal.counter-sale-create`      | POST   | `/counter-sales`                      | `sal.invoice.manage`, `sal.finance.view`   |
+ * | `inv.returnable-quantity-read` | GET    | `/returnable-quantities`              | `inv.stock.read`                           |
+ * | `inv.sales-return-list`        | GET    | `/sales-returns`                      | `inv.stock.read`                           |
+ * | `inv.sales-return-create`      | POST   | `/sales-returns`                      | `inv.stock.operate`, `sal.finance.view`    |
+ *
+ * ## A scan resolves to the ITEM, never to a unit
+ *
+ * `inv.barcode-resolve` answers with the item, the identifier that matched, and
+ * the unit and pack quantity one scan stands for. It does that for a serialised
+ * item too — no serial-unit table exists, and the service says so. A value that
+ * is live under more than one item is REFUSED rather than resolved to either.
+ *
+ * ## The internal code is allocated, never typed
+ *
+ * `ENTERABLE_IDENTIFIER_KINDS` is what a person may attach; `internal` is absent
+ * from it. An internal code comes from the tenant's own counter through
+ * `inv.item-barcode-assign`, which carries no body at all. A manufacturer code
+ * is therefore never invented here — it is entered from the part or from its
+ * packaging, and the database checks the retail check digit.
+ *
+ * ## The label carries no price
+ *
+ * `inv.item-label-data` is tenant-wide and takes no branch, while a selling
+ * price is narrowed to a company and a branch, so there is no single figure that
+ * read could publish — whatever permission the caller holds. A shelf label for
+ * one branch reads that branch's price through `inv.item-sale-price-list`, which
+ * labels every row with the company and branch it names.
+ *
+ * ## Nothing moves until a counter sale is issued
+ *
+ * `sal.counter-sale-create` makes a DRAFT invoice with no work order; the stock
+ * leaves the shelf when `sal.invoice-issue` issues it. Voiding a draft is
+ * `sal.invoice-cancel`, and an ISSUED sale cannot be voided — a part comes back
+ * only through `inv.sales-return-create`, which is why cancelling a document
+ * never puts stock back. Issue and cancel are the billing feature's own
+ * adapters, guarded by the INVOICE's `recordVersion`; this feature owns the
+ * draft and its lines.
+ *
+ * ## A return is bounded by its source, and its condition decides the shelf
+ *
+ * `inv.returnable-quantity-read` states what left, what has already come back
+ * and the remainder — all three, because a bare remainder cannot be reconciled
+ * by the person holding the part. It is ADVISORY: the binding ceiling is
+ * re-checked under the source row lock when the return is received.
+ * `restockable` goes back into sellable stock; `damaged` must name a quarantine
+ * location and is then unavailable because of where it sits.
+ * ------------------------------------------------------------------ */
+
+/** `IDENTIFIER_KINDS`, mirrored. `internal` is allocated, never entered. */
+export const IDENTIFIER_KINDS = [
+  'internal',
+  'gtin',
+  'ean',
+  'upc',
+  'manufacturer_part_number',
+  'supplier_code',
+] as const;
+export type IdentifierKind = (typeof IDENTIFIER_KINDS)[number];
+
+/** `ENTERABLE_IDENTIFIER_KINDS`, mirrored — what the add form offers. */
+export const ENTERABLE_IDENTIFIER_KINDS = [
+  'gtin',
+  'ean',
+  'upc',
+  'manufacturer_part_number',
+  'supplier_code',
+] as const;
+export type EnterableIdentifierKind = (typeof ENTERABLE_IDENTIFIER_KINDS)[number];
+
+/** `ck_item_identifiers_value_length`, mirrored, so the form refuses before the 422 does. */
+export const MAX_IDENTIFIER_VALUE = 64;
+
+/** `BARCODE_SYMBOLOGIES`, mirrored. A hint from the server, not a contract. */
+export const BARCODE_SYMBOLOGIES = ['code128', 'ean13', 'ean8', 'upca', 'itf14'] as const;
+export type BarcodeSymbology = (typeof BARCODE_SYMBOLOGIES)[number];
+
+/** `RETURN_CONDITIONS`, mirrored. `damaged` lands in quarantine. */
+export const RETURN_CONDITIONS = ['restockable', 'damaged'] as const;
+export type ReturnCondition = (typeof RETURN_CONDITIONS)[number];
+
+/** `SALES_RETURN_SOURCE_KINDS`, mirrored — a job's part issue, or a counter-sale line. */
+export const SALES_RETURN_SOURCE_KINDS = ['part_issue', 'invoice_line'] as const;
+export type SalesReturnSourceKind = (typeof SALES_RETURN_SOURCE_KINDS)[number];
+
+/** `SALES_RETURN_STATES`, mirrored. `credited` means a PENDING credit note was raised. */
+export const SALES_RETURN_STATES = ['received', 'credited'] as const;
+export type SalesReturnState = (typeof SALES_RETURN_STATES)[number];
+
+/** The states a configured selling price is in. Exactly one live row per signature. */
+export const SALE_PRICE_STATES = ['active', 'superseded'] as const;
+export type SalePriceState = (typeof SALE_PRICE_STATES)[number];
+
+/** One identifier of an item — `ItemIdentifierView`. */
+export interface ItemIdentifier {
+  readonly id: string;
+  readonly itemId: string;
+  readonly kind: IdentifierKind;
+  /** As entered. */
+  readonly value: string;
+  /** What a scan is matched against — the server's own normalisation. */
+  readonly normalizedValue: string;
+  readonly unit: { readonly id: string; readonly code: string };
+  /** Exact decimal string: base units one scan of this code represents. */
+  readonly packQuantity: string;
+  readonly isPrimary: boolean;
+  readonly symbology: BarcodeSymbology;
+  readonly retired: boolean;
+  readonly retiredAt: string | null;
+  readonly recordVersion: number;
+  readonly createdAt: string;
+}
+
+/** `inv.item-identifier-list` — `ItemIdentifierListView`; live codes first. */
+export interface ItemIdentifierList {
+  readonly itemId: string;
+  readonly sku: string;
+  /** True when the item is serialised. A scan still resolves to the item. */
+  readonly isSerialized: boolean;
+  readonly identifiers: readonly ItemIdentifier[];
+}
+
+/** The echo of an identifier write — `ItemIdentifierWriteView`. */
+export interface ItemIdentifierEcho extends ItemIdentifier {
+  /** True when nothing changed because the write had already happened. */
+  readonly replayed: boolean;
+}
+
+/** `inv.barcode-resolve` — `BarcodeResolutionView`. */
+export interface BarcodeResolution {
+  readonly scannedValue: string;
+  readonly normalizedValue: string;
+  readonly item: {
+    readonly id: string;
+    readonly sku: string;
+    readonly name: string;
+    readonly isSerialized: boolean;
+    readonly isStockTracked: boolean;
+    readonly lifecycleStatus: ItemLifecycleState;
+  };
+  readonly identifier: {
+    readonly id: string;
+    readonly kind: IdentifierKind;
+    readonly isPrimary: boolean;
+    readonly symbology: BarcodeSymbology;
+  };
+  readonly unit: { readonly id: string; readonly code: string };
+  readonly packQuantity: string;
+  /** The item's stock at the named branch, or `null` when no branch was named. */
+  readonly availability: readonly StockAvailability[] | null;
+}
+
+/** `inv.item-label-data` — `ItemLabelView`. `primaryBarcode` is null when the item carries none. */
+export interface ItemLabel {
+  readonly itemId: string;
+  readonly sku: string;
+  readonly name: string;
+  readonly primaryBarcode: {
+    readonly identifierId: string;
+    readonly kind: IdentifierKind;
+    readonly value: string;
+    readonly normalizedValue: string;
+    readonly symbology: BarcodeSymbology;
+  } | null;
+  readonly unit: { readonly id: string; readonly code: string };
+  readonly packQuantity: string;
+}
+
+/** One configured selling price — `ItemSalePriceView`. Every figure is the server's. */
+export interface ItemSalePrice {
+  readonly id: string;
+  readonly itemId: string;
+  /** Null applies the price to every company of the tenant. */
+  readonly companyId: string | null;
+  /** Null applies the price to every branch of the named company. */
+  readonly branchId: string | null;
+  readonly currencyCode: string;
+  /** Exact decimal string at scale four, never a number. */
+  readonly unitPrice: string;
+  readonly taxClassId: string | null;
+  readonly taxClassCode: string | null;
+  readonly status: SalePriceState;
+  readonly recordVersion: number;
+}
+
+/** `inv.item-sale-price-list` — `ItemSalePriceListView`; most specific first. */
+export interface ItemSalePriceList {
+  readonly itemId: string;
+  readonly sku: string;
+  readonly prices: readonly ItemSalePrice[];
+}
+
+/** `inv.returnable-quantity-read` — `ReturnableQuantityView`. All three figures, always. */
+export interface ReturnableQuantity {
+  readonly sourceKind: SalesReturnSourceKind;
+  readonly sourceId: string;
+  readonly itemId: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly sourceQuantity: string;
+  readonly returnedQuantity: string;
+  readonly remainingQuantity: string;
+}
+
+/** The echo of `inv.sales-return-create` — `SalesReturnView`. */
+export interface SalesReturnEcho {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly sourceKind: SalesReturnSourceKind;
+  readonly sourceId: string;
+  readonly itemId: string;
+  readonly quantity: string;
+  readonly condition: ReturnCondition;
+  readonly receivedLocationId: string;
+  readonly quarantineLocationId: string | null;
+  readonly reason: string | null;
+  /** The PENDING credit note this return raised, or null when it raised none. */
+  readonly creditNoteId: string | null;
+  readonly status: SalesReturnState;
+  readonly recordVersion: number;
+  readonly createdAt: string;
+  /** True when an idempotent replay returned the return that already existed. */
+  readonly replayed: boolean;
+}
+
+/** `inv.sales-return-list` — `SalesReturnListView`; the row carries the item's stock code. */
+export interface SalesReturnRow extends Omit<SalesReturnEcho, 'replayed'> {
+  readonly sku: string;
+}
+
+/**
+ * The three facts BOTH the catalogue search and a scan publish about an item.
+ *
+ * A scan answers with the item's identifier, stock code and name; the catalogue
+ * search answers with those and more. A line holds only the intersection, so
+ * nothing on a screen has to invent a category, a type or a record version for
+ * an item that arrived by scan.
+ */
+export interface ChosenItem {
+  readonly id: string;
+  readonly sku: string;
+  readonly name: string;
+}
+
+/** A counter-sale line as the screen holds it before it is sent. Nothing here is a price. */
+export interface CounterSaleLine {
+  /** Distinguishes two lines of the same item on screen; never sent. */
+  readonly key: string;
+  readonly item: ChosenItem;
+  readonly locationId: string;
+  readonly quantity: string;
 }

@@ -153,16 +153,10 @@ export const PENDING_MIRRORS = Object.freeze({
   // The P1-32 preparatory inventory writes entered this scope the moment they were
   // registered. The stock-operation screens (transfers, goods receipts, adjustments
   // and counts) declared ten mirrors and deleted their entries in that same change.
-  // P1-32 preparatory slice 2 (item identifiers) is Backend and Database only; the
-  // barcode screens owe this mirror and must delete this entry in that change.
-  'inv.item-identifier-add':
-    'PENDING: P1-32 preparatory slice 2 (item identifiers) is Backend and Database only; the barcode screens that send this owe the mirror',
-  'inv.item-sale-price-set':
-    'PENDING: P1-32 preparatory slice 2 is Backend and Database only; the item pricing screen that sends this owes the mirror',
-  'sal.counter-sale-create':
-    'PENDING: P1-32 preparatory slice 2 is Backend and Database only; the counter-sale screen that sends this owes the mirror',
-  'inv.sales-return-create':
-    'PENDING: P1-32 preparatory slice 2 is Backend and Database only; the returns screen that sends this owes the mirror',
+  // P1-32 preparatory slice 2 stood here for the same reason and no longer does: the
+  // barcode, pricing, counter-sale and customer-return screens send all four writes,
+  // so `lib/contracts/inventory-contract.ts` and `lib/contracts/billing-contract.ts`
+  // declare their bodies and the entries were deleted in that same change.
   // P1-32 preparatory slice 3b: material demand control, its reference data and the
   // transfer discrepancy acts. Backend only; the slice-3 screens owe every mirror.
   'inv.material-requirement-create':

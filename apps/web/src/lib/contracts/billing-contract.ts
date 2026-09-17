@@ -33,3 +33,37 @@ export interface InvoiceCancelBody {
   /** One to two thousand characters, not blank. */
   readonly reason: string;
 }
+
+/* ------------------------------------------------------------------ *
+ * P1-32 — the counter sale. Sent by the counter-sale screen under
+ * `app/[locale]/(dashboard)/inventory/counter-sales`.
+ * ------------------------------------------------------------------ */
+
+/**
+ * One line of `sal.counter-sale-create`: what was sold and where it comes off.
+ *
+ * No price, no total, no tax and no discount — the route's body is `.strict()`,
+ * so there is no field through which a client-supplied amount could arrive.
+ * Every line is priced inside the database from the item's configured selling
+ * price, and an item with no configured price refuses the whole sale rather than
+ * leaving at zero.
+ */
+export interface CounterSaleCreateLine {
+  readonly itemId: string;
+  readonly locationId: string;
+  /** A decimal string, up to nine integer digits and three decimals. */
+  readonly quantity: string;
+}
+
+/**
+ * `sal.counter-sale-create` — `POST /counter-sales`. Creates a DRAFT invoice
+ * with no work order; issuing it is `sal.invoice-issue`, which is what moves the
+ * stock. The transport attaches the header key, derived once per confirmation.
+ */
+export interface CounterSaleCreateBody {
+  readonly companyId: string;
+  readonly branchId: string;
+  /** The buyer: a partner of the selling tenant. No account is created for it. */
+  readonly customerPartnerId: string;
+  readonly lines: readonly CounterSaleCreateLine[];
+}

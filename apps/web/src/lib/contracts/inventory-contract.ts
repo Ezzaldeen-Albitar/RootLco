@@ -287,3 +287,74 @@ export interface StockCountLineRecordBody {
 export interface StockCountCancelBody {
   readonly reason: string;
 }
+
+/* ------------------------------------------------------------------ *
+ * P1-32 — the barcode, pricing and customer-return screens. Each
+ * interface below is sent by a screen under
+ * `app/[locale]/(dashboard)/inventory/**`.
+ *
+ * `inv.item-identifier-retire` and `inv.item-barcode-assign` carry no body at
+ * all and are declared BODYLESS in the gate: the first names the item and the
+ * identifier in the path, and the second allocates the next internal code from
+ * the tenant's own counter, so there is nothing for a caller to state.
+ * ------------------------------------------------------------------ */
+
+/**
+ * `inv.item-identifier-add` — `POST /items/{itemId}/identifiers`.
+ *
+ * `kind` excludes `internal`: an internal code is allocated, never entered, so
+ * the server refuses that kind here. `value` is the code as printed on the part
+ * or its packaging — the database generates the normalised form and checks the
+ * retail check digit. `packQuantity` is a decimal string saying how many base
+ * units one scan of this code stands for; `unitId` names the unit it is counted
+ * in. Idempotent: the screen derives its key once per user confirmation, so a
+ * doubled scanner frame replays the first write instead of colliding.
+ */
+export interface ItemIdentifierAddBody {
+  readonly kind: 'gtin' | 'ean' | 'upc' | 'manufacturer_part_number' | 'supplier_code';
+  readonly value: string;
+  readonly unitId?: string;
+  readonly packQuantity?: string;
+  readonly isPrimary?: boolean;
+}
+
+/**
+ * `inv.item-sale-price-set` — `POST /items/{itemId}/sale-prices`.
+ *
+ * A row may name a company, or a company and a branch, or neither; neither
+ * means every branch of every company and requires `inv.item.manage` held
+ * tenant-wide. `unitPrice` is a decimal STRING at scale four — a price carried
+ * as a JSON number is a price nobody agreed to. Exactly one live row exists per
+ * signature, so this SETS rather than appends.
+ */
+export interface ItemSalePriceSetBody {
+  readonly companyId?: string;
+  readonly branchId?: string;
+  /** A three-letter ISO 4217 code. */
+  readonly currencyCode: string;
+  /** A decimal string of at most four places. */
+  readonly unitPrice: string;
+  /** A company's tax class; a tenant-wide price may not name one. */
+  readonly taxClassId?: string;
+}
+
+/**
+ * `inv.sales-return-create` — `POST /sales-returns`.
+ *
+ * The SOURCE bounds how much may come back and decides whether money moves; the
+ * CONDITION decides which shelf it lands on. `quarantineLocationId` is REQUIRED
+ * when the condition is `damaged` and refused when it is not. No company or
+ * branch: the return is received in the branch that issued or sold the part,
+ * resolved by the server from the source itself. Idempotent through the
+ * transport key, derived once per confirmation.
+ */
+export interface SalesReturnCreateBody {
+  readonly sourceKind: 'part_issue' | 'invoice_line';
+  readonly sourceId: string;
+  /** A decimal string, up to nine integer digits and three decimals. */
+  readonly quantity: string;
+  readonly condition: 'restockable' | 'damaged';
+  readonly receivedLocationId: string;
+  readonly quarantineLocationId?: string;
+  readonly reason?: string;
+}

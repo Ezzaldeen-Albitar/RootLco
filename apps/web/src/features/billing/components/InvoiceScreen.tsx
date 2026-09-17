@@ -1125,18 +1125,24 @@ function PrintPanel({
 }) {
   const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState<ReadState<InvoicePreview> | null>(null);
+  const workOrderId = detail.invoice.workOrderId;
   useEffect(() => {
     // Descriptions live only on the preview, which is money and needs the
     // code; it is read once, when the paper view is asked for.
-    if (!open || !canViewFinance || preview !== null) return;
+    //
+    // A counter sale carries no work order (P1-32) and so has no preview to
+    // read: its lines were priced from the item price list rather than
+    // snapshotted from an accepted quotation revision, and the preview route
+    // takes a work order in its path. Nothing is read for one.
+    if (!open || !canViewFinance || preview !== null || workOrderId === null) return;
     let live = true;
-    void readInvoicePreview(detail.invoice.workOrderId).then((state) => {
+    void readInvoicePreview(workOrderId).then((state) => {
       if (live) setPreview(state);
     });
     return () => {
       live = false;
     };
-  }, [open, canViewFinance, preview, detail.invoice.workOrderId]);
+  }, [open, canViewFinance, preview, workOrderId]);
 
   return (
     <section
