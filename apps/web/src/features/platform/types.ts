@@ -1,0 +1,262 @@
+/**
+ * Wire shapes of the platform operations, as the route handlers under
+ * `apps/api/src/app/api/v1/platform/**` publish them (P1-32-PRE-060).
+ *
+ * Every amount is a decimal STRING and stays one: it is displayed through
+ * `formatMoney` and submitted exactly as the operator typed it after
+ * canonicalisation, never converted to a JavaScript number.
+ */
+import type { ActionState } from '@/lib/forms/action-result';
+
+export const ORGANIZATION_STATUSES = ['provisioning', 'active', 'suspended', 'closed'] as const;
+export type OrganizationStatus = (typeof ORGANIZATION_STATUSES)[number];
+
+export const ASSIGNMENT_KINDS = ['assigned', 'renewed', 'upgraded', 'downgraded'] as const;
+export type AssignmentKind = (typeof ASSIGNMENT_KINDS)[number];
+
+export const PLAN_STATUSES = ['draft', 'active', 'retired'] as const;
+export type PlanStatus = (typeof PLAN_STATUSES)[number];
+
+/** The term presets the subscription dialog offers beside a free value. */
+export const TERM_PRESETS = [12, 24, 36] as const;
+
+/** Usage at or above this share of a limit is shown as a warning. */
+export const CAPACITY_WARNING_PERCENT = 90;
+
+/** The audit window the search opens on, in days. */
+export const AUDIT_DEFAULT_WINDOW_DAYS = 30;
+
+export interface OrganizationRow {
+  readonly id: string;
+  readonly tenantCode: string;
+  readonly displayName: string;
+  readonly status: string;
+  readonly defaultLocale: string;
+  readonly defaultTimezone: string;
+  readonly createdAt: string;
+  readonly activePlanCode: string | null;
+  readonly activePlanEffectiveTo: string | null;
+  readonly activeCompanyCount: number;
+  readonly activeBranchCount: number;
+  readonly activeUserCount: number;
+}
+
+export interface CapacityUsage {
+  readonly used: number;
+  readonly limit: number | null;
+}
+
+export interface OrganizationCompany {
+  readonly id: string;
+  readonly code: string;
+  readonly legalName: string;
+  readonly status: string;
+}
+
+export interface OrganizationBranch {
+  readonly id: string;
+  readonly companyId: string;
+  readonly code: string;
+  readonly name: string;
+  readonly status: string;
+}
+
+export interface OrganizationSubscription {
+  readonly id: string;
+  readonly planId: string;
+  readonly planCode: string;
+  readonly planName: string;
+  readonly status: string;
+  readonly effectiveFrom: string;
+  readonly effectiveTo: string | null;
+  readonly recordVersion: number;
+}
+
+export interface SubscriptionEvent {
+  readonly id: string;
+  readonly subscriptionId: string;
+  readonly eventKind: string;
+  readonly fromPlanCode: string | null;
+  readonly toPlanCode: string | null;
+  readonly effectiveFrom: string;
+  readonly effectiveTo: string | null;
+  readonly reason: string;
+  readonly occurredAt: string;
+}
+
+export interface StatusHistoryEntry {
+  readonly fromState: string | null;
+  readonly toState: string;
+  readonly reason: string | null;
+  readonly occurredAt: string;
+}
+
+export interface OrganizationDetail {
+  readonly id: string;
+  readonly tenantCode: string;
+  readonly displayName: string;
+  readonly status: string;
+  readonly defaultLocale: string;
+  readonly defaultTimezone: string;
+  readonly createdAt: string;
+  readonly companies: readonly OrganizationCompany[];
+  readonly branches: readonly OrganizationBranch[];
+  readonly userCountsByStatus: readonly { readonly status: string; readonly count: number }[];
+  readonly subscriptions: readonly OrganizationSubscription[];
+  readonly subscriptionEvents: readonly SubscriptionEvent[];
+  readonly statusHistory: readonly StatusHistoryEntry[];
+  readonly capacity: {
+    readonly companies: CapacityUsage;
+    readonly branches: CapacityUsage;
+    readonly users: CapacityUsage;
+  };
+}
+
+export interface SubscriptionPlan {
+  readonly id: string;
+  readonly planCode: string;
+  readonly name: string;
+  readonly displayName: string | null;
+  readonly description: string | null;
+  readonly status: string;
+  readonly listPrice: string | null;
+  readonly currencyCode: string | null;
+  readonly termMonths: number | null;
+  readonly entitlementDocument: Readonly<Record<string, unknown>>;
+  readonly capacityLimits: Readonly<Record<string, unknown>>;
+  readonly effectiveFrom: string;
+  readonly effectiveTo: string | null;
+  readonly recordVersion: number;
+}
+
+export interface SubscriptionReceipt {
+  readonly id: string;
+  readonly chargeId: string;
+  readonly amount: string;
+  readonly currencyCode: string;
+  readonly receivedOn: string;
+  readonly reference: string | null;
+  readonly method: string;
+  readonly notes: string | null;
+  readonly recordedAt: string;
+}
+
+export interface SubscriptionCharge {
+  readonly id: string;
+  readonly subscriptionId: string | null;
+  readonly amount: string;
+  readonly currencyCode: string;
+  readonly dueOn: string;
+  readonly description: string;
+  readonly status: string;
+  readonly voidReason: string | null;
+  readonly outstanding: string;
+  readonly recordVersion: number;
+  readonly recordedAt: string;
+  readonly receipts: readonly SubscriptionReceipt[];
+}
+
+export interface CapacityAlert {
+  readonly tenantId: string;
+  readonly tenantCode: string;
+  readonly displayName: string;
+  readonly kind: string;
+  readonly used: number;
+  readonly limit: number;
+  readonly severity: string;
+}
+
+export interface RevenueByCurrency {
+  readonly currencyCode: string;
+  readonly contracted: string;
+  readonly received: string;
+  readonly outstanding: string;
+  readonly projectedRenewalValue: string;
+}
+
+export interface PlatformStatistics {
+  readonly generatedAt: string;
+  readonly asOf: string;
+  readonly tenantsByStatus: readonly { readonly key: string; readonly count: number }[];
+  readonly activeCompanies: number;
+  readonly activeBranches: number;
+  readonly activeUserAccounts: number;
+  readonly subscriptions: {
+    readonly active: number;
+    readonly expiringWithin30Days: number;
+    readonly expiringWithin60Days: number;
+    readonly expiringWithin90Days: number;
+    readonly expired: number;
+  };
+  readonly capacityAlerts: readonly CapacityAlert[];
+  readonly revenueByCurrency: readonly RevenueByCurrency[];
+  readonly health: {
+    readonly readiness: string;
+    readonly readinessChecks: readonly { readonly name: string; readonly ok: boolean }[];
+    readonly outbox: {
+      readonly reachable: boolean;
+      readonly undelivered: number | null;
+      readonly deadLettered: number | null;
+      readonly oldestPendingAgeSeconds: number | null;
+    };
+  };
+}
+
+export interface PlatformAuditEvent {
+  readonly id: string;
+  readonly action: string;
+  readonly entityType: string;
+  readonly entityId: string | null;
+  readonly actorId: string | null;
+  readonly actorKind: string;
+  readonly correlationId: string | null;
+  readonly targetTenantId: string | null;
+  readonly occurredAt: string;
+}
+
+/** The audit criteria the screen applies, beside the table's own paging. */
+export interface PlatformAuditCriteria {
+  readonly from: string;
+  readonly to: string;
+  readonly action?: string | undefined;
+  readonly organizationId?: string | undefined;
+}
+
+/** A provisioning outcome: the ordinary action state plus the new organisation. */
+export interface ProvisionState extends ActionState {
+  readonly tenantId?: string | undefined;
+}
+
+/** The audit actions the platform operations record, in display order. */
+export const PLATFORM_AUDIT_ACTIONS = [
+  'org.tenant.provisioned',
+  'org.tenant.status_changed',
+  'org.subscription_plan.created',
+  'org.subscription_plan.updated',
+  'org.tenant_subscription.changed',
+  'org.subscription_charge.recorded',
+  'org.subscription_charge.voided',
+  'org.subscription_receipt.recorded',
+] as const;
+
+/**
+ * Translation key for an audit action. An action this console does not know is
+ * shown under a neutral label rather than as its internal code.
+ */
+export function auditActionKey(action: string): string {
+  const index = (PLATFORM_AUDIT_ACTIONS as readonly string[]).indexOf(action);
+  return index === -1 ? 'platform.audit.action.other' : `platform.audit.action.${index}`;
+}
+
+/** Share of a limit in whole percent, or null when there is no limit. */
+export function usagePercent(usage: CapacityUsage): number | null {
+  if (usage.limit === null) return null;
+  if (usage.limit === 0) return usage.used > 0 ? 100 : 0;
+  return Math.min(100, Math.floor((usage.used * 100) / usage.limit));
+}
+
+/** Whether usage has reached the warning threshold. Unlimited never warns. */
+export function usageWarns(usage: CapacityUsage): boolean {
+  const percent = usagePercent(usage);
+  return percent !== null && percent >= CAPACITY_WARNING_PERCENT;
+}
