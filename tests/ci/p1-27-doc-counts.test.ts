@@ -887,13 +887,62 @@ describe('P1-31-QA-005-038 — a restated provenance is judged against the run l
       readRepo(`${PHASE}/evidence/closing-value-ledger.json`)
     ) as ClosingLedger;
     const runs = JSON.parse(readRepo(`${PHASE}/evidence/local-run-ledger.json`)) as RunLedger;
-    // Both tiers carry no provenance block at this head, so the page must say
-    // local. If a hosted run is ever recorded, this case fails until the
-    // sentence is corrected — which is the whole purpose.
-    expect(tierProvenance(runs, 'web').state, 'the web tier is neither local nor hosted').toBe(
-      'local'
-    );
+    /*
+     * DERIVED, not pinned. This case used to fix the web tier at `local`, with a
+     * comment saying it must change when a hosted record lands — which made a
+     * hosted record impossible to commit: the pin lives in an executable file,
+     * so correcting it staled the very record that required the correction.
+     *
+     * The expectation now comes from the ledger. Each recorded tier must be a
+     * well-formed `local` or `hosted`, and the page's restated sentence must
+     * carry the wording THAT state obliges. The case still fails the moment the
+     * page and the ledger disagree — see the mutation case directly below.
+     */
+    for (const tier of ['web', 'unit']) {
+      const provenance = tierProvenance(runs, tier);
+      const why = provenance.state === 'malformed' ? provenance.why : '';
+      expect(['local', 'hosted'], `the ${tier} tier is neither local nor hosted: ${why}`).toContain(
+        provenance.state
+      );
+    }
     expect(judgeRestatedProvenance(CLEAN_ROOM_PATH, CLEAN_ROOM, closing, runs)).toEqual([]);
+  });
+
+  it('MUTATION: the live page carrying the OTHER provenance wording is refused', () => {
+    const closing = JSON.parse(
+      readRepo(`${PHASE}/evidence/closing-value-ledger.json`)
+    ) as ClosingLedger;
+    const runs = JSON.parse(readRepo(`${PHASE}/evidence/local-run-ledger.json`)) as RunLedger;
+    const state = tierProvenance(runs, 'web').state;
+    const restated = /\*\*The (\d+) is ([A-Za-z]+)([\s\S]*?)\*\*/.exec(CLEAN_ROOM);
+    expect(restated, 'the live page restates no provenance sentence').not.toBeNull();
+    const sentence = String(restated?.[0]);
+    const wrong =
+      state === 'hosted'
+        ? `**The ${String(restated?.[1])} is local, and it is pending attestation by this pull request's hosted run.**`
+        : `**The ${String(restated?.[1])} is HOSTED, and it is the binding measurement.**`;
+    // The locator moves with the sentence, so the refusal is about the WORD
+    // rather than about a restatement nothing binds.
+    const mutatedClosing: ClosingLedger = {
+      ...closing,
+      values: (closing.values ?? []).map((value) =>
+        value.document === CLEAN_ROOM_PATH &&
+        typeof value.locator === 'string' &&
+        value.locator !== '' &&
+        sentence.startsWith(value.locator) &&
+        value.binding?.kind === 'run'
+          ? { ...value, locator: wrong.slice(0, 40) }
+          : value
+      ),
+    };
+    const problems = judgeRestatedProvenance(
+      CLEAN_ROOM_PATH,
+      CLEAN_ROOM.replace(sentence, wrong),
+      mutatedClosing,
+      runs
+    );
+    expect(problems.length, 'a page contradicting the ledger provenance passed').toBeGreaterThan(0);
+    expect(first(problems)).toContain(`record is ${state}`);
   });
 
   it('accepts a local record described as local', () => {

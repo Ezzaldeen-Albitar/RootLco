@@ -6,18 +6,31 @@
   "tiers": {
     "unit": {
       "command": "npx vitest run --reporter=json",
-      "tests": 3475,
-      "passed": 3475,
+      "tests": 3482,
+      "passed": 3479,
       "failed": 0,
-      "skipped": 0,
+      "skipped": 3,
       "files": 133,
       "exitCode": 0,
       "reporterSuccess": true,
       "failedSuites": [],
       "filesWithoutCases": [],
-      "measuredAtCommit": "19fa406607980db0409f934941b3efb79f1694c8",
+      "measuredAtCommit": "d4eecebc93f88dd3835422e23732120d846502b0",
       "dirtyExecutablePaths": [],
-      "measuredAt": "2026-09-15T23:00:56.683Z"
+      "measuredAt": "2026-09-17T00:47:58Z",
+      "provenance": {
+        "source": "hosted",
+        "runId": "35167827637",
+        "runUrl": "https://github.com/Ezzaldeen-Albitar/RootLco/actions/runs/35167827637",
+        "workflow": "PR CI",
+        "job": "105032854830",
+        "jobName": "unit-tests-coverage / unit-coverage",
+        "step": "Unit tier with coverage",
+        "headSha": "d4eecebc93f88dd3835422e23732120d846502b0",
+        "artifact": "evidence-unit-coverage",
+        "artifactDigest": "sha256:010c02897f8c01a6ebc155351bd582fbfc71f01796811fb30902d262f00bbd0f",
+        "field": "vitest-unit.json"
+      }
     },
     "web": {
       "command": "npm run test --workspace @rootlco/web -- --reporter=json",
@@ -30,9 +43,22 @@
       "reporterSuccess": true,
       "failedSuites": [],
       "filesWithoutCases": [],
-      "measuredAtCommit": "19fa406607980db0409f934941b3efb79f1694c8",
+      "measuredAtCommit": "d4eecebc93f88dd3835422e23732120d846502b0",
       "dirtyExecutablePaths": [],
-      "measuredAt": "2026-09-15T22:52:44.546Z"
+      "measuredAt": "2026-09-17T00:51:56Z",
+      "provenance": {
+        "source": "hosted",
+        "runId": "35167827637",
+        "runUrl": "https://github.com/Ezzaldeen-Albitar/RootLco/actions/runs/35167827637",
+        "workflow": "PR CI",
+        "job": "105032854917",
+        "jobName": "Web quality / web-quality",
+        "step": "Web component tier",
+        "headSha": "d4eecebc93f88dd3835422e23732120d846502b0",
+        "artifact": "evidence-web-quality",
+        "artifactDigest": "sha256:e6c5346c4fa49498a59d05c986901ea504fe78d937f327cd6998935b5d11950a",
+        "field": "apps/web/vitest-web.json"
+      }
     }
   }
 }

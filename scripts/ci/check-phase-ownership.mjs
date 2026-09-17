@@ -422,6 +422,43 @@ export const PROFILES = {
         'dbSeeds bucket, and the Owner acceptance fixtures live under scripts/dev/owner-acceptance',
     },
   },
+  /*
+   * The Owner directive of 2026-09-16 — modelled on `pre-p1-29-initiative`,
+   * which is the nearest shape, and distinct from it in the one bucket that
+   * matters: `apiConfig`. The directive requires a complete environment
+   * configuration inventory with tracked templates, and `apps/api/.env.example`
+   * classifies as `apiConfig`, which `pre-p1-29-initiative` forbids by name.
+   * `api-boundary`, the other candidate, forbids `migrations`. No committed
+   * profile permits apiSource + apiConfig + migrations + dbSeeds + web + docs
+   * together, so borrowing one would have meant refusing the directive's own
+   * first requirement.
+   */
+  'owner-directive-saas-operation': {
+    why:
+      'the Owner directive of 2026-09-16 (SaaS operation before daily use): the Platform Owner ' +
+      'Console, subscription and capacity administration, company/branch/user administration, ' +
+      'inventory, external sales, barcodes, returns, duplicate-demand controls, search and the ' +
+      'environment configuration — spanning API source and its env template, migrations, the ' +
+      'permission seed, the web app, docs, tooling and tests',
+    allowed: [
+      'apiSource',
+      'apiConfig',
+      'migrations',
+      'dbSeeds',
+      'web',
+      'webGenerated',
+      'webContract',
+      'docs',
+      'tooling',
+      'tests',
+      'rootConfig',
+    ],
+    forbidden: {
+      supabase:
+        'the owner directive must not change the database HARNESS — config.toml and the local ' +
+        'bootstrap are their own review; seeds travel under dbSeeds',
+    },
+  },
   'pre-p1-29-backend': {
     why:
       'the Backend lane of PRE-P1-29 — platform and company administration contracts, RBAC ' +

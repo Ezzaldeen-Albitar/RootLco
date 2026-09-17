@@ -684,7 +684,7 @@ under-report itself by seven files.
 | `canonical-plan.md`                               | 340   | What P1-27 is scoped to build, and the disposition of `P1-OD-017` and `P1-OD-025`  |
 | `canonical-write-reachability.json`               | 66    | Every write operation classified reachable or deliberately absent, with a decision |
 | `ci-evidence.md`                                  | 275   | Hosted CI, with every value classified and every hosted one naming its run         |
-| `clean-room-evidence.md`                          | 380   | The clean-room record, and the six classes every closing value is sorted into      |
+| `clean-room-evidence.md`                          | 379   | The clean-room record, and the six classes every closing value is sorted into      |
 | `contract-archaeology.md`                         | 416   | What the Backend actually publishes, read before anything was built                |
 | `deliverable-manifest.md`                         | 1062  | This file                                                                          |
 | `developer-guide.md`                              | 238   | `DOC-002` — the developer half                                                     |
@@ -692,7 +692,7 @@ under-report itself by seven files.
 | `evidence/evidence-manifest.json`                 | 175   | `QA-005` — a SHA-256 digest of every document in this directory                    |
 | `evidence/closing-value-ledger.json`              | 907   | Every closing value on the two evidence pages, classified, with its authority      |
 | `evidence/lifecycle-ledger.json`                  | 72    | The closure lifecycle's observations and the state this repository declares        |
-| `evidence/local-run-ledger.json`                  | 38    | What a tier DID when it was run — written only by `record:p1-27-run`               |
+| `evidence/local-run-ledger.json`                  | 64    | What a tier DID when it was run — written only by `record:p1-27-run`               |
 | `evidence/task-traceability.md`                   | 437   | Every task, the operations it calls, the files it produced, the named proof        |
 | `evidence/test-catalogue-traceability.md`         | 406   | `DOC-001` — the 29 canonical `TC-P1-27-*` ids bound to executable tests            |
 | `evidence/test-catalogue-traceability.json`       | 863   | Its machine-readable form, checked by `validate:p1-27-doc-counts`                  |
@@ -997,7 +997,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files p1-27-frontend-gate:trees = 5 -->
 <!-- derived: tracked docs/phase-1/phase-1-27 = 42 -->
 <!-- derived: tracked docs/phase-1/phase-1-27:md = 32 -->
-<!-- derived: tracked docs/product = 14 -->
+<!-- derived: tracked docs/product = 17 -->
 <!-- derived: commands registered = 181 -->
 <!-- derived: commands required = 97 -->
 <!-- derived: commands reachable = 97 -->
@@ -1013,7 +1013,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/canonical-plan.md = 340 -->
 <!-- derived: lines docs/phase-1/phase-1-27/canonical-write-reachability.json = 66 -->
 <!-- derived: lines docs/phase-1/phase-1-27/ci-evidence.md = 275 -->
-<!-- derived: lines docs/phase-1/phase-1-27/clean-room-evidence.md = 380 -->
+<!-- derived: lines docs/phase-1/phase-1-27/clean-room-evidence.md = 379 -->
 <!-- derived: lines docs/phase-1/phase-1-27/closure-record.md = 114 -->
 <!-- derived: lines docs/phase-1/phase-1-27/contract-archaeology.md = 416 -->
 <!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 1062 -->
@@ -1022,7 +1022,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/evidence-manifest.json = 175 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/closing-value-ledger.json = 907 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/lifecycle-ledger.json = 72 -->
-<!-- derived: lines docs/phase-1/phase-1-27/evidence/local-run-ledger.json = 38 -->
+<!-- derived: lines docs/phase-1/phase-1-27/evidence/local-run-ledger.json = 64 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/task-traceability.md = 437 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json = 863 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.md = 406 -->

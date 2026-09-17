@@ -78,6 +78,25 @@ export const CATEGORY_RULES = [
         p
       ),
   },
+  // BEFORE `docs`, and after `openapi` has carved out `docs/api/`. The `docs`
+  // rule below is extension-blind: it reads every path under `docs/` as prose.
+  // Pull request #409 changed only `docs/user-manual/tools/build-pdf.mjs` — an
+  // executable Node script — and was classified documentation-only, so the
+  // `code-security` umbrella was SKIPPED on the pull request and CodeQL first
+  // saw that file on the merge commit, where a finding is no longer reviewable
+  // before merge. An executable under `docs/` is tooling for analysis purposes,
+  // whatever directory it sits in.
+  //
+  // Deliberately NOT the existing `scripts` category: `scripts` also triggers
+  // `database-migration-replay` and `database-security`, which a PDF-builder
+  // edit has no reason to run. This category triggers `code-security` and
+  // nothing else — the narrowest correction that closes the gap. Genuinely
+  // non-executable documentation keeps its documentation-only treatment.
+  {
+    category: 'docsTooling',
+    test: (p) =>
+      p.startsWith('docs/') && /\.(mjs|cjs|js|ts|tsx|mts|cts|py|ps1|sh|bat|cmd)$/i.test(p),
+  },
   { category: 'docs', test: (p) => p.startsWith('docs/') || p.endsWith('.md') },
 ];
 
@@ -144,6 +163,10 @@ export const CONDITIONAL_JOBS = {
     'tests',
     'scripts',
     'ciScripts',
+    // An executable under `docs/` is analysed like any other executable. It is
+    // on THIS list and on no other: a documentation tool builds nothing, runs
+    // no migration and reaches no database. See the `docsTooling` rule above.
+    'docsTooling',
     'dependencies',
     'workflows',
     'config',

@@ -149,13 +149,12 @@ comparing a live baseline against a record of a head the branch had left behind.
 The superseded figures are left exactly as they were, because they are a true
 account of that head; what moved is which number the check consults.
 
-**The 4125 is local, and it is pending attestation by this pull request's hosted
-run.** It is the output of
-`node scripts/ci/check-p1-27-closing-values.mjs --record web` against this tree,
-recorded in `evidence/local-run-ledger.json` with the commit it was taken at and
-with no provenance block, which is what marks it local. The required hosted run can attest this local measurement without changing its
-source. A valid hosted-attested local record is retained; it is not converted
-merely for cosmetic consistency.
+**The 4125 is HOSTED, and it is the binding measurement.** It is the output of
+`node scripts/ci/check-p1-27-closing-values.mjs --record web --hosted-run`, read
+from this pull request's own hosted run of the head it was taken at and recorded in
+`evidence/local-run-ledger.json` with that commit and with the provenance block —
+the run, the job, the artefact and that artefact's published digest — which is
+what marks it hosted.
 
 ### `DERIVABLE_LOCAL` — a command in this repository answers it
 
@@ -164,7 +163,7 @@ merely for cosmetic consistency.
 | Web test files under `apps/web/tests`       | 144    | a walk of the tree                                                 |
 | Web tier — tests executed                   | 4125  | `--record web`, from the `vitest` JSON report                      |
 | Web tier — files the run reported           | 144    | the same report, cross-checked against the walk above              |
-| Root unit tier — tests executed             | 3475  | `--record unit`, from the `vitest` JSON report                     |
+| Root unit tier — tests executed             | 3482  | `--record unit`, from the `vitest` JSON report                     |
 | Root unit tier — files the run reported     | 133   | the same report, cross-checked against the tier's include rule      |
 | Committed web floor (`minTests`)            | 3700  | `.github/ci-baselines/test-count-baseline.json`                    |
 | Committed unit floor (`minTests`)           | 1050  | the same baseline                                                  |
