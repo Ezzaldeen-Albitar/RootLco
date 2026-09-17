@@ -163,7 +163,7 @@ what marks it hosted.
 | Web test files under `apps/web/tests`       | 144    | a walk of the tree                                                 |
 | Web tier — tests executed                   | 4125  | `--record web`, from the `vitest` JSON report                      |
 | Web tier — files the run reported           | 144    | the same report, cross-checked against the walk above              |
-| Root unit tier — tests executed             | 3481  | `--record unit`, from the `vitest` JSON report                     |
+| Root unit tier — tests executed             | 3482  | `--record unit`, from the `vitest` JSON report                     |
 | Root unit tier — files the run reported     | 133   | the same report, cross-checked against the tier's include rule      |
 | Committed web floor (`minTests`)            | 3700  | `.github/ci-baselines/test-count-baseline.json`                    |
 | Committed unit floor (`minTests`)           | 1050  | the same baseline                                                  |
