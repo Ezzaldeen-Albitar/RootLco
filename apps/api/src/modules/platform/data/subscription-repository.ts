@@ -84,6 +84,52 @@ export interface CapacityLimitsInput {
   readonly users?: number | undefined;
 }
 
+/**
+ * One capacity kind a plan would place BELOW what an organisation already
+ * holds, as `org.plan_capacity_shortfall` reports it.
+ *
+ * `newLimit` rather than `limit`: the number is what the plan being assigned
+ * would impose, not what is in force, and an operator reading a refusal has to
+ * be able to tell those apart.
+ */
+export interface CapacityShortfallRow {
+  readonly kind: string;
+  readonly used: number;
+  readonly newLimit: number;
+}
+
+/**
+ * The three kinds the console names on the wire, and the keys the DATABASE
+ * reads them under.
+ *
+ * `org.capacity_limit` resolves `capacity_limits ->> 'max_<kind>'` and nothing
+ * else, so a plan written with a bare `companies` key would declare a ceiling no
+ * trigger could ever enforce — a limit that looks set in the console and is
+ * decoration in the database. The wire keeps the short names, which are the ones
+ * an operator reads and the ones the published contract carries, and the
+ * document is translated at this boundary in both directions so exactly one
+ * spelling reaches the column.
+ */
+const CAPACITY_KINDS = ['companies', 'branches', 'users'] as const;
+
+function toCapacityDocument(input: CapacityLimitsInput): Record<string, number> {
+  const document: Record<string, number> = {};
+  for (const kind of CAPACITY_KINDS) {
+    const value = input[kind];
+    if (value !== undefined) document[`max_${kind}`] = value;
+  }
+  return document;
+}
+
+function fromCapacityDocument(document: Record<string, unknown>): Record<string, unknown> {
+  const limits: Record<string, unknown> = {};
+  for (const kind of CAPACITY_KINDS) {
+    const value = document[`max_${kind}`];
+    if (value !== undefined) limits[kind] = value;
+  }
+  return limits;
+}
+
 /** What the plan write operations take. Every field is already validated. */
 export interface PlanWriteInput {
   readonly displayName?: string | undefined;
@@ -227,7 +273,7 @@ export class SubscriptionRepository extends Repository {
         input.displayName,
         input.description,
         JSON.stringify(input.entitlementDocument),
-        JSON.stringify(input.capacityLimits),
+        JSON.stringify(toCapacityDocument(input.capacityLimits)),
         input.status,
         input.effectiveFrom,
         input.effectiveTo,
@@ -286,7 +332,9 @@ export class SubscriptionRepository extends Repository {
         input.termMonths !== undefined,
         input.termMonths ?? null,
         input.capacityLimits !== undefined,
-        input.capacityLimits === undefined ? null : JSON.stringify(input.capacityLimits),
+        input.capacityLimits === undefined
+          ? null
+          : JSON.stringify(toCapacityDocument(input.capacityLimits)),
         input.entitlementDocument !== undefined,
         input.entitlementDocument === undefined ? null : JSON.stringify(input.entitlementDocument),
         input.status !== undefined,
@@ -296,6 +344,29 @@ export class SubscriptionRepository extends Repository {
       ]
     );
     return row ? toPlanRow(row) : null;
+  }
+
+  /**
+   * Every capacity kind on which a plan would sit BELOW what the organisation
+   * already holds — from `org.plan_capacity_shortfall`, by name.
+   *
+   * The comparison is not made here and must not be: the usage half of it is
+   * `org.capacity_used`, which is the same function the creation triggers count
+   * with, and a TypeScript re-count would eventually explain a refusal with
+   * numbers the database does not agree with. An empty array means the plan
+   * fits.
+   */
+  async planCapacityShortfall(
+    db: DbHandle,
+    tenantId: string,
+    planId: string
+  ): Promise<readonly CapacityShortfallRow[]> {
+    const row = await this.runOne<{ shortfall: readonly CapacityShortfallRow[] }>(
+      db,
+      'SELECT org.plan_capacity_shortfall($1::uuid, $2::uuid) AS shortfall',
+      [tenantId, planId]
+    );
+    return row?.shortfall ?? [];
   }
 
   /** Every subscription assignment of one organisation, newest period first. */
@@ -644,7 +715,7 @@ function toPlanRow(r: PlanDbRow): SubscriptionPlanRow {
     currencyCode: r.currency_code,
     termMonths: r.term_months,
     entitlementDocument: r.entitlement_document ?? {},
-    capacityLimits: r.capacity_limits ?? {},
+    capacityLimits: fromCapacityDocument(r.capacity_limits ?? {}),
     effectiveFrom: toIsoString(r.effective_from),
     effectiveTo: r.effective_to === null ? null : toIsoString(r.effective_to),
     recordVersion: r.record_version,

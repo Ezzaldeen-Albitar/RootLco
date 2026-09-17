@@ -29,7 +29,11 @@ import { BillingService } from './application/billing-service';
 import { InsightService } from './application/insight-service';
 
 export type {
+  AdministratorCommand,
+  AdministratorSetupResultView,
+  BranchAddedView,
   CapacityUsage,
+  CompanyAddedView,
   OrganizationDetailView,
   OrganizationView,
 } from './application/organization-service';
@@ -48,11 +52,14 @@ export {
   type PlatformStatisticsView,
 } from './application/insight-service';
 export type {
+  CapacityAllowanceRow,
+  CapacityUsageRow,
   OrganizationBranchRow,
   OrganizationCompanyRow,
   TenantStatusHistoryRow,
 } from './data/platform-repository';
 export type {
+  CapacityShortfallRow,
   SubscriptionEventRow,
   SubscriptionPlanRow,
   TenantSubscriptionRow,

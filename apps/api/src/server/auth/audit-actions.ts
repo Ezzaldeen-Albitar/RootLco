@@ -256,6 +256,13 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
   // operations declaring `privileged` that appended nothing for exactly that
   // reason. A declared class with no append call is a silent no-op.
   {
+    code: 'iam.tenant_administrator.invited',
+    class: 'privileged',
+    entityType: 'org.tenant',
+    description:
+      'The Platform Owner Console established an administrator for an existing organisation, or sent an outstanding invitation again. Recorded against the ORGANISATION rather than the account, because both outcomes are acts upon the organisation and a re-invitation writes no account at all; the account established, when there is one, is a detail of the record. Written in the operator home tenant carrying target_tenant_id, which is where an operator can find it.',
+  },
+  {
     code: 'org.company.created',
     class: 'privileged',
     entityType: 'org.legal_company',

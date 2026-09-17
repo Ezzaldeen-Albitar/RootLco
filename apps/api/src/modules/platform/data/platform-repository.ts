@@ -101,6 +101,24 @@ export interface PlatformSessionRow {
   readonly platformPermissions: readonly string[];
 }
 
+/**
+ * One capacity kind as `org.capacity_usage` publishes it.
+ *
+ * `limit` is `null` for unlimited and never absent — the published convention of
+ * the function itself, which the tenant capacity read and this console share.
+ */
+export interface CapacityAllowanceRow {
+  readonly used: number;
+  readonly limit: number | null;
+}
+
+/** The three ceilings a subscription can place on an organisation. */
+export interface CapacityUsageRow {
+  readonly companies: CapacityAllowanceRow;
+  readonly branches: CapacityAllowanceRow;
+  readonly users: CapacityAllowanceRow;
+}
+
 /** The tenant root, as every single-organisation operation resolves it first. */
 export interface TenantRootRow {
   readonly id: string;
@@ -462,6 +480,29 @@ export class PlatformRepository extends Repository {
       companyId: row.result.company_id,
       branchId: row.result.branch_id,
     };
+  }
+
+  /**
+   * What one organisation may hold and what it is holding, from
+   * `org.capacity_usage` — BY NAME.
+   *
+   * The console used to assemble this itself: three counts taken from the lists
+   * it had already read, and a limit picked out of the plan document by a
+   * TypeScript reader. That was a second definition of every number, and it
+   * disagreed with the one that decides a refusal — the database counts a seat
+   * as `invited` OR `active` while the console counted only `active`, so an
+   * organisation could be refused its next user while the console showed a seat
+   * free. There is one definition, it is in the database, and this is the read
+   * of it.
+   */
+  async readCapacityUsage(db: DbHandle, tenantId: string): Promise<CapacityUsageRow> {
+    const row = await this.runOne<{ usage: CapacityUsageRow }>(
+      db,
+      'SELECT org.capacity_usage($1) AS usage',
+      [tenantId]
+    );
+    if (row === null) throw new Error('capacity usage returned no row');
+    return row.usage;
   }
 
   /**

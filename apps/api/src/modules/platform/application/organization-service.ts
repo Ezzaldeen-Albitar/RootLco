@@ -12,12 +12,25 @@
 import { appendAudit } from '@/server/audit/audit';
 import { AppFailure } from '@/server/errors/app-failure';
 import { isSqlState, SQLSTATE } from '@/server/db/repository';
-import { type DbHandle, withPlatformTarget } from '@/server/db/transaction';
+import {
+  type DbHandle,
+  withPlatformTarget,
+  withPlatformTenantScope,
+} from '@/server/db/transaction';
 import { type Page, pageRequest } from '@/server/db/pagination';
-import { type FirstOwnerInput, iamModule } from '@/modules/iam';
+import {
+  type BranchCreateInput,
+  type BranchRecordRow,
+  type CompanyCreateInput,
+  type CompanyRecordRow,
+  type FirstOwnerInput,
+  iamModule,
+} from '@/modules/iam';
 import { paymentsModule } from '@/modules/payments';
 import { sharedServicesModule } from '@/modules/shared-services';
 import type {
+  CapacityAllowanceRow,
+  CapacityUsageRow,
   OrganizationBranchRow,
   OrganizationCompanyRow,
   OrganizationRow,
@@ -55,11 +68,13 @@ export interface OrganizationView {
  * `limit` is null when the plan states none for that kind — which the console
  * renders as unlimited. That is the honest reading: `capacity_limits` is an open
  * document and an absent key is an absent rule, not a zero.
+ *
+ * The shape is `org.capacity_usage`'s own, re-exported rather than rebuilt: the
+ * console and the tenant capacity read publish the SAME numbers because they
+ * call the same function, which is what stops a screen explaining a refusal with
+ * figures the database does not recognise.
  */
-export interface CapacityUsage {
-  readonly used: number;
-  readonly limit: number | null;
-}
+export type CapacityUsage = CapacityAllowanceRow;
 
 /** Everything the console's organisation screen shows about one tenant. */
 export interface OrganizationDetailView {
@@ -77,11 +92,7 @@ export interface OrganizationDetailView {
   readonly subscriptions: readonly TenantSubscriptionRow[];
   readonly subscriptionEvents: readonly SubscriptionEventRow[];
   readonly statusHistory: readonly TenantStatusHistoryRow[];
-  readonly capacity: {
-    readonly companies: CapacityUsage;
-    readonly branches: CapacityUsage;
-    readonly users: CapacityUsage;
-  };
+  readonly capacity: CapacityUsageRow;
 }
 
 /** How many rows of each unbounded child list the detail publishes. */
@@ -114,6 +125,55 @@ export interface ProvisionCommand {
   readonly spec: Readonly<Record<string, unknown>>;
   readonly owner: FirstOwnerInput;
   readonly activate: boolean;
+}
+
+/**
+ * What the console is handed after adding a legal company to an existing
+ * organisation.
+ *
+ * `targetTenantId` travels with the row deliberately. Every other response on
+ * this module describes the operator's own context; these three describe an act
+ * performed INSIDE another organisation, and the response says which one rather
+ * than leaving the caller to infer it from the path it happened to call.
+ */
+export interface CompanyAddedView {
+  readonly targetTenantId: string;
+  readonly company: CompanyRecordRow;
+}
+
+/** The branch half, with the numbering runs already established for it. */
+export interface BranchAddedView {
+  readonly targetTenantId: string;
+  readonly branch: BranchRecordRow;
+}
+
+/**
+ * What the console asks for when an organisation needs an administrator.
+ *
+ * `resend` and the establishment fields are one command rather than two
+ * operations because they are one question asked of one address — "this
+ * organisation's administrator has not arrived, act on it" — and splitting them
+ * would put the same address lock, the same window and the same authority behind
+ * two routes.
+ */
+export interface AdministratorCommand {
+  readonly email: string;
+  readonly displayName?: string | undefined;
+  readonly additionalAdministrator: boolean;
+  readonly reason?: string | undefined;
+  readonly redirectTo?: string | undefined;
+  readonly resend: boolean;
+}
+
+/** What an administrator setup or re-invitation established. Identifiers only. */
+export interface AdministratorSetupResultView {
+  readonly targetTenantId: string;
+  /** `established` — an account was written and granted. `reinvited` — a fresh link, nothing written. */
+  readonly outcome: string;
+  readonly accountId: string | null;
+  readonly tenantAdministratorRoleId: string | null;
+  readonly roleEstablished: boolean;
+  readonly administratorsBefore: number;
 }
 
 export class OrganizationService {
@@ -175,10 +235,11 @@ export class OrganizationService {
       tenantId,
       DETAIL_HISTORY_LIMIT
     );
-    const activePlan = await this.subscriptions.readActivePlanForTenant(db, tenantId);
-
-    const limits = activePlan?.capacityLimits ?? {};
-    const activeUsers = userCounts.find((row) => row.status === 'active')?.count ?? 0;
+    // The allowance comes from `org.capacity_usage` rather than from the lists
+    // above and the plan document. Those gave the console a SECOND definition of
+    // every number, and it disagreed with the one that decides a refusal: the
+    // database holds a seat for an `invited` account as well as an `active` one.
+    const capacity = await this.repository.readCapacityUsage(db, tenantId);
 
     return {
       id: root.id,
@@ -194,17 +255,7 @@ export class OrganizationService {
       subscriptions,
       subscriptionEvents: events,
       statusHistory,
-      capacity: {
-        companies: {
-          used: companies.filter((c) => c.status === 'active').length,
-          limit: capacityLimit(limits, 'companies'),
-        },
-        branches: {
-          used: branches.filter((b) => b.status === 'active').length,
-          limit: capacityLimit(limits, 'branches'),
-        },
-        users: { used: activeUsers, limit: capacityLimit(limits, 'users') },
-      },
+      capacity,
     };
   }
 
@@ -388,6 +439,151 @@ export class OrganizationService {
     };
   }
 
+  /**
+   * Adds a legal company to an organisation that is already running
+   * (P1-32-PRE-151).
+   *
+   * The write is `iam`'s, not this module's, and the sharing is the point:
+   * `org.company-create` and this operation issue the SAME statement through the
+   * same port, so the duplicate-code refusal, the capacity refusal and the
+   * companion state a company is born with are one implementation. What the
+   * console adds is WHERE the act happens and where it is recorded — inside a
+   * platform-on-target window for the named organisation, and audited in the
+   * operator's own tenant with `target_tenant_id`, because
+   * `sel_audit_records_platform` is `tenant_id = current_tenant_id()` and a
+   * record written in the target would be invisible to the operator who made it.
+   */
+  async addCompany(
+    db: DbHandle,
+    tenantId: string,
+    input: CompanyCreateInput
+  ): Promise<CompanyAddedView> {
+    const company = await withPlatformTenantScope(db, tenantId, (target) =>
+      iamModule().organizationAdministration.writeCompany(target, input)
+    );
+
+    await appendAudit(db, {
+      action: 'org.company.created',
+      entityType: 'org.legal_company',
+      entityId: company.id,
+      details: [
+        { field: TARGET_TENANT_DETAIL_FIELD, classification: 'internal', value: tenantId },
+        { field: 'company_code', classification: 'public', value: company.companyCode },
+        { field: 'legal_name', classification: 'public', value: company.legalName },
+        {
+          field: 'base_currency_code',
+          classification: 'public',
+          value: company.baseCurrencyCode,
+        },
+      ],
+    });
+
+    return { targetTenantId: tenantId, company };
+  }
+
+  /**
+   * Adds a branch to a company of an organisation that is already running.
+   *
+   * Through the same `iam` port the tenant operation uses, so the branch arrives
+   * with its invoice, quotation and receipt numbering runs — the half a console
+   * copy of the insert would silently omit, leaving a branch that cannot issue
+   * an invoice and a failure nobody could explain weeks later.
+   */
+  async addBranch(
+    db: DbHandle,
+    tenantId: string,
+    input: BranchCreateInput
+  ): Promise<BranchAddedView> {
+    const branch = await withPlatformTenantScope(db, tenantId, (target) =>
+      iamModule().organizationAdministration.writeBranch(target, input)
+    );
+
+    await appendAudit(db, {
+      action: 'org.branch.created',
+      entityType: 'org.branch',
+      entityId: branch.id,
+      details: [
+        { field: TARGET_TENANT_DETAIL_FIELD, classification: 'internal', value: tenantId },
+        { field: 'branch_code', classification: 'public', value: branch.branchCode },
+        { field: 'name', classification: 'public', value: branch.name },
+        { field: 'timezone_name', classification: 'public', value: branch.timezoneName },
+      ],
+    });
+
+    return { targetTenantId: tenantId, branch };
+  }
+
+  /**
+   * Gives an organisation its first administrator — or sends the outstanding
+   * invitation again.
+   *
+   * The act that closes the hole the control plane has had since it shipped: an
+   * organisation whose first owner never accepted their link had nobody who
+   * could sign in, and no operation could give it one. Both paths run through
+   * `iam`'s bootstrap service inside the target window, so the address lock, the
+   * identity rules, the seat ceiling and the refusal recovery are the ones the
+   * provisioning path already proves.
+   *
+   * The record is written in the operator's tenant for the reason the company
+   * port states, and it carries the outcome: an operator asking "was this
+   * organisation given an administrator, or merely reminded?" must be able to
+   * tell from the trail.
+   */
+  async setUpAdministrator(
+    db: DbHandle,
+    tenantId: string,
+    command: AdministratorCommand
+  ): Promise<AdministratorSetupResultView> {
+    const result = await withPlatformTenantScope(db, tenantId, (target) =>
+      command.resend
+        ? iamModule().tenantBootstrap.reinviteAdministrator(target, {
+            email: command.email,
+            ...(command.redirectTo === undefined ? {} : { redirectTo: command.redirectTo }),
+          })
+        : iamModule().tenantBootstrap.establishAdministrator(target, {
+            email: command.email,
+            displayName: command.displayName ?? '',
+            additionalAdministrator: command.additionalAdministrator,
+            ...(command.reason === undefined ? {} : { reason: command.reason }),
+            ...(command.redirectTo === undefined ? {} : { redirectTo: command.redirectTo }),
+          })
+    );
+
+    await appendAudit(db, {
+      action: 'iam.tenant_administrator.invited',
+      entityType: 'org.tenant',
+      entityId: tenantId,
+      details: [
+        { field: TARGET_TENANT_DETAIL_FIELD, classification: 'internal', value: tenantId },
+        { field: 'outcome', classification: 'public', value: result.outcome },
+        // The address is `restricted`, so iam.audit_mask replaces it with a fixed
+        // marker in the stored row: the trail proves that an administrator was
+        // established and for which account, never who they are.
+        { field: 'email', classification: 'restricted', value: command.email },
+        {
+          field: 'account_id',
+          classification: 'internal',
+          value: result.accountId ?? '',
+        },
+        {
+          field: 'additional_administrator',
+          classification: 'public',
+          value: String(command.additionalAdministrator),
+        },
+        { field: 'reason', classification: 'internal', value: command.reason ?? '' },
+      ],
+    });
+
+    return {
+      targetTenantId: tenantId,
+      outcome: result.outcome,
+      accountId: result.accountId,
+      tenantAdministratorRoleId: result.tenantAdministratorRoleId,
+      roleEstablished: result.roleEstablished,
+      administratorsBefore: result.administratorsBefore,
+    };
+  }
+
   /** The lifecycle predicate, asked of the database before anything is written. */
   /**
    * A second organization with a code already in use is a conflict, not an
@@ -526,20 +722,6 @@ function subscriptionEventKindFor(fromState: string | null, toState: string): st
  */
 function today(db: DbHandle): string {
   return db.context.startedAt.toISOString().slice(0, 10);
-}
-
-/**
- * Reads one capacity limit out of a plan's open `capacity_limits` document.
- *
- * Returns null — meaning "the plan states no limit", which the console renders
- * as unlimited — when the key is absent or is not a finite number. It is NOT
- * coerced to zero: an absent rule and a rule of zero are opposite statements,
- * and conflating them would report every organisation as over its allowance the
- * moment a plan forgot a key.
- */
-function capacityLimit(limits: Record<string, unknown>, key: string): number | null {
-  const raw = limits[key];
-  return typeof raw === 'number' && Number.isFinite(raw) ? raw : null;
 }
 
 function toView(row: OrganizationRow): OrganizationView {

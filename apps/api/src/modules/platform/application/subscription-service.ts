@@ -245,6 +245,10 @@ export class SubscriptionService {
       readonly termMonths?: number | undefined;
       readonly kind: AssignmentKind;
       readonly reason: string;
+      /** Deliberate acceptance that the new plan sits below current usage. */
+      readonly acceptOverCapacity?: boolean | undefined;
+      /** Why that was accepted. Required with the flag, refused without it. */
+      readonly overCapacityReason?: string | undefined;
     }
   ): Promise<SubscriptionChangeView> {
     const tenant = await this.organizations.readTenantRoot(db, command.tenantId);
@@ -259,6 +263,28 @@ export class SubscriptionService {
     }
 
     this.refuseIncoherentKind(command.kind, live, plan);
+
+    // The capacity question, asked of the database and not of the plan
+    // document: `org.plan_capacity_shortfall` counts with `org.capacity_used`,
+    // which is the function the creation triggers count with, so what the
+    // operator is told here and what the organisation will actually be refused
+    // tomorrow are the same arithmetic.
+    //
+    // Refused by default and overridable with a reason, because both halves are
+    // real: a downgrade onto a plan smaller than the organisation is nearly
+    // always a mistake, and occasionally it is a commercial decision the Owner
+    // has already taken — the customer is being moved to a smaller plan and will
+    // shed the extra branches over the month. What it never does is DELETE
+    // anything: existing records stay, and the creation triggers go on refusing
+    // everything new until usage is back inside the ceiling.
+    const shortfall = await this.plans.planCapacityShortfall(db, command.tenantId, plan.id);
+    if (shortfall.length > 0 && command.acceptOverCapacity !== true) {
+      throw new AppFailure('ERR-CAP-003', {
+        message:
+          'The plan would place the organisation below its current usage; accept the over-capacity explicitly, with a reason, to proceed',
+        safeDetails: { overCapacity: shortfall },
+      });
+    }
 
     const termMonths = command.termMonths ?? plan.termMonths;
     if (termMonths === null || termMonths === undefined) {
@@ -326,6 +352,21 @@ export class SubscriptionService {
         { field: 'effective_from', classification: 'public', value: command.effectiveFrom },
         { field: 'term_months', classification: 'public', value: String(termMonths) },
         { field: 'reason', classification: 'internal', value: command.reason },
+        // Present on every assignment, empty when the plan fits. An operator
+        // asking later why an organisation is over its allowance must find the
+        // act that put it there and the justification given at the time, and an
+        // absent detail would leave them unable to tell "it fitted" from "nobody
+        // recorded that it did not".
+        {
+          field: 'over_capacity',
+          classification: 'public',
+          value: shortfall.map((row) => `${row.kind}:${row.used}>${row.newLimit}`).join(', '),
+        },
+        {
+          field: 'over_capacity_reason',
+          classification: 'internal',
+          value: command.overCapacityReason ?? '',
+        },
       ],
     });
 

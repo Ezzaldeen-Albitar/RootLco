@@ -15,6 +15,17 @@
  * `termMonths` defaults to the plan's own term; 24 or 36 is a multi-year
  * contract. The new period's end is computed in SQL (`+ make_interval`), never
  * by hand-rolled month arithmetic.
+ *
+ * ## The capacity gate (P1-32-PRE-151)
+ *
+ * A plan whose ceilings sit BELOW what the organisation already holds is refused
+ * with `ERR-CAP-003`, naming every kind, what is in use and what the new plan
+ * would permit. The numbers come from `org.plan_capacity_shortfall`, which
+ * counts with the same function the creation triggers count with, so the
+ * refusal and tomorrow's refusals agree. `acceptOverCapacity` with a reason
+ * proceeds anyway: nothing is deleted, the organisation keeps what it has, and
+ * the triggers go on refusing anything new until usage is back inside the
+ * ceiling.
  */
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
@@ -34,8 +45,16 @@ export const SubscriptionAssignBody = z
     termMonths: z.number().int().min(1).max(120).optional(),
     kind: z.enum(ASSIGNMENT_KINDS),
     reason: z.string().trim().min(1).max(500),
+    acceptOverCapacity: z.boolean().optional(),
+    overCapacityReason: z.string().trim().min(1).max(500).optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (value) => (value.acceptOverCapacity === true) === (value.overCapacityReason !== undefined),
+    {
+      message: 'accepting over-capacity needs a reason, and the reason needs the flag',
+    }
+  );
 
 export const SUBSCRIPTION_ASSIGN_OPERATION = defineOperation({
   id: 'platform.subscription-assign',
@@ -76,6 +95,12 @@ export async function POST(
         termMonths: input.termMonths,
         kind: input.kind,
         reason: input.reason,
+        ...(input.acceptOverCapacity === undefined
+          ? {}
+          : { acceptOverCapacity: input.acceptOverCapacity }),
+        ...(input.overCapacityReason === undefined
+          ? {}
+          : { overCapacityReason: input.overCapacityReason }),
       });
       return { status: 201, body: changed };
     },

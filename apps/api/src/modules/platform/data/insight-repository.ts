@@ -13,11 +13,13 @@
  *
  * `org.subscription_plans.capacity_limits` is an open jsonb document whose
  * validator (`org.validate_plan_documents()`) admits ANY key with a
- * non-negative numeric value. The console reads exactly three of them —
- * `companies`, `branches`, `users` — because those are the three things it can
- * count. A plan carrying other keys is not rejected; they are simply not
- * reported, because reporting a limit nothing measures would be a number with
- * no meaning.
+ * non-negative numeric value. Exactly three of them carry meaning —
+ * `max_companies`, `max_branches`, `max_users` — because those are the three
+ * the database's own capacity functions read and enforce. A plan carrying other
+ * keys is not rejected; they are simply not reported, because reporting a limit
+ * nothing measures would be a number with no meaning. The console publishes the
+ * three under their short names and translates at the repository boundary, so
+ * the column holds one spelling: the one the triggers read.
  *
  * ## The audit search is the OPERATOR's trail, not a tenant's
  *
@@ -207,6 +209,13 @@ export class InsightRepository extends Repository {
    * A limit of zero is skipped rather than reported as "always breached": a
    * plan that grants no branches at all is a configuration statement, not an
    * alert about every tenant holding it. Ratios are computed in `numeric`.
+   *
+   * Both halves come from `org.capacity_usage`, by name. They used to be
+   * assembled here — three counts and a plan-document read — and the counts
+   * disagreed with the ones that decide a refusal: a seat is held by an
+   * `invited` account as well as an `active` one, so an organisation could be
+   * refused its next user while this alert reported it comfortably inside its
+   * allowance.
    */
   async listCapacityAlerts(db: DbHandle): Promise<readonly CapacityAlertRow[]> {
     const result = await this.run<{
@@ -219,40 +228,24 @@ export class InsightRepository extends Repository {
       severity: string;
     }>(
       db,
-      `WITH live AS (
-         SELECT s.tenant_id, p.capacity_limits
-           FROM org.tenant_subscriptions s
-           JOIN org.subscription_plans p ON p.id = s.plan_id
-          WHERE s.status = 'active'
-            AND s.effective_from <= now()
-            AND (s.effective_to IS NULL OR s.effective_to > now())
-       ),
-       usage AS (
+      `WITH usage AS (
          SELECT t.id AS tenant_id, t.tenant_code, t.display_name,
-                (SELECT count(*)::int FROM org.legal_companies c
-                  WHERE c.tenant_id = t.id AND c.status = 'active' AND c.deleted_at IS NULL)
-                  AS companies,
-                (SELECT count(*)::int FROM org.branches b
-                  WHERE b.tenant_id = t.id AND b.status = 'active' AND b.deleted_at IS NULL)
-                  AS branches,
-                (SELECT count(*)::int FROM iam.user_accounts u
-                  WHERE u.tenant_id = t.id AND u.status = 'active' AND u.deleted_at IS NULL)
-                  AS users
+                org.capacity_usage(t.id) AS allowance
            FROM org.tenants t
        )
        SELECT u.tenant_id, u.tenant_code, u.display_name,
-              k.kind, k.used,
-              (live.capacity_limits ->> k.kind)::numeric::int AS limit_value,
-              CASE WHEN k.used >= (live.capacity_limits ->> k.kind)::numeric
+              k.kind,
+              (u.allowance -> k.kind ->> 'used')::int AS used,
+              (u.allowance -> k.kind ->> 'limit')::int AS limit_value,
+              CASE WHEN (u.allowance -> k.kind ->> 'used')::numeric
+                     >= (u.allowance -> k.kind ->> 'limit')::numeric
                    THEN 'at-limit' ELSE 'near-limit' END AS severity
          FROM usage u
-         JOIN live ON live.tenant_id = u.tenant_id
-         CROSS JOIN LATERAL (
-           VALUES ('companies', u.companies), ('branches', u.branches), ('users', u.users)
-         ) AS k(kind, used)
-        WHERE live.capacity_limits ? k.kind
-          AND (live.capacity_limits ->> k.kind)::numeric > 0
-          AND k.used::numeric >= 0.9 * (live.capacity_limits ->> k.kind)::numeric
+         CROSS JOIN LATERAL (VALUES ('companies'), ('branches'), ('users')) AS k(kind)
+        WHERE (u.allowance -> k.kind ->> 'limit') IS NOT NULL
+          AND (u.allowance -> k.kind ->> 'limit')::numeric > 0
+          AND (u.allowance -> k.kind ->> 'used')::numeric
+                >= 0.9 * (u.allowance -> k.kind ->> 'limit')::numeric
         ORDER BY u.tenant_code ASC, k.kind ASC`
     );
     return result.rows.map((r) => ({
