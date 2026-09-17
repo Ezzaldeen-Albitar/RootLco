@@ -2,6 +2,7 @@
 
 import { z } from 'zod';
 import { authorizedClient } from '@/lib/api/server-client';
+import { CAPACITY_LIMIT_CODE, ORGANISATION_INACTIVE_CODE } from '@/lib/api/client';
 import { fromFailure, invalid, success, type ActionState } from '@/lib/forms/action-result';
 import { issueKeysByField } from '@/features/authentication/schemas/credentials';
 
@@ -74,7 +75,16 @@ export async function inviteUserAction(
     // tenant. It arrives as a 409 and is a deterministic, documented outcome,
     // not a mystery: re-inviting would issue a second live token for the same
     // identity, so the backend refuses rather than silently re-sending.
-    if (result.kind === 'conflict') {
+    //
+    // A capacity refusal is ALSO a 409, and it is not a duplicate: the seat
+    // allowance is spent. It goes through `fromFailure`, which names the
+    // ceiling and the numbers instead of blaming an address that is fine.
+    const code = result.problem?.code;
+    if (
+      result.kind === 'conflict' &&
+      code !== CAPACITY_LIMIT_CODE &&
+      code !== ORGANISATION_INACTIVE_CODE
+    ) {
       return {
         status: 'conflict',
         messageKey: 'users.invite.duplicate',
@@ -182,4 +192,152 @@ async function mutate(
     return fromFailure(result, 1, result.kind === 'forbidden' ? 'state.denied.title' : undefined);
   }
   return success('admin.saved', 1);
+}
+
+// --- role grants and where they apply ----------------------------------------
+
+const scopeSchema = z
+  .object({
+    scopeType: z.enum(['company', 'branch', 'department']),
+    companyId: z.string().regex(UUID),
+    branchId: z.string().regex(UUID).optional(),
+    departmentId: z.string().regex(UUID).optional(),
+  })
+  .strict()
+  .refine((scope) =>
+    scope.scopeType === 'company'
+      ? scope.branchId === undefined && scope.departmentId === undefined
+      : scope.scopeType === 'branch'
+        ? scope.branchId !== undefined && scope.departmentId === undefined
+        : scope.branchId !== undefined && scope.departmentId !== undefined
+  );
+
+const grantSchema = z.object({
+  userId: z.string().regex(UUID),
+  roleId: z.string().regex(UUID, 'users.access.roleRequired'),
+  scopes: z.array(scopeSchema).max(50),
+});
+
+/**
+ * `POST /api/v1/iam/grants` — `iam.grant-issue`, `iam.grant.manage`.
+ *
+ * An EMPTY scope list is a deliberate request for the whole organisation, and
+ * the backend treats it exactly so — it takes the unrestricted authority path,
+ * which only an organisation-wide administrator passes. So the screen sends an
+ * empty list only when the operator chose "whole organisation", and refuses a
+ * narrower choice with nothing selected rather than silently widening it.
+ */
+export async function issueGrantAction(input: {
+  readonly userId: string;
+  readonly roleId: string;
+  readonly wholeOrganisation: boolean;
+  readonly scopes: readonly ScopeInput[];
+}): Promise<ActionState> {
+  if (!input.wholeOrganisation && input.scopes.length === 0) {
+    return invalid({ scopes: 'users.access.scope.pickOne' }, 1, 'users.access.scope.pickOne');
+  }
+  const parsed = grantSchema.safeParse({
+    userId: input.userId,
+    roleId: input.roleId,
+    scopes: input.wholeOrganisation ? [] : input.scopes,
+  });
+  if (!parsed.success) {
+    const keys = issueKeysByField(parsed.error);
+    return invalid(keys, 1, keys.roleId ?? 'form.formError');
+  }
+
+  const client = await authorizedClient();
+  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+
+  const result = await client.send('POST', '/api/v1/iam/grants', {
+    userId: parsed.data.userId,
+    roleId: parsed.data.roleId,
+    ...(parsed.data.scopes.length > 0 ? { scopes: parsed.data.scopes } : {}),
+  });
+  if (!result.ok) {
+    return fromFailure(result, 1, result.kind === 'forbidden' ? 'state.denied.title' : undefined);
+  }
+  return success('users.access.granted', 1);
+}
+
+type ScopeInput = {
+  readonly scopeType: 'company' | 'branch' | 'department';
+  readonly companyId: string;
+  readonly branchId?: string;
+  readonly departmentId?: string;
+};
+
+/**
+ * `POST /api/v1/iam/grants/{grantId}/scopes` — `iam.grant-scope-add`.
+ *
+ * One place per request, as the operation takes it. Several places are added
+ * one after another and the first refusal stops the rest, so the operator is
+ * told which answer they got instead of a mixture.
+ */
+export async function addGrantScopesAction(
+  grantId: string,
+  scopes: readonly ScopeInput[]
+): Promise<ActionState> {
+  if (scopes.length === 0) {
+    return invalid({ scopes: 'users.access.scope.pickOne' }, 1, 'users.access.scope.pickOne');
+  }
+  const parsed = z.array(scopeSchema).max(50).safeParse(scopes);
+  if (!UUID.test(grantId) || !parsed.success) return invalid({}, 1, 'form.formError');
+
+  const client = await authorizedClient();
+  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+
+  for (const scope of parsed.data) {
+    const result = await client.send(
+      'POST',
+      `/api/v1/iam/grants/${encodeURIComponent(grantId)}/scopes`,
+      scope
+    );
+    if (!result.ok) {
+      return fromFailure(result, 1, result.kind === 'forbidden' ? 'state.denied.title' : undefined);
+    }
+  }
+  return success('users.access.scopeAdded', 1);
+}
+
+/** `DELETE /api/v1/iam/grants/{grantId}/scopes/{scopeId}` — `iam.grant-scope-remove`. */
+export async function removeGrantScopeAction(
+  grantId: string,
+  scopeId: string
+): Promise<ActionState> {
+  if (!UUID.test(grantId) || !UUID.test(scopeId)) return invalid({}, 1, 'form.formError');
+  return mutate(
+    'DELETE',
+    `/api/v1/iam/grants/${encodeURIComponent(grantId)}/scopes/${encodeURIComponent(scopeId)}`,
+    undefined
+  );
+}
+
+/**
+ * `DELETE /api/v1/iam/grants/{grantId}` — `iam.grant-revoke`, `iam.grant.manage`.
+ *
+ * Version-guarded and reason-bearing: the operation refuses without `If-Match`,
+ * and the reason becomes the audit record of why someone lost a role. The
+ * version is the one the screen displayed, so a grant that changed underneath
+ * the operator is refused as a conflict rather than revoked blind.
+ *
+ * The backend refuses two revocations this action does not pre-empt: your own
+ * grant, and the last remaining holder of user, role or grant administration.
+ * Both are answered by the server, which is the only answer that binds.
+ */
+export async function revokeGrantAction(
+  grantId: string,
+  recordVersion: number,
+  reasonText: string
+): Promise<ActionState> {
+  if (!UUID.test(grantId) || !Number.isInteger(recordVersion)) {
+    return invalid({}, 1, 'form.formError');
+  }
+  const result = await mutate(
+    'DELETE',
+    `/api/v1/iam/grants/${encodeURIComponent(grantId)}`,
+    { reason: reasonText },
+    { validateReason: reasonText, ifMatch: recordVersion }
+  );
+  return result.status === 'success' ? success('users.access.revoked', 1) : result;
 }
