@@ -34,10 +34,8 @@ import type {
  * It is a server-only module now, in the same way as
  * `features/platform/api/session.ts`: no directive, and `authorizedClient()`
  * reads the `httpOnly` cookie through `next/headers`, which does not exist in a
- * client bundle. Every caller is a Server Component or a server module, and
- * `tests/platform-console-writes.test.ts` fails when this module carries the
- * directive or when any client module reaches it, directly or through plain
- * modules. The `server-only` package is not a dependency of this repository.
+ * client bundle — so an import from a client component fails at build time
+ * rather than shipping. Every caller is a Server Component or a server module.
  *
  * The two reads a client data table drives, the organisation list and the
  * activity search, are still Server Actions in `actions.ts`. That is an open
