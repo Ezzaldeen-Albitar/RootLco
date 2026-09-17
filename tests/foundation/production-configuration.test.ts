@@ -44,7 +44,6 @@ function fullyConfigured(): Record<string, string> {
     AUTH_JWT_SECRET: 'set',
     AUTH_JWT_ISSUER: 'set',
     AUTH_REDIRECT_ALLOWLIST: 'set',
-    CORS_ALLOWED_ORIGINS: 'set',
     STORAGE_PROVIDER: 's3_compatible',
     STORAGE_S3_ENDPOINT: 'set',
     STORAGE_S3_ACCESS_KEY_ID: 'set',
@@ -97,11 +96,11 @@ describe('a deployed environment with values missing', () => {
     // `AUTH_REDIRECT_ALLOWLIST=` in a template is how "unset" is written, and a
     // present-but-empty comma list rejects every redirect just as an absent one
     // does. Reporting only `undefined` would miss the commonest spelling.
-    const env = { ...fullyConfigured(), AUTH_REDIRECT_ALLOWLIST: '', CORS_ALLOWED_ORIGINS: '   ' };
+    const env = { ...fullyConfigured(), AUTH_JWT_ISSUER: '', AUTH_REDIRECT_ALLOWLIST: '   ' };
 
     expect(productionConfigurationProblems(env)).toEqual([
+      'AUTH_JWT_ISSUER',
       'AUTH_REDIRECT_ALLOWLIST',
-      'CORS_ALLOWED_ORIGINS',
     ]);
   });
 
@@ -113,6 +112,30 @@ describe('a deployed environment with values missing', () => {
     const problems = productionConfigurationProblems(env);
     expect(problems).toEqual(['DATABASE_URL']);
     expect(problems.join(' ')).not.toContain('a-value-that-must-never-be-echoed');
+  });
+});
+
+describe('settings that are accepted but read by nothing', () => {
+  it('does not refuse a deployment for omitting one', () => {
+    // `CORS_ALLOWED_ORIGINS` used to be listed here, which made a deployment
+    // unready for omitting a value no code reads: no CORS layer exists on this
+    // tier, so supplying it would have emitted no header. `RESERVED_SETTINGS`
+    // records why, and `tests/foundation/reserved-settings.test.ts` derives the
+    // whole accepted surface from the schema so this cannot silently return.
+    const env = fullyConfigured();
+    delete env['CORS_ALLOWED_ORIGINS'];
+    delete env['CACHE_DEFAULT_TTL_SECONDS'];
+    delete env['DATABASE_REPLICA_URL'];
+
+    expect(productionConfigurationProblems(env)).toEqual([]);
+  });
+
+  it('is still accepted when a deployment does set it', () => {
+    // Compatibility is the other half: a deployment already carrying the value
+    // must not start reporting a problem for having it.
+    const env = { ...fullyConfigured(), CORS_ALLOWED_ORIGINS: 'set' };
+
+    expect(productionConfigurationProblems(env)).toEqual([]);
   });
 });
 

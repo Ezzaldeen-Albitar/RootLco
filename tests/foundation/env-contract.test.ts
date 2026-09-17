@@ -41,17 +41,39 @@ const schemaSource = readFileSync(BACKEND_CONFIG, 'utf8');
 const extracted = readSchemaKeys(schemaSource);
 
 /**
+ * The text of `const schema = z.object({ ... })`, and nothing else in the file.
+ *
+ * The file now holds a SECOND object literal keyed by environment names —
+ * `RESERVED_SETTINGS`, the register of settings that are accepted and read by
+ * nothing — whose properties are indented exactly as the schema's are. The
+ * counter below cannot tell them apart by indentation, and widening it to
+ * tolerate them would have quietly inflated the expected total by three, which
+ * is precisely the silent drift the count exists to catch. So the region is
+ * delimited first, by the schema's own opening and its closing `});` at column
+ * zero, and the count is taken inside it.
+ */
+function schemaRegion(source: string): string {
+  const opening = source.indexOf('const schema = z.object({');
+  const closing = source.indexOf('\n});', opening);
+  if (opening === -1 || closing === -1) {
+    throw new Error('the schema declaration was not found — the counter has nothing to count');
+  }
+  return source.slice(opening, closing);
+}
+
+/**
  * An independent count of the schema's properties.
  *
  * Deliberately a different rule from the extractor's: this one keys on the
- * INDENTATION of a top-level property of the one `z.object({ ... })` in the
- * file — exactly two spaces, which Prettier guarantees — and says nothing at
- * all about what follows the colon. The extractor keys on what follows the
- * colon and is relaxed about the indentation. Two rules that can only agree
- * when both are right.
+ * INDENTATION of a top-level property — exactly two spaces, which Prettier
+ * guarantees — and says nothing at all about what follows the colon. The
+ * extractor keys on what follows the colon and is relaxed about the
+ * indentation. Two rules that can only agree when both are right.
  */
 function countSchemaProperties(source: string): number {
-  return source.split(/\r?\n/).filter((line) => /^ {2}[A-Z][A-Z0-9_]*:/.test(line)).length;
+  return schemaRegion(source)
+    .split(/\r?\n/)
+    .filter((line) => /^ {2}[A-Z][A-Z0-9_]*:/.test(line)).length;
 }
 
 describe('schema key extraction', () => {
@@ -76,6 +98,18 @@ describe('schema key extraction', () => {
 
   it('extracts every property the schema declares, counted a different way', () => {
     expect(extracted.size).toBe(countSchemaProperties(schemaSource));
+  });
+
+  it('counts the schema only, not the reserved register beside it', () => {
+    // The delimiting is what makes the count above meaningful, so it is
+    // asserted rather than assumed: the region must stop before
+    // `RESERVED_SETTINGS`, whose keys are environment names at the same
+    // indentation, and must still contain the schema's own last entry.
+    const region = schemaRegion(schemaSource);
+    expect(region).toContain('EXPORT_MAX_ROWS');
+    // The declaration, not the word: several schema entries name the register
+    // in their own documentation, which is exactly why they are reserved.
+    expect(region).not.toContain('export const RESERVED_SETTINGS');
   });
 
   it('extracts nothing from a schema whose keys are not environment names', () => {
