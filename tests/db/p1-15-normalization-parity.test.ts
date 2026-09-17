@@ -142,7 +142,7 @@ describe('P1-15 / normalization parity with the frozen SQL', () => {
   // stripped as if they were punctuation and the number normalized to null. That
   // was recorded in phase-1-15-implementation-decisions.md §2.2 as a limitation of
   // the frozen contract that only a database change could lift; migration
-  // 20260916090000_shared_text_folding.sql is that change, and this case now pins
+  // 20260916094000_shared_text_folding.sql is that change, and this case now pins
   // the folded result in BOTH implementations so neither can regress alone.
   it('Arabic-Indic digits fold to ASCII in both implementations', async () => {
     const { rows } = await admin.query<{ sql: string | null }>(

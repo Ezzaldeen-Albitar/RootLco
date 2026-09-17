@@ -4947,8 +4947,8 @@ User-owned saved filter (owner-only RLS).
 
 No table and no column is added or changed. Two routines are added, four existing normalizers
 are re-issued over them, and seven indexes make the widened search surface index-eligible.
-Migrations `20260916090000_shared_text_folding.sql` and
-`20260916091000_search_expression_indexes.sql`.
+Migrations `20260916094000_shared_text_folding.sql` and
+`20260916095000_search_expression_indexes.sql`.
 
 | Routine                         | Kind              | Security                   | Purpose                                                                                                                                                                  |
 | ------------------------------- | ----------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

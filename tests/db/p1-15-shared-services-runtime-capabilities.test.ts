@@ -440,11 +440,11 @@ describe('P1-15 / global security posture', () => {
     // relation — the two functions are EXECUTE-granted to the application roles
     // exactly like the normalizers that call them, and are asserted by name in
     // foundation.test.ts and by posture in tests/db/p1-32-text-folding-parity.test.ts.
-    expect(files.at(-2)).toBe('20260916090000_shared_text_folding.sql');
+    expect(files.at(-2)).toBe('20260916094000_shared_text_folding.sql');
     // 143 is the index half of that slice: seven expression indexes, six of them
     // GIN trigram, so the widened contains-matches are index-eligible. Indexes only
     // — nothing in `shared` moves.
-    expect(files.at(-1)).toBe('20260916091000_search_expression_indexes.sql');
+    expect(files.at(-1)).toBe('20260916095000_search_expression_indexes.sql');
   });
 
   it('migration 121 changes the shared surface DELIBERATELY, and the change is bounded', () => {
