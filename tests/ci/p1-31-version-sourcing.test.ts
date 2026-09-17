@@ -159,7 +159,9 @@ describe('the tree as it stands passes, and the run is not vacuous', () => {
     expect(out).toContain(
       'P1-31 version sourcing: 11 guarded operation(s) in scope of 77 the contract guards, ' +
         '4 with a consumer, 7 pending one, 5 in-scope send(s), 4 adapter call site(s), ' +
-        '23 versioned send(s) outside the subject.'
+        // 23 -> 25 with the P1-32 stock-operation adapters: posting a goods receipt and
+        // recording a count line each send a version for an inv operation.
+        '25 versioned send(s) outside the subject.'
     );
     expect(out).toContain(
       'OK: every version-guarded P1-31 command sources its If-Match from a read or a command ' +
