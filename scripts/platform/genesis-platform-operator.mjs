@@ -16,8 +16,9 @@
  *      then activated) — operator accounts live in a tenant that holds no
  *      business data (§5.4);
  *   2. the operator's account in it, `active`, with its status-history row;
- *   3. the three platform grants: `platform.organization.provision`,
- *      `platform.organization.lifecycle`, `platform.organization.read`;
+ *   3. the platform grants named by `PLATFORM_AUTHORITY_CODES` — the three
+ *      Wave-B organisation authorities and the six Platform Owner Console ones
+ *      (P1-32-PRE-020);
  *   4. an audit record in the home tenant, `platform.operator.genesis`, naming
  *      the account and the grants — identifiers only;
  *   5. optionally, the `app_platform` LOGIN role the application's
@@ -71,11 +72,31 @@ import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 
 const ALLOWED_ENVIRONMENTS = new Set(['local-acceptance', 'production-genesis']);
-const PLATFORM_CODES = Object.freeze([
+
+/**
+ * Every platform authority code an operator is established with — ONE list.
+ *
+ * Exported because two scripts need the same answer: this genesis, and
+ * `grant-platform-authority.mjs`, which completes an operator established before
+ * a code existed. Two copies of this list would drift the first time a code was
+ * added to one and not the other, and the symptom would be an operator whose
+ * console silently lacks a screen. The codes themselves are seeded in
+ * `supabase/seeds/04_iam_permission_catalog.sql`; a code here that is absent
+ * there fails the grant's foreign key, loudly.
+ */
+export const PLATFORM_AUTHORITY_CODES = Object.freeze([
   'platform.organization.provision',
   'platform.organization.lifecycle',
   'platform.organization.read',
+  // P1-32-PRE-020 — the Platform Owner Console.
+  'platform.organization.manage',
+  'platform.subscription.manage',
+  'platform.billing.read',
+  'platform.billing.manage',
+  'platform.statistics.read',
+  'platform.audit.read',
 ]);
+const PLATFORM_CODES = PLATFORM_AUTHORITY_CODES;
 /** The catalogue seed's own actor: the only uuid that predates every account. */
 const GENESIS_ACTOR = '00000000-0000-4000-8000-000000000001';
 
