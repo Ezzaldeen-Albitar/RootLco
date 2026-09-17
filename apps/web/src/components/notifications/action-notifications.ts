@@ -1,7 +1,7 @@
 import type { ToastTone } from '@/components/overlays/Overlays';
 import type { ActionState } from '@/lib/forms/action-result';
 import type { Messages } from '@/i18n/get-messages';
-import { translate } from '@/i18n/get-messages';
+import { translate, translateWithValues } from '@/i18n/get-messages';
 import { notify } from './notification-store';
 
 /**
@@ -45,7 +45,7 @@ export function notifyActionResult(state: ActionState, messages: Messages): bool
   // would arrive untranslated in Arabic and would bypass the catalogue
   // completeness gate entirely.
   const title = state.messageKey
-    ? translate(messages, state.messageKey as keyof Messages)
+    ? translateWithValues(messages, state.messageKey, state.messageValues)
     : translate(messages, tone === 'success' ? 'action.succeeded' : 'action.failed');
 
   notify({

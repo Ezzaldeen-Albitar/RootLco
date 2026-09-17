@@ -1,6 +1,7 @@
 import {
   VIOLATION_FALLBACK_KEY,
-  failureMessageKey,
+  refusalMessageKey,
+  failureMessageValues,
   violationKeysOf,
   type ApiFailure,
 } from '@/lib/api/client';
@@ -65,6 +66,15 @@ export interface ActionState {
   readonly status: ActionStatus;
   /** A translation key. Never a server-authored sentence. */
   readonly messageKey?: string;
+  /**
+   * Values for the `{name}` placeholders in the catalogue text of `messageKey`.
+   *
+   * Only numbers the backend published about the refusal itself — the capacity
+   * ceiling and its usage — and never prose. Present only when the key is the
+   * failure's own key, so an override or a violation banner never receives
+   * values meant for a different sentence.
+   */
+  readonly messageValues?: Readonly<Record<string, string>>;
   /**
    * Translation keys, by control name.
    *
@@ -151,9 +161,12 @@ export function fromFailure(
   const status = STATUS_BY_KIND[failure.kind];
   const { fieldErrors, formKeys } = violationKeysOf(failure);
   const stated = formKeys.find((key) => key !== VIOLATION_FALLBACK_KEY);
+  const own = messageKeyOverride === undefined && stated === undefined;
+  const values = own ? failureMessageValues(failure) : undefined;
   return {
     status,
-    messageKey: messageKeyOverride ?? stated ?? failureMessageKey(failure),
+    messageKey: messageKeyOverride ?? stated ?? refusalMessageKey(failure),
+    ...(values !== undefined ? { messageValues: values } : {}),
     ...(Object.keys(fieldErrors).length > 0 ? { fieldErrors } : {}),
     correlationId: failure.correlationId,
     attempt,
