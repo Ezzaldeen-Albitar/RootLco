@@ -84,6 +84,14 @@ describe('the navigation model', () => {
       'gallery',
       // P1-30 W4: item search, stock availability and reservations at `/inventory`.
       'inventory',
+      // P1-32 stock operations: the parent's own route as a child (a disclosure
+      // parent carries no current-page marker), and the four screens, each gated
+      // on `inv.stock.read`.
+      'inventory.adjustments',
+      'inventory.counts',
+      'inventory.goods-receipts',
+      'inventory.stock',
+      'inventory.transfers',
       'overview',
       // P1-30 W7: the branch's receipts at `/payments`, gated on
       // `sal.finance.view` — the only code both receipt reads declare, and the

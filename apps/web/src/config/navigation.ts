@@ -376,6 +376,61 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         permission: 'inv.item.read',
         status: 'available',
         scope: 'branch',
+        children: [
+          {
+            // The parent's own route, named by a child for the reason
+            // `work-orders.queue` records: an expanded parent is a disclosure
+            // button, and a button can carry no current-page marker.
+            key: 'inventory.stock',
+            labelKey: 'nav.inventoryStock',
+            icon: 'inventory',
+            href: '/inventory',
+            permission: 'inv.item.read',
+            status: 'available',
+            scope: 'branch',
+          },
+          /*
+           * P1-32: the stock-operation screens. Each page gates on
+           * `inv.stock.read` — the code every list it reads declares — before
+           * any read, so each entry is gated on that code too.
+           */
+          {
+            key: 'inventory.transfers',
+            labelKey: 'nav.inventoryTransfers',
+            icon: 'inventory',
+            href: '/inventory/transfers',
+            permission: 'inv.stock.read',
+            status: 'available',
+            scope: 'branch',
+          },
+          {
+            key: 'inventory.goods-receipts',
+            labelKey: 'nav.inventoryReceipts',
+            icon: 'inventory',
+            href: '/inventory/goods-receipts',
+            permission: 'inv.stock.read',
+            status: 'available',
+            scope: 'branch',
+          },
+          {
+            key: 'inventory.adjustments',
+            labelKey: 'nav.inventoryAdjustments',
+            icon: 'inventory',
+            href: '/inventory/adjustments',
+            permission: 'inv.stock.read',
+            status: 'available',
+            scope: 'branch',
+          },
+          {
+            key: 'inventory.counts',
+            labelKey: 'nav.inventoryCounts',
+            icon: 'inventory',
+            href: '/inventory/counts',
+            permission: 'inv.stock.read',
+            status: 'available',
+            scope: 'branch',
+          },
+        ],
       },
       {
         key: 'billing',
