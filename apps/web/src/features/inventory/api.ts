@@ -34,6 +34,7 @@ import type {
   StockTransferCreateBody,
   StockTransferDiscrepancyResolveBody,
   StockTransferReceiveBody,
+  StockTransferWriteOffDecideBody,
 } from '@/lib/contracts/inventory-contract';
 import type { BranchOption } from '@/features/services/services-contract';
 import {
@@ -67,9 +68,11 @@ import {
   type StockMovement,
   type StockReservation,
   type StockTarget,
+  type SettlementDecision,
   type StockTransfer,
   type TransferDirection,
   type TransferEcho,
+  type TransferSettlement,
   type TransferSettlementEcho,
   type UnitOfMeasureOption,
 } from './inventory-contract';
@@ -750,6 +753,42 @@ export async function resolveTransferDiscrepancy(
       : 'inventory.transfers.resolve.returned',
     attempt,
     { stateRefusedKey: 'inventory.transfers.resolve.refused', idempotencyKey }
+  );
+}
+
+/**
+ * A branch's write-offs (`inv.stock-transfer-settlement-list`), for transfers it
+ * sent or is receiving, newest first, narrowed to one decision. One page of fifty.
+ */
+export async function listTransferWriteOffs(
+  target: StockTarget,
+  status: SettlementDecision
+): Promise<ReadState<CursorPage<TransferSettlement>>> {
+  return readOperation<CursorPage<TransferSettlement>>(
+    '/api/v1/stock-transfer-settlements' +
+      branchTargetQuery(target, { kind: 'write_off', status, limit: 50 })
+  );
+}
+
+/**
+ * Approve or reject a pending write-off (`inv.stock-transfer-write-off-decide`).
+ * Refused (409) for the requester and for a write-off already decided; the
+ * transport attaches the idempotency key the operation is published with.
+ */
+export async function decideTransferWriteOff(
+  settlementId: string,
+  body: StockTransferWriteOffDecideBody,
+  attempt = 1
+): Promise<CreateOutcome<TransferSettlementEcho>> {
+  return write<TransferSettlementEcho>(
+    'POST',
+    `/api/v1/stock-transfer-settlements/${encodeURIComponent(settlementId)}/decision`,
+    body,
+    body.decision === 'approved'
+      ? 'inventory.transfers.writeOffs.decide.approved'
+      : 'inventory.transfers.writeOffs.decide.rejected',
+    attempt,
+    { stateRefusedKey: 'inventory.transfers.writeOffs.decide.refused' }
   );
 }
 

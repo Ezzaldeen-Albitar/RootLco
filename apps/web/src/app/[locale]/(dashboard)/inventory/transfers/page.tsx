@@ -15,9 +15,9 @@ import { pageMetadata } from '@/lib/page-metadata';
  * not arrive, and cancel.
  *
  * `inv.stock.read` gates the page and is checked BEFORE any read is issued — the
- * transfer list and the location list are both that code. `inv.stock.operate`
- * decides what the screen OFFERS; `org.branch.read` whether a branch list is
- * requested for the target.
+ * transfer list, the write-off list and the location list are all that code.
+ * `inv.stock.operate` and `inv.adjustment.approve` decide what the screen OFFERS;
+ * `org.branch.read` whether a branch list is requested for the target.
  */
 export default async function InventoryTransfersPage({
   params,
@@ -63,7 +63,9 @@ export default async function InventoryTransfersPage({
         <TransfersScreen
           locale={locale}
           messages={messages}
+          currentUserId={session.userId}
           canOperate={holds(session.permissions, INVENTORY_PERMISSIONS.operate)}
+          canApprove={holds(session.permissions, INVENTORY_PERMISSIONS.approve)}
           canReadBranches={holds(session.permissions, INVENTORY_PERMISSIONS.branchRead)}
         />
       </PageBody>

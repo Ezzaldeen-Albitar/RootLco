@@ -13,16 +13,20 @@
  * transit only by an act with a reason: a return to the origin (posted at once)
  * or a write-off (waiting for a second person).
  *
- * ## What the screen cannot offer, said rather than hidden
+ * ## A write-off is decided here, by someone else
  *
- * A pending write-off is decided on its SETTLEMENT, and no read lists
- * settlements. The person who may decide it — never the requester — cannot reach
- * it from their own session, so the decision is not offered here and the screen
- * says so when a write-off is requested.
+ * A pending write-off is decided on its SETTLEMENT. The branch's write-offs
+ * waiting for a decision — for transfers it sent or is receiving — are listed
+ * from `inv.stock-transfer-settlement-list`, and a holder of
+ * `inv.adjustment.approve` approves or rejects one with a reason. The requester
+ * is never offered the decision: the screen knows who is signed in and says on
+ * their own request that another person must decide it. The server remains the
+ * guarantee, and a refusal that arrives anyway is said in plain words.
  *
- * Permissions: `inv.stock.read` gates the page (the list and the locations);
+ * Permissions: `inv.stock.read` gates the page (the lists and the locations);
  * `inv.stock.operate` offers dispatch, receipt, settlement and cancellation;
- * `org.branch.read` the branch picker.
+ * `inv.adjustment.approve` the write-off decision; `org.branch.read` the branch
+ * picker.
  */
 
 import { useState } from 'react';
@@ -38,6 +42,8 @@ import { formatDateTime } from '@/lib/format';
 import {
   cancelTransfer,
   createTransfer,
+  decideTransferWriteOff,
+  listTransferWriteOffs,
   listTransfers,
   receiveTransfer,
   resolveTransferDiscrepancy,
@@ -48,9 +54,11 @@ import {
   TRANSFER_DISCREPANCY_KINDS,
   type InventoryItem,
   type StockTarget,
+  type AdjustmentDecision,
   type StockTransfer,
   type TransferDirection,
   type TransferDiscrepancyKind,
+  type TransferSettlement,
 } from '../inventory-contract';
 import {
   LocationPicker,
@@ -75,6 +83,7 @@ import {
 
 const readOutbound = (target: StockTarget) => listTransfers(target, 'outbound');
 const readInbound = (target: StockTarget) => listTransfers(target, 'inbound');
+const readPendingWriteOffs = (target: StockTarget) => listTransferWriteOffs(target, 'pending');
 
 /** What a write left to say, shown above the list it caused to re-read. */
 interface Notice {
@@ -89,13 +98,19 @@ type RowAction = { readonly kind: 'receive' | 'resolve' | 'cancel'; readonly row
 export function TransfersScreen({
   locale,
   messages,
+  currentUserId,
   canOperate,
+  canApprove,
   canReadBranches,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
+  /** The signed-in person, compared with `requestedBy` to say why a decision is not offered. */
+  readonly currentUserId: string;
   /** `inv.stock.operate` — dispatch, receive, settle, cancel. */
   readonly canOperate: boolean;
+  /** `inv.adjustment.approve` — approving or rejecting someone else's write-off. */
+  readonly canApprove: boolean;
   /** `org.branch.read` — whether a branch list is requested for the picker. */
   readonly canReadBranches: boolean;
 }) {
@@ -125,7 +140,9 @@ export function TransfersScreen({
           locale={locale}
           messages={messages}
           target={target}
+          currentUserId={currentUserId}
           canOperate={canOperate}
+          canApprove={canApprove}
         />
       ) : null}
     </div>
@@ -136,12 +153,16 @@ function BranchTransfers({
   locale,
   messages,
   target,
+  currentUserId,
   canOperate,
+  canApprove,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly target: StockTarget;
+  readonly currentUserId: string;
   readonly canOperate: boolean;
+  readonly canApprove: boolean;
 }) {
   const [direction, setDirection] = useState<TransferDirection>('outbound');
   const { list, reload } = useBranchList<StockTransfer>(
@@ -151,14 +172,23 @@ function BranchTransfers({
     'inventory.transfers.list.unavailable',
     direction
   );
+  const writeOffs = useBranchList<TransferSettlement>(
+    target,
+    readPendingWriteOffs,
+    'inventory.transfers.writeOffs.refused',
+    'inventory.transfers.writeOffs.unavailable'
+  );
   const locations = useLocations(target);
   const [action, setAction] = useState<RowAction | null>(null);
+  const [deciding, setDeciding] = useState<TransferSettlement | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
 
   const done = (next: Notice) => {
     setNotice(next);
     setAction(null);
+    setDeciding(null);
     reload();
+    writeOffs.reload();
   };
 
   return (
@@ -343,6 +373,107 @@ function BranchTransfers({
         </BranchListView>
       </section>
 
+      <section aria-labelledby="transfer-write-offs-heading" className={PANEL}>
+        <h2 id="transfer-write-offs-heading" className="text-body font-medium text-text-primary">
+          {translate(messages, 'inventory.transfers.writeOffs.heading')}
+        </h2>
+        <p className="text-caption text-text-muted">
+          {translate(messages, 'inventory.transfers.writeOffs.explain')}
+        </p>
+        <BranchListView
+          messages={messages}
+          list={writeOffs.list}
+          loadingKey="inventory.transfers.writeOffs.loading"
+          noneKey="inventory.transfers.writeOffs.none"
+          truncatedKey="inventory.transfers.writeOffs.truncated"
+        >
+          {(items) => (
+            <table className="w-full text-body">
+              <caption className="sr-only">
+                {translate(messages, 'inventory.transfers.writeOffs.caption')}
+              </caption>
+              <thead>
+                <tr className="text-caption text-text-muted">
+                  <th scope="col" className="text-start font-medium">
+                    {translate(messages, 'inventory.transfers.column.item')}
+                  </th>
+                  <th scope="col" className="text-end font-medium">
+                    {translate(messages, 'inventory.transfers.writeOffs.column.quantity')}
+                  </th>
+                  <th scope="col" className="text-start font-medium">
+                    {translate(messages, 'inventory.transfers.writeOffs.column.reason')}
+                  </th>
+                  <th scope="col" className="text-end font-medium">
+                    {translate(messages, 'inventory.transfers.writeOffs.column.decision')}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((row) => {
+                  const own = row.requestedBy === currentUserId;
+                  return (
+                    <tr key={row.id} className="border-t border-border align-top">
+                      <td>
+                        <code className="font-mono text-caption" dir="ltr">
+                          {row.sku}
+                        </code>
+                      </td>
+                      <td className="text-end">
+                        <Qty value={row.quantity} />
+                      </td>
+                      <td>
+                        {row.reason}
+                        <span className="block text-caption text-text-muted" dir="ltr">
+                          {formatDateTime(row.createdAt, locale)}
+                        </span>
+                        {own ? (
+                          <span className="block text-caption text-text-muted">
+                            {translate(messages, 'inventory.transfers.writeOffs.byYou')}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="text-end">
+                        {!canApprove ? (
+                          <span className="text-caption text-text-muted">
+                            {translate(messages, 'inventory.transfers.writeOffs.needsApprove')}
+                          </span>
+                        ) : own ? (
+                          <span className="text-caption text-text-muted">
+                            {translate(messages, 'inventory.transfers.writeOffs.ownRequest')}
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            className={SECONDARY_BUTTON}
+                            onClick={() => {
+                              setAction(null);
+                              setDeciding(row);
+                            }}
+                          >
+                            {translate(messages, 'inventory.transfers.writeOffs.decide.action')}
+                            <span className="sr-only"> {row.sku}</span>
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </BranchListView>
+      </section>
+
+      {deciding !== null ? (
+        <WriteOffDecisionForm
+          key={`decide-${deciding.id}`}
+          messages={messages}
+          writeOff={deciding}
+          onClose={() => setDeciding(null)}
+          onDone={done}
+        />
+      ) : null}
+
       {action !== null && action.kind === 'receive' ? (
         <ReceiveForm
           key={`receive-${action.row.id}`}
@@ -382,6 +513,110 @@ function BranchTransfers({
         />
       ) : null}
     </>
+  );
+}
+
+function WriteOffDecisionForm({
+  messages,
+  writeOff,
+  onClose,
+  onDone,
+}: {
+  readonly messages: Messages;
+  readonly writeOff: TransferSettlement;
+  readonly onClose: () => void;
+  readonly onDone: (notice: Notice) => void;
+}) {
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [outcome, setOutcome] = useState<ActionState | null>(null);
+
+  const decide = async (decision: AdjustmentDecision) => {
+    const why = reason.trim();
+    if (why.length === 0 || why.length > MAX_REASON) {
+      setError(why.length === 0 ? 'field.required' : 'inventory.stockOps.reasonTooLong');
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    const result = await decideTransferWriteOff(writeOff.id, { decision, reason: why });
+    setBusy(false);
+    setOutcome(result.state);
+    notifyActionResult(result.state, messages);
+    if (result.state.status === 'success' && result.created) {
+      onDone(
+        decision === 'approved'
+          ? {
+              messageKey: 'inventory.transfers.writeOffs.decide.approvedDone',
+              quantity: result.created.quantity,
+              detailKey: null,
+            }
+          : {
+              messageKey: 'inventory.transfers.writeOffs.decide.rejectedDone',
+              quantity: result.created.quantity,
+              detailKey: 'inventory.transfers.writeOffs.decide.rejectedNext',
+            }
+      );
+    }
+  };
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        void decide('approved');
+      }}
+      noValidate
+      aria-labelledby="transfer-write-off-decide-heading"
+      className={PANEL}
+    >
+      <h2
+        id="transfer-write-off-decide-heading"
+        className="text-body font-medium text-text-primary"
+      >
+        {translate(messages, 'inventory.transfers.writeOffs.decide.heading')}{' '}
+        <code className="font-mono" dir="ltr">
+          {writeOff.sku}
+        </code>
+      </h2>
+      <p className="text-body">
+        <Qty value={writeOff.quantity} />
+      </p>
+      <p className="text-caption text-text-muted">{writeOff.reason}</p>
+      <p className="text-caption text-text-muted">
+        {translate(messages, 'inventory.transfers.writeOffs.decide.explain')}
+      </p>
+      <TextAreaField
+        label={translate(messages, 'inventory.transfers.writeOffs.decide.reason')}
+        required
+        rows={2}
+        value={reason}
+        onChange={(event) => setReason(event.target.value)}
+        error={
+          error ? translateDynamic(messages, error) : outcomeField(messages, outcome, 'reason')
+        }
+      />
+      <OutcomeNote messages={messages} outcome={outcome} />
+      <div className="flex flex-wrap gap-2">
+        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+          {translate(messages, 'inventory.transfers.writeOffs.decide.approve')}
+        </button>
+        <button
+          type="button"
+          className={DANGER_BUTTON}
+          disabled={busy}
+          onClick={() => {
+            void decide('rejected');
+          }}
+        >
+          {translate(messages, 'inventory.transfers.writeOffs.decide.reject')}
+        </button>
+        <button type="button" className={SECONDARY_BUTTON} onClick={onClose}>
+          {translate(messages, 'inventory.stockOps.close')}
+        </button>
+      </div>
+    </form>
   );
 }
 

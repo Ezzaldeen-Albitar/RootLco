@@ -158,8 +158,9 @@ export interface OpeningBatchLineCreateBody {
 /* ------------------------------------------------------------------ *
  * P1-32 — the stock-operation screens (transfers, goods receipts,
  * adjustments, counts). Each interface below is sent by a screen under
- * `app/[locale]/(dashboard)/inventory/**`; the write-off decision is not,
- * because no read reaches a pending settlement, and stays PENDING in the gate.
+ * `app/[locale]/(dashboard)/inventory/**`, the write-off decision included:
+ * the transfers screen reaches a pending settlement through
+ * `inv.stock-transfer-settlement-list` (P1-32-PRE-144).
  * ------------------------------------------------------------------ */
 
 /**
@@ -252,6 +253,17 @@ export interface StockAdjustmentCreateBody {
  * The requester may not decide; the server refuses them (409).
  */
 export interface StockAdjustmentApproveBody {
+  readonly decision: 'approved' | 'rejected';
+  readonly reason: string;
+}
+
+/**
+ * `inv.stock-transfer-write-off-decide` —
+ * `POST /stock-transfer-settlements/{settlementId}/decision`. A pending write-off
+ * only, decided by someone other than its requester; the server refuses the
+ * requester (409).
+ */
+export interface StockTransferWriteOffDecideBody {
   readonly decision: 'approved' | 'rejected';
   readonly reason: string;
 }

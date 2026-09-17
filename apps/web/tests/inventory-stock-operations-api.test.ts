@@ -33,9 +33,11 @@ const {
   createReservation,
   createTransfer,
   decideAdjustment,
+  decideTransferWriteOff,
   listAdjustments,
   listGoodsReceipts,
   listStockCounts,
+  listTransferWriteOffs,
   listTransfers,
   openStockCount,
   postGoodsReceipt,
@@ -104,6 +106,18 @@ describe('every stock-operation list is addressed to its branch target', () => {
       expect(path.startsWith(root)).toBe(true);
       expect([...params(path).keys()].sort()).toEqual(['branchId', 'companyId', 'limit']);
     }
+  });
+
+  it('write-offs carry the target, the write-off kind and the decision they wait for', async () => {
+    get.mockResolvedValue(ok(EMPTY_PAGE));
+    await listTransferWriteOffs(TARGET, 'pending');
+    const path = String(get.mock.calls[0]?.[0]);
+    expect(path.startsWith('/api/v1/stock-transfer-settlements?')).toBe(true);
+    const search = params(path);
+    expect(search.get('companyId')).toBe(COMPANY_ID);
+    expect(search.get('branchId')).toBe(BRANCH_ID);
+    expect(search.get('kind')).toBe('write_off');
+    expect(search.get('status')).toBe('pending');
   });
 
   it('adjustments send a status only when one is chosen', async () => {
@@ -257,6 +271,23 @@ describe('the writes send what was typed, to the right place', () => {
     ]);
     expect(send.mock.calls[1]?.[2]).toBeUndefined();
     expect(decided.state.messageKey).toBe('inventory.adjustments.decide.rejected');
+  });
+
+  it('deciding a write-off posts the decision and reason to the settlement, with no version', async () => {
+    send.mockResolvedValue(ok({ id: TRANSFER_ID }));
+    const outcome = await decideTransferWriteOff(TRANSFER_ID, {
+      decision: 'rejected',
+      reason: 'Found at the dock',
+    });
+    expect(send.mock.calls[0]).toEqual([
+      'POST',
+      `/api/v1/stock-transfer-settlements/${TRANSFER_ID}/decision`,
+      { decision: 'rejected', reason: 'Found at the dock' },
+      {},
+    ]);
+    expect(outcome.state.messageKey).toBe('inventory.transfers.writeOffs.decide.rejected');
+    expect(EN['inventory.transfers.writeOffs.decide.rejected']).toBeTruthy();
+    expect(AR['inventory.transfers.writeOffs.decide.rejected']).toBeTruthy();
   });
 
   it('an ended session is reported before any request is made', async () => {

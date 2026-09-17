@@ -11,6 +11,8 @@ import {
   ITEM_ID,
   LOCATION_ID,
   OTHER_LOCATION_ID,
+  OTHER_USER_ID,
+  USER_ID,
   branch,
   chooseBranch,
   chooseItem,
@@ -32,9 +34,11 @@ import {
  * again for the other direction; the figures are the server's strings, with what
  * is still on its way shown as the server states it; a PARTIAL receipt sends only
  * what arrived and the screen then says what is still on its way, taken from the
- * answer; a write-off request says it waits for a second person and that the
- * decision cannot be made here; a refusal is said in words; nothing that writes
- * is offered without `inv.stock.operate`; and the route page decides before it
+ * answer; a write-off request says it waits for a second person; the branch's
+ * pending write-offs are listed and decided with a reason by someone other than
+ * the requester, who is told why they cannot decide their own; a refusal is said
+ * in words; nothing that writes is offered without `inv.stock.operate`, and no
+ * decision without `inv.adjustment.approve`; and the route page decides before it
  * reads.
  */
 
@@ -45,6 +49,8 @@ const createTransfer = vi.fn();
 const receiveTransfer = vi.fn();
 const cancelTransfer = vi.fn();
 const resolveTransferDiscrepancy = vi.fn();
+const listTransferWriteOffs = vi.fn();
+const decideTransferWriteOff = vi.fn();
 const listItems = vi.fn();
 const listLocations = vi.fn();
 const listBranches = vi.fn();
@@ -54,6 +60,8 @@ vi.mock('@/features/inventory/api', () => ({
   receiveTransfer: (...args: unknown[]) => receiveTransfer(...args),
   cancelTransfer: (...args: unknown[]) => cancelTransfer(...args),
   resolveTransferDiscrepancy: (...args: unknown[]) => resolveTransferDiscrepancy(...args),
+  listTransferWriteOffs: (...args: unknown[]) => listTransferWriteOffs(...args),
+  decideTransferWriteOff: (...args: unknown[]) => decideTransferWriteOff(...args),
   listItems: (...args: unknown[]) => listItems(...args),
   listLocations: (...args: unknown[]) => listLocations(...args),
   listBranches: (...args: unknown[]) => listBranches(...args),
@@ -71,7 +79,7 @@ vi.mock('next/navigation', () => ({
 let PERMISSIONS: readonly string[] = [];
 vi.mock('@/features/authentication/api/session', () => ({
   requireSession: async () => ({
-    userId: 'user-1',
+    userId: USER_ID,
     permissions: PERMISSIONS,
     email: 'operator@test.local',
   }),
@@ -126,7 +134,15 @@ const listRegion = () =>
 
 function renderScreen(over: Record<string, unknown> = {}) {
   return renderLtr(
-    <TransfersScreen locale="en" messages={en} canOperate={true} canReadBranches={true} {...over} />
+    <TransfersScreen
+      locale="en"
+      messages={en}
+      currentUserId={USER_ID}
+      canOperate={true}
+      canApprove={true}
+      canReadBranches={true}
+      {...over}
+    />
   );
 }
 
@@ -141,6 +157,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   PERMISSIONS = [];
   listTransfers.mockResolvedValue(okPage([transfer()]));
+  listTransferWriteOffs.mockResolvedValue(okPage([]));
   listLocations.mockResolvedValue(okPage([warehouse, shelf]));
   listBranches.mockResolvedValue({ status: 'ok', data: { items: [branch] }, correlationId: 'c' });
   listItems.mockResolvedValue(itemPage([item]));
@@ -458,6 +475,197 @@ describe('settling what did not arrive', () => {
   });
 });
 
+const SETTLEMENT_ID = '66666666-6666-4666-8666-666666666666';
+
+function writeOff(over: Record<string, unknown> = {}) {
+  return {
+    id: SETTLEMENT_ID,
+    transferId: TRANSFER_ID,
+    companyId: COMPANY_ID,
+    branchId: BRANCH_ID,
+    toBranchId: BRANCH_ID,
+    itemId: ITEM_ID,
+    sku: 'BRK-001',
+    kind: 'write_off',
+    quantity: '1.000',
+    reason: 'Lost on the way',
+    status: 'pending',
+    requestedBy: OTHER_USER_ID,
+    decision: 'pending',
+    decidedBy: null,
+    decidedAt: null,
+    recordVersion: 1,
+    createdAt: '2026-09-17T09:00:00Z',
+    ...over,
+  };
+}
+
+const writeOffRegion = () =>
+  screen.getByRole('region', { name: EN['inventory.transfers.writeOffs.heading'] as string });
+const DECIDE_BUTTON = `${EN['inventory.transfers.writeOffs.decide.action'] as string} BRK-001`;
+
+describe('deciding a write-off that waits for a second person', () => {
+  it("lists the branch's pending write-offs, and a different person decides one with a reason", async () => {
+    const user = userEvent.setup();
+    listTransferWriteOffs.mockResolvedValue(okPage([writeOff()]));
+    decideTransferWriteOff.mockResolvedValue(
+      succeeded('inventory.transfers.writeOffs.decide.approved', {
+        ...writeOff({ status: 'posted' }),
+        transfer: transfer({ status: 'settled', outstandingQuantity: '0.000' }),
+        replayed: false,
+      })
+    );
+    renderScreen();
+    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await waitFor(() => expect(listTransferWriteOffs).toHaveBeenCalledTimes(1));
+    expect(listTransferWriteOffs.mock.calls[0]).toEqual([
+      { companyId: COMPANY_ID, branchId: BRANCH_ID },
+      'pending',
+    ]);
+    const table = await within(writeOffRegion()).findByRole('table');
+    expect(within(table).getByText('Lost on the way')).toBeVisible();
+    expect(within(table).getByText('1.000')).toBeVisible();
+
+    await user.click(within(table).getByRole('button', { name: DECIDE_BUTTON }));
+    const form = screen.getByRole('form', { name: /Decide the write-off of/ });
+    // No reason, nothing sent.
+    await user.click(
+      within(form).getByRole('button', {
+        name: EN['inventory.transfers.writeOffs.decide.approve'] as string,
+      })
+    );
+    expect(decideTransferWriteOff).not.toHaveBeenCalled();
+    await user.type(
+      within(form).getByLabelText(labelled('inventory.transfers.writeOffs.decide.reason')),
+      'Carrier confirmed the loss'
+    );
+    await user.click(
+      within(form).getByRole('button', {
+        name: EN['inventory.transfers.writeOffs.decide.approve'] as string,
+      })
+    );
+    await waitFor(() => expect(decideTransferWriteOff).toHaveBeenCalledTimes(1));
+    expect(decideTransferWriteOff.mock.calls[0]).toEqual([
+      SETTLEMENT_ID,
+      { decision: 'approved', reason: 'Carrier confirmed the loss' },
+    ]);
+    expect(
+      await screen.findByText(EN['inventory.transfers.writeOffs.decide.approvedDone'] as string, {
+        exact: false,
+      })
+    ).toBeVisible();
+    // Both lists are read again: the write-off and the transfer it settled moved.
+    await waitFor(() => expect(listTransferWriteOffs).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(listTransfers).toHaveBeenCalledTimes(2));
+  });
+
+  it('a rejection keeps the units on their way and says so', async () => {
+    const user = userEvent.setup();
+    listTransferWriteOffs.mockResolvedValue(okPage([writeOff()]));
+    decideTransferWriteOff.mockResolvedValue(
+      succeeded('inventory.transfers.writeOffs.decide.rejected', {
+        ...writeOff({ status: 'rejected' }),
+        transfer: transfer(),
+        replayed: false,
+      })
+    );
+    renderScreen();
+    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    const table = await within(writeOffRegion()).findByRole('table');
+    await user.click(within(table).getByRole('button', { name: DECIDE_BUTTON }));
+    const form = screen.getByRole('form', { name: /Decide the write-off of/ });
+    await user.type(
+      within(form).getByLabelText(labelled('inventory.transfers.writeOffs.decide.reason')),
+      'Found at the dock'
+    );
+    await user.click(
+      within(form).getByRole('button', {
+        name: EN['inventory.transfers.writeOffs.decide.reject'] as string,
+      })
+    );
+    await waitFor(() => expect(decideTransferWriteOff).toHaveBeenCalledTimes(1));
+    expect(decideTransferWriteOff.mock.calls[0]?.[1]).toEqual({
+      decision: 'rejected',
+      reason: 'Found at the dock',
+    });
+    expect(
+      await screen.findByText(EN['inventory.transfers.writeOffs.decide.rejectedDone'] as string, {
+        exact: false,
+      })
+    ).toBeVisible();
+    expect(
+      screen.getByText(EN['inventory.transfers.writeOffs.decide.rejectedNext'] as string)
+    ).toBeVisible();
+  });
+
+  it('the requester is not offered the decision and is told another person must decide it', async () => {
+    const user = userEvent.setup();
+    listTransferWriteOffs.mockResolvedValue(okPage([writeOff({ requestedBy: USER_ID })]));
+    renderScreen();
+    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    const table = await within(writeOffRegion()).findByRole('table');
+    expect(
+      within(table).getByText(EN['inventory.transfers.writeOffs.ownRequest'] as string)
+    ).toBeVisible();
+    expect(
+      within(table).getByText(EN['inventory.transfers.writeOffs.byYou'] as string)
+    ).toBeVisible();
+    expect(within(table).queryAllByRole('button')).toHaveLength(0);
+  });
+
+  it('without the approval permission no decision is offered, and the row says why', async () => {
+    const user = userEvent.setup();
+    listTransferWriteOffs.mockResolvedValue(okPage([writeOff()]));
+    renderScreen({ canApprove: false });
+    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    const table = await within(writeOffRegion()).findByRole('table');
+    expect(
+      within(table).getByText(EN['inventory.transfers.writeOffs.needsApprove'] as string)
+    ).toBeVisible();
+    expect(within(table).queryAllByRole('button')).toHaveLength(0);
+  });
+
+  it('a refused decision is said in words, with its reference', async () => {
+    const user = userEvent.setup();
+    listTransferWriteOffs.mockResolvedValue(okPage([writeOff()]));
+    decideTransferWriteOff.mockResolvedValue(
+      refusedWith('inventory.transfers.writeOffs.decide.refused')
+    );
+    renderScreen();
+    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    const table = await within(writeOffRegion()).findByRole('table');
+    await user.click(within(table).getByRole('button', { name: DECIDE_BUTTON }));
+    const form = screen.getByRole('form', { name: /Decide the write-off of/ });
+    await user.type(
+      within(form).getByLabelText(labelled('inventory.transfers.writeOffs.decide.reason')),
+      'Checked'
+    );
+    await user.click(
+      within(form).getByRole('button', {
+        name: EN['inventory.transfers.writeOffs.decide.approve'] as string,
+      })
+    );
+    const alert = await within(form).findByRole('alert');
+    expect(alert).toHaveTextContent(EN['inventory.transfers.writeOffs.decide.refused'] as string);
+    expect(alert).toHaveTextContent('corr-refused');
+  });
+
+  it('a refused write-off list is a refusal, never an empty list', async () => {
+    const user = userEvent.setup();
+    listTransferWriteOffs.mockResolvedValue({ status: 'denied', correlationId: 'c' });
+    renderScreen();
+    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    expect(
+      await within(writeOffRegion()).findByText(
+        EN['inventory.transfers.writeOffs.refused'] as string
+      )
+    ).toBeVisible();
+    expect(
+      within(writeOffRegion()).queryByText(EN['inventory.transfers.writeOffs.none'] as string)
+    ).toBeNull();
+  });
+});
+
 describe('sending a transfer', () => {
   it('sends the chosen item, both locations, the typed quantity and one key per form', async () => {
     const user = userEvent.setup();
@@ -575,6 +783,30 @@ describe('the /inventory/transfers route page decides before it reads', () => {
     await waitFor(() => expect(listBranches).toHaveBeenCalled());
   });
 
+  it('binds the decision to inv.adjustment.approve and the requester to the signed-in person', async () => {
+    const user = userEvent.setup();
+    listTransferWriteOffs.mockResolvedValue(
+      okPage([writeOff(), writeOff({ id: 'own', sku: 'OWN-001', requestedBy: USER_ID })])
+    );
+    PERMISSIONS = ['inv.stock.read', 'org.branch.read'];
+    const { unmount } = await renderPage();
+    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    let table = await within(writeOffRegion()).findByRole('table');
+    expect(
+      within(table).getAllByText(EN['inventory.transfers.writeOffs.needsApprove'] as string)
+    ).toHaveLength(2);
+    unmount();
+
+    PERMISSIONS = ['inv.stock.read', 'inv.adjustment.approve', 'org.branch.read'];
+    await renderPage();
+    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    table = await within(writeOffRegion()).findByRole('table');
+    expect(within(table).getByRole('button', { name: DECIDE_BUTTON })).toBeVisible();
+    expect(
+      within(table).getByText(EN['inventory.transfers.writeOffs.ownRequest'] as string)
+    ).toBeVisible();
+  });
+
   it('a locale it does not serve is not found', async () => {
     PERMISSIONS = ['inv.stock.read'];
     await expect(renderPage('xx')).rejects.toThrow('notFound');
@@ -592,7 +824,14 @@ describe('accessibility and Arabic', () => {
 
   it('renders in Arabic, right to left, with the same controls', async () => {
     renderRtl(
-      <TransfersScreen locale="ar" messages={ar} canOperate={true} canReadBranches={false} />
+      <TransfersScreen
+        locale="ar"
+        messages={ar}
+        currentUserId={USER_ID}
+        canOperate={true}
+        canApprove={true}
+        canReadBranches={false}
+      />
     );
     expect(screen.getByText(AR['inventory.transfers.explain'] as string)).toBeVisible();
     expect(

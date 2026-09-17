@@ -177,8 +177,6 @@ export const PENDING_MIRRORS = Object.freeze({
     'PENDING: P1-32 preparatory slice 3b is Backend only; the unit conversion screen that sends this owes the mirror',
   'inv.vehicle-specification-create':
     'PENDING: P1-32 preparatory slice 3b is Backend only; the vehicle specification screen that sends this owes the mirror',
-  'inv.stock-transfer-write-off-decide':
-    'PENDING: no read lists or reads a transfer settlement, so the second person who must decide a write-off cannot reach it; the screen that sends this owes the mirror once that read exists',
   // P1-32 preparatory slice 3c: cancelling a requirement, and closing or cancelling a
   // material request. Backend only; the slice-3 screens owe every mirror.
   'inv.material-requirement-cancel':

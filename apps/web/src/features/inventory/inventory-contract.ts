@@ -540,6 +540,8 @@ export interface OpeningBatchDetail {
  * | `inv.stock-transfer-receive`             | POST   | `/stock-transfers/{transferId}/receipt`                | `inv.stock.operate`      |
  * | `inv.stock-transfer-cancel`              | POST   | `/stock-transfers/{transferId}/cancellation`           | `inv.stock.operate`      |
  * | `inv.stock-transfer-discrepancy-resolve` | POST   | `/stock-transfers/{transferId}/discrepancy-resolution` | `inv.stock.operate`      |
+ * | `inv.stock-transfer-settlement-list`     | GET    | `/stock-transfer-settlements`                          | `inv.stock.read`         |
+ * | `inv.stock-transfer-write-off-decide`    | POST   | `/stock-transfer-settlements/{settlementId}/decision`  | `inv.adjustment.approve` |
  * | `inv.goods-receipt-list`                 | GET    | `/goods-receipts`                                      | `inv.stock.read`         |
  * | `inv.goods-receipt-read`                 | GET    | `/goods-receipts/{receiptId}`                          | `inv.stock.read`         |
  * | `inv.goods-receipt-create`               | POST   | `/goods-receipts`                                      | `inv.stock.operate`      |
@@ -561,13 +563,12 @@ export interface OpeningBatchDetail {
  * quantity and every cost is the exact decimal string the server sent; nothing
  * here or on the screens adds or subtracts figures to derive another.
  *
- * ## A write-off decision has no read to reach it from
+ * ## A write-off is decided from the list that reaches it
  *
- * `inv.stock-transfer-write-off-decide` names a SETTLEMENT, and no operation
- * lists or reads settlements: the pending write-off's identifier exists only in
- * the answer the requester received. The person who may decide it — someone
- * other than the requester — therefore cannot find it in their own session, so
- * no screen offers the decision yet and its mirror stays pending.
+ * `inv.stock-transfer-write-off-decide` names a SETTLEMENT.
+ * `inv.stock-transfer-settlement-list` (P1-32-PRE-141) lists a branch's returns
+ * and write-offs, sent or inbound, so the person who may decide a pending
+ * write-off — someone other than the requester — reaches it in their own session.
  * ------------------------------------------------------------------ */
 
 /** `TRANSFER_STATES`, mirrored. `received`, `settled` and `cancelled` are terminal. */
@@ -669,6 +670,33 @@ export interface TransferSettlementEcho {
   readonly recordVersion: number;
   readonly transfer: TransferEcho;
   readonly replayed: boolean;
+}
+
+/** `status` of `inv.stock-transfer-settlement-list`: the decision a write-off is waiting for or received. */
+export const SETTLEMENT_DECISIONS = ['pending', 'approved', 'rejected'] as const;
+export type SettlementDecision = (typeof SETTLEMENT_DECISIONS)[number];
+
+/** One row of `inv.stock-transfer-settlement-list` (`TransferSettlementReadView`). */
+export interface TransferSettlement {
+  readonly id: string;
+  readonly transferId: string;
+  readonly companyId: string;
+  /** The branch that sent the transfer; the decision is authorized there. */
+  readonly branchId: string;
+  readonly toBranchId: string;
+  readonly itemId: string;
+  readonly sku: string;
+  readonly kind: TransferDiscrepancyKind;
+  readonly quantity: string;
+  readonly reason: string | null;
+  readonly status: 'pending' | 'posted' | 'rejected';
+  readonly requestedBy: string;
+  /** Null for a return to origin, which posts at once and is never decided. */
+  readonly decision: SettlementDecision | null;
+  readonly decidedBy: string | null;
+  readonly decidedAt: string | null;
+  readonly recordVersion: number;
+  readonly createdAt: string;
 }
 
 /** One row of `inv.goods-receipt-list` (`GoodsReceiptView`). */
