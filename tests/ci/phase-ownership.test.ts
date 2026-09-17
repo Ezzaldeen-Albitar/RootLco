@@ -1389,3 +1389,74 @@ describe('the step is wired to the decision, and the callers are wired to the st
     expect(checked, 'no pull-request caller of web-quality was found at all').toBeGreaterThan(0);
   });
 });
+
+describe('owner-directive-saas-operation profile', () => {
+  /*
+   * The Owner directive of 2026-09-16 spans the product AND the API workspace's
+   * environment template. No committed profile permitted that combination:
+   * `pre-p1-29-initiative` forbids `apiConfig` by name, and `api-boundary`
+   * forbids `migrations`. Borrowing either would have refused the directive's
+   * own first requirement — a complete, tracked environment configuration.
+   */
+  const DIRECTIVE_CHANGES = [
+    'apps/api/src/modules/platform/application/subscription-service.ts',
+    'apps/api/.env.example',
+    'supabase/migrations/20260917090000_subscription_terms.sql',
+    'supabase/seeds/04_iam_permission_catalog.sql',
+    'apps/web/src/app/[locale]/platform/organizations/page.tsx',
+    'docs/product/owner-directive-2026-09-16/README.md',
+    'scripts/ci/check-phase-ownership.mjs',
+    'tests/backend/platform-subscription.test.ts',
+    '.env.example',
+  ];
+
+  it('permits one path from every bucket the directive declares', () => {
+    const { failures, counts } = evaluate(DIRECTIVE_CHANGES, 'owner-directive-saas-operation');
+    expect(failures).toEqual([]);
+    for (const bucket of [
+      'apiSource',
+      'apiConfig',
+      'migrations',
+      'dbSeeds',
+      'web',
+      'docs',
+      'tooling',
+      'tests',
+      'rootConfig',
+    ]) {
+      // Anti-vacuity: an empty bucket would let the assertion above pass while
+      // proving nothing about that bucket.
+      expect(counts[bucket], `no path classified as ${bucket}`).toBeGreaterThan(0);
+    }
+  });
+
+  it('still refuses the database harness, and names itself doing it', () => {
+    const { failures } = evaluate(
+      [...DIRECTIVE_CHANGES, 'supabase/config.toml'],
+      'owner-directive-saas-operation'
+    );
+    expect(
+      failures.some((f) => f.startsWith('supabase:') && f.includes('supabase/config.toml'))
+    ).toBe(true);
+    expect(failures.join('\n')).toContain('the database HARNESS');
+  });
+
+  it('resolves its branch family against the committed map, and swallows nothing', () => {
+    const resolve = (headBranch: string) =>
+      decideOwnershipRun({
+        headBranch,
+        baseRef: 'develop',
+        eventName: 'pull_request',
+        rules: RULES,
+      }) as { action: string; profile: string | null };
+
+    expect(resolve('feature/owner-directive-environment-configuration').profile).toBe(
+      'owner-directive-saas-operation'
+    );
+    // The rule sits immediately before the bare `planning/` rule. A short
+    // sibling must reach the directive profile and not fall through to the
+    // planning one, which permits nothing this directive needs.
+    expect(resolve('feature/owner-directive-x').profile).not.toBe('p1-29-planning');
+    expect(resolve('feature/owner-directive-x').profile).toBe('owner-directive-saas-operation');
+  });
+});
