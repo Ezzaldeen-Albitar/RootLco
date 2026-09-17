@@ -475,9 +475,10 @@ export class InvitationService extends ApplicationService {
       return;
     }
     try {
-      // Re-read at the provider immediately before removing. The invitation
-      // lock keeps other invitations out, but not every writer of the directory
-      // takes it — the first-owner bootstrap binds identities too. An identity
+      // Re-read at the provider immediately before removing. The address lock
+      // keeps other invitations and the first-owner bootstrap out, but not every
+      // change to the directory passes through this database — an invitee can
+      // confirm, and the provider can disable, on its own side. An identity
       // no longer bound to this organisation, or already confirmed or disabled,
       // has been adopted by something other than this request and is kept.
       const current = await this.provider.findBySubject(subject);

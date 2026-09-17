@@ -338,11 +338,9 @@ describe('the operations under test', () => {
   });
 });
 
-describe('(a) an invitation the seat ceiling refuses', () => {
+describe('(a) an invitation the seat ceiling refuses writes no account, grant or seat', () => {
   const firstEmail = address('seat_holder');
   const refusedEmail = address('refused');
-  const ghostEmail = address('ghost');
-  let ghostSubject = '';
 
   it('admits the invitation that takes the last seat, with the role it was given', async () => {
     const before = await footprintOf(ALPHA.tenantId);
@@ -388,6 +386,12 @@ describe('(a) an invitation the seat ceiling refuses', () => {
   it('leaves no provider identity behind for the address it refused', async () => {
     expect(await fake.findByEmail(refusedEmail)).toBeNull();
   });
+});
+
+describe('(b) the refused identity cannot log in', () => {
+  const refusedEmail = address('refused');
+  const ghostEmail = address('ghost');
+  let ghostSubject = '';
 
   it('gives the refused address no way to sign in and no session', async () => {
     const before = await footprintOf(ALPHA.tenantId);
@@ -434,7 +438,7 @@ describe('(a) an invitation the seat ceiling refuses', () => {
   });
 });
 
-describe('(b) the same address, once a seat exists', () => {
+describe('(c) a retry of the same address succeeds once a seat exists', () => {
   const refusedEmail = address('refused');
 
   it('succeeds and consumes exactly one seat', async () => {
@@ -459,7 +463,7 @@ describe('(b) the same address, once a seat exists', () => {
   });
 });
 
-describe('(b) an orphan identity that already exists is reused, not blocked', () => {
+describe('(c) a retry reuses an orphan identity that already exists rather than being blocked by it', () => {
   const orphanEmail = address('orphan');
   let orphanSubject = '';
 
@@ -532,7 +536,7 @@ describe('an identity that is not this organisation to reuse stays refused', () 
   });
 });
 
-describe('(c) two invitations racing for the last seat', () => {
+describe('two invitations racing for the last seat', () => {
   const raceOne = address('race_one');
   const raceTwo = address('race_two');
 
@@ -720,5 +724,93 @@ describe('two invitations of the SAME address racing for the last seat', () => {
     expect(identity).not.toBeNull();
     expect(identity?.subject).toBe(heldSubject);
     expect(await fake.findBySubject(heldSubject as string)).not.toBeNull();
+  });
+});
+
+describe('an identity adopted between the refusal and its removal is kept', () => {
+  /**
+   * Reaches the re-check `removeIdentityCreatedHere` makes immediately before
+   * removing: the invitation creates the identity, the seat ceiling refuses the
+   * account, and at the provider read that precedes removal the identity is
+   * moved into an adopted state — the fake is changed for real, not merely
+   * reported differently, so what survives is the stored identity itself.
+   * Each case is keyed on its own address, and the re-check read is counted so a
+   * pass cannot come from a path that never reached it.
+   */
+  async function refuseWhileAdopted(
+    label: string,
+    adopt: (subject: string) => Promise<unknown>
+  ): Promise<{ readonly email: string; readonly subject: string }> {
+    const email = address(label);
+    const before = await footprintOf(ALPHA.tenantId);
+    const bravoBefore = await footprintOf(BRAVO.tenantId);
+    // Every seat is held after the cases above, so the INSERT is refused.
+    expect(before.seatsUsed).toBe(7);
+    expect(await seatLimitOf(ALPHA.tenantId)).toBe(7);
+    expect(await fake.findByEmail(email)).toBeNull();
+
+    const original = fake.findBySubject.bind(fake);
+    let rechecks = 0;
+    fake.findBySubject = async (subject: string) => {
+      const stored = await original(subject);
+      if (stored !== null && stored.email === email) {
+        rechecks += 1;
+        await adopt(subject);
+      }
+      return original(subject);
+    };
+
+    asAdmin();
+    let refused: Awaited<ReturnType<typeof invite>>;
+    try {
+      refused = await invite({ email, displayName: 'Adopted Invitee', roleIds: [inviteeRoleId] });
+    } finally {
+      fake.findBySubject = original;
+    }
+
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('ERR-CAP-001');
+    expect(rechecks).toBe(1);
+
+    // Nothing in the refused organisation — no account, grant, scope, audit,
+    // event or seat — and no account for the address in any organisation.
+    expect(await footprintOf(ALPHA.tenantId)).toEqual(before);
+    expect(await footprintOf(BRAVO.tenantId)).toEqual(bravoBefore);
+    expect(await count('SELECT count(*) FROM iam.user_accounts WHERE email = $1', [email])).toBe(0);
+
+    // The identity was kept.
+    const kept = await fake.findByEmail(email);
+    expect(kept).not.toBeNull();
+    return { email, subject: kept?.subject as string };
+  }
+
+  it('(i) keeps an identity that is now bound to another organisation', async () => {
+    const { subject } = await refuseWhileAdopted('adopted_bound', (s) =>
+      fake.bindTenant(s, BRAVO.tenantId)
+    );
+    const kept = await fake.findBySubject(subject);
+    expect(kept?.tenantId).toBe(BRAVO.tenantId);
+    expect(kept?.confirmed).toBe(false);
+    expect(kept?.disabled).toBe(false);
+  });
+
+  it('(ii) keeps an identity that is now confirmed', async () => {
+    const { subject } = await refuseWhileAdopted('adopted_confirmed', (s) =>
+      fake.confirmIdentity(s)
+    );
+    const kept = await fake.findBySubject(subject);
+    expect(kept?.tenantId).toBe(ALPHA.tenantId);
+    expect(kept?.confirmed).toBe(true);
+    expect(kept?.disabled).toBe(false);
+  });
+
+  it('(iii) keeps an identity that is now disabled', async () => {
+    const { subject } = await refuseWhileAdopted('adopted_disabled', (s) =>
+      fake.setDisabled(s, true)
+    );
+    const kept = await fake.findBySubject(subject);
+    expect(kept?.tenantId).toBe(ALPHA.tenantId);
+    expect(kept?.confirmed).toBe(false);
+    expect(kept?.disabled).toBe(true);
   });
 });
