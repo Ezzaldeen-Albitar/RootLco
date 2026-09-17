@@ -1,6 +1,7 @@
 'use client';
 
 import { useActionState, useCallback, useState, useTransition } from 'react';
+import Link from 'next/link';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import {
   withFilter,
@@ -223,6 +224,7 @@ export function UsersScreen({
         rowActions={(row) => (
           <RowActions
             row={row}
+            locale={locale}
             messages={messages}
             canManage={canManage}
             canRevokeSessions={canRevokeSessions}
@@ -348,12 +350,14 @@ function StatusPill({
  */
 function RowActions({
   row,
+  locale,
   messages,
   canManage,
   canRevokeSessions,
   onChoose,
 }: {
   readonly row: UserRow;
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly canManage: boolean;
   readonly canRevokeSessions: boolean;
@@ -368,10 +372,21 @@ function RowActions({
   // Revoking sessions needs BOTH permissions the operation declares.
   if (canManage && canRevokeSessions && row.status !== 'archived') available.push('revoke');
 
-  if (available.length === 0) return null;
-
   return (
     <div className="flex flex-wrap justify-end gap-1">
+      {/*
+        Roles and where they apply live on the user's own page. Offered to every
+        reader of this list: the page reads with `iam.user.read`, the code this
+        list already required, and shows its management controls only to a
+        session holding `iam.grant.manage`.
+      */}
+      <Link
+        href={`/${locale}/administration/users/${encodeURIComponent(row.id)}`}
+        aria-label={`${translate(messages, 'users.action.access')}: ${row.displayName}`}
+        className="rounded-md border border-border bg-surface px-2 py-1 text-caption text-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-subtle hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+      >
+        {translate(messages, 'users.action.access')}
+      </Link>
       {available.map((kind) => (
         <button
           key={kind}

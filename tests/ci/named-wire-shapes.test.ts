@@ -137,8 +137,12 @@ describe('every route body serialises a named type', () => {
     // be named `WarrantyStatusHistoryEntryView` as well — so `named` moves by one
     // and `composed` does not.
     // P1-31 P-12 adds the named ReportExportView response.
-    expect(summary.bodies).toBe(413);
-    expect(summary.named).toBe(360);
+    // 416 with the Owner directive organisation administration: the company
+    // create serialises `CompanyResult`, the branch create `BranchResult` and the
+    // capacity read `CapacityResult` — all NAMED — so `named` moves by three and
+    // `composed` does not.
+    expect(summary.bodies).toBe(416);
+    expect(summary.named).toBe(363);
     expect(summary.composed).toBe(53);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

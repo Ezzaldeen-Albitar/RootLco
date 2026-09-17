@@ -70,6 +70,9 @@ export interface FakeDelivery {
 export class FakeIdentityProvider implements IdentityProvider {
   readonly name = 'supabase';
   readonly supportsDisable = true;
+  readonly supportsDelete = true;
+  /** Set to make the next `deleteIdentity` fail, so the compensation gap is testable. */
+  refuseDelete = false;
 
   private readonly identities = new Map<string, FakeIdentityRecord>();
   private readonly revokedSessions = new Set<string>();
@@ -257,14 +260,40 @@ export class FakeIdentityProvider implements IdentityProvider {
     return this.toIdentity(record);
   }
 
+  /**
+   * Invites, or re-sends to an identity that never finished accepting.
+   *
+   * The re-send arm is not a convenience: it is what the real provider does.
+   * GoTrue's invite endpoint looks the address up first and refuses only an
+   * identity that is already **confirmed**; an unconfirmed one is re-issued a
+   * fresh link under its existing subject. A double that refused every known
+   * address would have made the orphan-recovery path look impossible when the
+   * deployed adapter handles it, which is the shape of double that turns a test
+   * suite into evidence for the wrong system. A disabled identity is refused
+   * here as well — a cancelled invitation disables its identity, and reviving one
+   * by re-invitation would undo an administrator's decision.
+   */
   async invite(request: InviteRequest): Promise<ProviderIdentity> {
     this.assertUp();
     const existing = this.byEmail(request.email);
     if (existing) {
-      throw new ProviderFailure(
-        'identity-conflict',
-        'An identity already exists for that address.'
-      );
+      if (existing.confirmed || existing.disabled) {
+        throw new ProviderFailure(
+          'identity-conflict',
+          'An identity already exists for that address.'
+        );
+      }
+      // Same subject, fresh link, and the binding rewritten exactly as the
+      // adapter's own `invite` rewrites it through `bindTenant`.
+      existing.tenantId = request.tenantId;
+      existing.recoveryToken = randomUUID();
+      this.deliveries.push({
+        kind: 'invite',
+        email: existing.email,
+        redirectTo: request.redirectTo,
+        token: existing.recoveryToken,
+      });
+      return this.toIdentity(existing);
     }
     const record = this.seed({
       email: request.email,
@@ -323,6 +352,20 @@ export class FakeIdentityProvider implements IdentityProvider {
     return this.toIdentity(record);
   }
 
+  /**
+   * Removes one identity, addressed by subject. Removing an unknown subject is a
+   * no-op, matching the adapter's treatment of a 404 as the end state already
+   * reached, so a retried compensation is idempotent in both implementations.
+   */
+  async deleteIdentity(subject: string): Promise<void> {
+    this.assertUp();
+    if (this.refuseDelete) {
+      throw new ProviderFailure('identity-unavailable', 'The identity could not be removed.');
+    }
+    this.identities.delete(subject);
+    await this.revokeAllSessions(subject);
+  }
+
   /** Test helper: simulates the invitee following their link and setting a password. */
   async acceptInvitation(email: string, password: string): Promise<ProviderIdentity> {
     const record = this.byEmail(email);
@@ -339,5 +382,6 @@ export class FakeIdentityProvider implements IdentityProvider {
     this.refreshTokens.clear();
     this.deliveries.length = 0;
     this.outage = false;
+    this.refuseDelete = false;
   }
 }

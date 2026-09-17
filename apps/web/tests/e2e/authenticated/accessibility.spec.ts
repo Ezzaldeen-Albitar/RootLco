@@ -134,11 +134,18 @@ const ALSO = { 'label-content-name-mismatch': { enabled: true } };
  *   would be worse than an honest skip.
  *
  * The three creation routes below need no data and are listed normally.
+ *
+ * `/administration/users/[userId]` is deliberately absent: it needs a user id
+ * this sweep has no way to obtain without inventing one, and a scan of a route
+ * that answered "not found" would be a green that proved nothing. Its roles and
+ * scopes panels are covered by the DOM tier instead.
  */
 const ROUTES = [
   '/administration',
   '/administration/organization',
   '/administration/users',
+  '/administration/departments',
+  '/administration/employees',
   '/administration/roles',
   '/administration/permissions',
   '/administration/approval-limits',

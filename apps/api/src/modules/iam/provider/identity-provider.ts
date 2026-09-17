@@ -4,8 +4,8 @@
  * ADR-019 selects Supabase Auth as the authentication and session provider and
  * requires that no application service, domain service, repository, or Route
  * Handler depend on a provider SDK type. This interface is that boundary: it
- * declares the twelve capabilities the phase needs, in RootLco's own vocabulary,
- * with RootLco's own error model.
+ * declares the thirteen capabilities the product needs, in RootLco's own
+ * vocabulary, with RootLco's own error model.
  *
  * Three rules the port exists to make structural rather than advisory:
  *
@@ -119,18 +119,22 @@ export interface PasswordResetRequest {
 }
 
 /**
- * The twelve capabilities Phase 1-14 needs from an authentication provider.
+ * The thirteen capabilities RootLco needs from an authentication provider.
  *
  * Adapters implement all of them or fail closed on the ones the concrete
  * provider does not support — never silently succeed. `supportsDisable` exists
  * so a caller can tell "not supported" from "did nothing", which matters when
  * the alternative is believing an account was disabled and it was not.
+ * `supportsDelete` exists for the same reason and is read before the one
+ * compensating call in the product — see `deleteIdentity`.
  */
 export interface IdentityProvider {
   /** Stable name, written to `iam.user_accounts.identity_provider`. */
   readonly name: string;
   /** False when this provider cannot disable an identity; callers must not pretend. */
   readonly supportsDisable: boolean;
+  /** False when this provider cannot remove an identity; the caller must not pretend. */
+  readonly supportsDelete: boolean;
 
   /** 1. Verify credentials and issue a session. */
   authenticate(email: string, password: string): Promise<ProviderSession>;
@@ -181,13 +185,35 @@ export interface IdentityProvider {
    * `SECURITY DEFINER` routines by CI-asserted invariant — so a lookup that does
    * not yet know its tenant has nowhere in the database it is allowed to run.
    *
-   * Called on the **failure** path of login only, so an attempt the provider
-   * refused can still be attributed to an account and audited. It is never called
-   * on a successful login (the session already carries the binding), and its
-   * result is never revealed to the caller in any form — see ADR-019 rule 3 and
-   * the enumeration note on `AuthenticationService.login`.
+   * Two call sites, and only two. On the **failure** path of login, so an attempt
+   * the provider refused can still be attributed to an account and audited — it is
+   * never called on a successful login (the session already carries the binding),
+   * and its result is never revealed to the caller in any form there. See ADR-019
+   * rule 3 and the enumeration note on `AuthenticationService.login`. And ahead of
+   * an invitation, where the answer decides whether an address the provider
+   * already knows is an orphan of the caller's own organisation that may be
+   * reused, or somebody else's identity that must be refused; that path reveals
+   * no more than the invitation already did, because a provider conflict has
+   * answered ERR-RES-002 to the inviter since P1-14.
    */
   findByEmail(email: string): Promise<ProviderIdentity | null>;
+
+  /**
+   * 13. Remove an identity by subject. Compensation only.
+   *
+   * The one caller is `InvitationService.invite`, and it passes the subject the
+   * provider returned **to that same request** when the account INSERT the
+   * invitation exists to make was refused — a capacity ceiling, a duplicate — so
+   * the identity this request created does not outlive the transaction that
+   * rolled back. It is never called with an address, never with an identity this
+   * request did not create, never for a set, and there is no operation, route or
+   * service method that exposes it to a caller.
+   *
+   * Adapters that cannot remove an identity report `supportsDelete: false` and
+   * throw; the compensating caller checks the flag first and records the gap
+   * rather than believing a removal that did not happen.
+   */
+  deleteIdentity(subject: string): Promise<void>;
 }
 
 /**
@@ -200,6 +226,7 @@ export interface IdentityProvider {
 export class UnconfiguredIdentityProvider implements IdentityProvider {
   readonly name = 'unconfigured';
   readonly supportsDisable = false;
+  readonly supportsDelete = false;
 
   private fail(): never {
     throw new ProviderFailure(
@@ -245,6 +272,9 @@ export class UnconfiguredIdentityProvider implements IdentityProvider {
     this.fail();
   }
   async findByEmail(): Promise<ProviderIdentity | null> {
+    this.fail();
+  }
+  async deleteIdentity(): Promise<void> {
     this.fail();
   }
 }

@@ -10,7 +10,7 @@
  * The backend requires an `Idempotency-Key` header on every operation it
  * registers as idempotent, and answers `400 ERR-INT-002` without one — before
  * authorization is evaluated. That set is NOT "the POST operations": it is
- * currently 174 operations (PATCH 3, POST 165, PUT 6).
+ * currently 176 operations (PATCH 3, POST 167, PUT 6).
  *
  * The client used to infer the answer from the HTTP method, which was wrong for
  * every non-POST member of that set. This table is the contract instead of a
@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 13, export 2, financial 14, none 179, privileged 192, security 13.
+ * Currently approval 13, export 2, financial 14, none 180, privileged 194, security 13.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 413 of them. */
+/** Every operation the contract publishes. 416 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -1410,6 +1410,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'none',
   },
   {
+    template: '/org/branches',
+    method: 'POST',
+    operationId: 'org.branch-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
     template: '/org/branches/{branchId}',
     method: 'PATCH',
     operationId: 'org.branch-update',
@@ -1431,11 +1438,25 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'privileged',
   },
   {
+    template: '/org/capacity',
+    method: 'GET',
+    operationId: 'org.capacity-read',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
     template: '/org/companies',
     method: 'GET',
     operationId: 'org.company-list',
     idempotent: false,
     auditClass: 'none',
+  },
+  {
+    template: '/org/companies',
+    method: 'POST',
+    operationId: 'org.company-create',
+    idempotent: true,
+    auditClass: 'privileged',
   },
   {
     template: '/org/companies/{companyId}',

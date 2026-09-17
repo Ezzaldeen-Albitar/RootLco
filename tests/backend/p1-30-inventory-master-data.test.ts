@@ -418,7 +418,9 @@ describe('declarations', () => {
     // and 78 since P1-31 P-17 minted the two employee-register codes and carried
     // both, because a delivery cannot be created without an employee to name;
     // the two inventory codes this case owns are unaffected by all five.
-    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(78);
+    // 80 since the Owner directive of 2026-09-16 carried org.company.manage and
+    // org.branch.manage for the two organisation creation operations.
+    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(80);
   });
 });
 

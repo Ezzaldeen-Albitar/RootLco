@@ -41,3 +41,30 @@ export function translate(messages: Messages, key: keyof Messages): string {
 export function translateDynamic(messages: Messages, key: string): string {
   return translate(messages, key as keyof Messages);
 }
+
+/**
+ * Fills `{name}` placeholders in a catalogue message.
+ *
+ * A placeholder with no value is LEFT AS WRITTEN rather than blanked, so a
+ * missing value is visible in the interface instead of producing a sentence
+ * that silently says "allows  branches". Values are plain text; nothing here is
+ * ever treated as markup.
+ */
+export function formatMessage(
+  template: string,
+  values: Readonly<Record<string, string>> | undefined
+): string {
+  if (values === undefined) return template;
+  return template.replace(/\{([a-zA-Z]+)\}/g, (whole, name: string) =>
+    Object.prototype.hasOwnProperty.call(values, name) ? (values[name] as string) : whole
+  );
+}
+
+/** `translateDynamic` followed by `formatMessage`. */
+export function translateWithValues(
+  messages: Messages,
+  key: string,
+  values: Readonly<Record<string, string>> | undefined
+): string {
+  return formatMessage(translateDynamic(messages, key), values);
+}

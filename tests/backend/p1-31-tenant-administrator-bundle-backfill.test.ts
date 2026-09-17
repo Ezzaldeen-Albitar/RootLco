@@ -135,6 +135,16 @@ const P1_31_ADDED = Object.freeze([
   'org.employee.manage',
 ]);
 
+/**
+ * The Owner directive of 2026-09-16 carries `org.company.manage` and
+ * `org.branch.manage`. The backfill reads the bundle, so it owes these two to every
+ * organisation as well, and a 67-code organisation is missing all thirteen.
+ */
+const OWNER_DIRECTIVE_ADDED = Object.freeze(['org.company.manage', 'org.branch.manage']);
+
+/** Every code a 67-code organisation is missing from the current bundle. */
+const BACKFILLED = Object.freeze([...P1_31_ADDED, ...OWNER_DIRECTIVE_ADDED]);
+
 /** The bundle before the five P1-31 widenings. Unchanged by all five. */
 const BUNDLE_BEFORE = 67;
 
@@ -313,13 +323,13 @@ async function backfillAuditCount(tenantId: string): Promise<number> {
   return rows[0]?.n ?? 0;
 }
 
-/** Removes the eleven P1-31 codes, reproducing the 67-code bundle on a fresh role. */
+/** Removes the thirteen backfilled codes, reproducing the 67-code bundle on a fresh role. */
 async function makeStale(tenant: Provisioned): Promise<void> {
   await admin.query(
     `DELETE FROM iam.role_permissions
       WHERE role_id = $1
         AND permission_id IN (SELECT id FROM iam.permissions WHERE permission_code = ANY($2::text[]))`,
-    [tenant.tenantAdministratorRoleId, [...P1_31_ADDED]]
+    [tenant.tenantAdministratorRoleId, [...BACKFILLED]]
   );
   expect(await codesOfRole(tenant.tenantAdministratorRoleId)).toHaveLength(BUNDLE_BEFORE);
 }
@@ -483,9 +493,9 @@ describe('P1-31 D-2 — the mechanism', () => {
     expect(parsedBundle).toHaveLength(TENANT_ADMINISTRATOR_ROLE.permissionCodes.length);
     // The eight this backfill exists to deliver are in it, and the withheld
     // export code is not: a backfill must never widen past the bundle.
-    for (const code of P1_31_ADDED) expect(parsedBundle).toContain(code);
+    for (const code of BACKFILLED) expect(parsedBundle).toContain(code);
     expect(parsedBundle).not.toContain(CUSTOMISATION_CODE);
-    expect(parsedBundle).toHaveLength(BUNDLE_BEFORE + P1_31_ADDED.length);
+    expect(parsedBundle).toHaveLength(BUNDLE_BEFORE + BACKFILLED.length);
   });
 
   it('BF-8 additive only, structurally: the script issues no DELETE and no UPDATE', () => {
@@ -570,7 +580,7 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
     const before = await codesOfRole(stale.tenantAdministratorRoleId);
     const beforeRows = await mappingRows(stale.tenantAdministratorRoleId);
     expect(before).toHaveLength(BUNDLE_BEFORE);
-    for (const code of P1_31_ADDED) expect(before).not.toContain(code);
+    for (const code of BACKFILLED) expect(before).not.toContain(code);
 
     const result = await backfill({ tenants: [stale.tenantId] });
     expect(result.outcome).toBe('applied');
@@ -583,17 +593,17 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
       heldAfter: parsedBundle.length,
       blockedByDeny: [],
     });
-    expect(only(result).added).toEqual([...P1_31_ADDED].sort());
+    expect(only(result).added).toEqual([...BACKFILLED].sort());
 
     const after = await codesOfRole(stale.tenantAdministratorRoleId);
     expect(after).toEqual([...TENANT_ADMINISTRATOR_ROLE.permissionCodes].sort());
     // Exactly the delta, computed on the rows rather than trusted from the report.
-    expect(after.filter((code) => !before.includes(code))).toEqual([...P1_31_ADDED].sort());
+    expect(after.filter((code) => !before.includes(code))).toEqual([...BACKFILLED].sort());
     expect(before.filter((code) => !after.includes(code))).toEqual([]);
     // NOTHING was revoked: every mapping row that existed still exists, by id.
     const afterRows = await mappingRows(stale.tenantAdministratorRoleId);
     for (const row of beforeRows) expect(afterRows).toContain(row);
-    expect(afterRows).toHaveLength(beforeRows.length + P1_31_ADDED.length);
+    expect(afterRows).toHaveLength(beforeRows.length + BACKFILLED.length);
 
     // It recorded what it changed, in that organisation's own audit trail.
     expect(await backfillAuditCount(stale.tenantId)).toBe(1);
@@ -604,7 +614,7 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
         WHERE r.tenant_id = $1 AND r.action = $2 AND d.field_name = 'permission_codes_added'`,
       [stale.tenantId, BACKFILL_AUDIT_ACTION]
     );
-    expect(detail[0]?.new_value_masked).toBe([...P1_31_ADDED].sort().join(','));
+    expect(detail[0]?.new_value_masked).toBe([...BACKFILLED].sort().join(','));
   });
 
   it('BF-2 running it again changes nothing', async () => {
@@ -632,7 +642,7 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
     // The denied code is LEFT ALONE and reported, never re-decided by update.
     expect(organisation.blockedByDeny).toEqual([DENIED_CODE]);
     expect(organisation.added).toEqual(
-      [...P1_31_ADDED].filter((code) => code !== DENIED_CODE).sort()
+      [...BACKFILLED].filter((code) => code !== DENIED_CODE).sort()
     );
 
     const after = await mappingRows(customised.tenantAdministratorRoleId);

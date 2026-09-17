@@ -458,7 +458,10 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
     // fresh administrator unable to record ANY handover, because
     // `sal.delivery-create` refuses an employee that does not exist and nothing
     // else in the product can create one.
-    expect(expected).toHaveLength(78);
+    // 80 with the two codes the Owner directive of 2026-09-16 carries for
+    // `org.company-create` and `org.branch-create`: without them no one in a
+    // freshly provisioned organisation could add a company or a branch.
+    expect(expected).toHaveLength(80);
     expect(expected.some((c) => c.includes('*'))).toBe(false);
     expect(expected.some((c) => c.startsWith('platform.'))).toBe(false);
     expect(new Set(expected).size).toBe(expected.length);
