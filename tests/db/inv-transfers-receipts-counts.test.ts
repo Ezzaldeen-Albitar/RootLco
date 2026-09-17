@@ -219,7 +219,12 @@ describe('stock transfers', () => {
     });
   });
 
-  it('refuses a partial receipt, a second receipt, and a receipt after cancellation', async () => {
+  // A SHORT receipt is no longer refused: since 20260917098000 it records what
+  // arrived and leaves the rest in transit (tests/db/inv-material-demand-control.test.ts
+  // proves that path). What stays refused is a receipt of more than is in transit, a
+  // received quantity written past the status that explains it, and any receipt of
+  // a cancelled transfer.
+  it('refuses an over-receipt, an incoherent received quantity, and a receipt after cancellation', async () => {
     await withRolledBackTx(runtime, ctxA, async (c) => {
       const { item } = await seedItem(c, 'tr2');
       const { warehouse } = await seedLocations(c, 'tr2');
@@ -233,8 +238,9 @@ describe('stock transfers', () => {
         )
       ).id;
 
-      await expectFail(c, '23514', `SELECT inv.receive_transfer($1, 2, NULL)`, [transfer]);
-      // The constraint, not only the function, makes partial receipt unrepresentable.
+      await expectFail(c, '23514', `SELECT inv.receive_transfer($1, 4, NULL)`, [transfer]);
+      // The constraint, not only the function: a dispatched transfer has received
+      // nothing, so a received quantity written onto it is incoherent with its status.
       await expectFail(
         c,
         '23514',
