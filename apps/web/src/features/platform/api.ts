@@ -37,10 +37,9 @@ import type {
  * client bundle — so an import from a client component fails at build time
  * rather than shipping. Every caller is a Server Component or a server module.
  *
- * The two reads a client data table drives — the organisation list and the
- * activity search — genuinely must be browser-callable, because paging and
- * searching happen after render. They live in `actions.ts` with the writes, and
- * are the only console reads a browser can call.
+ * The two reads a client data table drives, the organisation list and the
+ * activity search, are still Server Actions in `actions.ts`. That is an open
+ * item awaiting a decision, not an approved exception.
  */
 
 const EMPTY = { rows: [], nextCursor: null, hasMore: false } as const;

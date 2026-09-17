@@ -32,16 +32,15 @@ import type {
  * Money is a decimal string from the form to the wire. It is checked against the
  * same pattern the operation publishes and is never turned into a number.
  *
- * ## Why two READS live in the actions module
+ * ## Two READS still live in the actions module (OPEN, awaiting a decision)
  *
- * Every other console read is server-only, in `api.ts`, reachable only from the
- * page that gates it. These two are not: the organisation list and the activity
- * search are paged and searched by a client data table AFTER render, so the
- * browser has to be able to call them. They are the named, deliberate exception
- * to "console reads are not Server Actions", and each is refused by its backend
- * operation without the platform code it declares — `platform.organization.read`
- * and `platform.audit.read` — which is what makes the exception safe rather than
- * merely convenient.
+ * Every other console read is server-only, in `api.ts`. These two are not yet:
+ * the organisation list and the activity search are paged and searched by a
+ * client data table after render, and today that table calls a Server Action.
+ * This does NOT meet the approved follow-up that console reads are not Server
+ * Actions; how to move them is an open decision, not a settled exception. Until
+ * then each is still refused by its backend operation without the platform code
+ * it declares: `platform.organization.read` and `platform.audit.read`.
  */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

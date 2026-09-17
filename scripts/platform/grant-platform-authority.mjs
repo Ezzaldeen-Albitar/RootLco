@@ -34,8 +34,8 @@
  *     REFUSED with a non-zero exit before a connection is opened. The script
  *     never adds the base code on the operator's behalf: an incompatible
  *     request is a refusal, not a silent widening of authority. The set the
- *     operator would be left holding is checked again inside the transaction,
- *     and so is the set the operator would be left holding. That code is the
+ *     operator would be left holding is checked again inside the transaction.
+ *     That code is the
  *     Platform Owner Console's base entitlement: `GET /platform/session` — the
  *     first request every console page makes — declares it and nothing else, so
  *     an operator granted only `platform.audit.read` or
