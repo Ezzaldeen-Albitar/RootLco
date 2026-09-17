@@ -679,6 +679,63 @@ describe('inv.sales_returns — condition, ceiling and credit', () => {
     });
   });
 
+  /**
+   * The ceiling is keyed on NEW.tenant_id, never on `iam.current_tenant_id()`.
+   *
+   * `inv.guard_part_return_ceiling` was written that way from the start. Its sibling
+   * reached both the source and the running total through helpers that read the GUC,
+   * so in a session carrying none the source was not found and the sum was zero — a
+   * ceiling that refuses for the wrong reason, or does not bind at all. Both helpers
+   * now take the tenant as an argument. This case holds them to it: the GUC is
+   * cleared INSIDE the transaction once the fixtures are in place, and the guard must
+   * still find the issue and still count what has already come back.
+   */
+  it('binds the ceiling on the row tenant, in a session carrying no tenant GUC', async () => {
+    await withRolledBackTx(admin, ctxA, async (c) => {
+      const { item } = await seedItem(c, 'odcs_noguc');
+      const { warehouse } = await seedLocations(c, 'odcs_noguc');
+      await seedStock(c, item, warehouse, 10, 'odcs_noguc');
+      const { wo } = await makeWorkOrder(c, 'odcs_noguc');
+      const issue = await one<{ id: string }>(
+        c,
+        `SELECT inv.issue_part($1,$2,$3,5,NULL,NULL,NULL) AS id`,
+        [wo, item, warehouse]
+      );
+
+      await c.query(`SELECT set_config('app.tenant_id','',true)`);
+      expect(await scalar(c, `SELECT (iam.current_tenant_id() IS NULL)::text AS v`)).toBe('true');
+
+      const rawReturn = `INSERT INTO inv.sales_returns
+          (tenant_id, company_id, branch_id, source_kind, source_id, item_id, quantity,
+           return_condition, received_location_id, created_by)
+        VALUES ($1,$2,$3,'part_issue',$4,$5,$6::numeric,'restockable',$7,$8)`;
+      const args = (quantity: string): unknown[] => [
+        TENANT_A,
+        COMPANY_A1,
+        BRANCH_A1,
+        issue.id,
+        item,
+        quantity,
+        warehouse,
+        USER_A,
+      ];
+
+      // Four of the five come back: the source is located by NEW.tenant_id alone.
+      await c.query(rawReturn, args('4'));
+      // The running total is keyed the same way, so two more are one too many.
+      await expectFail(c, '23514', rawReturn, args('2'));
+      // The fifth is still allowed, so the guard bounds rather than blocks.
+      await c.query(rawReturn, args('1'));
+      expect(
+        await scalar(
+          c,
+          `SELECT sum(quantity)::text AS v FROM inv.sales_returns WHERE source_id = $1`,
+          [issue.id]
+        )
+      ).toBe('5.000');
+    });
+  });
+
   it('replays an idempotency key instead of receiving the part twice', async () => {
     await withRolledBackTx(runtime, ctxA, async (c) => {
       const { item } = await seedItem(c, 'odcs_idem');

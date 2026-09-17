@@ -118,20 +118,25 @@ CREATE INDEX ix_sales_returns_credit_note ON inv.sales_returns (tenant_id, compa
 -- so a part issue has two ways back and one ceiling. Reading only the new table
 -- would let the same issued quantity be returned twice, once through each path —
 -- which is the phantom stock this function exists to prevent.
-CREATE OR REPLACE FUNCTION inv.returned_quantity(p_source_kind text, p_source_id uuid)
+-- The tenant is an ARGUMENT, never `iam.current_tenant_id()`. A trigger has to bound
+-- the row it is handed even in a session that carries no tenant GUC, and a sum keyed
+-- on the GUC would return 0 in such a session — a ceiling of zero already returned,
+-- which is no ceiling at all. Every caller has the tenant in hand, so asking for it
+-- costs nothing and removes the failure mode.
+CREATE OR REPLACE FUNCTION inv.returned_quantity(p_tenant uuid, p_source_kind text, p_source_id uuid)
 RETURNS numeric LANGUAGE sql STABLE SECURITY INVOKER SET search_path = '' AS $$
   SELECT COALESCE((SELECT sum(r.quantity) FROM inv.sales_returns r
-                    WHERE r.tenant_id = iam.current_tenant_id()
+                    WHERE r.tenant_id = p_tenant
                       AND r.source_kind = p_source_kind AND r.source_id = p_source_id), 0)
        + CASE WHEN p_source_kind = 'part_issue'
               THEN COALESCE((SELECT sum(pr.quantity) FROM inv.part_returns pr
-                              WHERE pr.tenant_id = iam.current_tenant_id()
+                              WHERE pr.tenant_id = p_tenant
                                 AND pr.part_issue_id = p_source_id), 0)
               ELSE 0 END
 $$;
-COMMENT ON FUNCTION inv.returned_quantity(text, uuid) IS 'Everything already returned against a source: inv.sales_returns plus, for a part-issue source, the legacy inv.part_returns rows. One ceiling over two tables.';
-REVOKE EXECUTE ON FUNCTION inv.returned_quantity(text, uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION inv.returned_quantity(text, uuid) TO app_runtime, app_readonly;
+COMMENT ON FUNCTION inv.returned_quantity(uuid, text, uuid) IS 'Everything already returned against a source, for the tenant NAMED IN THE ARGUMENT: inv.sales_returns plus, for a part-issue source, the legacy inv.part_returns rows. One ceiling over two tables.';
+REVOKE EXECUTE ON FUNCTION inv.returned_quantity(uuid, text, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION inv.returned_quantity(uuid, text, uuid) TO app_runtime, app_readonly;
 
 -- The OLD path's ceiling, re-issued to count the new table too.
 --
@@ -180,7 +185,7 @@ BEGIN
   -- lock the issue to serialize the return-ceiling check
   SELECT * INTO i FROM inv.part_issues WHERE tenant_id = v_tenant AND id = p_part_issue FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'part issue % not found', p_part_issue USING ERRCODE = 'foreign_key_violation'; END IF;
-  v_returned := inv.returned_quantity('part_issue', p_part_issue);
+  v_returned := inv.returned_quantity(v_tenant, 'part_issue', p_part_issue);
   IF v_returned + p_qty > i.quantity THEN
     RAISE EXCEPTION 'return exceeds issued quantity (issued %, already returned %, requested %)', i.quantity, v_returned, p_qty USING ERRCODE = 'check_violation';
   END IF;
@@ -218,7 +223,7 @@ BEGIN
     RAISE EXCEPTION 'return source: unknown source kind %', p_source_kind USING ERRCODE = 'check_violation';
   END IF;
   IF v_qty IS NULL THEN RETURN; END IF;
-  v_returned := inv.returned_quantity(p_source_kind, p_source_id);
+  v_returned := inv.returned_quantity(v_tenant, p_source_kind, p_source_id);
   RETURN QUERY SELECT v_qty, v_returned, v_qty - v_returned, v_item, v_co, v_br;
 END; $$;
 COMMENT ON FUNCTION inv.returnable_quantity(text, uuid) IS 'How much of a source left, how much has come back, and how much may still be returned. Advisory: the binding ceiling is re-checked under the source lock by inv.guard_sales_return_ceiling.';
@@ -227,10 +232,15 @@ GRANT EXECUTE ON FUNCTION inv.returnable_quantity(text, uuid) TO app_runtime, ap
 
 -- The quantity the source put into the customer's hands, read under a ROW LOCK so
 -- two concurrent returns of the last unit cannot both pass the ceiling.
-CREATE OR REPLACE FUNCTION inv.lock_return_source(p_source_kind text, p_source_id uuid)
+--
+-- The tenant is an ARGUMENT here for the same reason as in `inv.returned_quantity`:
+-- the trigger calls this with `NEW.tenant_id`, so the source it locks and the sum it
+-- is compared against are both the new row's tenant, in a session with a tenant GUC
+-- or without one.
+CREATE OR REPLACE FUNCTION inv.lock_return_source(p_tenant uuid, p_source_kind text, p_source_id uuid)
 RETURNS TABLE (source_quantity numeric, item_id uuid, company_id uuid, branch_id uuid)
 LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
-DECLARE v_tenant uuid := iam.current_tenant_id();
+DECLARE v_tenant uuid := p_tenant;
         v_qty numeric(12, 3); v_item uuid; v_co uuid; v_br uuid; v_status text;
 BEGIN
   IF p_source_kind = 'part_issue' THEN
@@ -250,24 +260,29 @@ BEGIN
   END IF;
   RETURN QUERY SELECT v_qty, v_item, v_co, v_br;
 END; $$;
-REVOKE EXECUTE ON FUNCTION inv.lock_return_source(text, uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION inv.lock_return_source(text, uuid) TO app_runtime;
+REVOKE EXECUTE ON FUNCTION inv.lock_return_source(uuid, text, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION inv.lock_return_source(uuid, text, uuid) TO app_runtime;
 
 -- The ceiling at the CONSTRAINT layer, like inv.guard_part_return_ceiling: a raw
 -- INSERT that bypassed inv.receive_sales_return would otherwise mint stock, because
 -- the movement provenance guard binds the movement to this row's own quantity.
+--
+-- Keyed on NEW.tenant_id, exactly as inv.guard_part_return_ceiling is, and for the
+-- reason stated there: a trigger must bound the row it is given even in a session
+-- that carries no tenant GUC. Both helpers below take the tenant as an argument, so
+-- neither the source lock nor the returned sum can quietly degrade to nothing.
 CREATE OR REPLACE FUNCTION inv.guard_sales_return_ceiling()
 RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
 DECLARE s record; v_returned numeric(12, 3);
 BEGIN
-  SELECT * INTO s FROM inv.lock_return_source(NEW.source_kind, NEW.source_id);
+  SELECT * INTO s FROM inv.lock_return_source(NEW.tenant_id, NEW.source_kind, NEW.source_id);
   IF NEW.item_id <> s.item_id THEN
     RAISE EXCEPTION 'inv.sales_returns: the return names item % but the source sold %', NEW.item_id, s.item_id USING ERRCODE = 'check_violation';
   END IF;
   IF NEW.company_id <> s.company_id OR NEW.branch_id <> s.branch_id THEN
     RAISE EXCEPTION 'inv.sales_returns: a return is received in the branch that sold or issued the part' USING ERRCODE = 'check_violation';
   END IF;
-  v_returned := inv.returned_quantity(NEW.source_kind, NEW.source_id);
+  v_returned := inv.returned_quantity(NEW.tenant_id, NEW.source_kind, NEW.source_id);
   IF v_returned + NEW.quantity > s.source_quantity THEN
     RAISE EXCEPTION 'inv.sales_returns: returning % would exceed the % that left (% already returned)',
       NEW.quantity, s.source_quantity, v_returned USING ERRCODE = 'check_violation';
@@ -497,7 +512,7 @@ BEGIN
     SELECT id INTO v_existing FROM inv.sales_returns WHERE tenant_id = v_tenant AND idempotency_key = p_idempotency_key;
     IF FOUND THEN RETURN v_existing; END IF;
   END IF;
-  SELECT * INTO s FROM inv.lock_return_source(p_source_kind, p_source_id);
+  SELECT * INTO s FROM inv.lock_return_source(v_tenant, p_source_kind, p_source_id);
 
   v_location := CASE WHEN p_condition = 'damaged' THEN p_quarantine_location ELSE p_received_location END;
   SELECT location_type INTO v_loc_type FROM inv.stock_locations

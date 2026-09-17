@@ -10,9 +10,13 @@
  *
  * ## No price
  *
- * `svc.resolve_price` prices services only and no table holds a selling price for an
- * inventory item, so there is no figure to print whatever the caller may read. When
- * an item price source exists, the price belongs here behind `svc.price.read`.
+ * `inv.item_sale_prices` does hold a selling price for an item, but a label is
+ * TENANT-WIDE — the operation is `scope: 'tenant'` and addresses the item by id alone —
+ * while a price is narrowed to a company and a branch, one live row per
+ * `(tenant, item, company, branch)`. Nothing here could say which of those rows the
+ * printed figure would be, so printing one would be printing an arbitrary pick. A caller
+ * that needs the price asks `inv.item-sale-price-list`, which publishes every configured
+ * row most specific first, each labelled with the company and branch it names.
  */
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
