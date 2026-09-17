@@ -872,6 +872,7 @@
   "receptions.workOrderStart.customerFixed": "ستُفتح الزيارة لهذا العميل. ولاستقبال شخص آخر استخدم استقبال الزوار.",
   "receptions.workOrderStart.description": "اختر المركبة التي أحضرها هذا العميل، ثم تابع إلى تسجيل الوصول.",
   "receptions.workOrderStart.empty": "لا توجد مركبة مسجلة لهذا العميل في الوقت الحالي. ابحث عن المركبة أو أضفها للمتابعة.",
+  "receptions.workOrderStart.emptyOnThisPage": "لا توجد في هذه الصفحة مركبة مسجلة لهذا العميل حالياً. انتقل إلى الصفحة التالية، أو ابحث عن المركبة أو أضفها.",
   "receptions.workOrderStart.title": "أمر عمل جديد",
   "receptions.workOrderStart.vehicleHeading": "اختر المركبة",
   "receptions.workOrderStart.vehicleLegend": "مركبات هذا العميل",

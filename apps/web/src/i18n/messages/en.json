@@ -872,6 +872,7 @@
   "receptions.workOrderStart.customerFixed": "The visit will be opened for this customer. To receive somebody else, use walk-in intake.",
   "receptions.workOrderStart.description": "Choose the vehicle this customer has brought in, then continue to check-in.",
   "receptions.workOrderStart.empty": "No vehicle is recorded for this customer at the moment. Find or add the vehicle to continue.",
+  "receptions.workOrderStart.emptyOnThisPage": "No vehicle on this page is recorded for this customer right now. Look on the next page, or find or add the vehicle.",
   "receptions.workOrderStart.title": "New work order",
   "receptions.workOrderStart.vehicleHeading": "Choose the vehicle",
   "receptions.workOrderStart.vehicleLegend": "This customer's vehicles",

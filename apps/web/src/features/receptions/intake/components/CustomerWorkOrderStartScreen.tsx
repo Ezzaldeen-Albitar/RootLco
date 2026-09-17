@@ -49,9 +49,11 @@ import type { ChosenCustomer } from './WalkInIntakeScreen';
  *
  * The filter runs on the page that was fetched, because the read publishes no
  * filter of its own and inventing a query parameter it does not accept would be
- * a fabricated contract. A page whose rows are all history therefore shows the
- * empty sentence with the pager still offering the next page, which is honest:
- * the operator can page on or add the vehicle.
+ * a fabricated contract. That has a consequence the screen must state rather
+ * than hide: a page whose rows are all history is not a customer with no
+ * vehicle, so an emptied page says so — and keeps its pager — while the "no
+ * vehicle recorded" sentence is kept for the case where there is nothing
+ * further to look at.
  */
 
 export interface CustomerWorkOrderStartScreenProps {
@@ -230,6 +232,17 @@ function CurrentVehicleChoice({
           (entry) => entry.active && entry.vehicleLifecycleStatus !== null
         );
 
+  /*
+   * A page whose rows were ALL filtered out is not the same fact as a customer
+   * with no vehicle, and the screen said it was. The filter runs on the page
+   * that was fetched — ten rows — because the read publishes no filter of its
+   * own, so a customer whose first page holds only ended relationships was told
+   * "no vehicle is recorded for this customer" beside a Next button that would
+   * have found one. The sentence now says which of the two it is, and the pager
+   * is untouched either way: it is what makes the first sentence actionable.
+   */
+  const morePages = table.response !== null && table.response.hasMore;
+
   return (
     <section
       aria-labelledby="work-order-start-vehicle-heading"
@@ -255,7 +268,12 @@ function CurrentVehicleChoice({
           onRetry={table.refresh}
           empty={
             <p className="text-caption text-text-muted" data-testid="work-order-start-empty">
-              {translate(messages, 'receptions.workOrderStart.empty')}
+              {translate(
+                messages,
+                morePages
+                  ? 'receptions.workOrderStart.emptyOnThisPage'
+                  : 'receptions.workOrderStart.empty'
+              )}
             </p>
           }
           rows={offered}

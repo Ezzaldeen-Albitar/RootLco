@@ -851,6 +851,42 @@ describe('the vehicle step that follows the customer profile', () => {
     expect(screen.getByText(en['receptions.intake.vehicle.limitedAccess'])).toBeVisible();
   });
 
+  it('says an emptied page is an emptied page, and keeps the pager', async () => {
+    /*
+     * The filter runs on the fetched page, so a customer whose first page holds
+     * only history has an EMPTY page and not an empty history. The screen said
+     * "no vehicle is recorded for this customer" beside a Next button that
+     * would have found one, which is two wrong things at once: a claim about
+     * the customer made from one page, and an invitation to add a vehicle they
+     * may already have.
+     */
+    listCustomerVehicles.mockResolvedValue(
+      page([ENDED_LINK, DEAD_VEHICLE_ROW], { hasMore: true, nextCursor: 'the-next-cursor' })
+    );
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+
+    expect(await screen.findByTestId('work-order-start-empty')).toHaveTextContent(
+      en['receptions.workOrderStart.emptyOnThisPage']
+    );
+    expect(screen.queryByText(en['receptions.workOrderStart.empty'])).not.toBeInTheDocument();
+    // The way to the rest of the list stays where it was.
+    expect(screen.getByRole('button', { name: en['table.nextPage'] })).toBeEnabled();
+  });
+
+  it('says no vehicle is recorded only when there is no further page', async () => {
+    listCustomerVehicles.mockResolvedValue(page([ENDED_LINK]));
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+
+    expect(await screen.findByTestId('work-order-start-empty')).toHaveTextContent(
+      en['receptions.workOrderStart.empty']
+    );
+    expect(
+      screen.queryByText(en['receptions.workOrderStart.emptyOnThisPage'])
+    ).not.toBeInTheDocument();
+    // Nothing further to look at, so the shared Pager renders nothing at all.
+    expect(screen.queryByRole('button', { name: en['table.nextPage'] })).not.toBeInTheDocument();
+  });
+
   it('offers the shared Pager, with no invented range, when a page is not the last', async () => {
     listCustomerVehicles.mockResolvedValue(
       page([OWN_VEHICLE], { hasMore: true, nextCursor: 'the-next-cursor' })
@@ -948,6 +984,107 @@ describe('continuing from the customer profile into the existing check-in flow',
       'href',
       checkInWizardHref('en', { customerId: CUSTOMER_ID, vehicleId: SEARCHED_VEHICLE_ID })
     );
+  });
+
+  /** Open the find-or-add sub-flow from a step whose list came back empty. */
+  async function addFromEmptyState(user: ReturnType<typeof userEvent.setup>) {
+    listCustomerVehicles.mockResolvedValue(page([]));
+    renderLtr(<CustomerWorkOrderStartScreen {...stepProps()} />);
+    await user.click(await screen.findByTestId('work-order-start-add'));
+  }
+
+  /** Record the relationship the sub-flow asks for, in the owner role. */
+  async function recordTheRelationship(user: ReturnType<typeof userEvent.setup>) {
+    await screen.findByTestId('intake-link-step');
+    await user.selectOptions(
+      screen.getByLabelText(en['vehicles.relationships.role'], { exact: false }),
+      'owner'
+    );
+    await user.click(screen.getByRole('button', { name: en['receptions.intake.link.submit'] }));
+  }
+
+  it('carries a vehicle registered from the empty state through to the check-in link', async () => {
+    /*
+     * The return path, end to end. A customer with nothing on record is the
+     * case this step exists for, and every earlier case stopped at the moment
+     * the sub-flow opened — so `settle` and `onLinkOutcome`, which are what
+     * turn that sub-flow's answer into the pair handed to check-in, were
+     * reachable only by reading the source.
+     */
+    const user = userEvent.setup();
+    await addFromEmptyState(user);
+
+    const create = await screen.findByTestId('intake-vehicle-create');
+    await user.type(
+      within(create).getByLabelText(en['vehicles.create.vin'], { exact: false }),
+      '2hgcm82633a004999'
+    );
+    await user.click(within(create).getByRole('button', { name: en['vehicles.create.submit'] }));
+
+    // A vehicle just registered is not yet related to the customer, so the
+    // EXISTING relationship step runs before this step settles.
+    await recordTheRelationship(user);
+    expect(linkCustomerAction.mock.calls[0]?.[0]).toBe(CREATED_VEHICLE_ID);
+
+    // Back on the customer's own step — the sub-flow is closed, not stacked.
+    await screen.findByTestId('work-order-start-vehicle');
+    expect(screen.queryByTestId('intake-vehicle-create')).not.toBeInTheDocument();
+
+    const control = screen.getByTestId('work-order-start-continue');
+    expect(control).toHaveAttribute(
+      'href',
+      checkInWizardHref('en', { customerId: CUSTOMER_ID, vehicleId: CREATED_VEHICLE_ID })
+    );
+    expect(control.getAttribute('href')).toContain(CUSTOMER_ID);
+    expect(control.getAttribute('href')).toContain(CREATED_VEHICLE_ID);
+  });
+
+  it('carries a vehicle found by search and linked from the empty state to the same link', async () => {
+    const user = userEvent.setup();
+    await addFromEmptyState(user);
+
+    const search = await screen.findByTestId('intake-vehicle-search');
+    await user.type(within(search).getByLabelText(en['vehicles.search.vin']), SEARCH_HIT.vin);
+    await user.click(within(search).getByRole('button', { name: en['vehicles.search.submit'] }));
+    const results = await screen.findByTestId('intake-vehicle-search-results');
+    await within(results).findByText('V-0100');
+    await user.click(
+      within(results).getByRole('button', { name: en['receptions.intake.vehicle.choose'] })
+    );
+
+    await recordTheRelationship(user);
+    expect(linkCustomerAction.mock.calls[0]?.[0]).toBe(SEARCHED_VEHICLE_ID);
+    const form = linkCustomerAction.mock.calls[0]?.[2] as FormData;
+    expect(form.get('partnerId')).toBe(CUSTOMER_ID);
+
+    await screen.findByTestId('work-order-start-vehicle');
+    const control = screen.getByTestId('work-order-start-continue');
+    expect(control).toHaveAttribute(
+      'href',
+      checkInWizardHref('en', { customerId: CUSTOMER_ID, vehicleId: SEARCHED_VEHICLE_ID })
+    );
+    expect(control.getAttribute('href')).toContain(CUSTOMER_ID);
+    expect(control.getAttribute('href')).toContain(SEARCHED_VEHICLE_ID);
+  });
+
+  it('leaves the way onward closed while the sub-flow is still open', async () => {
+    // The other direction of the same mechanism: a vehicle that has been
+    // chosen but whose relationship question is unanswered has NOT settled,
+    // and nothing may proceed on a half-finished answer.
+    const user = userEvent.setup();
+    await addFromEmptyState(user);
+
+    const create = await screen.findByTestId('intake-vehicle-create');
+    await user.type(
+      within(create).getByLabelText(en['vehicles.create.vin'], { exact: false }),
+      '2hgcm82633a004999'
+    );
+    await user.click(within(create).getByRole('button', { name: en['vehicles.create.submit'] }));
+    await screen.findByTestId('intake-link-step');
+
+    const control = screen.getByTestId('work-order-start-continue');
+    expect(control).toBeDisabled();
+    expect(control).not.toHaveAttribute('href');
   });
 
   it('creates nothing on its own — choosing a vehicle calls no write', async () => {
