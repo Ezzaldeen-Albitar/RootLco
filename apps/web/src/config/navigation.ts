@@ -590,6 +590,30 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
             status: 'available',
             scope: 'tenant',
           },
+          /*
+           * Organisation structure beneath companies and branches (P1-32
+           * preparation). Each is gated on the list operation's own read code —
+           * `org.department-list` and `org.employee-list` — so the entry is
+           * shown to exactly the sessions whose first request would succeed.
+           */
+          {
+            key: 'administration.departments',
+            labelKey: 'nav.departments',
+            icon: 'administration',
+            href: '/administration/departments',
+            permission: 'org.department.read',
+            status: 'available',
+            scope: 'branch',
+          },
+          {
+            key: 'administration.employees',
+            labelKey: 'nav.employees',
+            icon: 'technicians',
+            href: '/administration/employees',
+            permission: 'org.employee.read',
+            status: 'available',
+            scope: 'branch',
+          },
           {
             key: 'administration.roles',
             labelKey: 'nav.roles',

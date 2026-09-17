@@ -36,11 +36,11 @@
       "bytes": 15409
     },
     "docs/phase-1/phase-1-27/clean-room-evidence.md": {
-      "sha256": "3b982e001476dbe3a696ba240519ed0aa912502ffe210c6f680542dff7e1c8c8",
-      "bytes": 23806
+      "sha256": "cb12fb57f862f8590611bd12f78ad2b6e68cab26bbd2965ca1a4c59bde0dcc04",
+      "bytes": 23721
     },
     "docs/phase-1/phase-1-27/closure-record.md": {
-      "sha256": "33ad1feb604e94af8955621af2d24d3bd44de1a35d9ebf506b11221cffbc3212",
+      "sha256": "316accd849cbe8ad42f8c4cd1815d7c45ee7e8327212b809dcfb9be1f7716bb3",
       "bytes": 8630
     },
     "docs/phase-1/phase-1-27/continuation-checkpoint.md": {
@@ -52,7 +52,7 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "2e8ca6343716281f311afd4fe50893401a8e8cb97ff678647f41f857206762b5",
+      "sha256": "b2759b891c0b2b7a594f23449a37c166809177b45fe34d51649d66fe5d2c43a4",
       "bytes": 149609
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
@@ -64,24 +64,24 @@
       "bytes": 81669
     },
     "docs/phase-1/phase-1-27/evidence/closing-value-ledger.json": {
-      "sha256": "5a9189cf045d5b4f8c2985867d4f92ce439ee6b1881abad235c75c99c2be051b",
-      "bytes": 50367
+      "sha256": "a80a15e3a451fbfa23b2495affb38d56457e5ed99ce5a1d158fef996221eadbb",
+      "bytes": 50345
     },
     "docs/phase-1/phase-1-27/evidence/lifecycle-ledger.json": {
       "sha256": "c2bc3e5bd353ee54ccaefd8286573a5be5c09f91bbb01ea9af7fa5fe72aebf1e",
       "bytes": 9208
     },
     "docs/phase-1/phase-1-27/evidence/local-run-ledger.json": {
-      "sha256": "9c74cf52dc202c19ae90bfee19c73f7c546aa05a12108486d3ebd2132066f304",
-      "bytes": 1420
+      "sha256": "db29a0f0c6232b6df2c16884dc6be121fdf35c739555a351102c52d3984ac17b",
+      "bytes": 2581
     },
     "docs/phase-1/phase-1-27/evidence/task-traceability.md": {
-      "sha256": "7fee64f3f8c0af473090b27b9387b058f7cc98e9f6ef31c330c0575d482ef7e9",
-      "bytes": 114007
+      "sha256": "642de51a428d37f378fc6c54c0041382657fc8c3694bab0d5856f6baba70b392",
+      "bytes": 113935
     },
     "docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json": {
-      "sha256": "89eed0e4a7c64ff836c6300a98fec158a8873db91d7c52d7bb21cf1b40dcec5e",
-      "bytes": 34332
+      "sha256": "b7aa356988b3108edbfa4ddbd8e08b0f8411a8b894a6dd67e0e4428464e69f73",
+      "bytes": 34328
     },
     "docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.md": {
       "sha256": "9622f5ea1ea08be618651b5688074c37619c34caaeb6ed19ad27ffbe0a04c954",
@@ -124,7 +124,7 @@
       "bytes": 14530
     },
     "docs/phase-1/phase-1-27/open-decisions.md": {
-      "sha256": "c9631e2f0648615d1309f6525a758c41096414cbb7d0573182dca5c8e90b25a0",
+      "sha256": "21ffbc4ca4ad49491092666315cf31263774a4db1f560c181153885d62e0f8a0",
       "bytes": 124614
     },
     "docs/phase-1/phase-1-27/operator-guide.md": {
@@ -136,7 +136,7 @@
       "bytes": 5776
     },
     "docs/phase-1/phase-1-27/owner-acceptance-fail-remediation.md": {
-      "sha256": "4d92b700492f0f79d7a0426c7edf8b2bf2459481fb8dbbafdeb6fb81897b9baa",
+      "sha256": "584f4612c6bf5e2078f3544cd0191fbb3315a94ca272303e391a572a9f55908d",
       "bytes": 13549
     },
     "docs/phase-1/phase-1-27/p1-27-int-113-unregistered-rate-limit-policy.md": {
@@ -156,7 +156,7 @@
       "bytes": 62211
     },
     "docs/phase-1/phase-1-27/risk-register.md": {
-      "sha256": "6c648d22d655432f590649d7142eef7f090549a0fe96112dea5c6720d7336467",
+      "sha256": "ef15279599424fd6085a735a483ddc8351727457fb844087f7c71c251694e334",
       "bytes": 187802
     },
     "docs/phase-1/phase-1-27/task-matrix-verdicts.json": {

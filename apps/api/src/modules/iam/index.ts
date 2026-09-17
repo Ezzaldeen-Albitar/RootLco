@@ -339,6 +339,7 @@ export const iamModule = composeModule({
       // its provisioning transaction's platform-on-target window.
       tenantBootstrap: new TenantBootstrapService(
         new TenantBootstrapRepository(),
+        identities,
         provider,
         credentialPolicy
       ),

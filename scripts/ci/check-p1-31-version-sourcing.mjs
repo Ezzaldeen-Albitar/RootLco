@@ -125,13 +125,17 @@
  *
  * ## PENDING is a state, not an allow-list
  *
- * Seven of the eleven have no consumer anywhere in `apps/web`. Writing an adapter
+ * Six of the eleven have no consumer anywhere in `apps/web`. Writing an adapter
  * for them would manufacture the declared-but-never-wired shape this repository
  * has shipped repeatedly, so each is declared in `PENDING_CONSUMERS` with its
  * reason. The lifecycle binds in both directions: an entry naming an operation
  * that is not in scope is stale, an in-scope operation with neither a consumer
  * nor an entry is a violation, and an entry whose operation acquires a consumer
  * turns this gate RED until it is deleted in that same change.
+ *
+ * It was seven until the employee register acquired a screen: the entry for the
+ * employee transition was deleted in the change that gave it a consumer, which is
+ * the lifecycle working rather than an exception to it.
  *
  * ## Anti-vacuity
  *
@@ -220,8 +224,6 @@ export const PENDING_CONSUMERS = Object.freeze({
     'PENDING: no screen or adapter in apps/web sends this write — the report-configuration screen does not exist (CC-37(b) declares the same absence for its request mirror)',
   'rpt.report-configuration-version-publish':
     'PENDING: no screen or adapter in apps/web sends this write — the report-configuration screen does not exist (CC-37(b) declares the same absence for its request mirror)',
-  'org.employee-status-set':
-    'PENDING: no screen or adapter in apps/web sends this write — nothing in P1-31 administers the employee roster, which is why the access gate deliberately does not claim this operation either',
 });
 
 function fail(message) {

@@ -510,7 +510,9 @@ describe('the coverage include lists are pinned, because they are the denominato
     // P1-31 P-12 adds ReportExportService to the measured backend population.
     // P1-32-PRE-021..026 add seven platform-module files (three repositories and
     // four services), so 291 -> 298.
-    expect(files.length).toBe(298);
+    // The Owner directive organisation administration adds capacity-failure.ts,
+    // so the merge of both holds 299.
+    expect(files.length).toBe(299);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -593,7 +595,12 @@ describe('the coverage include lists are pinned, because they are the denominato
      * include list admits and `exclude` then removes; the two numbers moving
      * together by the same count is what says no file slipped in behind the
      * exclusion.
+     *
+     * 291 with the Owner directive organisation administration: ONE more,
+     * `modules/iam/application/capacity-failure.ts`, the single reader of the
+     * database capacity refusal that both organisation creation and invitation
+     * share. The floors stay untouched for the same reason.
      */
-    expect(instrumented.length).toBe(297);
+    expect(instrumented.length).toBe(298);
   });
 });

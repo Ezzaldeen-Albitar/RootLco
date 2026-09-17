@@ -35,7 +35,12 @@ import {
   scopeTargetOption,
   searchParamsToObject,
 } from '@/server/http/validation';
-import { WORK_ORDER_KINDS, workOrderModule } from '@/modules/work-order';
+import {
+  MAX_WORK_ORDER_SEARCH_FRAGMENT,
+  MIN_WORK_ORDER_SEARCH_FRAGMENT,
+  WORK_ORDER_KINDS,
+  workOrderModule,
+} from '@/modules/work-order';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -69,6 +74,23 @@ const Query = z
      * ignore.
      */
     customerId: schemas.uuid.optional(),
+    /**
+     * P1-32. Exact work-order number. Digits typed on an Arabic keyboard are
+     * folded to ASCII before the comparison; nothing else about the number is
+     * changed, because it is an identifier.
+     */
+    number: z.string().min(1).max(MAX_WORK_ORDER_SEARCH_FRAGMENT).optional(),
+    /**
+     * P1-32. One free-text box: part of the work-order number, part of the name of
+     * a party on its reception visit, part of any plate its vehicle has carried,
+     * or part of its VIN. Company and branch stay REQUIRED beside it — the box
+     * narrows a board, it never widens one.
+     */
+    q: z
+      .string()
+      .min(MIN_WORK_ORDER_SEARCH_FRAGMENT)
+      .max(MAX_WORK_ORDER_SEARCH_FRAGMENT)
+      .optional(),
     cursor: schemas.cursor.optional(),
     limit: schemas.limit.optional(),
   })
@@ -109,6 +131,8 @@ export async function GET(request: Request): Promise<Response> {
             openedFrom: query.openedFrom === undefined ? undefined : new Date(query.openedFrom),
             openedTo: query.openedTo === undefined ? undefined : new Date(query.openedTo),
             customerId: query.customerId,
+            number: query.number,
+            q: query.q,
           },
           { cursor: query.cursor, limit: query.limit }
         ),

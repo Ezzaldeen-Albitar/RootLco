@@ -1,7 +1,7 @@
 'use client';
 
 import type { Messages } from '@/i18n/get-messages';
-import { translate } from '@/i18n/get-messages';
+import { translate, translateWithValues } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
 
 /**
@@ -48,7 +48,7 @@ export function FormFeedback({
       role={success ? 'status' : 'alert'}
       className={`rounded-lg border p-3 text-supporting text-text-primary ${tone}`}
     >
-      <p>{translate(messages, state.messageKey as keyof Messages)}</p>
+      <p>{translateWithValues(messages, state.messageKey, state.messageValues)}</p>
       {state.correlationId ? (
         <p className="mt-1 text-caption text-text-muted">
           {translate(messages, 'state.correlationId')}{' '}

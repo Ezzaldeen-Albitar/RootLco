@@ -59,6 +59,22 @@ export interface WalkInHandoff {
  */
 export const CHECK_IN_WIZARD_PATH = '/receptions/check-in';
 
+/**
+ * Where the customer-first entry point mounts, relative to the locale segment
+ * and to the customer whose profile offers it.
+ *
+ * The customer profile's "New work order" action and the step it opens are two
+ * ends of the same seam as the pair above, so the address lives here for the
+ * same reason `CHECK_IN_WIZARD_PATH` does: one module knows every way into
+ * reception, and a screen that offers a way in cannot point somewhere the
+ * destination is not. It also makes the entry point's own permission question
+ * answerable — the profile's import of this module is what puts the check-in
+ * wizard one link away from the profile, which is how
+ * `scripts/ci/check-p1-28-access.mjs` decides whether the action's gate is the
+ * destination's gate or surplus privilege.
+ */
+export const CUSTOMER_WORK_ORDER_START_SEGMENT = '/work-order/new';
+
 export const HANDOFF_CUSTOMER_PARAM = 'customerId';
 export const HANDOFF_VEHICLE_PARAM = 'vehicleId';
 
@@ -69,6 +85,11 @@ export const HANDOFF_VEHICLE_PARAM = 'vehicleId';
  * a read that can only 404.
  */
 const IDENTIFIER = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The customer-first vehicle step for one customer, under the given locale. */
+export function customerWorkOrderStartHref(locale: Locale, customerId: string): string {
+  return `/${locale}/crm/customers/${customerId}${CUSTOMER_WORK_ORDER_START_SEGMENT}`;
+}
 
 /** The wizard URL for a completed intake, under the given locale. */
 export function checkInWizardHref(locale: Locale, handoff: WalkInHandoff): string {

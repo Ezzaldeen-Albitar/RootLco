@@ -340,7 +340,7 @@
         {
           "file": "apps/web/tests/reception-walkin.dom.test.tsx",
           "cases": [
-            "states beside the search controls, in English, that phone search is not available",
+            "offers a phone box and no longer states that phone search is missing",
             "links the chosen customer to the searched vehicle in the chosen role",
             "completes the customer-first path entirely in Arabic"
           ]

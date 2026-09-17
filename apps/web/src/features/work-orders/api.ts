@@ -74,6 +74,8 @@ export async function listWorkOrders(
       openedFrom: criteria.openedFrom,
       openedTo: criteria.openedTo,
       customerId: criteria.customerId,
+      number: criteria.number,
+      q: criteria.q,
       cursor,
       limit: request.pageSize,
     });

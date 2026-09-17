@@ -190,6 +190,11 @@
       "why": "The Frontend lane of P1-31 (delivery, warranty, dashboard and reporting screens). Not a prefix of feature/p1-30- in either direction — the two diverge at the tenth character — so the two phases cannot reach one another. The A0 preflight itself travels on this lane: it adds these profiles (tooling) and the canonical plan and preflight records (docs), and no screen."
     },
     {
+      "branchPrefix": "feature/owner-directive-",
+      "profile": "owner-directive-saas-operation",
+      "why": "The Owner directive of 2026-09-16 (SaaS operation before daily use). No other rule in this file starts with feature/owner-directive-, and this prefix is a prefix of no other rule, so first-match ordering is unaffected: every branch that resolved to some profile before this rule was added still resolves to the same one. The profile is deliberately the initiative's WHOLE surface rather than a lane, because every branch of this directive spans the product — a console screen needs its operation, its migration and its permission seed, and the environment-configuration branch needs the API env template that no committed profile permitted alongside migrations. Each branch declares its own slice in its pull request, which is where the narrowing lives."
+    },
+    {
       "branchPrefix": "planning/",
       "profile": "p1-29-planning",
       "why": "Every planning branch in this repository is documentation-only by construction, so one bare-prefix rule is honest where a rule per phase would be the same declaration copied. It resolves the two live planning branches, which matched NO rule before this and could not have opened a pull request. If a future planning branch ever needs to be judged differently, a longer prefix listed ABOVE this one is the mechanism — never a widening of this profile."

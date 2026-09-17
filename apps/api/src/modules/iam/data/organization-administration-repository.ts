@@ -77,6 +77,58 @@ export interface DepartmentRow {
   readonly recordVersion: number;
 }
 
+/**
+ * One capacity kind as org.capacity_usage publishes it.
+ *
+ * `limit` is `null` for unlimited and is never absent: a caller must not have to
+ * tell "the plan declares no ceiling" from "the key was dropped".
+ */
+export interface CapacityAllowanceRow {
+  readonly used: number;
+  readonly limit: number | null;
+}
+
+/** The three ceilings a subscription can place on an organisation. */
+export interface CapacityUsageRow {
+  readonly companies: CapacityAllowanceRow;
+  readonly branches: CapacityAllowanceRow;
+  readonly users: CapacityAllowanceRow;
+}
+
+/**
+ * The active subscription, as much of it as a tenant administrator may see.
+ *
+ * No price, no entitlement document and no plan identifier: the question this
+ * answers is "why was I refused", and the plan code plus its display name and
+ * effective window is the whole of the answer.
+ */
+export interface SubscriptionSummaryRow {
+  readonly planCode: string;
+  readonly displayName: string;
+  readonly status: string;
+  readonly effectiveFrom: string;
+  readonly effectiveTo: string | null;
+}
+
+/** Fields a company creation carries. */
+export interface CompanyCreateInput {
+  readonly companyCode: string;
+  readonly legalName: string;
+  readonly baseCurrencyCode: string;
+  readonly registrationNumber?: string | null | undefined;
+  readonly taxRegistrationNumber?: string | null | undefined;
+}
+
+/** Fields a branch creation carries. */
+export interface BranchCreateInput {
+  readonly companyId: string;
+  readonly branchCode: string;
+  readonly name: string;
+  readonly timezoneName: string;
+  readonly city?: string | null | undefined;
+  readonly countryCode?: string | null | undefined;
+}
+
 /** Fields a company update may carry. Everything else is refused at the route. */
 export interface CompanyChanges {
   readonly legalName?: string | undefined;
@@ -139,6 +191,62 @@ export class OrganizationAdministrationRepository extends Repository {
       legalName: row.legal_name,
       status: row.status,
     }));
+  }
+
+  /**
+   * The first INSERT into org.legal_companies that has ever existed outside the
+   * provisioning function.
+   *
+   * No capacity arithmetic here and no tenant-status check: tg_legal_companies_capacity
+   * owns both, and a TypeScript copy would be a second rule that could disagree
+   * with the one the database actually enforces — and would be wrong under
+   * concurrency, because the advisory lock the trigger takes spans the count and
+   * the write while a pre-check cannot.
+   *
+   * `status` is not settable: a company is born `active` (the column default)
+   * and moves through org.change_company_status, which writes the history row.
+   */
+  async createCompany(db: DbHandle, input: CompanyCreateInput): Promise<CompanyRecordRow> {
+    const row = await this.runOne<{
+      id: string;
+      company_code: string;
+      legal_name: string;
+      base_currency_code: string;
+      status: string;
+      record_version: number;
+    }>(
+      db,
+      `INSERT INTO org.legal_companies
+         (tenant_id, company_code, legal_name, base_currency_code,
+          registration_number, tax_registration_number, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, company_code, legal_name, base_currency_code, status, record_version`,
+      [
+        // The tenant and the actor come from the resolved principal, never from
+        // the request. ins_legal_companies_capacity_authority re-checks the
+        // tenant and the permission regardless.
+        db.context.principal.tenantId,
+        input.companyCode,
+        input.legalName,
+        input.baseCurrencyCode,
+        input.registrationNumber ?? null,
+        input.taxRegistrationNumber ?? null,
+        db.context.principal.userId,
+      ]
+    );
+    if (row === null) throw new Error('legal company insert returned no row');
+    return toCompanyRecord(row);
+  }
+
+  /** Whether the company is visible to THIS session, under sel_legal_companies_tenant. */
+  async companyIsReachable(db: DbHandle, companyId: string): Promise<boolean> {
+    const row = await this.runOne<{ ok: boolean }>(
+      db,
+      `SELECT true AS ok FROM org.legal_companies
+        WHERE id = $1 AND deleted_at IS NULL AND archived_at IS NULL`,
+      [companyId]
+    );
+    return row?.ok === true;
   }
 
   async readCompany(db: DbHandle, companyId: string): Promise<CompanyRecordRow | null> {
@@ -255,6 +363,37 @@ export class OrganizationAdministrationRepository extends Repository {
       timezoneName: row.timezone_name,
       status: row.status,
     }));
+  }
+
+  /**
+   * The first INSERT into org.branches outside the provisioning function.
+   *
+   * tg_branches_parent_company_live already refuses a soft-deleted or archived
+   * parent and tg_branches_capacity owns the ceiling, so neither is restated.
+   * The address lines, region and postal code are absent from the column list on
+   * purpose: creation asks for a place, and the rest is an edit.
+   */
+  async createBranch(db: DbHandle, input: BranchCreateInput): Promise<BranchRecordRow> {
+    const row = await this.runOne<BranchColumns>(
+      db,
+      `INSERT INTO org.branches
+         (tenant_id, company_id, branch_code, name, timezone_name, country_code, city, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, company_id, branch_code, name, address_line1, address_line2, city,
+                 region, postal_code, country_code, timezone_name, status, record_version`,
+      [
+        db.context.principal.tenantId,
+        input.companyId,
+        input.branchCode,
+        input.name,
+        input.timezoneName,
+        input.countryCode ?? null,
+        input.city ?? null,
+        db.context.principal.userId,
+      ]
+    );
+    if (row === null) throw new Error('branch insert returned no row');
+    return toBranchRecord(row);
   }
 
   async readBranch(db: DbHandle, branchId: string): Promise<BranchRecordRow | null> {
@@ -417,6 +556,65 @@ export class OrganizationAdministrationRepository extends Repository {
       [departmentId, expectedVersion, changes.name ?? null, changes.status ?? null]
     );
     return row === null ? null : toDepartment(row);
+  }
+
+  // --- capacity -------------------------------------------------------------
+
+  /**
+   * The three ceilings and what the organisation is consuming against them.
+   *
+   * org.capacity_usage is the authority and is called by name: the platform
+   * console reads the same function, and two implementations of "how many
+   * branches count" is exactly how a screen comes to disagree with the refusal
+   * it is explaining.
+   */
+  async readCapacityUsage(db: DbHandle): Promise<CapacityUsageRow> {
+    const row = await this.runOne<{ usage: CapacityUsageRow }>(
+      db,
+      `SELECT org.capacity_usage($1) AS usage`,
+      [db.context.principal.tenantId]
+    );
+    if (row === null) throw new Error('capacity usage returned no row');
+    return row.usage;
+  }
+
+  /**
+   * The subscription the ceilings come from, or `null` when none is running.
+   *
+   * The predicate is the one org.capacity_limit resolves with, so the summary a
+   * screen shows and the limit a write is refused against can never describe two
+   * different assignments. Timestamps are rendered to ISO text in SQL rather
+   * than handed to the driver's date parser, so the wire shape is a string here
+   * and a string in the published contract.
+   */
+  async readActiveSubscription(db: DbHandle): Promise<SubscriptionSummaryRow | null> {
+    const row = await this.runOne<{
+      plan_code: string;
+      display_name: string;
+      status: string;
+      effective_from: string;
+      effective_to: string | null;
+    }>(
+      db,
+      `SELECT p.plan_code,
+              p.name                              AS display_name,
+              s.status,
+              to_jsonb(s.effective_from) #>> '{}' AS effective_from,
+              to_jsonb(s.effective_to)   #>> '{}' AS effective_to
+         FROM org.tenant_subscriptions s
+         JOIN org.subscription_plans p ON p.id = s.plan_id
+        WHERE s.status = 'active'
+          AND tstzrange(s.effective_from, s.effective_to, '[)') @> now()`
+    );
+    return row === null
+      ? null
+      : {
+          planCode: row.plan_code,
+          displayName: row.display_name,
+          status: row.status,
+          effectiveFrom: row.effective_from,
+          effectiveTo: row.effective_to,
+        };
   }
 }
 

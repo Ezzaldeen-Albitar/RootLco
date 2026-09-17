@@ -2,9 +2,13 @@
 
 import { authorizedClient } from '@/lib/api/server-client';
 import type { ApiFailureKind } from '@/lib/api/client';
+import { readOperation, type ItemsOnly, type ReadState } from '@/lib/api/read-operation';
 import {
   settingsPath,
   type BranchStatusView,
+  type BranchView,
+  type CapacityView,
+  type CompanyView,
   type Read,
   type ReadStatus,
   type SettingView,
@@ -81,4 +85,59 @@ export async function readBranchStatus(branchId: string): Promise<Read<BranchSta
     return { status: STATUS_BY_KIND[result.kind], data: null, correlationId: result.correlationId };
   }
   return { status: 'ok', data: result.data, correlationId: result.correlationId };
+}
+
+// --- organisation structure ----------------------------------------------------
+
+/**
+ * `GET /api/v1/org/capacity` — `org.tenant.read`.
+ *
+ * The same numbers the refusal is computed from, so the panel and a refused
+ * creation can never disagree about how many are in use.
+ */
+export async function readCapacity(): Promise<ReadState<CapacityView>> {
+  return readOperation<CapacityView>('/api/v1/org/capacity');
+}
+
+/** `GET /api/v1/org/companies` — `org.company.read`. The companies this session may reach. */
+export async function listCompanies(): Promise<ReadState<readonly CompanyView[]>> {
+  return unwrapItems(await readOperation<ItemsOnly<CompanyView>>('/api/v1/org/companies'));
+}
+
+/** `GET /api/v1/org/branches` — `org.branch.read`. The branches this session may reach. */
+export async function listBranches(): Promise<ReadState<readonly BranchView[]>> {
+  return unwrapItems(await readOperation<ItemsOnly<BranchView>>('/api/v1/org/branches'));
+}
+
+/**
+ * The currency codes offered when a company is added.
+ *
+ * The platform publishes no currency catalogue read, so the choices are the
+ * codes an administrator has already enabled on the Currencies screen
+ * (`currency.enabled_codes`) for the companies this session can reach. Nothing
+ * is invented: an organisation that has enabled none gets an empty list, and
+ * the form then asks for the three-letter code directly.
+ */
+export async function readCurrencyChoices(
+  companyIds: readonly string[]
+): Promise<readonly string[]> {
+  const codes = new Set<string>();
+  for (const companyId of companyIds.slice(0, 20)) {
+    const read = await readSettings('company', companyId);
+    if (read.status !== 'ok' || read.data === null) continue;
+    for (const setting of read.data) {
+      if (setting.settingKey !== 'currency.enabled_codes') continue;
+      const value = setting.settingValue;
+      if (!Array.isArray(value)) continue;
+      for (const code of value) {
+        if (typeof code === 'string' && /^[A-Z]{3}$/.test(code)) codes.add(code);
+      }
+    }
+  }
+  return [...codes].sort();
+}
+
+async function unwrapItems<T>(read: ReadState<ItemsOnly<T>>): Promise<ReadState<readonly T[]>> {
+  if (read.status !== 'ok') return read;
+  return { status: 'ok', data: read.data.items, correlationId: read.correlationId };
 }

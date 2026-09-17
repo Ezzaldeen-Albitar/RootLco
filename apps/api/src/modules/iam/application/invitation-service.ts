@@ -45,9 +45,10 @@ import { AuthorizationRepository } from '../data/authorization-repository';
 import { IdentityPolicy } from '../domain/identity-policy';
 import { CredentialPolicy } from '../domain/credential-policy';
 import { DelegationPolicy, type GrantFacts } from '../domain/delegation-policy';
-import type { IdentityProvider } from '../provider/identity-provider';
+import type { IdentityProvider, ProviderIdentity } from '../provider/identity-provider';
 import { ProviderFailure } from '../provider/identity-provider';
-import { toAppFailureFromProvider } from '../provider/provider-errors';
+import { providerReasonOf, toAppFailureFromProvider } from '../provider/provider-errors';
+import { throwCapacityFailure } from './capacity-failure';
 
 export interface InviteInput {
   readonly email: string;
@@ -96,6 +97,47 @@ export class InvitationService extends ApplicationService {
    * The tenant is taken from the resolved context and never from the request:
    * an inviter cannot invite into a tenant they do not belong to, because no
    * field of the request can express one.
+   *
+   * ## An address the provider already knows
+   *
+   * The provider is a single tenant-agnostic directory: one identity per
+   * address for the whole platform. So an invitation can meet an identity that
+   * already exists, and there are exactly two things it can be.
+   *
+   * It can be an ORPHAN OF THIS ORGANISATION — an identity this product created
+   * and then failed to give an account to, because the seat ceiling, a duplicate
+   * or any other refusal rolled the transaction back after the provider call had
+   * already happened. It confers nothing (every permission hangs off the account
+   * that was never written, and `login` denies an address with no account), but
+   * it does block the retry that would put the matter right. Such an identity is
+   * REUSED: the same subject is re-invited, gets a fresh link, and becomes the
+   * account this request was asked to create.
+   *
+   * Or it can be SOMEBODY ELSE'S — bound to another organisation, or already
+   * carrying an account. That is the duplicate case and it keeps the answer it
+   * has had since P1-14: ERR-RES-002, with the identity untouched. The check is
+   * made BEFORE `provider.invite`, because the adapter's invite rewrites the
+   * tenant binding, and a rebind of another organisation's identity would be a
+   * cross-tenant write dressed as an invitation.
+   *
+   * The reuse test is made out of the two readings this service is entitled to:
+   * the provider's own tenant binding, and this tenant's accounts. It is NOT a
+   * cross-tenant query — `sel_user_accounts_tenant` admits one tenant and the
+   * platform holds zero `SECURITY DEFINER` routines by CI-asserted invariant, so
+   * no session may ask whether another organisation references a subject. It
+   * does not have to: `uq_user_accounts_provider_identity_active` is a GLOBAL partial
+   * unique index on `(identity_provider, provider_subject)`, so an identity any
+   * live account anywhere references cannot be inserted a second time, and the
+   * refusal arrives as the same ERR-RES-002 the duplicate path answers.
+   *
+   * ## When the account cannot be written after all
+   *
+   * If the INSERT is refused — the seat ceiling being the case that made this
+   * necessary — and the provider identity was created BY THIS REQUEST, that
+   * identity is removed again, by the subject the provider returned to this
+   * request. Never by address, never an identity this request found rather than
+   * made, never a set. A compensation that fails is recorded and changes
+   * nothing else: the caller still receives the refusal that is true.
    */
   async invite(db: DbHandle, input: InviteInput): Promise<InvitedUser> {
     const context = this.contextOf(db);
@@ -121,6 +163,10 @@ export class InvitationService extends ApplicationService {
       }
     }
 
+    // From here to the end of the transaction no other invitation of this address
+    // can run between a read and the write it justifies — see the repository.
+    await this.identities.lockInvitationAddress(db, input.email);
+
     const existing = await this.identities.findByEmail(db, this.provider.name, input.email);
     if (existing) {
       // Deterministic duplicate behaviour: an address already known in this
@@ -130,6 +176,20 @@ export class InvitationService extends ApplicationService {
         message: 'An account already exists for that address in this tenant',
       });
     }
+
+    // Is the address already an identity at the provider, and if so may this
+    // invitation have it? Asked before the provider is written to, because the
+    // adapter's `invite` rewrites the tenant binding of whatever it finds.
+    let known: ProviderIdentity | null;
+    try {
+      known = await this.provider.findByEmail(input.email);
+    } catch (error) {
+      toAppFailureFromProvider(error);
+    }
+    if (known !== null) await this.assertReusableOrphan(db, known);
+
+    /** True when the identity below is one THIS request brought into existence. */
+    const createdHere = known === null;
 
     let identity;
     try {
@@ -152,14 +212,39 @@ export class InvitationService extends ApplicationService {
         mfaRequired: input.mfaRequired ?? false,
       });
     } catch (error) {
+      // The account this invitation exists to create was refused, and the
+      // transaction is already aborted — so nothing further can be written to
+      // the database, including an audit row. What CAN still be undone is the
+      // provider write, which lives outside the transaction and which a
+      // rollback therefore cannot reach. Compensating here is the only moment
+      // the subject is known to belong to this request.
+      //
+      // Never on a unique violation: that refusal is itself the proof that a
+      // live account — possibly in an organisation this session cannot read —
+      // already references the address or the subject, so the identity is bound
+      // to somebody and is not this request's to remove.
+      const referenced = isSqlState(error, SQLSTATE.uniqueViolation);
+      if (createdHere && !referenced) {
+        await this.removeIdentityCreatedHere(db, identity.subject);
+      }
+
       // `uq_user_accounts_tenant_email_active` or the global provider-identity
-      // index. A concurrent invite won; the caller's did not happen.
-      if (isSqlState(error, SQLSTATE.uniqueViolation)) {
+      // index. A concurrent invite won, or the identity is referenced by an
+      // account in an organisation this session may not read; the caller's
+      // invitation did not happen either way.
+      if (referenced) {
         throw new AppFailure('ERR-RES-002', {
           message: 'An account already exists for that address in this tenant',
         });
       }
-      throw error;
+      // The user-seat ceiling. `tg_user_accounts_capacity` refuses the INSERT
+      // when the plan's seats are spent, and this is the mapping that turns that
+      // refusal into ERR-CAP-001 with the numbers attached. Deliberately NOT a
+      // pre-check: the trigger counts and writes under one per-tenant advisory
+      // lock, so it is the only reading two concurrent invitations cannot both
+      // pass. A seat count taken here would be a second copy of the rule that
+      // agreed with it right up to the moment it mattered.
+      throwCapacityFailure(error);
     }
 
     for (const roleId of roleIds) {
@@ -335,6 +420,87 @@ export class InvitationService extends ApplicationService {
 
     const refreshed = await this.identities.findById(db, userId);
     return toInvited(refreshed ?? account);
+  }
+
+  /**
+   * Refuses an address whose provider identity is not this organisation's to
+   * reuse. Three readings, and a duplicate answer for each of them.
+   */
+  private async assertReusableOrphan(db: DbHandle, known: ProviderIdentity): Promise<void> {
+    const duplicate = new AppFailure('ERR-RES-002', {
+      message: 'An account already exists for that address in this tenant',
+    });
+
+    // Bound to another organisation, or to none. Re-inviting would rewrite that
+    // binding, which is how one tenant would take another tenant's identity.
+    if (known.tenantId !== this.contextOf(db).principal.tenantId) throw duplicate;
+
+    // A cancelled invitation archives its account and disables its identity.
+    // Reviving it by re-invitation would undo an administrator's decision.
+    if (known.disabled) throw duplicate;
+
+    // Bound here AND already answered for by a live account in this tenant: not
+    // an orphan at all. The same subject under another organisation's account is
+    // refused by the global unique index at the INSERT, which this session has
+    // no readable way to anticipate and does not need one.
+    const held = await this.identities.findByProviderSubject(db, this.provider.name, known.subject);
+    if (held) throw duplicate;
+  }
+
+  /**
+   * Removes the provider identity this request created, after the database
+   * refused the account it was created for.
+   *
+   * A failure here is recorded and swallowed: the caller's answer is the
+   * database's refusal, and replacing it with a provider fault would report the
+   * wrong cause for the wrong decision. No audit row is attempted — the
+   * transaction is aborted by the time this runs, so `appendAudit` could only
+   * fail; the structured log is the record, and a leftover identity is
+   * self-healing anyway, because the next invitation of that address reuses it.
+   */
+  private async removeIdentityCreatedHere(db: DbHandle, subject: string): Promise<void> {
+    const entry = {
+      module: 'iam',
+      operation: 'iam.invitation.create',
+      correlationId: db.context.correlationId,
+      tenantRef: db.context.principal.tenantId,
+      actorRef: db.context.principal.userId,
+      result: 'failure' as const,
+    };
+    if (!this.provider.supportsDelete) {
+      log.warn('Provider identity created by a refused invitation cannot be removed', {
+        ...entry,
+        context: { reason: 'provider-does-not-support-delete' },
+      });
+      return;
+    }
+    try {
+      // Re-read at the provider immediately before removing. The address lock
+      // keeps other invitations and the first-owner bootstrap out, but not every
+      // change to the directory passes through this database — an invitee can
+      // confirm, and the provider can disable, on its own side. An identity
+      // no longer bound to this organisation, or already confirmed or disabled,
+      // has been adopted by something other than this request and is kept.
+      const current = await this.provider.findBySubject(subject);
+      if (current === null) return;
+      if (
+        current.tenantId !== db.context.principal.tenantId ||
+        current.confirmed ||
+        current.disabled
+      ) {
+        log.warn('Provider identity created by a refused invitation was adopted and is kept', {
+          ...entry,
+          context: { reason: 'identity-adopted-elsewhere' },
+        });
+        return;
+      }
+      await this.provider.deleteIdentity(subject);
+    } catch (error) {
+      log.warn('Provider identity created by a refused invitation could not be removed', {
+        ...entry,
+        context: { reason: providerReasonOf(error) },
+      });
+    }
   }
 
   private async requireAccount(db: DbHandle, userId: string): Promise<AccountRow> {

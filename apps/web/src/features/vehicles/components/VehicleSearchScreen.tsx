@@ -6,20 +6,24 @@ import { useRouter } from 'next/navigation';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
+import { DigitsEcho } from '@/components/forms/DigitsEcho';
 import { EmptyState } from '@/components/states/States';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
+import { formatDate } from '@/lib/format';
 import { searchVehicles } from '../api';
 import type { CatalogueResult } from '../catalogue-api';
 import {
   EMPTY_CRITERIA,
   POWERTRAIN_CATEGORIES,
   VEHICLE_LIFECYCLE_STATUSES,
+  hasTooShortCriteria,
   isEmptyCriteria,
   normalizeVinForDisplay,
   MAX_PLATE_FRAGMENT,
   MAX_VEHICLE_NUMBER,
+  MAX_VEHICLE_TEXT,
   MAX_VIN_FRAGMENT,
   type VehicleSearchCriteria,
   type VehicleSearchHit,
@@ -43,11 +47,18 @@ import {
  * full scan, and the adapter refuses empty criteria — so a bounded default list
  * would need a filter nobody chose. Recorded in `contract-archaeology.md`.
  *
- * ## Every text filter is EXACT
+ * ## One box first, then the precise filters (P1-32)
  *
- * VIN, plate and vehicle number are equality matches, not prefixes. The hint
- * text says so, because a box that silently requires the whole value while
- * looking like a type-ahead is worse than one that explains itself.
+ * The free-text box sends `q` (make, model, vehicle number, part of a VIN or of
+ * any plate). VIN and vehicle number stay exact; make and model are contains
+ * matches; plate matches any plate the vehicle has carried. When a plate search
+ * matched an EARLIER plate the row says so with a badge and the date that plate
+ * stopped being valid, because an operator reading the current plate beside the
+ * one they typed would otherwise think the search was wrong.
+ *
+ * Criteria live in screen state, never in the address bar (`P1-27-SEC-002`).
+ * Digits typed on an Arabic keyboard are echoed as Western digits for reading
+ * only; the value is sent as typed and the backend folds it.
  */
 
 interface Props {
@@ -68,6 +79,7 @@ export function VehicleSearchScreen({ locale, messages, canCreate, makes }: Prop
     setDraft((current) => ({ ...current, [key]: value }));
 
   const blocked = isEmptyCriteria(draft);
+  const [tooShort, setTooShort] = useState(false);
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
@@ -77,10 +89,31 @@ export function VehicleSearchScreen({ locale, messages, canCreate, makes }: Prop
           event.preventDefault();
           // Enter submits, because this is a real form with a real submit
           // button — not a keydown handler that reimplements one.
-          if (!blocked) setSubmitted(draft);
+          if (blocked) return;
+          // The backend refuses a one-character free-text, make or model value.
+          if (hasTooShortCriteria(draft)) {
+            setTooShort(true);
+            return;
+          }
+          setTooShort(false);
+          setSubmitted(draft);
         }}
         className="rounded-lg border border-border bg-surface p-4"
       >
+        <div className="mb-3">
+          <Field
+            messages={messages}
+            id={`${formId}-q`}
+            labelKey="vehicles.search.q"
+            hintKey="vehicles.search.qHint"
+            value={draft.q}
+            onChange={(v) => set('q', v)}
+            maxLength={MAX_VEHICLE_TEXT}
+            dir="auto"
+            note={null}
+            echo
+          />
+        </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Field
             messages={messages}
@@ -111,6 +144,7 @@ export function VehicleSearchScreen({ locale, messages, canCreate, makes }: Prop
             maxLength={MAX_PLATE_FRAGMENT}
             dir="ltr"
             note={null}
+            echo
           />
           <Field
             messages={messages}
@@ -121,6 +155,29 @@ export function VehicleSearchScreen({ locale, messages, canCreate, makes }: Prop
             onChange={(v) => set('vehicleNumber', v)}
             maxLength={MAX_VEHICLE_NUMBER}
             dir="ltr"
+            note={null}
+            echo
+          />
+          <Field
+            messages={messages}
+            id={`${formId}-make`}
+            labelKey="vehicles.search.make"
+            hintKey="vehicles.search.containsHint"
+            value={draft.make}
+            onChange={(v) => set('make', v)}
+            maxLength={MAX_VEHICLE_TEXT}
+            dir="auto"
+            note={null}
+          />
+          <Field
+            messages={messages}
+            id={`${formId}-model`}
+            labelKey="vehicles.search.model"
+            hintKey="vehicles.search.containsHint"
+            value={draft.model}
+            onChange={(v) => set('model', v)}
+            maxLength={MAX_VEHICLE_TEXT}
+            dir="auto"
             note={null}
           />
 
@@ -156,6 +213,7 @@ export function VehicleSearchScreen({ locale, messages, canCreate, makes }: Prop
             type="button"
             onClick={() => {
               setDraft(EMPTY_CRITERIA);
+              setTooShort(false);
               // Clears the RESULTS too. Leaving a stale table under an emptied
               // form would show an answer to a question no longer on screen.
               setSubmitted(null);
@@ -177,6 +235,11 @@ export function VehicleSearchScreen({ locale, messages, canCreate, makes }: Prop
         {blocked ? (
           <p className="mt-2 text-caption text-text-muted">
             {translate(messages, 'vehicles.search.needCriteria')}
+          </p>
+        ) : null}
+        {!blocked && tooShort ? (
+          <p role="alert" className="mt-2 text-caption text-error">
+            {translate(messages, 'vehicles.search.tooShort')}
           </p>
         ) : null}
       </form>
@@ -248,6 +311,60 @@ function VehicleSearchResults({
           ),
       },
       {
+        id: 'plate',
+        headerKey: 'vehicles.column.plate',
+        /*
+         * P1-32. The current plate, and — when the search matched a plate the
+         * vehicle no longer carries — a badge naming that plate and the date it
+         * stopped being valid. Without the badge an operator who typed an old
+         * plate sees a different plate in the row and concludes the search is
+         * wrong.
+         */
+        cell: (row) => (
+          <span className="flex flex-col gap-1">
+            {row.activePlate ? (
+              <code className="font-mono text-caption" dir="ltr">
+                {row.activePlate}
+              </code>
+            ) : (
+              <span className="text-text-muted">
+                {translate(messages, 'vehicles.column.noPlate')}
+              </span>
+            )}
+            {row.plateMatch && !row.plateMatch.active ? (
+              <span
+                data-testid="previous-plate-badge"
+                className="inline-flex flex-wrap items-center gap-1 rounded-md border border-warning-border bg-warning-subtle px-2 py-0.5 text-caption text-text-primary"
+              >
+                <span>
+                  {row.plateMatch.validTo
+                    ? translate(messages, 'vehicles.search.previousPlateUntil')
+                    : translate(messages, 'vehicles.search.previousPlate')}
+                </span>
+                {row.plateMatch.validTo ? (
+                  <bdi>{formatDate(row.plateMatch.validTo, locale)}</bdi>
+                ) : null}
+                <code className="font-mono" dir="ltr">
+                  {row.plateMatch.plate}
+                </code>
+              </span>
+            ) : null}
+          </span>
+        ),
+      },
+      {
+        id: 'owner',
+        headerKey: 'vehicles.column.owner',
+        // Null when there is no current owner or the operator may not read
+        // customers. Either way the row shows an absence, never a guess.
+        cell: (row) =>
+          row.customerDisplayName ? (
+            <bdi>{row.customerDisplayName}</bdi>
+          ) : (
+            <span className="text-text-muted">—</span>
+          ),
+      },
+      {
         id: 'vin',
         headerKey: 'vehicles.column.vin',
         cell: (row) =>
@@ -292,6 +409,18 @@ function VehicleSearchResults({
          * `makes.correlationId`.
          */
         cell: (row) => {
+          // P1-32: the backend now resolves the names. The catalogue fallback
+          // below stays for a hit whose name did not resolve.
+          if (row.makeName) {
+            return (
+              <span className="flex flex-col">
+                <bdi>{row.makeName}</bdi>
+                {row.modelName ? (
+                  <bdi className="text-caption text-text-secondary">{row.modelName}</bdi>
+                ) : null}
+              </span>
+            );
+          }
           if (row.makeId === null) {
             return (
               <span className="text-text-muted">
@@ -363,9 +492,9 @@ function VehicleSearchResults({
         cell: (row) => translateDynamic(messages, `vehicles.workshop.${row.workshopStatus}`),
       },
     ],
-    // `locale` is not a dependency because these columns render TEXT only. The
-    // row action does build a URL and is defined outside this memo, which is why
-    // it needs no entry here.
+    // `locale` IS a dependency since P1-32: the previous-plate badge formats the
+    // date that plate stopped being valid. The row action builds a URL and is
+    // defined outside this memo.
     //
     // The earlier note said "nothing in these columns builds a URL any more" and
     // attributed it to the profile route being a later deliverable. Both halves
@@ -376,7 +505,7 @@ function VehicleSearchResults({
     // both yield the same empty map, which is precisely the confusion the column
     // exists to resolve. Omitting them would have made the column render the
     // wrong sentence from a stale outcome.
-    [makeById, makes.status, makes.truncated, messages]
+    [locale, makeById, makes.status, makes.truncated, messages]
   );
 
   return (
@@ -470,6 +599,7 @@ function Field({
   maxLength,
   dir,
   note,
+  echo = false,
 }: {
   readonly messages: Messages;
   readonly id: string;
@@ -478,8 +608,10 @@ function Field({
   readonly value: string;
   readonly onChange: (value: string) => void;
   readonly maxLength: number;
-  readonly dir: 'ltr' | 'rtl';
+  readonly dir: 'ltr' | 'rtl' | 'auto';
   readonly note: string | null;
+  /** Echo Arabic-Indic digits as Western digits under the box, for reading only. */
+  readonly echo?: boolean;
 }) {
   return (
     <div>
@@ -504,6 +636,7 @@ function Field({
           {note}
         </p>
       ) : null}
+      {echo ? <DigitsEcho messages={messages} value={value} /> : null}
     </div>
   );
 }

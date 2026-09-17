@@ -457,6 +457,7 @@ import '@/app/api/v1/org/companies/[companyId]/route';
 import '@/app/api/v1/org/companies/[companyId]/status/route';
 import '@/app/api/v1/org/branches/route';
 import '@/app/api/v1/org/branches/[branchId]/route';
+import '@/app/api/v1/org/capacity/route';
 import '@/app/api/v1/org/departments/route';
 import '@/app/api/v1/org/departments/[departmentId]/route';
 

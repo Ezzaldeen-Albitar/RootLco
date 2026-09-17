@@ -36,7 +36,7 @@ import {
  *
  * ## It sends only what the contract accepts
  *
- * Four criteria plus `cursor` and `limit`. **No `sort`** — the route's schema is
+ * Six criteria plus `cursor` and `limit`. **No `sort`** — the route's schema is
  * `.strict()` and the operation publishes no sort parameter, so sending one is a
  * 422 rather than a differently-ordered page.
  */
@@ -74,6 +74,8 @@ export async function searchCustomerDirectory(
       limit: request.pageSize,
       name: criteria.name,
       customerNumber: criteria.customerNumber,
+      phone: criteria.phone,
+      q: criteria.q,
       partyType: criteria.partyType,
       lifecycleStatus: criteria.lifecycleStatus,
     });

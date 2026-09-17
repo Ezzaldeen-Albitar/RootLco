@@ -142,8 +142,12 @@ describe('every route body serialises a named type', () => {
     // by one more, because `platform.organization-read` now serialises the named
     // `Page<OrganizationView>` from its service where it used to compose
     // `{ items }` in the route, which is also why `composed` falls by one.
-    expect(summary.bodies).toBe(426);
-    expect(summary.named).toBe(374);
+    // 429 with the Owner directive organisation administration: the company
+    // create serialises `CompanyResult`, the branch create `BranchResult` and the
+    // capacity read `CapacityResult` — all NAMED — so `named` moves by three and
+    // `composed` does not.
+    expect(summary.bodies).toBe(429);
+    expect(summary.named).toBe(377);
     expect(summary.composed).toBe(52);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

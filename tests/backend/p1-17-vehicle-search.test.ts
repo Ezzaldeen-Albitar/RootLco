@@ -70,6 +70,15 @@ const SAFE_KEYS = [
   'workshopStatus',
   'createdAt',
   'mergedIntoId',
+  // P1-32. The catalogue names behind the two ids, the plate carried today, the
+  // plate row a plate search matched (null when none was asked about), and the
+  // current owner's name — null unless the caller also holds crm.customer.read.
+  // Proved in tests/backend/p1-32-friendly-search.test.ts.
+  'makeName',
+  'modelName',
+  'activePlate',
+  'plateMatch',
+  'customerDisplayName',
 ];
 
 interface Hit {

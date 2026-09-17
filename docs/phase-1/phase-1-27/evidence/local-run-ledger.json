@@ -6,33 +6,59 @@
   "tiers": {
     "unit": {
       "command": "npx vitest run --reporter=json",
-      "tests": 3475,
-      "passed": 3475,
+      "tests": 3567,
+      "passed": 3564,
       "failed": 0,
-      "skipped": 0,
-      "files": 133,
+      "skipped": 3,
+      "files": 137,
       "exitCode": 0,
       "reporterSuccess": true,
       "failedSuites": [],
       "filesWithoutCases": [],
-      "measuredAtCommit": "70bf27ba2647948b9bd96ed387ae1205c4bcf296",
+      "measuredAtCommit": "2744f0c9782af259583f054d03b95620040c261b",
       "dirtyExecutablePaths": [],
-      "measuredAt": "2026-09-17T10:16:00.238Z"
+      "measuredAt": "2026-09-17T16:19:42Z",
+      "provenance": {
+        "source": "hosted",
+        "runId": "35245598620",
+        "runUrl": "https://github.com/Ezzaldeen-Albitar/RootLco/actions/runs/35245598620",
+        "workflow": "PR CI",
+        "job": "105284964635",
+        "jobName": "unit-tests-coverage / unit-coverage",
+        "step": "Unit tier with coverage",
+        "headSha": "2744f0c9782af259583f054d03b95620040c261b",
+        "artifact": "evidence-unit-coverage",
+        "artifactDigest": "sha256:3f9e50efc2b65b079efbaaa609b5165000cd8513847c0a166ab47d53fb3e3d61",
+        "field": "vitest-unit.json"
+      }
     },
     "web": {
       "command": "npm run test --workspace @rootlco/web -- --reporter=json",
-      "tests": 4252,
-      "passed": 4252,
+      "tests": 4275,
+      "passed": 4275,
       "failed": 0,
       "skipped": 0,
-      "files": 148,
+      "files": 149,
       "exitCode": 0,
       "reporterSuccess": true,
       "failedSuites": [],
       "filesWithoutCases": [],
-      "measuredAtCommit": "70bf27ba2647948b9bd96ed387ae1205c4bcf296",
+      "measuredAtCommit": "2744f0c9782af259583f054d03b95620040c261b",
       "dirtyExecutablePaths": [],
-      "measuredAt": "2026-09-17T10:00:14.393Z"
+      "measuredAt": "2026-09-17T16:22:30Z",
+      "provenance": {
+        "source": "hosted",
+        "runId": "35245598620",
+        "runUrl": "https://github.com/Ezzaldeen-Albitar/RootLco/actions/runs/35245598620",
+        "workflow": "PR CI",
+        "job": "105284964818",
+        "jobName": "Web quality / web-quality",
+        "step": "Web component tier",
+        "headSha": "2744f0c9782af259583f054d03b95620040c261b",
+        "artifact": "evidence-web-quality",
+        "artifactDigest": "sha256:7e8cab4a213d063b92bffbabf0ecdd379fe5c4d176f5fcd22fe59ad41b319b56",
+        "field": "apps/web/vitest-web.json"
+      }
     }
   }
 }

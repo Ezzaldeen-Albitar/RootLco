@@ -430,3 +430,190 @@ describe('the Platform Owner Console routes decide on their own platform code be
     expect(platformReads.listCharges).toHaveBeenCalledWith(CONSOLE_TENANT);
   });
 });
+
+// --- organisation administration (P1-32 preparation) --------------------------
+
+vi.mock('@/features/administration/organization/api', () => ({
+  readTenant: async () => ({ status: 'ok', data: null, correlationId: 'cid' }),
+  readCapacity: async () => ({ status: 'ok', data: null, correlationId: 'cid' }),
+  listCompanies: async () => ({ status: 'ok', data: [], correlationId: 'cid' }),
+  listBranches: async () => ({ status: 'ok', data: [], correlationId: 'cid' }),
+  readCurrencyChoices: async () => [],
+  readBranchStatus: async () => ({ status: 'ok', data: null, correlationId: 'cid' }),
+  readSettings: async () => ({ status: 'ok', data: [], correlationId: 'cid' }),
+}));
+vi.mock('@/features/administration/departments/api', () => ({
+  listDepartments: async () => ({ status: 'ok', data: [], correlationId: 'cid' }),
+  readDepartmentNames: async () => ({}),
+}));
+vi.mock('@/features/administration/employees/api', () => ({
+  listEmployees: async () => ({ status: 'ok', data: { items: [] }, correlationId: 'cid' }),
+  listLoginAccounts: async () => [],
+}));
+vi.mock('@/features/administration/users/api', () => ({
+  readUserAccess: async () => ({
+    status: 'ok',
+    user: { id: 'u', email: 'e', displayName: 'd', status: 'active' },
+    grants: [],
+    roles: [],
+    correlationId: 'cid',
+  }),
+  listGrantableRoles: async () => [],
+  listUsers: async () => ({ status: 'ok', rows: [], nextCursor: null, hasMore: false }),
+  readUser: async () => ({ status: 'ok' }),
+}));
+
+const { PERMISSIONS: ADMIN } = await import('@/features/administration/shared/permissions');
+type AnyPage = (args: { params: Promise<Record<string, string>> }) => Promise<unknown>;
+const OrganizationPage = (
+  await import('@/app/[locale]/(dashboard)/administration/organization/page')
+).default as unknown as AnyPage;
+const DepartmentsPage = (await import('@/app/[locale]/(dashboard)/administration/departments/page'))
+  .default as unknown as AnyPage;
+const EmployeesPage = (await import('@/app/[locale]/(dashboard)/administration/employees/page'))
+  .default as unknown as AnyPage;
+const UserAccessPage = (
+  await import('@/app/[locale]/(dashboard)/administration/users/[userId]/page')
+).default as unknown as AnyPage;
+
+/**
+ * Walks an element tree for the first node whose props carry `marker`. A render
+ * function child (`ReadBoundary`) is called with the data of an `ok` state, the
+ * way the boundary itself would call it.
+ */
+function findPropsWith(node: unknown, marker: string): Record<string, unknown> | null {
+  if (node === null || typeof node !== 'object') return null;
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const found = findPropsWith(child, marker);
+      if (found) return found;
+    }
+    return null;
+  }
+  const props = (node as ReactElement<Record<string, unknown>>).props;
+  if (!props || typeof props !== 'object') return null;
+  if (marker in props) return props;
+  const children = (props as { children?: unknown }).children;
+  if (typeof children === 'function') {
+    const state = (props as { state?: { status?: string; data?: unknown } }).state;
+    return state?.status === 'ok'
+      ? findPropsWith((children as (data: unknown) => unknown)(state.data), marker)
+      : null;
+  }
+  return findPropsWith(children, marker);
+}
+
+async function screenProps(
+  page: AnyPage,
+  params: Record<string, string>,
+  permissions: readonly string[],
+  marker: string
+): Promise<Record<string, unknown> | null> {
+  PERMISSIONS = [...permissions];
+  return findPropsWith(
+    await page({ params: Promise.resolve({ locale: 'en', ...params }) }),
+    marker
+  );
+}
+
+describe('organisation administration routes grant each control from its OWN permission', () => {
+  const USER_ID = 'a1b2c3d4-0000-4000-8000-0000000000aa';
+  const CASES: readonly {
+    readonly name: string;
+    readonly page: AnyPage;
+    readonly params: Record<string, string>;
+    readonly base: readonly string[];
+    readonly prop: string;
+    readonly permission: string;
+    readonly others: readonly string[];
+  }[] = [
+    {
+      name: 'organization, Add company and company status',
+      page: OrganizationPage,
+      params: {},
+      base: [ADMIN.tenantRead, ADMIN.companyRead, ADMIN.branchRead],
+      prop: 'canManageCompanies',
+      permission: ADMIN.companyManage,
+      others: [ADMIN.branchManage, ADMIN.settingsManage],
+    },
+    {
+      name: 'organization, Add branch',
+      page: OrganizationPage,
+      params: {},
+      base: [ADMIN.tenantRead, ADMIN.companyRead, ADMIN.branchRead],
+      prop: 'canManageBranches',
+      permission: ADMIN.branchManage,
+      others: [ADMIN.companyManage, ADMIN.settingsManage],
+    },
+    {
+      name: 'organization, branch status',
+      page: OrganizationPage,
+      params: {},
+      base: [ADMIN.tenantRead, ADMIN.companyRead, ADMIN.branchRead],
+      prop: 'canChangeBranchStatus',
+      permission: ADMIN.settingsManage,
+      others: [ADMIN.companyManage, ADMIN.branchManage],
+    },
+    {
+      name: 'departments',
+      page: DepartmentsPage,
+      params: {},
+      base: [ADMIN.departmentRead, ADMIN.branchRead],
+      prop: 'canManage',
+      permission: ADMIN.departmentManage,
+      others: [ADMIN.employeeManage, ADMIN.companyManage, ADMIN.branchManage],
+    },
+    {
+      name: 'employees',
+      page: EmployeesPage,
+      params: {},
+      base: [ADMIN.employeeRead, ADMIN.branchRead],
+      prop: 'canManage',
+      permission: ADMIN.employeeManage,
+      others: [ADMIN.departmentManage, ADMIN.companyManage, ADMIN.branchManage],
+    },
+    {
+      name: 'user access',
+      page: UserAccessPage,
+      params: { userId: USER_ID },
+      base: [ADMIN.userRead, ADMIN.roleRead],
+      prop: 'canManageGrants',
+      permission: ADMIN.grantManage,
+      others: [ADMIN.userManage, ADMIN.roleManage],
+    },
+  ];
+
+  for (const entry of CASES) {
+    it(`${entry.name}: ${entry.prop} for ${entry.permission} and for nothing else`, async () => {
+      const granted = await screenProps(
+        entry.page,
+        entry.params,
+        [...entry.base, entry.permission],
+        entry.prop
+      );
+      expect(granted, 'the route did not render its screen').not.toBeNull();
+      expect(granted?.[entry.prop]).toBe(true);
+
+      const denied = await screenProps(
+        entry.page,
+        entry.params,
+        [...entry.base, ...entry.others],
+        entry.prop
+      );
+      expect(denied, 'the route did not render its screen').not.toBeNull();
+      expect(denied?.[entry.prop]).toBe(false);
+    });
+  }
+
+  it('renders the denial instead of the screen without the read permission', async () => {
+    const writesOnly = [ADMIN.departmentManage, ADMIN.employeeManage, ADMIN.grantManage];
+    const routes: readonly (readonly [AnyPage, Record<string, string>, string])[] = [
+      [DepartmentsPage, {}, 'canManage'],
+      [EmployeesPage, {}, 'canManage'],
+      [UserAccessPage, { userId: USER_ID }, 'canManageGrants'],
+    ];
+    for (const [page, params, marker] of routes) {
+      expect(await screenProps(page, params, writesOnly, marker)).toBeNull();
+    }
+  });
+});

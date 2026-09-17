@@ -173,7 +173,7 @@ test.describe('search asks the real backend only when asked', () => {
 
     await page.goto('/en/vehicles');
     const before = posts.length;
-    await page.getByLabel(/VIN/i).fill('JH4KA7561PC008269');
+    await page.getByLabel('VIN', { exact: true }).fill('JH4KA7561PC008269');
     await page.waitForTimeout(500);
 
     expect(observed.length, 'the listener saw no requests at all').toBeGreaterThan(0);
@@ -312,7 +312,7 @@ test.describe('the client asserts no scope on the wire', () => {
 test.describe('no free-text search term reaches the address bar', () => {
   test('a VIN typed into search never appears in the URL', async ({ page }) => {
     await page.goto('/en/vehicles');
-    await page.getByLabel(/VIN/i).fill('JH4KA7561PC008269');
+    await page.getByLabel('VIN', { exact: true }).fill('JH4KA7561PC008269');
     await page
       .getByRole('button', { name: /search/i })
       .first()

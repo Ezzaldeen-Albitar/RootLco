@@ -24,7 +24,7 @@ import { fieldErrorsFrom } from '@/lib/forms/field-errors';
 /**
  * Vehicle search (`FE-017`) and creation (`FE-018`) adapters.
  *
- * ## Search sends exactly the six parameters the schema names
+ * ## Search sends only the parameters the schema names
  *
  * The query schema is `.strict()`, so an unknown parameter is a 422 for the
  * whole request rather than a silently ignored extra. There is no `sort`, no

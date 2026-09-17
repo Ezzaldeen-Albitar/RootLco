@@ -1478,7 +1478,9 @@ describe('P-10 the provisioning bundle', () => {
     // closing CC-02; 78 once P-17 minted the two employee-register codes and
     // carried both, because a delivery cannot be created without an employee to
     // name — which is why the assertion below is now a POSITIVE one.
-    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(78);
+    // 80 since the Owner directive of 2026-09-16 carried org.company.manage and
+    // org.branch.manage for the two organisation creation operations.
+    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(80);
     expect(new Set(TENANT_ADMINISTRATOR_ROLE.permissionCodes).size).toBe(
       TENANT_ADMINISTRATOR_ROLE.permissionCodes.length
     );

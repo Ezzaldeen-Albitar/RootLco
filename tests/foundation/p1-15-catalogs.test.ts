@@ -89,6 +89,8 @@ const ascending = (values: readonly string[]): string[] => [...values].sort();
 // ---------------------------------------------------------------------------
 
 const EXPECTED_ERROR_CODES = [
+  'ERR-CAP-001',
+  'ERR-CAP-002',
   'ERR-CON-001',
   'ERR-CON-002',
   'ERR-CTX-001',
@@ -126,6 +128,8 @@ const EXPECTED_ERROR_CODES = [
  * a change to any of them has to be made here too.
  */
 const EXPECTED_ERROR_CONTRACTS = [
+  { code: 'ERR-CAP-001', status: 409, owner: 'capacity', class: 'conflict', retryable: false },
+  { code: 'ERR-CAP-002', status: 409, owner: 'capacity', class: 'conflict', retryable: false },
   { code: 'ERR-CON-001', status: 409, owner: 'concurrency', class: 'conflict', retryable: true },
   { code: 'ERR-CON-002', status: 428, owner: 'concurrency', class: 'client', retryable: false },
   { code: 'ERR-CTX-001', status: 500, owner: 'context', class: 'server', retryable: false },
@@ -289,9 +293,11 @@ const EXPECTED_AUDIT_ACTIONS = [
   'inv.stock.reservation_released',
   'inv.stock.reserved',
   'inv.stock_location.created',
+  'org.branch.created',
   'org.branch.settings_updated',
   'org.branch.status_changed',
   'org.branch.updated',
+  'org.company.created',
   'org.company.settings_updated',
   'org.company.status_changed',
   'org.company.updated',
