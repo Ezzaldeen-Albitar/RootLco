@@ -9,7 +9,7 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translateDynamic } from '@/i18n/get-messages';
 import { formatDateTime } from '@/lib/format';
-import { searchPlatformAudit } from '../actions';
+import { searchPlatformAudit } from '../table-reads';
 import {
   PLATFORM_AUDIT_ACTIONS,
   auditActionKey,

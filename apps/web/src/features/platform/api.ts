@@ -40,8 +40,11 @@ import type {
  * modules. The `server-only` package is not a dependency of this repository.
  *
  * The two reads a client data table drives, the organisation list and the
- * activity search, are still Server Actions in `actions.ts`. That is an open
- * item awaiting a decision, not an approved exception.
+ * activity search, are Server Actions in `table-reads.ts`. That is a decided
+ * exception, recorded there with its reasons: it is the established pattern for
+ * an interactive paged table, a search term may not travel in the address, and
+ * the authority boundary is the backend operation. The same test fails when any
+ * other platform read is exported from a Server Action module.
  */
 
 const EMPTY = { rows: [], nextCursor: null, hasMore: false } as const;
@@ -58,8 +61,8 @@ async function read<T>(path: string): Promise<ReadState<T>> {
 /**
  * One page of a cursor-paged platform read.
  *
- * Exported for `actions.ts`, which holds the two paged reads a client data table
- * drives and therefore cannot share this file's server-only home.
+ * Exported for `table-reads.ts`, which holds the two paged reads a client data
+ * table drives and therefore cannot share this file's server-only home.
  */
 export async function readPage<Row>(path: string): Promise<ServerPage<Row>> {
   const client = await authorizedClient();

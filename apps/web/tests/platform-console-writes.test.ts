@@ -51,6 +51,7 @@ vi.mock('@/lib/api/server-client', () => ({
 
 const actions = await import('@/features/platform/actions');
 const reads = await import('@/features/platform/api');
+const tableReads = await import('@/features/platform/table-reads');
 
 const TENANT = '11111111-1111-4111-8111-111111111111';
 const SUBSCRIPTION = '22222222-2222-4222-8222-222222222222';
@@ -508,7 +509,7 @@ describe('the console reads name their subject and carry only what was asked', (
   const request = tableRequest({});
 
   it('sends the search term and the status only once they have a value', async () => {
-    await actions.listOrganizations(request, null);
+    await tableReads.listOrganizations(request, null);
     const first = String(get.mock.calls[0]?.[0]);
     expect(first).toContain('/api/v1/platform/organizations');
     expect(first).not.toContain('q=');
@@ -516,7 +517,7 @@ describe('the console reads name their subject and carry only what was asked', (
     expect(first).toContain('limit=25');
 
     get.mockClear();
-    await actions.listOrganizations(
+    await tableReads.listOrganizations(
       tableRequest({
         search: '  northern  ',
         filters: [{ key: 'status', value: 'suspended' }],
@@ -531,14 +532,14 @@ describe('the console reads name their subject and carry only what was asked', (
 
   it('turns a page of rows into the shape the table reads, and a refusal into a denial', async () => {
     get.mockResolvedValue(okResult({ items: [{ id: TENANT }], nextCursor: 'c2', hasMore: true }));
-    const page = await actions.listOrganizations(request, null);
+    const page = await tableReads.listOrganizations(request, null);
     expect(page.status).toBe('ok');
     expect(page.rows).toHaveLength(1);
     expect(page.nextCursor).toBe('c2');
     expect(page.hasMore).toBe(true);
 
     get.mockResolvedValue({ ok: false, kind: 'forbidden', correlationId: 'corr-4' });
-    const denied = await actions.listOrganizations(request, null);
+    const denied = await tableReads.listOrganizations(request, null);
     expect(denied.status).toBe('denied');
     expect(denied.rows).toEqual([]);
   });
@@ -563,7 +564,7 @@ describe('the console reads name their subject and carry only what was asked', (
   });
 
   it('drops an organisation filter that is not an identifier rather than sending it', async () => {
-    await actions.searchPlatformAudit(
+    await tableReads.searchPlatformAudit(
       { from: '2026-08-18', to: '2026-09-17', action: '', organizationId: NOT_AN_ID },
       request,
       null
@@ -575,7 +576,7 @@ describe('the console reads name their subject and carry only what was asked', (
     expect(path).not.toContain('action=');
 
     get.mockClear();
-    await actions.searchPlatformAudit(
+    await tableReads.searchPlatformAudit(
       {
         from: '2026-08-18',
         to: '2026-09-17',
@@ -592,7 +593,7 @@ describe('the console reads name their subject and carry only what was asked', (
 
   it('answers an ended session as an ended session, not as an empty page', async () => {
     authorizedClient.mockResolvedValue(null as unknown);
-    const page = await actions.listOrganizations(request, null);
+    const page = await tableReads.listOrganizations(request, null);
     expect(page.status).toBe('expired');
     expect(page.rows).toEqual([]);
     expect(await reads.listOrganizationChoices()).toEqual([]);
@@ -610,6 +611,9 @@ describe('the console reads name their subject and carry only what was asked', (
  */
 const WEB_SRC = join(__dirname, '..', 'src');
 const READS_MODULE = resolve(WEB_SRC, 'features', 'platform', 'api.ts');
+const SESSION_MODULE = resolve(WEB_SRC, 'features', 'platform', 'api', 'session.ts');
+const ACTIONS_MODULE = resolve(WEB_SRC, 'features', 'platform', 'actions.ts');
+const TABLE_READS_MODULE = resolve(WEB_SRC, 'features', 'platform', 'table-reads.ts');
 
 /** The directive a module opens with, if any. */
 function directiveOf(source: string): string | null {
@@ -686,5 +690,125 @@ describe('the console reads stay on the server', () => {
     expect(
       localImportsOf(probe, "import { readStatistics } from '@/features/platform/api';")
     ).toContain(READS_MODULE);
+  });
+});
+
+/*
+ * The decided exception (P1-32-PRE-068): the organisation list and the activity
+ * search are driven by a client data table after render, so they are Server
+ * Actions, in `table-reads.ts` and nowhere else. It is the established pattern
+ * for an interactive paged table, a search term may not travel in the address,
+ * and the backend operation is the authority boundary. No OTHER platform read
+ * may be a Server Action, and the writes module holds writes only.
+ *
+ * A Server Action module performs a platform read when it imports a server-only
+ * platform read module, or when it names a platform path and issues a GET.
+ */
+const ALLOWED_TABLE_READS = ['listOrganizations', 'searchPlatformAudit'];
+
+/*
+ * A Server Action that consults a platform read without handing its result to
+ * the browser. Sign-in reads the platform session only to choose where to send
+ * the user next; what it returns is a destination, not console data. Any new
+ * entry here is a reviewed decision, not a way to make the case below pass.
+ */
+const CONSULTS_WITHOUT_EXPORTING = [
+  resolve(WEB_SRC, 'features', 'authentication', 'actions', 'login.ts') + '#loginAction',
+];
+
+function exportedNamesOf(source: string): string[] {
+  const names: string[] = [];
+  for (const match of source.matchAll(
+    /\bexport\s+(?:async\s+)?(?:function\*?|const|let|var)\s+([A-Za-z_$][\w$]*)/g
+  )) {
+    names.push(match[1] ?? '');
+  }
+  for (const match of source.matchAll(/\bexport\s*\{([^}]*)\}/g)) {
+    for (const part of (match[1] ?? '').split(',')) {
+      const trimmed = part.trim();
+      if (trimmed.length === 0 || trimmed.startsWith('type ')) continue;
+      names.push(trimmed.split(/\s+as\s+/).pop() ?? trimmed);
+    }
+  }
+  return names;
+}
+
+function performsPlatformRead(file: string, source: string): boolean {
+  const imports = localImportsOf(file, source);
+  if (imports.includes(READS_MODULE) || imports.includes(SESSION_MODULE)) return true;
+  // A typed GET, or a GET whose path is written in place. `FormData.get('x')` is neither.
+  return (
+    source.includes('/api/v1/platform') &&
+    /\.get\s*<[^>]*>\s*\(|\.get\s*\(\s*['"`]\/api\/v1\/platform/.test(source)
+  );
+}
+
+function platformReadsExportedFromServerActions(): string[] {
+  const out: string[] = [];
+  for (const file of globSync(['**/*.ts', '**/*.tsx'], { cwd: WEB_SRC, absolute: true })) {
+    const path = resolve(file);
+    const source = readFileSync(path, 'utf8');
+    if (directiveOf(source) !== 'use server' || !performsPlatformRead(path, source)) continue;
+    for (const name of exportedNamesOf(source)) out.push(`${path}#${name}`);
+  }
+  return out.sort();
+}
+
+describe('only the two table reads are platform reads a browser can call', () => {
+  it('exports exactly the organisation list and the activity search from a Server Action module', () => {
+    expect(platformReadsExportedFromServerActions()).toEqual(
+      [
+        ...ALLOWED_TABLE_READS.map((name) => `${TABLE_READS_MODULE}#${name}`),
+        ...CONSULTS_WITHOUT_EXPORTING,
+      ].sort()
+    );
+  });
+
+  it('keeps the table reads module a Server Action module with those two exports only', () => {
+    const source = readFileSync(TABLE_READS_MODULE, 'utf8');
+    expect(directiveOf(source)).toBe('use server');
+    expect(exportedNamesOf(source).sort()).toEqual([...ALLOWED_TABLE_READS].sort());
+    expect(Object.keys(tableReads).sort()).toEqual([...ALLOWED_TABLE_READS].sort());
+  });
+
+  it('keeps the writes module to writes: no read, and every export is an action', () => {
+    const source = readFileSync(ACTIONS_MODULE, 'utf8');
+    expect(performsPlatformRead(ACTIONS_MODULE, source)).toBe(false);
+    const names = exportedNamesOf(source);
+    expect(names.length).toBeGreaterThan(0);
+    expect(names.filter((name) => !name.endsWith('Action'))).toEqual([]);
+    expect(Object.keys(actions).filter((name) => !name.endsWith('Action'))).toEqual([]);
+  });
+
+  it('would notice another platform read exported from a Server Action module', () => {
+    const probe = resolve(WEB_SRC, 'features', 'platform', 'probe-actions.ts');
+    const viaModule = [
+      "'use server';",
+      "import { readPage } from './api';",
+      'export async function listPlans() {}',
+    ].join('\n');
+    expect(directiveOf(viaModule)).toBe('use server');
+    expect(performsPlatformRead(probe, viaModule)).toBe(true);
+    expect(exportedNamesOf(viaModule)).toEqual(['listPlans']);
+
+    const viaClient = [
+      "'use server';",
+      "export const readStatistics = async () => client.get<Stats>('/api/v1/platform/statistics');",
+    ].join('\n');
+    expect(performsPlatformRead(probe, viaClient)).toBe(true);
+    expect(exportedNamesOf(viaClient)).toEqual(['readStatistics']);
+
+    const write = [
+      "'use server';",
+      "export async function voidAction() { return client.send('POST', '/api/v1/platform/x'); }",
+    ].join('\n');
+    expect(performsPlatformRead(probe, write)).toBe(false);
+
+    const formRead = [
+      "'use server';",
+      "const PATH = '/api/v1/platform/plans';",
+      "export async function createAction(form: FormData) { return form.get('name'); }",
+    ].join('\n');
+    expect(performsPlatformRead(probe, formRead)).toBe(false);
   });
 });

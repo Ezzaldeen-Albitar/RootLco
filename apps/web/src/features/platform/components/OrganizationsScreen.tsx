@@ -15,7 +15,7 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translateDynamic } from '@/i18n/get-messages';
 import { formatDate, formatInteger } from '@/lib/format';
-import { listOrganizations } from '../actions';
+import { listOrganizations } from '../table-reads';
 import { ORGANIZATION_STATUSES, type OrganizationRow } from '../types';
 import { PRIMARY_BUTTON, StatusBadge } from './ui';
 
