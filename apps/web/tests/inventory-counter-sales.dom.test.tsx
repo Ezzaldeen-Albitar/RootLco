@@ -36,6 +36,8 @@ import {
  *    answer replays rather than opening a second sale.
  *  - Issuing carries the INVOICE's own version, and only issuing moves stock.
  *  - An issued sale says it cannot be undone and points at the returns desk.
+ *  - The money is reached by a LINK carrying the invoice, not by an instruction
+ *    to go and find the sale again on another screen.
  */
 
 const AR = ar as Record<string, string>;
@@ -392,6 +394,23 @@ describe('issuing and voiding', () => {
     expect(
       screen.queryByRole('button', { name: EN['inventory.counterSales.void.action'] as string })
     ).toBeNull();
+  });
+
+  it('links the payments screen AT this invoice, rather than naming it in a sentence', async () => {
+    /*
+     * The payments page reads an `invoiceId` from the address and prefills the
+     * allocation with it, so a sentence saying "settle it on the payments
+     * screen" throws away a mechanism the repository already has. The href is
+     * asserted rather than the words: the words are what the previous spelling
+     * had, and they are what this case exists to refuse.
+     */
+    const user = userEvent.setup();
+    renderLtr(screenAt());
+    await toDraft(user);
+    const link = await screen.findByRole('link', {
+      name: EN['inventory.counterSales.sale.takePayment'] as string,
+    });
+    expect(link.getAttribute('href')).toBe(`/en/payments?invoiceId=${INVOICE_ID}`);
   });
 
   it('voids a draft with a reason and the invoice version', async () => {

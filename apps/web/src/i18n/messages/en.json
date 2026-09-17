@@ -4528,6 +4528,7 @@
   "inventory.counterSales.sale.explain": "Issuing takes the parts off the shelf and gives the sale its number. Until then nothing has moved.",
   "inventory.counterSales.sale.issuedNote": "This sale has been issued. The parts have left the shelf and it cannot be undone — take a part back through customer returns.",
   "inventory.counterSales.sale.paymentNote": "Take the money on the payments screen, against this sale.",
+  "inventory.counterSales.sale.takePayment": "Go to payments for this sale",
   "inventory.counterSales.sale.next": "Start another sale",
   "inventory.counterSales.issue.action": "Issue the sale",
   "inventory.counterSales.issue.needsIssue": "You do not have permission to issue a sale. Somebody who has may issue this one.",

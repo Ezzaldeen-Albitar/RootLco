@@ -44,6 +44,7 @@
  * `crm.customer.read` the buyer search; `org.branch.read` the branch picker.
  */
 
+import Link from 'next/link';
 import { useCallback, useState } from 'react';
 
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
@@ -83,6 +84,7 @@ import {
   BranchTargetForm,
   DANGER_BUTTON,
   ItemFinder,
+  LINK,
   PANEL,
   StockOperationLinks,
   isQuantity,
@@ -810,9 +812,21 @@ function SalePanel({
         </p>
       )}
 
+      {/*
+       * The money is settled on the payments screen, and that screen already
+       * accepts the invoice it is to settle: `payments/page.tsx` reads an
+       * `invoiceId` from the address and prefills the allocation with it. So
+       * this is a link rather than an instruction to go and find the sale
+       * again — the operator arrives with the invoice already chosen.
+       */}
       <p className="text-caption text-text-muted">
         {translate(messages, 'inventory.counterSales.sale.paymentNote')}
       </p>
+      <div>
+        <Link href={`/${locale}/payments?invoiceId=${invoice.id}`} className={LINK}>
+          {translate(messages, 'inventory.counterSales.sale.takePayment')}
+        </Link>
+      </div>
       <div>
         <button type="button" className={SECONDARY_BUTTON} onClick={onNewSale}>
           {translate(messages, 'inventory.counterSales.sale.next')}
