@@ -13,6 +13,22 @@
  * key is bound to the resolved principal and the canonicalised body, so a
  * different user replaying the same key gets a conflict rather than the first
  * caller's result.
+ *
+ * ## Known limitation (recorded 2026-09-17): a refused seat can orphan a provider identity
+ *
+ * When the organisation's subscription seats are spent, `tg_user_accounts_capacity`
+ * refuses the account INSERT and the caller receives ERR-CAP-001 with the seat
+ * numbers. That refusal happens AFTER `provider.invite` has already created the
+ * identity at the provider, and the transaction rollback cannot reach the
+ * provider, so the identity is left behind with no RootLco account. It confers
+ * nothing — every permission hangs off the account that was never written — but
+ * it is not cleaned up, and a later invitation of the same address meets the
+ * provider's existing identity. The duplicate-address race refused by
+ * `uq_user_accounts_tenant_email_active` has had the same shape since P1-14. A
+ * seat pre-check would narrow the window without closing it (the trigger's
+ * advisory lock is the only serialised reading), so the limitation is recorded
+ * rather than papered over; closing it needs a compensating provider disable on
+ * this refusal path.
  */
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
