@@ -999,3 +999,155 @@ describe('the helpers this gate is built on', () => {
     expect(RENEWAL_NAMES).toContain('refresh');
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * The subject, as the contract states it (P1-32)
+ * ------------------------------------------------------------------ */
+
+/**
+ * An adapter module whose sends name their operations with literal paths: one for
+ * the guarded `wo.synthetic-seal` the synthetic contract publishes outside apt/rec,
+ * and a second, correct-looking apt/rec adapter for `rec.synthetic-lock`.
+ */
+const LITERAL_ADAPTER = `
+'use server';
+export async function sealOtherThing(id: string, ifMatch: number, attempt = 1) {
+  return client.send('POST', \`/api/v1/other-things/\${id}/seal\`, undefined, { ifMatch });
+}
+`;
+
+const SEAL_SCREEN = `
+'use client';
+import { sealOtherThing } from '../seal-actions';
+
+export function OtherThingSealPanel({ id, detail, settle }) {
+  const submit = () => {
+    startTransition(async () => {
+      const result = await sealOtherThing(id, detail.recordVersion, 1);
+      await settle(result);
+    });
+  };
+  return submit;
+}
+`;
+
+/** The synthetic tree plus one more adapter module and the screen that calls it. */
+function withExtra(adapter: string, screen: string = SEAL_SCREEN) {
+  return [
+    ...sources,
+    [`${ADAPTER_ROOT}/seal-actions.ts`, adapter],
+    [`${ADAPTER_ROOT}/components/OtherThingSealPanel.tsx`, screen],
+  ] as const;
+}
+
+describe('an adapter the contract places outside apt/rec is excluded from the count, and only it', () => {
+  it('on the live tree, excludes exactly the two inventory adapters by their guarded operations', () => {
+    const live = run() as Report & {
+      outsideByContract: { name: string; operations: string[] }[];
+    };
+    expect(live.outsideByContract).toEqual([
+      { name: 'postGoodsReceipt', operations: ['inv.goods-receipt-post'] },
+      { name: 'recordStockCountLine', operations: ['inv.stock-count-line-record'] },
+    ]);
+    expect(live.accountedFor).not.toContain('postGoodsReceipt');
+    expect(live.accountedFor).not.toContain('recordStockCountLine');
+  });
+
+  it('does not count an adapter whose every versioned send reaches a guarded wo operation', () => {
+    const report = judge({ sources: withExtra(LITERAL_ADAPTER) }) as Report & {
+      outsideByContract: { name: string; operations: string[] }[];
+    };
+    expect(report.violations).toEqual([]);
+    expect(report.outsideByContract).toEqual([
+      { name: 'sealOtherThing', operations: ['wo.synthetic-seal'] },
+    ]);
+    expect(report.accountedFor.sort()).toEqual(['lockSyntheticVisit', 'unlockSyntheticVisit']);
+  });
+
+  it('still holds that adapter to version sourcing: a computed version at its call site fails', () => {
+    const report = judge({
+      sources: withExtra(
+        LITERAL_ADAPTER,
+        SEAL_SCREEN.replace('id, detail.recordVersion, 1', 'id, detail.recordVersion + 1, 1')
+      ),
+    });
+    expect(report.violations.join('\n')).toContain('sealOtherThing');
+    expect(report.violations.join('\n')).toContain('computes a version');
+  });
+
+  it('still refuses an optional ifMatch on that adapter', () => {
+    const report = judge({
+      sources: withExtra(LITERAL_ADAPTER.replace('ifMatch: number', 'ifMatch?: number')),
+    });
+    expect(report.violations.join('\n')).toContain('sealOtherThing declares ifMatch as optional');
+  });
+
+  it('keeps a phase-subject adapter inside: a literal apt/rec send is counted and a computed version fails', () => {
+    const inSubject = `
+'use server';
+export async function relockSyntheticVisit(visitId: string, ifMatch: number, attempt = 1) {
+  return client.send('POST', \`/api/v1/synthetic-visits/\${visitId}/lock\`, undefined, { ifMatch });
+}
+`;
+    const screen = `
+'use client';
+import { relockSyntheticVisit } from '../seal-actions';
+
+export function SyntheticRelockPanel({ visitId, recordVersion, settle }) {
+  const submit = () => {
+    startTransition(async () => {
+      const result = await relockSyntheticVisit(visitId, recordVersion + 1, 1);
+      await settle(result);
+    });
+  };
+  return submit;
+}
+`;
+    const report = judge({ sources: withExtra(inSubject, screen) }) as Report & {
+      outsideByContract: { name: string }[];
+    };
+    expect(report.outsideByContract).toEqual([]);
+    expect(report.accountedFor).toContain('relockSyntheticVisit');
+    const text = report.violations.join('\n');
+    expect(text).toContain('relockSyntheticVisit is sent an If-Match this gate refuses');
+    expect(text).toContain('computes a version');
+    expect(text).toContain('tree exports 3 adapters');
+  });
+
+  it('keeps inside an adapter whose send it cannot attribute, and fails the count', () => {
+    const throughHelper = LITERAL_ADAPTER.replace(
+      '`/api/v1/other-things/${id}/seal`',
+      "thingPath(id, '/seal')"
+    );
+    const report = judge({ sources: withExtra(throughHelper) });
+    expect(report.accountedFor).toContain('sealOtherThing');
+    expect(report.violations.join('\n')).toContain('tree exports 3 adapters');
+  });
+
+  it('keeps inside an adapter that sends a version to an operation the contract does not guard', () => {
+    const report = judge({
+      document: {
+        paths: {
+          ...document.paths,
+          '/api/v1/other-things/{id}/seal': {
+            post: { operationId: 'wo.synthetic-seal', parameters: [] },
+          },
+        },
+      },
+      sources: withExtra(LITERAL_ADAPTER),
+    });
+    expect(report.accountedFor).toContain('sealOtherThing');
+    expect(report.violations.join('\n')).toContain('tree exports 3 adapters');
+  });
+
+  it('keeps inside an adapter that sends to a wo operation AND an apt/rec one', () => {
+    const mixed = LITERAL_ADAPTER.replace(
+      "  return client.send('POST', `/api/v1/other-things/${id}/seal`, undefined, { ifMatch });",
+      "  await client.send('POST', `/api/v1/other-things/${id}/seal`, undefined, { ifMatch });\n" +
+        "  return client.send('POST', `/api/v1/synthetic-visits/${id}/unlock`, undefined, { ifMatch });"
+    );
+    const report = judge({ sources: withExtra(mixed) });
+    expect(report.accountedFor).toContain('sealOtherThing');
+    expect(report.violations.join('\n')).toContain('tree exports 3 adapters');
+  });
+});
