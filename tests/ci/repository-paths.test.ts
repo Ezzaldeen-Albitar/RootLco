@@ -265,7 +265,9 @@ describe('the API application lives in the workspace', () => {
     // 335 with the P1-32 preparatory inventory slice: eighteen operations over
     // FOURTEEN new modules, because the transfer, goods-receipt, adjustment and
     // count collections each co-locate a GET and a POST on one path.
-    expect(routeFiles.length).toBe(335);
+    // 340 with P1-32 preparatory slice 2: six identifier operations over five new
+    // modules, because the identifier collection co-locates a GET and a POST.
+    expect(routeFiles.length).toBe(340);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -286,7 +288,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 431 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 437 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -351,7 +353,8 @@ describe('the API application lives in the workspace', () => {
     // P1-31 P-12 adds the report export action to the existing report-code route.
     // 431 with the P1-32 preparatory inventory slice: eighteen operations over
     // fourteen new modules, for the reason stated above the route-module count.
-    expect(report.operations).toHaveLength(431);
+    // 437 with P1-32 preparatory slice 2, for the reason stated above.
+    expect(report.operations).toHaveLength(437);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the

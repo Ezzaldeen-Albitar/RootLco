@@ -64,7 +64,8 @@ describe('every operation publishes the success status it returns', () => {
     // P1-31 P-12 adds one 200 export response.
     // 431 with the P1-32 preparatory inventory slice: eighteen more route
     // handlers, each resolved from its own literal status or its absence.
-    expect(actual.size).toBe(431);
+    // 437 with P1-32 preparatory slice 2: six identifier operations.
+    expect(actual.size).toBe(437);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -110,7 +111,9 @@ describe('every operation publishes the success status it returns', () => {
     // replay — transfer dispatch, goods receipt, count open — return
     // `replayed ? 200 : 201`, which the scanner cannot read as a literal and so
     // publishes as 200, exactly as `inv.stock-reservation-create` already does.
-    expect(counts[201]).toBe(116);
+    // P1-32 preparatory slice 2 adds ONE literal 201, the identifier add; the
+    // internal-barcode allocation returns `replayed ? 200 : 201` and publishes 200.
+    expect(counts[201]).toBe(117);
     expect(counts[202]).toBe(1);
     // The two P1-30 opening-batch reads (S-17) are GETs returning 200, so
     // 264 -> 266 while 201 and 202 are unchanged.
@@ -145,7 +148,9 @@ describe('every operation publishes the success status it returns', () => {
     // eighteen operations publish 200 — the seven reads, the seven state changes,
     // and the three replayable creates whose status is not a literal — and the
     // adjustment request is the one 201 counted above.
-    expect(counts[200]).toBe(314);
+    // 314 -> 319 with P1-32 preparatory slice 2: the list, the retirement, the
+    // barcode allocation, the resolver and the label read.
+    expect(counts[200]).toBe(319);
   });
 
   it('reads the handler, not the declaration', () => {

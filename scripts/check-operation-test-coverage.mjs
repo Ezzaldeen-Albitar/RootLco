@@ -3171,6 +3171,38 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
     note: 'only an open or counting count; raises no adjustment and moves no stock',
   },
+  // P1-32 preparatory slice 2: item barcodes and packaging identifiers. Tenant-wide
+  // catalogue reference data; the assertions rest on identifier rows and audit rows.
+  'inv.item-identifier-list': {
+    files: ['tests/backend/p1-32-item-identifiers.test.ts'],
+    required: ['success', 'cross-tenant', 'isolation'],
+    note: 'live identifiers first; retired ones only with includeRetired=true; another tenant item answers 404',
+  },
+  'inv.item-identifier-add': {
+    files: ['tests/backend/p1-32-item-identifiers.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'requires inv.item.manage granted tenant-wide, so a branch-scoped holder is refused; a retail code with a wrong check digit is refused on body.value; a live duplicate is a conflict; marking a code primary demotes the previous primary; the Idempotency-Key header replays a doubled scan instead of refusing it as a duplicate code',
+  },
+  'inv.item-identifier-retire': {
+    files: ['tests/backend/p1-32-item-identifiers.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'the row is kept and its value freed for a new live identifier; retiring twice changes nothing and writes no second audit record',
+  },
+  'inv.item-barcode-assign': {
+    files: ['tests/backend/p1-32-item-identifiers.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'RL + nine-digit per-tenant counter + mod-10 check digit, once per item; a second call returns the same code with replayed true and consumes no number; a retired number is never reallocated',
+  },
+  'inv.barcode-resolve': {
+    files: ['tests/backend/p1-32-item-identifiers.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'the scanned value is normalised by the same SQL function that generates the stored column; an unknown code answers 404; availability at a branch needs inv.stock.read there; a code of another tenant does not resolve',
+  },
+  'inv.item-label-data': {
+    files: ['tests/backend/p1-32-item-identifiers.test.ts'],
+    required: ['success', 'cross-tenant', 'isolation'],
+    note: 'primary code else internal code else first live code, with a symbology hint by kind and length; carries no price because no item price source exists',
+  },
 };
 
 // ---------------------------------------------------------------------------

@@ -172,6 +172,68 @@ export type CustodyState = (typeof CUSTODY_STATES)[number];
 export const EXTERNAL_PURCHASE_STATES = Object.freeze(['recorded', 'linked', 'cancelled'] as const);
 export type ExternalPurchaseState = (typeof EXTERNAL_PURCHASE_STATES)[number];
 
+/** `ck_item_identifiers_kind`. */
+export const IDENTIFIER_KINDS = Object.freeze([
+  'internal',
+  'gtin',
+  'ean',
+  'upc',
+  'manufacturer_part_number',
+  'supplier_code',
+] as const);
+export type IdentifierKind = (typeof IDENTIFIER_KINDS)[number];
+
+/**
+ * The kinds a user may ENTER. `internal` is absent: an internal code is only ever
+ * allocated by `inv.assign_internal_barcode`, and `inv.add_item_identifier` refuses it.
+ */
+export const ENTERABLE_IDENTIFIER_KINDS = Object.freeze([
+  'gtin',
+  'ean',
+  'upc',
+  'manufacturer_part_number',
+  'supplier_code',
+] as const);
+export type EnterableIdentifierKind = (typeof ENTERABLE_IDENTIFIER_KINDS)[number];
+
+/** `ck_item_identifiers_value_length`. */
+export const MAX_IDENTIFIER_VALUE = 64;
+
+/** The symbology a label printer should render a code in. A hint, not a contract. */
+export const BARCODE_SYMBOLOGIES = Object.freeze([
+  'code128',
+  'ean13',
+  'ean8',
+  'upca',
+  'itf14',
+] as const);
+export type BarcodeSymbology = (typeof BARCODE_SYMBOLOGIES)[number];
+
+/**
+ * Chooses the symbology for a stored, already normalised code.
+ *
+ * The retail kinds are decided by LENGTH, because a GTIN may legally be 8, 12, 13 or
+ * 14 digits and each length has its own symbology. Every internal or free-text code
+ * is `code128`, which encodes the full alphanumeric set.
+ */
+export function barcodeSymbologyFor(kind: string, normalizedValue: string): BarcodeSymbology {
+  if (kind === 'gtin' || kind === 'ean' || kind === 'upc') {
+    switch (normalizedValue.length) {
+      case 8:
+        return 'ean8';
+      case 12:
+        return 'upca';
+      case 13:
+        return 'ean13';
+      case 14:
+        return 'itf14';
+      default:
+        return 'code128';
+    }
+  }
+  return 'code128';
+}
+
 /** `ck_item_master_sku_format` — mixed case permitted for this external code. */
 export const SKU_FORMAT = /^[A-Za-z0-9][A-Za-z0-9_-]{1,62}$/;
 

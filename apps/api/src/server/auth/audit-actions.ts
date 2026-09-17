@@ -1641,6 +1641,30 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'An open stock count was cancelled with a reason. Raises no adjustment and moves no stock.',
   },
 
+  // P1-32 preparatory slice 2: item barcodes and packaging identifiers. Catalogue
+  // reference data, like the item it identifies, so `privileged` and no stock.
+  {
+    code: 'inv.item_identifier.added',
+    class: 'privileged',
+    entityType: 'inv.item_identifier',
+    description:
+      'A barcode or packaging identifier entered by a user was attached to an item, with the unit and pack quantity one scan of it represents. Retail codes carry a verified check digit. Moves no stock.',
+  },
+  {
+    code: 'inv.item_identifier.retired',
+    class: 'privileged',
+    entityType: 'inv.item_identifier',
+    description:
+      'An item identifier was retired. The row is kept as history and its value is freed for a new identifier; a label that still carries it no longer resolves.',
+  },
+  {
+    code: 'inv.item_barcode.assigned',
+    class: 'privileged',
+    entityType: 'inv.item_identifier',
+    description:
+      'An internal barcode was allocated to an item from the tenant counter, once per item. An allocated number is never reused, including after retirement.',
+  },
+
   // ---- Phase 1-22 — Billing and payment (sal) ----
   //
   // Every action in this block is `financial` except the credit-note approval,

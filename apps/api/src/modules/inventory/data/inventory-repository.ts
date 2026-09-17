@@ -1030,6 +1030,66 @@ const toItem = (r: ItemSql): ItemRow => ({
   recordVersion: r.record_version,
 });
 
+/** One barcode or packaging identifier of an item (P1-32-PRE-100). */
+export interface ItemIdentifierRow {
+  readonly id: string;
+  readonly itemId: string;
+  readonly kind: string;
+  readonly value: string;
+  readonly normalizedValue: string;
+  readonly unitId: string;
+  readonly unitCode: string;
+  /** Exact decimal string: base units one scan of this code represents. */
+  readonly packQuantity: string;
+  readonly isPrimary: boolean;
+  readonly retiredAt: Date | null;
+  readonly recordVersion: number;
+  readonly createdAt: Date;
+}
+
+/** A live identifier matched by a scan, with the item it names. */
+export interface ResolvedIdentifierRow extends ItemIdentifierRow {
+  readonly sku: string;
+  readonly itemName: string;
+  readonly isSerialized: boolean;
+  readonly isStockTracked: boolean;
+  readonly lifecycleStatus: string;
+}
+
+const IDENTIFIER_COLUMNS = `x.id, x.item_id, x.identifier_kind, x.value, x.normalized_value,
+  x.unit_id, u.code AS unit_code, x.pack_quantity, x.is_primary, x.retired_at,
+  x.record_version, x.created_at`;
+
+interface ItemIdentifierSql {
+  id: string;
+  item_id: string;
+  identifier_kind: string;
+  value: string;
+  normalized_value: string;
+  unit_id: string;
+  unit_code: string;
+  pack_quantity: string;
+  is_primary: boolean;
+  retired_at: Date | null;
+  record_version: number;
+  created_at: Date;
+}
+
+const toItemIdentifier = (r: ItemIdentifierSql): ItemIdentifierRow => ({
+  id: r.id,
+  itemId: r.item_id,
+  kind: r.identifier_kind,
+  value: r.value,
+  normalizedValue: r.normalized_value,
+  unitId: r.unit_id,
+  unitCode: r.unit_code,
+  packQuantity: r.pack_quantity,
+  isPrimary: r.is_primary,
+  retiredAt: r.retired_at,
+  recordVersion: r.record_version,
+  createdAt: r.created_at,
+});
+
 export class InventoryRepository extends Repository {
   protected readonly module = 'inventory';
 
@@ -4085,5 +4145,124 @@ export class InventoryRepository extends Repository {
       activeReservations: Number(row?.reservations ?? '0'),
       openIssues: Number(row?.issues ?? '0'),
     };
+  }
+
+  // -------------------------------------------------------------------------
+  // P1-32-PRE-100…104 — item barcodes and packaging identifiers.
+  // -------------------------------------------------------------------------
+
+  /** Every identifier of one item, live first, then by kind and value. */
+  public async listItemIdentifiers(
+    db: DbHandle,
+    itemId: string,
+    options: { readonly includeRetired: boolean }
+  ): Promise<readonly ItemIdentifierRow[]> {
+    const context = this.assertContext(db);
+    const rows = await this.run<ItemIdentifierSql>(
+      db,
+      `SELECT ${IDENTIFIER_COLUMNS}
+         FROM inv.item_identifiers x
+         JOIN inv.units_of_measure u ON u.id = x.unit_id
+        WHERE x.tenant_id = $1 AND x.item_id = $2
+          AND ($3::boolean OR x.retired_at IS NULL)
+        ORDER BY (x.retired_at IS NULL) DESC, x.is_primary DESC, x.identifier_kind, x.normalized_value, x.id`,
+      [context.principal.tenantId, itemId, options.includeRetired]
+    );
+    return rows.rows.map(toItemIdentifier);
+  }
+
+  public async readItemIdentifier(
+    db: DbHandle,
+    identifierId: string
+  ): Promise<ItemIdentifierRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ItemIdentifierSql>(
+      db,
+      `SELECT ${IDENTIFIER_COLUMNS}
+         FROM inv.item_identifiers x
+         JOIN inv.units_of_measure u ON u.id = x.unit_id
+        WHERE x.tenant_id = $1 AND x.id = $2`,
+      [context.principal.tenantId, identifierId]
+    );
+    return row ? toItemIdentifier(row) : null;
+  }
+
+  /** `inv.add_item_identifier`, which demotes a previous primary in the same call. */
+  public async addItemIdentifier(
+    db: DbHandle,
+    input: {
+      readonly itemId: string;
+      readonly kind: string;
+      readonly value: string;
+      readonly unitId: string | null;
+      readonly packQuantity: string;
+      readonly isPrimary: boolean;
+    }
+  ): Promise<string> {
+    this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `SELECT inv.add_item_identifier($1, $2, $3, $4, $5::numeric, $6) AS id`,
+      [input.itemId, input.kind, input.value, input.unitId, input.packQuantity, input.isPrimary]
+    );
+    if (!row) throw new Error('inventory: inv.add_item_identifier returned no row');
+    return row.id;
+  }
+
+  /** `inv.assign_internal_barcode` — idempotent per item. */
+  public async assignInternalBarcode(db: DbHandle, itemId: string): Promise<string> {
+    this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `SELECT inv.assign_internal_barcode($1) AS id`,
+      [itemId]
+    );
+    if (!row) throw new Error('inventory: inv.assign_internal_barcode returned no row');
+    return row.id;
+  }
+
+  public async retireItemIdentifier(db: DbHandle, identifierId: string): Promise<void> {
+    this.assertContext(db);
+    await this.run(db, `SELECT inv.retire_item_identifier($1)`, [identifierId]);
+  }
+
+  /**
+   * Every LIVE identifier whose normalised value equals the scanned value, with its
+   * item. The scanned value is normalised by the same SQL function that generates
+   * the stored column, so there is one rule rather than two.
+   */
+  public async resolveItemIdentifiers(
+    db: DbHandle,
+    scanned: string
+  ): Promise<readonly ResolvedIdentifierRow[]> {
+    const context = this.assertContext(db);
+    const rows = await this.run<
+      ItemIdentifierSql & {
+        sku: string;
+        item_name: string;
+        is_serialized: boolean;
+        is_stock_tracked: boolean;
+        lifecycle_status: string;
+      }
+    >(
+      db,
+      `SELECT ${IDENTIFIER_COLUMNS}, i.sku, i.name AS item_name, i.is_serialized,
+              i.is_stock_tracked, i.lifecycle_status
+         FROM inv.item_identifiers x
+         JOIN inv.units_of_measure u ON u.id = x.unit_id
+         JOIN inv.item_master i ON i.tenant_id = x.tenant_id AND i.id = x.item_id
+        WHERE x.tenant_id = $1 AND x.retired_at IS NULL AND i.deleted_at IS NULL
+          AND x.normalized_value = inv.normalize_item_identifier($2)
+        ORDER BY x.item_id, x.is_primary DESC, x.id`,
+      [context.principal.tenantId, scanned]
+    );
+    return rows.rows.map((r) => ({
+      ...toItemIdentifier(r),
+      sku: r.sku,
+      itemName: r.item_name,
+      isSerialized: r.is_serialized,
+      isStockTracked: r.is_stock_tracked,
+      lifecycleStatus: r.lifecycle_status,
+    }));
   }
 }

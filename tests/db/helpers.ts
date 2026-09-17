@@ -509,6 +509,8 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('svc.services');
   await deleteFrom('svc.service_categories');
   await deleteFrom('inv.item_cost_details');
+  // P1-32 preparatory slice 2: identifiers cite the item and a unit.
+  await deleteFrom('inv.item_identifiers');
   await deleteFrom('inv.item_master');
   await deleteFrom('inv.stock_locations');
   await deleteFrom('inv.item_categories');

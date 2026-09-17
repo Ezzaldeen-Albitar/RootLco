@@ -10,7 +10,7 @@
  * The backend requires an `Idempotency-Key` header on every operation it
  * registers as idempotent, and answers `400 ERR-INT-002` without one — before
  * authorization is evaluated. That set is NOT "the POST operations": it is
- * currently 185 operations (PATCH 3, POST 175, PUT 7).
+ * currently 188 operations (PATCH 3, POST 178, PUT 7).
  *
  * The client used to infer the answer from the HTTP method, which was wrong for
  * every non-POST member of that set. This table is the contract instead of a
@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 14, export 2, financial 14, none 186, privileged 202, security 13.
+ * Currently approval 14, export 2, financial 14, none 189, privileged 205, security 13.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 431 of them. */
+/** Every operation the contract publishes. 437 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -363,6 +363,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     template: '/auth/session',
     method: 'GET',
     operationId: 'iam.auth-session',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/barcodes/{value}',
+    method: 'GET',
+    operationId: 'inv.barcode-resolve',
     idempotent: false,
     auditClass: 'none',
   },
@@ -1189,6 +1196,41 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     template: '/items/{itemId}/cost-history',
     method: 'GET',
     operationId: 'inv.item-cost-history-read',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/items/{itemId}/identifiers',
+    method: 'GET',
+    operationId: 'inv.item-identifier-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/items/{itemId}/identifiers',
+    method: 'POST',
+    operationId: 'inv.item-identifier-add',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/items/{itemId}/identifiers/{identifierId}/retirement',
+    method: 'POST',
+    operationId: 'inv.item-identifier-retire',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/items/{itemId}/internal-barcode',
+    method: 'POST',
+    operationId: 'inv.item-barcode-assign',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/items/{itemId}/label',
+    method: 'GET',
+    operationId: 'inv.item-label-data',
     idempotent: false,
     auditClass: 'none',
   },

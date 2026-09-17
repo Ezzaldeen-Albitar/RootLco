@@ -359,6 +359,12 @@ import '@/app/api/v1/stock-counts/[countId]/route';
 import '@/app/api/v1/stock-counts/[countId]/lines/[itemId]/route';
 import '@/app/api/v1/stock-counts/[countId]/reconciliation/route';
 import '@/app/api/v1/stock-counts/[countId]/cancellation/route';
+// P1-32 preparatory slice 2 — item barcodes and packaging identifiers.
+import '@/app/api/v1/items/[itemId]/identifiers/route';
+import '@/app/api/v1/items/[itemId]/identifiers/[identifierId]/retirement/route';
+import '@/app/api/v1/items/[itemId]/internal-barcode/route';
+import '@/app/api/v1/items/[itemId]/label/route';
+import '@/app/api/v1/barcodes/[value]/route';
 
 // Phase 1-22 — billing, payment, delivery and warranty.
 //

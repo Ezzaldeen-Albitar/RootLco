@@ -98,6 +98,12 @@ export const BODYLESS = Object.freeze({
     'posting carries nothing but the receipt in the path and its version as If-Match',
   'inv.stock-count-reconcile':
     'reconciliation carries nothing but the count in the path and the caller as actor',
+  // P1-32 preparatory slice 2. Retirement names the item and the identifier in the
+  // path; allocation names the item. The internal code is allocated, never sent.
+  'inv.item-identifier-retire':
+    'retirement carries nothing but the item and the identifier in the path and the caller as actor',
+  'inv.item-barcode-assign':
+    'allocation carries nothing but the item in the path; the code comes from the tenant counter',
 });
 
 /** Field-level omissions the web side has decided, with reasons. Empty today. */
@@ -153,6 +159,10 @@ export const PENDING_MIRRORS = Object.freeze({
     'PENDING: P1-32 preparatory inventory slice 1 is Backend and Database only; the inventory screens that send this (slice 2, same branch) owe the mirror',
   'inv.stock-transfer-receive':
     'PENDING: P1-32 preparatory inventory slice 1 is Backend and Database only; the inventory screens that send this (slice 2, same branch) owe the mirror',
+  // P1-32 preparatory slice 2 (item identifiers) is Backend and Database only; the
+  // barcode screens owe this mirror and must delete this entry in that change.
+  'inv.item-identifier-add':
+    'PENDING: P1-32 preparatory slice 2 (item identifiers) is Backend and Database only; the barcode screens that send this owe the mirror',
   // The `sal` writes entered this scope with W6, which mirrors the invoice
   // create and cancel bodies. Payments belong to W7 (canonical plan §4); credit
   // notes are sent by no P1-30 screen.

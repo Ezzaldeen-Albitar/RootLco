@@ -11,7 +11,7 @@
  * the movement ledger, balances, reservations, opening batches, adjustments, part
  * issues and returns, damaged stock, customer-supplied parts, external-purchase
  * references, stock transfers, goods receipts with their cost history, and stock
- * counts.
+ * counts, and item barcodes and packaging identifiers.
  *
  * ## What no other module may do
  *
@@ -56,6 +56,7 @@ import { InventoryTransferService } from './application/inventory-transfer-servi
 import { InventoryReceiptService } from './application/inventory-receipt-service';
 import { InventoryAdjustmentService } from './application/inventory-adjustment-service';
 import { InventoryCountService } from './application/inventory-count-service';
+import { InventoryIdentifierService } from './application/inventory-identifier-service';
 
 export type {
   AdjustmentListRow,
@@ -64,6 +65,7 @@ export type {
   CostLayerRow,
   GoodsReceiptLineRow,
   GoodsReceiptRow,
+  ItemIdentifierRow,
   ItemCategoryRow,
   ItemCostSummaryRow,
   ItemListFilter,
@@ -74,6 +76,7 @@ export type {
   OpeningBatchHeaderRow,
   OpeningLineRow,
   ReservationRow,
+  ResolvedIdentifierRow,
   StockBalanceRow,
   StockCountLineRow,
   StockCountListRow,
@@ -86,6 +89,14 @@ export type {
 } from './data/inventory-repository';
 
 export type { TransferListView, TransferView } from './application/inventory-transfer-service';
+
+export type {
+  BarcodeResolutionView,
+  ItemIdentifierListView,
+  ItemIdentifierView,
+  ItemIdentifierWriteView,
+  ItemLabelView,
+} from './application/inventory-identifier-service';
 
 export type {
   CostLayerView,
@@ -158,19 +169,23 @@ export type {
 export {
   ADJUSTMENT_DECISIONS,
   ADJUSTMENT_STATES,
+  BARCODE_SYMBOLOGIES,
   CATEGORY_CODE_FORMAT,
   COST_LAYER_SOURCE_KINDS,
   CUSTODY_STATES,
   DAMAGE_DISPOSITIONS,
   DIRECTIONS,
+  ENTERABLE_IDENTIFIER_KINDS,
   EXTERNAL_PURCHASE_STATES,
   GOODS_RECEIPT_STATES,
+  IDENTIFIER_KINDS,
   ITEM_LIFECYCLE_STATES,
   ITEM_TYPES,
   InventoryRuleError,
   LOCATION_CODE_FORMAT,
   LOCATION_TYPES,
   MAX_DESCRIPTION,
+  MAX_IDENTIFIER_VALUE,
   MAX_NAME,
   MAX_REASON,
   MOVEMENT_REFERENCE_MATRIX,
@@ -193,15 +208,19 @@ export {
   assertReservationMatchesIssue,
   assertTransferEndpoints,
   assertWorkOrderAcceptsParts,
+  barcodeSymbologyFor,
   isLegalMovementReference,
   type AdjustmentDecision,
   type AdjustmentState,
+  type BarcodeSymbology,
   type CostLayerSourceKind,
   type CustodyState,
   type DamageDisposition,
   type Direction,
+  type EnterableIdentifierKind,
   type ExternalPurchaseState,
   type GoodsReceiptState,
+  type IdentifierKind,
   type ItemLifecycleState,
   type ItemType,
   type LocationType,
@@ -229,8 +248,9 @@ export const inventoryModule = composeModule({
   create: () => {
     const repository = new InventoryRepository();
     const stock = new InventoryStockService(repository);
+    const reads = new InventoryReadService(repository);
     return {
-      reads: new InventoryReadService(repository),
+      reads,
       stock,
       intake: new InventoryIntakeService(repository),
       // The master data every movement is keyed on (P1-30 corrective slice):
@@ -252,6 +272,10 @@ export const inventoryModule = composeModule({
       receipts: new InventoryReceiptService(repository, stock),
       adjustments: new InventoryAdjustmentService(repository, stock),
       counts: new InventoryCountService(repository, stock),
+      // P1-32 preparatory slice 2. Barcodes and packaging identifiers: catalogue
+      // reference data that moves no stock. Composes `reads` only so a scan can
+      // report availability through the one read that already authorizes a branch.
+      identifiers: new InventoryIdentifierService(repository, reads),
     };
   },
 });

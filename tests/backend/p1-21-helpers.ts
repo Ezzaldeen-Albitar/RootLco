@@ -42,6 +42,8 @@ export const EXTERNAL_PURCHASE_RECORD = 'inv.external_purchase.record';
 export const AUDIT_READ = 'inv.audit.read';
 /** Needed to create the work orders stock is issued to. */
 export const WORK_ORDER_READ = 'wo.work_order.read';
+/** P1-32 preparatory slice 2: the catalogue authority identifier writes require. */
+export const ITEM_MANAGE = 'inv.item.manage';
 
 const ALL_INVENTORY = [
   ITEM_READ,
@@ -189,6 +191,41 @@ export const INV_TENANT_B: Principal = {
   permissions: ALL_INVENTORY,
 };
 
+/**
+ * P1-32 preparatory slice 2. Every inventory permission plus `inv.item.manage`,
+ * UNRESTRICTED — the tenant-wide catalogue authority an identifier write requires.
+ */
+export const INV_CATALOG: Principal = {
+  roleId: 'e1000000-0000-4000-8000-000000000171',
+  userId: 'e1000000-0000-4000-8000-000000000172',
+  subject: 'fx_p1_21_catalog',
+  tenantId: TENANT_A,
+  permissions: [...ALL_INVENTORY, ITEM_MANAGE],
+};
+
+/**
+ * The same authority scoped to branch A1 only. An identifier resolves its item in
+ * every branch, so a branch-scoped `inv.item.manage` must be refused.
+ */
+export const INV_CATALOG_SCOPED_A1: Principal = {
+  roleId: 'e1000000-0000-4000-8000-000000000181',
+  userId: 'e1000000-0000-4000-8000-000000000182',
+  subject: 'fx_p1_21_catalog_scoped_a1',
+  tenantId: TENANT_A,
+  permissions: [...ALL_INVENTORY, ITEM_MANAGE],
+  scope: { companyId: COMPANY_A1, branchId: BRANCH_A1 },
+  grantId: 'e1000000-0000-4000-8000-0000000001f3',
+};
+
+/** Tenant B with the same unrestricted catalogue authority: a refusal is the tenant boundary. */
+export const INV_TENANT_B_CATALOG: Principal = {
+  roleId: 'e1000000-0000-4000-8000-000000000191',
+  userId: 'e1000000-0000-4000-8000-000000000192',
+  subject: 'fx_p1_21_tenant_b_catalog',
+  tenantId: TENANT_B,
+  permissions: [...ALL_INVENTORY, ITEM_MANAGE],
+};
+
 export const P1_21_PRINCIPALS: readonly Principal[] = [
   INV_FULL,
   INV_APPROVER,
@@ -198,6 +235,9 @@ export const P1_21_PRINCIPALS: readonly Principal[] = [
   INV_PERMISSION_ELSEWHERE,
   INV_COMPANY_SCOPED,
   INV_TENANT_B,
+  INV_CATALOG,
+  INV_CATALOG_SCOPED_A1,
+  INV_TENANT_B_CATALOG,
 ];
 
 let admin: Pool;
@@ -773,6 +813,8 @@ export async function cleanP1_21Fixtures(): Promise<void> {
     `DELETE FROM inv.goods_receipts WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.item_cost_layers WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.stock_transfers WHERE tenant_id IN ($1,$2)`,
+    // P1-32 preparatory slice 2: identifiers cite an item and a unit below.
+    `DELETE FROM inv.item_identifiers WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.stock_movements WHERE tenant_id IN ($1,$2)`,
     // After the movements that cite them: a top-up seed approves an adjustment,
     // and a leftover row would keep the item and location rows below undeletable.

@@ -2,7 +2,7 @@
   "$schema": "./classification.schema.json",
   "description": "P1-10-SEC — Service Catalog / Pricing / Quotation / Inventory personal-and-financial-data classification registry. Restricted = cost/margin fields gated by inv.cost.view. Prices and quotation totals are operational (internal). No restricted column is searchable.",
   "allowedClassifications": ["public", "internal", "restricted", "secret"],
-  "columnCount": 696,
+  "columnCount": 712,
   "columns": {
     "inv.customer_supplied_parts.branch_id": {
       "classification": "internal",
@@ -758,6 +758,86 @@
       "classification": "restricted",
       "searchable": false,
       "dataType": "numeric"
+    },
+    "inv.item_identifiers.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.item_identifiers.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_identifiers.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_identifiers.identifier_kind": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.item_identifiers.is_primary": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "inv.item_identifiers.item_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_identifiers.normalized_value": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.item_identifiers.pack_quantity": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "inv.item_identifiers.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "inv.item_identifiers.retired_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.item_identifiers.retired_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_identifiers.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_identifiers.unit_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_identifiers.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.item_identifiers.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_identifiers.value": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
     },
     "inv.item_master.archived_at": {
       "classification": "internal",

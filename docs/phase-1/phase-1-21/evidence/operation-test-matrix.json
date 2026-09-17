@@ -1,9 +1,9 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 42,
-    "publicApi": 42,
-    "operationDepth": 42,
+    "registered": 48,
+    "publicApi": 48,
+    "operationDepth": 48,
     "invocationOnly": 0,
     "pending": 0,
     "unitOnly": 0,
@@ -11,6 +11,38 @@
     "metadataOnly": 0
   },
   "operations": [
+    {
+      "id": "inv.barcode-resolve",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/barcodes/{value}",
+      "public": false,
+      "files": ["tests/backend/p1-32-item-identifiers.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
     {
       "id": "inv.customer-supplied-part-create",
       "surface": "public-api",
@@ -305,6 +337,50 @@
       "unitOnly": false
     },
     {
+      "id": "inv.item-barcode-assign",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/items/{itemId}/internal-barcode",
+      "public": false,
+      "files": ["tests/backend/p1-32-item-identifiers.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "audit", "idempotency", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial",
+        "isolation"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "inv.item-category-create",
       "surface": "public-api",
       "method": "POST",
@@ -416,6 +492,126 @@
         "service",
         "success"
       ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "inv.item-identifier-add",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/items/{itemId}/identifiers",
+      "public": false,
+      "files": ["tests/backend/p1-32-item-identifiers.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "audit", "idempotency", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial",
+        "isolation"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "inv.item-identifier-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/items/{itemId}/identifiers",
+      "public": false,
+      "files": ["tests/backend/p1-32-item-identifiers.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["success", "cross-tenant", "isolation"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "provided": ["authorization", "cross-tenant", "isolation", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "inv.item-identifier-retire",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/items/{itemId}/identifiers/{identifierId}/retirement",
+      "public": false,
+      "files": ["tests/backend/p1-32-item-identifiers.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "audit", "idempotency", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial",
+        "isolation"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "inv.item-label-data",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/items/{itemId}/label",
+      "public": false,
+      "files": ["tests/backend/p1-32-item-identifiers.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["success", "cross-tenant", "isolation"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "provided": ["authorization", "cross-tenant", "isolation", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
