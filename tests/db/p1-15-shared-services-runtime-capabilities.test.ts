@@ -440,7 +440,7 @@ describe('P1-15 / global security posture', () => {
     // ins_number_sequences_branch_authority, asserted in the write-policy
     // inventory below, so a branch created after provisioning can be given its
     // invoice, quotation and receipt runs.
-    expect(files.at(-1)).toBe('20260916090000_org_capacity_enforcement.sql');
+    expect(files.at(-1)).toBe('20260916093000_org_capacity_enforcement.sql');
   });
 
   it('migration 121 changes the shared surface DELIBERATELY, and the change is bounded', () => {

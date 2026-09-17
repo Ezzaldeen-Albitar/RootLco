@@ -1,5 +1,5 @@
 /**
- * Subscription capacity enforcement — migration 20260916090000.
+ * Subscription capacity enforcement — migration 20260916093000.
  *
  * `org.subscription_plans.capacity_limits` was validated on write and read by
  * nothing, so every ceiling a plan declared was decoration. These cases prove

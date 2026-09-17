@@ -541,7 +541,7 @@ describe('P1-15 / the runtime grant shape on shared.number_sequences', () => {
     expect(privileges?.upd_next_value).toBe(true);
     expect(privileges?.upd_current_period).toBe(true);
     expect(privileges?.upd_prefix_template).toBe(false);
-    // TRUE since migration 20260916090000, and narrower than the privilege reads:
+    // TRUE since migration 20260916093000, and narrower than the privilege reads:
     // ins_number_sequences_branch_authority admits only a per-branch row for a
     // real branch of the session's own tenant, under org.branch.manage. A branch
     // created after provisioning needs its invoice, quotation and receipt runs,

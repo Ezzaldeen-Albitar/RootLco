@@ -51,7 +51,7 @@ afterAll(async () => {
 /**
  * Runs `fn` while USER_A holds org.company.manage and org.branch.manage.
  *
- * Since migration 20260916090000 a runtime INSERT into org.legal_companies or
+ * Since migration 20260916093000 a runtime INSERT into org.legal_companies or
  * org.branches must also satisfy a RESTRICTIVE policy requiring the matching
  * manage permission. The shared fixture actor holds no permission at all, so
  * the cases below that exercise the runtime write path are given exactly that
