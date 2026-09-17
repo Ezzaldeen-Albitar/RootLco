@@ -695,6 +695,12 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   // the same shape as branch_status_history one line above.
   await deleteFrom('org.company_status_history');
   await deleteFrom('org.legal_companies');
+  // P1-32-PRE-023/024, children before parents: a receipt references its charge,
+  // a charge and an event reference the subscription, and all three are
+  // ON DELETE RESTRICT — so any of them surviving blocks the subscription delete.
+  await deleteFrom('org.subscription_receipts');
+  await deleteFrom('org.subscription_charges');
+  await deleteFrom('org.tenant_subscription_events');
   await deleteFrom('org.tenant_subscriptions');
   await deleteFrom('org.tenant_status_history');
   await admin.query('DELETE FROM org.tenants WHERE id = ANY($1::uuid[])', [tenantIds]);
