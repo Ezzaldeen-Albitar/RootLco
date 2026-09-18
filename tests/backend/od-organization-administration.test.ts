@@ -8,6 +8,7 @@
  *   org.company-create  POST /org/companies
  *   org.branch-create   POST /org/branches
  *   org.capacity-read   GET  /org/capacity
+ *   org.capacity-alert-read GET /org/capacity-alerts
  *   iam.invitation-create — now answers ERR-CAP-001 when the seats are spent.
  *
  * Every tenant here is created under the `odorg_` prefix and removed by that
@@ -25,6 +26,7 @@
  *   org.company-create: route service authorization success denial audit idempotency
  *   org.branch-create: route service authorization success denial cross-tenant isolation audit idempotency
  *   org.capacity-read: route service authorization success denial cross-tenant
+ *   org.capacity-alert-read: route service authorization success denial cross-tenant
  *   iam.invitation-create: route service authorization success
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -50,6 +52,10 @@ import {
   POST as branchCreateRoute,
 } from '@/app/api/v1/org/branches/route';
 import { CAPACITY_READ_OPERATION, GET as capacityReadRoute } from '@/app/api/v1/org/capacity/route';
+import {
+  CAPACITY_ALERT_READ_OPERATION,
+  GET as capacityAlertRoute,
+} from '@/app/api/v1/org/capacity-alerts/route';
 import {
   INVITE_OPERATION,
   POST as invitationCreateRoute,
@@ -570,6 +576,74 @@ describe('org.capacity-read', () => {
     asReader();
     const refused = await call<{ code: string }>(capacityReadRoute, {
       path: '/org/capacity',
+      method: 'GET',
+    });
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('ERR-IAM-001');
+  });
+});
+
+describe('org.capacity-alert-read', () => {
+  it('declares the same authority as the allowance read it narrows', () => {
+    expect(CAPACITY_ALERT_READ_OPERATION.id).toBe('org.capacity-alert-read');
+    expect(CAPACITY_ALERT_READ_OPERATION.permissions).toEqual(['org.tenant.read']);
+    // The two reads answer the same question at different widths, so a different
+    // code on one of them would mean an administrator could see the allowance and
+    // not the warning about it, or the other way round.
+    expect(CAPACITY_ALERT_READ_OPERATION.permissions).toEqual(CAPACITY_READ_OPERATION.permissions);
+  });
+
+  it('flags every kind alpha has reached, with the figures org.capacity_usage reports', async () => {
+    asAdmin();
+    const result = await call<{
+      asOf: string;
+      rule: { statement: string; nearLimitRatio: number };
+      alerts: { kind: string; used: number; limit: number; severity: string; headroom: number }[];
+      capacity: unknown;
+      subscription: { planCode: string } | null;
+    }>(capacityAlertRoute, { path: '/org/capacity-alerts', method: 'GET' });
+    expect(result.status).toBe(200);
+    expect(Number.isNaN(Date.parse(result.body.asOf))).toBe(false);
+    expect(result.body.rule.nearLimitRatio).toBe(0.9);
+
+    // Alpha sits exactly on all three ceilings: 2/2 companies, 1/1 branches and
+    // 3/3 users, so all three are `at-limit` with no headroom left.
+    expect(result.body.alerts).toEqual([
+      { kind: 'companies', used: 2, limit: 2, severity: 'at-limit', headroom: 0 },
+      { kind: 'branches', used: 1, limit: 1, severity: 'at-limit', headroom: 0 },
+      { kind: 'users', used: 3, limit: 3, severity: 'at-limit', headroom: 0 },
+    ]);
+    // The whole allowance travels with the alerts, so the arithmetic is checkable.
+    expect(result.body.capacity).toEqual({
+      companies: { used: 2, limit: 2 },
+      branches: { used: 1, limit: 1 },
+      users: { used: 3, limit: 3 },
+    });
+    expect(result.body.subscription?.planCode).toBe(code('plan'));
+  });
+
+  it('flags nothing for a tenant on no plan, because an unlimited kind cannot run out', async () => {
+    asBravo();
+    const result = await call<{ alerts: unknown[]; capacity: unknown; subscription: unknown }>(
+      capacityAlertRoute,
+      { path: '/org/capacity-alerts', method: 'GET' }
+    );
+    expect(result.status).toBe(200);
+    expect(result.body.alerts).toEqual([]);
+    // Not an empty answer: bravo holds two companies and a user, and every ceiling
+    // is null. Silence here is "nothing is limited", not "nothing was measured".
+    expect(result.body.capacity).toEqual({
+      companies: { used: 2, limit: null },
+      branches: { used: 0, limit: null },
+      users: { used: 1, limit: null },
+    });
+    expect(result.body.subscription).toBeNull();
+  });
+
+  it('refuses an actor without org.tenant.read', async () => {
+    asReader();
+    const refused = await call<{ code: string }>(capacityAlertRoute, {
+      path: '/org/capacity-alerts',
       method: 'GET',
     });
     expect(refused.status).toBe(403);
