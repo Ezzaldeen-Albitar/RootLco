@@ -11,8 +11,8 @@ scope_statement: 'This manual describes behaviour implemented at the commit name
 # Quick start — first login and first working day
 
 This is the short guide. It takes you from an empty installation to a vehicle handed back to its
-customer, using the application's own words. Longer explanations live in the other parts of the
-manual, named at the end of each step.
+customer with its invoice issued, using the application's own words. Longer explanations live in
+the other parts of the manual, named at the end of each step.
 
 **Three people appear in it, and they are not the same person.**
 
@@ -252,10 +252,12 @@ The provisioned administrator holds all four. **Where:** **Customers** <!-- nav.
 **Customers** <!-- crm.customers.title --> , then **Vehicles** <!-- nav.vehicles --> . **Steps:**
 
 1. Search first. The screen opens idle: **Search for a customer** <!-- crm.customers.search.idleTitle -->
-   — _"Enter a name or a customer reference, then choose Search. Results are not loaded until you
-   do."_ <!-- crm.customers.search.idleDescription --> Fill **Name** <!-- crm.customers.search.name -->
-   (_"Matches the start of the name"_) or **Customer reference** <!-- crm.customers.search.reference -->
-   (_"Exact match"_) and choose **Search** <!-- crm.customers.search.submit --> .
+   — _"Enter a name, a customer number or a phone number, then choose Search. Results are not
+   loaded until you do."_ <!-- crm.customers.search.idleDescription --> Fill **Name** <!-- crm.customers.search.name -->
+   (_"Matches any part of the name"_ <!-- crm.customers.search.nameHint --> ), **Phone number** <!-- crm.customers.search.phone -->
+   (_"The whole number, or at least its last seven digits."_ <!-- crm.customers.search.phoneHint --> )
+   or **Customer reference** <!-- crm.customers.search.reference --> (_"Exact match"_ <!-- crm.customers.search.referenceHint --> ),
+   then choose **Search** <!-- crm.customers.search.submit --> .
 2. If nobody matches, choose **Add an individual customer** <!-- crm.customers.search.createIndividual -->
    or **Add a company customer** <!-- crm.customers.search.createCompany --> .
 3. For a person, enter **Given name** <!-- crm.customers.create.givenName --> and **Family name** <!-- crm.customers.create.familyName -->
@@ -484,6 +486,101 @@ exception, confirm the vehicle capacity, or state the unit conversion. All five 
 
 ---
 
+## 10B. Take the parts off the shelf
+
+**Label:** IMPLEMENTED (UI) **Who:** `inv.stock.read` to open the screen, `inv.stock.operate` to
+reserve and to issue, `wo.work_order.read` to see the work-order header. **Where:** on the work
+order, follow **Parts issued for this work order** <!-- workOrders.detail.partsLink --> , which opens
+**Parts of a work order** <!-- inventory.parts.title --> at `/{locale}/inventory/parts`. There is no
+navigation entry for it; you arrive from the work order, or you enter the identifier under **Which
+work order?** <!-- inventory.parts.choose.heading --> and choose **Show parts** <!-- inventory.parts.choose.submit -->
+. **Steps:**
+
+1. Read **Required parts** <!-- inventory.parts.required.heading --> — _"What the work order says it
+   needs. A line recorded against an item can be issued from here."_ <!-- inventory.parts.required.explain -->
+2. Optionally hold the stock first: **Reserve for this job** <!-- inventory.parts.reserve.open --> →
+   **Reserve parts for this job** <!-- inventory.parts.reserve.heading --> — _"Reserving holds the
+   parts for this job. It is measured against the amount the job is allowed."_ <!-- inventory.parts.reserve.explain -->
+   → **Reserve** <!-- inventory.parts.reserve.submit --> . The screen answers _"The parts were
+   reserved."_ <!-- inventory.parts.reserve.recorded -->
+3. Issue them: the row action **Issue this part** <!-- inventory.parts.required.issueThis --> , or
+   **Issue parts** <!-- inventory.issue.open --> → **New issue** <!-- inventory.issue.heading --> .
+   Choose the **Reservation** <!-- inventory.issue.reservation --> if you made one — _"The parts
+   leave the chosen location for this work order. Choosing an active reservation fills the item and
+   location and consumes the reservation."_ <!-- inventory.issue.explain --> — otherwise enter
+   **Item identifier** <!-- inventory.issue.itemId --> , **Location** <!-- inventory.issue.location -->
+   and **Quantity** <!-- inventory.issue.quantity --> , then choose **Issue** <!-- inventory.issue.submit -->
+   .
+4. When the job is done with the material, settle what the draw opened: **The material this draw
+   opened** <!-- inventory.parts.request.heading --> → **Settle it** <!-- inventory.parts.request.close -->
+   , or **Withdraw it** <!-- inventory.parts.request.cancel --> with a **Reason** <!-- inventory.parts.request.reason -->
+   if the job changed.
+
+**Result:** _"The parts were issued."_ <!-- inventory.issue.success --> and the row joins **Parts
+issued** <!-- inventory.parts.issues.heading --> . **Restrictions:** both the reservation and the
+issue are measured against the allowance of step 10A — **"Measured against the chosen allowance."** <!-- inventory.parts.draw.usingRequirement -->
+— and without one both are refused. The issued list shows two figures, **Issued** <!-- inventory.parts.issues.column.quantity -->
+and **Returned so far** <!-- inventory.parts.issues.column.returned --> , and no net figure: _"Each
+issue shows what was issued and what has come back so far, as two figures the server holds; nothing
+is subtracted on this screen."_ <!-- inventory.parts.issues.explain --> There is no way to cancel an
+issue; a return undoes it (Part 5, §5.15). **If it goes wrong:** _"This work order lists no required
+parts."_ <!-- inventory.parts.required.none --> is an empty list, not a fault, and a row reading **No
+item recorded** <!-- inventory.parts.required.noItem --> cannot be issued from. The five material
+refusals and what to do about each are in Part 5, §5.26.7.
+
+**Screenshot:** no screenshot available at this version. Reserving, issuing and returning in full
+are Part 5, §5.13 to §5.15.
+
+---
+
+## 10C. Bill the work
+
+**Label:** IMPLEMENTED (UI) **Who:** `sal.invoice.manage` and `sal.finance.view` to preview and
+create; add `sal.invoice.issue` to issue. **Where:** on the work order, follow **Invoice for this
+work order** <!-- workOrders.detail.invoiceLink --> , or **Commerce** <!-- nav.group.commerce --> →
+**Billing** <!-- nav.billing --> at `/{locale}/invoices`. **Steps:**
+
+1. Read **What would be billed** <!-- invoices.preview.heading --> — _"Computed by the server from
+   the accepted quotation revision. Nothing is written until the invoice is created."_ <!-- invoices.preview.explain -->
+2. Choose **Create invoice** <!-- invoices.create.submit --> under **Create the invoice** <!-- invoices.create.heading -->
+   . **Payer identifier** <!-- invoices.create.payer --> is optional.
+3. Check **Lines** <!-- invoices.detail.lines.heading --> and **Totals** <!-- invoices.detail.totals -->
+   , then choose **Issue invoice** <!-- invoices.issue.action --> under **Actions** <!-- invoices.actions.heading -->
+   .
+
+**Result:** _"The invoice was created."_ <!-- invoices.create.success --> gives you a draft whose
+**Number** <!-- invoices.detail.number --> reads **Not issued** <!-- invoices.detail.notIssued --> ;
+_"The invoice was issued."_ <!-- invoices.issue.success --> allocates the number and fixes it.
+**Open balance** <!-- invoices.outstanding.heading --> then carries **Amount open** <!-- invoices.outstanding.amount -->
+. **Restrictions:**
+
+- **There is nothing to bill until a quotation revision has been accepted** — _"This work order has
+  no accepted quotation revision, so there is nothing to bill yet."_ <!-- invoices.preview.noAcceptedRevision -->
+  Quotations are Part 4C; they are not part of this first-day walk.
+- One invoice per work order. A draft carries no number; the number is allocated at issue, from the
+  branch's own sequence: _"Issuing allocates the number from the branch's sequence and fixes the
+  invoice. It is refused if the invoice changed since it was read, or if the branch has no invoice
+  numbering set up."_ <!-- invoices.issue.explain --> **Setting that sequence up is an OPERATOR
+  PROCEDURE in practice**: the numbering screen is gated on the settings-management permission,
+  which the standard administrator role does not carry (Part 6, §6.2.11).
+- **A draft can be cancelled; an issued invoice cannot.** _"Only a draft can be cancelled. The work
+  order can then be invoiced again."_ <!-- invoices.cancel.explain --> After issue the correction is
+  a credit note, and Part 6, §6.2.10 states what of that exists.
+- Amounts are hidden from an account without `sal.finance.view`: _"Amounts are not available to you;
+  the invoice exists with its status and dates."_ <!-- invoices.detail.totalsUnavailable -->
+
+**If it goes wrong:** _"An invoice already existed for this work order; nothing further was
+created:"_ <!-- invoices.create.replayed --> means your request arrived twice and nothing was
+duplicated. _"This invoice was already issued; nothing changed. Number"_ <!-- invoices.issue.replayed -->
+is the same story at issue. _"The invoice changed since it was read; it has been re-read. Check it
+and try again."_ <!-- invoices.detail.conflict --> means somebody else wrote to it; nothing of yours
+was written.
+
+**Screenshot:** no screenshot available at this version. Invoices, payments and the open balance in
+full are Part 6, §6.2 and §6.3.
+
+---
+
 ## 11. Hand the vehicle back
 
 **Label:** IMPLEMENTED (UI) **Who:** an account holding `sal.delivery.view`, `wo.work_order.read`
@@ -685,8 +782,17 @@ administrator's account is inserted active —
 apps/api/src/modules/iam/data/tenant-bootstrap-repository.ts insertActiveAccount — so the password
 is their only step), a corrected navigation table and branch step (Part 2 screens exist), and a new
 step 10A for the material a job is allowed to use
-(apps/web/src/features/inventory/components/MaterialRequirementsPanel.tsx). Everything else is
-carried unchanged from the reading below.
+(apps/web/src/features/inventory/components/MaterialRequirementsPanel.tsx).
+
+ADDENDUM 2026-09-18 — the day was missing two of its own steps, so step 10B (reserving and issuing
+the parts) and step 10C (creating and issuing the invoice) were added. Read for them:
+apps/web/src/features/work-orders/components/WorkOrderDetailScreen.tsx:195-219 for the two links off
+the work order, apps/web/src/i18n/messages/en.json keys inventory.parts.*, inventory.issue.* and
+invoices.* for every quoted label, apps/api/src/app/api/v1/stock-issues/route.ts and
+stock-reservations/route.ts for inv.stock.operate, and apps/api/src/app/api/v1/invoices/route.ts
+with invoices/[invoiceId]/issuance/route.ts for the invoice permissions. The customer-search wording
+quoted in step 7 was re-read from apps/web/src/i18n/messages/en.json crm.customers.search.*.
+Everything else is carried unchanged from the reading below.
 
 Sources (all read at develop commit beebc6c28c873f498fe0503161eb53caa107a9e3):
 - scratchpad/handover-map-B.json — navigation (48 rows), modules 0 (Authentication, session and profile),
