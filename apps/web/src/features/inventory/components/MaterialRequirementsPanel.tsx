@@ -22,6 +22,13 @@
  * source is required beside it, because a capacity with no source is a guess
  * wearing a number.
  *
+ * Before anything is sent, the form shows the confirmed specifications on file
+ * for the service kind being asked about, each with its unit and the source it
+ * was read from, so the operator can see what is able to answer instead of
+ * learning it only from the created row. It is a display and nothing else: no
+ * figure from it is copied into a field, and the panel names no winner, because
+ * the vehicle the server matches against is not held by this screen.
+ *
  * When no confirmed specification answers for the vehicle, the server does not
  * refuse, return zero, or invent a default: it stores the requirement as
  * `approval_required` naming the fact that is missing. The row says which fact
@@ -60,6 +67,7 @@ import {
   decideMaterialRequirement,
   listMaterialRequirements,
   listUnitsOfMeasure,
+  listVehicleSpecifications,
   readMaterialRequirement,
   recheckMaterialRequirement,
   requestMaterialException,
@@ -74,6 +82,7 @@ import {
   type MaterialRequirementCreateBody,
   type StockTarget,
   type UnitOfMeasureOption,
+  type VehicleSpecification,
 } from '../inventory-contract';
 import { OutcomeNote, PRIMARY_BUTTON, Qty, SECONDARY_BUTTON, UUID } from './shared';
 import { DANGER_BUTTON, PANEL, isQuantity } from './stock-operations';
@@ -82,6 +91,22 @@ import { DANGER_BUTTON, PANEL, isQuantity } from './stock-operations';
 type Listing =
   | { readonly phase: 'loading' }
   | { readonly phase: 'listed'; readonly rows: readonly MaterialRequirement[] }
+  | { readonly phase: 'failed'; readonly messageKey: string };
+
+/**
+ * The confirmed capacities on file for the service kind being asked about.
+ *
+ * This is shown BEFORE the request is sent, so the operator can see the
+ * capacities that can answer for this vehicle and where each was read from,
+ * rather than discovering the match only on the created row. It fills nothing
+ * in: the amount is never copied into a field from here, and the vehicle of
+ * this job — which this screen does not hold — is what the server matches
+ * against, so the panel states the candidates and never names a winner.
+ */
+type MatchState =
+  | { readonly phase: 'idle' }
+  | { readonly phase: 'loading' }
+  | { readonly phase: 'listed'; readonly rows: readonly VehicleSpecification[] }
   | { readonly phase: 'failed'; readonly messageKey: string };
 
 /** Which per-row form is open, if any. */
@@ -953,6 +978,62 @@ function CreateRequirementForm({
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
 
+  /*
+   * The confirmed capacities on file for the service kind typed above, read as
+   * soon as that kind is well formed. Only CONFIRMED ones are asked for,
+   * because only a confirmed capacity answers for a vehicle; a recorded one
+   * shown here would read as an allowance that exists when it does not.
+   *
+   * The read is delayed briefly so that typing a service kind does not issue a
+   * request per keystroke.
+   */
+  const [found, setFound] = useState<{
+    readonly condition: string;
+    readonly result: MatchState;
+  } | null>(null);
+  const condition = form.serviceCondition.trim();
+  const lookFor = form.basis === 'specification' && SERVICE_CONDITION.test(condition);
+  useEffect(() => {
+    if (!lookFor) return;
+    let live = true;
+    const timer = setTimeout(() => {
+      void listVehicleSpecifications({ serviceCondition: condition, status: 'confirmed' }).then(
+        (state) => {
+          if (!live) return;
+          setFound({
+            condition,
+            result:
+              state.status === 'ok'
+                ? { phase: 'listed', rows: state.data.items }
+                : {
+                    phase: 'failed',
+                    messageKey:
+                      state.status === 'denied'
+                        ? 'inventory.material.create.matchRefused'
+                        : 'inventory.material.create.matchUnavailable',
+                  },
+          });
+        }
+      );
+    }, 300);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [lookFor, condition]);
+
+  /*
+   * Derived, never stored: an answer belongs to the service kind it was asked
+   * about, so anything else is still being looked for. Holding a phase in state
+   * and setting it from the effect would render one service kind's capacities
+   * under another's name for a frame.
+   */
+  const match: MatchState = !lookFor
+    ? { phase: 'idle' }
+    : found !== null && found.condition === condition
+      ? found.result
+      : { phase: 'loading' };
+
   const errorFor = (name: string): string | undefined => {
     const key = errors[name] ?? outcome?.fieldErrors?.[name];
     return key ? translateDynamic(messages, key) : undefined;
@@ -1109,6 +1190,65 @@ function CreateRequirementForm({
             onChange={(event) => setForm((f) => ({ ...f, engineVariant: event.target.value }))}
             error={errorFor('engineVariant')}
           />
+          <div
+            aria-live="polite"
+            className="flex flex-col gap-2 rounded-md border border-border p-3 sm:col-span-2"
+          >
+            <h4 className="text-caption font-medium text-text-primary">
+              {translate(messages, 'inventory.material.create.matchHeading')}
+            </h4>
+            {match.phase === 'idle' ? (
+              <p className="text-caption text-text-muted">
+                {translate(messages, 'inventory.material.create.matchIdle')}
+              </p>
+            ) : match.phase === 'loading' ? (
+              <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
+            ) : match.phase === 'failed' ? (
+              <p role="alert" className="text-body text-error">
+                {translateDynamic(messages, match.messageKey)}
+              </p>
+            ) : match.rows.length === 0 ? (
+              <p className="text-body text-text-secondary">
+                {translate(messages, 'inventory.material.create.matchNone')}
+              </p>
+            ) : (
+              <>
+                <p className="text-caption text-text-muted">
+                  {translate(messages, 'inventory.material.create.matchExplain')}
+                </p>
+                <ul className="flex flex-col gap-1">
+                  {match.rows.map((row) => (
+                    <li key={row.id} className="text-body text-text-secondary">
+                      <span className="tabular-nums">
+                        <Qty value={row.capacity} /> <bdi>{row.uomCode}</bdi>
+                      </span>
+                      {' · '}
+                      <code className="font-mono text-caption" dir="ltr">
+                        {row.makeId}
+                      </code>
+                      {row.modelId ? (
+                        <>
+                          {' · '}
+                          <code className="font-mono text-caption" dir="ltr">
+                            {row.modelId}
+                          </code>
+                        </>
+                      ) : null}
+                      {row.engineVariant ? (
+                        <>
+                          {' · '}
+                          <bdi>{row.engineVariant}</bdi>
+                        </>
+                      ) : null}
+                      {' · '}
+                      {translate(messages, 'inventory.material.source.entered')}{' '}
+                      <bdi>{row.sourceReference}</bdi>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
           <p className="text-caption text-text-muted sm:col-span-2">
             {translate(messages, 'inventory.material.create.derivedNote')}
           </p>

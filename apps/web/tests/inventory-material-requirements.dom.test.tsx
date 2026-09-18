@@ -38,6 +38,7 @@ const cancelMaterialRequirement = vi.fn();
 const requestMaterialException = vi.fn();
 const decideMaterialException = vi.fn();
 const listUnitsOfMeasure = vi.fn();
+const listVehicleSpecifications = vi.fn();
 vi.mock('@/features/inventory/api', () => ({
   listMaterialRequirements: (...args: unknown[]) => listMaterialRequirements(...args),
   readMaterialRequirement: (...args: unknown[]) => readMaterialRequirement(...args),
@@ -48,6 +49,7 @@ vi.mock('@/features/inventory/api', () => ({
   requestMaterialException: (...args: unknown[]) => requestMaterialException(...args),
   decideMaterialException: (...args: unknown[]) => decideMaterialException(...args),
   listUnitsOfMeasure: (...args: unknown[]) => listUnitsOfMeasure(...args),
+  listVehicleSpecifications: (...args: unknown[]) => listVehicleSpecifications(...args),
 }));
 
 const notifyActionResult = vi.fn((..._args: unknown[]): boolean => true);
@@ -69,6 +71,8 @@ const SERVICE_LINE_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const SPECIFICATION_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const UOM_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const EXCEPTION_ID = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+const MAKE_ID = '12121212-1212-4121-8121-121212121212';
+const MODEL_ID = '13131313-1313-4131-8131-131313131313';
 
 const okRead = (data: unknown) => ({ status: 'ok' as const, data, correlationId: 'corr' });
 const listing = (rows: readonly unknown[]) =>
@@ -108,6 +112,38 @@ function requirement(over: Record<string, unknown> = {}) {
     remainingQuantity: '3.500',
     recordVersion: 1,
     createdAt: '2026-09-01T08:30:00Z',
+    ...over,
+  };
+}
+
+/**
+ * A confirmed capacity on file, as `inv.vehicle-specification-list` publishes
+ * one. The create form shows these beside the service kind being asked about so
+ * the operator sees what can answer before sending; nothing here is ever copied
+ * into a field.
+ */
+function specification(over: Record<string, unknown> = {}) {
+  return {
+    id: SPECIFICATION_ID,
+    makeId: MAKE_ID,
+    modelId: MODEL_ID,
+    modelYearFrom: null,
+    modelYearTo: null,
+    engineVariant: null,
+    serviceCondition: 'oil_change',
+    itemCategoryId: null,
+    capacity: '4.250',
+    uomId: UOM_ID,
+    uomCode: 'L',
+    sourceReference: 'Workshop manual, page 41',
+    status: 'confirmed',
+    createdBy: OTHER_USER_ID,
+    createdAt: '2026-08-01T08:00:00Z',
+    confirmedBy: USER_ID,
+    confirmedAt: '2026-08-02T08:00:00Z',
+    retiredBy: null,
+    retiredAt: null,
+    recordVersion: 1,
     ...over,
   };
 }
@@ -164,6 +200,7 @@ beforeEach(() => {
       items: [{ id: UOM_ID, scope: 'platform', code: 'L', name: 'Litre', dimension: 'volume' }],
     })
   );
+  listVehicleSpecifications.mockImplementation(async () => listing([specification()]));
 });
 
 describe('the allowance is the server figure', () => {
@@ -495,6 +532,66 @@ describe('asking for a requirement', () => {
       itemId: ITEM_ID,
       serviceCondition: 'oil_change',
     });
+  });
+
+  it('shows the confirmed capacities on file for the service kind, with each source', async () => {
+    /*
+     * The half that was missing: the operator saw no capacity at all until the
+     * request came back. Now the confirmed ones on file for the service kind
+     * are shown BEFORE it is sent, each with its unit and where it was read —
+     * and only the confirmed ones are asked for, because a recorded one answers
+     * for no vehicle.
+     */
+    const user = userEvent.setup();
+    renderPanel({ canRequest: true });
+
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.material.create.open'] as string })
+    );
+    const form = await screen.findByRole('form', {
+      name: EN['inventory.material.create.heading'] as string,
+    });
+    // Before a service kind is typed the form claims nothing about any capacity.
+    expect(
+      within(form).getByText(EN['inventory.material.create.matchIdle'] as string)
+    ).toBeVisible();
+    expect(listVehicleSpecifications).not.toHaveBeenCalled();
+
+    await user.type(
+      within(form).getByLabelText(labelled('inventory.material.create.serviceCondition')),
+      'oil_change'
+    );
+    await waitFor(() => expect(listVehicleSpecifications).toHaveBeenCalled());
+    expect(listVehicleSpecifications.mock.calls[0]?.[0]).toEqual({
+      serviceCondition: 'oil_change',
+      status: 'confirmed',
+    });
+    expect(await within(form).findByText('4.250')).toBeVisible();
+    expect(within(form).getByText('Workshop manual, page 41')).toBeVisible();
+    // Shown, never copied: this branch still offers no amount field to prefill.
+    expect(
+      within(form).queryByLabelText(labelled('inventory.material.create.allowanceQuantity'))
+    ).toBeNull();
+  });
+
+  it('says no confirmed capacity is on file rather than offering a figure', async () => {
+    const user = userEvent.setup();
+    listVehicleSpecifications.mockImplementation(async () => listing([]));
+    renderPanel({ canRequest: true });
+
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.material.create.open'] as string })
+    );
+    const form = await screen.findByRole('form', {
+      name: EN['inventory.material.create.heading'] as string,
+    });
+    await user.type(
+      within(form).getByLabelText(labelled('inventory.material.create.serviceCondition')),
+      'oil_change'
+    );
+    expect(
+      await within(form).findByText(EN['inventory.material.create.matchNone'] as string)
+    ).toBeVisible();
   });
 
   it('refuses an entered amount with no source, and sends both together once given', async () => {
