@@ -1,10 +1,10 @@
 ---
 manual: 'CRM User Manual'
 title: 'Part 4B — The workshop journey, the floor: work orders, diagnostics, technicians, quality'
-application_version: 'beebc6c28c873f498fe0503161eb53caa107a9e3'
-application_version_short: 'beebc6c2'
+application_version: '5b2c7840da1821f973438d5429665ef4448132f2'
+application_version_short: '5b2c7840'
 environment: 'LOCAL — a private single-machine environment at http://localhost:3100. Not public, not hosted.'
-date: '2026-09-16'
+date: '2026-09-18'
 scope_statement: 'This manual describes behaviour implemented at the commit named above, and nothing else.'
 ---
 
