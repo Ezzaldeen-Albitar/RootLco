@@ -1,12 +1,13 @@
 import { authorizedClient } from '@/lib/api/server-client';
 import type { ServerPage } from '@/components/data-table/use-server-table';
-import { STATUS_BY_KIND, type CursorPage, type ReadState } from '@/lib/api/read-operation';
-import type {
-  OrganizationDetail,
-  OrganizationRow,
-  PlatformStatistics,
-  SubscriptionCharge,
-  SubscriptionPlan,
+import { query, STATUS_BY_KIND, type CursorPage, type ReadState } from '@/lib/api/read-operation';
+import {
+  CHARGE_PAGE_SIZE,
+  type OrganizationDetail,
+  type OrganizationRow,
+  type PlatformStatistics,
+  type SubscriptionCharge,
+  type SubscriptionPlan,
 } from './types';
 
 /**
@@ -101,13 +102,26 @@ export async function listPlans(): Promise<
   return read<{ readonly items: readonly SubscriptionPlan[] }>('/api/v1/platform/plans');
 }
 
-/** An organisation's charges with their receipts: the first page the server returns. */
+/**
+ * One page of an organisation's charges with their receipts.
+ *
+ * `platform.charge-list` publishes a status filter and a cursor, and both are
+ * honoured here. Before they were, the panel read the first hundred charges and
+ * an operator with more than that had no way to reach the rest — the server was
+ * paging and nothing asked it for the next page.
+ *
+ * The filter and the cursor come from the address, which is why this stays a
+ * server read: neither is free text, so neither is the kind of value that must
+ * be kept out of history and proxy logs (SEC-002).
+ */
 export async function listCharges(
-  tenantId: string
+  tenantId: string,
+  page: { readonly status?: string | undefined; readonly cursor?: string | undefined } = {}
 ): Promise<ReadState<CursorPage<SubscriptionCharge>>> {
   if (!UUID.test(tenantId)) return { status: 'not-found', correlationId: null };
   return read<CursorPage<SubscriptionCharge>>(
-    `/api/v1/platform/organizations/${encodeURIComponent(tenantId)}/charges?limit=100`
+    `/api/v1/platform/organizations/${encodeURIComponent(tenantId)}/charges` +
+      query({ limit: CHARGE_PAGE_SIZE, status: page.status, cursor: page.cursor })
   );
 }
 

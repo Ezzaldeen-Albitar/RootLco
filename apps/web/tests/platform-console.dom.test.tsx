@@ -17,8 +17,9 @@ import { renderLtr, renderRtl } from './render';
  *     platform authority could satisfy it;
  *   - the subscription dialog sends the act as `kind` and the term as a whole
  *     number of months;
- *   - billing shows the server's outstanding figure and submits money as a
- *     canonical decimal STRING;
+ *   - billing shows the server's outstanding figure, submits money as a
+ *     canonical decimal STRING, and reaches the charges behind the page by the
+ *     server's own cursor under the status filter the operation publishes;
  *   - the overview labels the projected renewal value as an estimate, apart from
  *     the recorded amounts;
  *   - provisioning sends what was typed, offers a subscription only when the
@@ -915,6 +916,141 @@ describe('billing', () => {
     expect(screen.getByTestId('platform-billing-model')).toHaveTextContent(
       AR['platform.billing.recordedNote'] as string
     );
+  });
+
+  /*
+   * P1-32-PRE-OD-CONSOLE-006. Saying that more charges exist was the whole of
+   * the answer while there was no way to open them: the panel read one page and
+   * offered no link to the next, so an organisation with more charges than a
+   * page holds kept them out of reach. `platform.charge-list` pages by cursor
+   * and filters by status, and these cases pin that the links carry the server's
+   * own cursor and nothing invented.
+   */
+  it('offers the next page only with the cursor the server gave, and a way back to the first', () => {
+    const { unmount } = renderLtr(
+      <BillingPanel
+        locale="en"
+        messages={messages}
+        tenantId={TENANT}
+        charges={[charge]}
+        hasMore
+        nextCursor="cursor-2"
+        subscriptions={[]}
+        canManage={false}
+        defaultCurrency=""
+      />
+    );
+    expect(screen.getByTestId('platform-billing-next')).toHaveAttribute(
+      'href',
+      `/en/platform/organizations/${TENANT}?chargeCursor=cursor-2`
+    );
+    // The first page is where this reader already is, so nothing offers to
+    // return to it.
+    expect(screen.queryByTestId('platform-billing-first')).toBeNull();
+    unmount();
+
+    // A later page under a filter: back to the first page of the SAME filter,
+    // and no next link at the end of the set even though a cursor came with it.
+    renderLtr(
+      <BillingPanel
+        locale="en"
+        messages={messages}
+        tenantId={TENANT}
+        charges={[charge]}
+        hasMore={false}
+        nextCursor="cursor-3"
+        status="open"
+        paged
+        subscriptions={[]}
+        canManage={false}
+        defaultCurrency=""
+      />
+    );
+    expect(screen.getByTestId('platform-billing-first')).toHaveAttribute(
+      'href',
+      `/en/platform/organizations/${TENANT}?chargeStatus=open`
+    );
+    expect(screen.queryByTestId('platform-billing-next')).toBeNull();
+  });
+
+  it('draws no pager at all on a single unfiltered page', () => {
+    renderLtr(
+      <BillingPanel
+        locale="en"
+        messages={messages}
+        tenantId={TENANT}
+        charges={[charge]}
+        hasMore={false}
+        subscriptions={[]}
+        canManage={false}
+        defaultCurrency=""
+      />
+    );
+    expect(screen.queryByTestId('platform-billing-pager')).toBeNull();
+  });
+
+  it('asks for a chosen status from the first page, never with the previous set cursor', async () => {
+    renderLtr(
+      <BillingPanel
+        locale="en"
+        messages={messages}
+        tenantId={TENANT}
+        charges={[charge]}
+        hasMore
+        nextCursor="cursor-2"
+        paged
+        subscriptions={[]}
+        canManage={false}
+        defaultCurrency=""
+      />
+    );
+    const filter = screen.getByLabelText(new RegExp(`^${L('platform.billing.filterStatus')}`));
+    // Every status the operation accepts is offered, and nothing else.
+    expect([...(filter as HTMLSelectElement).options].map((option) => option.value)).toEqual([
+      '',
+      'open',
+      'settled',
+      'void',
+    ]);
+
+    await userEvent.selectOptions(filter, 'settled');
+    expect(push).toHaveBeenCalledWith(`/en/platform/organizations/${TENANT}?chargeStatus=settled`);
+    // A cursor belongs to the ordering of the set it came from, so choosing a
+    // status starts again rather than carrying it.
+    expect(String(push.mock.calls[0]?.[0])).not.toContain('chargeCursor');
+  });
+
+  it('says that no charge carries the chosen status, rather than that none was ever recorded', () => {
+    const { unmount } = renderLtr(
+      <BillingPanel
+        locale="en"
+        messages={messages}
+        tenantId={TENANT}
+        charges={[]}
+        hasMore={false}
+        status="void"
+        subscriptions={[]}
+        canManage={false}
+        defaultCurrency=""
+      />
+    );
+    expect(screen.getByText(L('platform.billing.noneWithStatus'))).toBeInTheDocument();
+    expect(screen.queryByText(L('platform.billing.none'))).toBeNull();
+    unmount();
+
+    renderLtr(
+      <BillingPanel
+        locale="en"
+        messages={messages}
+        tenantId={TENANT}
+        charges={[]}
+        hasMore={false}
+        subscriptions={[]}
+        canManage={false}
+        defaultCurrency=""
+      />
+    );
+    expect(screen.getByText(L('platform.billing.none'))).toBeInTheDocument();
   });
 });
 

@@ -755,6 +755,26 @@ describe('the console reads name their subject and carry only what was asked', (
     expect(paths[3]).toBe('/api/v1/platform/statistics');
   });
 
+  /*
+   * P1-32-PRE-OD-CONSOLE-006. The charge read asked for one page and never for
+   * the next, so `platform.charge-list` was paging into nothing. The status and
+   * the cursor are sent only when the operator asked for them, so an operator
+   * who asked for neither still gets the plain first page.
+   */
+  it('sends the charge status and the cursor only when they were asked for', async () => {
+    get.mockResolvedValue(okResult({ items: [], nextCursor: null, hasMore: false }));
+    await reads.listCharges(TENANT, { status: 'open', cursor: 'cursor-2' });
+    expect(String(get.mock.calls[0]?.[0])).toBe(
+      `/api/v1/platform/organizations/${TENANT}/charges?limit=100&status=open&cursor=cursor-2`
+    );
+
+    get.mockClear();
+    await reads.listCharges(TENANT, {});
+    expect(String(get.mock.calls[0]?.[0])).toBe(
+      `/api/v1/platform/organizations/${TENANT}/charges?limit=100`
+    );
+  });
+
   it('drops an organisation filter that is not an identifier rather than sending it', async () => {
     await tableReads.searchPlatformAudit(
       { from: '2026-08-18', to: '2026-09-17', action: '', organizationId: NOT_AN_ID },
