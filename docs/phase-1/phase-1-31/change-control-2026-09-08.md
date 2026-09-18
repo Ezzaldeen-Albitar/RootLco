@@ -10047,3 +10047,227 @@ result is claimed.**
 **The ownership gate reading above is the post-commit one**, on § 74.10's reason: it judges
 **committed** state against `origin/develop`, so a run over an uncommitted working tree proves nothing
 about the files this slice changes.
+
+## 76. The three dispositions the Owner's carry-forward EXCLUDED, read against the work merged since (2026-09-18)
+
+**Dated section, appended 2026-09-18. Baseline:** protected `develop`
+**`3b50f26c02bf658d3b83f09b766cfa364bb0425e`**, the merge of pull request #417. **Measured at that
+head by static read only.**
+
+**Why it exists.** **D-33** carried forward the 47 open dispositions "with their restrictions
+preserved" and, on the Owner's own exclusion — the instruction "creates no new acceptance of an
+unresolved critical defect or an unresolved security/isolation blocker" — **three rows were marked NOT
+COVERED BY O-3**: **CC-56 (b)**, **CC-60 (d)** and **CC-63 (a)**
+([`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md) § 2.1; § 75.3 above). Seven pull
+requests have merged since the head those decisions were recorded against — **#411, #412, #413, #414,
+#415, #416, #417**. This section asks one question of each of the three, and answers it from the tree:
+**does the merged work discharge the obligation, in whole or in part?**
+
+**What this section is not.** **It closes no row, marks nothing fixed or completed, moves no state
+cell, moves no task-matrix row, re-classifies nothing and re-derives no figure.** It **raises no new
+identifier**: it reports no finding of its own, and the one stale citation it measures is handled at
+§ 76.3 as a **mechanical reference repair under D-35**, **PROPOSED and not applied**, on the precedent
+of the two repairs already recorded at § 43.3 and § 69.7. **No certification and no clearance is
+issued, implied or inferred; the nine decision fields at
+[`certification-and-clearance-packet.md`](./certification-and-clearance-packet.md) § 7 stay EMPTY;
+gate conditions 2 and 3 stay unsatisfied; no review is described as independent; and no signature is
+written on anybody's behalf.** **No test tier, build, migration, database operation, browser tier or
+hosted job was run to produce it.**
+
+**The three facts stay separate throughout**, on the Owner's instruction: the Owner's **conditional
+decision** exists and is the Owner's; the nine **QA and Security determinations** are **absent**; and
+the **formal P1-G31 prerequisites** are **not satisfied**.
+
+### 76.1 CC-56 (b) — six open sites outside this phase whose refusal discloses whether the target exists
+
+**The register's own text, quoted from the carry table at
+[`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md) § 2.1:**
+
+> "the same defect survives outside this phase's operation set" — six open sites answer a refusal that
+> discloses whether the target exists (§ 66.9, rows 1 and 3 – 7)
+
+with the owner cell "the lane that owns P1-30 inventory master data (row 1); the IAM lane (rows 3, 4,
+5, 6, 7)", the restriction "none of the six is changed; each is a decision by cited authority for the
+lane that owns it, not a code normalised by a slice passing through", and the destination "its
+existing owner — two lanes, named above".
+
+**The obligation that remains.** Each of the six sites is a **contract decision** for the lane that
+owns it, taken against **CC-14 § 2** the way § 66.3 takes it, and under **D-27**: "Correct
+implementation or documentation according to that authority; do not normalize codes merely for
+numerical consistency." Nothing is owed by P1-31 and nothing may be normalised in passing.
+
+**Does the work merged in #411 … #417 discharge it? NO — not in whole, and not in part.** Measured at
+`3b50f26c`:
+
+| § 66.9 row | site, re-read at this head                                                                                  | what it answers at this head                                                | moved by #411 … #417?                                                                                                                                                    |
+| ---------- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1          | the five P1-30 body-scoped creates                                                                          | **still not established**, exactly as § 66.9 records                        | **no.** `apps/api/src/app/api/v1/stock-locations/route.ts` changed only its accepted `locationType` enum; `InventoryCatalogService.createLocation` (`:388`) is unchanged |
+| 3          | `apps/api/src/modules/iam/application/access-administration-service.ts`**:681** — `createApprovalLimit`     | `404 ERR-RES-001` "Company not found in this tenant"                        | **no.** Identical text at the identical line                                                                                                                             |
+| 4          | the same file **:776** — `assertScopeBelongsTogether` (`:771`), company arm, reached from `:415` and `:552` | `404 ERR-RES-001` "Company not found in this tenant"                        | **no.** Identical text at the identical line                                                                                                                             |
+| 5          | the same file **:781** — the branch arm                                                                     | `404 ERR-RES-001` "Branch not found in this tenant"                         | **no.** Identical text at the identical line                                                                                                                             |
+| 6          | the same file **:786** — the owner-mismatch arm                                                             | **`422 ERR-VAL-001`**, `body.branchId` / `branch_company_mismatch`          | **no.** Identical text                                                                                                                                                   |
+| 7          | `apps/api/src/modules/iam/application/organization-settings-service.ts`**:374**, branch sibling at **:382** | `404 ERR-RES-001` "Company not found in this tenant" / "Branch not found …" | **no.** Identical text at the identical lines                                                                                                                            |
+
+The IAM module did change under #413 — `organization-administration-service.ts`,
+`tenant-bootstrap-service.ts`, `invitation-service.ts` and their repositories all gained code — but
+**neither `access-administration-service.ts` nor `organization-settings-service.ts` is touched by any
+of the seven merges**, and every line anchor § 66.9 states still resolves to the sentence it states.
+**Row 2 needs no change and needed none**: `organization-administration-service.ts` `notFound()`
+returns `ERR-IAM-001`, and it still does.
+
+**What is still owed, and by whom.** Unchanged from § 66.9: **rows 3, 4, 5, 6 and 7 are owed by the
+IAM lane**, and **row 1 by the lane that owns P1-30 inventory master data**. Each is one contract
+decision against CC-14 § 2 — four NOT-FOUND answers, one `422`, and one answer that no test pins —
+taken by the owning lane, with **CC-56 (d)** moving alongside row 1 because "the test and the decision
+should move together, in that lane". **The Owner's carry-forward does not reach this row, and nothing
+here downgrades, closes or reclassifies it.**
+
+**No closure text is proposed, because nothing is discharged.**
+
+### 76.2 CC-63 (a) — the download authorization does not refuse a branch-scoped file-access grant
+
+**The register's own text, quoted from the § 72.6 disposition row:**
+
+> **the download authorization does not refuse a caller whose file-access grant is scoped to another
+> branch** — one local probe on the disposable database: 200 with a signed URL; the operation is
+> documented at `tenant` scope and evaluated by the tenant-wide `iam.has_permission` … **recorded
+> limitation of the documented tenant-scope design**; no canonical, decision or P1-31 text requires or
+> claims branch scoping; carried for the security certifier to weigh
+
+with the owner cell "security certification review" and the destination "the security determination,
+which does not exist at this head".
+
+**The obligation that remains.** Not a repair: the row is **carried for the security certifier to
+weigh** as a disclosed input to **SEC-C2**. Its dated note of 2026-09-15 fixes exactly how far the
+committed proof reaches — **one case** — and states the residue in terms: "a document linked to a
+tenant-only entity — a business partner, a damage-map template or a vehicle — remains downloadable by
+any holder of the permission in the tenant."
+
+**Does the work merged in #411 … #417 discharge it? NO — not in whole, and not in part.** Measured at
+`3b50f26c`:
+
+- `apps/api/src/modules/shared-services/domain/attachment-policy.ts` is **unchanged**, and
+  `LINKABLE_ENTITY_TYPES` at `:42-52` still holds the **same nine** entity types. So **L-11**'s
+  denominator has not moved and no new link type widened the surface.
+- `apps/api/src/modules/shared-services/application/attachment-service.ts` is **unchanged**, including
+  the two allow-list checks at `:300` and `:859` and the visibility narrowing at `:812-813`.
+- `apps/api/src/app/api/v1/attachments/documents/[documentId]/download-authorizations/route.ts` is
+  **unchanged**. The permission declaration is still `tenant`-scoped.
+- The one committed branch-scope case is still the one the note names, now re-read at this head:
+  `tests/backend/p1-31-signature-download-refusal.test.ts`**:664** — "refuses a caller whose grant is
+  scoped to a branch that cannot see the linked work order" — which asserts `404 ERR-RES-001`, nothing
+  signed and nothing audited, **and in its own second half issues a `200` to the same caller for a
+  document linked to a business partner**, which is what shows the refusal was the linked entity's
+  visibility and not the permission. **That is the one case, and it is still one case.**
+
+**What is still owed, and by whom.** The **security determination SEC-C2**, by the designated human
+reviewer — which does not exist at this head, its field being **EMPTY**. Separately, whether the
+tenant-scope design should be narrowed at all is a **contract/product question that no canonical or
+decision text has asked**, and it is not raised here. **The Owner's carry-forward does not reach this
+row.**
+
+**No closure text is proposed, because nothing is discharged.**
+
+### 76.3 CC-60 (d) — the unissued certification and the unissued clearance
+
+**The register's own text, quoted from the § 70.8 disposition row:**
+
+> **gate conditions 2 and 3 had no items a named reviewer could answer** … **OPEN, and deliberately.**
+> **No certificate is issued and engineering cannot issue one.** The two roles are already held; what
+> is outstanding is an **unissued certification and an unissued clearance**. **Independence — Field 11
+> of the canonical plan, P1-EC-016 — stays open as a separate Owner question**
+
+with the owner cell "the assigned reviewer; the Owner", the restriction "engineering cannot issue
+either; the nine decision fields stay EMPTY", and the destination "the assigned reviewer's nine
+determinations. **D-32 appoints and authorizes and supplies none of them**".
+
+**The obligation that remains.** **Nine human determinations** — **QA-C1 … QA-C5** for gate condition
+2 and **SEC-C1 … SEC-C4** for gate condition 3 — each carrying, word for word, the disclosure sentence
+of [`certification-and-clearance-packet.md`](./certification-and-clearance-packet.md) § 2, which labels
+the act an **owner-authorized technical self-review** that **must not be represented as an independent
+external review** and leaves **P1-EC-016** open.
+
+**Does the work merged in #411 … #417 discharge it? NO — and it could not.** Measured at `3b50f26c`:
+
+- `docs/phase-1/phase-1-31/certification-and-clearance-packet.md` is **unchanged by all seven merges**,
+  and **the nine decision fields at its § 7 are EMPTY**.
+- `docs/governance/` is **unchanged**, so the role assignment, the self-review labelling rule and
+  **P1-EC-016** all stand exactly as they stood.
+- A determination is a **human act**. No merge can perform it, and none claims to.
+
+**What is still owed, and by whom.** The **nine determinations**, by **Eng. Ezzaldeen Al-Bitar** in
+the roles **D-32** retains him in. The material is assembled for him at
+[`determination-evidence-index-2026-09-18.md`](./determination-evidence-index-2026-09-18.md) and routed
+as one packet at [`reviewer-packet-2026-09-18.md`](./reviewer-packet-2026-09-18.md). **Assembling
+evidence is not a determination**, and neither document fills a field.
+
+**One mechanical reference repair, PROPOSED and NOT applied.** Under **D-35** — "Repair broken
+references mechanically where the evidence already exists" — and on the precedent of § 43.3 and
+§ 69.7. **§ 66.9 and the CC-56 (d) row both cite MD-X1 at
+`tests/backend/p1-30-inventory-master-data.test.ts`:685.** At `3b50f26c` the assertion
+`expect([403, 404]).toContain(status)` sits at **:689**: four lines were inserted earlier in the file
+by the merged work, which raised a permission-count expectation and its comment. **The evidence is
+unchanged — the same assertion, in the same case, with the same either/or — and only the anchor
+moved.** **PROPOSED text, for the register lane and pending the reviewer, to be added as a dated note
+beside each citation without altering the original words:**
+
+> _(2026-09-18 — mechanical reference repair under D-35, proposed: MD-X1's assertion is at
+> `tests/backend/p1-30-inventory-master-data.test.ts`:689 at `3b50f26c`. The citation `:685` was exact
+> at the head it was written against; the case, the assertion and the finding are unchanged.)_
+
+**It is not applied here**, no state cell moves for it, and **CC-56 (d)** stays exactly as its cell
+records it.
+
+### 76.4 The three, summarised
+
+| row           | discharged by #411 … #417? | what is still owed                                                      | by whom                                                   | state cell moved? |
+| ------------- | -------------------------- | ----------------------------------------------------------------------- | --------------------------------------------------------- | ----------------- |
+| **CC-56 (b)** | **no — nothing**           | one contract decision per site, six sites, against CC-14 § 2 under D-27 | the IAM lane (rows 3–7); the P1-30 inventory lane (row 1) | **no**            |
+| **CC-63 (a)** | **no — nothing**           | the SEC-C2 determination, weighing a one-case branch-scope proof        | the designated human reviewer                             | **no**            |
+| **CC-60 (d)** | **no — and it could not**  | the nine determinations, each carrying the § 2 disclosure sentence      | Eng. Ezzaldeen Al-Bitar, in the roles D-32 retains him in | **no**            |
+
+**All three remain NOT COVERED BY O-3**, on the Owner's own exclusion, and each keeps its identifier,
+its cell, its owner and its restriction exactly as this register holds them.
+
+### 76.5 What this section did NOT do
+
+- **It issued no certification and no clearance**, and it filled none of the nine decision fields.
+  **Gate conditions 2 and 3 are unsatisfied.**
+- **It described no review as independent**, it did not close **P1-EC-016**, and it signed for nobody.
+- **It closed no row, marked nothing fixed or completed, moved no state cell, no task-matrix row and
+  no total**, and it re-derived no figure.
+- **It raised no identifier** and renumbered nothing.
+- **It applied no reference repair.** The one at § 76.3 is **PROPOSED**.
+- **It recorded no unconditional Pass, no "100% verified" claim, no production-readiness claim and no
+  issued human certification.** The Owner's **CONDITIONAL PASS** of 2026-09-16 is the Owner's, is
+  recorded at **D-38**, and satisfies gate condition 4 and nothing else.
+- **`P1-31-FU-001` stays open, deferred and not built**, on § 75.4's own terms.
+- **It ran no test tier, no build, no migration, no database operation, no browser tier and no hosted
+  job**, and it claims no result of one.
+- **It authorised no promotion and moved no protected branch.** Promotion stays NOT eligible.
+
+### 76.6 Verification
+
+**Documentation gates only, every one of them LOCAL and static over the working tree with this section
+and its two companion documents present. No hosted result is claimed, and no tier that needs a
+database, a container or a browser was run.**
+
+| command                                                                                   | exit |
+| ----------------------------------------------------------------------------------------- | ---- |
+| `npx prettier --check` over the three documents this slice touches                        | 0    |
+| `npm run validate:encoding`                                                               | 0    |
+| `npm run validate:product-name`                                                           | 0    |
+| `npm run validate:p1-27-doc-counts`                                                       | 0    |
+| `npm run validate:p1-27-evidence`                                                         | 0    |
+| `npm run validate:generated-artifacts`                                                    | 0    |
+| `npm run validate:plain-language`                                                         | 0    |
+| `npm run validate:p1-24-register`                                                         | 0    |
+| `npm run validate:p1-27-closing-values` (check mode)                                      | 0    |
+| `npm run validate:p1-27-lifecycle`                                                        | 0    |
+| `npm run validate:p1-27-matrix`                                                           | 0    |
+| `npm run security:all` (tracked secrets, browser secrets, scope exclusions, no-fake-data) | 0    |
+
+**Two readings are NOT recorded here, and neither is claimed as taken.** The **phase-ownership** gate
+judges **committed** state against `origin/develop`, so on § 74.10's and § 75.10's reason it is read
+after the commit and not over a working tree. **No hosted check run of this branch is read or claimed
+anywhere in this section.**
