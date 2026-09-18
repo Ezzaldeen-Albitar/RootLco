@@ -838,8 +838,8 @@ a customer's vehicle. Booking records the requested time; confirming happens aft
 
 1. **"Company reference"** and **"Branch reference"** — _both required_.
 2. **"Customer"** <!-- appointments.book.requester --> — _required_. Use **"Search customers"** <!-- customerSelector.search -->
-   ; the hint is explicit about the limit: "Search by name or customer reference, then choose from
-   the results. Phone numbers and email addresses cannot be searched." <!-- customerSelector.hint -->
+   ; the hint states what can be searched: "Search by name, customer number or phone number, then
+   choose from the results. Email addresses cannot be searched." <!-- customerSelector.hint -->
    **"Choose a different customer"** <!-- customerSelector.change --> swaps the selection.
 3. **"Vehicle"** <!-- appointments.book.vehicle --> — _required_. The customer's vehicles are listed
    once the customer is chosen: "Choose the customer first; their vehicles are then listed here to

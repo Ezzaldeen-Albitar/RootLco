@@ -436,8 +436,8 @@ These are not your error. The screen does not exist, and looking harder will not
 ### 7.5.3 Mistakes of habit — IMPLEMENTED (UI)
 
 - **Nothing loaded because you did not search.** Customer and vehicle searches are deliberately
-  idle: "Enter a name or a customer reference, then choose Search. Results are not loaded until you
-  do."
+  idle: "Enter a name, a customer number or a phone number, then choose Search. Results are not
+  loaded until you do."
 - **You forgot to choose a branch.** The reception queue, work-order board, quality queue, delivery
   readiness queue, warranty list, stock screens, payments and every report run open on "Choose a
   branch" and show nothing until you answer. There is no all-branches view.
