@@ -298,11 +298,15 @@ function propsCarrying(node: unknown, prop: string): Record<string, unknown> | n
   return null;
 }
 
-function invokeConsole(route: ConsoleRoute, codes: readonly string[]) {
+function invokeConsole(
+  route: ConsoleRoute,
+  codes: readonly string[],
+  searchParams: Record<string, string> = {}
+) {
   PLATFORM_CODES = [...codes];
   return route({
     params: Promise.resolve({ locale: 'en', tenantId: CONSOLE_TENANT }),
-    searchParams: Promise.resolve({}),
+    searchParams: Promise.resolve(searchParams),
   });
 }
 
@@ -444,7 +448,38 @@ describe('the Platform Owner Console routes decide on their own platform code be
       P.billingRead,
     ]);
     expect(platformReads.listPlans).toHaveBeenCalledTimes(1);
-    expect(platformReads.listCharges).toHaveBeenCalledWith(CONSOLE_TENANT);
+    // The charge read takes the page the address asked for, which is nothing at
+    // all when the address carried neither parameter.
+    expect(platformReads.listCharges).toHaveBeenCalledWith(CONSOLE_TENANT, {
+      status: undefined,
+      cursor: undefined,
+    });
+  });
+
+  /*
+   * P1-32-PRE-OD-CONSOLE-006. The charge list is paged and filtered by the
+   * server, and the address is what carries which page and which status. A
+   * status the operation would refuse is dropped here rather than sent, so a
+   * hand-typed address costs no failed read and no error state.
+   */
+  it('organisation detail: carries the charge page from the address and drops a status the operation would refuse', async () => {
+    await invokeConsole(consoleRoutes.detail, [P.organizationRead, P.billingRead], {
+      chargeStatus: 'settled',
+      chargeCursor: 'cursor-2',
+    });
+    expect(platformReads.listCharges).toHaveBeenCalledWith(CONSOLE_TENANT, {
+      status: 'settled',
+      cursor: 'cursor-2',
+    });
+
+    platformReads.listCharges.mockClear();
+    await invokeConsole(consoleRoutes.detail, [P.organizationRead, P.billingRead], {
+      chargeStatus: 'every-status-there-is',
+    });
+    expect(platformReads.listCharges).toHaveBeenCalledWith(CONSOLE_TENANT, {
+      status: undefined,
+      cursor: undefined,
+    });
   });
 });
 
