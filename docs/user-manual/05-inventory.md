@@ -1860,7 +1860,10 @@ Read for this revision:
   minimumQty default 1) and AGED_TRANSIT_BOUNDS (minimumAgeDays default 7)
 - Alert routes: apps/api/src/app/api/v1/inventory-alerts/{low-stock,count-discrepancies,
   unusual-consumption,aged-in-transit}/route.ts and /api/v1/org/capacity-alerts/route.ts
-- Permission bundle: apps/api/src/modules/iam/domain/bootstrap-roles.ts
+- Permission bundle: apps/api/src/modules/iam/domain/bootstrap-roles.ts:417-444 — the ten inv.* codes
+  the tenant-administrator bundle carries at this head, which is what the table in 5.3 lists. The
+  older block below cites :357-372 for five codes; that citation was correct at the commit that block
+  names and is left exactly as written rather than re-based onto this head.
 - Absence of batch, lot and expiry: no column, operation or message anywhere under
   supabase/migrations/*inv_*, apps/api/src/modules/inventory or the inventory message keys records
   one; the expiry wording in supabase/migrations/20260723094000_inv_ledger.sql concerns RESERVATION
