@@ -59,6 +59,20 @@ function problemSchema(): JsonObject {
       retryAfterSeconds: { type: 'integer', minimum: 0 },
       contract: { type: 'string' },
       requiredPermissions: { type: 'array', items: { type: 'string' } },
+      overCapacity: {
+        type: 'array',
+        description:
+          'Every capacity kind a plan change would leave below current usage. Present on ERR-CAP-003 only.',
+        items: {
+          type: 'object',
+          required: ['kind', 'used', 'newLimit'],
+          properties: {
+            kind: { type: 'string', enum: ['companies', 'branches', 'users'] },
+            used: { type: 'integer', minimum: 0 },
+            newLimit: { type: 'integer', minimum: 0 },
+          },
+        },
+      },
       capacity: {
         type: 'object',
         description: 'Which subscription ceiling a write ran into. Present on ERR-CAP-001 only.',

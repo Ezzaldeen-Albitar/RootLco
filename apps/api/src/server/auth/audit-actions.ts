@@ -256,6 +256,13 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
   // operations declaring `privileged` that appended nothing for exactly that
   // reason. A declared class with no append call is a silent no-op.
   {
+    code: 'iam.tenant_administrator.invited',
+    class: 'privileged',
+    entityType: 'org.tenant',
+    description:
+      'The Platform Owner Console established an administrator for an existing organisation, or sent an outstanding invitation again. Recorded against the ORGANISATION rather than the account, because both outcomes are acts upon the organisation and a re-invitation writes no account at all; the account established, when there is one, is a detail of the record. Written in the operator home tenant carrying target_tenant_id, which is where an operator can find it.',
+  },
+  {
     code: 'org.company.created',
     class: 'privileged',
     entityType: 'org.legal_company',
@@ -1817,6 +1824,66 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     class: 'export',
     entityType: 'rpt.report_configuration',
     description: 'A bounded CSV report was generated under explicit scoped export permissions.',
+  },
+
+  // ---- Platform Owner Console (P1-32-PRE-023/024) -------------------------
+  //
+  // Every one of these is written by an explicit `appendAudit` call in the
+  // platform module's services, in the OPERATOR's home tenant, carrying
+  // `target_tenant_id` as a detail. The class is the declaration the route
+  // makes; the append is what makes it true. PRE-P1-29 Wave B shipped two
+  // control-plane operations that declared `privileged` and appended nothing
+  // for the life of the product, so the pair is written together here and in
+  // the service, and the backend proof asserts on the RECORD rather than on
+  // the declaration.
+  {
+    code: 'org.subscription_plan.created',
+    class: 'privileged',
+    entityType: 'org.subscription_plan',
+    description:
+      'A subscription plan version was added to the platform catalogue, with its entitlement document, capacity limits and — where the Platform Owner has configured one — its list price and term.',
+  },
+  {
+    code: 'org.subscription_plan.updated',
+    class: 'privileged',
+    entityType: 'org.subscription_plan',
+    description:
+      'A subscription plan version was amended. The plan code is immutable, so this never renames a plan: it changes what the version grants, what it costs, or whether it may still be assigned.',
+  },
+  {
+    code: 'org.tenant_subscription.changed',
+    class: 'privileged',
+    entityType: 'org.tenant_subscription',
+    description:
+      "An organisation's subscription was assigned, renewed, upgraded, downgraded or cancelled. The act and its justification are also recorded in org.tenant_subscription_events, which is the queryable trail; this record is the operator's own.",
+  },
+  {
+    code: 'org.subscription_charge.recorded',
+    class: 'privileged',
+    entityType: 'org.subscription_charge',
+    description:
+      'The Platform Owner recorded a subscription fee against an organisation. Platform revenue, never tenant revenue: this is money the organisation owes for using the product.',
+  },
+  {
+    code: 'org.subscription_charge.voided',
+    class: 'privileged',
+    entityType: 'org.subscription_charge',
+    description:
+      'A subscription charge was voided with a reason. Voiding is terminal and a settled charge cannot be voided, so this can only ever cancel an amount nobody has paid.',
+  },
+  {
+    code: 'org.subscription_receipt.recorded',
+    class: 'privileged',
+    entityType: 'org.subscription_receipt',
+    description:
+      'Money received against a subscription charge was recorded. Append-only: a correction is a further charge, never an edit, and the charge settles itself when the receipts reach its amount.',
+  },
+  {
+    code: 'platform.operator.authority_granted',
+    class: 'security',
+    entityType: 'iam.user_account',
+    description:
+      'Platform authority codes were granted to an existing operator account by an out-of-band operator act on a privileged connection. No product path writes iam.platform_grants, so this record and the genesis one are the only trail there is.',
   },
 ]);
 

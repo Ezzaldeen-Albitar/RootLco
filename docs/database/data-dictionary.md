@@ -275,6 +275,13 @@ NOT claimed implemented here.
 | `created_by`           | uuid                     | NO   | —                 | internal       |
 | `updated_at`           | timestamp with time zone | YES  | —                 | internal       |
 | `updated_by`           | uuid                     | YES  | —                 | internal       |
+| `list_price`           | numeric(18,4)            | YES  | —                 | internal       |
+| `currency_code`        | text                     | YES  | —                 | internal       |
+| `term_months`          | integer                  | YES  | —                 | internal       |
+| `display_name`         | text                     | YES  | —                 | internal       |
+
+The four commercial columns (P1-32-PRE-023) are configured through `platform.plan-create` /
+`platform.plan-update` and never seeded; `list_price` and `currency_code` are NULL together.
 
 ### `org.tenant_subscriptions`
 
@@ -294,6 +301,65 @@ NOT claimed implemented here.
 | `created_by`     | uuid                     | NO   | —                 | internal       |
 | `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
 | `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+### `org.tenant_subscription_events`
+
+**Scope:** tenant · **Retention class:** operational · Append-only trail of every act on a subscription (P1-32-PRE-023); tenant reads its own rows, Platform Owner appends.
+
+| Column            | Type                     | Null | Default           | Classification |
+| ----------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`              | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`       | uuid                     | NO   | —                 | internal       |
+| `subscription_id` | uuid                     | NO   | —                 | internal       |
+| `event_kind`      | text                     | NO   | —                 | internal       |
+| `from_plan_id`    | uuid                     | YES  | —                 | internal       |
+| `to_plan_id`      | uuid                     | YES  | —                 | internal       |
+| `effective_from`  | date                     | NO   | —                 | internal       |
+| `effective_to`    | date                     | YES  | —                 | internal       |
+| `reason`          | text                     | NO   | —                 | internal       |
+| `actor_id`        | uuid                     | YES  | —                 | internal       |
+| `correlation_id`  | uuid                     | YES  | —                 | internal       |
+| `created_at`      | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`      | uuid                     | NO   | —                 | internal       |
+
+### `org.subscription_charges`
+
+**Scope:** tenant (platform revenue, not tenant-facing) · **Retention class:** financial · Subscription fees the Platform Owner recorded against an organisation (P1-32-PRE-024); app_runtime holds no grant.
+
+| Column            | Type                     | Null | Default           | Classification |
+| ----------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`              | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`       | uuid                     | NO   | —                 | internal       |
+| `subscription_id` | uuid                     | YES  | —                 | internal       |
+| `amount`          | numeric(18,4)            | NO   | —                 | internal       |
+| `currency_code`   | text                     | NO   | —                 | internal       |
+| `due_on`          | date                     | NO   | —                 | internal       |
+| `description`     | text                     | NO   | —                 | internal       |
+| `status`          | text                     | NO   | 'open'::text      | internal       |
+| `void_reason`     | text                     | YES  | —                 | internal       |
+| `record_version`  | integer                  | NO   | 1                 | internal       |
+| `created_at`      | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`      | uuid                     | NO   | —                 | internal       |
+| `updated_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`      | uuid                     | YES  | —                 | internal       |
+
+### `org.subscription_receipts`
+
+**Scope:** tenant (platform revenue, not tenant-facing) · **Retention class:** financial · Append-only receipts against a platform subscription charge (P1-32-PRE-024); currency must equal the charge's.
+
+| Column          | Type                     | Null | Default           | Classification |
+| --------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`            | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`     | uuid                     | NO   | —                 | internal       |
+| `charge_id`     | uuid                     | NO   | —                 | internal       |
+| `amount`        | numeric(18,4)            | NO   | —                 | internal       |
+| `currency_code` | text                     | NO   | —                 | internal       |
+| `received_on`   | date                     | NO   | —                 | internal       |
+| `reference`     | text                     | YES  | —                 | internal       |
+| `method`        | text                     | NO   | —                 | internal       |
+| `notes`         | text                     | YES  | —                 | internal       |
+| `created_at`    | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`    | uuid                     | NO   | —                 | internal       |
 
 ### `org.legal_companies`
 

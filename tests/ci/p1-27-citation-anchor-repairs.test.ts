@@ -94,16 +94,16 @@ const MATRIX_REPAIRS: ReadonlyArray<Omit<Repair, 'doc'>> = [
   {
     citedAs: 'lib/api/client.ts',
     resolvesTo: WEB_CLIENT,
-    from: 806,
-    to: 807,
+    from: 808,
+    to: 809,
     anchor: 'state.conflict.blocked.title',
   },
   // SEC-003.NEGATIVE_OR_MUTATION_PROOF — the mapping the mutation rewrites.
   {
     citedAs: 'lib/api/client.ts',
     resolvesTo: WEB_CLIENT,
-    from: 757,
-    to: 757,
+    from: 759,
+    to: 759,
     anchor: 'state.denied.title',
   },
   // QA-002.IMPLEMENTATION_SURFACES — the declared error contract.
@@ -126,24 +126,24 @@ const MATRIX_REPAIRS: ReadonlyArray<Omit<Repair, 'doc'>> = [
   {
     citedAs: 'lib/api/client.ts',
     resolvesTo: WEB_CLIENT,
-    from: 806,
-    to: 807,
+    from: 808,
+    to: 809,
     anchor: 'state.conflict.blocked.title',
   },
   // QA-004.IMPLEMENTATION_SURFACES — the conflict-copy region.
   {
     citedAs: 'lib/api/client.ts',
     resolvesTo: WEB_CLIENT,
-    from: 759,
-    to: 807,
+    from: 761,
+    to: 809,
     anchor: 'state.conflict.blocked.title',
   },
   // QA-004.CONFLICT_STATE — the row's stated strongest evidence.
   {
     citedAs: 'lib/api/client.ts',
     resolvesTo: WEB_CLIENT,
-    from: 806,
-    to: 807,
+    from: 808,
+    to: 809,
     anchor: 'state.conflict.blocked.title',
   },
   // DOC-001.NEGATIVE_OR_MUTATION_PROOF — the deadline callback a mutation empties.
@@ -158,8 +158,8 @@ const MATRIX_REPAIRS: ReadonlyArray<Omit<Repair, 'doc'>> = [
   {
     citedAs: WEB_CLIENT,
     resolvesTo: WEB_CLIENT,
-    from: 503,
-    to: 503,
+    from: 505,
+    to: 505,
     anchor: 'isAbort',
   },
   // DOC-001.NEGATIVE_OR_MUTATION_PROOF — the key a mutation overwrites.
@@ -180,8 +180,8 @@ const REPAIRS: readonly Repair[] = [
     doc: 'docs/phase-1/phase-1-27/adversarial-round-five.md',
     citedAs: 'client.ts',
     resolvesTo: WEB_CLIENT,
-    from: 806,
-    to: 807,
+    from: 808,
+    to: 809,
     anchor: 'state.conflict.blocked.title',
   },
   {
@@ -196,8 +196,8 @@ const REPAIRS: readonly Repair[] = [
     doc: 'docs/phase-1/phase-1-27/independent-task-audit.md',
     citedAs: 'client.ts',
     resolvesTo: WEB_CLIENT,
-    from: 367,
-    to: 367,
+    from: 369,
+    to: 369,
     anchor: 'requiresIdempotencyKey',
   },
 ];

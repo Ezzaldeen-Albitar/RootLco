@@ -62,10 +62,13 @@ describe('every operation publishes the success status it returns', () => {
     // 412 with the P1-31 warranty status-history read (P-18), one further route
     // module whose single literal status the scanner resolves from the handler.
     // P1-31 P-12 adds one 200 export response.
-    // 416 with the Owner directive organisation administration: the company and
+    // 426 with the P1-32 Platform Owner Console backend (thirteen operations).
+    // 429 with the Owner directive organisation administration: the company and
     // branch creates co-locate a POST on two existing route modules, and the
     // capacity read is one new module.
-    expect(actual.size).toBe(416);
+    // 432 with the P1-32-PRE-151 organisation growth: three operations over three
+    // new route modules under the organisation the console is administering.
+    expect(actual.size).toBe(432);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -106,10 +109,15 @@ describe('every operation publishes the success status it returns', () => {
     // The P1-31 employee register (P-17) publishes four operations: the create
     // returns 201 (114 -> 115) and the other three — the list, the detail and the
     // status command — return 200.
+    // The P1-32 Platform Owner Console publishes thirteen operations: the plan,
+    // subscription, charge and receipt creates return 201 (115 -> 119) and the
+    // other nine return 200.
     // The Owner directive organisation administration publishes three: the
-    // company and branch creates return 201 (115 -> 117) and the capacity read
+    // company and branch creates return 201 (119 -> 121) and the capacity read
     // returns 200.
-    expect(counts[201]).toBe(117);
+    // The three growth operations all return 201: each of them either writes a
+    // row or issues an invitation, and a re-invitation is still an act.
+    expect(counts[201]).toBe(124);
     expect(counts[202]).toBe(1);
     // The two P1-30 opening-batch reads (S-17) are GETs returning 200, so
     // 264 -> 266 while 201 and 202 are unchanged.
@@ -140,9 +148,10 @@ describe('every operation publishes the success status it returns', () => {
     // GET returning 200 with the 201 and 202 counts unchanged. That pair not
     // moving is the assertion carrying weight: a ledger read that had shipped an
     // append beside it would show up here and nowhere else in this file.
-    // 297 -> 298 with the Owner directive capacity read, a GET returning 200;
+    // 297 -> 306 with the P1-32 console's nine 200s.
+    // 306 -> 307 with the Owner directive capacity read, a GET returning 200;
     // its two sibling creates move the 201 count above instead.
-    expect(counts[200]).toBe(298);
+    expect(counts[200]).toBe(307);
   });
 
   it('reads the handler, not the declaration', () => {

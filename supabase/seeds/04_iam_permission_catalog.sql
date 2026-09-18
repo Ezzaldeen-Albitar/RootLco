@@ -402,7 +402,25 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- ------------------------------------------------------------------------
   ('platform.organization.read',      'platform', 'Read any organization from the control plane', 'medium', '00000000-0000-4000-8000-000000000001'),
   ('platform.organization.provision', 'platform', 'Create a tenant and its first Owner',          'high',   '00000000-0000-4000-8000-000000000001'),
-  ('platform.organization.lifecycle', 'platform', 'Transition a tenant lifecycle status',         'high',   '00000000-0000-4000-8000-000000000001')
+  ('platform.organization.lifecycle', 'platform', 'Transition a tenant lifecycle status',         'high',   '00000000-0000-4000-8000-000000000001'),
+
+  -- ------------------------------------------------------------------------
+  -- P1-32-PRE-020 — the Platform Owner Console. Six further codes in the same
+  -- domain, resolved by the same predicate, mapped to NO role for the same
+  -- reason: a platform grant is an out-of-band operator act.
+  --
+  -- The split is by ACT rather than by screen, so revoking one authority
+  -- removes one capability and nothing else. `platform.organization.manage`
+  -- ships with the code and without a route: the operations that add a company
+  -- or a branch to an EXISTING organisation arrive in a later slice, and a code
+  -- seeded ahead of its route is held by nobody and reachable by nothing.
+  -- ------------------------------------------------------------------------
+  ('platform.organization.manage',    'platform', 'Administer an existing organization structure and its administrators', 'high',   '00000000-0000-4000-8000-000000000001'),
+  ('platform.subscription.manage',    'platform', 'Administer subscription plans and tenant assignments',                 'high',   '00000000-0000-4000-8000-000000000001'),
+  ('platform.billing.read',           'platform', 'Read platform subscription charges and receipts',                      'medium', '00000000-0000-4000-8000-000000000001'),
+  ('platform.billing.manage',         'platform', 'Record and void platform subscription charges and receipts',           'high',   '00000000-0000-4000-8000-000000000001'),
+  ('platform.statistics.read',        'platform', 'Read platform-wide statistics and operational health',                 'medium', '00000000-0000-4000-8000-000000000001'),
+  ('platform.audit.read',             'platform', 'Read the platform operator audit trail',                               'medium', '00000000-0000-4000-8000-000000000001')
 ON CONFLICT (permission_code) DO NOTHING;
 
 DO $$

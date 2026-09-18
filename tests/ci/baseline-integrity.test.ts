@@ -508,8 +508,13 @@ describe('the coverage include lists are pinned, because they are the denominato
     );
     expect(files.filter((file) => file.endsWith('.d.ts'))).toEqual([]);
     // P1-31 P-12 adds ReportExportService to the measured backend population.
-    // The Owner directive organisation administration adds capacity-failure.ts.
-    expect(files.length).toBe(292);
+    // P1-32-PRE-021..026 add seven platform-module files (three repositories and
+    // four services), so 291 -> 298.
+    // The Owner directive organisation administration adds capacity-failure.ts,
+    // so the merge of both holds 299.
+    // P1-32-PRE-151 adds iam/application/identity-compensation.ts, the one place
+    // the provider identity of a refused write is undone, so 299 -> 300.
+    expect(files.length).toBe(300);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -582,7 +587,13 @@ describe('the coverage include lists are pinned, because they are the denominato
      * The floors are untouched for the reason above: re-establishing them needs a
      * hosted measurement run, which these slices did not perform and do not claim.
      *
-     * The 290 above is these 289 plus `server/openapi/document.ts`, which the
+     * 296 with the P1-32 Platform Owner Console backend: SEVEN more, all in the
+     * platform module — `data/subscription-repository.ts`,
+     * `data/billing-repository.ts`, `data/insight-repository.ts` and the
+     * `application/` session, subscription, billing and insight services. The
+     * floors are untouched for the reason above.
+     *
+     * The 297 below is these 296 plus `server/openapi/document.ts`, which the
      * include list admits and `exclude` then removes; the two numbers moving
      * together by the same count is what says no file slipped in behind the
      * exclusion.
@@ -592,6 +603,6 @@ describe('the coverage include lists are pinned, because they are the denominato
      * database capacity refusal that both organisation creation and invitation
      * share. The floors stay untouched for the same reason.
      */
-    expect(instrumented.length).toBe(291);
+    expect(instrumented.length).toBe(299);
   });
 });

@@ -159,7 +159,7 @@ describe('the tree as it stands passes, and the run is not vacuous', () => {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     expect(out).toContain(
-      'P1-31 version sourcing: 11 guarded operation(s) in scope of 75 the contract guards, ' +
+      'P1-31 version sourcing: 11 guarded operation(s) in scope of 76 the contract guards, ' +
         '5 with a consumer, 6 pending one, 6 in-scope send(s), 5 adapter call site(s), ' +
         '24 versioned send(s) outside the subject.'
     );

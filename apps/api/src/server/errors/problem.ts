@@ -12,7 +12,7 @@
  * URL: no documentation host is provisioned (ADR-012), and publishing a URL that
  * 404s is worse than publishing a stable identifier.
  */
-import { type AppFailure, type CapacityDetail } from './app-failure';
+import { type AppFailure, type CapacityDetail, type CapacityShortfall } from './app-failure';
 import { type ErrorCode, errorDefinition } from './catalog';
 import { CORRELATION_HEADER } from '../observability/correlation';
 
@@ -43,6 +43,8 @@ export interface ProblemDocument {
   readonly requiredPermissions?: readonly string[];
   /** Which subscription ceiling was reached. Capacity refusals only. */
   readonly capacity?: CapacityDetail;
+  /** Every kind a plan change would leave over its ceiling. Plan refusals only. */
+  readonly overCapacity?: readonly CapacityShortfall[];
 }
 
 /** Builds the problem document for a failure. Reads no unsafe field. */
@@ -69,6 +71,7 @@ export function problemFor(failure: AppFailure, correlationId: string): ProblemD
       ? { requiredPermissions: details.requiredPermissions }
       : {}),
     ...(details.capacity !== undefined ? { capacity: details.capacity } : {}),
+    ...(details.overCapacity !== undefined ? { overCapacity: details.overCapacity } : {}),
   };
 }
 

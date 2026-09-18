@@ -81,6 +81,29 @@ export { ROLE_ORDERING } from './data/authorization-repository';
 export { AUDIT_ORDERING } from './data/audit-repository';
 export type { LoginResult, SessionSummary } from './application/authentication-service';
 export type { FirstOwnerBootstrap, FirstOwnerInput } from './application/tenant-bootstrap-service';
+/**
+ * The administrator-setup port (P1-32-PRE-151).
+ *
+ * The Platform Owner Console gives a LIVE organisation an administrator through
+ * the same service that gives a newborn one its first owner — the same address
+ * lock, the same identity rules, the same refusal recovery and the same seat
+ * ceiling. These are the shapes that cross the module boundary while it does so.
+ */
+export type {
+  AdministratorSetupInput,
+  AdministratorSetupResult,
+} from './application/tenant-bootstrap-service';
+/**
+ * The organisation-growth ports (P1-32-PRE-151): the inputs of the company and
+ * branch WRITES the console shares with `org.company-create` and
+ * `org.branch-create`, and the rows they return.
+ */
+export type {
+  BranchCreateInput,
+  BranchRecordRow,
+  CompanyCreateInput,
+  CompanyRecordRow,
+} from './data/organization-administration-repository';
 export {
   FIRST_OWNER_ROLE,
   TENANT_ADMINISTRATOR_ROLE,

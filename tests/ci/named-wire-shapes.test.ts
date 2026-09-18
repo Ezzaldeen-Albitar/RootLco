@@ -137,13 +137,23 @@ describe('every route body serialises a named type', () => {
     // be named `WarrantyStatusHistoryEntryView` as well — so `named` moves by one
     // and `composed` does not.
     // P1-31 P-12 adds the named ReportExportView response.
-    // 416 with the Owner directive organisation administration: the company
+    // 426 with the P1-32 Platform Owner Console backend: thirteen new bodies,
+    // every one a NAMED service return type, so `named` moves by thirteen — and
+    // by one more, because `platform.organization-read` now serialises the named
+    // `Page<OrganizationView>` from its service where it used to compose
+    // `{ items }` in the route, which is also why `composed` falls by one.
+    // 429 with the Owner directive organisation administration: the company
     // create serialises `CompanyResult`, the branch create `BranchResult` and the
     // capacity read `CapacityResult` — all NAMED — so `named` moves by three and
     // `composed` does not.
-    expect(summary.bodies).toBe(416);
-    expect(summary.named).toBe(363);
-    expect(summary.composed).toBe(53);
+    // 432 with the P1-32-PRE-151 organisation growth: the company add serialises
+    // `CompanyAddedView`, the branch add `BranchAddedView` and the administrator
+    // setup `AdministratorSetupResultView` — all NAMED, all carrying the target
+    // organisation beside the row, so `named` moves by three and `composed` does
+    // not.
+    expect(summary.bodies).toBe(432);
+    expect(summary.named).toBe(380);
+    expect(summary.composed).toBe(52);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);
   });

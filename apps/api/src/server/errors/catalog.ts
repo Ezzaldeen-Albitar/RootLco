@@ -46,6 +46,7 @@ export const ERROR_CODES = [
   'ERR-QMS-001',
   'ERR-CAP-001',
   'ERR-CAP-002',
+  'ERR-CAP-003',
   'ERR-SYS-001',
 ] as const;
 
@@ -375,6 +376,16 @@ const DEFINITIONS: Readonly<Record<ErrorCode, ErrorDefinition>> = Object.freeze(
     class: 'conflict',
     description:
       'The write would have grown the organisation while the tenant is suspended or closed, and org.assert_capacity_available refused it. Distinct from ERR-CAP-001, which means the allowance is spent: here there is no allowance to spend, because the organisation itself is not running. A caller cannot fix this by retrying or by changing the request.',
+  },
+  'ERR-CAP-003': {
+    code: 'ERR-CAP-003',
+    title: 'Plan capacity is below current usage',
+    status: 409,
+    owner: 'capacity',
+    retryable: false,
+    class: 'conflict',
+    description:
+      'The subscription plan the request would assign declares a ceiling below what the organisation already holds, so assigning it would leave the organisation over its own allowance on at least one kind. Reported per kind — `overCapacity` names every one of them with what is in use and what the new plan would permit — because an operator told only that a downgrade is too small would correct one kind and be refused for the next. Distinct from ERR-CAP-001, which is a single write meeting a ceiling that is already in force. The refusal is not absolute: an operator who states a reason may accept the over-capacity deliberately, after which existing records stay and the creation triggers go on refusing anything new.',
   },
   'ERR-SYS-001': {
     code: 'ERR-SYS-001',

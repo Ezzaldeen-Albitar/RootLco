@@ -238,13 +238,24 @@ export class OrganizationAdministrationRepository extends Repository {
     return toCompanyRecord(row);
   }
 
-  /** Whether the company is visible to THIS session, under sel_legal_companies_tenant. */
+  /**
+   * Whether the company is visible to THIS session, under
+   * `sel_legal_companies_tenant`.
+   *
+   * The tenant is named explicitly as well, and it is not redundant. On the
+   * request path RLS has already narrowed the row to the session's own
+   * organisation, so the term changes nothing; on the control plane the console
+   * read policies admit companies of EVERY tenant to an operator holding
+   * `platform.organization.read`, and without this term a company of another
+   * organisation would pass the reach check and then fail at
+   * `fk_branches_company` as a 500. The term makes it a denial instead.
+   */
   async companyIsReachable(db: DbHandle, companyId: string): Promise<boolean> {
     const row = await this.runOne<{ ok: boolean }>(
       db,
       `SELECT true AS ok FROM org.legal_companies
-        WHERE id = $1 AND deleted_at IS NULL AND archived_at IS NULL`,
-      [companyId]
+        WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL AND archived_at IS NULL`,
+      [companyId, db.context.principal.tenantId]
     );
     return row?.ok === true;
   }
