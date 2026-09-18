@@ -125,6 +125,32 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         scope: 'branch',
       },
       /*
+       * Attention (Owner directive, operational alerts): what is about to stop
+       * working — stock at its reorder level, counted differences, unusual
+       * consumption, consignments still in transit, and the subscription
+       * allowance.
+       *
+       * Gated on `inv.stock.read`, which four of the five cards declare. The
+       * fifth is `org.tenant.read` and the PAGE says so: a session holding only
+       * that code is not refused the screen, it simply sees the card its code
+       * answers for. A navigation gate names one code, as every other row here
+       * does, and naming the one that opens most of the screen is the honest
+       * choice.
+       *
+       * The icon is the attention glyph — the same one the duplicate queues use,
+       * and for the same stated reason: a list that needs a human decision is
+       * not the same thing as a list.
+       */
+      {
+        key: 'attention',
+        labelKey: 'nav.attention',
+        icon: 'duplicate-review',
+        href: '/attention',
+        permission: 'inv.stock.read',
+        status: 'available',
+        scope: 'branch',
+      },
+      /*
        * Walk-in intake — landed with `P1-28-FE-006`. Gated on
        * `crm.customer.read` because every operation the screen calls is a CRM
        * or Vehicle one: its first step is a customer search, and an operator

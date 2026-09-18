@@ -44,6 +44,29 @@ vi.mock('@/features/inventory/api', () => ({
   listItemCategories: (...args: unknown[]) => listItemCategories(...args),
   createReservation: (...args: unknown[]) => createReservation(...args),
   releaseReservation: (...args: unknown[]) => releaseReservation(...args),
+  /*
+   * The stock-signal indicator this screen mounts reads both alert lists. Its
+   * own behaviour is proved in `attention.dom.test.tsx`; here it answers with
+   * nothing to report so it cannot change what these cases are about.
+   */
+  readLowStockAlerts: async () => ({
+    status: 'ok',
+    data: {
+      asOf: '2026-09-18T09:00:00.000Z',
+      rule: { statement: 'rule', excludedLocationTypes: [] },
+      findings: { items: [], nextCursor: null, hasMore: false },
+    },
+    correlationId: null,
+  }),
+  readCountDiscrepancyAlerts: async () => ({
+    status: 'ok',
+    data: {
+      asOf: '2026-09-18T09:00:00.000Z',
+      rule: { statement: 'rule' },
+      findings: { items: [], nextCursor: null, hasMore: false },
+    },
+    correlationId: null,
+  }),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -414,6 +437,26 @@ describe('FE-009 — stock is read only for a named branch', () => {
     await waitFor(() => expect(listReservations).toHaveBeenCalled());
     expect(listReservations.mock.calls[0]?.[0]).toEqual(target);
     await waitFor(() => expect(listLocations).toHaveBeenCalledWith(target));
+  });
+
+  it('carries the branch stock signals beside the stock it is about, and only reads', async () => {
+    /*
+     * The Attention area is where somebody goes to look; this is what finds
+     * them while they are already on the inventory screen. It appears only
+     * once a branch is named — there is no claim to make about a branch nobody
+     * has chosen — and it offers one link and no control.
+     */
+    const user = userEvent.setup();
+    renderScreen({ canReadStock: true, canReadBranches: true });
+    expect(screen.queryByTestId('stock-alert-indicator')).toBeNull();
+    await chooseBranch(user);
+
+    const indicator = await screen.findByTestId('stock-alert-indicator');
+    expect(indicator).toHaveTextContent(EN['inventory.signals.quiet'] as string);
+    expect(
+      within(indicator).getByRole('link', { name: EN['inventory.signals.open'] as string })
+    ).toHaveAttribute('href', '/en/attention');
+    expect(within(indicator).queryAllByRole('button')).toHaveLength(0);
   });
 
   it('without org.branch.read, takes the branch as two identifiers and requests no list', async () => {

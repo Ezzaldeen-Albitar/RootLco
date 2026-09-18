@@ -56,6 +56,29 @@ vi.mock('@/features/inventory/api', () => ({
   // `./shared` and `./stock-operations` name these exports; this screen never calls them.
   listItemCategories: vi.fn(),
   listItems: vi.fn(),
+  /*
+   * The stock-signal indicator this screen mounts reads both alert lists. Its
+   * own behaviour is proved in `attention.dom.test.tsx`; here it answers with
+   * nothing to report so it cannot change what these cases are about.
+   */
+  readLowStockAlerts: async () => ({
+    status: 'ok',
+    data: {
+      asOf: '2026-09-18T09:00:00.000Z',
+      rule: { statement: 'rule', excludedLocationTypes: [] },
+      findings: { items: [], nextCursor: null, hasMore: false },
+    },
+    correlationId: null,
+  }),
+  readCountDiscrepancyAlerts: async () => ({
+    status: 'ok',
+    data: {
+      asOf: '2026-09-18T09:00:00.000Z',
+      rule: { statement: 'rule' },
+      findings: { items: [], nextCursor: null, hasMore: false },
+    },
+    correlationId: null,
+  }),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -193,6 +216,19 @@ describe('what a count shows', () => {
     expect(within(table).getByText('1 / 2')).toBeVisible();
     expect(within(table).getByText('1.000')).toBeVisible();
     expect(within(table).getByText(EN['inventory.countStatus.counting'] as string)).toBeVisible();
+  });
+
+  it('carries the branch stock signals beside the counts that raise half of them', async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    expect(screen.queryByTestId('stock-alert-indicator')).toBeNull();
+    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+
+    const indicator = await screen.findByTestId('stock-alert-indicator');
+    expect(indicator).toHaveTextContent(EN['inventory.signals.quiet'] as string);
+    expect(
+      within(indicator).getByRole('link', { name: EN['inventory.signals.open'] as string })
+    ).toHaveAttribute('href', '/en/attention');
   });
 
   it('shows snapshot, movements during the count, counted and variance, and says what is not counted', async () => {

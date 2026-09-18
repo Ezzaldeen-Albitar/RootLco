@@ -69,6 +69,9 @@ describe('the navigation model', () => {
       // Built in P1-28 (`P1-28-FE-001`): the branch calendar at
       // `/appointments`, flipped in the same change that landed the screen.
       'appointments',
+      // Owner directive, operational alerts: the Attention area at `/attention`,
+      // gated on `inv.stock.read` — the code four of its five cards declare.
+      'attention',
       // P1-30 W6: the invoice of a work order at `/invoices`, gated on
       // `sal.invoice.manage` — the code every invoice read requires.
       'billing',

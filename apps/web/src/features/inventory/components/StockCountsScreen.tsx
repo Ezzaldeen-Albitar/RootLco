@@ -63,6 +63,7 @@ import {
   useLocations,
   type Locations,
 } from './shared';
+import { StockAlertIndicator } from './StockAlertIndicator';
 import {
   BranchListView,
   BranchTargetForm,
@@ -121,6 +122,11 @@ export function StockCountsScreen({
         submitKey="inventory.counts.chooseBranch"
         onChosen={setTarget}
       />
+      {/*
+        The same two signals the Attention area carries, beside the counts that
+        raise half of them. Reads only, and silent until a branch is named.
+      */}
+      <StockAlertIndicator messages={messages} locale={locale} target={target} />
       {target !== null ? (
         <BranchCounts
           key={`${target.companyId}:${target.branchId}`}
