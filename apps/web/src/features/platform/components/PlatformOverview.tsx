@@ -8,6 +8,35 @@ import type { PlatformStatistics } from '../types';
 import { Section, SimpleTable, Cell } from './ui';
 
 /**
+ * How one capacity severity is drawn and what it is called.
+ *
+ * Three states arrive from the console read — `near-limit`, `at-limit` and
+ * `over-limit` — and they are ordered. An organisation PAST its ceiling is the
+ * most severe of the three, so it is drawn like the one sitting exactly on it
+ * and never like the near band: a ternary that treated "not at-limit" as "close
+ * to the limit" would draw the worst state in the mildest colour and call it
+ * "Close to the limit", which is the opposite of what happened.
+ *
+ * A severity this console does not recognise keeps the alert visible and its
+ * numbers readable, but is given no severity word at all. Naming it as the
+ * mildest state is exactly the failure this map exists to prevent.
+ */
+const CAPACITY_SEVERITY = new Map<string, { readonly tone: string; readonly label: string }>([
+  [
+    'over-limit',
+    { tone: 'border-error-border bg-error-subtle', label: 'platform.capacity.overLimit' },
+  ],
+  ['at-limit', { tone: 'border-error-border bg-error-subtle', label: 'platform.capacity.atLimit' }],
+  [
+    'near-limit',
+    { tone: 'border-warning-border bg-warning-subtle', label: 'platform.capacity.nearLimit' },
+  ],
+]);
+
+/** The frame of an alert whose severity the console cannot name. */
+const CAPACITY_SEVERITY_UNKNOWN_TONE = 'border-warning-border bg-warning-subtle';
+
+/**
  * The console overview (P1-32-PRE-065).
  *
  * The revenue figures are four DIFFERENT things and each is labelled as what it
@@ -126,40 +155,36 @@ export function PlatformOverview({
           <p className="text-body text-text-muted">{t('platform.overview.noCapacityAlerts')}</p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {statistics.capacityAlerts.map((alert) => (
-              <li
-                key={`${alert.tenantId}-${alert.kind}`}
-                className={`flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 ${
-                  alert.severity === 'at-limit'
-                    ? 'border-error-border bg-error-subtle'
-                    : 'border-warning-border bg-warning-subtle'
-                }`}
-              >
-                {canReadOrganizations ? (
-                  <Link
-                    href={`/${locale}/platform/organizations/${alert.tenantId}`}
-                    className="font-medium text-text-primary underline"
-                  >
-                    {alert.displayName}
-                  </Link>
-                ) : (
-                  <span className="font-medium text-text-primary">{alert.displayName}</span>
-                )}
-                <span className="text-supporting text-text-secondary">
-                  {t(
-                    `platform.capacity.${['companies', 'branches', 'users'].includes(alert.kind) ? alert.kind : 'other'}`
+            {statistics.capacityAlerts.map((alert) => {
+              const presentation = CAPACITY_SEVERITY.get(alert.severity);
+              return (
+                <li
+                  key={`${alert.tenantId}-${alert.kind}`}
+                  className={`flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 ${
+                    presentation?.tone ?? CAPACITY_SEVERITY_UNKNOWN_TONE
+                  }`}
+                >
+                  {canReadOrganizations ? (
+                    <Link
+                      href={`/${locale}/platform/organizations/${alert.tenantId}`}
+                      className="font-medium text-text-primary underline"
+                    >
+                      {alert.displayName}
+                    </Link>
+                  ) : (
+                    <span className="font-medium text-text-primary">{alert.displayName}</span>
                   )}
-                  {': '}
-                  {formatInteger(alert.used, locale)} / {formatInteger(alert.limit, locale)}
-                  {' · '}
-                  {t(
-                    alert.severity === 'at-limit'
-                      ? 'platform.capacity.atLimit'
-                      : 'platform.capacity.nearLimit'
-                  )}
-                </span>
-              </li>
-            ))}
+                  <span className="text-supporting text-text-secondary">
+                    {t(
+                      `platform.capacity.${['companies', 'branches', 'users'].includes(alert.kind) ? alert.kind : 'other'}`
+                    )}
+                    {': '}
+                    {formatInteger(alert.used, locale)} / {formatInteger(alert.limit, locale)}
+                    {presentation ? `${' · '}${t(presentation.label)}` : null}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         )}
       </Section>

@@ -860,6 +860,36 @@ describe('the overview', () => {
     );
   });
 
+  it('draws an organisation past its ceiling as the most severe state, not the mildest', () => {
+    renderLtr(
+      <PlatformOverview
+        locale="en"
+        messages={messages}
+        statistics={{
+          ...statistics,
+          capacityAlerts: [
+            {
+              tenantId: TENANT,
+              tenantCode: 'test_org_one',
+              displayName: 'Test Organisation One',
+              kind: 'branches',
+              used: 4,
+              limit: 3,
+              severity: 'over-limit',
+            },
+          ],
+        }}
+        canReadOrganizations={false}
+      />
+    );
+    const line = screen.getByText(new RegExp(`${L('platform.capacity.overLimit')}$`));
+    expect(line).toHaveTextContent('4 / 3');
+    expect(line.textContent).not.toContain(L('platform.capacity.nearLimit'));
+    const frame = line.closest('li');
+    expect(frame?.className).toContain('bg-error-subtle');
+    expect(frame?.className).not.toContain('bg-warning-subtle');
+  });
+
   it('renders in Arabic, right to left', () => {
     const { container } = renderRtl(
       <PlatformOverview

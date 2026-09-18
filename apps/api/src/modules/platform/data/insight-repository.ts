@@ -43,6 +43,7 @@ import {
 import {
   CAPACITY_ALERT_NEAR_LIMIT_RATIO,
   capacityAlertSeverity,
+  type CapacityAlertSeverity,
 } from '@/shared/capacity/capacity-alert';
 import { toIsoString } from './platform-repository';
 
@@ -83,8 +84,12 @@ export interface CapacityAlertRow {
    * `over-limit` past the ceiling, `at-limit` exactly on it, `near-limit` from
    * 90% of it. Decided by `capacityAlertSeverity`, which the organisation's own
    * capacity alert calls too, so the console and the tenant never disagree.
+   *
+   * The union, never `string`: widening it at this boundary lets a consumer
+   * handle two of the three states and still compile, which is how a breach
+   * comes to be drawn and labelled as a near miss.
    */
-  readonly severity: string;
+  readonly severity: CapacityAlertSeverity;
 }
 
 /** Platform revenue in one currency. Every amount is a decimal string. */

@@ -955,6 +955,7 @@
   "platform.capacity.companies": "Companies",
   "platform.capacity.nearLimit": "Close to the limit",
   "platform.capacity.other": "Capacity",
+  "platform.capacity.overLimit": "Over the limit",
   "platform.capacity.users": "Users",
   "platform.console.operator": "Platform owner",
   "platform.console.title": "Platform Owner Console",

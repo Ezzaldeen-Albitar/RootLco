@@ -41,6 +41,7 @@ import { sharedServicesModule } from '@/modules/shared-services';
 import {
   CAPACITY_ALERT_NEAR_LIMIT_RATIO,
   capacityAlertSeverity,
+  type CapacityAlertSeverity,
 } from '@/shared/capacity/capacity-alert';
 import { throwCapacityFailure } from './capacity-failure';
 import type {
@@ -123,8 +124,13 @@ export interface CapacityAlertView {
   readonly kind: string;
   readonly used: number;
   readonly limit: number;
-  /** `near-limit` from 90%, `at-limit` exactly on it, `over-limit` past it. */
-  readonly severity: string;
+  /**
+   * `near-limit` from 90%, `at-limit` exactly on it, `over-limit` past it.
+   *
+   * The union, never `string`: a reader that handles two of the three states
+   * must fail to compile rather than quietly call the third something else.
+   */
+  readonly severity: CapacityAlertSeverity;
   /** `limit - used`. Negative when the organisation is already over its limit. */
   readonly headroom: number;
 }

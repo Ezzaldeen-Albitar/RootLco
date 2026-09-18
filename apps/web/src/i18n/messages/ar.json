@@ -955,6 +955,7 @@
   "platform.capacity.companies": "الشركات",
   "platform.capacity.nearLimit": "قريب من الحد",
   "platform.capacity.other": "السعة",
+  "platform.capacity.overLimit": "تجاوز الحد",
   "platform.capacity.users": "المستخدمون",
   "platform.console.operator": "مالك المنصة",
   "platform.console.title": "وحدة تحكم مالك المنصة",
