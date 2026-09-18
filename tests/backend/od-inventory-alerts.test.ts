@@ -34,10 +34,10 @@
  *   inv.reorder-level-set: route service authorization success denial audit idempotency isolation
  *   inv.reorder-level-list: route service authorization success denial isolation
  *   inv.reorder-level-retire: route service authorization success denial cross-tenant stale-version audit idempotency isolation
- *   inv.low-stock-alert-read: route service authorization success denial isolation
- *   inv.count-discrepancy-alert-read: route service authorization success denial isolation
- *   inv.unusual-consumption-alert-read: route service authorization success denial isolation
- *   inv.aged-in-transit-alert-read: route service authorization success denial isolation
+ *   inv.low-stock-alert-read: route service authorization success denial cross-tenant isolation
+ *   inv.count-discrepancy-alert-read: route service authorization success denial cross-tenant isolation
+ *   inv.unusual-consumption-alert-read: route service authorization success denial cross-tenant isolation
+ *   inv.aged-in-transit-alert-read: route service authorization success denial cross-tenant isolation
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
@@ -61,6 +61,7 @@ import {
   INV_MATERIAL,
   INV_PERMISSION_ELSEWHERE,
   INV_READER,
+  INV_TENANT_B,
   INV_TENANT_B_CATALOG,
   QUARANTINE_A1,
   UOM_EACH,
@@ -200,6 +201,21 @@ interface AgedBody {
       readonly toBranchId: string;
     }[];
   };
+}
+
+/**
+ * What every one of the four reads owes a caller from ANOTHER tenant.
+ *
+ * `INV_TENANT_B` holds every inventory permission, unrestricted — in tenant B. So
+ * the permission itself cannot be what refuses this: only the scope check deciding
+ * against a branch of tenant A can, and `app.branch_ids` is the permission-blind
+ * union, which is exactly why the refusal has to be asserted rather than assumed.
+ * A refusal that nevertheless echoed the branch back would be a disclosure, so the
+ * body is checked too.
+ */
+async function expectCrossTenantRefusal(response: Response): Promise<void> {
+  expect([403, 404]).toContain(response.status);
+  expect(await response.text()).not.toContain(BRANCH_A1);
 }
 
 /** An item nobody else's fixtures touch, so a branch-wide aggregate is readable. */
@@ -622,6 +638,11 @@ describe('inv.low-stock-alert-read', () => {
     const refused = await readLowStock();
     expect(refused.status).toBe(403);
   });
+
+  it('never answers another tenant about this branch (cross-tenant)', async () => {
+    authAs(INV_TENANT_B);
+    await expectCrossTenantRefusal(await readLowStock());
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -664,6 +685,16 @@ describe('inv.count-discrepancy-alert-read', () => {
       `/api/v1/inventory-alerts/count-discrepancies?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}`
     );
     expect(refused.status).toBe(403);
+  });
+
+  it('never answers another tenant about this branch (cross-tenant)', async () => {
+    authAs(INV_TENANT_B);
+    await expectCrossTenantRefusal(
+      await get(
+        DISCREPANCIES,
+        `/api/v1/inventory-alerts/count-discrepancies?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}`
+      )
+    );
   });
 });
 
@@ -741,6 +772,16 @@ describe('inv.unusual-consumption-alert-read', () => {
     );
     expect(refused.status).toBe(403);
   });
+
+  it('never answers another tenant about this branch (cross-tenant)', async () => {
+    authAs(INV_TENANT_B);
+    await expectCrossTenantRefusal(
+      await get(
+        CONSUMPTION,
+        `/api/v1/inventory-alerts/unusual-consumption?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}`
+      )
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -776,6 +817,16 @@ describe('inv.aged-in-transit-alert-read', () => {
       `/api/v1/inventory-alerts/aged-in-transit?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}`
     );
     expect(refused.status).toBe(403);
+  });
+
+  it('never answers another tenant about this branch (cross-tenant)', async () => {
+    authAs(INV_TENANT_B);
+    await expectCrossTenantRefusal(
+      await get(
+        AGED,
+        `/api/v1/inventory-alerts/aged-in-transit?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}`
+      )
+    );
   });
 });
 

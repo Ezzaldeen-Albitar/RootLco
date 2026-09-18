@@ -3785,9 +3785,25 @@
       "files": ["tests/backend/od-inventory-alerts.test.ts"],
       "referenced": true,
       "derived": ["route", "service", "success", "authorization", "isolation"],
-      "declared": ["success", "denial", "isolation"],
-      "required": ["route", "service", "success", "authorization", "isolation", "denial"],
-      "provided": ["authorization", "denial", "isolation", "route", "service", "success"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -3833,9 +3849,25 @@
       "files": ["tests/backend/od-inventory-alerts.test.ts"],
       "referenced": true,
       "derived": ["route", "service", "success", "authorization", "isolation"],
-      "declared": ["success", "denial", "isolation"],
-      "required": ["route", "service", "success", "authorization", "isolation", "denial"],
-      "provided": ["authorization", "denial", "isolation", "route", "service", "success"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -4488,9 +4520,25 @@
       "files": ["tests/backend/od-inventory-alerts.test.ts"],
       "referenced": true,
       "derived": ["route", "service", "success", "authorization", "isolation"],
-      "declared": ["success", "denial", "isolation"],
-      "required": ["route", "service", "success", "authorization", "isolation", "denial"],
-      "provided": ["authorization", "denial", "isolation", "route", "service", "success"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -6424,9 +6472,25 @@
       "files": ["tests/backend/od-inventory-alerts.test.ts"],
       "referenced": true,
       "derived": ["route", "service", "success", "authorization", "isolation"],
-      "declared": ["success", "denial", "isolation"],
-      "required": ["route", "service", "success", "authorization", "isolation", "denial"],
-      "provided": ["authorization", "denial", "isolation", "route", "service", "success"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false

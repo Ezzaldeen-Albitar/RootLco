@@ -3451,23 +3451,23 @@ export const MANIFEST = {
   },
   'inv.low-stock-alert-read': {
     files: ['tests/backend/od-inventory-alerts.test.ts'],
-    required: ['success', 'denial', 'isolation'],
-    note: 'an item with no configured level never appears however empty its shelf; the boundary is at, one below and one above the level; a level naming a location is compared against that location alone; quarantine and transit are excluded from a branch total and the response names them',
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'an item with no configured level never appears however empty its shelf; the boundary is at, one below and one above the level; a level naming a location is compared against that location alone; quarantine and transit are excluded from a branch total and the response names them; a caller holding every inventory permission in another tenant is refused this branch',
   },
   'inv.count-discrepancy-alert-read': {
     files: ['tests/backend/od-inventory-alerts.test.ts'],
-    required: ['success', 'denial', 'isolation'],
-    note: 'a reconciled line carries the generated variance the adjustment was raised from and that adjustment approval state; a line counted exactly right is not a discrepancy',
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'a reconciled line carries the generated variance the adjustment was raised from and that adjustment approval state; a line counted exactly right is not a discrepancy; a caller holding every inventory permission in another tenant is refused this branch',
   },
   'inv.unusual-consumption-alert-read': {
     files: ['tests/backend/od-inventory-alerts.test.ts'],
-    required: ['success', 'denial', 'isolation'],
-    note: 'fires at the stated multiple of the median and not one step above it; the absolute floor can refuse on its own; every compared window and the baseline travel with the finding; a period outside the published bounds is refused on query.periodDays',
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'fires at the stated multiple of the median and not one step above it; the absolute floor can refuse on its own; every compared window and the baseline travel with the finding; a period outside the published bounds is refused on query.periodDays; a caller holding every inventory permission in another tenant is refused this branch',
   },
   'inv.aged-in-transit-alert-read': {
     files: ['tests/backend/od-inventory-alerts.test.ts'],
-    required: ['success', 'denial', 'isolation'],
-    note: 'reported past the age asked about and silent inside it; the remaining quantity is the schema generated outstanding figure and both branches travel with the finding',
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'reported past the age asked about and silent inside it; the remaining quantity is the schema generated outstanding figure and both branches travel with the finding; a caller holding every inventory permission in another tenant is refused this branch',
   },
   'org.capacity-alert-read': {
     files: ['tests/backend/od-organization-administration.test.ts'],
