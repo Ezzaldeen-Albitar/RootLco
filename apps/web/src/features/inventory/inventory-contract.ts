@@ -74,6 +74,8 @@
  * action, never on first paint.
  */
 
+import type { CursorPage } from '@/lib/api/read-operation';
+
 /** The permissions the W4 screen consults, as the backend registers them. */
 export const INVENTORY_PERMISSIONS = {
   /** The item search — tenant-wide, and the page's own gate. */
@@ -1416,4 +1418,143 @@ export interface VehicleSpecification {
 /** The echo of a specification write. */
 export interface VehicleSpecificationEcho extends VehicleSpecification {
   readonly replayed: boolean;
+}
+
+/* ------------------------------------------------------------------ *
+ * Operational stock alerts (Owner directive) — four explainable reads
+ * ------------------------------------------------------------------ */
+
+/**
+ * Every alert list carries the instant the DATABASE answered.
+ *
+ * Not this process's clock and not the moment the screen painted: a freshness
+ * stamp that does not belong to the snapshot invites a reader to trust a figure
+ * that was already stale when it rendered. Every card states it.
+ */
+interface AlertList {
+  readonly asOf: string;
+}
+
+/** One item whose available quantity has reached its configured reorder level. */
+export interface LowStockFinding {
+  readonly reorderLevelId: string;
+  readonly itemId: string;
+  readonly sku: string;
+  readonly itemName: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  /** `branch` when the level is about the whole branch, `location` when one shelf. */
+  readonly scope: string;
+  readonly locationId: string | null;
+  readonly locationCode: string | null;
+  readonly onHandQty: string;
+  readonly reservedQty: string;
+  readonly availableQty: string;
+  readonly reorderLevelQty: string;
+  /** The level less what is available, computed by the database in `numeric`. */
+  readonly shortfallQty: string;
+  /**
+   * What somebody recorded as the quantity to order when this item runs low.
+   * A SUGGESTION: nothing on this surface orders, reserves or posts anything.
+   */
+  readonly preferredOrderQty: string | null;
+}
+
+export interface LowStockAlerts extends AlertList {
+  readonly rule: {
+    readonly statement: string;
+    readonly excludedLocationTypes: readonly string[];
+  };
+  readonly findings: CursorPage<LowStockFinding>;
+}
+
+/** One reconciled count line whose variance was not zero. */
+export interface CountDiscrepancyFinding {
+  readonly countId: string;
+  readonly lineId: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly locationId: string;
+  readonly locationCode: string;
+  readonly itemId: string;
+  readonly sku: string;
+  readonly itemName: string;
+  readonly snapshotQty: string;
+  readonly countedQty: string | null;
+  readonly movementDeltaDuringCount: string;
+  readonly varianceQty: string;
+  readonly countedOn: string;
+  readonly adjustmentId: string | null;
+  /** `pending`, `approved` or `rejected`; absent when no adjustment was raised. */
+  readonly adjustmentStatus: string | null;
+  readonly adjustmentApprovedAt: string | null;
+}
+
+export interface CountDiscrepancyAlerts extends AlertList {
+  readonly rule: { readonly statement: string };
+  readonly findings: CursorPage<CountDiscrepancyFinding>;
+}
+
+/** One compared window, exactly as the database cut it. */
+export interface ConsumptionPeriod {
+  readonly from: string;
+  readonly to: string;
+  readonly issuedQty: string;
+}
+
+/** One item issued far faster in the observed window than in its own history. */
+export interface UnusualConsumptionFinding {
+  readonly itemId: string;
+  readonly sku: string;
+  readonly itemName: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly observedQty: string;
+  readonly baselineMedianQty: string;
+  readonly observedPeriod: ConsumptionPeriod;
+  /** Oldest first, one entry per compared window. Nothing is weighted. */
+  readonly baselinePeriods: readonly ConsumptionPeriod[];
+}
+
+export interface UnusualConsumptionAlerts extends AlertList {
+  /**
+   * The rule's own numbers, so the screen can state it in the reader's language
+   * instead of printing the server's English sentence at an Arabic operator.
+   */
+  readonly rule: {
+    readonly statement: string;
+    readonly periodDays: number;
+    readonly baselinePeriods: number;
+    readonly multiple: string;
+    readonly minimumQty: string;
+    readonly baselineStatistic: string;
+  };
+  readonly findings: CursorPage<UnusualConsumptionFinding>;
+}
+
+/** One transfer dispatched long ago and still on its way. */
+export interface AgedInTransitFinding {
+  readonly transferId: string;
+  readonly itemId: string;
+  readonly sku: string;
+  readonly itemName: string;
+  readonly status: string;
+  readonly companyId: string;
+  readonly fromBranchId: string;
+  readonly fromLocationId: string;
+  readonly fromLocationCode: string;
+  readonly toBranchId: string;
+  readonly toLocationId: string;
+  readonly toLocationCode: string;
+  readonly quantity: string;
+  readonly receivedQuantity: string | null;
+  /** Dispatched less received less resolved — the schema's own figure. */
+  readonly outstandingQuantity: string;
+  readonly dispatchedAt: string;
+  readonly ageDays: number;
+}
+
+export interface AgedInTransitAlerts extends AlertList {
+  readonly rule: { readonly statement: string; readonly minimumAgeDays: number };
+  readonly findings: CursorPage<AgedInTransitFinding>;
 }
