@@ -87,7 +87,9 @@ describe('every operation publishes the success status it returns', () => {
     // operations from this branch and 16 from the console.
     // 492 with the Owner directive operational stock alerts: eight operations over
     // seven new route modules, the reorder-level collection carrying both verbs.
-    expect(actual.size).toBe(492);
+    // 493 with the Owner directive console account and security: one operation
+    // over one new route module.
+    expect(actual.size).toBe(493);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -218,7 +220,7 @@ describe('every operation publishes the success status it returns', () => {
     // publish 200: six are reads, and the two writes change or create a row whose
     // identity the caller already named by its signature, so neither handler sets
     // 201 and neither declares it.
-    expect(counts[200]).toBe(353);
+    expect(counts[200]).toBe(354);
   });
 
   it('reads the handler, not the declaration', () => {

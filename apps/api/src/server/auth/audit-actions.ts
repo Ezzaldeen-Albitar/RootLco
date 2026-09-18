@@ -117,6 +117,13 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'A password reset was requested for an account. Recorded only where an authenticated administrator requested it; the unauthenticated path has no context and records a security event instead.',
   },
+  {
+    code: 'iam.password.changed',
+    class: 'security',
+    entityType: 'iam.user_account',
+    description:
+      'A signed-in account holder changed their own password after the identity provider verified the current one. The record carries who and when; no password, no hash and no reset token is ever written into it.',
+  },
 
   // ---- Roles and permission mappings -------------------------------------
   {

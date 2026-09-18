@@ -23,6 +23,8 @@ export const ERROR_CODES = [
   'ERR-PAG-001',
   'ERR-IAM-001',
   'ERR-IAM-002',
+  'ERR-IAM-003',
+  'ERR-IAM-004',
   'ERR-TEN-001',
   'ERR-CTX-001',
   'ERR-RES-001',
@@ -147,6 +149,26 @@ const DEFINITIONS: Readonly<Record<ErrorCode, ErrorDefinition>> = Object.freeze(
     retryable: false,
     class: 'security',
     description: 'No authenticated principal could be resolved for the request.',
+  },
+  'ERR-IAM-003': {
+    code: 'ERR-IAM-003',
+    title: 'Current password did not verify',
+    status: 422,
+    owner: 'authorization',
+    retryable: false,
+    class: 'security',
+    description:
+      'A caller changing their own password supplied a current password the identity provider would not verify. Deliberately NOT ERR-IAM-002: the session is valid and must stay valid, and answering 401 would sign the caller out for a typing mistake. Deliberately NOT ERR-IAM-001 either, because the caller IS permitted to perform the operation. 422 so a client renders it against the field the caller must correct. Security-classed: it is a failed credential verification and is triaged as one. No provider text and no fragment of either password reaches the response.',
+  },
+  'ERR-IAM-004': {
+    code: 'ERR-IAM-004',
+    title: 'The new password was refused',
+    status: 422,
+    owner: 'validation',
+    retryable: false,
+    class: 'client',
+    description:
+      'The identity provider refused the new password by its own credential policy. RootLco holds no second strength policy (ADR-019), so this code is the only place such a verdict exists; the provider bounds nothing else about it. The provider’s own sentence is written to the operator log and is never placed in the problem document, which carries a violation on the new-password field and nothing more. Distinct from ERR-VAL-001 so a client can tell "the provider will not accept this password" from "the request document is malformed", which have different remedies.',
   },
   'ERR-TEN-001': {
     code: 'ERR-TEN-001',

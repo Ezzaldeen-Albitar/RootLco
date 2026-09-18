@@ -1,20 +1,20 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 492,
-    "openapiPaths": 384,
-    "openapiOperations": 492,
+    "operations": 493,
+    "openapiPaths": 385,
+    "openapiOperations": 493,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
     "eventsDeliveryTested": 50,
     "outboxForeignWriters": 0,
-    "errorCodes": 32,
+    "errorCodes": 34,
     "permissionCodes": 132,
-    "auditActions": 283
+    "auditActions": 284
   },
   "counts": {
-    "Covered": 492
+    "Covered": 493
   },
   "operations": [
     {
@@ -2981,6 +2981,46 @@
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/template-versions/[versionId]/status/route.ts"
+    },
+    {
+      "id": "iam.account-password-change",
+      "domain": "iam",
+      "method": "POST",
+      "route": "/api/v1/platform/account/password",
+      "permissions": ["platform.organization.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "transactional write",
+      "auditClass": "security",
+      "auditAction": "iam.password.changed",
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/platform/account/password",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "audit",
+        "unauthenticated",
+        "denial",
+        "provider"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "denial",
+        "provider",
+        "route",
+        "service",
+        "success",
+        "unauthenticated"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-32-account-security.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/platform/account/password/route.ts"
     },
     {
       "id": "iam.approval-limit-create",

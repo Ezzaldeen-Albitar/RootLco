@@ -297,7 +297,9 @@ describe('the API application lives in the workspace', () => {
     // modules — four alert reads, the reorder-level collection and its retirement,
     // and the tenant capacity alert — carrying eight operations, because the
     // collection module co-locates the list and the set on one path.
-    expect(routeFiles.length).toBe(384);
+    // 385 with the Owner directive console account and security: one new route
+    // module, `platform/account/password`, carrying one operation.
+    expect(routeFiles.length).toBe(385);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -318,7 +320,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 492 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 493 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -400,7 +402,9 @@ describe('the API application lives in the workspace', () => {
     // operations from this branch and 16 from the console.
     // 492 with the Owner directive operational stock alerts: eight operations over
     // seven new route modules, for the reason stated above the route-module count.
-    expect(report.operations).toHaveLength(492);
+    // 493 with the Owner directive console account and security: one operation
+    // over one new route module.
+    expect(report.operations).toHaveLength(493);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the

@@ -65,6 +65,29 @@ export class CredentialPolicy extends DomainService {
   }
 
   /**
+   * Bounds a password from ABOVE only, leaving the minimum to the provider.
+   *
+   * `assertPasswordBounds` refuses anything under eight characters, which is
+   * right for the reset path — the token holder has no session, and refusing
+   * before the provider is asked costs nothing. It is wrong for a change of
+   * password by a signed-in caller: it would make RootLco the thing that
+   * refuses a short password, which is a second strength policy under another
+   * name, and the caller would be told a rule the provider may not hold.
+   *
+   * The ceiling stays, for the reason the bounds exist at all: an unbounded
+   * password is an unbounded input to the provider's hashing routine, which is
+   * a cheap denial of service. Nothing about strength is decided here.
+   */
+  assertPasswordCeiling(password: string): void {
+    if (password.length > PASSWORD_MAX) {
+      throw new AppFailure('ERR-VAL-001', {
+        message: `Password must be at most ${PASSWORD_MAX} characters`,
+        safeDetails: { violations: [{ path: 'body.newPassword', rule: 'too_long' }] },
+      });
+    }
+  }
+
+  /**
    * Validates an approval-limit amount against `iam.approval_limits`.
    *
    * The column is `numeric(18,4)`, so at most 4 decimal places and at most 14
