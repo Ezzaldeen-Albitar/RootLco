@@ -8,7 +8,8 @@ request #417) ·
 (the nine items, and the EMPTY fields that are the only place a determination may be written),
 [`determination-evidence-index-2026-09-18.md`](./determination-evidence-index-2026-09-18.md) (the
 evidence, four kinds per row), [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) § 76
-(the three excluded dispositions, read against the merged work)
+(the three excluded dispositions, read against the merged work) and § 77 (what moved beneath the
+evidence base since the packet's head)
 
 **THIS IS ONE PACKET, NOT A SERIES OF QUESTIONS.** It exists so that nine determinations can be made
 from evidence in one sitting, and it asks for nothing else.
@@ -75,6 +76,15 @@ act an **owner-authorized technical self-review**, forbids representing it as an
 review, and records that **P1-EC-016 remains open and is not claimed by it**. The Owner's acceptance
 of a self-review is the reason the sentence is required, not a reason to drop it.
 
+**What moved since the head the certification packet was written against.** The nine **questions** are
+unchanged and the nine **fields** are still empty, but **seven non-documentary artefacts changed**
+between `beebc6c2` and this head, three of them the instruments behind **QA-C1**, **QA-C4** and
+**SEC-C4**. They are enumerated, with what does and does not move because of them, at
+[`determination-evidence-index-2026-09-18.md`](./determination-evidence-index-2026-09-18.md) § 3.1, and
+analysed at [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) § 77. **One register
+figure is stale as a result — CC-57 (a)'s "seven" reads six at this head** — and it is stated in full
+in row § 3.4 below rather than left in the quotation. **No register state cell is moved by any of this.**
+
 **What a determination would, and would not, establish** is set out at § 11 of that packet and is not
 restated here.
 
@@ -101,7 +111,12 @@ conditions being, verbatim and unabridged: (a) every coverage figure is a **LOCA
 keeps its `LOCAL, pending the hosted web-quality run` label — limitation **L-2**, and **CC-64 (b)**,
 open; (b) hole **H-1** stays open and is counted on FE-004, deferred behind **`P1-31-FU-001`** and
 closed by nothing; (c) `scripts/ci/coverage-gate.mjs` is reachable from no npm script and is invoked
-only from the workflows, so no local aggregate enforces the floors.
+only from the workflows, so no local aggregate enforces the floors; (d) **the instrument moved after
+the figures were taken** — `apps/web/vitest.config.ts` widened `COVERAGE_INCLUDE` by two prefixes and
+the web coverage baseline gained two critical-module floors between `beebc6c2` and this head (evidence
+index § 3.1, rows 1 and 2), so the record's global figures were measured over a **smaller denominator
+than the one configured here**, and nothing in this packet re-measures them. **No P1-31 figure and no
+global floor moved.**
 
 **Fields to fill, in [`certification-and-clearance-packet.md`](./certification-and-clearance-packet.md)
 § 7, QA table, row QA-C1:** determination; conditions; certifier's name; date. **Plus the § 2
@@ -155,10 +170,22 @@ the unreachable operations disclosed rather than hidden?
 `verify:policies`; `tests/ci/p1-31-version-sourcing.test.ts:83` … `:200`;
 [`operator-runbook.md`](./operator-runbook.md) § 11; **authenticated browser ABSENT**.
 
+**A figure in this row's register cell is STALE at this head, and the reviewer is told so before being
+asked anything.** **CC-57 (a)** (register § 67) says "the **seven** PENDING operations remain
+unreachable". At this head the gate declares **SIX**: `tests/ci/p1-31-version-sourcing.test.ts:111`
+asserts `pending.length` is `6`, and `scripts/ci/check-p1-31-version-sourcing.mjs:128` reads "Six of
+the eleven have no consumer". The seventh, `org.employee-status-set`, acquired a consumer and its entry
+was deleted in that same change — commit `8bc4bfec`, merged with **pull request #413**, inside the
+`#411 … #417` window. **No state cell is moved and the register cell is not rewritten**; a corrected
+wording is **PROPOSED** at [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) § 77.2 for
+the reviewer to adopt, alter or refuse. **CC-57 (a) is not discharged either way**: six operations
+still have no consumer.
+
 **PROPOSED — engineering's reading, not a determination.** **Certified-with-conditions**, the
-conditions being: (a) **CC-57 (a)** is **OPEN** — seven guarded operations have no consumer and "this
-gate discloses that rather than closing it"; three of the seven are the checklist-template writes
-**D-36** deferred to **`P1-31-FU-001`**, deferred and not closed; (b) **CC-57 (b)** is **OPEN** — the
+conditions being: (a) **CC-57 (a)** is **OPEN** — **six** guarded operations have no consumer at this
+head (the register cell still says seven, above) and "this gate discloses that rather than closing it";
+three of the six are the checklist-template writes **D-36** deferred to **`P1-31-FU-001`**, deferred
+and not closed, and three are the report-configuration writes; (b) **CC-57 (b)** is **OPEN** — the
 gate "judges the SEND, not the screen state behind it", so no figure from it may be quoted as a
 runtime property.
 
@@ -205,6 +232,14 @@ being **CC-58 (a)**, stated exactly as its own cell states it: "SE-5M cannot see
 authority requirement for 45 of the 46 operations" — sufficiency is established **at the pre-handler
 gate only**, and **one operation alone** is probed against real rows with a minimal caller. It is a
 **disclosed input**, and no claim in that section reads past the limit.
+
+**One mismatch in that quotation, flagged so it is not read as a contradiction.** The cell says **46**
+operations; the grant map and census this same row cites say **47** over 34 route files, pinned at
+`tests/ci/p1-31-grant-map.test.ts:78-79` and stated at
+[`change-control-2026-09-08.md`](./change-control-2026-09-08.md) § 69.13. **The two are unreconciled in
+the source records**, the cell is quoted verbatim rather than corrected, **neither figure is re-derived
+in this packet**, and the difference is recorded at § 77.3 of that register. The limitation is the same
+in kind under either number: all but one operation are probed at the pre-handler gate only.
 
 **Fields to fill:** § 7, security table, row SEC-C1 — determination; conditions; reviewer's name;
 date. **Plus the § 2 disclosure sentence.**
@@ -293,7 +328,10 @@ four report codes with `403 ERR-IAM-001`.
 being **L-13**, quoted: "the export audit records selection and counts, not a byte length or a content
 digest, so it cannot later identify the exact bytes disclosed" — the same fact **CC-61 (c)** carries as
 a register row, with its own restriction that the audit is "deliberately not described as durable-file
-provenance".
+provenance". **Disclosed with it:** `apps/api/src/server/auth/audit-actions.ts` is **+364/-1** between
+`beebc6c2` and this head — later slices registered their own actions and one P1-30 description was
+extended — while **no P1-31 action entry was removed, renamed or re-classed**, so the 21 `none` and 24
+`privileged` declarations this row rests on are untouched (evidence index § 3.1, row 7).
 
 **Fields to fill:** § 7, security table, row SEC-C4 — determination; conditions; reviewer's name;
 date. **Plus the § 2 disclosure sentence.**

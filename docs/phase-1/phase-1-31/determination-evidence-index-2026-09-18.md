@@ -7,7 +7,8 @@ request #417) ·
 (the nine items and their EMPTY decision fields),
 [`reviewer-packet-2026-09-18.md`](./reviewer-packet-2026-09-18.md) (the one packet routed to the
 reviewer), [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) § 76 (the three excluded
-dispositions, analysed)
+dispositions, analysed) and § 77 (what moved beneath the evidence base, and the two figures that must
+not be read at face value)
 
 **THIS DOCUMENT INDEXES EVIDENCE. IT ISSUES NO DETERMINATION.** It fills no decision field, writes no
 name, no date and no signature, records no verdict, moves no task-matrix row and moves no register
@@ -106,10 +107,51 @@ at.** Seven pull requests merged after `beebc6c2` (the merge of #405) and before
 | the phase-1-31 records as a set                                                                                    | **three files changed and no figure moved**: `error-path-matrix.md`, `isolation-matrix.md` and `least-privilege-grant-map.md` were re-anchored to line numbers that drifted under the merged work. No count, state or verdict changed |
 | `docs/governance/`                                                                                                 | **unchanged**                                                                                                                                                                                                                         |
 | the artefacts the nine items cite                                                                                  | every file named in this index exists at this head, and every line anchor in it was read at this head                                                                                                                                 |
+| the NON-DOCUMENTARY artefacts the nine items cite (source, gates, suites, baselines)                               | **SEVEN CHANGED**, and they are set out one by one at § 3.1 below. Three of them are the instruments behind **QA-C1**, **QA-C4** and **SEC-C4**                                                                                       |
 
-**So the nine items read at this head exactly as the packet lays them out**, with the one citation
-drift recorded at [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) § 76.3 and proposed
-for mechanical repair there rather than applied here.
+**So the correct statement is narrower than "nothing moved", and § 3.1 is the reason it has to be.**
+The nine **questions** are unchanged and the nine **fields** are still empty; the phase records that
+state the P1-31 figures did not move. But **three of the instruments those records were measured with
+did move**, and one register **figure now reads differently at this head than the register's own words
+say** (§ 3.1, row 7). Both facts are disclosed here rather than left for the reviewer to find. The one
+citation drift is recorded at [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) § 76.3
+and proposed for mechanical repair there rather than applied here; the movement below is recorded at
+§ 77 of the same register, likewise analysed and not applied.
+
+### 3.1 The seven non-documentary artefacts that changed between `beebc6c2` and `3b50f26c`
+
+**Read from `git diff --stat beebc6c2 3b50f26c` restricted to the files this index cites. Every line
+below is a static read; nothing was executed.** The artefacts this index cites and which did **NOT**
+change are also stated, because a reviewer needs both halves: `apps/api/src/modules/shared-services/domain/attachment-policy.ts`,
+`…/application/attachment-service.ts`, the download-authorizations route,
+`apps/api/src/modules/iam/application/access-administration-service.ts`,
+`…/organization-settings-service.ts`, `tests/backend/p1-31-privilege-escalation.test.ts`,
+`tests/backend/p1-31-audit-emission.test.ts`, `tests/backend/p1-31-signature-download-refusal.test.ts`,
+`tests/ci/p1-31-grant-map.test.ts`, `tests/ci/p1-31-error-path-matrix.test.ts`,
+`tests/db/p1-11-isolation.test.ts` and every P1-31 spec under
+`apps/web/tests/e2e/authenticated/` are **byte-identical at the two heads**.
+
+| #   | artefact                                          | what changed                                                                                                                                                                                        | whose instrument it is | does a figure in the nine rows move?                                                                                                                                                                               |
+| --- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | `apps/web/vitest.config.ts`                       | **+10.** `COVERAGE_INCLUDE` gained `src/features/platform/**` and the `(platform)` route group                                                                                                      | **QA-C1**              | **no P1-31 figure moves**, and the widening is **not** re-measured here. The P1-31 denominator is larger than the one the coverage record's globals were taken over, so those globals are **older than this head** |
+| 2   | `.github/ci-baselines/coverage-baseline.web.json` | **+21.** Two new critical-module floors, `platform-console-surface` and `platform-console-routes`, both labelled `LOCAL` and pending a hosted run; the file's own note states no global floor moved | **QA-C1**              | **no.** No P1-31 floor and no global floor changed                                                                                                                                                                 |
+| 3   | `tests/ci/baseline-integrity.test.ts`             | **+48/-…** the measured backend file count moves `291 → 310` as later slices add files                                                                                                              | **QA-C1** (kind B)     | **no.** The cited anchors `:445`, `:450`, `:457` and `:506` were re-read at this head and hold                                                                                                                     |
+| 4   | `tests/db/shared-hardening.test.ts`               | **+7.** Two P1-32 search-folding functions added to an EXECUTE-grant list                                                                                                                           | **QA-C3** (kind B)     | **no.** The cited `:336` was re-read at this head and is still the RLS-enabled-and-forced case                                                                                                                     |
+| 5   | `scripts/ci/check-p1-31-version-sourcing.mjs`     | **-8/+8.** The gate's own prose now reads "**Six** of the eleven have no consumer", with the retirement recorded in it                                                                              | **QA-C4**              | **YES — see row 7**                                                                                                                                                                                                |
+| 6   | `tests/ci/p1-31-version-sourcing.test.ts`         | **+32/-…** `:111` now asserts `pending.length` is **6** and the compared set is **5**, naming `org.employee-status-set` as the fifth                                                                | **QA-C4**              | **YES — see row 7**                                                                                                                                                                                                |
+| 7   | `apps/api/src/server/auth/audit-actions.ts`       | **+364/-1.** New action registrations for later slices, and one existing description extended (`sal.invoice.issued`). **No P1-31 action entry was removed, renamed or re-classed**                  | **SEC-C4**             | **no.** `audit-class-review.md`'s 21 `none` and 24 `privileged` P1-31 declarations are untouched; the registry each resolves against is simply larger                                                              |
+
+**Row 7, stated in full because it is the one figure that changed.** The register's **CC-57 (a)** cell
+(§ 67) reads "the **seven** PENDING operations remain unreachable". At `beebc6c2` that was correct. At
+`3b50f26c` the gate declares **six**: the entry for `org.employee-status-set` was deleted by commit
+`8bc4bfec` ("Retire a pending-consumer entry that now has a consumer"), which merged into `develop`
+with **pull request #413** — inside the `#411 … #417` window this index measures. That is the gate's
+declared lifecycle working, not an exception to it: the entry was removed in the same change that gave
+the operation a consumer. **The register cell is NOT rewritten and its state is NOT moved by this
+document**; the discrepancy is recorded at
+[`change-control-2026-09-08.md`](./change-control-2026-09-08.md) § 77.2 and a corrected wording is
+**PROPOSED** there for the reviewer, not applied. Everywhere below, the register's "seven" is quoted as
+the register's words and the measured **six** is stated beside it.
 
 ---
 
@@ -147,6 +189,13 @@ lines to 25/25**; **H-1 remains open** and is counted on FE-004
   weighs the local figures knowing which harness does and does not hold them.
 - **H-1 is open and stays open.** The Owner's **D-36** defers the screen behind it to **`P1-31-FU-001`**
   and closes neither H-1 nor **CC-57 (a)**.
+- **The instrument behind this row MOVED between the packet's head and this one**, and a determination
+  over QA-C1 should know it: `apps/web/vitest.config.ts` widened `COVERAGE_INCLUDE` by two prefixes and
+  `.github/ci-baselines/coverage-baseline.web.json` gained two critical-module floors (§ 3.1, rows 1 and
+  2). **No P1-31 figure and no global floor moved**, and nothing here re-measures the widened list — so
+  the coverage record's global figures were taken over a **smaller denominator than the one configured
+  at this head**, and they are quoted as what they are: measurements of an earlier head, still
+  **LOCAL**.
 
 ### 4.2 QA-C2 — QA-002, API, contract and error-path coverage complete as a set
 
@@ -180,16 +229,30 @@ rewritten. The row is CARRIED UNDER O-3 and is not closed.
 
 ### 4.4 QA-C4 — QA-004, record-version sourcing mechanically enforced where reachable, unreachable operations disclosed
 
-| kind                                 | evidence at `3b50f26c`                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **A — source / contract**            | `scripts/ci/check-p1-31-version-sourcing.mjs`, the gate itself, registered as `validate:p1-31-version-sourcing` in `package.json:133` and run inside `verify:policies` (`package.json:160`); [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) § 67; [`operator-runbook.md`](./operator-runbook.md) § 11, which records how to run it, read a red and roll back                                                          |
-| **B — automated test**               | `tests/ci/p1-31-version-sourcing.test.ts` — `:83` the eleven version-guarded operations each guarded by the contract, `:111` the ones with no consumer declared rather than hidden, `:131` the overlap with the access gate's allow-list pinned, `:155` the gate reports what it examined and exits clean, `:180` the structural completion adapter bound to its operation and caller, `:200` the defect classes that turn the gate red |
-| **C — authenticated browser**        | **ABSENT.** No committed browser case asserts a record-version source. The gate judges the **send**, and a browser case cannot stand in for it — see **CC-57 (b)** below                                                                                                                                                                                                                                                                |
-| **D — physical or external-service** | **PRESENT only as the hosted execution of the policy aggregate carrying this gate** ([`acceptance-record.md`](./acceptance-record.md) § 11.11 (e)). No external service supplies evidence for this row                                                                                                                                                                                                                                  |
+| kind                                 | evidence at `3b50f26c`                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A — source / contract**            | `scripts/ci/check-p1-31-version-sourcing.mjs`, the gate itself, registered as `validate:p1-31-version-sourcing` in `package.json:133` and run inside `verify:policies` (`package.json:160`); [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) § 67; [`operator-runbook.md`](./operator-runbook.md) § 11, which records how to run it, read a red and roll back                                                                                                        |
+| **B — automated test**               | `tests/ci/p1-31-version-sourcing.test.ts` — `:83` the eleven version-guarded operations each guarded by the contract, `:111` the **six** with no consumer declared rather than hidden (the number read at this head — see below), `:131` the overlap with the access gate's allow-list pinned, `:155` the gate reports what it examined and exits clean, `:180` the structural completion adapter bound to its operation and caller, `:200` the defect classes that turn the gate red |
+| **C — authenticated browser**        | **ABSENT.** No committed browser case asserts a record-version source. The gate judges the **send**, and a browser case cannot stand in for it — see **CC-57 (b)** below                                                                                                                                                                                                                                                                                                              |
+| **D — physical or external-service** | **PRESENT only as the hosted execution of the policy aggregate carrying this gate** ([`acceptance-record.md`](./acceptance-record.md) § 11.11 (e)). No external service supplies evidence for this row                                                                                                                                                                                                                                                                                |
 
-**Open items this row must weigh.** **CC-57 (a)** is **OPEN**: seven guarded operations have no
-consumer, and "this gate discloses that rather than closing it". Three of the seven are the
-checklist-template writes the Owner deferred by **D-36** to **`P1-31-FU-001`** — deferred, not closed.
+**Open items this row must weigh.** **CC-57 (a)** is **OPEN** and its register cell (§ 67) reads, in
+the register's own words, "the **seven** PENDING operations remain unreachable" and "this gate discloses
+that rather than closing it".
+
+**Measured at this head, the number in that sentence is SIX, not seven.**
+`tests/ci/p1-31-version-sourcing.test.ts:111` asserts `pending.length` is **6** and pins the compared
+set at **5**; `scripts/ci/check-p1-31-version-sourcing.mjs:128` states "Six of the eleven have no
+consumer" and records why. The seventh, `org.employee-status-set`, **acquired a consumer** and its
+PENDING entry was deleted in the same change — commit `8bc4bfec`, merged with **pull request #413**,
+inside the `#411 … #417` window. **The register cell keeps its words and its state until the reviewer
+decides**; the corrected wording is **PROPOSED** at
+[`change-control-2026-09-08.md`](./change-control-2026-09-08.md) § 77.2 and is not applied.
+
+**What did not change with it:** three of the remaining six are the checklist-template writes the Owner
+deferred by **D-36** to **`P1-31-FU-001`** — deferred, not closed — and three are the
+report-configuration writes. **CC-57 (a) is not discharged**: six operations still have no consumer.
+
 **CC-57 (b)** is **OPEN**: "the sourcing gate judges the SEND, not the screen state behind it", so no
 figure from the gate may be quoted as a runtime property.
 
@@ -239,6 +302,18 @@ minimal-actor probe establishes sufficiency **at the pre-handler gate only**, an
 alone** is probed against real rows with a minimal caller. The register's own restriction is that "no
 claim in this section reads past the limit"; it is a **disclosed input** to a security determination
 that does not exist.
+
+**A figure mismatch inside this row, flagged rather than silently smoothed.** The quoted cell says
+**46** operations; the grant map and the census this same row cites say **47** — pinned as constants in
+`tests/ci/p1-31-grant-map.test.ts:78-79` (`EXPECTED_OPERATIONS = 47`, `EXPECTED_ROUTE_FILES = 34`) and
+stated as "47 operations with 13 declared permission codes" at
+[`change-control-2026-09-08.md`](./change-control-2026-09-08.md) § 69.13. **The two figures are not
+reconciled in the source records, and this document does not reconcile them**: the cell is quoted word
+for word because a register cell is quoted, not corrected, by an index. **Neither number is re-derived
+here**, and the difference is recorded for the reviewer at
+[`change-control-2026-09-08.md`](./change-control-2026-09-08.md) § 77.3. Whichever is right, the
+limitation is unchanged in kind — sufficiency is established at the pre-handler gate for all but one
+operation.
 
 ### 5.2 SEC-C2 — SEC-002, sensitive-data, export and file-access controls, and how far the download rule reaches
 
@@ -290,6 +365,14 @@ byte length or a content digest, so it cannot later identify the exact bytes dis
 carries the same fact as a register row, with the register's own restriction that the audit is
 "deliberately not described as durable-file provenance".
 
+**The registry this row resolves against GREW since the packet's head, and it is disclosed rather than
+passed over.** `apps/api/src/server/auth/audit-actions.ts` is **+364/-1** between `beebc6c2` and
+`3b50f26c` (§ 3.1, row 7): later slices registered their own actions, and one existing description was
+extended (`sal.invoice.issued`, a P1-30 financial action). **No P1-31 action entry was removed, renamed
+or re-classed**, and the 21 `auditClass: 'none'` and 24 `auditClass: 'privileged'` declarations
+[`audit-class-review.md`](./audit-class-review.md) enumerates are untouched — the registry is simply
+larger than it was when the review was written, and the review's set is a subset of it.
+
 ---
 
 ## 6. The index at a glance — which kinds each row has, and where each is absent
@@ -319,8 +402,10 @@ with state **open, deferred, not built** and owner **unassigned — a later Fron
   whose purpose is frontend validation rather than new administration features."
 - **It closes nothing.** Coverage hole **H-1** stays open on its own terms; **CC-57 (a)** keeps its
   state; the five pending mirror entries stay pending; **FE-004 does not move**.
-- It bears on **QA-C1** (through H-1) and **QA-C4** (through three of CC-57 (a)'s seven operations),
-  and the reviewer weighs it as **deferred work with a named destination**, not as work discharged.
+- It bears on **QA-C1** (through H-1) and **QA-C4** (through three of the operations CC-57 (a) names —
+  the register's cell says seven of them and the gate declares **six** at this head, § 4.4; the three
+  checklist-template writes are in both readings), and the reviewer weighs it as **deferred work with a
+  named destination**, not as work discharged.
 
 ## 8. What this document does not do
 

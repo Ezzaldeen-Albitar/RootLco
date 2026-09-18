@@ -10245,6 +10245,11 @@ its cell, its owner and its restriction exactly as this register holds them.
 - **It ran no test tier, no build, no migration, no database operation, no browser tier and no hosted
   job**, and it claims no result of one.
 - **It authorised no promotion and moved no protected branch.** Promotion stays NOT eligible.
+- **Its measurement was of the DOCUMENTS and of the sources its own three rows name, and no wider.**
+  Seven configuration, gate, baseline and suite artefacts that the nine determination rows rest on also
+  changed between `beebc6c2` and this head, and **nothing in this section reads them**. They are
+  measured at **§ 77** below, which was appended for exactly that reason. **No sentence in § 76 may be
+  read as a statement that the whole evidence base is unmoved.**
 
 ### 76.6 Verification
 
@@ -10271,3 +10276,168 @@ database, a container or a browser was run.**
 judges **committed** state against `origin/develop`, so on § 74.10's and § 75.10's reason it is read
 after the commit and not over a working tree. **No hosted check run of this branch is read or claimed
 anywhere in this section.**
+
+## 77. The evidence base re-measured past the documents, and two figures the reviewer must not read at face value (2026-09-18, second reading)
+
+**Dated section, appended 2026-09-18, after § 76. Baseline: the same protected `develop`
+`3b50f26c02bf658d3b83f09b766cfa364bb0425e`, measured by static read only.**
+
+**Why it exists, stated plainly.** § 76 and the first draft of
+[`determination-evidence-index-2026-09-18.md`](./determination-evidence-index-2026-09-18.md) measured
+the **documents** — `docs/phase-1/phase-1-31/`, `docs/governance/`, and, for § 76's three rows, the IAM
+and attachment sources those rows name — and concluded that nothing had moved. **That conclusion was
+too wide.** The nine determination rows also rest on **configuration, gates, baselines and suites**,
+and **seven of those changed** between `beebc6c2` (the head the Owner's decisions and the certification
+packet were measured at) and this one. Three of the seven are the instruments behind **QA-C1**,
+**QA-C4** and **SEC-C4**. A reviewer told "the evidence base is unmoved" while an instrument moved
+underneath it is being misinformed, so the movement is recorded here.
+
+**What this section is and is not.** It is a **disclosure**. **It closes no row, marks nothing fixed or
+completed, moves no state cell, moves no task-matrix row and re-classifies nothing. It raises no new
+identifier.** It does re-read two figures and finds one of them **stale**; the corrected wording is
+**PROPOSED and NOT applied**, on the same footing as § 76.3's reference repair. **No certification and
+no clearance is issued, implied or inferred; the nine decision fields at
+[`certification-and-clearance-packet.md`](./certification-and-clearance-packet.md) § 7 stay EMPTY;
+gate P1-G31's conditions 2 and 3 stay unsatisfied; no review is described as independent; and no
+signature is written on anybody's behalf.** **No test tier, build, migration, database operation,
+browser tier or hosted job was run to produce it.**
+
+**The three facts stay separate**: the Owner's **conditional decision** exists and is the Owner's; the
+nine **QA and Security determinations** are **absent**; the **formal P1-G31 prerequisites** are **not
+satisfied**.
+
+### 77.1 The seven non-documentary artefacts that moved
+
+Read from `git diff --stat beebc6c2 3b50f26c`, restricted to the artefacts the nine rows cite. The full
+table, with the effect on each row, is at
+[`determination-evidence-index-2026-09-18.md`](./determination-evidence-index-2026-09-18.md) § 3.1 and
+is not duplicated here; this is the register's record that it happened.
+
+| artefact                                          | size of change | row whose instrument it is |
+| ------------------------------------------------- | -------------- | -------------------------- |
+| `apps/web/vitest.config.ts`                       | +10            | **QA-C1**                  |
+| `.github/ci-baselines/coverage-baseline.web.json` | +21            | **QA-C1**                  |
+| `tests/ci/baseline-integrity.test.ts`             | +48 / −…       | **QA-C1**, kind B          |
+| `tests/db/shared-hardening.test.ts`               | +7             | **QA-C3**, kind B          |
+| `scripts/ci/check-p1-31-version-sourcing.mjs`     | +8 / −8        | **QA-C4**                  |
+| `tests/ci/p1-31-version-sourcing.test.ts`         | +32 / −…       | **QA-C4**                  |
+| `apps/api/src/server/auth/audit-actions.ts`       | +364 / −1      | **SEC-C4**                 |
+
+**Only one of the seven changes a figure any of the nine rows rests on**, and that is § 77.2. The other
+six leave every P1-31 figure where it was: no P1-31 coverage floor and no global floor moved, every
+cited line anchor was re-read at this head and holds, and no P1-31 audit action entry was removed,
+renamed or re-classed. **The widened web coverage include list is not re-measured here**, so the
+coverage record's global figures remain what they were labelled — **LOCAL**, and now also taken over a
+**smaller denominator than the one configured at this head**.
+
+**The artefacts that did NOT move are stated too**, because both halves matter:
+`attachment-policy.ts`, `attachment-service.ts`, the download-authorizations route,
+`access-administration-service.ts`, `organization-settings-service.ts`, and the P1-31 backend, CI and
+browser suites this phase's rows cite, are **byte-identical at the two heads** — which is the same
+reading § 76.1 and § 76.2 already took, arrived at independently.
+
+### 77.2 CC-57 (a): the register says SEVEN, the gate declares SIX at this head — PROPOSED, not applied
+
+**The register's own text, quoted from § 67:**
+
+> "the seven PENDING operations remain unreachable, and this gate discloses that rather than closing
+> it"
+
+**What the tree says at `3b50f26c`.** `tests/ci/p1-31-version-sourcing.test.ts:111` asserts
+`expect(pending.length).toBe(6)` and pins the compared set at **five**, naming `org.employee-status-set`
+as the fifth. `scripts/ci/check-p1-31-version-sourcing.mjs:128` reads "Six of the eleven have no
+consumer", and the gate's own prose records why: "It was seven until the employee register acquired a
+screen: the entry for the employee transition was deleted in the change that gave it a consumer, which
+is the lifecycle working rather than an exception to it."
+
+**How it moved.** Commit **`8bc4bfec`** — "Retire a pending-consumer entry that now has a consumer" —
+is **not** an ancestor of `beebc6c2` and **is** an ancestor of `3b50f26c`; it reached protected
+`develop` with **pull request #413**, inside the `#411 … #417` window § 76 measures. This is the
+declared lifecycle of the PENDING list, which turns the gate red the moment an entry's operation
+acquires a consumer, so the entry must be deleted in the same change.
+
+**What is discharged, and what is not.** **CC-57 (a) is NOT discharged and stays open.** **Six**
+guarded operations still have no consumer: three checklist-template writes (deferred behind
+**`P1-31-FU-001`** by **D-36**, deferred and not closed) and three report-configuration writes. What is
+discharged is **one seventh of the row's enumeration**, by the mechanism the row itself prescribes —
+"the phase that builds each surface owes the adapter, the mirror and the version discipline in one
+change".
+
+**PROPOSED closure text, for the reviewer, NOT APPLIED and NOT a determination.** Engineering proposes
+that CC-57 (a)'s finding cell be re-worded to read **"the six PENDING operations remain unreachable,
+and this gate discloses that rather than closing it"**, with its detail cell adding: _"A seventh, the
+employee-register transition, was retired at `8bc4bfec` (pull request #413) when the employee register
+acquired a consumer, which is this gate's declared lifecycle rather than an exception to it."_ **The
+state cell stays `open, recorded`**, the owner cell stays "the lane that builds each surface", and the
+disposition stays **CARRIED UNDER O-3**. **Nothing above is applied by this section**, and the cell at
+§ 67 is unchanged.
+
+**Where the stale number was also carried, and now is not.** The number is restated at
+[`certification-and-clearance-packet.md`](./certification-and-clearance-packet.md) § 5 (QA-C4's
+evidence cell), at [`closure-record.md`](./closure-record.md) § 4's QA-004 row, at
+[`task-matrix.md`](./task-matrix.md) and in
+[`owner-decisions-2026-09-16.md`](./owner-decisions-2026-09-16.md) § 2.1's carry table — **all of which
+quote the register and none of which is edited here**. The two documents dated 2026-09-18 state the
+measured six beside the quoted seven, so the reviewer reads the correction before reading the
+condition.
+
+### 77.3 CC-58 (a): 46 operations in the cell, 47 in the census — unreconciled, and quoted verbatim
+
+**The register's own text, quoted from § 68.4:**
+
+> "SE-5M cannot see a service-level authority requirement for 45 of the 46 operations"
+
+**The same phase's other figures say 47.**
+[`least-privilege-grant-map.md`](./least-privilege-grant-map.md) is a map of **47 operations over 34
+route files**; `tests/ci/p1-31-grant-map.test.ts:78-79` pins exactly those two numbers as
+`EXPECTED_OPERATIONS = 47` and `EXPECTED_ROUTE_FILES = 34`; and § 69.13 records the census as "47
+operations with 13 declared permission codes".
+
+**This section does not reconcile them, and does not re-derive either.** Both readings were taken from
+the committed artefacts at this head; which of the two is the right denominator for SE-5M's statement
+is a question for the lane that owns the row, not a number an index may quietly change. **No cell is
+edited, no figure is replaced, and no identifier is raised.** It is recorded so that the reviewer, who
+meets both numbers inside one SEC-C1 condition, is not left to decide whether one of them is a
+transcription error; and the limitation reads the same in kind under either — **all but one operation
+are probed at the pre-handler gate only**.
+
+### 77.4 What this section did NOT do
+
+- **It issued no certification and no clearance**, and it filled none of the nine decision fields.
+  **Gate conditions 2 and 3 are unsatisfied.**
+- **It described no review as independent**, it did not close **P1-EC-016**, and it signed for nobody.
+- **It closed no row, marked nothing fixed or completed, moved no state cell, no task-matrix row and
+  no total.**
+- **It applied no wording change.** The one at § 77.2 is **PROPOSED**, and the mismatch at § 77.3 is
+  reported and left alone.
+- **It raised no identifier** and renumbered nothing.
+- **It re-measured no coverage figure and no test tier.** Where it says a figure did not move, that is
+  a statement about the committed artefact, not a re-run.
+- **`P1-31-FU-001` stays open, deferred and not built**, on § 75.4's own terms.
+- **It ran no test tier, no build, no migration, no database operation, no browser tier and no hosted
+  job**, and it claims no result of one.
+- **It authorised no promotion and moved no protected branch.** Promotion stays NOT eligible.
+
+### 77.5 Verification
+
+**Documentation gates only, LOCAL and static over the working tree with this section and the two
+documents dated 2026-09-18 present. No hosted result is claimed, and no tier that needs a database, a
+container or a browser was run.**
+
+| command                                                                                   | exit |
+| ----------------------------------------------------------------------------------------- | ---- |
+| `npx prettier --check` over the three documents this fix touches                          | 0    |
+| `npm run validate:encoding`                                                               | 0    |
+| `npm run validate:product-name`                                                           | 0    |
+| `npm run validate:p1-27-doc-counts`                                                       | 0    |
+| `npm run validate:p1-27-evidence`                                                         | 0    |
+| `npm run validate:generated-artifacts`                                                    | 0    |
+| `npm run validate:p1-24-register`                                                         | 0    |
+| `npm run validate:p1-27-closing-values` (check mode)                                      | 0    |
+| `npm run validate:p1-27-lifecycle`                                                        | 0    |
+| `npm run validate:p1-27-matrix`                                                           | 0    |
+| `npm run security:all` (tracked secrets, browser secrets, scope exclusions, no-fake-data) | 0    |
+
+**The phase-ownership gate is read after the commit**, on § 74.10's, § 75.10's and § 76.6's reason: it
+judges committed state against `origin/develop`. **No hosted check run of this branch is read or
+claimed anywhere in this section.**
