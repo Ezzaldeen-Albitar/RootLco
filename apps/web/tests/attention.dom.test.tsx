@@ -411,6 +411,32 @@ describe('differences found by a count', () => {
     ).toHaveAttribute('href', '/en/inventory/counts');
   });
 
+  it('names the count each difference came from, so two of them are not one row', async () => {
+    /*
+     * Two counts, same shelf, same item, same day. The card used to draw a
+     * generic label beside a date on both, which made a row that cannot be
+     * matched to the count it came from — and a link to a list of counts is not
+     * a link to THE count until the row says which one.
+     */
+    readCountDiscrepancyAlerts.mockResolvedValue(
+      discrepancies([
+        discrepancyRow({ countId: 'aaaaaaaa-1111', lineId: 'line-1', varianceQty: '-2.000' }),
+        discrepancyRow({ countId: 'bbbbbbbb-2222', lineId: 'line-2', varianceQty: '-5.000' }),
+      ])
+    );
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseTheBranch(user);
+
+    const frame = card('attention.discrepancy.title');
+    const first = await within(frame).findByText('Count reference aaaaaaaa');
+    const second = within(frame).getByText('Count reference bbbbbbbb');
+    expect(first.closest('tr')).not.toBe(second.closest('tr'));
+    // And the count is placed, not only numbered: where it was taken is on the
+    // row beside the reference rather than filed under the item.
+    expect(first.closest('tr')).toHaveTextContent('A-01');
+  });
+
   it('says when no correction was raised instead of leaving the decision blank', async () => {
     readCountDiscrepancyAlerts.mockResolvedValue(
       discrepancies([discrepancyRow({ adjustmentId: null, adjustmentStatus: null })])
@@ -497,6 +523,30 @@ describe('still on their way', () => {
       '/en/inventory/transfers'
     );
     expect(within(frame).getByText(/sent more than 7 days ago/)).toBeInTheDocument();
+  });
+
+  it('names both BRANCHES, and says so when one is not in the list it was given', async () => {
+    /*
+     * The column asks which two branches a transfer runs between. It used to
+     * answer with two stock LOCATION codes, which is a different question: the
+     * read carries the branches as identifiers only, so the names come from the
+     * branch list the picker already loaded. A branch outside that list is
+     * named as outside it — never replaced by a shelf code, which would read as
+     * an answer.
+     */
+    readAgedInTransitAlerts.mockResolvedValue(
+      inTransit([transitRow({ fromBranchId: BRANCH_ID, toBranchId: 'branch-elsewhere' })])
+    );
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseTheBranch(user);
+
+    const frame = card('attention.inTransit.title');
+    const row = await within(frame).findByRole('row', { name: /Brake pad/ });
+    expect(row).toHaveTextContent(`From ${branch.name} to a branch not in your list`);
+    // The shelf codes stay, below, as the detail they are.
+    expect(row).toHaveTextContent('A-01');
+    expect(row).toHaveTextContent('B-02');
   });
 
   it('reports an empty answer as empty', async () => {

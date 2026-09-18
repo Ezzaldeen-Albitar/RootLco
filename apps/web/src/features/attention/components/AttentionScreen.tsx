@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
@@ -68,6 +68,20 @@ export function AttentionScreen({
   const [pair, setPair] = useState<BranchPair>(EMPTY_PAIR);
   const t = (key: keyof Messages) => translate(messages, key);
 
+  /*
+   * The branch list, as a lookup for the cards that report on a PAIR of
+   * branches. A transfer names the two it runs between by identifier only, and
+   * the only place on this screen that already knows their names is the list
+   * the picker was given. A branch missing from it stays missing: the card says
+   * so rather than inventing a name or quietly showing something else.
+   */
+  const names = useMemo(() => {
+    const map = new Map<string, string>();
+    if (branches.phase === 'listed') for (const row of branches.items) map.set(row.id, row.name);
+    return map;
+  }, [branches]);
+  const branchName = useCallback((id: string) => names.get(id) ?? null, [names]);
+
   return (
     <div className="flex flex-col gap-4">
       {canReadStock ? (
@@ -127,6 +141,7 @@ export function AttentionScreen({
               locale={locale}
               companyId={pair.companyId}
               branchId={pair.branchId}
+              branchName={branchName}
             />
           </div>
         ) : null}

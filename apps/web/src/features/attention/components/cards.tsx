@@ -345,6 +345,19 @@ export function LowStockCard({
  * 2. Count discrepancies
  * ------------------------------------------------------------------ */
 
+/**
+ * A short, stable handle for the count a difference came from.
+ *
+ * The read carries no count NUMBER — there is none in the schema — so the only
+ * thing that separates two counts of the same shelf on the same day is the
+ * identifier the row already holds. The leading run of it is shown rather than
+ * the whole, because the purpose is telling two rows apart on one screen and a
+ * full identifier read aloud does that no better.
+ */
+export function countReference(countId: string): string {
+  return countId.slice(0, 8);
+}
+
 export function CountDiscrepancyCard({
   messages,
   locale,
@@ -392,14 +405,27 @@ export function CountDiscrepancyCard({
               <Link href={attentionLink(locale, 'discrepancy')} className={LINK}>
                 {t('attention.discrepancy.openCount')}
               </Link>
-              <span className="block text-caption text-text-muted">
-                {formatDateTime(row.countedOn, locale)}
+              {/*
+               * WHICH count, in the two facts the counts screen itself lists a
+               * count by — where it was taken and when. A generic label beside a
+               * date left two counts of the same day telling the same story, and
+               * a row that cannot be matched to the count it came from is not a
+               * link to anything. The short reference below is the tie-break the
+               * read carries when even those two agree.
+               */}
+              <span className="block text-caption text-text-muted" dir="ltr">
+                {row.locationCode} · {formatDateTime(row.countedOn, locale)}
+              </span>
+              <span className="block text-caption text-text-muted" dir="ltr">
+                {formatMessage(t('attention.discrepancy.countRef'), {
+                  ref: countReference(row.countId),
+                })}
               </span>
             </Cell>
             <Cell>
               {row.itemName}
               <span className="block text-caption text-text-muted" dir="ltr">
-                {row.sku} · {row.locationCode}
+                {row.sku}
               </span>
             </Cell>
             <Cell>
@@ -520,11 +546,18 @@ export function AgedInTransitCard({
   locale,
   companyId,
   branchId,
+  branchName = () => null,
 }: {
   readonly messages: Messages;
   readonly locale: Locale;
   readonly companyId: string;
   readonly branchId: string;
+  /**
+   * The name of a branch the caller can see, or `null` where it cannot. Passed
+   * in rather than read here: the branch list is already on the screen for the
+   * picker, and a second read of it would make one refusal silence two things.
+   */
+  readonly branchName?: (id: string) => string | null;
 }) {
   const t = (key: string) => translateDynamic(messages, key);
   const enabled = companyId !== '' && branchId !== '';
@@ -581,7 +614,22 @@ export function AgedInTransitCard({
               <Qty value={row.outstandingQuantity} />
             </Cell>
             <Cell>
-              <span dir="ltr">
+              {/*
+               * The two BRANCHES, named. The read carries their identifiers and
+               * no names, so the names come from the branch list this screen
+               * already loaded for its picker; a branch outside that list is
+               * said to be outside it rather than replaced by a shelf code.
+               * Drawing the stock LOCATIONS here instead — which is what stood
+               * here — answered a different question from the one the column
+               * asks, and the codes are kept below as the detail they are.
+               */}
+              <span>
+                {formatMessage(t('attention.inTransit.fromTo'), {
+                  from: branchName(row.fromBranchId) ?? t('attention.inTransit.branchUnlisted'),
+                  to: branchName(row.toBranchId) ?? t('attention.inTransit.branchUnlisted'),
+                })}
+              </span>
+              <span className="block text-caption text-text-muted" dir="ltr">
                 {row.fromLocationCode} → {row.toLocationCode}
               </span>
             </Cell>
