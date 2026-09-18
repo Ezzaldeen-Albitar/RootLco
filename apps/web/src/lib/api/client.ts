@@ -121,6 +121,8 @@ export interface ProblemDetails {
   /** Permission codes the operation requires. Authorization failures only. */
   readonly requiredPermissions?: readonly string[];
   readonly capacity?: CapacityDetail; // `ERR-CAP-001` only. See `CapacityDetail` below.
+  /** `ERR-CAP-003` only: every kind a plan change would leave below current usage. */
+  readonly overCapacity?: readonly OverCapacityEntry[];
   /**
    * The allowance a work-order draw was measured against. `ERR-INV-001` only.
    * Quantities are exact decimal strings in the requirement unit; `allowance` and
@@ -855,6 +857,48 @@ export const CAPACITY_LIMIT_CODE = 'ERR-CAP-001';
 /** The organisation itself is suspended or closed, so it may not grow (409). */
 export const ORGANISATION_INACTIVE_CODE = 'ERR-CAP-002';
 
+/**
+ * The plan a change would assign sits below what the organisation already holds
+ * (409).
+ *
+ * Unlike the two above this refusal is not final: an operator who states a
+ * reason may accept it deliberately. The document lists EVERY kind that would be
+ * over its ceiling, which is what lets a screen show the whole picture instead
+ * of the first problem it met.
+ */
+export const PLAN_OVER_CAPACITY_CODE = 'ERR-CAP-003';
+
+/** One kind a plan change would leave over its ceiling. */
+export interface OverCapacityEntry {
+  readonly kind: string;
+  readonly used: number;
+  readonly newLimit: number;
+}
+
+/**
+ * The over-capacity list of an `ERR-CAP-003`, or an empty list when it is
+ * absent, malformed, or names a kind outside the vocabulary.
+ *
+ * Every member is checked before it is trusted, for the reason
+ * `capacityDetailOf` gives: a kind with no message key would render nothing at
+ * all, and a screen that silently showed less than the refusal said would be
+ * worse than one that showed only the sentence.
+ */
+export function overCapacityOf(failure: ApiFailure): readonly OverCapacityEntry[] {
+  if (failure.problem?.code !== PLAN_OVER_CAPACITY_CODE) return [];
+  const list: unknown = failure.problem.overCapacity;
+  if (!Array.isArray(list)) return [];
+  const entries: OverCapacityEntry[] = [];
+  for (const raw of list) {
+    if (raw === null || typeof raw !== 'object') continue;
+    const { kind, used, newLimit } = raw as Record<string, unknown>;
+    if (typeof kind !== 'string' || !CAPACITY_KINDS.includes(kind)) continue;
+    if (!Number.isInteger(used) || !Number.isInteger(newLimit)) continue;
+    entries.push({ kind, used: used as number, newLimit: newLimit as number });
+  }
+  return entries;
+}
+
 /** The capacity kinds the database vocabulary admits (`org.capacity_limit`). */
 export const CAPACITY_KINDS: readonly string[] = Object.freeze(['companies', 'branches', 'users']);
 
@@ -890,6 +934,7 @@ export function refusalMessageKey(failure: ApiFailure): string {
       return detail === null ? 'capacity.reached.unknown' : `capacity.reached.${detail.kind}`;
     }
     if (code === ORGANISATION_INACTIVE_CODE) return 'capacity.organisationInactive';
+    if (code === PLAN_OVER_CAPACITY_CODE) return 'capacity.planBelowUsage';
   }
   return failureMessageKey(failure);
 }

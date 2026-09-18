@@ -44,7 +44,11 @@ import {
   strayPoolErrors,
   loginPoolFor,
 } from './isolated-database';
-import { readGenesisInput, runGenesis } from '../../scripts/platform/genesis-platform-operator.mjs';
+import {
+  PLATFORM_AUTHORITY_CODES,
+  readGenesisInput,
+  runGenesis,
+} from '../../scripts/platform/genesis-platform-operator.mjs';
 
 const RUN = Math.random().toString(36).slice(2, 8);
 const EMAIL = `operator_${RUN}@fixture.test`;
@@ -233,11 +237,10 @@ describe('W9 — platform operator genesis', () => {
       'SELECT permission_code, granted_by FROM iam.platform_grants WHERE account_id = $1 AND revoked_at IS NULL ORDER BY 1',
       [established.operatorAccountId]
     );
-    expect(grants.rows.map((g) => g.permission_code)).toEqual([
-      'platform.organization.lifecycle',
-      'platform.organization.provision',
-      'platform.organization.read',
-    ]);
+    // Every code in the ONE exported list and nothing else (P1-32-PRE-020 raised
+    // it from three to nine). The query sorts, so the expectation is sorted too.
+    expect(grants.rows.map((g) => g.permission_code)).toEqual([...PLATFORM_AUTHORITY_CODES].sort());
+    expect(grants.rows).toHaveLength(9);
     expect(grants.rows.every((g) => g.granted_by !== established.operatorAccountId)).toBe(true);
     const account = await admin.query<{ status: string; tenant_id: string; email: string }>(
       'SELECT status, tenant_id, email FROM iam.user_accounts WHERE id = $1',
@@ -300,7 +303,7 @@ describe('W9 — platform operator genesis', () => {
     ).toMatchObject({ rowCount: 0 });
     expect(
       await admin.query('SELECT 1 FROM iam.platform_grants WHERE revoked_at IS NULL')
-    ).toMatchObject({ rowCount: 3 });
+    ).toMatchObject({ rowCount: PLATFORM_AUTHORITY_CODES.length });
   });
 
   it('G6 a partially established operator is completed, not re-created, and never for another address', async () => {
@@ -357,7 +360,7 @@ describe('W9 — platform operator genesis', () => {
         'SELECT 1 FROM iam.platform_grants WHERE revoked_at IS NULL AND account_id = $1',
         [established.operatorAccountId]
       )
-    ).toMatchObject({ rowCount: 3 });
+    ).toMatchObject({ rowCount: PLATFORM_AUTHORITY_CODES.length });
     expect(
       await admin.query('SELECT count(*)::int AS n FROM org.tenants WHERE tenant_code LIKE $1', [
         `${HOME}%`,

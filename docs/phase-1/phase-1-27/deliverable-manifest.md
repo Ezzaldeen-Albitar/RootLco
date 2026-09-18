@@ -162,7 +162,7 @@ fact in words did not, which is the gap this revision closes.
 | Source files under the P1-27 ownership gate                            | **145** (43 feature source + 53 route + 49 adopted reception)      | derived from the gate's own scan roots                                     |
 | Router pages (CRM and Vehicle)                                         | **8**                                                              | command 1                                                                  |
 | Shared-foundation source files changed by the phase or its remediation | **13** named in §5.5                                               | command 1, cross-read against the task register and the remediation record |
-| Web unit and component test files                                      | **162**                                                            | derived                                                                    |
+| Web unit and component test files                                      | **167**                                                            | derived                                                                    |
 | Playwright specification files                                         | **9** (2 anonymous, 7 authenticated)                               | commands 11 and 12 — **not re-measured**, §1.1.1                           |
 | Root CI-contract test files                                            | **46**                                                             | derived                                                                    |
 | CI gate scripts under `scripts/ci`                                     | **66** in the directory, **8** introduced or changed by this phase | derived; the eight are the `scripts/ci` rows of §7.1                       |
@@ -407,7 +407,7 @@ records.
 
 ## 6. Test files
 
-### 6.1 Web unit and component — `apps/web/tests` (162 files, and no case total — `E-03`)
+### 6.1 Web unit and component — `apps/web/tests` (167 files, and no case total — `E-03`)
 
 **`E-03` is closed by DELETING the number, not by correcting it.** The heading
 used to read `(70 files, 1493 cases, 0 failed)`, and before that `(66 files, 1231
@@ -417,7 +417,7 @@ and borrowing its credibility. It drifted exactly as the finding predicted: the
 paragraphs below this heading still said `66` and `1231` while the heading beside
 them said `70` and `1493` — `E-02` returning, in the section written to close it.
 
-`149` is recomputed from the tree on every run, here and in §3, and
+`154` is recomputed from the tree on every run, here and in §3, and
 `p1-27-doc-reconciliation.test.ts` fails if either statement of it disagrees with
 `apps/web/tests`.
 
@@ -692,7 +692,7 @@ under-report itself by seven files.
 | `evidence/evidence-manifest.json`                 | 175   | `QA-005` — a SHA-256 digest of every document in this directory                    |
 | `evidence/closing-value-ledger.json`              | 907   | Every closing value on the two evidence pages, classified, with its authority      |
 | `evidence/lifecycle-ledger.json`                  | 72    | The closure lifecycle's observations and the state this repository declares        |
-| `evidence/local-run-ledger.json`                  | 51    | What a tier DID when it was run — written only by `record:p1-27-run`               |
+| `evidence/local-run-ledger.json`                  | 64    | What a tier DID when it was run — written only by `record:p1-27-run`               |
 | `evidence/task-traceability.md`                   | 437   | Every task, the operations it calls, the files it produced, the named proof        |
 | `evidence/test-catalogue-traceability.md`         | 406   | `DOC-001` — the 29 canonical `TC-P1-27-*` ids bound to executable tests            |
 | `evidence/test-catalogue-traceability.json`       | 863   | Its machine-readable form, checked by `validate:p1-27-doc-counts`                  |
@@ -982,15 +982,15 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      an earlier revision put them in the label column and broke two other gates
      whose regexes read the label and the number as adjacent cells. -->
 
-<!-- derived: files apps/web/tests = 162 -->
-<!-- derived: files tests/ci = 76 -->
+<!-- derived: files apps/web/tests = 167 -->
+<!-- derived: files tests/ci = 77 -->
 <!-- derived: files scripts/ci = 66 -->
 <!-- derived: files apps/web/scripts = 4 -->
-<!-- derived: files supabase/migrations = 154 -->
-<!-- derived: files tests/db = 153 -->
-<!-- derived: files tests/db:all = 157 -->
-<!-- derived: files tests/backend = 154 -->
-<!-- derived: files tests/backend:all = 163 -->
+<!-- derived: files supabase/migrations = 158 -->
+<!-- derived: files tests/db = 154 -->
+<!-- derived: files tests/db:all = 158 -->
+<!-- derived: files tests/backend = 156 -->
+<!-- derived: files tests/backend:all = 165 -->
 <!-- derived: files apps/web/src/features/crm = 20 -->
 <!-- derived: files apps/web/src/features/vehicles = 23 -->
 <!-- derived: files p1-27-frontend-gate = 171 -->
@@ -1022,7 +1022,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/evidence-manifest.json = 175 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/closing-value-ledger.json = 907 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/lifecycle-ledger.json = 72 -->
-<!-- derived: lines docs/phase-1/phase-1-27/evidence/local-run-ledger.json = 51 -->
+<!-- derived: lines docs/phase-1/phase-1-27/evidence/local-run-ledger.json = 64 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/task-traceability.md = 437 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json = 863 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.md = 406 -->

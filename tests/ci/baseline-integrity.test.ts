@@ -508,6 +508,12 @@ describe('the coverage include lists are pinned, because they are the denominato
     );
     expect(files.filter((file) => file.endsWith('.d.ts'))).toEqual([]);
     // P1-31 P-12 adds ReportExportService to the measured backend population.
+    // P1-32-PRE-021..026 add seven platform-module files (three repositories and
+    // four services), so 291 -> 298.
+    // The Owner directive organisation administration adds capacity-failure.ts,
+    // so the merge of both holds 299.
+    // P1-32-PRE-151 adds iam/application/identity-compensation.ts, the one place
+    // the provider identity of a refused write is undone, so 299 -> 300.
     // 296 with the P1-32 preparatory inventory slice: the transfer, receipt,
     // adjustment and count services and the shared failure mapper.
     // 298 with P1-32 preparatory slice 2: the item identifier service and the
@@ -516,7 +522,9 @@ describe('the coverage include lists are pinned, because they are the denominato
     // data service.
     // 301 with the Owner directive organisation administration merged in, which
     // adds capacity-failure.ts.
-    expect(files.length).toBe(301);
+    // 309 at the integration of the two lines: 292 in the shared base, 9 more
+    // from this branch and 8 from the console line.
+    expect(files.length).toBe(309);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -589,7 +597,13 @@ describe('the coverage include lists are pinned, because they are the denominato
      * The floors are untouched for the reason above: re-establishing them needs a
      * hosted measurement run, which these slices did not perform and do not claim.
      *
-     * The 290 above is these 289 plus `server/openapi/document.ts`, which the
+     * 296 with the P1-32 Platform Owner Console backend: SEVEN more, all in the
+     * platform module — `data/subscription-repository.ts`,
+     * `data/billing-repository.ts`, `data/insight-repository.ts` and the
+     * `application/` session, subscription, billing and insight services. The
+     * floors are untouched for the reason above.
+     *
+     * The 297 below is these 296 plus `server/openapi/document.ts`, which the
      * include list admits and `exclude` then removes; the two numbers moving
      * together by the same count is what says no file slipped in behind the
      * exclusion.
@@ -604,6 +618,9 @@ describe('the coverage include lists are pinned, because they are the denominato
     // more, `modules/iam/application/capacity-failure.ts`, the single reader of
     // the database capacity refusal that both organisation creation and
     // invitation share. The floors stay untouched for the same reason.
-    expect(instrumented.length).toBe(300);
+    // 308 at the integration of the two lines: 291 in the shared base, 9 more
+    // application files from this branch and 8 from the console line, none of
+    // them under `server/openapi/`. The floors stay untouched for that reason.
+    expect(instrumented.length).toBe(308);
   });
 });

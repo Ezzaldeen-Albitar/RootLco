@@ -511,6 +511,21 @@ import '@/app/api/v1/org/departments/[departmentId]/route';
 
 import '@/app/api/v1/platform/organizations/route';
 import '@/app/api/v1/platform/organizations/[tenantId]/status/route';
+// P1-32-PRE-021..026 — the Platform Owner Console backend.
+import '@/app/api/v1/platform/session/route';
+import '@/app/api/v1/platform/organizations/[tenantId]/route';
+import '@/app/api/v1/platform/plans/route';
+import '@/app/api/v1/platform/plans/[planId]/route';
+import '@/app/api/v1/platform/organizations/[tenantId]/administrators/route';
+import '@/app/api/v1/platform/organizations/[tenantId]/branches/route';
+import '@/app/api/v1/platform/organizations/[tenantId]/companies/route';
+import '@/app/api/v1/platform/organizations/[tenantId]/subscriptions/route';
+import '@/app/api/v1/platform/organizations/[tenantId]/subscriptions/[subscriptionId]/cancellation/route';
+import '@/app/api/v1/platform/organizations/[tenantId]/charges/route';
+import '@/app/api/v1/platform/organizations/[tenantId]/charges/[chargeId]/void/route';
+import '@/app/api/v1/platform/organizations/[tenantId]/receipts/route';
+import '@/app/api/v1/platform/statistics/route';
+import '@/app/api/v1/platform/audit-events/route';
 
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 

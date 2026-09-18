@@ -12,7 +12,12 @@
  * URL: no documentation host is provisioned (ADR-012), and publishing a URL that
  * 404s is worse than publishing a stable identifier.
  */
-import { type AppFailure, type CapacityDetail, type MaterialDrawDetails } from './app-failure';
+import {
+  type AppFailure,
+  type CapacityDetail,
+  type CapacityShortfall,
+  type MaterialDrawDetails,
+} from './app-failure';
 import { type ErrorCode, errorDefinition } from './catalog';
 import { CORRELATION_HEADER } from '../observability/correlation';
 
@@ -43,6 +48,8 @@ export interface ProblemDocument {
   readonly requiredPermissions?: readonly string[];
   /** Which subscription ceiling was reached. Capacity refusals only. */
   readonly capacity?: CapacityDetail;
+  /** Every kind a plan change would leave over its ceiling. Plan refusals only. */
+  readonly overCapacity?: readonly CapacityShortfall[];
   /** The allowance a work-order draw was measured against. `ERR-INV-001` only. */
   readonly materialDraw?: MaterialDrawDetails;
 }
@@ -71,6 +78,7 @@ export function problemFor(failure: AppFailure, correlationId: string): ProblemD
       ? { requiredPermissions: details.requiredPermissions }
       : {}),
     ...(details.capacity !== undefined ? { capacity: details.capacity } : {}),
+    ...(details.overCapacity !== undefined ? { overCapacity: details.overCapacity } : {}),
     ...(details.materialDraw !== undefined ? { materialDraw: details.materialDraw } : {}),
   };
 }

@@ -35,6 +35,24 @@ export interface CapacityDetail {
   readonly used: number;
 }
 
+/**
+ * One capacity kind a plan change would place BELOW what the organisation is
+ * already using.
+ *
+ * `newLimit`, not `limit`: the number is what the plan being assigned would
+ * impose, and an operator reading the refusal has to be able to tell it from the
+ * ceiling in force. Safe to publish for the same reason the ceiling itself is —
+ * the caller is administering the organisation the numbers describe.
+ */
+export interface CapacityShortfall {
+  /** `companies`, `branches` or `users`. */
+  readonly kind: string;
+  /** What the organisation is consuming right now. */
+  readonly used: number;
+  /** The ceiling the plan being assigned would impose. */
+  readonly newLimit: number;
+}
+
 /** Caller-safe extras. Only primitives and the shapes declared here. */
 export interface SafeDetails {
   readonly violations?: readonly FieldViolation[];
@@ -46,6 +64,8 @@ export interface SafeDetails {
   readonly requiredPermissions?: readonly string[];
   /** Which subscription ceiling was reached. Capacity refusals only. */
   readonly capacity?: CapacityDetail;
+  /** Every kind a plan change would leave over its ceiling. Plan refusals only. */
+  readonly overCapacity?: readonly CapacityShortfall[];
   /**
    * Why a work-order draw was refused by its material requirement (`ERR-INV-001`).
    * Quantities are exact decimal strings in the REQUIREMENT unit; `allowance` and

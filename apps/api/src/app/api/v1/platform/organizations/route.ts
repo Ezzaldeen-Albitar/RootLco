@@ -29,7 +29,7 @@ import {
   searchParamsToObject,
 } from '@/server/http/validation';
 import { requireIdempotencyKey } from '@/server/http/idempotency';
-import { platformModule } from '@/modules/platform';
+import { TENANT_STATUSES, platformModule } from '@/modules/platform';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -45,6 +45,14 @@ export const dynamic = 'force-dynamic';
 const Query = z
   .object({
     tenantId: schemas.uuid.optional(),
+    /**
+     * Case-insensitive CONTAINS over the organisation code and display name
+     * (P1-32-PRE-022). Bounded so a search box cannot become a payload; the
+     * repository escapes `LIKE` metacharacters so the fragment is literal.
+     */
+    q: z.string().trim().min(1).max(100).optional(),
+    status: z.enum(TENANT_STATUSES).optional(),
+    cursor: schemas.cursor.optional(),
     limit: schemas.limit.optional(),
   })
   .strict();
@@ -132,12 +140,21 @@ const ProvisionBody = z
   })
   .strict();
 
+/**
+ * The id stays `platform.organization-read` although the operation now
+ * searches (P1-32-PRE-022). Renaming it would move the generated contract, the
+ * idempotent-operation manifest, the P1-24 register, the operation-coverage
+ * manifest and every proof that names it, while the only thing a new id would
+ * buy is a closer match to a word — the route, method and permission are
+ * unchanged, so no caller could tell the difference except by breaking.
+ */
 export const ORGANIZATION_READ_OPERATION = defineOperation({
   id: 'platform.organization-read',
   module: 'platform',
   method: 'GET',
   path: '/platform/organizations',
-  summary: 'Read organizations from the control plane, optionally narrowed to one tenant.',
+  summary:
+    'Search organizations from the control plane by code, name or status, optionally narrowed to one tenant.',
   permissions: ['platform.organization.read'],
   scope: 'tenant',
   auditClass: 'none',
@@ -169,12 +186,11 @@ export async function GET(request: Request): Promise<Response> {
     'query'
   );
   return handleOperation(ORGANIZATION_READ_OPERATION, request, async ({ db }) => ({
-    body: {
-      items: await platformModule().organizations.read(db, {
-        ...(query.tenantId !== undefined ? { tenantId: query.tenantId } : {}),
-        limit: query.limit ?? 50,
-      }),
-    },
+    body: await platformModule().organizations.read(
+      db,
+      { tenantId: query.tenantId, q: query.q, status: query.status },
+      { cursor: query.cursor, limit: query.limit }
+    ),
   }));
 }
 

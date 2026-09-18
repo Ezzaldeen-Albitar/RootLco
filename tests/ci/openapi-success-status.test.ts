@@ -63,6 +63,12 @@ describe('every operation publishes the success status it returns', () => {
     // 412 with the P1-31 warranty status-history read (P-18), one further route
     // module whose single literal status the scanner resolves from the handler.
     // P1-31 P-12 adds one 200 export response.
+    // 426 with the P1-32 Platform Owner Console backend (thirteen operations).
+    // 429 with the Owner directive organisation administration: the company and
+    // branch creates co-locate a POST on two existing route modules, and the
+    // capacity read is one new module.
+    // 432 with the P1-32-PRE-151 organisation growth: three operations over three
+    // new route modules under the organisation the console is administering.
     // 431 with the P1-32 preparatory inventory slice: eighteen more route
     // handlers, each resolved from its own literal status or its absence.
     // 437 with P1-32 preparatory slice 2: six identifier operations.
@@ -77,7 +83,9 @@ describe('every operation publishes the success status it returns', () => {
     // 468 with the Owner directive organisation administration merged in: the
     // company and branch creates co-locate a POST on two existing route modules,
     // and the capacity read is one new module.
-    expect(actual.size).toBe(468);
+    // 484 at the integration of the two lines: 416 in the shared base, 52 more
+    // operations from this branch and 16 from the console.
+    expect(actual.size).toBe(484);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -118,6 +126,14 @@ describe('every operation publishes the success status it returns', () => {
     // The P1-31 employee register (P-17) publishes four operations: the create
     // returns 201 (114 -> 115) and the other three — the list, the detail and the
     // status command — return 200.
+    // The P1-32 Platform Owner Console publishes thirteen operations: the plan,
+    // subscription, charge and receipt creates return 201 (115 -> 119) and the
+    // other nine return 200.
+    // The Owner directive organisation administration publishes three: the
+    // company and branch creates return 201 (119 -> 121) and the capacity read
+    // returns 200.
+    // The three growth operations all return 201: each of them either writes a
+    // row or issues an invitation, and a re-invitation is still an act.
     // The P1-32 preparatory inventory slice publishes eighteen operations and
     // exactly ONE literal 201: the adjustment request. The three creates that can
     // replay — transfer dispatch, goods receipt, count open — return
@@ -137,7 +153,9 @@ describe('every operation publishes the success status it returns', () => {
     // 129 -> 131 with the Owner directive organisation administration merged in:
     // the company and branch creates each return a literal 201; its capacity read
     // returns 200 and moves the count below instead.
-    expect(counts[201]).toBe(131);
+    // 131 + 124 - 117 = 138 at the integration of the two lines: the console's
+    // seven 201s and this branch's fourteen land on disjoint route modules.
+    expect(counts[201]).toBe(138);
     expect(counts[202]).toBe(1);
     // The two P1-30 opening-batch reads (S-17) are GETs returning 200, so
     // 264 -> 266 while 201 and 202 are unchanged.
@@ -168,6 +186,9 @@ describe('every operation publishes the success status it returns', () => {
     // GET returning 200 with the 201 and 202 counts unchanged. That pair not
     // moving is the assertion carrying weight: a ledger read that had shipped an
     // append beside it would show up here and nowhere else in this file.
+    // 297 -> 306 with the P1-32 console's nine 200s.
+    // 306 -> 307 with the Owner directive capacity read, a GET returning 200;
+    // its two sibling creates move the 201 count above instead.
     // 297 -> 314 with the P1-32 preparatory inventory slice: seventeen of its
     // eighteen operations publish 200 — the seven reads, the seven state changes,
     // and the three replayable creates whose status is not a literal — and the
@@ -189,7 +210,9 @@ describe('every operation publishes the success status it returns', () => {
     // 333 -> 335 with P1-32-PRE-141: the transfer settlement list and read.
     // 335 -> 336 with the Owner directive capacity read, a GET returning 200;
     // its two sibling creates move the 201 count above instead.
-    expect(counts[200]).toBe(336);
+    // 336 + 307 - 298 = 345 at the integration of the two lines: the console's
+    // nine 200s and this branch's thirty-eight land on disjoint route modules.
+    expect(counts[200]).toBe(345);
   });
 
   it('reads the handler, not the declaration', () => {

@@ -26,6 +26,14 @@ const alias = { '@': fileURLToPath(new URL('./src', import.meta.url)) };
  * feature code could be instrumented at all. Their critical-module floors are in
  * `.github/ci-baselines/coverage-baseline.web.json`.
  *
+ * The Platform Owner Console — `src/features/platform/**` and the
+ * `(platform)` route group — joined for the same reason, and the same way. A
+ * surface absent from this list is not measured at a low number; it is absent
+ * from the report, so the touched-file floor in the baseline skips every one of
+ * its files (`coverage-gate.mjs` iterates the report, not the tree) and the
+ * global floors are computed over a denominator it never joins. Its
+ * critical-module floors sit beside the P1-31 ones.
+ *
  * ## The escaping is load-bearing, not decoration
  *
  * The dashboard pages live at `src/app/[locale]/(dashboard)/`. Written into a
@@ -47,7 +55,9 @@ export const COVERAGE_INCLUDE = [
   'src/features/delivery/**',
   'src/features/warranty/**',
   'src/features/reports/**',
+  'src/features/platform/**',
   'src/app/\\[locale\\]/\\(dashboard\\)/**',
+  'src/app/\\[locale\\]/\\(platform\\)/**',
   'src/lib/**',
 ];
 

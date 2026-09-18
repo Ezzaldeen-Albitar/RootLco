@@ -162,21 +162,7 @@ export class OrganizationAdministrationService {
    * has no standing over one that does not exist.
    */
   async createCompany(db: DbHandle, input: CompanyCreateInput): Promise<CompanyResult> {
-    let created: CompanyRecordView;
-    try {
-      created = await this.repository.createCompany(db, input);
-    } catch (error) {
-      // uq_legal_companies_tenant_code_active. A duplicate code is a caller
-      // conflict, not a server fault, and route-handler sends every 5xx to the
-      // exception monitor — so letting the 23505 through would be silent in the
-      // response and noisy in the wrong place.
-      if (isSqlState(error, SQLSTATE.uniqueViolation)) {
-        throw new AppFailure('ERR-RES-002', {
-          message: 'A company with that code already exists in this organisation',
-        });
-      }
-      throwCapacityFailure(error);
-    }
+    const created = await this.writeCompany(db, input);
 
     await appendAudit(db, {
       action: 'org.company.created',
@@ -194,6 +180,35 @@ export class OrganizationAdministrationService {
     });
 
     return { company: created };
+  }
+
+  /**
+   * The WRITE half of a company creation, without the audit record.
+   *
+   * Exported as a port because the Platform Owner Console adds a company to an
+   * organisation through exactly this statement and exactly these refusals —
+   * the same INSERT, the same duplicate mapping, the same capacity mapping — and
+   * a second implementation would be a second set of rules that agreed until it
+   * did not. What the console does NOT share is where the act is recorded: a
+   * platform act is audited in the OPERATOR's tenant carrying the target, while
+   * the tenant operation records it in its own. So the audit stays with the
+   * caller and only the write is shared.
+   */
+  async writeCompany(db: DbHandle, input: CompanyCreateInput): Promise<CompanyRecordView> {
+    try {
+      return await this.repository.createCompany(db, input);
+    } catch (error) {
+      // uq_legal_companies_tenant_code_active. A duplicate code is a caller
+      // conflict, not a server fault, and route-handler sends every 5xx to the
+      // exception monitor — so letting the 23505 through would be silent in the
+      // response and noisy in the wrong place.
+      if (isSqlState(error, SQLSTATE.uniqueViolation)) {
+        throw new AppFailure('ERR-RES-002', {
+          message: 'A company with that code already exists in this organisation',
+        });
+      }
+      throwCapacityFailure(error);
+    }
   }
 
   async updateCompany(
@@ -301,6 +316,34 @@ export class OrganizationAdministrationService {
     authorizeScope: ScopeAuthorizer
   ): Promise<BranchResult> {
     await authorizeScope({ companyId: input.companyId });
+    const created = await this.writeBranch(db, input);
+
+    await appendAudit(db, {
+      action: 'org.branch.created',
+      entityType: 'org.branch',
+      entityId: created.id,
+      details: [
+        { field: 'branch_code', classification: 'public', value: created.branchCode },
+        { field: 'name', classification: 'public', value: created.name },
+        { field: 'timezone_name', classification: 'public', value: created.timezoneName },
+      ],
+    });
+
+    return { branch: created };
+  }
+
+  /**
+   * The WRITE half of a branch creation, without the audit record: the company
+   * reach check, the insert, and the numbering runs the branch owes.
+   *
+   * The console adds a branch to an organisation through this method for the
+   * reason the company port states — one statement, one set of refusals, one
+   * place where a branch without its invoice, quotation and receipt runs is
+   * refused rather than committed. The scope authorization stays with the tenant
+   * operation: a platform operator holds no company-scoped grant and is
+   * authorized by `platform.organization.manage` plus the target window instead.
+   */
+  async writeBranch(db: DbHandle, input: BranchCreateInput): Promise<BranchRecordView> {
     if (!(await this.repository.companyIsReachable(db, input.companyId))) {
       throw notFound();
     }
@@ -322,19 +365,7 @@ export class OrganizationAdministrationService {
       companyId: created.companyId,
       branchId: created.id,
     });
-
-    await appendAudit(db, {
-      action: 'org.branch.created',
-      entityType: 'org.branch',
-      entityId: created.id,
-      details: [
-        { field: 'branch_code', classification: 'public', value: created.branchCode },
-        { field: 'name', classification: 'public', value: created.name },
-        { field: 'timezone_name', classification: 'public', value: created.timezoneName },
-      ],
-    });
-
-    return { branch: created };
+    return created;
   }
 
   async updateBranch(

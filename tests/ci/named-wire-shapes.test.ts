@@ -137,6 +137,20 @@ describe('every route body serialises a named type', () => {
     // be named `WarrantyStatusHistoryEntryView` as well — so `named` moves by one
     // and `composed` does not.
     // P1-31 P-12 adds the named ReportExportView response.
+    // 426 with the P1-32 Platform Owner Console backend: thirteen new bodies,
+    // every one a NAMED service return type, so `named` moves by thirteen — and
+    // by one more, because `platform.organization-read` now serialises the named
+    // `Page<OrganizationView>` from its service where it used to compose
+    // `{ items }` in the route, which is also why `composed` falls by one.
+    // 429 with the Owner directive organisation administration: the company
+    // create serialises `CompanyResult`, the branch create `BranchResult` and the
+    // capacity read `CapacityResult` — all NAMED — so `named` moves by three and
+    // `composed` does not.
+    // 432 with the P1-32-PRE-151 organisation growth: the company add serialises
+    // `CompanyAddedView`, the branch add `BranchAddedView` and the administrator
+    // setup `AdministratorSetupResultView` — all NAMED, all carrying the target
+    // organisation beside the row, so `named` moves by three and `composed` does
+    // not.
     // 431 with the P1-32 preparatory inventory slice: eighteen operations —
     // transfers, goods receipts, the cost history, adjustments and counts — and
     // every one serialises a NAMED view or `Page<…>` of one, so `named` moves by
@@ -159,9 +173,14 @@ describe('every route body serialises a named type', () => {
     // company create serialises `CompanyResult`, the branch create `BranchResult`
     // and the capacity read `CapacityResult` — all NAMED — so `named` moves by
     // three and `composed` does not.
-    expect(summary.bodies).toBe(468);
-    expect(summary.named).toBe(415);
-    expect(summary.composed).toBe(53);
+    // 484 with the Owner directive inventory operations merged into the Platform
+    // Owner Console line: the two branches move different route modules, so the
+    // console's sixteen bodies and this branch's fifty-two add without overlap;
+    // `named` moves by seventeen and by fifty-two, and `composed` falls by one
+    // for the console's `platform.organization-read` alone.
+    expect(summary.bodies).toBe(484);
+    expect(summary.named).toBe(432);
+    expect(summary.composed).toBe(52);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);
   });

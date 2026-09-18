@@ -87,6 +87,38 @@ vi.mock('@/features/vehicles/documents-api', () => ({
   listVehicleDocuments: async () => ({ status: 'ok', documentIds: [] }),
 }));
 
+/*
+ * P1-32-PRE-069 — the Platform Owner Console routes. The platform session and
+ * every console read are replaced so each route can be invoked with a chosen
+ * set of platform authority codes and the reads it attempted can be counted.
+ */
+let PLATFORM_CODES: string[] = [];
+const platformReads = vi.hoisted(() => ({
+  readStatistics: vi.fn(),
+  readOrganization: vi.fn(),
+  listPlans: vi.fn(),
+  listCharges: vi.fn(),
+  listOrganizationChoices: vi.fn(),
+}));
+vi.mock('@/features/platform/api/session', () => ({
+  requirePlatformSession: async () => ({
+    userId: 'p-1',
+    homeTenantId: 'h-1',
+    platformPermissions: PLATFORM_CODES,
+  }),
+}));
+vi.mock('@/features/platform/api', () => ({
+  readStatistics: (...args: unknown[]) => platformReads.readStatistics(...args),
+  readOrganization: (...args: unknown[]) => platformReads.readOrganization(...args),
+  listPlans: (...args: unknown[]) => platformReads.listPlans(...args),
+  listCharges: (...args: unknown[]) => platformReads.listCharges(...args),
+  listOrganizationChoices: (...args: unknown[]) => platformReads.listOrganizationChoices(...args),
+  // The paged helper the two browser-callable reads in `actions.ts` use. Those
+  // two are Server Actions a client table calls after render, so no route below
+  // reaches them; the export is stood in for so the actions module still loads.
+  readPage: vi.fn(),
+}));
+
 const { VEHICLE_PERMISSIONS, CRM_PERMISSIONS } = await import('@/features/crm/permissions');
 const { DOCUMENT_LIST_PERMISSION } = await import('@/features/vehicles/documents-contract');
 const VehiclePage = (await import('@/app/[locale]/(dashboard)/vehicles/[vehicleId]/page')).default;
@@ -188,6 +220,217 @@ describe('the vehicle profile route grants each capability from its OWN permissi
       allowed['canListDocuments'],
       'no session in this file ever made canListDocuments true'
     ).toBe(true);
+  });
+});
+
+// --- P1-32-PRE-069: the Platform Owner Console routes ------------------------
+
+type ConsoleRoute = (args: {
+  params: Promise<Record<string, string>>;
+  searchParams?: Promise<Record<string, string>>;
+}) => Promise<unknown>;
+
+const { PLATFORM_PERMISSIONS: P } = await import('@/features/platform/permissions');
+const { PermissionDeniedState } = await import('@/components/states/States');
+const ALL_PLATFORM_CODES: readonly string[] = Object.values(P);
+const CONSOLE_TENANT = '11111111-1111-4111-8111-111111111111';
+const CONSOLE_ORGANIZATION = {
+  id: CONSOLE_TENANT,
+  tenantCode: 'test_org',
+  displayName: 'Test Organisation',
+  status: 'active',
+  defaultLocale: 'en',
+  defaultTimezone: 'UTC',
+  createdAt: '2026-09-01T00:00:00.000Z',
+  companies: [],
+  branches: [],
+  userCountsByStatus: [],
+  subscriptions: [],
+  subscriptionEvents: [],
+  statusHistory: [],
+  capacity: {
+    companies: { used: 0, limit: null },
+    branches: { used: 0, limit: null },
+    users: { used: 0, limit: null },
+  },
+};
+
+const consoleRoutes = {
+  overview: (await import('@/app/[locale]/(platform)/platform/page'))
+    .default as unknown as ConsoleRoute,
+  organizations: (await import('@/app/[locale]/(platform)/platform/organizations/page'))
+    .default as unknown as ConsoleRoute,
+  provision: (await import('@/app/[locale]/(platform)/platform/organizations/new/page'))
+    .default as unknown as ConsoleRoute,
+  detail: (await import('@/app/[locale]/(platform)/platform/organizations/[tenantId]/page'))
+    .default as unknown as ConsoleRoute,
+  plans: (await import('@/app/[locale]/(platform)/platform/plans/page'))
+    .default as unknown as ConsoleRoute,
+  audit: (await import('@/app/[locale]/(platform)/platform/audit/page'))
+    .default as unknown as ConsoleRoute,
+};
+
+function rendersType(node: unknown, type: unknown): boolean {
+  if (node === null || typeof node !== 'object') return false;
+  const element = node as { type?: unknown; props?: { children?: unknown } };
+  if (element.type === type) return true;
+  const children = element.props?.children;
+  return (Array.isArray(children) ? children : [children]).some((child) =>
+    rendersType(child, type)
+  );
+}
+
+function propsCarrying(node: unknown, prop: string): Record<string, unknown> | null {
+  if (node === null || typeof node !== 'object') return null;
+  const props = (node as { props?: Record<string, unknown> }).props;
+  if (!props || typeof props !== 'object') return null;
+  if (prop in props) return props;
+  const children = props.children;
+  for (const child of Array.isArray(children) ? children : [children]) {
+    const found = propsCarrying(child, prop);
+    if (found) return found;
+  }
+  return null;
+}
+
+function invokeConsole(route: ConsoleRoute, codes: readonly string[]) {
+  PLATFORM_CODES = [...codes];
+  return route({
+    params: Promise.resolve({ locale: 'en', tenantId: CONSOLE_TENANT }),
+    searchParams: Promise.resolve({}),
+  });
+}
+
+describe('the Platform Owner Console routes decide on their own platform code before reading', () => {
+  beforeEach(() => {
+    for (const read of Object.values(platformReads)) read.mockReset();
+    platformReads.readStatistics.mockResolvedValue({ status: 'error', correlationId: 'c' });
+    platformReads.readOrganization.mockResolvedValue({
+      status: 'ok',
+      data: CONSOLE_ORGANIZATION,
+      correlationId: 'c',
+    });
+    platformReads.listPlans.mockResolvedValue({
+      status: 'ok',
+      data: { items: [] },
+      correlationId: 'c',
+    });
+    platformReads.listCharges.mockResolvedValue({
+      status: 'ok',
+      data: { items: [], nextCursor: null, hasMore: false },
+      correlationId: 'c',
+    });
+    platformReads.listOrganizationChoices.mockResolvedValue([]);
+  });
+
+  const GATES = [
+    { name: 'overview', route: 'overview', code: P.statisticsRead, read: 'readStatistics' },
+    { name: 'organisation list', route: 'organizations', code: P.organizationRead, read: null },
+    { name: 'provisioning', route: 'provision', code: P.organizationProvision, read: 'listPlans' },
+    {
+      name: 'organisation detail',
+      route: 'detail',
+      code: P.organizationRead,
+      read: 'readOrganization',
+    },
+    { name: 'plan catalogue', route: 'plans', code: P.subscriptionManage, read: 'listPlans' },
+    { name: 'audit', route: 'audit', code: P.auditRead, read: 'listOrganizationChoices' },
+  ] as const;
+
+  it('found distinct platform codes to test with', () => {
+    // Nine with platform.organization.manage, which the console gained when it
+    // learned to add a company, open a branch and establish an administrator
+    // inside an organisation that is already running.
+    expect(new Set(ALL_PLATFORM_CODES).size).toBe(9);
+  });
+
+  for (const gate of GATES) {
+    it(`${gate.name}: denies without ${gate.code} and reads nothing`, async () => {
+      const tree = await invokeConsole(
+        consoleRoutes[gate.route],
+        ALL_PLATFORM_CODES.filter((code) => code !== gate.code)
+      );
+      expect(rendersType(tree, PermissionDeniedState)).toBe(true);
+      for (const read of Object.values(platformReads)) expect(read).not.toHaveBeenCalled();
+    });
+
+    it(`${gate.name}: renders for a holder of ${gate.code}`, async () => {
+      const tree = await invokeConsole(consoleRoutes[gate.route], ALL_PLATFORM_CODES);
+      expect(rendersType(tree, PermissionDeniedState)).toBe(false);
+      if (gate.read) expect(platformReads[gate.read]).toHaveBeenCalled();
+    });
+  }
+
+  const PAIRS = [
+    {
+      route: 'organizations',
+      prop: 'canProvision',
+      code: P.organizationProvision,
+      base: [P.organizationRead],
+    },
+    {
+      route: 'provision',
+      prop: 'canActivate',
+      code: P.organizationLifecycle,
+      base: [P.organizationProvision],
+    },
+  ] as const;
+
+  for (const pair of PAIRS) {
+    it(`${pair.route}: grants ${pair.prop} for ${pair.code} and for nothing else`, async () => {
+      const granted = propsCarrying(
+        await invokeConsole(consoleRoutes[pair.route], [...pair.base, pair.code]),
+        pair.prop
+      );
+      expect(granted?.[pair.prop]).toBe(true);
+      const denied = propsCarrying(
+        await invokeConsole(
+          consoleRoutes[pair.route],
+          ALL_PLATFORM_CODES.filter((code) => code !== pair.code)
+        ),
+        pair.prop
+      );
+      expect(denied?.[pair.prop]).toBe(false);
+    });
+  }
+
+  const DETAIL = [
+    { capability: 'canChangeLifecycle', code: P.organizationLifecycle },
+    { capability: 'canManageSubscription', code: P.subscriptionManage },
+    { capability: 'canReadBilling', code: P.billingRead },
+    { capability: 'canManageBilling', code: P.billingManage },
+    { capability: 'canReadAudit', code: P.auditRead },
+  ] as const;
+
+  for (const entry of DETAIL) {
+    it(`organisation detail: grants ${entry.capability} for ${entry.code} and for nothing else`, async () => {
+      const granted = propsCarrying(
+        await invokeConsole(consoleRoutes.detail, [P.organizationRead, entry.code]),
+        'capabilities'
+      );
+      expect((granted?.capabilities as Record<string, boolean>)[entry.capability]).toBe(true);
+      const denied = propsCarrying(
+        await invokeConsole(
+          consoleRoutes.detail,
+          ALL_PLATFORM_CODES.filter((code) => code !== entry.code)
+        ),
+        'capabilities'
+      );
+      expect((denied?.capabilities as Record<string, boolean>)[entry.capability]).toBe(false);
+    });
+  }
+
+  it('organisation detail: reads plans and charges only for their holders', async () => {
+    await invokeConsole(consoleRoutes.detail, [P.organizationRead]);
+    expect(platformReads.listPlans).not.toHaveBeenCalled();
+    expect(platformReads.listCharges).not.toHaveBeenCalled();
+    await invokeConsole(consoleRoutes.detail, [
+      P.organizationRead,
+      P.subscriptionManage,
+      P.billingRead,
+    ]);
+    expect(platformReads.listPlans).toHaveBeenCalledTimes(1);
+    expect(platformReads.listCharges).toHaveBeenCalledWith(CONSOLE_TENANT);
   });
 });
 

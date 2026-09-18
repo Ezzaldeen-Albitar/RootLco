@@ -160,8 +160,9 @@ describe('the tree as it stands passes, and the run is not vacuous', () => {
     });
     expect(out).toContain(
       // 75 -> 77 with the P1-32 preparatory inventory slice, which publishes two
-      // further If-Match-guarded operations.
-      'P1-31 version sourcing: 11 guarded operation(s) in scope of 77 the contract guards, ' +
+      // further If-Match-guarded operations; 78 with the Platform Owner Console
+      // line merged in, which publishes one more.
+      'P1-31 version sourcing: 11 guarded operation(s) in scope of 78 the contract guards, ' +
         '5 with a consumer, 6 pending one, 6 in-scope send(s), 5 adapter call site(s), ' +
         // 23 -> 25 with the P1-32 stock-operation adapters: posting a goods receipt and
         // recording a count line each send a version for an inv operation; 26 with the

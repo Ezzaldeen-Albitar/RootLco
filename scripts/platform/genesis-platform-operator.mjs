@@ -16,8 +16,9 @@
  *      then activated) — operator accounts live in a tenant that holds no
  *      business data (§5.4);
  *   2. the operator's account in it, `active`, with its status-history row;
- *   3. the three platform grants: `platform.organization.provision`,
- *      `platform.organization.lifecycle`, `platform.organization.read`;
+ *   3. the platform grants named by `PLATFORM_AUTHORITY_CODES` — the three
+ *      Wave-B organisation authorities and the six Platform Owner Console ones
+ *      (P1-32-PRE-020);
  *   4. an audit record in the home tenant, `platform.operator.genesis`, naming
  *      the account and the grants — identifiers only;
  *   5. optionally, the `app_platform` LOGIN role the application's
@@ -71,11 +72,73 @@ import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 
 const ALLOWED_ENVIRONMENTS = new Set(['local-acceptance', 'production-genesis']);
-const PLATFORM_CODES = Object.freeze([
+
+/**
+ * Every platform authority code an operator is established with — ONE list.
+ *
+ * Exported because two scripts need the same answer: this genesis, and
+ * `grant-platform-authority.mjs`, which completes an operator established before
+ * a code existed. Two copies of this list would drift the first time a code was
+ * added to one and not the other, and the symptom would be an operator whose
+ * console silently lacks a screen. The codes themselves are seeded in
+ * `supabase/seeds/04_iam_permission_catalog.sql`; a code here that is absent
+ * there fails the grant's foreign key, loudly.
+ */
+export const PLATFORM_AUTHORITY_CODES = Object.freeze([
   'platform.organization.provision',
   'platform.organization.lifecycle',
   'platform.organization.read',
+  // P1-32-PRE-020 — the Platform Owner Console.
+  'platform.organization.manage',
+  'platform.subscription.manage',
+  'platform.billing.read',
+  'platform.billing.manage',
+  'platform.statistics.read',
+  'platform.audit.read',
 ]);
+const PLATFORM_CODES = PLATFORM_AUTHORITY_CODES;
+
+/**
+ * The Platform Owner Console's BASE entitlement.
+ *
+ * `GET /platform/session` — the console's own session read, the first request
+ * every console page makes — declares `platform.organization.read` and nothing
+ * else. So an operator granted, say, `platform.audit.read` alone is refused at
+ * the session read and bounced out of the console before any page gate could
+ * admit them: their grants are real and completely unusable.
+ *
+ * The published permission set of `platform.session-read` is NOT widened to
+ * repair that, because a session read that accepts any one of eight codes tells
+ * a caller nothing about which console it may open. The rule is enforced where
+ * grants are MADE instead: every platform grant set contains this code.
+ */
+export const PLATFORM_BASE_AUTHORITY_CODE = 'platform.organization.read';
+
+/**
+ * The refusal a platform grant set earns, or `null` when it is admissible.
+ *
+ * A message rather than a thrown error, so each script raises it through its own
+ * refusal class and exit code; a pure function of the codes, so
+ * `tests/ci/platform-grant-base-entitlement.test.ts` can drive it with sets that
+ * no run would produce and prove each one is refused rather than assuming it.
+ *
+ * @param {readonly string[]} codes The platform authority codes a run would establish.
+ * @returns {string | null}
+ */
+export function platformGrantSetRefusal(codes) {
+  if (!Array.isArray(codes) || codes.length === 0) {
+    return 'Refused: a platform grant set must name at least one platform authority code';
+  }
+  if (!codes.includes(PLATFORM_BASE_AUTHORITY_CODE)) {
+    return (
+      `Refused: every platform grant set must contain ${PLATFORM_BASE_AUTHORITY_CODE}, ` +
+      'the console base entitlement that GET /platform/session declares. Without it the ' +
+      `operator is refused at the session read and never reaches a page. Requested: ${codes.join(', ')}`
+    );
+  }
+  return null;
+}
+
 /** The catalogue seed's own actor: the only uuid that predates every account. */
 const GENESIS_ACTOR = '00000000-0000-4000-8000-000000000001';
 
@@ -187,9 +250,19 @@ async function establishProviderIdentity(input) {
  * Runs the genesis on an open client. Exported so the proof suite can drive it
  * against the real database without spawning a process; `main` below is the
  * only other caller.
+ *
+ * `grantCodes` is the platform grant set this run establishes, and the refusal below
+ * checks that same set. It defaults to every platform authority code, which is
+ * what `main` passes. The check used to read the module constant directly, so it
+ * compared a fixed list with itself and could never refuse (P1-32-PRE-068).
  */
-export async function runGenesis(client, input, identity) {
+export async function runGenesis(client, input, identity, grantCodes = PLATFORM_CODES) {
   const state = {};
+  // The base-entitlement rule, checked before anything is written: this is one
+  // of the two code paths that issue a platform grant, and both refuse the same
+  // set for the same reason.
+  const refusal = platformGrantSetRefusal(grantCodes);
+  if (refusal) fail(refusal, 4);
   await client.query('BEGIN');
   try {
     // G2 — one-time. Any active platform grant held by a different account
@@ -237,7 +310,7 @@ export async function runGenesis(client, input, identity) {
         [account.id]
       );
       const held = [...new Set(codes.rows.map((r) => r.permission_code))].sort();
-      const missing = PLATFORM_CODES.filter((c) => !held.includes(c));
+      const missing = grantCodes.filter((c) => !held.includes(c));
       if (missing.length === 0) {
         await client.query('ROLLBACK');
         return {
@@ -269,7 +342,7 @@ export async function runGenesis(client, input, identity) {
             {
               field: 'platform_grants',
               old: held.join(','),
-              new: PLATFORM_CODES.join(','),
+              new: grantCodes.join(','),
               class: 'public',
             },
             { field: 'home_tenant_id', old: null, new: account.tenant_id, class: 'internal' },
@@ -283,7 +356,7 @@ export async function runGenesis(client, input, identity) {
           outcome: 'dry-run',
           operatorAccountId: account.id,
           homeTenantId: account.tenant_id,
-          grants: [...PLATFORM_CODES],
+          grants: [...grantCodes],
           completedGrants: missing,
           auditRecordId: completion.rows[0].id,
           loginCreated: false,
@@ -294,7 +367,7 @@ export async function runGenesis(client, input, identity) {
         outcome: 'completed',
         operatorAccountId: account.id,
         homeTenantId: account.tenant_id,
-        grants: [...PLATFORM_CODES],
+        grants: [...grantCodes],
         completedGrants: missing,
         auditRecordId: completion.rows[0].id,
         loginCreated: false,
@@ -357,7 +430,7 @@ export async function runGenesis(client, input, identity) {
 
     // 3. The three grants. granted_by is the genesis actor, never the account
     //    itself: ck_platform_grants_no_self_grant.
-    for (const code of PLATFORM_CODES) {
+    for (const code of grantCodes) {
       await client.query(
         `INSERT INTO iam.platform_grants (account_id, permission_code, granted_by, created_by)
          VALUES ($1, $2, $3, $3)`,
@@ -386,7 +459,7 @@ export async function runGenesis(client, input, identity) {
         JSON.stringify([
           { field: 'email', old: null, new: input.operator.email, class: 'restricted' },
           { field: 'identity_provider', old: null, new: input.operator.provider, class: 'public' },
-          { field: 'platform_grants', old: null, new: PLATFORM_CODES.join(','), class: 'public' },
+          { field: 'platform_grants', old: null, new: grantCodes.join(','), class: 'public' },
           { field: 'home_tenant_id', old: null, new: homeTenantId, class: 'internal' },
           { field: 'environment', old: null, new: input.environment, class: 'public' },
         ]),
@@ -418,7 +491,7 @@ export async function runGenesis(client, input, identity) {
         outcome: 'dry-run',
         operatorAccountId,
         homeTenantId,
-        grants: [...PLATFORM_CODES],
+        grants: [...grantCodes],
         auditRecordId: audit.rows[0].id,
         loginCreated,
       };
@@ -428,7 +501,7 @@ export async function runGenesis(client, input, identity) {
       outcome: 'established',
       operatorAccountId,
       homeTenantId,
-      grants: [...PLATFORM_CODES],
+      grants: [...grantCodes],
       auditRecordId: audit.rows[0].id,
       loginCreated,
     };

@@ -1751,5 +1751,9 @@ describe('a violation on a route parameter is read whatever the status was', () 
 function own(code: string): string {
   if (code === 'ERR-CAP-001') return 'capacity.reached.unknown';
   if (code === 'ERR-CAP-002') return 'capacity.organisationInactive';
+  // The plan-below-usage refusal is not final: it names what would be over the
+  // ceiling and can be accepted deliberately, so it gets its own sentence rather
+  // than the blocked one.
+  if (code === 'ERR-CAP-003') return 'capacity.planBelowUsage';
   return 'state.conflict.blocked.title';
 }

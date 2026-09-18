@@ -262,6 +262,15 @@ describe('the API application lives in the workspace', () => {
     // this time — and a slice that had added a second verb to the new module, or
     // hung the read off an existing module as a query parameter, would break that
     // symmetry here and nowhere else.
+    // 332 with the P1-32 Platform Owner Console backend: THIRTEEN operations over
+    // ELEVEN new route modules — the plan and charge collections each carry a
+    // list and a create on one path, so the counts move by 13 and 11.
+    // 333 with the Owner directive organisation administration: three operations
+    // over ONE new route module. The company and branch creates are POSTs
+    // co-located on the existing collection modules; only `/org/capacity` is new.
+    // 336 with the P1-32-PRE-151 organisation growth: three operations over THREE
+    // new route modules — companies, branches and administrators, each hung off
+    // the organisation path the console already addresses.
     // 335 with the P1-32 preparatory inventory slice: eighteen operations over
     // FOURTEEN new modules, because the transfer, goods-receipt, adjustment and
     // count collections each co-locate a GET and a POST on one path.
@@ -281,7 +290,10 @@ describe('the API application lives in the workspace', () => {
     // operations over ONE new route module. The company and branch creates are
     // POSTs co-located on the existing collection modules; only `/org/capacity`
     // is new.
-    expect(routeFiles.length).toBe(363);
+    // 377 with the Owner directive inventory operations and the Platform Owner
+    // Console line integrated: 322 in the shared base, 41 more route modules from
+    // this branch and 14 from the console, landing on disjoint paths.
+    expect(routeFiles.length).toBe(377);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -302,7 +314,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 468 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 484 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -365,6 +377,9 @@ describe('the API application lives in the workspace', () => {
     // 412 with the P1-31 warranty status-history read (P-18): one operation over
     // one new module, so both counts move by one.
     // P1-31 P-12 adds the report export action to the existing report-code route.
+    // 426 with the P1-32 Platform Owner Console backend (thirteen operations).
+    // 429 with the Owner directive organisation administration: three operations
+    // over one new module, for the reason stated above the route-module count.
     // 431 with the P1-32 preparatory inventory slice: eighteen operations over
     // fourteen new modules, for the reason stated above the route-module count.
     // 437 with P1-32 preparatory slice 2, for the reason stated above.
@@ -377,7 +392,9 @@ describe('the API application lives in the workspace', () => {
     // 468 with the Owner directive organisation administration merged in: three
     // operations over one new module, for the reason stated above the
     // route-module count.
-    expect(report.operations).toHaveLength(468);
+    // 484 at the integration of the two lines: 416 in the shared base, 52 more
+    // operations from this branch and 16 from the console.
+    expect(report.operations).toHaveLength(484);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the
