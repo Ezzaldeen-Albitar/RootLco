@@ -102,33 +102,59 @@ Navigation group **"Customers"** <!-- nav.group.customers --> — in Arabic "ا�
 **Steps**
 
 1. The screen opens idle: **"Search for a customer"** <!-- crm.customers.search.idleTitle --> /
-   "Enter a name or a customer reference, then choose Search. Results are not loaded until you do." <!-- crm.customers.search.idleDescription -->
-   Nothing is read until you ask.
-2. In the form **"Customer search"** <!-- crm.customers.search.formLabel --> fill in any of:
-   - **"Name"** <!-- crm.customers.search.name --> — "Matches the start of the name" <!-- crm.customers.search.nameHint -->
+   "Enter a name, a customer number or a phone number, then choose Search. Results are not loaded
+   until you do." <!-- crm.customers.search.idleDescription --> Nothing is read until you ask.
+2. The quickest way in is the single box **"Search by name, customer number or phone"** <!-- crm.customers.search.q -->
+   , whose hint says exactly what it accepts: "Part of a name, a customer number, or a phone number.
+   For a phone, type the whole number or at least its last seven digits." <!-- crm.customers.search.qHint -->
+   Two characters is the minimum: **"Type at least two characters."** <!-- crm.customers.search.qTooShort -->
+3. **"More filters"** <!-- crm.customers.search.moreFilters --> opens the rest of the form
+   **"Customer search"** <!-- crm.customers.search.formLabel --> ; **"Fewer filters"** <!-- crm.customers.search.fewerFilters -->
+   closes it again. In it, fill in any of:
+   - **"Name"** <!-- crm.customers.search.name --> — "Matches any part of the name" <!-- crm.customers.search.nameHint -->
+   - **"Phone number"** <!-- crm.customers.search.phone --> — "The whole number, or at least its last
+     seven digits." <!-- crm.customers.search.phoneHint -->
    - **"Customer reference"** <!-- crm.customers.search.reference --> — "Exact match" <!-- crm.customers.search.referenceHint -->
    - **"Type"** <!-- crm.customers.search.type --> — leave as **"Any type"** <!-- crm.customers.search.anyType -->
      , or choose **"Individual"** <!-- crm.partyType.individual --> or **"Company"** <!-- crm.partyType.organization -->
    - **"Status"** <!-- crm.customers.search.status --> — **"Any status"** <!-- crm.customers.search.anyStatus -->
      , or one of "Prospect", "Active", "Inactive", "Blocked", "Merged" <!-- crm.lifecycle.* --> _No
      field is required._
-3. Choose **"Search"** <!-- crm.customers.search.submit --> (the button reads **"Searching…"** <!-- crm.customers.search.searching -->
+4. Choose **"Search"** <!-- crm.customers.search.submit --> (the button reads **"Searching…"** <!-- crm.customers.search.searching -->
    while it works). Pressing Enter in the form does the same. Typing alone does nothing — there is
    no search-as-you-type.
-4. **"Clear"** <!-- crm.customers.search.clear --> empties the form.
+5. **"Clear"** <!-- crm.customers.search.clear --> empties the form.
 
 **Result** — a table captioned "Customers matching your search, newest first" <!-- crm.customers.search.tableCaption -->
-, with columns **"Name"**, **"Reference"**, **"Type"**, **"Status"** <!-- crm.customers.column.name / .reference / .type / .status -->
-and a row action **"Open"** <!-- crm.customers.search.open --> .
+, with columns **"Name"**, **"Reference"**, **"Phone"** <!-- crm.customers.column.phone --> ,
+**"Vehicles"** <!-- crm.customers.column.vehicles --> , **"Type"** and **"Status"**, and a row action
+**"Open"** <!-- crm.customers.search.open --> .
 
-**Restrictions** — phone numbers and email addresses cannot be searched anywhere in the product. The
-search is rate-limited to 30 searches per minute per account, which is why the button exists instead
-of live results.
+**Three things about the search that are worth knowing**
+
+- **A name matches anywhere in it**, not just at the start. Searching "noor" finds a name that has
+  "noor" in the middle.
+- **Arabic and Latin typing meet.** A name typed on an Arabic keyboard and the same name typed on a
+  Latin one are treated as one, and Arabic-Indic digits (٠١٢…) are treated the same as ASCII ones, so
+  a phone number typed either way finds the same person.
+- **A phone number is matched against the recorded contact numbers, never against free text.** The
+  whole number always counts; a tail counts only from seven digits up, because a shorter tail matches
+  too many people to be a lookup.
+
+**Restrictions**
+
+- **Email addresses still cannot be searched**, anywhere in the product.
+- **The phone shown in a result is partly hidden** unless your account may see sensitive details:
+  the column reads **"Partly hidden"** <!-- crm.customers.search.phonePartlyHidden --> and only the
+  last four digits are shown — enough to confirm the right person out loud, not enough to collect
+  numbers from a page of results.
+- The search is rate-limited to 30 searches per minute per account, which is why the button exists
+  instead of live results.
 
 **If it goes wrong**
 
-- "No matching customer was found." <!-- crm.customers.search.noMatch --> — nothing matched. Name
-  matches the _start_ of the name only, and the reference must be exact.
+- "No match. Check the spelling or try the last digits of the phone." <!-- crm.customers.search.noMatch -->
+  — nothing matched.
 - **"You do not have access"** <!-- state.denied.title --> / "Your account does not have permission
   for this. An administrator can grant it." <!-- state.denied.description --> — your account lacks
   `crm.customer.read`.
@@ -384,38 +410,51 @@ Navigation: **"Vehicles"** <!-- nav.vehicles --> (المركبات) and **"Revie
 **Who** — `veh.vehicle.read`. **"Add a vehicle"** appears only with `veh.vehicle.manage`.
 
 **Where** — **Customers** > **Vehicles** (`/{locale}/vehicles`). Heading **"Vehicles"** <!-- vehicles.search.title -->
-, described as "Find a vehicle by VIN, plate or reference." <!-- vehicles.search.description -->
+, described as "Find a vehicle by make, model, plate, VIN or reference." <!-- vehicles.search.description -->
 
 **Steps**
 
 1. The screen opens idle: **"Search for a vehicle"** <!-- vehicles.search.idleTitle --> / "Enter a
-   VIN, plate or vehicle reference and choose Search. Results are not loaded until you do." <!-- vehicles.search.idleBody -->
-2. Fill in at least one of:
+   make, model, plate, VIN or vehicle reference and choose Search. Results are not loaded until you
+   do." <!-- vehicles.search.idleBody -->
+2. The quickest way in is the single box **"Search by make, model, plate, VIN or vehicle
+   reference"** <!-- vehicles.search.q --> — "Part of any of them. A plate also finds a vehicle by a
+   plate it carried before." <!-- vehicles.search.qHint --> Or fill in any of:
+   - **"Make"** <!-- vehicles.search.make --> and **"Model"** <!-- vehicles.search.model --> —
+     "Matches any part of the name." <!-- vehicles.search.containsHint -->
+   - **"Registration plate"** <!-- vehicles.search.plate --> — "Finds the current plate or any
+     earlier plate." <!-- vehicles.search.plateHint -->
    - **"VIN"** <!-- vehicles.search.vin --> — "Exact match. Punctuation and spacing are ignored." <!-- vehicles.search.vinHint -->
      What will actually be matched is echoed back under **"Will be matched as"** <!-- vehicles.search.vinNormalized -->
      .
-   - **"Registration plate"** <!-- vehicles.search.plate --> — "Exact match, current plate only. A
-     previous plate will not match." <!-- vehicles.search.plateHint -->
    - **"Vehicle reference"** <!-- vehicles.search.vehicleNumber --> — "Exact match." <!-- vehicles.search.exactHint -->
      Optional narrowing: **"Status"** <!-- vehicles.search.lifecycleStatus --> and **"Powertrain"** <!-- vehicles.search.powertrainCategory -->
      , both defaulting to **"Any"** <!-- vehicles.search.anyOption --> .
 3. Choose **"Search"** <!-- vehicles.search.submit --> . **"Clear"** <!-- vehicles.search.clear -->
-   resets the form.
+   resets the form. The search box, the make and the model each need at least two characters:
+   "The search box, make and model each need at least two characters." <!-- vehicles.search.tooShort -->
 
 **Result** — heading **"Search results"** <!-- vehicles.search.resultsHeading --> , table captioned
-"Vehicle search results" <!-- vehicles.search.caption --> , row action **"Open"** <!-- vehicles.search.open -->
-. Missing values read "No VIN recorded", "No reference", "No make recorded" <!-- vehicles.column.noVin / .noReference / .noMake -->
+"Vehicle search results" <!-- vehicles.search.caption --> , with a **"Plate"** <!-- vehicles.column.plate -->
+and an **"Owner"** <!-- vehicles.column.owner --> column and the row action **"Open"** <!-- vehicles.search.open -->
+. Missing values read "No plate recorded", "No VIN recorded", "No reference", "No make recorded" <!-- vehicles.column.noPlate / .noVin / .noReference / .noMake -->
 .
 
-**Restrictions** — the whole screen matches exactly: "VIN, plate and reference are matched exactly —
-partial values return nothing. Plate matches the current plate only." <!-- vehicles.search.exactMatchNote -->
-You cannot search by make, model or customer name.
+**A vehicle found by an old plate says so.** The row is marked **"Matched a previous plate"** <!-- vehicles.search.previousPlate -->
+, or **"Matched a previous plate, valid until"** <!-- vehicles.search.previousPlateUntil --> with the
+date the plate stopped being current. That is how you tell a customer quoting last year's plate that
+you have found their car without wondering whether it is the right one.
+
+**Restrictions** — the screen states which fields are exact and which are not: "VIN and vehicle
+reference are matched exactly. A plate also finds a vehicle by a plate it carried before." <!-- vehicles.search.exactMatchNote -->
+Arabic-Indic digits are treated the same as ASCII ones, so a plate typed either way matches. You
+still cannot search by customer name here — search for the customer instead (4A.2.1) and open their
+vehicles from the profile.
 
 **If it goes wrong**
 
 - "Enter at least one search value." <!-- vehicles.search.needCriteria -->
-- "No matching vehicle was found." <!-- vehicles.search.noMatch --> — check for a transposed VIN
-  character, and remember a previous plate will not match.
+- "No match. Check the spelling or try part of the plate or VIN." <!-- vehicles.search.noMatch -->
 
 **Screenshot** — no screenshot available at this version.
 
@@ -1588,7 +1627,7 @@ section on the visit screen first.
 | --------------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Merge two customer records                                | NOT AVAILABLE           | "Merging two customer records is not available yet. The rules for it are pending an Owner decision." <!-- crm.duplicates.mergePendingDecision --> Keep one record and use only it. |
 | Merge two vehicle records                                 | NOT AVAILABLE           | "Merging two vehicle records is not available yet. The rules for it are pending an Owner decision." <!-- vehicles.duplicates.mergePendingDecision -->                              |
-| Search a customer by phone number or email                | NOT AVAILABLE           | "Phone numbers and email addresses cannot be searched." <!-- customerSelector.hint --> Search by name or customer reference.                                                       |
+| Search a customer by email address                        | NOT AVAILABLE           | "Email addresses cannot be searched." <!-- customerSelector.hint --> Search by name, customer number or phone number (4A.2.1).                                                     |
 | The customer profile's **Vehicles** section               | DEFERRED                | "This section is defined but its screen is not built yet." <!-- crm.customers.profile.sectionPending --> Link vehicles from the vehicle page (4A.3.6).                             |
 | Change quiet hours on a customer                          | DEFERRED                | "Quiet hours are stored on the record but cannot yet be changed from this screen." <!-- crm.customers.preferences.quietHoursReadOnly -->                                           |
 | Download a document from the vehicle page                 | NOT AVAILABLE here      | "Downloading a document is a separately audited action and is not started from this page." <!-- vehicles.documents.downloadNote -->                                                |
@@ -1599,7 +1638,7 @@ section on the visit screen first.
 | A road test at reception                                  | NOT AVAILABLE           | "Road test is not part of this release…" <!-- receptions.inspection.roadTestAbsent -->                                                                                             |
 | Close an inspection opened at reception                   | NOT AVAILABLE           | "There is no operation that closes one, so an inspection opened here stays open." <!-- receptions.inspection.openOnlyNote -->                                                      |
 | Create a work order directly                              | NOT AVAILABLE by design | "This is the only way a work order comes to exist." <!-- receptions.steps.convert.description -->                                                                                  |
-| A company, branch, department or employee screen          | OPERATOR PROCEDURE      | Those records are created outside the application. The receiving employee is a login account.                                                                                      |
+| A company, branch, department or employee screen          | IMPLEMENTED (UI)        | All four exist now — see Part 2, §2.4 to §2.7. The receiving employee is still a login account.                                                                                    |
 | A workspace-wide appointment or reception list            | NOT AVAILABLE           | Choose a branch first (4A.1).                                                                                                                                                      |
 
 **One further standing fact, met on every screen in this part.** The product name, logo and colours
@@ -1649,6 +1688,26 @@ screenshot of a page that shows customer details when the reference alone will d
 
 <!--
 SOURCES
+REVISION 2026-09-18 — sections 4A.2.1 (customer search) and 4A.3.1 (vehicle search) were re-read
+and rewritten at develop 5b2c7840da1821f973438d5429665ef4448132f2, and two rows of 4A.6 were
+corrected. Everything else in this part is carried unchanged from the reading below.
+
+Read for this revision:
+  apps/web/src/features/crm/customers/components/CustomerSearchScreen.tsx and contract.ts
+  apps/web/src/features/vehicles/components/VehicleSearchScreen.tsx, contract.ts and api.ts
+  apps/web/src/components/party/CustomerSelector.tsx
+  apps/api/src/modules/crm/domain/customer-search.ts — folding (tashkeel and tatweel removed, alef
+    forms collapsed, Arabic-Indic digits folded to ASCII), CONTAINS rather than prefix,
+    MIN_PHONE_SUFFIX = 7, MIN_SEARCH_FRAGMENT = 2, PHONE_VISIBLE_DIGITS = 4 unless the caller
+    holds iam.sensitive.view
+  apps/api/src/modules/crm/data/customer-search-repository.ts
+  apps/web/src/lib/text/normalization.ts
+  New message keys quoted: crm.customers.search.q/.qHint/.qTooShort/.phone/.phoneHint/
+    .phonePartlyHidden/.moreFilters/.fewerFilters/.nameHint/.noMatch/.idleDescription,
+    crm.customers.column.phone/.vehicles, vehicles.search.q/.qHint/.make/.model/.containsHint/
+    .plateHint/.previousPlate/.previousPlateUntil/.tooShort/.noMatch/.exactMatchNote/.description/
+    .idleBody, vehicles.column.plate/.owner/.noPlate
+
 Message catalogue, read at origin/develop beebc6c28c873f498fe0503161eb53caa107a9e3:
   apps/web/src/i18n/messages/en.json — every key quoted above, specifically the prefixes
     crm.customers.*, crm.duplicates.*, crm.lifecycle.*, crm.partyType.*, crm.noteClassification.*,
