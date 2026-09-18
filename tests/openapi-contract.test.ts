@@ -516,6 +516,8 @@ import '@/app/api/v1/org/capacity-alerts/route';
 import '@/app/api/v1/org/departments/route';
 import '@/app/api/v1/org/departments/[departmentId]/route';
 
+// Owner directive — the console's own account and security operation.
+import '@/app/api/v1/platform/account/password/route';
 import '@/app/api/v1/platform/organizations/route';
 import '@/app/api/v1/platform/organizations/[tenantId]/status/route';
 // P1-32-PRE-021..026 — the Platform Owner Console backend.

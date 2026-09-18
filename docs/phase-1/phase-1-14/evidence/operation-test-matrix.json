@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 492,
-    "publicApi": 492,
+    "registered": 493,
+    "publicApi": 493,
     "internal": 0,
-    "withRequiredEvidence": 492,
+    "withRequiredEvidence": 493,
     "invocationOnly": 0,
     "p1_15": {
       "registered": 28,
@@ -2614,6 +2614,49 @@
         "service",
         "stale-version",
         "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "iam.account-password-change",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/platform/account/password",
+      "public": false,
+      "files": ["tests/backend/p1-32-platform-console.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "audit"],
+      "declared": [
+        "route",
+        "service",
+        "authorization",
+        "unauthenticated",
+        "success",
+        "denial",
+        "audit",
+        "provider"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "audit",
+        "unauthenticated",
+        "denial",
+        "provider"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "denial",
+        "provider",
+        "route",
+        "service",
+        "success",
+        "unauthenticated"
       ],
       "missing": [],
       "metadataOnly": false,

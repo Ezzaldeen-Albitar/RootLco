@@ -182,8 +182,11 @@ describe('every route body serialises a named type', () => {
     // the three reorder-level ones, the four stock alerts and the tenant capacity
     // alert — each serialising a NAMED view, so `named` moves by eight and
     // `composed` does not move at all.
-    expect(summary.bodies).toBe(492);
-    expect(summary.named).toBe(440);
+    // 493 with the Owner directive console account and security: one operation,
+    // the caller's own password change, serialising the NAMED `PasswordChangeResult`
+    // — so `named` moves by one and `composed` does not move.
+    expect(summary.bodies).toBe(493);
+    expect(summary.named).toBe(441);
     expect(summary.composed).toBe(52);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

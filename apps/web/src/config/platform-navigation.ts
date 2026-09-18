@@ -50,6 +50,15 @@ export const PLATFORM_NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         scope: 'tenant',
       },
       {
+        key: 'platform-account',
+        labelKey: 'platform.nav.account',
+        icon: 'settings',
+        href: '/platform/account',
+        permission: 'platform.organization.read',
+        status: 'available',
+        scope: 'tenant',
+      },
+      {
         key: 'platform-audit',
         labelKey: 'platform.nav.audit',
         icon: 'reports',

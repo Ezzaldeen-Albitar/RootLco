@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
+import ar from '../src/i18n/messages/ar.json';
 import { renderLtr, renderRtl } from './render';
 
 /**
@@ -16,8 +17,9 @@ import { renderLtr, renderRtl } from './render';
  *     platform authority could satisfy it;
  *   - the subscription dialog sends the act as `kind` and the term as a whole
  *     number of months;
- *   - billing shows the server's outstanding figure and submits money as a
- *     canonical decimal STRING;
+ *   - billing shows the server's outstanding figure, submits money as a
+ *     canonical decimal STRING, and reaches the charges behind the page by the
+ *     server's own cursor under the status filter the operation publishes;
  *   - the overview labels the projected renewal value as an estimate, apart from
  *     the recorded amounts;
  *   - provisioning sends what was typed, offers a subscription only when the
@@ -28,11 +30,16 @@ import { renderLtr, renderRtl } from './render';
  *     version the operator was looking at;
  *   - the activity search opens on the window it was given and applies its
  *     criteria together.
+ *   - account and security validates each password field before it asks the
+ *     server, reveals each field on its own, states what the server reported
+ *     about the operator's other devices, and tells the two server refusals
+ *     apart on screen.
  *
  * Every business value below is a test value invented for this file.
  */
 
 const EN = en as Record<string, string>;
+const AR = ar as Record<string, string>;
 /** A catalogued English message, typed as present: a missing key fails the lookup visibly. */
 const L = (key: string): string => EN[key] ?? `missing message ${key}`;
 
@@ -45,8 +52,19 @@ const refresh = vi.fn();
 const push = vi.fn();
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push, refresh }),
-  usePathname: () => '/en/platform',
+  usePathname: () => mockPathname,
 }));
+
+/**
+ * The address the route boundaries read their language from.
+ *
+ * A constant here would have made the three boundary files untestable in the
+ * only respect they exist for: `loading.tsx`, `error.tsx` and `not-found.tsx`
+ * are given no props by Next, so the locale can only come from the path
+ * (P1-26-F-059, P1-26-F-071). Every case resets it to the English console
+ * address in `beforeEach`.
+ */
+let mockPathname = '/en/platform';
 
 const assignSubscriptionAction = vi.fn();
 const cancelSubscriptionAction = vi.fn();
@@ -57,6 +75,7 @@ const changeOrganizationStatusAction = vi.fn();
 const provisionOrganizationAction = vi.fn();
 const createPlanAction = vi.fn();
 const updatePlanAction = vi.fn();
+const changeOwnPasswordAction = vi.fn();
 vi.mock('@/features/platform/actions', () => ({
   /*
    * P1-32-PRE-068. This module holds only the writes, and every one is stood in
@@ -73,6 +92,7 @@ vi.mock('@/features/platform/actions', () => ({
   provisionOrganizationAction: (...args: unknown[]) => provisionOrganizationAction(...args),
   createPlanAction: (...args: unknown[]) => createPlanAction(...args),
   updatePlanAction: (...args: unknown[]) => updatePlanAction(...args),
+  changeOwnPasswordAction: (...args: unknown[]) => changeOwnPasswordAction(...args),
 }));
 
 const { OrganizationsScreen } = await import('@/features/platform/components/OrganizationsScreen');
@@ -84,6 +104,8 @@ const { ProvisionOrganizationScreen } =
   await import('@/features/platform/components/ProvisionOrganizationScreen');
 const { PlansScreen } = await import('@/features/platform/components/PlansScreen');
 const { PlatformAuditScreen } = await import('@/features/platform/components/PlatformAuditScreen');
+const { AccountSecurityScreen } =
+  await import('@/features/platform/components/AccountSecurityScreen');
 const { getMessages } = await import('@/i18n/get-messages');
 
 const messages = getMessages('en');
@@ -206,6 +228,7 @@ const NONE = {
 };
 
 beforeEach(() => {
+  mockPathname = '/en/platform';
   apiGet.mockReset();
   refresh.mockReset();
   push.mockReset();
@@ -218,6 +241,15 @@ beforeEach(() => {
   provisionOrganizationAction.mockReset();
   createPlanAction.mockReset();
   updatePlanAction.mockReset();
+  changeOwnPasswordAction.mockReset();
+  // The default answer for the account form: a change the server accepted and
+  // whose other-device sign-out it reported. A case that needs another answer
+  // replaces it before it renders.
+  changeOwnPasswordAction.mockResolvedValue({
+    status: 'success',
+    messageKey: 'platform.account.done',
+    attempt: 1,
+  });
 });
 
 describe('the organisation list', () => {
@@ -624,6 +656,7 @@ describe('billing', () => {
         messages={messages}
         tenantId={TENANT}
         charges={[charge]}
+        hasMore={false}
         subscriptions={[subscription]}
         canManage
         defaultCurrency="SAR"
@@ -679,6 +712,7 @@ describe('billing', () => {
         messages={messages}
         tenantId={TENANT}
         charges={[charge]}
+        hasMore={false}
         subscriptions={[subscription]}
         canManage
         defaultCurrency="SAR"
@@ -733,6 +767,7 @@ describe('billing', () => {
         messages={messages}
         tenantId={TENANT}
         charges={[charge]}
+        hasMore={false}
         subscriptions={[subscription]}
         canManage
         defaultCurrency="SAR"
@@ -760,6 +795,7 @@ describe('billing', () => {
         messages={messages}
         tenantId={TENANT}
         charges={[charge]}
+        hasMore={false}
         subscriptions={[]}
         canManage={false}
         defaultCurrency=""
@@ -768,6 +804,253 @@ describe('billing', () => {
     expect(screen.queryByRole('button', { name: L('platform.billing.recordCharge') })).toBeNull();
     expect(screen.queryByRole('button', { name: L('platform.billing.void') })).toBeNull();
     expect(screen.getByText(/500\.00 SAR/)).toBeInTheDocument();
+  });
+
+  /*
+   * The commercial model is the Owner's decision D-OD-04: the Platform Owner
+   * enters each charge and each payment, and no payment provider exists in this
+   * repository. A panel headed "Billing" that offers "Record payment" is read as
+   * the front of a system collecting money unless it says otherwise, so the
+   * sentence is asserted for its content and not merely for its presence.
+   */
+  it('states that every charge and payment is entered by hand, and that nothing collects itself', () => {
+    renderLtr(
+      <BillingPanel
+        locale="en"
+        messages={messages}
+        tenantId={TENANT}
+        charges={[charge]}
+        hasMore={false}
+        subscriptions={[]}
+        canManage
+        defaultCurrency="SAR"
+      />
+    );
+    const note = screen.getByTestId('platform-billing-model');
+    expect(note).toHaveTextContent(L('platform.billing.recordedNote'));
+    expect(note.textContent ?? '').toMatch(/entered by the platform owner/i);
+    expect(note.textContent ?? '').toMatch(/no subscription renews or charges itself/i);
+  });
+
+  it('says more charges exist behind the page when the server said so, and otherwise says nothing', () => {
+    const { unmount } = renderLtr(
+      <BillingPanel
+        locale="en"
+        messages={messages}
+        tenantId={TENANT}
+        charges={[charge]}
+        hasMore={false}
+        subscriptions={[]}
+        canManage={false}
+        defaultCurrency=""
+      />
+    );
+    expect(screen.queryByTestId('platform-billing-more')).toBeNull();
+    unmount();
+
+    renderLtr(
+      <BillingPanel
+        locale="en"
+        messages={messages}
+        tenantId={TENANT}
+        charges={[charge]}
+        hasMore
+        subscriptions={[]}
+        canManage={false}
+        defaultCurrency=""
+      />
+    );
+    // The count is the rows actually drawn, so the sentence cannot claim to have
+    // examined more than it did.
+    expect(screen.getByTestId('platform-billing-more')).toHaveTextContent(
+      'Charges shown on this page: 1.'
+    );
+  });
+
+  /*
+   * The sentence has to read correctly at EVERY count, in a catalogue with no
+   * plural forms. "The first 1 charges are shown" was grammatical at two and
+   * wrong at one, and a test pinning the wrong half would have made it
+   * permanent — so both counts are read here, and in Arabic as well.
+   */
+  it('states the page count grammatically at one charge and at several, in both languages', () => {
+    const second = { ...charge, id: '44444444-4444-4444-8444-444444444445' };
+    const { unmount } = renderLtr(
+      <BillingPanel
+        locale="en"
+        messages={messages}
+        tenantId={TENANT}
+        charges={[charge, second]}
+        hasMore
+        subscriptions={[]}
+        canManage={false}
+        defaultCurrency=""
+      />
+    );
+    expect(screen.getByTestId('platform-billing-more')).toHaveTextContent(
+      'Charges shown on this page: 2. More exist beyond them.'
+    );
+    unmount();
+
+    renderRtl(
+      <BillingPanel
+        locale="ar"
+        messages={getMessages('ar')}
+        tenantId={TENANT}
+        charges={[charge]}
+        hasMore
+        subscriptions={[]}
+        canManage={false}
+        defaultCurrency=""
+      />
+    );
+    expect(document.documentElement.dir).toBe('rtl');
+    // The digits are the locale's, so the words either side of the count are
+    // what the sentence is recognised by.
+    const arabic = screen.getByTestId('platform-billing-more').textContent ?? '';
+    expect(arabic).toContain('الرسوم الظاهرة في هذه الصفحة');
+    expect(arabic).toContain('توجد رسوم أخرى بعدها');
+    expect(AR['platform.billing.morePages']).not.toBe(EN['platform.billing.morePages']);
+    // The commercial sentence is new too, and an Arabic reader is the one most
+    // likely to meet this console first.
+    expect(screen.getByTestId('platform-billing-model')).toHaveTextContent(
+      AR['platform.billing.recordedNote'] as string
+    );
+  });
+
+  /*
+   * P1-32-PRE-OD-CONSOLE-006. Saying that more charges exist was the whole of
+   * the answer while there was no way to open them: the panel read one page and
+   * offered no link to the next, so an organisation with more charges than a
+   * page holds kept them out of reach. `platform.charge-list` pages by cursor
+   * and filters by status, and these cases pin that the links carry the server's
+   * own cursor and nothing invented.
+   */
+  it('offers the next page only with the cursor the server gave, and a way back to the first', () => {
+    const { unmount } = renderLtr(
+      <BillingPanel
+        locale="en"
+        messages={messages}
+        tenantId={TENANT}
+        charges={[charge]}
+        hasMore
+        nextCursor="cursor-2"
+        subscriptions={[]}
+        canManage={false}
+        defaultCurrency=""
+      />
+    );
+    expect(screen.getByTestId('platform-billing-next')).toHaveAttribute(
+      'href',
+      `/en/platform/organizations/${TENANT}?chargeCursor=cursor-2`
+    );
+    // The first page is where this reader already is, so nothing offers to
+    // return to it.
+    expect(screen.queryByTestId('platform-billing-first')).toBeNull();
+    unmount();
+
+    // A later page under a filter: back to the first page of the SAME filter,
+    // and no next link at the end of the set even though a cursor came with it.
+    renderLtr(
+      <BillingPanel
+        locale="en"
+        messages={messages}
+        tenantId={TENANT}
+        charges={[charge]}
+        hasMore={false}
+        nextCursor="cursor-3"
+        status="open"
+        paged
+        subscriptions={[]}
+        canManage={false}
+        defaultCurrency=""
+      />
+    );
+    expect(screen.getByTestId('platform-billing-first')).toHaveAttribute(
+      'href',
+      `/en/platform/organizations/${TENANT}?chargeStatus=open`
+    );
+    expect(screen.queryByTestId('platform-billing-next')).toBeNull();
+  });
+
+  it('draws no pager at all on a single unfiltered page', () => {
+    renderLtr(
+      <BillingPanel
+        locale="en"
+        messages={messages}
+        tenantId={TENANT}
+        charges={[charge]}
+        hasMore={false}
+        subscriptions={[]}
+        canManage={false}
+        defaultCurrency=""
+      />
+    );
+    expect(screen.queryByTestId('platform-billing-pager')).toBeNull();
+  });
+
+  it('asks for a chosen status from the first page, never with the previous set cursor', async () => {
+    renderLtr(
+      <BillingPanel
+        locale="en"
+        messages={messages}
+        tenantId={TENANT}
+        charges={[charge]}
+        hasMore
+        nextCursor="cursor-2"
+        paged
+        subscriptions={[]}
+        canManage={false}
+        defaultCurrency=""
+      />
+    );
+    const filter = screen.getByLabelText(new RegExp(`^${L('platform.billing.filterStatus')}`));
+    // Every status the operation accepts is offered, and nothing else.
+    expect([...(filter as HTMLSelectElement).options].map((option) => option.value)).toEqual([
+      '',
+      'open',
+      'settled',
+      'void',
+    ]);
+
+    await userEvent.selectOptions(filter, 'settled');
+    expect(push).toHaveBeenCalledWith(`/en/platform/organizations/${TENANT}?chargeStatus=settled`);
+    // A cursor belongs to the ordering of the set it came from, so choosing a
+    // status starts again rather than carrying it.
+    expect(String(push.mock.calls[0]?.[0])).not.toContain('chargeCursor');
+  });
+
+  it('says that no charge carries the chosen status, rather than that none was ever recorded', () => {
+    const { unmount } = renderLtr(
+      <BillingPanel
+        locale="en"
+        messages={messages}
+        tenantId={TENANT}
+        charges={[]}
+        hasMore={false}
+        status="void"
+        subscriptions={[]}
+        canManage={false}
+        defaultCurrency=""
+      />
+    );
+    expect(screen.getByText(L('platform.billing.noneWithStatus'))).toBeInTheDocument();
+    expect(screen.queryByText(L('platform.billing.none'))).toBeNull();
+    unmount();
+
+    renderLtr(
+      <BillingPanel
+        locale="en"
+        messages={messages}
+        tenantId={TENANT}
+        charges={[]}
+        hasMore={false}
+        subscriptions={[]}
+        canManage={false}
+        defaultCurrency=""
+      />
+    );
+    expect(screen.getByText(L('platform.billing.none'))).toBeInTheDocument();
   });
 });
 
@@ -1387,5 +1670,496 @@ describe('the activity search', () => {
     expect(applied.get('from')).toBe('2026-09-01T00:00:00.000Z');
     expect(applied.get('action')).toBe('org.subscription_charge.recorded');
     expect(applied.get('targetTenantId')).toBe(TENANT);
+  });
+
+  /*
+   * The server caps the window at 92 days and refuses a wider one as a
+   * validation failure. A refused read reaches the table as the undifferentiated
+   * error state — "something went wrong" over a Retry that can only be refused
+   * again — so the screen names the limit before it spends the request.
+   */
+  it('refuses a window wider than the server accepts, naming the limit, and asks for nothing', async () => {
+    apiGet.mockResolvedValue({
+      ok: true,
+      data: { items: [event], nextCursor: null, hasMore: false },
+      correlationId: 'c',
+    });
+    renderScreen();
+    await screen.findByText(L('platform.audit.action.0'));
+
+    fireEvent.change(screen.getByLabelText(new RegExp(`^${L('platform.audit.from')}`)), {
+      target: { value: '2026-01-01' },
+    });
+    await userEvent.click(screen.getByRole('button', { name: L('platform.audit.apply') }));
+
+    expect(await screen.findByText('Choose a range of 92 days or fewer.')).toBeInTheDocument();
+    expect(apiGet).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses an end date before the start date, and withdraws the complaint on an edit', async () => {
+    apiGet.mockResolvedValue({
+      ok: true,
+      data: { items: [event], nextCursor: null, hasMore: false },
+      correlationId: 'c',
+    });
+    renderScreen();
+    await screen.findByText(L('platform.audit.action.0'));
+
+    fireEvent.change(screen.getByLabelText(new RegExp(`^${L('platform.audit.to')}`)), {
+      target: { value: '2026-08-01' },
+    });
+    await userEvent.click(screen.getByRole('button', { name: L('platform.audit.apply') }));
+    expect(await screen.findByText(L('platform.audit.error.range'))).toBeInTheDocument();
+    expect(apiGet).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByLabelText(new RegExp(`^${L('platform.audit.to')}`)), {
+      target: { value: '2026-09-15' },
+    });
+    await waitFor(() => expect(screen.queryByText(L('platform.audit.error.range'))).toBeNull());
+
+    await userEvent.click(screen.getByRole('button', { name: L('platform.audit.apply') }));
+    await waitFor(() => expect(apiGet).toHaveBeenCalledTimes(2));
+    const applied = new URLSearchParams(String(apiGet.mock.calls[1]?.[0]).split('?')[1]);
+    expect(applied.get('to')).toBe('2026-09-15T23:59:59.999Z');
+  });
+
+  /*
+   * The criteria are held outside the table request on purpose, so the table
+   * cannot tell a narrowed search from an empty trail. Left to itself it said
+   * "Nothing here yet" — a claim about every change ever made from this console
+   * — on the evidence of one window that held none.
+   */
+  it('says no change matches the criteria, rather than that the record is empty', async () => {
+    apiGet.mockResolvedValue({
+      ok: true,
+      data: { items: [], nextCursor: null, hasMore: false },
+      correlationId: 'c',
+    });
+    renderScreen();
+
+    const empty = await screen.findByTestId('platform-audit-empty');
+    expect(empty).toHaveTextContent(L('platform.audit.noMatches'));
+    expect(screen.queryByText(L('state.empty.title'))).toBeNull();
+    /*
+     * ANNOUNCED, not merely printed. The rows disappear on a search that
+     * matched nothing; a bare paragraph in their place leaves an operator who
+     * cannot see the table with no announcement and no heading to land on, so
+     * the sentence is carried by the shared state shell.
+     */
+    const announced = within(empty).getByRole('status');
+    expect(within(announced).getByRole('heading')).toHaveTextContent(L('state.noResults.title'));
+  });
+
+  /*
+   * Arabic, right to left, and by keyboard alone — the three things the English
+   * mouse-driven cases above cannot show. Both refusals and the zero-row
+   * sentence are the screen's own new words, so all three are read in Arabic.
+   */
+  it('refuses the window and states the empty result in Arabic, right to left', async () => {
+    const arabic = getMessages('ar');
+    apiGet.mockResolvedValue({
+      ok: true,
+      data: { items: [], nextCursor: null, hasMore: false },
+      correlationId: 'c',
+    });
+    renderRtl(
+      <PlatformAuditScreen
+        locale="ar"
+        messages={arabic}
+        initialFrom="2026-08-17"
+        initialTo="2026-09-16"
+        initialOrganizationId=""
+        organizations={[row]}
+      />
+    );
+
+    expect(document.documentElement.dir).toBe('rtl');
+    const empty = await screen.findByTestId('platform-audit-empty');
+    expect(empty).toHaveTextContent(AR['platform.audit.noMatches'] as string);
+    // Real Arabic, not an English string sitting in the Arabic catalogue.
+    expect(AR['platform.audit.noMatches']).not.toBe(EN['platform.audit.noMatches']);
+
+    fireEvent.change(screen.getByLabelText(new RegExp(`^${AR['platform.audit.from'] as string}`)), {
+      target: { value: '2026-01-01' },
+    });
+    await userEvent.click(
+      screen.getByRole('button', { name: AR['platform.audit.apply'] as string })
+    );
+    // The day count is formatted in the locale's own digits, so the sentence is
+    // recognised by its words rather than by a hard-coded numeral.
+    expect(await screen.findByText(/اختر مدة لا تتجاوز/)).toBeInTheDocument();
+    expect(apiGet).toHaveBeenCalledTimes(1);
+  });
+
+  it('applies the criteria from the keyboard alone', async () => {
+    apiGet.mockResolvedValue({
+      ok: true,
+      data: { items: [event], nextCursor: null, hasMore: false },
+      correlationId: 'c',
+    });
+    renderScreen();
+    await screen.findByText(L('platform.audit.action.0'));
+
+    fireEvent.change(screen.getByLabelText(new RegExp(`^${L('platform.audit.from')}`)), {
+      target: { value: '2026-09-01' },
+    });
+    const apply = screen.getByRole('button', { name: L('platform.audit.apply') });
+    apply.focus();
+    expect(apply).toHaveFocus();
+    await userEvent.keyboard('{Enter}');
+
+    await waitFor(() => expect(apiGet).toHaveBeenCalledTimes(2));
+    const applied = new URLSearchParams(String(apiGet.mock.calls[1]?.[0]).split('?')[1]);
+    expect(applied.get('from')).toBe('2026-09-01T00:00:00.000Z');
+  });
+});
+
+// --- account and security ------------------------------------------------------
+//
+// Folded into this file rather than given its own, because the P1-27 evidence
+// seal digests a stated count of web test FILES: a new file moves a sealed
+// record, and these cases belong to the same console the rest of this file
+// covers. Names are prefixed so nothing here can collide with the console
+// fixtures above.
+
+const ACCOUNT_SESSION = {
+  userId: '22222222-2222-4222-8222-222222222222',
+  homeTenantId: TENANT,
+  platformPermissions: ['platform.organization.read', 'platform.statistics.read'],
+} as const;
+
+const ACCOUNT_CURRENT = 'the-current-password';
+const ACCOUNT_NEXT = 'a-different-password';
+
+function renderAccount(locale: 'en' | 'ar' = 'en') {
+  const catalogue = getMessages(locale);
+  const paint = locale === 'en' ? renderLtr : renderRtl;
+  return paint(<AccountSecurityScreen messages={catalogue} session={ACCOUNT_SESSION} />);
+}
+
+/** The three password inputs, in the order the form declares them. */
+function accountFields(): HTMLInputElement[] {
+  return [
+    document.querySelector<HTMLInputElement>('input[name="currentPassword"]'),
+    document.querySelector<HTMLInputElement>('input[name="newPassword"]'),
+    document.querySelector<HTMLInputElement>('input[name="confirmPassword"]'),
+  ].map((element, index) => {
+    if (!element) throw new Error(`password field ${index} is not rendered`);
+    return element;
+  });
+}
+
+async function fillAccount(values: readonly [string, string, string]) {
+  const user = userEvent.setup();
+  const inputs = accountFields();
+  for (const [index, value] of values.entries()) {
+    const input = inputs[index] as HTMLInputElement;
+    await user.clear(input);
+    await user.type(input, value);
+  }
+  return user;
+}
+
+describe('the account screen shows the identity the console session carries', () => {
+  it('names the operator, its home organisation and every authority code it holds', () => {
+    renderAccount();
+    expect(screen.getByTestId('account-operator-id')).toHaveTextContent(ACCOUNT_SESSION.userId);
+    expect(screen.getByTestId('account-home-tenant')).toHaveTextContent(
+      ACCOUNT_SESSION.homeTenantId
+    );
+    for (const code of ACCOUNT_SESSION.platformPermissions) {
+      expect(screen.getByText(code)).toBeInTheDocument();
+    }
+  });
+
+  it('offers a change-password form with three fields and no address field', () => {
+    renderAccount();
+    expect(accountFields()).toHaveLength(3);
+    expect(document.querySelector('input[name="email"]')).toBeNull();
+    expect(screen.getByRole('button', { name: L('platform.account.submit') })).toBeEnabled();
+  });
+});
+
+describe('the form validates before it asks the server', () => {
+  it('refuses an empty form and sends nothing', async () => {
+    const user = userEvent.setup();
+    renderAccount();
+    await user.click(screen.getByRole('button', { name: L('platform.account.submit') }));
+    // One complaint per field, and nothing asked of the server.
+    await waitFor(() => expect(screen.getAllByText(L('platform.error.required'))).toHaveLength(3));
+    expect(changeOwnPasswordAction).not.toHaveBeenCalled();
+    for (const field of accountFields()) expect(field).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('refuses a confirmation that does not match, and marks only that field', async () => {
+    renderAccount();
+    const user = await fillAccount([ACCOUNT_CURRENT, ACCOUNT_NEXT, 'something-else-entirely']);
+    await user.click(screen.getByRole('button', { name: L('platform.account.submit') }));
+
+    await screen.findByText(L('platform.account.error.mismatch'));
+    expect(changeOwnPasswordAction).not.toHaveBeenCalled();
+    const [current, next, confirm] = accountFields();
+    expect(confirm).toHaveAttribute('aria-invalid', 'true');
+    expect(current).not.toHaveAttribute('aria-invalid');
+    expect(next).not.toHaveAttribute('aria-invalid');
+  });
+
+  it('refuses a new password equal to the current one, and withdraws the complaint on an edit', async () => {
+    renderAccount();
+    const user = await fillAccount([ACCOUNT_CURRENT, ACCOUNT_CURRENT, ACCOUNT_CURRENT]);
+    await user.click(screen.getByRole('button', { name: L('platform.account.submit') }));
+
+    await screen.findByText(L('platform.account.error.unchanged'));
+    expect(changeOwnPasswordAction).not.toHaveBeenCalled();
+
+    await user.type(accountFields()[1] as HTMLInputElement, '-and-more');
+    await waitFor(() =>
+      expect(screen.queryByText(L('platform.account.error.unchanged'))).toBeNull()
+    );
+  });
+
+  it('carries the three values, and only those three, to the one server function', async () => {
+    renderAccount();
+    const user = await fillAccount([ACCOUNT_CURRENT, ACCOUNT_NEXT, ACCOUNT_NEXT]);
+    await user.click(screen.getByRole('button', { name: L('platform.account.submit') }));
+
+    await waitFor(() => expect(changeOwnPasswordAction).toHaveBeenCalledTimes(1));
+    const [sent] = changeOwnPasswordAction.mock.calls[0] as [Record<string, unknown>];
+    expect(Object.keys(sent).sort()).toEqual(['confirmPassword', 'currentPassword', 'newPassword']);
+  });
+});
+
+describe('every password field can be revealed on its own', () => {
+  it('starts hidden, reveals the field its toggle controls, and leaves the others hidden', async () => {
+    const user = userEvent.setup();
+    renderAccount();
+    const [current, next, confirm] = accountFields();
+    expect([current?.type, next?.type, confirm?.type]).toEqual([
+      'password',
+      'password',
+      'password',
+    ]);
+
+    const toggles = screen.getAllByTestId('password-reveal-toggle');
+    expect(toggles).toHaveLength(3);
+
+    await user.click(toggles[1] as HTMLElement);
+    expect(accountFields().map((field) => field.type)).toEqual(['password', 'text', 'password']);
+    expect(toggles[1]).toHaveAttribute('aria-pressed', 'true');
+
+    await user.click(toggles[1] as HTMLElement);
+    expect(accountFields().map((field) => field.type)).toEqual([
+      'password',
+      'password',
+      'password',
+    ]);
+  });
+
+  it('is reachable from the keyboard', async () => {
+    const user = userEvent.setup();
+    renderAccount();
+    const [current] = accountFields();
+    current?.focus();
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getAllByTestId('password-reveal-toggle')[0]);
+  });
+});
+
+describe('a success states what happened, and clears the fields', () => {
+  it('announces the change, says the other devices were signed out, and empties the form', async () => {
+    renderAccount();
+    const user = await fillAccount([ACCOUNT_CURRENT, ACCOUNT_NEXT, ACCOUNT_NEXT]);
+    await user.click(screen.getByRole('button', { name: L('platform.account.submit') }));
+
+    const done = await screen.findByTestId('account-password-done');
+    expect(done).toHaveTextContent(L('platform.account.doneTitle'));
+    expect(done).toHaveTextContent(L('platform.account.done'));
+    expect(accountFields().map((field) => field.value)).toEqual(['', '', '']);
+  });
+
+  it('says the other devices were NOT signed out when that is what the server reported', async () => {
+    changeOwnPasswordAction.mockResolvedValue({
+      status: 'success',
+      messageKey: 'platform.account.doneSessionsKept',
+      attempt: 1,
+    });
+    renderAccount();
+    const user = await fillAccount([ACCOUNT_CURRENT, ACCOUNT_NEXT, ACCOUNT_NEXT]);
+    await user.click(screen.getByRole('button', { name: L('platform.account.submit') }));
+
+    const done = await screen.findByTestId('account-password-done');
+    expect(done).toHaveTextContent(L('platform.account.doneSessionsKept'));
+    expect(done).not.toHaveTextContent(L('platform.account.done'));
+  });
+});
+
+describe('the two refusals are distinct, and mark different fields', () => {
+  it('marks the current password when the identity provider would not verify it', async () => {
+    changeOwnPasswordAction.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'platform.account.error.currentPassword',
+      fieldErrors: { currentPassword: 'platform.account.error.currentPassword' },
+      correlationId: 'c-1',
+      attempt: 1,
+    });
+    renderAccount();
+    const user = await fillAccount(['not-the-current-one', ACCOUNT_NEXT, ACCOUNT_NEXT]);
+    await user.click(screen.getByRole('button', { name: L('platform.account.submit') }));
+
+    // Once in the banner and once against the field the operator must correct.
+    await waitFor(() =>
+      expect(
+        screen.getAllByText(L('platform.account.error.currentPassword')).length
+      ).toBeGreaterThan(0)
+    );
+    expect(screen.queryByTestId('account-password-done')).toBeNull();
+    const [current, next] = accountFields();
+    expect(current).toHaveAttribute('aria-invalid', 'true');
+    expect(next).not.toHaveAttribute('aria-invalid');
+  });
+
+  it('marks the new password when the identity provider refused it, with a different sentence', async () => {
+    changeOwnPasswordAction.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'platform.account.error.refused',
+      fieldErrors: { newPassword: 'platform.account.error.refused' },
+      correlationId: 'c-2',
+      attempt: 1,
+    });
+    renderAccount();
+    const user = await fillAccount([ACCOUNT_CURRENT, 'short', 'short']);
+    await user.click(screen.getByRole('button', { name: L('platform.account.submit') }));
+
+    await waitFor(() =>
+      expect(screen.getAllByText(L('platform.account.error.refused')).length).toBeGreaterThan(0)
+    );
+    expect(L('platform.account.error.refused')).not.toBe(
+      L('platform.account.error.currentPassword')
+    );
+    const [current, next] = accountFields();
+    expect(next).toHaveAttribute('aria-invalid', 'true');
+    expect(current).not.toHaveAttribute('aria-invalid');
+    expect(screen.queryByTestId('account-password-done')).toBeNull();
+  });
+});
+
+describe('Arabic', () => {
+  it('renders the screen right to left with catalogued Arabic', async () => {
+    renderAccount('ar');
+    expect(document.documentElement.dir).toBe('rtl');
+    expect(screen.getByText(AR['platform.account.passwordTitle'] as string)).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: AR['platform.account.submit'] as string })
+    ).toBeInTheDocument();
+    // Real Arabic, not an English string sitting in the Arabic catalogue.
+    expect(AR['platform.account.title']).not.toBe(EN['platform.account.title']);
+    expect(AR['platform.account.title']).toMatch(/[؀-ۿ]/);
+  });
+
+  it('keeps the reveal control on every field in Arabic too', async () => {
+    const user = userEvent.setup();
+    renderAccount('ar');
+    const toggles = screen.getAllByTestId('password-reveal-toggle');
+    expect(toggles).toHaveLength(3);
+    await user.click(toggles[0] as HTMLElement);
+    expect(accountFields()[0]?.type).toBe('text');
+  });
+});
+
+// --- the console route group's own boundaries ----------------------------------
+//
+// Every console page is a Server Component that awaits at least one
+// control-plane read, and each of those reads is rated `expensive-read`. The
+// group carried no `loading.tsx`, `error.tsx` or `not-found.tsx` at all, so a
+// slow read looked like a console that had stopped responding and a render that
+// threw took the shell, the navigation and the language down with it. These
+// three files are the workspace group's, written for this group.
+
+const PlatformLoading = (await import('@/app/[locale]/(platform)/loading')).default;
+const PlatformError = (await import('@/app/[locale]/(platform)/error')).default;
+const PlatformNotFound = (await import('@/app/[locale]/(platform)/not-found')).default;
+
+describe('the console route group draws its own waiting, failure and not-found screens', () => {
+  it('says it is loading, in the language of the address', () => {
+    renderLtr(<PlatformLoading />);
+    expect(screen.getByText(L('state.loading'))).toBeInTheDocument();
+  });
+
+  it('says the page could not be found', () => {
+    renderLtr(<PlatformNotFound />);
+    expect(screen.getByText(L('state.notFound.title'))).toBeInTheDocument();
+  });
+
+  it('shows the failure reference and retries, and publishes nothing from the error itself', async () => {
+    const reset = vi.fn();
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const failure = Object.assign(new Error('connect ECONNREFUSED /var/secret/socket'), {
+      digest: 'digest-9',
+    });
+
+    renderLtr(<PlatformError error={failure} reset={reset} />);
+
+    expect(screen.getByText(L('state.error.title'))).toBeInTheDocument();
+    expect(screen.getByText('digest-9')).toBeInTheDocument();
+    // The message and the path inside it stay off the screen and out of the log
+    // line: a Next.js error message routinely carries both.
+    expect(document.body.textContent ?? '').not.toContain('ECONNREFUSED');
+    for (const call of logged.mock.calls) {
+      expect(String(call[0])).not.toContain('ECONNREFUSED');
+    }
+
+    await userEvent.click(screen.getByRole('button', { name: L('state.retry') }));
+    expect(reset).toHaveBeenCalledTimes(1);
+    logged.mockRestore();
+  });
+
+  /*
+   * The three files exist BECAUSE the language has to come from the address:
+   * Next gives a boundary no props, so reading the default locale instead would
+   * announce an Arabic waiting state to an English reader, and an English
+   * failure inside an Arabic document (P1-26-F-059, P1-26-F-071). An English
+   * address is the only one the cases above ever visit, which is exactly the
+   * half that cannot fail — so each boundary is visited in Arabic too.
+   */
+  it('speaks Arabic on an Arabic address, in all three boundaries', async () => {
+    mockPathname = '/ar/platform';
+
+    const loading = renderRtl(<PlatformLoading />);
+    expect(document.documentElement.dir).toBe('rtl');
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent(AR['state.loading'] as string);
+    expect(status).not.toHaveTextContent(L('state.loading'));
+    loading.unmount();
+
+    const missing = renderRtl(<PlatformNotFound />);
+    expect(screen.getByText(AR['state.notFound.title'] as string)).toBeInTheDocument();
+    missing.unmount();
+
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    renderRtl(<PlatformError error={new Error('boom')} reset={vi.fn()} />);
+    expect(screen.getByText(AR['state.error.title'] as string)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: AR['state.retry'] as string })).toBeInTheDocument();
+    logged.mockRestore();
+  });
+
+  it('falls back to the default language when the address carries none', () => {
+    // Not hypothetical: `usePathname` returns `/` during a transition, and what
+    // happens then must be a decision rather than a crash.
+    mockPathname = '/';
+    renderRtl(<PlatformLoading />);
+    expect(screen.getByRole('status')).toHaveTextContent(AR['state.loading'] as string);
+  });
+
+  it('lets the keyboard reach and press the retry control', async () => {
+    const reset = vi.fn();
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    renderLtr(<PlatformError error={new Error('boom')} reset={reset} />);
+
+    const retry = screen.getByRole('button', { name: L('state.retry') });
+    await userEvent.tab();
+    expect(retry).toHaveFocus();
+    await userEvent.keyboard('{Enter}');
+    expect(reset).toHaveBeenCalledTimes(1);
+    logged.mockRestore();
   });
 });

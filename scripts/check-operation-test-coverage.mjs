@@ -2007,6 +2007,20 @@ export const MANIFEST = {
     required: ['success', 'denial', 'audit'],
     note: 'token + session + success audit; every failure generic; failure audited',
   },
+  'iam.account-password-change': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: [
+      'route',
+      'service',
+      'authorization',
+      'unauthenticated',
+      'success',
+      'denial',
+      'audit',
+      'provider',
+    ],
+    note: 'Owner directive, console account and security. The only change-password path a PLATFORM-ONLY identity can reach: every tenant operation resolves through iam.has_permission, which returns false without an active role in the current tenant, so the profile surface answers 403 to the console operator. Declares platform.organization.read, the base entitlement every platform grant set is refused without, which is why a tenant user with no platform grant is refused ERR-IAM-001 and a new code would have locked out every operator already provisioned. The identity acted on is read from the caller own bearer token and never from the request document. Two refusals, told apart by code: ERR-IAM-003 for a current password the provider would not verify, ERR-IAM-004 for a new one its own policy rejects, with the provider sentence in the operator log and never in the response. The audit record carries who and when and one detail naming how the change was authorised, and is asserted to hold no password, no hash and no token',
+  },
   'iam.auth-logout': {
     files: [
       'tests/backend/iam-auth-provider.test.ts',

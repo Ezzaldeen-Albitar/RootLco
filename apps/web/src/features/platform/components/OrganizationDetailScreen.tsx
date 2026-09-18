@@ -64,6 +64,8 @@ export function OrganizationDetailScreen({
   organization,
   plans,
   charges,
+  chargeStatus = '',
+  chargesPaged = false,
   capabilities,
   today,
 }: {
@@ -72,6 +74,10 @@ export function OrganizationDetailScreen({
   readonly organization: OrganizationDetail;
   readonly plans: readonly SubscriptionPlan[] | null;
   readonly charges: ReadState<CursorPage<SubscriptionCharge>> | null;
+  /** The charge status filter the address asked for, empty for every status. */
+  readonly chargeStatus?: string;
+  /** Whether the charge page came from a cursor rather than being the first. */
+  readonly chargesPaged?: boolean;
   readonly capabilities: DetailCapabilities;
   readonly today: string;
 }) {
@@ -220,6 +226,10 @@ export function OrganizationDetailScreen({
             messages={messages}
             tenantId={organization.id}
             charges={charges.data.items}
+            hasMore={charges.data.hasMore}
+            nextCursor={charges.data.nextCursor}
+            status={chargeStatus}
+            paged={chargesPaged}
             subscriptions={organization.subscriptions}
             canManage={capabilities.canManageBilling}
             defaultCurrency={currentPlan?.currencyCode ?? ''}

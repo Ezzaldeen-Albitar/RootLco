@@ -31,8 +31,9 @@
  *   platform.statistics-read: route service authorization success denial
  *   platform.audit-search: route service authorization success denial
  *   platform.organization-lifecycle: route service authorization success denial cross-tenant audit
+ *   iam.account-password-change: route service authorization unauthenticated success denial audit provider
  */
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
 import {
@@ -113,6 +114,12 @@ import {
   PLATFORM_AUDIT_SEARCH_OPERATION,
   GET as auditSearchRoute,
 } from '@/app/api/v1/platform/audit-events/route';
+import {
+  ACCOUNT_PASSWORD_CHANGE_OPERATION,
+  POST as changePasswordRoute,
+} from '@/app/api/v1/platform/account/password/route';
+import { POST as passwordResetRequestRoute } from '@/app/api/v1/auth/password-reset/route';
+import { POST as passwordResetCompletionRoute } from '@/app/api/v1/auth/password-reset/completion/route';
 
 const IDENTITY_PROVIDER = 'test_harness';
 const SYSTEM_ACTOR = '00000000-0000-4000-8000-000000000001';
@@ -134,6 +141,7 @@ const PLAN_LARGE = `odpc_large_${RUN}`;
 let admin: Pool;
 let runtime: Pool;
 let platform: Pool;
+let identityDouble: FakeIdentityProvider;
 
 let tenantOne = '';
 let tenantTwo = '';
@@ -305,13 +313,15 @@ beforeAll(async () => {
   process.env.NEXT_PUBLIC_APP_ENV = 'local';
   process.env.AUTH_REDIRECT_ALLOWLIST = 'https://app.test/welcome';
   __resetBackendConfigForTests();
-  setIdentityProvider(
-    new FakeIdentityProvider({
-      secret: 'platform-console-secret-not-real',
-      issuer: 'https://auth.test.local/auth/v1',
-      audience: 'authenticated',
-    })
-  );
+  // Kept rather than discarded: the account-security cases at the foot of this
+  // file mint a real token with it and ask it what credential it holds
+  // afterwards, which is the only place a password can be observed at all.
+  identityDouble = new FakeIdentityProvider({
+    secret: 'platform-console-secret-not-real',
+    issuer: 'https://auth.test.local/auth/v1',
+    audience: 'authenticated',
+  });
+  setIdentityProvider(identityDouble);
 
   admin = adminPool();
   await ensureTestLogins(admin);
@@ -1592,5 +1602,443 @@ describe('every platform operation refuses a tenant principal and an unauthentic
         [REFUSED_CODE]
       )
     ).toBe('0');
+  });
+});
+
+// ===========================================================================
+// iam.account-password-change — account and security for a PLATFORM-ONLY caller
+//
+// Here rather than in a file of its own, and the reason is a property of the
+// repository: the sealed P1-27 evidence package digests a stated count of
+// backend test FILES, so a new file moves a record that is closed. These cases
+// belong to the console this suite already covers, and they reuse its two most
+// useful callers unchanged:
+//
+//   READER        `platform.organization.read` and NO tenant role at all — the
+//                 platform-only identity the operation exists for;
+//   TENANT_ADMIN  a generous tenant role and no platform grant — refused,
+//                 because tenant authority is the wrong KIND of authority.
+//
+// Nothing about a password is asserted by reading a database column, because
+// RootLco stores none: the credential is asked of the identity double through
+// the real port, before and after.
+// ===========================================================================
+
+const ACCOUNT_PATH = '/platform/account/password';
+const EMAIL_READER = `${SUBJECT_READER}@fixture.test`;
+const EMAIL_TENANT_ADMIN = `${SUBJECT_TENANT_ADMIN}@fixture.test`;
+const FIRST_PASSWORD = 'first-password-that-is-long';
+const NEXT_PASSWORD = 'second-password-that-is-long';
+const TOO_WEAK = 'short';
+
+interface AccountViolation {
+  readonly path: string;
+  readonly rule: string;
+}
+interface AccountProblem {
+  readonly code?: string;
+  readonly violations?: readonly AccountViolation[];
+}
+
+/** POSTs the change with a bearer header, which the shared `call` does not carry. */
+async function callAccount<T>(input: {
+  readonly body?: unknown;
+  readonly bearer?: string | null;
+}): Promise<{ status: number; body: T; raw: string }> {
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (input.bearer) headers.authorization = `Bearer ${input.bearer}`;
+  const request = new Request(`http://localhost/api/v1${ACCOUNT_PATH}`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(input.body ?? {}),
+  });
+  const response = await changePasswordRoute(request);
+  const raw = await response.text();
+  return { status: response.status, body: (raw === '' ? null : JSON.parse(raw)) as T, raw };
+}
+
+/** Calls one of the two PUBLIC reset routes, which carry no session at all. */
+async function callPublicAuth<T>(
+  handler: (request: Request) => Promise<Response>,
+  path: string,
+  body: unknown
+): Promise<{ status: number; body: T }> {
+  const request = new Request(`http://localhost/api/v1${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const response = await handler(request);
+  const raw = await response.text();
+  return { status: response.status, body: (raw === '' ? null : JSON.parse(raw)) as T };
+}
+
+/** A real token for `email`, minted by the double through the real port. */
+async function accountTokenFor(email: string, password: string): Promise<string> {
+  const session = await identityDouble.authenticate(email, password);
+  return session.accessToken;
+}
+
+async function accountAuditRows(entityId: string) {
+  const { rows } = await admin.query<{
+    id: string;
+    actor_id: string | null;
+    action: string;
+    entity_type: string;
+    occurred_at: Date;
+  }>(
+    `SELECT id, actor_id, action, entity_type, occurred_at
+       FROM iam.audit_records
+      WHERE action = 'iam.password.changed' AND entity_id = $1
+      ORDER BY occurred_at`,
+    [entityId]
+  );
+  return rows;
+}
+
+async function accountAuditDetails(recordId: string) {
+  const { rows } = await admin.query<{
+    field_name: string;
+    old_value_masked: string | null;
+    new_value_masked: string | null;
+  }>(
+    `SELECT field_name, old_value_masked, new_value_masked
+       FROM iam.audit_record_details WHERE audit_record_id = $1`,
+    [recordId]
+  );
+  return rows;
+}
+
+/** Re-seeds the double so one case's credential change cannot decide the next. */
+function seedAccountIdentities(): void {
+  identityDouble.reset();
+  for (const [subject, email] of [
+    [SUBJECT_READER, EMAIL_READER],
+    [SUBJECT_TENANT_ADMIN, EMAIL_TENANT_ADMIN],
+  ] as const) {
+    identityDouble.seed({
+      subject,
+      email,
+      password: FIRST_PASSWORD,
+      confirmed: true,
+      tenantId: TENANT_A,
+    });
+  }
+}
+
+describe('the account operation declares what the console depends on', () => {
+  it('names the base console entitlement, audits as a security act, and is not idempotent', () => {
+    expect(ACCOUNT_PASSWORD_CHANGE_OPERATION.id).toBe('iam.account-password-change');
+    expect(ACCOUNT_PASSWORD_CHANGE_OPERATION.path).toBe(ACCOUNT_PATH);
+    expect(ACCOUNT_PASSWORD_CHANGE_OPERATION.permissions).toEqual(['platform.organization.read']);
+    expect(ACCOUNT_PASSWORD_CHANGE_OPERATION.auditClass).toBe('security');
+    expect(ACCOUNT_PASSWORD_CHANGE_OPERATION.auditAction).toBe('iam.password.changed');
+    // An idempotency fingerprint over a body carrying two passwords is refused
+    // by ERR-INT-003, so declaring it would make every request fail.
+    expect(ACCOUNT_PASSWORD_CHANGE_OPERATION.idempotent).toBeUndefined();
+  });
+});
+
+describe('a platform-only identity changes its own password', () => {
+  beforeEach(() => {
+    seedAccountIdentities();
+    asReader();
+  });
+
+  it('replaces the credential at the provider and refuses the old one afterwards', async () => {
+    const bearer = await accountTokenFor(EMAIL_READER, FIRST_PASSWORD);
+    const result = await callAccount<{ status: string; otherSessions: string }>({
+      bearer,
+      body: { currentPassword: FIRST_PASSWORD, newPassword: NEXT_PASSWORD },
+    });
+
+    expect(result.status).toBe(200);
+    expect(result.body.status).toBe('password-changed');
+    expect(result.body.otherSessions).toBe('ended-at-provider');
+
+    await expect(identityDouble.authenticate(EMAIL_READER, NEXT_PASSWORD)).resolves.toMatchObject({
+      subject: SUBJECT_READER,
+    });
+    await expect(identityDouble.authenticate(EMAIL_READER, FIRST_PASSWORD)).rejects.toMatchObject({
+      reason: 'invalid-credentials',
+    });
+  });
+
+  it('neither echoes a password nor returns anything but the two published fields', async () => {
+    const bearer = await accountTokenFor(EMAIL_READER, FIRST_PASSWORD);
+    const result = await callAccount<Record<string, unknown>>({
+      bearer,
+      body: { currentPassword: FIRST_PASSWORD, newPassword: NEXT_PASSWORD },
+    });
+
+    expect(result.status).toBe(200);
+    expect(Object.keys(result.body).sort()).toEqual(['otherSessions', 'status']);
+    expect(result.raw).not.toContain(FIRST_PASSWORD);
+    expect(result.raw).not.toContain(NEXT_PASSWORD);
+  });
+
+  it('ends every other session of the identity at the provider', async () => {
+    // A session opened BEFORE the change, on another device.
+    const otherDevice = await identityDouble.authenticate(EMAIL_READER, FIRST_PASSWORD);
+    const bearer = await accountTokenFor(EMAIL_READER, FIRST_PASSWORD);
+
+    const result = await callAccount<{ otherSessions: string }>({
+      bearer,
+      body: { currentPassword: FIRST_PASSWORD, newPassword: NEXT_PASSWORD },
+    });
+    expect(result.status).toBe(200);
+    expect(result.body.otherSessions).toBe('ended-at-provider');
+
+    await expect(identityDouble.verifyToken(otherDevice.accessToken)).rejects.toMatchObject({
+      reason: 'invalid-token',
+    });
+  });
+
+  it('acts on the caller of the token and never on another identity', async () => {
+    const bearer = await accountTokenFor(EMAIL_READER, FIRST_PASSWORD);
+    expect(
+      (
+        await callAccount({
+          bearer,
+          body: { currentPassword: FIRST_PASSWORD, newPassword: NEXT_PASSWORD },
+        })
+      ).status
+    ).toBe(200);
+
+    // The other identity's credential is untouched: there is no field in the
+    // request document that could have named it.
+    await expect(
+      identityDouble.authenticate(EMAIL_TENANT_ADMIN, FIRST_PASSWORD)
+    ).resolves.toMatchObject({ subject: SUBJECT_TENANT_ADMIN });
+  });
+
+  it('holds no tenant role whatsoever, which is why the profile surface cannot serve it', async () => {
+    const { rows } = await admin.query<{ count: string }>(
+      'SELECT count(*)::text AS count FROM iam.role_grants WHERE user_id = $1',
+      [USER_READER]
+    );
+    expect(rows[0]?.count).toBe('0');
+  });
+});
+
+describe('a password change refusal names which field the caller must correct', () => {
+  beforeEach(() => {
+    seedAccountIdentities();
+    asReader();
+  });
+
+  it('refuses a wrong current password with ERR-IAM-003 and changes nothing', async () => {
+    const bearer = await accountTokenFor(EMAIL_READER, FIRST_PASSWORD);
+    const result = await callAccount<AccountProblem>({
+      bearer,
+      body: { currentPassword: 'not-the-current-password', newPassword: NEXT_PASSWORD },
+    });
+
+    expect(result.status).toBe(422);
+    expect(result.body.code).toBe('ERR-IAM-003');
+    expect(result.body.violations).toEqual([
+      { path: 'body.currentPassword', rule: 'did_not_verify' },
+    ]);
+    await expect(identityDouble.authenticate(EMAIL_READER, FIRST_PASSWORD)).resolves.toBeTruthy();
+    await expect(identityDouble.authenticate(EMAIL_READER, NEXT_PASSWORD)).rejects.toMatchObject({
+      reason: 'invalid-credentials',
+    });
+  });
+
+  it("refuses a new password the provider's own policy rejects, with ERR-IAM-004", async () => {
+    const bearer = await accountTokenFor(EMAIL_READER, FIRST_PASSWORD);
+    const result = await callAccount<AccountProblem>({
+      bearer,
+      body: { currentPassword: FIRST_PASSWORD, newPassword: TOO_WEAK },
+    });
+
+    expect(result.status).toBe(422);
+    expect(result.body.code).toBe('ERR-IAM-004');
+    expect(result.body.violations).toEqual([
+      { path: 'body.newPassword', rule: 'refused_by_identity_provider' },
+    ]);
+    // The provider's own sentence goes to the operator log and is deliberately
+    // NOT in the response: ADR-019 §3, and the interface renders catalogued
+    // keys in two languages.
+    expect(result.raw).not.toContain('at least');
+    expect(result.raw).not.toContain(TOO_WEAK);
+    await expect(identityDouble.authenticate(EMAIL_READER, FIRST_PASSWORD)).resolves.toBeTruthy();
+  });
+
+  it('tells the two refusals apart by code, for the same account and the same session', async () => {
+    const bearer = await accountTokenFor(EMAIL_READER, FIRST_PASSWORD);
+    const wrongCurrent = await callAccount<AccountProblem>({
+      bearer,
+      body: { currentPassword: 'wrong', newPassword: NEXT_PASSWORD },
+    });
+    const weakNew = await callAccount<AccountProblem>({
+      bearer,
+      body: { currentPassword: FIRST_PASSWORD, newPassword: TOO_WEAK },
+    });
+    expect(wrongCurrent.body.code).not.toBe(weakNew.body.code);
+  });
+
+  it('refuses a body that names a field the operation does not publish', async () => {
+    const bearer = await accountTokenFor(EMAIL_READER, FIRST_PASSWORD);
+    const result = await callAccount<AccountProblem>({
+      bearer,
+      body: {
+        currentPassword: FIRST_PASSWORD,
+        newPassword: NEXT_PASSWORD,
+        email: EMAIL_TENANT_ADMIN,
+      },
+    });
+    // The identity is never taken from the request document, and a body trying
+    // to name one is refused rather than ignored.
+    expect(result.status).toBe(422);
+    expect(result.body.code).toBe('ERR-VAL-001');
+  });
+});
+
+describe('who may reach the account operation', () => {
+  beforeEach(() => {
+    seedAccountIdentities();
+  });
+
+  it('refuses a tenant user who holds no platform authority, with ERR-IAM-001', async () => {
+    asTenantAdmin();
+    const bearer = await accountTokenFor(EMAIL_TENANT_ADMIN, FIRST_PASSWORD);
+    const result = await callAccount<AccountProblem>({
+      bearer,
+      body: { currentPassword: FIRST_PASSWORD, newPassword: NEXT_PASSWORD },
+    });
+
+    expect(result.status).toBe(403);
+    expect(result.body.code).toBe('ERR-IAM-001');
+    // Their credential is untouched: the refusal happens before the provider is
+    // asked anything at all.
+    await expect(
+      identityDouble.authenticate(EMAIL_TENANT_ADMIN, FIRST_PASSWORD)
+    ).resolves.toBeTruthy();
+    await expect(
+      identityDouble.authenticate(EMAIL_TENANT_ADMIN, NEXT_PASSWORD)
+    ).rejects.toMatchObject({ reason: 'invalid-credentials' });
+  });
+
+  it('answers 401 ERR-IAM-002 to a caller with no session', async () => {
+    __resetAuthenticatorForTests();
+    const result = await callAccount<AccountProblem>({
+      body: { currentPassword: FIRST_PASSWORD, newPassword: NEXT_PASSWORD },
+    });
+    expect(result.status).toBe(401);
+    expect(result.body.code).toBe('ERR-IAM-002');
+  });
+});
+
+describe('the password-change audit record says who and when, and nothing else', () => {
+  beforeEach(() => {
+    seedAccountIdentities();
+    asReader();
+  });
+
+  it('appends exactly one catalogued record carrying the actor and the time', async () => {
+    const before = await accountAuditRows(USER_READER);
+    const bearer = await accountTokenFor(EMAIL_READER, FIRST_PASSWORD);
+    const result = await callAccount({
+      bearer,
+      body: { currentPassword: FIRST_PASSWORD, newPassword: NEXT_PASSWORD },
+    });
+    expect(result.status).toBe(200);
+
+    const after = await accountAuditRows(USER_READER);
+    expect(after.length).toBe(before.length + 1);
+    const written = after[after.length - 1];
+    expect(written?.action).toBe('iam.password.changed');
+    expect(written?.entity_type).toBe('iam.user_account');
+    expect(written?.actor_id).toBe(USER_READER);
+    expect(written?.occurred_at).toBeInstanceOf(Date);
+  });
+
+  it('writes no password, no hash and no token into the record or its details', async () => {
+    const bearer = await accountTokenFor(EMAIL_READER, FIRST_PASSWORD);
+    expect(
+      (
+        await callAccount({
+          bearer,
+          body: { currentPassword: FIRST_PASSWORD, newPassword: NEXT_PASSWORD },
+        })
+      ).status
+    ).toBe(200);
+
+    const rows = await accountAuditRows(USER_READER);
+    const written = rows[rows.length - 1];
+    expect(written).toBeDefined();
+    const details = await accountAuditDetails(written?.id as string);
+    const text = JSON.stringify(details);
+    expect(text).not.toContain(FIRST_PASSWORD);
+    expect(text).not.toContain(NEXT_PASSWORD);
+    expect(text).not.toContain(bearer);
+    // What it DOES carry: how the change was authorised, and only that.
+    expect(details.map((row) => row.field_name)).toEqual(['verification']);
+    expect(details[0]?.new_value_masked).toBe('current-password');
+  });
+
+  it('writes no record when the current password did not verify', async () => {
+    const before = await accountAuditRows(USER_READER);
+    const bearer = await accountTokenFor(EMAIL_READER, FIRST_PASSWORD);
+    const result = await callAccount({
+      bearer,
+      body: { currentPassword: 'wrong', newPassword: NEXT_PASSWORD },
+    });
+    expect(result.status).toBe(422);
+    expect((await accountAuditRows(USER_READER)).length).toBe(before.length);
+  });
+});
+
+/**
+ * The supported reset path, checked for the principal it was never written for.
+ *
+ * Both routes are `public: true` and write no database row: the provider owns
+ * the token, its single use and its lifetime, and the services resolve no
+ * tenant, read no account and evaluate no permission. So "does the forgot
+ * -password path exclude a platform-only identity" has an answer that can be
+ * MEASURED rather than argued, and this is the measurement. Nothing was changed
+ * to make it pass.
+ */
+describe('the supported password reset works for a platform-only identity', () => {
+  beforeEach(() => {
+    seedAccountIdentities();
+    __resetAuthenticatorForTests();
+  });
+
+  it('accepts the request and issues the provider a link for the operator address', async () => {
+    const result = await callPublicAuth<{ status: string }>(
+      passwordResetRequestRoute,
+      '/auth/password-reset',
+      { email: EMAIL_READER }
+    );
+
+    expect(result.status).toBe(202);
+    expect(result.body.status).toBe('accepted');
+    const delivered = identityDouble.deliveries.filter(
+      (delivery) => delivery.kind === 'password-reset' && delivery.email === EMAIL_READER
+    );
+    expect(delivered).toHaveLength(1);
+  });
+
+  it('completes with the provider token and leaves the operator able to sign in again', async () => {
+    await callPublicAuth(passwordResetRequestRoute, '/auth/password-reset', {
+      email: EMAIL_READER,
+    });
+    const delivery = identityDouble.deliveries.find(
+      (entry) => entry.kind === 'password-reset' && entry.email === EMAIL_READER
+    );
+    expect(delivery).toBeDefined();
+
+    const completion = await callPublicAuth<{ status: string }>(
+      passwordResetCompletionRoute,
+      '/auth/password-reset/completion',
+      { token: delivery?.token, password: NEXT_PASSWORD }
+    );
+
+    expect(completion.status).toBe(200);
+    await expect(identityDouble.authenticate(EMAIL_READER, NEXT_PASSWORD)).resolves.toMatchObject({
+      subject: SUBJECT_READER,
+    });
   });
 });

@@ -73,6 +73,17 @@ export class FakeIdentityProvider implements IdentityProvider {
   readonly supportsDelete = true;
   /** Set to make the next `deleteIdentity` fail, so the compensation gap is testable. */
   refuseDelete = false;
+  /**
+   * The double's own credential policy, modelled rather than injected.
+   *
+   * GoTrue refuses a password below a configured minimum with a 422 and a
+   * sentence of its own. A double that accepted everything would leave the
+   * refusal path untested and would let a test believe RootLco has no strength
+   * rule *because nothing ever refused*, rather than because the provider owns
+   * the rule. The number is the double's, not a RootLco policy: no application
+   * code reads it.
+   */
+  passwordMinLength = 8;
 
   private readonly identities = new Map<string, FakeIdentityRecord>();
   private readonly revokedSessions = new Set<string>();
@@ -366,6 +377,53 @@ export class FakeIdentityProvider implements IdentityProvider {
     await this.revokeAllSessions(subject);
   }
 
+  /**
+   * Capability 14 — write a new credential for `subject`.
+   *
+   * Refuses by its own policy exactly as the adapter reports GoTrue's: a
+   * `credential-policy-rejected` carrying the provider's sentence, which the
+   * one caller writes to the operator log and never to a response. Sessions are
+   * NOT ended here, matching the adapter — ending them is capability 15, called
+   * explicitly, so a reader can see that it happens.
+   */
+  async setPassword(subject: string, newPassword: string): Promise<ProviderIdentity> {
+    this.assertUp();
+    const record = this.identities.get(subject);
+    if (!record) throw new ProviderFailure('identity-unavailable', 'Identity does not exist.');
+    if (newPassword.length < this.passwordMinLength) {
+      throw new ProviderFailure(
+        'credential-policy-rejected',
+        'The identity provider refused the new password.',
+        false,
+        `Password should be at least ${this.passwordMinLength} characters.`
+      );
+    }
+    record.password = newPassword;
+    return this.toIdentity(record);
+  }
+
+  /**
+   * Capability 15 — end every session of the identity behind `accessToken`.
+   *
+   * The subject is read out of the token's payload without re-verifying it, the
+   * same thing the adapter's HTTP sign-out lets the provider do. An
+   * unreadable or unknown token ends nothing and is not an error: the desired
+   * end state is already reached for any session it could have named.
+   */
+  async signOutEverywhere(accessToken: string): Promise<void> {
+    this.assertUp();
+    const payload = accessToken.split('.')[1];
+    if (!payload) return;
+    let subject: string | undefined;
+    try {
+      subject = (JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { sub?: string })
+        .sub;
+    } catch {
+      return;
+    }
+    if (subject) await this.revokeAllSessions(subject);
+  }
+
   /** Test helper: simulates the invitee following their link and setting a password. */
   async acceptInvitation(email: string, password: string): Promise<ProviderIdentity> {
     const record = this.byEmail(email);
@@ -383,5 +441,6 @@ export class FakeIdentityProvider implements IdentityProvider {
     this.deliveries.length = 0;
     this.outage = false;
     this.refuseDelete = false;
+    this.passwordMinLength = 8;
   }
 }

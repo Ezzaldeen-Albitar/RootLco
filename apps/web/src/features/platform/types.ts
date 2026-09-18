@@ -29,6 +29,41 @@ export const CAPACITY_WARNING_PERCENT = 90;
 /** The audit window the search opens on, in days. */
 export const AUDIT_DEFAULT_WINDOW_DAYS = 30;
 
+/**
+ * The widest window `platform.audit-search` accepts, in days.
+ *
+ * `MAX_AUDIT_WINDOW_DAYS` in `modules/platform/application/insight-service.ts`.
+ * The server refuses a wider range with a validation failure, and a refused read
+ * reaches a table as the undifferentiated error state — an operator who asked
+ * for a year would be told the system had broken and offered a Retry that can
+ * only break again. Repeating the figure here lets the screen name the actual
+ * limit before it spends the request; the server still decides.
+ *
+ * The repetition is held to the server's value by
+ * `tests/ci/platform-grant-base-entitlement.test.ts`, which reads both files and
+ * fails when they differ. A hand-written pin in a comment could not do that: it
+ * stays green while the server changes underneath it, and the screen then names
+ * a limit the server no longer applies.
+ */
+export const AUDIT_MAX_WINDOW_DAYS = 92;
+
+/**
+ * What is wrong with a chosen day range, as a message key, or null when nothing
+ * is.
+ *
+ * A day either side is read as the whole day, exactly as `auditCriteria` sends
+ * it: from the first instant of `fromDay` to the last of `toDay`. A day that is
+ * not a date at all is left to the controls that produced it.
+ */
+export function auditWindowProblem(fromDay: string, toDay: string): string | null {
+  const from = Date.parse(`${fromDay}T00:00:00.000Z`);
+  const to = Date.parse(`${toDay}T23:59:59.999Z`);
+  if (Number.isNaN(from) || Number.isNaN(to)) return null;
+  if (to < from) return 'platform.audit.error.range';
+  if (to - from > AUDIT_MAX_WINDOW_DAYS * 86_400_000) return 'platform.audit.error.window';
+  return null;
+}
+
 export interface OrganizationRow {
   readonly id: string;
   readonly tenantCode: string;
@@ -142,6 +177,35 @@ export interface SubscriptionReceipt {
   readonly method: string;
   readonly notes: string | null;
   readonly recordedAt: string;
+}
+
+/**
+ * The charge statuses `platform.charge-list` accepts as its filter, in the
+ * order the console offers them.
+ *
+ * `CHARGE_STATUSES` in `modules/platform/index.ts` is the authority: the route's
+ * query schema is built from it and refuses anything else. The list is repeated
+ * here because the web workspace may not import backend source, and
+ * `tests/ci/platform-grant-base-entitlement.test.ts` fails when the two disagree, so
+ * a status added or renamed on the API side cannot diverge unnoticed.
+ */
+export const CHARGE_STATUSES = ['open', 'settled', 'void'] as const;
+export type ChargeStatus = (typeof CHARGE_STATUSES)[number];
+
+/** How many charges the console asks the server for at a time. */
+export const CHARGE_PAGE_SIZE = 100;
+
+/**
+ * The status filter carried in the address, or null when none was asked for.
+ *
+ * A value the server would refuse is read as no filter at all: an address typed
+ * by hand must not spend a request on a validation failure and leave the panel
+ * showing the undifferentiated error state.
+ */
+export function chargeStatusFilter(value: unknown): ChargeStatus | null {
+  return typeof value === 'string' && (CHARGE_STATUSES as readonly string[]).includes(value)
+    ? (value as ChargeStatus)
+    : null;
 }
 
 export interface SubscriptionCharge {

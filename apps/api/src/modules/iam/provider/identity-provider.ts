@@ -41,7 +41,16 @@ export type ProviderFailureReason =
   /** The provider was unreachable, timed out, or returned a fault. */
   | 'provider-unavailable'
   /** The provider rejected the request as malformed. Always an application defect. */
-  | 'provider-rejected';
+  | 'provider-rejected'
+  /**
+   * The provider's own credential policy refused a new password.
+   *
+   * Distinct from `provider-rejected` because it is not an application defect
+   * and the caller CAN fix it: they chose a password the provider will not
+   * accept. RootLco deliberately holds no second strength policy (ADR-019), so
+   * this reason is the only place a strength verdict exists.
+   */
+  | 'credential-policy-rejected';
 
 /**
  * A provider failure, carrying a reason and never a provider message.
@@ -49,13 +58,22 @@ export type ProviderFailureReason =
  * The message is written by us, for operators. Forwarding the provider's own
  * text is how "user not found" ends up in a login response and turns the
  * endpoint into an account-enumeration oracle.
+ *
+ * `policyMessage` is the single, narrow exception, and it does not weaken that
+ * rule: it is set only for `credential-policy-rejected`, it is the provider's
+ * statement about a password the ALREADY-AUTHENTICATED caller just chose for
+ * their OWN identity, and it is written to the operator log rather than to the
+ * response — `toAppFailureFromProvider` never places it in `safeDetails`. It
+ * exists so that the provider's strength policy stays the only strength policy
+ * and an operator can read what the provider actually said.
  */
 export class ProviderFailure extends Error {
   public override readonly name = 'ProviderFailure';
   constructor(
     public readonly reason: ProviderFailureReason,
     message: string,
-    public readonly retryable = false
+    public readonly retryable = false,
+    public readonly policyMessage: string | null = null
   ) {
     super(message);
   }
@@ -119,7 +137,7 @@ export interface PasswordResetRequest {
 }
 
 /**
- * The thirteen capabilities RootLco needs from an authentication provider.
+ * The fifteen capabilities RootLco needs from an authentication provider.
  *
  * Adapters implement all of them or fail closed on the ones the concrete
  * provider does not support — never silently succeed. `supportsDisable` exists
@@ -214,6 +232,37 @@ export interface IdentityProvider {
    * rather than believing a removal that did not happen.
    */
   deleteIdentity(subject: string): Promise<void>;
+
+  /**
+   * 14. Write a new credential for an identity, addressed by subject.
+   *
+   * The provider owns the credential (ADR-019), so a change of password is a
+   * provider user-update and nothing else: RootLco stores no password, no hash
+   * and no reset token, and there is no local state for this call to keep in
+   * step. Proof that the caller may set it is NOT this call's business — the
+   * one caller re-authenticates through `authenticate` first, which is the only
+   * check that the current password is right.
+   *
+   * Strength is refused by the PROVIDER and only by the provider. A refusal
+   * arrives as `credential-policy-rejected`, carrying the provider's own
+   * statement in `policyMessage` for the operator log, so RootLco never has to
+   * hold a second opinion about what a strong password is.
+   */
+  setPassword(subject: string, newPassword: string): Promise<ProviderIdentity>;
+
+  /**
+   * 15. End every session of the identity behind `accessToken`.
+   *
+   * Takes a TOKEN rather than a subject, which is the whole reason it is a
+   * separate capability from `revokeAllSessions`: GoTrue 2.x has no
+   * revoke-by-subject endpoint, so a caller holding one of the identity's own
+   * tokens is the only way the sessions can actually be ended — see the note on
+   * `revokeAllSessions`, which documents that it can do nothing.
+   *
+   * Reaching the desired end state some other way is success, not failure: an
+   * already-invalid token means the sessions are already gone.
+   */
+  signOutEverywhere(accessToken: string): Promise<void>;
 }
 
 /**
@@ -275,6 +324,12 @@ export class UnconfiguredIdentityProvider implements IdentityProvider {
     this.fail();
   }
   async deleteIdentity(): Promise<void> {
+    this.fail();
+  }
+  async setPassword(): Promise<ProviderIdentity> {
+    this.fail();
+  }
+  async signOutEverywhere(): Promise<void> {
     this.fail();
   }
 }
