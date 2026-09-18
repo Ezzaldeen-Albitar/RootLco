@@ -474,13 +474,12 @@ allowed for this job** <!-- inventory.material.heading --> . **Steps:**
 
 **Result:** the job has an approved allowance, and every reservation and issue against it is measured
 against that allowance. **Restrictions:** without one, a draw is refused outright — _"Choose what
-this job is allowed to use before reserving or issuing. Nothing can be drawn on a job without it."_
-<!-- inventory.parts.draw.needRequirement --> If the job needs more than was approved, ask for extra
-
-with a quantity and a reason, and have that approved too. **If it goes wrong:** each of the five
-refusals names what to do next — add and approve a requirement, get the approval, request an
-exception, confirm the vehicle capacity, or state the unit conversion. All five are listed in Part 5,
-§5.26.7, with the two facts that can be missing and how to supply them.
+this job is allowed to use before reserving or issuing. Nothing can be drawn on a job without it."_ <!-- inventory.parts.draw.needRequirement -->
+If the job needs more than was approved, ask for extra with a quantity and a reason, and have that
+approved too. **If it goes wrong:** each of the five refusals names what to do next — add and approve
+a requirement, get the approval, request an exception, confirm the vehicle capacity, or state the
+unit conversion. All five are listed in Part 5, §5.26.7, with the two facts that can be missing and
+how to supply them.
 
 **Screenshot:** no screenshot available at this version.
 
