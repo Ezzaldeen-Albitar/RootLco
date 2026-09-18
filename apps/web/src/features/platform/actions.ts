@@ -665,3 +665,95 @@ export async function updatePlanAction(
     { ifMatch: recordVersion }
   );
 }
+
+// --- the operator's own credential -------------------------------------------
+
+/**
+ * The two refusals `POST /platform/account/password` tells apart, by code.
+ *
+ * Read from the problem document rather than from the status, because both are
+ * 422: one says the current password did not verify, the other says the
+ * identity provider refused the new one. Collapsing them would leave the
+ * operator guessing which field to change.
+ */
+const CURRENT_PASSWORD_WRONG = 'ERR-IAM-003';
+const NEW_PASSWORD_REFUSED = 'ERR-IAM-004';
+
+const passwordChangeSchema = z
+  .object({
+    currentPassword: z
+      .string()
+      .min(1, 'platform.error.required')
+      .max(200, 'platform.error.tooLong'),
+    newPassword: z.string().min(1, 'platform.error.required').max(200, 'platform.error.tooLong'),
+    confirmPassword: z.string().min(1, 'platform.error.required'),
+  })
+  // Two checks, and neither is a strength rule. The identity provider owns
+  // strength (ADR-019); a minimum declared here would be a second policy that
+  // could disagree with the one actually in force, and the operator would be
+  // told a rule nothing enforces.
+  .refine((value) => value.newPassword === value.confirmPassword, {
+    path: ['confirmPassword'],
+    message: 'platform.account.error.mismatch',
+  })
+  .refine((value) => value.newPassword !== value.currentPassword, {
+    path: ['newPassword'],
+    message: 'platform.account.error.unchanged',
+  });
+
+export type PasswordChangeInput = z.input<typeof passwordChangeSchema>;
+
+/**
+ * `iam.account-password-change` — POST /platform/account/password.
+ *
+ * Neither password is logged, echoed into a state, or placed in a URL: they
+ * travel as arguments of this server function, reach the request body, and are
+ * gone. Nothing about them is returned, not even a length.
+ *
+ * The success sentence depends on what the backend says happened to the
+ * operator's other sessions, and says only that. Claiming a revocation the
+ * server did not report would be the one thing worse than not performing it.
+ */
+export async function changeOwnPasswordAction(input: PasswordChangeInput): Promise<ActionState> {
+  const parsed = passwordChangeSchema.safeParse(input);
+  if (!parsed.success) return invalid(keysOf(parsed.error), 1);
+
+  const client = await authorizedClient();
+  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+
+  const result = await client.send<{ status: string; otherSessions: string }>(
+    'POST',
+    '/api/v1/platform/account/password',
+    { currentPassword: parsed.data.currentPassword, newPassword: parsed.data.newPassword }
+  );
+
+  if (!result.ok) {
+    const code = result.problem?.code;
+    if (code === CURRENT_PASSWORD_WRONG) {
+      return {
+        status: 'invalid',
+        messageKey: 'platform.account.error.currentPassword',
+        fieldErrors: { currentPassword: 'platform.account.error.currentPassword' },
+        correlationId: result.correlationId,
+        attempt: 1,
+      };
+    }
+    if (code === NEW_PASSWORD_REFUSED) {
+      return {
+        status: 'invalid',
+        messageKey: 'platform.account.error.refused',
+        fieldErrors: { newPassword: 'platform.account.error.refused' },
+        correlationId: result.correlationId,
+        attempt: 1,
+      };
+    }
+    return fromFailure(result, 1);
+  }
+
+  return success(
+    result.data.otherSessions === 'ended-at-provider'
+      ? 'platform.account.done'
+      : 'platform.account.doneSessionsKept',
+    1
+  );
+}

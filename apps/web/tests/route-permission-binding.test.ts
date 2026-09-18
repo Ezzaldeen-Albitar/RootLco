@@ -271,6 +271,8 @@ const consoleRoutes = {
     .default as unknown as ConsoleRoute,
   audit: (await import('@/app/[locale]/(platform)/platform/audit/page'))
     .default as unknown as ConsoleRoute,
+  account: (await import('@/app/[locale]/(platform)/platform/account/page'))
+    .default as unknown as ConsoleRoute,
 };
 
 function rendersType(node: unknown, type: unknown): boolean {
@@ -343,6 +345,10 @@ describe('the Platform Owner Console routes decide on their own platform code be
     },
     { name: 'plan catalogue', route: 'plans', code: P.subscriptionManage, read: 'listPlans' },
     { name: 'audit', route: 'audit', code: P.auditRead, read: 'listOrganizationChoices' },
+    // Account and security performs no read of its own: everything it shows is
+    // already in the session the console layout resolved, so there is nothing
+    // for a denial to have to avoid reading.
+    { name: 'account and security', route: 'account', code: P.organizationRead, read: null },
   ] as const;
 
   it('found distinct platform codes to test with', () => {

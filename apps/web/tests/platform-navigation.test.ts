@@ -17,7 +17,7 @@ const CODES = Object.values(PLATFORM_PERMISSIONS);
 
 describe('the console navigation model', () => {
   it('gates every item on a platform authority code the console knows', () => {
-    expect(ITEMS.length).toBe(4);
+    expect(ITEMS.length).toBe(5);
     for (const item of ITEMS) {
       expect(item.permission, item.key).not.toBeNull();
       expect(CODES, `${item.key} names an unknown code`).toContain(item.permission);
@@ -31,6 +31,7 @@ describe('the console navigation model', () => {
       'platform-overview': PLATFORM_PERMISSIONS.statisticsRead,
       'platform-organizations': PLATFORM_PERMISSIONS.organizationRead,
       'platform-plans': PLATFORM_PERMISSIONS.subscriptionManage,
+      'platform-account': PLATFORM_PERMISSIONS.organizationRead,
       'platform-audit': PLATFORM_PERMISSIONS.auditRead,
     });
   });
@@ -62,6 +63,10 @@ describe('filtering by platform authority', () => {
     });
     expect(flattenNavigation(groups).map((item) => item.key)).toEqual([
       'platform-organizations',
+      // Account and security is gated on the organisation read as well: it is
+      // the base entitlement every platform grant set carries, and the one
+      // code the change-password operation declares.
+      'platform-account',
       'platform-audit',
     ]);
   });
