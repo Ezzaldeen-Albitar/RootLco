@@ -10,9 +10,19 @@ scope_statement: 'This manual describes behaviour implemented at the commit name
 
 # Quick start — first login and first working day
 
-This is the short guide. It takes you from an invitation email to a vehicle handed back to its
+This is the short guide. It takes you from an empty installation to a vehicle handed back to its
 customer, using the application's own words. Longer explanations live in the other parts of the
 manual, named at the end of each step.
+
+**Three people appear in it, and they are not the same person.**
+
+| Who                         | What they do here                                                                     | Where they work                         |
+| --------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------- |
+| The **platform owner**      | Creates the organisation, gives it a plan, and invites its first administrator.       | The Platform Owner Console (Part 2A).   |
+| The **first administrator** | Sets their own password, adds branches, invites everyone else, and sets up inventory. | The workspace, Administration (Part 2). |
+| Everyone else               | Receives the vehicle, does the work, hands it back and takes the money.               | The workspace (Parts 4A to 6).          |
+
+If you are joining a workshop that is already running, start at step 3.
 
 Every section carries one label:
 
@@ -45,16 +55,44 @@ this one has been provisioned or tested. **If it goes wrong:** if the address do
 application is not running — ask the person who runs the machine to start it. Nothing you do in the
 browser can start it. **Screenshot:** no screenshot available at this version.
 
-> The very first administrator account of a workspace is **not** invited from a screen. It is
-> created by an operator act before anyone can sign in. See `02-saas-and-organisation-administration.md`.
+> **One identity is established before any screen exists: the platform owner's.** There is no screen
+> anywhere that creates it, in either area of the application. It is established by an operator
+> command against the database, described once in
+> [`../platform/platform-owner-provisioning.md`](../platform/platform-owner-provisioning.md). If you
+> are reading this because nobody can sign in at all, that is the document you need, not this one.
+
+---
+
+## 1A. Day zero — the platform owner creates the organisation
+
+**Label:** IMPLEMENTED (UI) **Who:** the platform owner. **Where:** the same sign-in page as
+everybody else, at http://localhost:3100/en/login. **Steps:**
+
+1. The platform owner signs in with their own address and password. They are not asked to choose an
+   area: the application sends them to the **Platform Owner Console** because of what their account
+   holds, and shows **"Platform Owner Console"** as the area they are in.
+2. **Organisations** → **New organisation**. One form creates the organisation, its first company,
+   its first branch and its first administrator together, and optionally gives it a subscription
+   plan. Every field is listed in Part 2A, §2A.7.
+3. **Create organisation**. The result says what happened next: _"Organisation created. The first
+   administrator receives an email to set a password."_
+
+**Result:** an organisation exists, with one company, one branch, numbering ready for that branch,
+and one invited administrator. **Restrictions:** nobody inside an organisation can do any of this —
+no workspace role carries platform authority. If the box **Activate the organisation now** was left
+clear, the organisation sits in **"Being set up"** until the owner activates it, and nobody can work
+in it. **If it goes wrong:** a clash of codes or an address already in use refuses the whole form and
+creates nothing: _"An organisation, company or branch with one of these codes already exists, or the
+email address is already in use."_ **Screenshot:** no screenshot available at this version.
 
 ---
 
 ## 2. Accept your invitation and set a password
 
-**Label:** IMPLEMENTED (UI), with one OPERATOR PROCEDURE step and one administrator step. **Who:**
-you, the invited person. An administrator sent the invitation from **Users** <!-- nav.users --> and
-must finish the job afterwards. **Where:** the local mailbox at http://127.0.0.1:54324, then the
+**Label:** IMPLEMENTED (UI), with one administrator step afterwards. **Who:** you, the invited
+person. If you are the **first** administrator, your invitation came from the platform owner at step
+1A; everybody after you is invited from **Users** <!-- nav.users --> by an administrator, who must
+also finish the job afterwards. **Where:** the local mailbox at http://127.0.0.1:54324, then the
 link it contains, which opens **Set up your account** <!-- auth.activate.title --> at
 `/{locale}/activate-account`. **Steps:**
 
@@ -71,7 +109,9 @@ workspace are set by your administrator, not on this page."_ <!-- auth.activate.
 **Restrictions:** there is no self-service sign-up. Setting the password does **not** open the
 application: an administrator must still choose **Activate account** <!-- users.action.activate -->
 on the Users screen, and the service checks the invitation was accepted first — _"The invitation has
-not been accepted yet, so the account cannot be activated."_ <!-- users.notAccepted --> **If it goes
+not been accepted yet, so the account cannot be activated."_ <!-- users.notAccepted --> **The first
+administrator is the exception**: their account is activated with the organisation, so setting the
+password is the only step they take before signing in. **If it goes
 wrong:**
 
 - **This link is not complete** <!-- auth.reset.missingToken --> — _"Open the link from your email
@@ -145,13 +185,14 @@ server for the whole page. **Screenshot:** no screenshot available at this versi
 the left-hand menu, landmark **Modules** <!-- nav.landmark --> . **Skip to content** <!-- app.skipToContent -->
 jumps past it. **The groups and the entries inside them:**
 
-| Group                                                | Entries you may see                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Workshop** <!-- nav.group.work -->                 | **Overview** <!-- nav.overview -->, **Walk-in intake** <!-- nav.walkIn -->, **Appointments** <!-- nav.appointments -->, **Reception** <!-- nav.receptions -->, **Work orders** <!-- nav.workOrders --> (with **Queue** <!-- nav.workOrdersQueue -->, **Diagnostics** <!-- nav.diagnostics -->, **Quality** <!-- nav.quality -->), **Technicians** <!-- nav.technicians --> (**My work** <!-- nav.technicianWorkspace -->)                            |
-| **Customers** <!-- nav.group.customers -->           | **Customers** <!-- nav.customers -->, **Review duplicate customers** <!-- nav.customerDuplicates -->, **Vehicles** <!-- nav.vehicles -->, **Review duplicate vehicles** <!-- nav.vehicleDuplicates -->                                                                                                                                                                                                                                               |
-| **Commerce** <!-- nav.group.commerce -->             | **Service catalogue** <!-- nav.catalog -->, **Price lists** <!-- nav.pricing -->, **Quotations** <!-- nav.quotations -->, **Inventory** <!-- nav.inventory -->, **Billing** <!-- nav.billing -->, **Payments** <!-- nav.payments -->, **Delivery and warranty** <!-- nav.delivery -->, **Warranties** <!-- nav.warranty -->                                                                                                                          |
-| **Records** <!-- nav.group.records -->               | **Documents** <!-- nav.documents --> (Planned), **Notifications** <!-- nav.notifications --> (Planned), **Reports** <!-- nav.reports -->                                                                                                                                                                                                                                                                                                             |
-| **Administration** <!-- nav.group.administration --> | **Users** <!-- nav.users -->, **Roles** <!-- nav.roles -->, **Permissions** <!-- nav.permissions -->, **Approval limits** <!-- nav.approvalLimits -->, **Audit log** <!-- nav.auditLog -->, **Organization** <!-- nav.organization -->, **Numbering rules** <!-- nav.numberingRules -->, **Taxes** <!-- nav.taxes -->, **Currencies** <!-- nav.currencies -->, **Languages** <!-- nav.languages -->, **System settings** <!-- nav.systemSettings --> |
+| Group                                                | Entries you may see                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Workshop** <!-- nav.group.work -->                 | **Overview** <!-- nav.overview -->, **Walk-in intake** <!-- nav.walkIn -->, **Appointments** <!-- nav.appointments -->, **Reception** <!-- nav.receptions -->, **Work orders** <!-- nav.workOrders --> (with **Queue** <!-- nav.workOrdersQueue -->, **Diagnostics** <!-- nav.diagnostics -->, **Quality** <!-- nav.quality -->), **Technicians** <!-- nav.technicians --> (**My work** <!-- nav.technicianWorkspace -->)                                                                                                            |
+| **Customers** <!-- nav.group.customers -->           | **Customers** <!-- nav.customers -->, **Review duplicate customers** <!-- nav.customerDuplicates -->, **Vehicles** <!-- nav.vehicles -->, **Review duplicate vehicles** <!-- nav.vehicleDuplicates -->                                                                                                                                                                                                                                                                                                                               |
+| **Commerce** <!-- nav.group.commerce -->             | **Service catalogue** <!-- nav.catalog -->, **Price lists** <!-- nav.pricing -->, **Quotations** <!-- nav.quotations -->, **Inventory** <!-- nav.inventory --> (with **Stock on hand**, **Transfers**, **Goods receipts**, **Adjustments**, **Stock counts**, **Counter sales**, **Customer returns**, **Labels**, **Unit conversions**, **Vehicle capacities**), **Billing** <!-- nav.billing -->, **Payments** <!-- nav.payments -->, **Delivery and warranty** <!-- nav.delivery -->, **Warranties** <!-- nav.warranty -->        |
+| **Records** <!-- nav.group.records -->               | **Documents** <!-- nav.documents --> (Planned), **Notifications** <!-- nav.notifications --> (Planned), **Reports** <!-- nav.reports -->                                                                                                                                                                                                                                                                                                                                                                                             |
+| **Attention** <!-- nav.attention -->                 | Its own entry, not a group: the five signals that need a decision — stock running low, differences found by a count, items leaving faster than usual, transfers still on their way, and your subscription limits.                                                                                                                                                                                                                                                                                                                    |
+| **Administration** <!-- nav.group.administration --> | **Users** <!-- nav.users -->, **Departments** <!-- nav.departments -->, **Employees** <!-- nav.employees -->, **Roles** <!-- nav.roles -->, **Permissions** <!-- nav.permissions -->, **Approval limits** <!-- nav.approvalLimits -->, **Audit log** <!-- nav.auditLog -->, **Organization** <!-- nav.organization -->, **Numbering rules** <!-- nav.numberingRules -->, **Taxes** <!-- nav.taxes -->, **Currencies** <!-- nav.currencies -->, **Languages** <!-- nav.languages -->, **System settings** <!-- nav.systemSettings --> |
 
 **Restrictions worth knowing on day one:**
 
@@ -189,11 +230,12 @@ If your account is not restricted to particular branches you must type the refer
 choosing from a list: _"Your access is not restricted to particular branches, so enter the
 identifier of the one you want."_ <!-- workOrders.queue.scopeUnrestricted --> On check-in the fields
 are literally **Company identifier** <!-- receptions.checkIn.company --> and **Branch identifier** <!-- receptions.checkIn.branch -->
-. **There is no company or branch directory screen** — the application says so: _"The service
-publishes no company or branch directory, so references are shown rather than names."_ Ask the
-person who set up the workspace for the two references and keep them to hand. Creating a company or
-a branch is an **OPERATOR PROCEDURE** with no screen; see
-`02-saas-and-organisation-administration.md`. **If it goes wrong:** **No branch available** <!-- delivery.queue.noScopesTitle -->
+. Your companies and branches are listed **by name** on **Administration** → **Organization**, under
+**Companies and branches**, which is also where you add a branch — Part 2, §2.5. The **settings**
+blocks on the same page still identify a company or a branch by a reference, and still say so:
+_"The service publishes no company or branch directory, so references are shown rather than names."_
+Adding a branch counts against your subscription's limit, and the refusal names both figures and who
+can raise it (Part 2, §2.9). **If it goes wrong:** **No branch available** <!-- delivery.queue.noScopesTitle -->
 — _"No company and branch are available for selection with your current access."_ <!-- delivery.queue.noScopesBody -->
 Ask an administrator to widen your scope. **Screenshot:** `images/readiness-queue-en.png` (the
 delivery queue before a branch is chosen).
@@ -412,6 +454,36 @@ quotations and quality are covered in `04b-work-orders-diagnostics-technicians-q
 
 ---
 
+## 10A. Before a part can leave the shelf: say what the job is allowed to use
+
+**Label:** IMPLEMENTED (UI) **Who:** somebody holding `inv.material.request` to ask, and a
+**different** person holding `inv.material.approve` to approve. A freshly provisioned administrator
+holds both, which is exactly why the second one has to be delegated to somebody else.
+**Where:** **Inventory** → **Parts of a work order**, with the work order open, under **Material
+allowed for this job** <!-- inventory.material.heading --> . **Steps:**
+
+1. Choose **Ask for material** <!-- inventory.material.create.open --> , name the service line and
+   the part (or a group of parts), and say where the amount comes from: the **confirmed capacity for
+   this vehicle**, or an amount you enter by hand **with its source**.
+2. Somebody else approves it. The screen refuses you approving your own: _"You asked for this, so
+   someone else has to decide it. Ask a supervisor to approve it."_ <!-- inventory.material.decide.ownRequest -->
+3. Only now reserve or issue the part (step 10, and Part 5, §5.13 to §5.15). The screen confirms
+   **"Measured against the chosen allowance."** <!-- inventory.parts.draw.usingRequirement -->
+
+**Result:** the job has an approved allowance, and every reservation and issue against it is measured
+against that allowance. **Restrictions:** without one, a draw is refused outright — _"Choose what
+this job is allowed to use before reserving or issuing. Nothing can be drawn on a job without it."_
+<!-- inventory.parts.draw.needRequirement --> If the job needs more than was approved, ask for extra
+
+with a quantity and a reason, and have that approved too. **If it goes wrong:** each of the five
+refusals names what to do next — add and approve a requirement, get the approval, request an
+exception, confirm the vehicle capacity, or state the unit conversion. All five are listed in Part 5,
+§5.26.7, with the two facts that can be missing and how to supply them.
+
+**Screenshot:** no screenshot available at this version.
+
+---
+
 ## 11. Hand the vehicle back
 
 **Label:** IMPLEMENTED (UI) **Who:** an account holding `sal.delivery.view`, `wo.work_order.read`
@@ -540,14 +612,22 @@ audit log with its **Reference** column is illustrated in
 
 ## 14. What is not there on your first day
 
-- **NOT AVAILABLE:** company, branch, department and employee screens. Those records are created by
-  operator acts. Also no technician roster screen.
+- **NOT AVAILABLE:** a technician roster screen. Company, branch, department and employee screens do
+  exist (Part 2), but a company or branch cannot be **edited** from a screen after it is created.
+- **NOT AVAILABLE, from inside your organisation:** changing your subscription or raising a limit.
+  The refusal names who can do it — the platform owner (Part 2, §2.9).
+- **NOT AVAILABLE:** any expiry or shelf-life warning. Nothing in the application records a batch, a
+  lot or an expiry date, so there is no fact to warn on (Part 5, §5.30.6).
 - **NOT AVAILABLE:** merging duplicate customers or duplicate vehicles.
 - **DEFERRED:** **Documents** and **Notifications** — both carry the **Planned** badge and have no
   screens. There is no notification inbox; in-page messages are transient only.
 - **DEFERRED:** the delivery checklist-template administration screen (P1-31-FU-001).
 - **Configuration without a screen:** appointment types, cancellation reasons, fuel levels, warning
-  lights, the delivery checklist and the delivering-employee register.
+  lights and the delivery checklist. The delivering-employee register does have a screen now
+  (Part 2, §2.7).
+- **Two people, not one, for five acts:** approving an opening stock batch, deciding an adjustment,
+  deciding a transfer write-off, approving a material requirement, and approving a request for extra
+  material. Plan your second person on day one, not on the day you are blocked.
 - **Key-value settings only:** **Numbering rules**, **Taxes**, **Currencies** and **System
   settings** are settings screens, not features. No reference number can be previewed or generated
   from a screen, no tax list is published, and no exchange rate is held or calculated.
@@ -563,18 +643,20 @@ audit log with its **Reference** column is illustrated in
 
 **REFERENCE** — this section summarises, records or points elsewhere; it makes no capability claim of its own.
 
-| Question                                                                                    | File                                                 |
-| ------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| Signing in, passwords, language, session expiry, access denied                              | `01-access-and-account-recovery.md`                  |
-| What a tenant, company, branch, department and employee are, and which of them have screens | `02-saas-and-organisation-administration.md`         |
-| Inviting users, roles, scope, the worked two-branch example                                 | `03-users-and-permissions.md`                        |
-| Customers, vehicles, appointments and reception in full                                     | `04a-customers-vehicles-appointments-reception.md`   |
-| Work orders, inspections, diagnostics, technicians, quality and rework                      | `04b-work-orders-diagnostics-technicians-quality.md` |
-| Services, price lists, quotations, approvals, execution and parts                           | `04c-services-quotations-execution-parts.md`         |
-| Handover, delivery readiness and warranty                                                   | `04d-delivery-and-warranty.md`                       |
-| Parts, stock, opening balances and counts                                                   | `05-inventory.md`                                    |
-| Invoices, payments, receipts, reports and exports                                           | `06-finance-and-reporting.md`                        |
-| Audit history, error states, conflicts, correlation ids, common mistakes                    | `07-daily-operation-and-troubleshooting.md`          |
+| Question                                                                                     | File                                                 |
+| -------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| Signing in, passwords, language, session expiry, access denied                               | `01-access-and-account-recovery.md`                  |
+| What a tenant, company, branch, department and employee are, and the screens that run them   | `02-saas-and-organisation-administration.md`         |
+| The platform owner: the console, organisations, plans, subscriptions, charges, activity      | `02a-platform-owner-console.md`                      |
+| Establishing the platform owner in the first place                                           | `../platform/platform-owner-provisioning.md`         |
+| Inviting users, roles, scope, the worked two-branch example                                  | `03-users-and-permissions.md`                        |
+| Customers, vehicles, appointments and reception in full                                      | `04a-customers-vehicles-appointments-reception.md`   |
+| Work orders, inspections, diagnostics, technicians, quality and rework                       | `04b-work-orders-diagnostics-technicians-quality.md` |
+| Services, price lists, quotations, approvals, execution and parts                            | `04c-services-quotations-execution-parts.md`         |
+| Handover, delivery readiness and warranty                                                    | `04d-delivery-and-warranty.md`                       |
+| Stock, receipts, transfers, counts, codes, counter sales, the material a job may use, alerts | `05-inventory.md`                                    |
+| Invoices, payments, receipts, reports and exports                                            | `06-finance-and-reporting.md`                        |
+| Audit history, error states, conflicts, correlation ids, common mistakes                     | `07-daily-operation-and-troubleshooting.md`          |
 
 ---
 
@@ -587,10 +669,25 @@ audit log with its **Reference** column is illustrated in
 2. Whether a provisioned administrator can grant themselves the appointment permissions from the
    screens alone, given that only a permission you already hold may be granted.
 3. No screenshot exists at this version for sign-in, the Overview page, customers, vehicles,
-   appointments, reception, check-in or work orders; only the delivery queue and one handover record
-   were captured.
+   appointments, reception, check-in, work orders, any inventory screen or any console screen; only
+   the delivery queue and one handover record were captured.
+4. Whether anybody has walked this first day end to end in a browser at this commit. Every step is
+   written from the code and the application's own wording; an acceptance journey covering the
+   console and the new inventory work is recorded as still owed in
+   [`../product/owner-directive-2026-09-16/capability-status.md`](../product/owner-directive-2026-09-16/capability-status.md).
 
 <!--
+REVISION 2026-09-18 — the first day was rewritten for develop
+5b2c7840da1821f973438d5429665ef4448132f2: a new step 1A (the platform owner creates the
+organisation, read from apps/web/src/features/platform/components/ProvisionOrganizationScreen.tsx
+and apps/web/src/features/authentication/actions/login.ts), a corrected step 2 (the first
+administrator's account is inserted active —
+apps/api/src/modules/iam/data/tenant-bootstrap-repository.ts insertActiveAccount — so the password
+is their only step), a corrected navigation table and branch step (Part 2 screens exist), and a new
+step 10A for the material a job is allowed to use
+(apps/web/src/features/inventory/components/MaterialRequirementsPanel.tsx). Everything else is
+carried unchanged from the reading below.
+
 Sources (all read at develop commit beebc6c28c873f498fe0503161eb53caa107a9e3):
 - scratchpad/handover-map-B.json — navigation (48 rows), modules 0 (Authentication, session and profile),
   1 (Administration: Users, Audit log, Languages), 2 (CRM customers), 3 (CRM vehicles), 4 (Appointments and
