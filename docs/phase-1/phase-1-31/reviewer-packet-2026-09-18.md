@@ -12,7 +12,9 @@ evidence, four kinds per row), [`change-control-2026-09-08.md`](./change-control
 evidence base since the packet's head)
 
 **THIS IS ONE PACKET, NOT A SERIES OF QUESTIONS.** It exists so that nine determinations can be made
-from evidence in one sitting, and it asks for nothing else.
+from evidence in one sitting, and it asks for nothing else. **§ 7 carries one further item, routed
+here on 2026-09-18 and labelled UNRESOLVED. It is not a tenth determination**, it is not a P1-31
+item, and the nine rows can be answered without it.
 
 **IT ISSUES NO DETERMINATION.** It fills no decision field, writes no name, no date and no signature,
 records no verdict, moves no task-matrix row and moves no register state cell. **The nine decision
@@ -381,3 +383,46 @@ weighed as **deferred work with a named destination**, not as work discharged.
   claims no result of one.
 - **It writes nothing into `phase-1/_acceptance/`.**
 - **It authorises no promotion.** Promotion stays NOT eligible.
+- **It answers nothing in § 7**, approves no prototype, designates no fidelity basis and starts no
+  P1-32 task.
+
+## 7. Routed alongside the nine — one UNRESOLVED question that is not a tenth determination
+
+**Read this as routing, not as a question the nine rows depend on.** It is placed here because this
+packet is the one thing routed to the reviewer, and the question below has no other destination. It
+is **not** a tenth determination: it fills no field in
+[`certification-and-clearance-packet.md`](./certification-and-clearance-packet.md) § 7, it alters no
+question in §§ 3.1–3.9 above, it moves no register state cell, and **P1-G31's four conditions are
+unchanged by it**. A reviewer may answer the nine without touching it.
+
+**The question is OIR-06's, and it belongs to P1-32.** It is stated in full, with every citation,
+at [`../phase-1-32/reconciliation-2026-09-18.md`](../phase-1-32/reconciliation-2026-09-18.md) § 4,
+and it is the item that file's § 4.3 routes here.
+
+**The contradiction, compressed to four sentences.** P1-32 Field 6 (¶19909) binds every Frontend task
+to an owner-approved prototype and forbids new visual design work. No per-module approved UI
+prototype exists for P1-26 through P1-31 — recorded as **MISSING**, per module, at
+[`../phase-1-32/fe-001-fidelity-basis.md`](../phase-1-32/fe-001-fidelity-basis.md) § 2.8. What is
+recorded instead is a designated basis — "the approved P1-25 design system itself; no separate
+package required" at `../phase-1-25/gate-record.md:44` and `../phase-1-26/gate-record.md:273`, and
+the replacement rule "**OIR-06 is resolved**" written in P1-27's own name at
+`../phase-1-27/canonical-plan.md:66` — while two Accepted ADRs at the same head state the opposite,
+`docs/adr/ADR-013-sass-and-scss-styling-architecture.md:9` and
+`docs/adr/ADR-020-frontend-styling-framework-and-component-primitives.md:139`, both reading that
+OIR-06 **remains open**. P1-28 through P1-31 carry no basis row at all and rest on the P1-27 rule by
+an inheritance no document states.
+
+**STATUS: UNRESOLVED. Owner-or-reviewer decision.** Six resolutions are listed with their owners at
+[`../phase-1-32/reconciliation-2026-09-18.md`](../phase-1-32/reconciliation-2026-09-18.md) § 4.2 —
+supplying the two never-delivered prototype packages; extending the designated basis by an explicit
+determination; pinning which version of the design system is the basis; reconciling the ADR wording
+through controlled change; re-scoping FE-001 to a composition-conformance review with a stated
+verdict vocabulary; or deferring FE-001 with conditions under Field 33. **None is recommended here
+and none is ranked.** The one option that is refused rather than offered is declaring the current
+implementation an approved prototype — engineering may not convert the thing being reviewed into the
+thing it is reviewed against.
+
+**What is not claimed by routing it.** No prototype is approved, no basis is designated, no fidelity
+verdict is reached for any module other than the P1-25 one already recorded at
+`../phase-1-25/gate-record.md:123-133`, and **no P1-32 task is started** — P1-32's dependency rule in
+Field 7 still governs and Gate P1-G31 is still unsatisfied.
