@@ -40,7 +40,7 @@ export const AUDIT_DEFAULT_WINDOW_DAYS = 30;
  * limit before it spends the request; the server still decides.
  *
  * The repetition is held to the server's value by
- * `tests/ci/platform-console-constants.test.ts`, which reads both files and
+ * `tests/ci/platform-grant-base-entitlement.test.ts`, which reads both files and
  * fails when they differ. A hand-written pin in a comment could not do that: it
  * stays green while the server changes underneath it, and the screen then names
  * a limit the server no longer applies.
@@ -186,7 +186,7 @@ export interface SubscriptionReceipt {
  * `CHARGE_STATUSES` in `modules/platform/index.ts` is the authority: the route's
  * query schema is built from it and refuses anything else. The list is repeated
  * here because the web workspace may not import backend source, and
- * `tests/ci/platform-console-constants.test.ts` fails when the two disagree, so
+ * `tests/ci/platform-grant-base-entitlement.test.ts` fails when the two disagree, so
  * a status added or renamed on the API side cannot diverge unnoticed.
  */
 export const CHARGE_STATUSES = ['open', 'settled', 'void'] as const;

@@ -8271,7 +8271,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-32-platform-console.test.ts",
-        "tests/ci/platform-console-constants.test.ts"
+        "tests/ci/platform-grant-base-entitlement.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/platform/audit-events/route.ts"
@@ -8310,7 +8310,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-32-platform-console.test.ts",
-        "tests/ci/platform-console-constants.test.ts"
+        "tests/ci/platform-grant-base-entitlement.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/platform/organizations/[tenantId]/charges/route.ts"
