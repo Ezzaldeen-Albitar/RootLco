@@ -20,6 +20,12 @@ import type {
   ItemCreateBody,
   ItemIdentifierAddBody,
   ItemSalePriceSetBody,
+  MaterialExceptionCreateBody,
+  MaterialExceptionDecideBody,
+  MaterialRequestCancelBody,
+  MaterialRequestCloseBody,
+  MaterialRequirementApproveBody,
+  MaterialRequirementCancelBody,
   OpeningBatchCreateBody,
   OpeningBatchLineCreateBody,
   SalesReturnCreateBody,
@@ -38,6 +44,8 @@ import type {
   StockTransferDiscrepancyResolveBody,
   StockTransferReceiveBody,
   StockTransferWriteOffDecideBody,
+  UnitConversionSetBody,
+  VehicleSpecificationCreateBody,
 } from '@/lib/contracts/inventory-contract';
 import type { BranchOption } from '@/features/services/services-contract';
 import {
@@ -59,6 +67,12 @@ import {
   type ItemSalePrice,
   type ItemSalePriceList,
   type ItemSearchCriteria,
+  type MaterialException,
+  type MaterialRequestEcho,
+  type MaterialRequirement,
+  type MaterialRequirementCreateBody,
+  type MaterialRequirementDetail,
+  type MaterialRequirementState,
   type MovementCriteria,
   type OpeningBatch,
   type OpeningBatchDetail,
@@ -88,7 +102,12 @@ import {
   type TransferEcho,
   type TransferSettlement,
   type TransferSettlementEcho,
+  type UnitConversion,
+  type UnitConversionEcho,
   type UnitOfMeasureOption,
+  type VehicleSpecification,
+  type VehicleSpecificationEcho,
+  type VehicleSpecificationState,
 } from './inventory-contract';
 
 /**
@@ -1241,5 +1260,356 @@ export async function createSalesReturn(
     'inventory.returns.create.success',
     attempt,
     { stateRefusedKey: 'inventory.returns.create.refused', idempotencyKey }
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * P1-32 — material demand control, and the two facts it depends on
+ * ------------------------------------------------------------------ */
+
+/**
+ * A branch material requirements (`inv.material-requirement-list`), newest
+ * first, narrowed to one work order by the parts screen.
+ *
+ * Every figure on a row is the server exact decimal string in the requirement
+ * unit. Nothing here adds or subtracts: `remainingQuantity` is published, and a
+ * remainder recomputed on this side would disagree with the server the moment a
+ * draw landed between the read and the render.
+ */
+export async function listMaterialRequirements(
+  target: StockTarget,
+  filter: {
+    readonly workOrderId?: string | undefined;
+    readonly status?: MaterialRequirementState | undefined;
+  } = {}
+): Promise<ReadState<CursorPage<MaterialRequirement>>> {
+  return readOperation<CursorPage<MaterialRequirement>>(
+    '/api/v1/material-requirements' +
+      branchTargetQuery(target, {
+        workOrderId: filter.workOrderId ?? null,
+        status: filter.status ?? null,
+        limit: 100,
+      })
+  );
+}
+
+/**
+ * One requirement and its exceptions (`inv.material-requirement-read`).
+ *
+ * The figures bind only when a draw reads them under the requirement lock, so
+ * this read is what the screen SHOWS and never what it decides with: a draw
+ * beyond the allowance is refused by the server, and the refusal is what the
+ * operator is told.
+ */
+export async function readMaterialRequirement(
+  requirementId: string
+): Promise<ReadState<MaterialRequirementDetail>> {
+  return readOperation<MaterialRequirementDetail>(
+    `/api/v1/material-requirements/${encodeURIComponent(requirementId)}`
+  );
+}
+
+/**
+ * Ask for material for one service line (`inv.material-requirement-create`).
+ *
+ * `basis: 'specification'` asks the server to derive the allowance from the
+ * confirmed specification for the work order vehicle. It is not refused when
+ * there is none: the requirement is stored as `approval_required` naming the
+ * fact that is missing, which is what the panel then renders.
+ * `basis: 'entered'` carries an allowance the operator read somewhere and the
+ * source they read it from — a capacity with no source is not accepted here,
+ * and no field on this side is prefilled with a guess.
+ */
+export async function createMaterialRequirement(
+  body: MaterialRequirementCreateBody,
+  attempt = 1
+): Promise<CreateOutcome<MaterialRequirementDetail>> {
+  return write<MaterialRequirementDetail>(
+    'POST',
+    '/api/v1/material-requirements',
+    body,
+    'inventory.material.create.success',
+    attempt,
+    { stateRefusedKey: 'inventory.material.create.refused' }
+  );
+}
+
+/**
+ * Decide a requirement someone else asked for
+ * (`inv.material-requirement-approve`).
+ *
+ * The requester may not decide it whatever codes they hold: the service refuses
+ * them and a database constraint refuses them again. The panel hides the control
+ * from the person who asked AND renders the server refusal if it ever arrives,
+ * because a hidden control is a courtesy and the constraint is the rule.
+ */
+export async function decideMaterialRequirement(
+  requirementId: string,
+  body: MaterialRequirementApproveBody,
+  attempt = 1
+): Promise<CreateOutcome<MaterialRequirementDetail>> {
+  return write<MaterialRequirementDetail>(
+    'POST',
+    `/api/v1/material-requirements/${encodeURIComponent(requirementId)}/approval`,
+    body,
+    'inventory.material.decide.success',
+    attempt,
+    { stateRefusedKey: 'inventory.material.decide.refused' }
+  );
+}
+
+/**
+ * Look again for the fact a requirement lacks
+ * (`inv.material-requirement-recheck`). No body: the requirement is the path
+ * and the caller is the actor. It either finds the newly confirmed
+ * specification or the newly stated conversion and moves to `pending_approval`,
+ * or stays where it is with the same reason.
+ */
+export async function recheckMaterialRequirement(
+  requirementId: string,
+  attempt = 1
+): Promise<CreateOutcome<MaterialRequirementDetail>> {
+  return write<MaterialRequirementDetail>(
+    'POST',
+    `/api/v1/material-requirements/${encodeURIComponent(requirementId)}/recheck`,
+    undefined,
+    'inventory.material.recheck.success',
+    attempt,
+    { stateRefusedKey: 'inventory.material.recheck.refused' }
+  );
+}
+
+/**
+ * Withdraw a requirement (`inv.material-requirement-cancel`). Refused while
+ * anything is still committed against it — release or return the stock first.
+ */
+export async function cancelMaterialRequirement(
+  requirementId: string,
+  body: MaterialRequirementCancelBody,
+  attempt = 1
+): Promise<CreateOutcome<MaterialRequirementDetail>> {
+  return write<MaterialRequirementDetail>(
+    'POST',
+    `/api/v1/material-requirements/${encodeURIComponent(requirementId)}/cancellation`,
+    body,
+    'inventory.material.cancel.success',
+    attempt,
+    { stateRefusedKey: 'inventory.material.cancel.refused' }
+  );
+}
+
+/**
+ * Ask for a FINITE extra quantity (`inv.material-exception-create`).
+ *
+ * An approved exception raises the allowance by exactly the quantity asked for,
+ * in the requirement own unit. There is no unbounded exception and no second
+ * allowance: the server states the resulting allowance on approval.
+ */
+export async function requestMaterialException(
+  requirementId: string,
+  body: MaterialExceptionCreateBody,
+  attempt = 1
+): Promise<CreateOutcome<MaterialException>> {
+  return write<MaterialException>(
+    'POST',
+    `/api/v1/material-requirements/${encodeURIComponent(requirementId)}/exceptions`,
+    body,
+    'inventory.material.exception.success',
+    attempt,
+    { stateRefusedKey: 'inventory.material.exception.refused' }
+  );
+}
+
+/**
+ * Decide an exception (`inv.material-exception-decide`) — a different approver
+ * again, refused for the person who asked.
+ */
+export async function decideMaterialException(
+  exceptionId: string,
+  body: MaterialExceptionDecideBody,
+  attempt = 1
+): Promise<CreateOutcome<MaterialException>> {
+  return write<MaterialException>(
+    'POST',
+    `/api/v1/material-exceptions/${encodeURIComponent(exceptionId)}/decision`,
+    body,
+    'inventory.material.exceptionDecision.success',
+    attempt,
+    { stateRefusedKey: 'inventory.material.exceptionDecision.refused' }
+  );
+}
+
+/**
+ * Finish a material request (`inv.material-request-close`). The echo names the
+ * reservations the closure released; a repeat answers the request already
+ * closed with `replayed` and releases nothing a second time.
+ */
+export async function closeMaterialRequest(
+  requestId: string,
+  body: MaterialRequestCloseBody,
+  attempt = 1
+): Promise<CreateOutcome<MaterialRequestEcho>> {
+  return write<MaterialRequestEcho>(
+    'POST',
+    `/api/v1/material-requests/${encodeURIComponent(requestId)}/closure`,
+    body,
+    'inventory.material.request.close.success',
+    attempt,
+    { stateRefusedKey: 'inventory.material.request.close.refused' }
+  );
+}
+
+/** Withdraw a material request (`inv.material-request-cancel`), with its reason. */
+export async function cancelMaterialRequest(
+  requestId: string,
+  body: MaterialRequestCancelBody,
+  attempt = 1
+): Promise<CreateOutcome<MaterialRequestEcho>> {
+  return write<MaterialRequestEcho>(
+    'POST',
+    `/api/v1/material-requests/${encodeURIComponent(requestId)}/cancellation`,
+    body,
+    'inventory.material.request.cancel.success',
+    attempt,
+    { stateRefusedKey: 'inventory.material.request.cancel.refused' }
+  );
+}
+
+/**
+ * The tenant unit conversions (`inv.unit-conversion-list`), optionally the ones
+ * that apply to one item — its own rows and the tenant-wide ones.
+ */
+export async function listUnitConversions(
+  filter: {
+    readonly itemId?: string | undefined;
+    readonly includeRetired?: boolean | undefined;
+  } = {}
+): Promise<ReadState<CursorPage<UnitConversion>>> {
+  return readOperation<CursorPage<UnitConversion>>(
+    '/api/v1/unit-conversions' +
+      query({
+        itemId: filter.itemId ?? null,
+        includeRetired: filter.includeRetired === true ? 'true' : null,
+        limit: 100,
+      })
+  );
+}
+
+/**
+ * State an exact conversion (`inv.unit-conversion-set`).
+ *
+ * One row says "1 from-unit = factor to-units" and nothing else. There is no
+ * implied reverse — 1 / factor is not exact in general — so a conversion the
+ * other way is a row of its own, stated by the same form. Stating a conversion
+ * whose signature is already live retires the row it replaces in the same
+ * transaction, so a changed factor is a new attributable fact and the old one
+ * stays readable.
+ */
+export async function setUnitConversion(
+  body: UnitConversionSetBody,
+  attempt = 1
+): Promise<CreateOutcome<UnitConversionEcho>> {
+  return write<UnitConversionEcho>(
+    'POST',
+    '/api/v1/unit-conversions',
+    body,
+    'inventory.conversions.set.success',
+    attempt,
+    { stateRefusedKey: 'inventory.conversions.set.refused' }
+  );
+}
+
+/**
+ * Retire a conversion (`inv.unit-conversion-retire`). No body: the conversion is
+ * the path and the caller is the actor. A retired row stops resolving and stays
+ * readable as the fact it was.
+ */
+export async function retireUnitConversion(
+  conversionId: string,
+  attempt = 1
+): Promise<CreateOutcome<UnitConversionEcho>> {
+  return write<UnitConversionEcho>(
+    'POST',
+    `/api/v1/unit-conversions/${encodeURIComponent(conversionId)}/retirement`,
+    undefined,
+    'inventory.conversions.retire.success',
+    attempt,
+    { stateRefusedKey: 'inventory.conversions.retire.refused' }
+  );
+}
+
+/** The tenant vehicle service specifications (`inv.vehicle-specification-list`), newest first. */
+export async function listVehicleSpecifications(
+  filter: {
+    readonly makeId?: string | undefined;
+    readonly modelId?: string | undefined;
+    readonly serviceCondition?: string | undefined;
+    readonly status?: VehicleSpecificationState | undefined;
+  } = {}
+): Promise<ReadState<CursorPage<VehicleSpecification>>> {
+  return readOperation<CursorPage<VehicleSpecification>>(
+    '/api/v1/vehicle-fluid-specifications' +
+      query({
+        makeId: filter.makeId ?? null,
+        modelId: filter.modelId ?? null,
+        serviceCondition: filter.serviceCondition ?? null,
+        status: filter.status ?? null,
+        limit: 100,
+      })
+  );
+}
+
+/**
+ * Record a service capacity (`inv.vehicle-specification-create`), UNCONFIRMED.
+ *
+ * Recording resolves nothing. Only a confirmed specification answers for a
+ * vehicle, and there is no zero capacity and no default: a vehicle no confirmed
+ * specification answers for gets a requirement that says exactly that.
+ */
+export async function createVehicleSpecification(
+  body: VehicleSpecificationCreateBody,
+  attempt = 1
+): Promise<CreateOutcome<VehicleSpecificationEcho>> {
+  return write<VehicleSpecificationEcho>(
+    'POST',
+    '/api/v1/vehicle-fluid-specifications',
+    body,
+    'inventory.specifications.create.success',
+    attempt,
+    { stateRefusedKey: 'inventory.specifications.create.refused' }
+  );
+}
+
+/**
+ * Confirm a specification (`inv.vehicle-specification-confirm`). No body: the
+ * specification is the path and the caller is the confirmer. From here a
+ * derived requirement for a matching vehicle takes its allowance from it.
+ */
+export async function confirmVehicleSpecification(
+  specificationId: string,
+  attempt = 1
+): Promise<CreateOutcome<VehicleSpecificationEcho>> {
+  return write<VehicleSpecificationEcho>(
+    'POST',
+    `/api/v1/vehicle-fluid-specifications/${encodeURIComponent(specificationId)}/confirmation`,
+    undefined,
+    'inventory.specifications.confirm.success',
+    attempt,
+    { stateRefusedKey: 'inventory.specifications.confirm.refused' }
+  );
+}
+
+/** Retire a specification (`inv.vehicle-specification-retire`). It stops answering for any vehicle. */
+export async function retireVehicleSpecification(
+  specificationId: string,
+  attempt = 1
+): Promise<CreateOutcome<VehicleSpecificationEcho>> {
+  return write<VehicleSpecificationEcho>(
+    'POST',
+    `/api/v1/vehicle-fluid-specifications/${encodeURIComponent(specificationId)}/retirement`,
+    undefined,
+    'inventory.specifications.retire.success',
+    attempt,
+    { stateRefusedKey: 'inventory.specifications.retire.refused' }
   );
 }

@@ -358,3 +358,120 @@ export interface SalesReturnCreateBody {
   readonly quarantineLocationId?: string;
   readonly reason?: string;
 }
+
+/* ------------------------------------------------------------------ *
+ * P1-32 — material demand control and its reference data. Each
+ * interface below is sent by a screen under
+ * `app/[locale]/(dashboard)/inventory/**`: the material requirements
+ * panel on the parts screen, and the unit-conversion and vehicle
+ * specification screens.
+ *
+ * `inv.material-requirement-recheck` carries no body at all and is
+ * declared BODYLESS in the gate: it re-reads the requirement named in
+ * the path, so there is nothing for a caller to state.
+ *
+ * `inv.material-requirement-create` is the one write on this surface
+ * whose schema is a DISCRIMINATED UNION — an entered allowance with its
+ * source, or a derivation from the confirmed vehicle specification — so
+ * its shape is declared in `features/inventory/inventory-contract.ts`
+ * beside the screen that sends it. The parity comparison comprehends a
+ * single object shape only, and a one-interface mirror of a two-branch
+ * body would state a shape the API does not accept.
+ * ------------------------------------------------------------------ */
+
+/**
+ * `inv.material-requirement-approve` —
+ * `POST /material-requirements/{requirementId}/approval`.
+ *
+ * Decided by someone OTHER than the person who asked: the service refuses the
+ * requester readably and the database refuses them whatever codes they hold.
+ * `reason` is what a rejection is recorded with.
+ */
+export interface MaterialRequirementApproveBody {
+  readonly decision: 'approved' | 'rejected';
+  readonly reason?: string;
+}
+
+/**
+ * `inv.material-exception-create` —
+ * `POST /material-requirements/{requirementId}/exceptions`.
+ *
+ * A FINITE extra quantity in the requirement's own unit, as an exact decimal
+ * string, with the reason it is being asked for. There is no unbounded
+ * exception: an approved one raises the allowance by exactly this much.
+ */
+export interface MaterialExceptionCreateBody {
+  readonly additionalQuantity: string;
+  readonly reason: string;
+}
+
+/**
+ * `inv.material-exception-decide` —
+ * `POST /material-exceptions/{exceptionId}/decision`. A different approver
+ * again; `note` is what the decision is recorded with.
+ */
+export interface MaterialExceptionDecideBody {
+  readonly decision: 'approved' | 'rejected';
+  readonly note?: string;
+}
+
+/**
+ * `inv.material-requirement-cancel` —
+ * `POST /material-requirements/{requirementId}/cancellation`. Refused while
+ * anything is still committed against the requirement.
+ */
+export interface MaterialRequirementCancelBody {
+  readonly reason: string;
+}
+
+/**
+ * `inv.material-request-close` — `POST /material-requests/{requestId}/closure`.
+ * `reason` is optional: finishing a request that was fully drawn needs no
+ * explanation.
+ */
+export interface MaterialRequestCloseBody {
+  readonly reason?: string;
+}
+
+/** `inv.material-request-cancel` — `POST /material-requests/{requestId}/cancellation`. */
+export interface MaterialRequestCancelBody {
+  readonly reason: string;
+}
+
+/**
+ * `inv.unit-conversion-set` — `POST /unit-conversions`.
+ *
+ * One row says "1 from-unit = factor to-units" and nothing else; there is no
+ * implied reverse, because 1 / factor is not exact in general. `itemId` is
+ * REQUIRED by the server when the two units measure different kinds of
+ * quantity, and refused on a tenant-wide row that crosses kinds. `factor` is an
+ * exact decimal string, never a number.
+ */
+export interface UnitConversionSetBody {
+  readonly itemId?: string;
+  readonly fromUomId: string;
+  readonly toUomId: string;
+  readonly factor: string;
+  readonly sourceReference: string;
+}
+
+/**
+ * `inv.vehicle-specification-create` — `POST /vehicle-fluid-specifications`.
+ *
+ * Records a capacity, unconfirmed: only a confirmed specification resolves a
+ * requirement. `capacity` is an exact decimal string and is always positive —
+ * an unknown capacity is not recorded at all — and `sourceReference` says where
+ * it was read from.
+ */
+export interface VehicleSpecificationCreateBody {
+  readonly makeId: string;
+  readonly modelId?: string;
+  readonly modelYearFrom?: number;
+  readonly modelYearTo?: number;
+  readonly engineVariant?: string;
+  readonly serviceCondition: string;
+  readonly itemCategoryId?: string;
+  readonly capacity: string;
+  readonly uomId: string;
+  readonly sourceReference: string;
+}

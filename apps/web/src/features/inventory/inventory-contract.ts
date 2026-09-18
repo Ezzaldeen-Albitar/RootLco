@@ -104,6 +104,18 @@ export const INVENTORY_PERMISSIONS = {
   invoiceIssue: 'sal.invoice.issue',
   /** P1-32: finding the buyer of a counter sale in the customer directory. */
   customerRead: 'crm.customer.read',
+  /** P1-32: asking for material for a service line, re-checking it, withdrawing it. */
+  materialRequest: 'inv.material.request',
+  /** P1-32: deciding a requirement someone ELSE asked for; the server refuses the requester. */
+  materialApprove: 'inv.material.approve',
+  /** P1-32: deciding a request for material beyond an approved allowance. */
+  materialExceptionApprove: 'inv.material.exception.approve',
+  /** P1-32: stating and retiring unit conversions (held tenant-wide; the server checks). */
+  unitConversionManage: 'inv.unit_conversion.manage',
+  /** P1-32: recording, confirming and retiring vehicle service capacities (tenant-wide). */
+  specificationManage: 'inv.specification.manage',
+  /** P1-32: the make and model catalogue, offered as a picker on the specification screen. */
+  vehicleRead: 'veh.vehicle.read',
 } as const;
 
 /** `ck_item_master_type`, mirrored. */
@@ -257,6 +269,12 @@ export interface ReservationEcho {
   readonly status: ReservationState;
   readonly expiresAt: string | null;
   readonly recordVersion: number;
+  /**
+   * The material request this reservation fulfills, when a material requirement
+   * governed the draw; null when none did. It is what the screen names to finish
+   * or withdraw the request afterwards.
+   */
+  readonly materialRequestId: string | null;
   readonly replayed: boolean;
 }
 
@@ -303,6 +321,8 @@ export interface IssueEcho {
   readonly branchId: string;
   readonly quantity: string;
   readonly reservationId: string | null;
+  /** The material request the issue fulfilled; null when no requirement governed it. */
+  readonly materialRequestId: string | null;
 }
 
 /**
@@ -1120,4 +1140,280 @@ export interface CounterSaleLine {
   readonly item: ChosenItem;
   readonly locationId: string;
   readonly quantity: string;
+}
+
+/* ------------------------------------------------------------------ *
+ * P1-32 — material demand control, unit conversions and vehicle
+ * service specifications.
+ *
+ * | operation                              | method | path                                                  | permission                       |
+ * | -------------------------------------- | ------ | ----------------------------------------------------- | -------------------------------- |
+ * | `inv.material-requirement-list`        | GET    | `/material-requirements`                              | `inv.stock.read`                 |
+ * | `inv.material-requirement-read`        | GET    | `/material-requirements/{requirementId}`              | `inv.stock.read`                 |
+ * | `inv.material-requirement-create`      | POST   | `/material-requirements`                              | `inv.material.request`           |
+ * | `inv.material-requirement-approve`     | POST   | `/material-requirements/{id}/approval`                | `inv.material.approve`           |
+ * | `inv.material-requirement-recheck`     | POST   | `/material-requirements/{id}/recheck`                 | `inv.material.request`           |
+ * | `inv.material-requirement-cancel`      | POST   | `/material-requirements/{id}/cancellation`            | `inv.material.request`           |
+ * | `inv.material-exception-create`        | POST   | `/material-requirements/{id}/exceptions`              | `inv.material.request`           |
+ * | `inv.material-exception-decide`        | POST   | `/material-exceptions/{exceptionId}/decision`         | `inv.material.exception.approve` |
+ * | `inv.material-request-close`           | POST   | `/material-requests/{requestId}/closure`              | `inv.material.request`           |
+ * | `inv.material-request-cancel`          | POST   | `/material-requests/{requestId}/cancellation`         | `inv.material.request`           |
+ * | `inv.unit-conversion-list`             | GET    | `/unit-conversions`                                   | `inv.item.read`                  |
+ * | `inv.unit-conversion-set`              | POST   | `/unit-conversions`                                   | `inv.unit_conversion.manage`     |
+ * | `inv.unit-conversion-retire`           | POST   | `/unit-conversions/{conversionId}/retirement`         | `inv.unit_conversion.manage`     |
+ * | `inv.vehicle-specification-list`       | GET    | `/vehicle-fluid-specifications`                       | `inv.item.read`                  |
+ * | `inv.vehicle-specification-create`     | POST   | `/vehicle-fluid-specifications`                       | `inv.specification.manage`       |
+ * | `inv.vehicle-specification-confirm`    | POST   | `/vehicle-fluid-specifications/{id}/confirmation`     | `inv.specification.manage`       |
+ * | `inv.vehicle-specification-retire`     | POST   | `/vehicle-fluid-specifications/{id}/retirement`       | `inv.specification.manage`       |
+ *
+ * Typed from the views in
+ * `apps/api/src/modules/inventory/application/inventory-material-service.ts` and
+ * `inventory-reference-data-service.ts`.
+ *
+ * ## Every figure is the server's, and none is derived here
+ *
+ * `allowanceQuantity`, `approvedExceptionQuantity`, `effectiveAllowance`,
+ * `requestedQuantity`, `reservedQuantity`, `issuedQuantity`, `returnedQuantity`,
+ * `committedQuantity` and `remainingQuantity` are exact decimal strings in the
+ * requirement unit, published by the server. The screen renders what it was sent
+ * and subtracts nothing: a remainder taken on this side would be a second answer
+ * to a question the server already answered, and would disagree with it the
+ * moment a draw lands between the read and the render.
+ *
+ * ## Nothing is guessed
+ *
+ * `allowanceQuantity`, `effectiveAllowance` and `remainingQuantity` are NULL
+ * while no allowance exists, and `approvalRequiredReason` says why. A null
+ * allowance is not zero and not unlimited, so the screen renders it as the
+ * absent fact it is — never as a figure, and never prefilled with a capacity
+ * nobody stated.
+ * ------------------------------------------------------------------ */
+
+/** `MATERIAL_REQUIREMENT_STATES`, mirrored. `rejected` and `cancelled` are terminal. */
+export const MATERIAL_REQUIREMENT_STATES = [
+  'approval_required',
+  'pending_approval',
+  'approved',
+  'rejected',
+  'cancelled',
+] as const;
+export type MaterialRequirementState = (typeof MATERIAL_REQUIREMENT_STATES)[number];
+
+/** `MATERIAL_REQUIREMENT_BASES`, mirrored: a confirmed specification, or an entered value. */
+export const MATERIAL_REQUIREMENT_BASES = ['specification', 'entered'] as const;
+export type MaterialRequirementBasis = (typeof MATERIAL_REQUIREMENT_BASES)[number];
+
+/** `MATERIAL_APPROVAL_REQUIRED_REASONS`, mirrored: the fact that does not exist yet. */
+export const MATERIAL_APPROVAL_REQUIRED_REASONS = [
+  'missing_specification',
+  'missing_unit_conversion',
+] as const;
+export type MaterialApprovalRequiredReason = (typeof MATERIAL_APPROVAL_REQUIRED_REASONS)[number];
+
+/** `MATERIAL_EXCEPTION_STATES`, mirrored. */
+export const MATERIAL_EXCEPTION_STATES = ['pending', 'approved', 'rejected'] as const;
+export type MaterialExceptionState = (typeof MATERIAL_EXCEPTION_STATES)[number];
+
+/** `MATERIAL_REQUEST_STATES`, mirrored. `closed` and `cancelled` are terminal. */
+export const MATERIAL_REQUEST_STATES = ['open', 'closed', 'cancelled'] as const;
+export type MaterialRequestState = (typeof MATERIAL_REQUEST_STATES)[number];
+
+/** `UNIT_CONVERSION_STATES`, mirrored. */
+export const UNIT_CONVERSION_STATES = ['active', 'retired'] as const;
+export type UnitConversionState = (typeof UNIT_CONVERSION_STATES)[number];
+
+/** `VEHICLE_SPECIFICATION_STATES`, mirrored. Only `confirmed` resolves a requirement. */
+export const VEHICLE_SPECIFICATION_STATES = ['recorded', 'confirmed', 'retired'] as const;
+export type VehicleSpecificationState = (typeof VEHICLE_SPECIFICATION_STATES)[number];
+
+/** `SERVICE_CONDITION_FORMAT`, mirrored: lower-case snake case, 2 to 63 characters. */
+export const SERVICE_CONDITION = /^[a-z][a-z0-9_]{1,62}$/;
+
+/** `CONVERSION_FACTOR_FORMAT`, mirrored: an exact decimal string, up to twelve places. */
+export const CONVERSION_FACTOR = /^\d{1,12}(\.\d{1,12})?$/;
+
+/** `MAX_SOURCE_REFERENCE`, mirrored: where a stated fact was read from. */
+export const MAX_SOURCE_REFERENCE = 500;
+
+/** `MAX_ENGINE_VARIANT`, mirrored. */
+export const MAX_ENGINE_VARIANT = 100;
+
+/** A model year as the route accepts it: one to four digits, above zero. */
+export const MODEL_YEAR = /^\d{1,4}$/;
+
+/** One requested exception (`MaterialExceptionView`). Quantities are requirement-unit strings. */
+export interface MaterialException {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly requirementId: string;
+  readonly additionalQuantity: string;
+  /** The allowance the approval produced; null until approved. */
+  readonly resultingAllowance: string | null;
+  readonly reason: string;
+  readonly status: MaterialExceptionState;
+  readonly requestedBy: string;
+  readonly decidedBy: string | null;
+  readonly decidedAt: string | null;
+  readonly decisionNote: string | null;
+  readonly recordVersion: number;
+  readonly createdAt: string;
+}
+
+/** One row of `inv.material-requirement-list` (`MaterialRequirementListView`). */
+export interface MaterialRequirement {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly workOrderId: string;
+  readonly serviceLineId: string;
+  readonly itemId: string | null;
+  readonly itemCategoryId: string | null;
+  readonly basis: MaterialRequirementBasis;
+  /** The confirmed specification the allowance was derived from, when it was. */
+  readonly specificationId: string | null;
+  readonly serviceCondition: string | null;
+  readonly engineVariant: string | null;
+  readonly uomId: string | null;
+  /** Where an ENTERED allowance was read from; the screen never invents one. */
+  readonly sourceReference: string | null;
+  readonly status: MaterialRequirementState;
+  /** Why nothing can be approved yet; null unless the status is `approval_required`. */
+  readonly approvalRequiredReason: MaterialApprovalRequiredReason | null;
+  readonly requestedBy: string;
+  readonly approvedBy: string | null;
+  readonly approvedAt: string | null;
+  readonly rejectedBy: string | null;
+  readonly rejectedAt: string | null;
+  readonly rejectionReason: string | null;
+  readonly allowanceQuantity: string | null;
+  readonly approvedExceptionQuantity: string;
+  readonly effectiveAllowance: string | null;
+  readonly requestedQuantity: string;
+  readonly reservedQuantity: string;
+  readonly issuedQuantity: string;
+  readonly returnedQuantity: string;
+  readonly committedQuantity: string;
+  readonly remainingQuantity: string | null;
+  readonly recordVersion: number;
+  readonly createdAt: string;
+}
+
+/** `inv.material-requirement-read`, and the echo of every requirement write. */
+export interface MaterialRequirementDetail extends MaterialRequirement {
+  readonly exceptions: readonly MaterialException[];
+}
+
+/** The echo of closing or cancelling a material request (`MaterialRequestView`). */
+export interface MaterialRequestEcho {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly requirementId: string;
+  readonly workOrderId: string;
+  readonly itemId: string;
+  /** Exact decimal strings in the item STOCK unit. */
+  readonly quantity: string;
+  /** How many requirement units one stock unit is. */
+  readonly requirementUnitFactor: string;
+  readonly status: MaterialRequestState;
+  readonly requestedBy: string;
+  readonly closedBy: string | null;
+  readonly closedAt: string | null;
+  readonly closeReason: string | null;
+  readonly cancelledBy: string | null;
+  readonly cancelledAt: string | null;
+  readonly cancelReason: string | null;
+  readonly recordVersion: number;
+  readonly createdAt: string;
+  /** The reservations this call released; empty on a replay. */
+  readonly releasedReservationIds: readonly string[];
+  readonly replayed: boolean;
+}
+
+/**
+ * What `inv.material-requirement-create` accepts — the ONE request shape on this
+ * surface that is a discriminated union, so it is declared here beside the panel
+ * that sends it rather than in `lib/contracts/`, whose comparison reads a single
+ * object shape (see `PENDING_MIRRORS` in `check-p1-30-payload-parity.mjs`).
+ *
+ * `entered` states an allowance the operator read somewhere and says WHERE:
+ * `sourceReference` is required, because a capacity with no source is a guess.
+ * `specification` states none at all — the server derives it from the confirmed
+ * specification for the work order vehicle, or stores the requirement as
+ * `approval_required` naming the fact that is missing.
+ */
+export type MaterialRequirementCreateBody =
+  | {
+      readonly basis: 'entered';
+      readonly serviceLineId: string;
+      readonly itemId?: string;
+      readonly itemCategoryId?: string;
+      readonly allowanceQuantity: string;
+      readonly uomId: string;
+      readonly sourceReference: string;
+    }
+  | {
+      readonly basis: 'specification';
+      readonly serviceLineId: string;
+      readonly itemId?: string;
+      readonly itemCategoryId?: string;
+      readonly serviceCondition: string;
+      readonly engineVariant?: string;
+    };
+
+/** One row of `inv.unit-conversion-list` (`UnitConversionView`). */
+export interface UnitConversion {
+  readonly id: string;
+  /** Null on a tenant-wide row, which stays within one kind of unit. */
+  readonly itemId: string | null;
+  readonly itemSku: string | null;
+  readonly fromUomId: string;
+  readonly fromUomCode: string;
+  readonly toUomId: string;
+  readonly toUomCode: string;
+  /** How many to-units ONE from-unit is, exact. There is no implied reverse. */
+  readonly factor: string;
+  readonly sourceReference: string;
+  readonly status: UnitConversionState;
+  readonly createdBy: string;
+  readonly createdAt: string;
+  readonly retiredBy: string | null;
+  readonly retiredAt: string | null;
+  readonly recordVersion: number;
+}
+
+/** The echo of a conversion write; `replayed` when the same key was seen before. */
+export interface UnitConversionEcho extends UnitConversion {
+  readonly replayed: boolean;
+}
+
+/** One row of `inv.vehicle-specification-list` (`VehicleSpecificationView`). */
+export interface VehicleSpecification {
+  readonly id: string;
+  readonly makeId: string;
+  readonly modelId: string | null;
+  readonly modelYearFrom: number | null;
+  readonly modelYearTo: number | null;
+  readonly engineVariant: string | null;
+  readonly serviceCondition: string;
+  readonly itemCategoryId: string | null;
+  /** An exact decimal string, always positive: an unknown capacity is not recorded. */
+  readonly capacity: string;
+  readonly uomId: string;
+  readonly uomCode: string;
+  readonly sourceReference: string;
+  readonly status: VehicleSpecificationState;
+  readonly createdBy: string;
+  readonly createdAt: string;
+  readonly confirmedBy: string | null;
+  readonly confirmedAt: string | null;
+  readonly retiredBy: string | null;
+  readonly retiredAt: string | null;
+  readonly recordVersion: number;
+}
+
+/** The echo of a specification write. */
+export interface VehicleSpecificationEcho extends VehicleSpecification {
+  readonly replayed: boolean;
 }

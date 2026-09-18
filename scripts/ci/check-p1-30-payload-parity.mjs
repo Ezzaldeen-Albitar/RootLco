@@ -157,28 +157,25 @@ export const PENDING_MIRRORS = Object.freeze({
   // barcode, pricing, counter-sale and customer-return screens send all four writes,
   // so `lib/contracts/inventory-contract.ts` and `lib/contracts/billing-contract.ts`
   // declare their bodies and the entries were deleted in that same change.
-  // P1-32 preparatory slice 3b: material demand control, its reference data and the
-  // transfer discrepancy acts. Backend only; the slice-3 screens owe every mirror.
+  // P1-32 preparatory slices 3b and 3c stood here for the same reason and no longer
+  // do: the material requirements panel on the parts screen, and the unit-conversion
+  // and vehicle-specification screens, send every one of those writes, so
+  // `lib/contracts/inventory-contract.ts` declares their bodies and eight entries were
+  // deleted in that same change.
+  //
+  // ONE remains, and its reason is not "no screen sends it" — the panel does. Its zod
+  // schema is a `z.discriminatedUnion` on `basis`: an ENTERED allowance with its source
+  // unit and source reference, or a derivation from the confirmed vehicle
+  // specification. `z.toJSONSchema` renders that as a top-level `oneOf` with no
+  // `properties` of its own, and `compareOperation` comprehends one object shape: it
+  // would report every field of any single-interface mirror as unknown to the API. A
+  // mirror flattening the two branches into one interface would be worse than none —
+  // it would state a shape the route refuses, which is the drift this gate exists to
+  // catch. The shape the screen sends is declared beside it, in
+  // `features/inventory/inventory-contract.ts`, and this entry is owed to whichever
+  // change teaches the shared comparison to walk a discriminated union.
   'inv.material-requirement-create':
-    'PENDING: P1-32 preparatory slice 3b is Backend only; the material requirement screen that sends this owes the mirror',
-  'inv.material-requirement-approve':
-    'PENDING: P1-32 preparatory slice 3b is Backend only; the material approval screen that sends this owes the mirror',
-  'inv.material-exception-create':
-    'PENDING: P1-32 preparatory slice 3b is Backend only; the material exception screen that sends this owes the mirror',
-  'inv.material-exception-decide':
-    'PENDING: P1-32 preparatory slice 3b is Backend only; the material exception screen that sends this owes the mirror',
-  'inv.unit-conversion-set':
-    'PENDING: P1-32 preparatory slice 3b is Backend only; the unit conversion screen that sends this owes the mirror',
-  'inv.vehicle-specification-create':
-    'PENDING: P1-32 preparatory slice 3b is Backend only; the vehicle specification screen that sends this owes the mirror',
-  // P1-32 preparatory slice 3c: cancelling a requirement, and closing or cancelling a
-  // material request. Backend only; the slice-3 screens owe every mirror.
-  'inv.material-requirement-cancel':
-    'PENDING: P1-32 preparatory slice 3c is Backend only; the material requirement screen that sends this owes the mirror',
-  'inv.material-request-close':
-    'PENDING: P1-32 preparatory slice 3c is Backend only; the material request screen that sends this owes the mirror',
-  'inv.material-request-cancel':
-    'PENDING: P1-32 preparatory slice 3c is Backend only; the material request screen that sends this owes the mirror',
+    'PENDING: the body is a discriminated union (`basis`) and the shared comparison reads one object shape only; the screen sends it and the shape is declared in features/inventory/inventory-contract.ts',
   // The `sal` writes entered this scope with W6, which mirrors the invoice
   // create and cancel bodies. Payments belong to W7 (canonical plan §4); credit
   // notes are sent by no P1-30 screen.
