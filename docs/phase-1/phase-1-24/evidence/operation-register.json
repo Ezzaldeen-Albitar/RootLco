@@ -8269,7 +8269,10 @@
       "requiredEvidence": ["route", "service", "success", "authorization", "denial"],
       "providedEvidence": ["authorization", "denial", "route", "service", "success"],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-32-platform-console.test.ts"],
+      "tests": [
+        "tests/backend/p1-32-platform-console.test.ts",
+        "tests/ci/platform-console-constants.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/platform/audit-events/route.ts"
     },
@@ -8305,7 +8308,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-32-platform-console.test.ts"],
+      "tests": [
+        "tests/backend/p1-32-platform-console.test.ts",
+        "tests/ci/platform-console-constants.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/platform/organizations/[tenantId]/charges/route.ts"
     },
