@@ -32,13 +32,18 @@ Example data throughout is fictional and marked "(example)".
 
 ## 2.1 The six words this manual uses, and how they fit together
 
-**OPERATOR PROCEDURE** — the five structural records below (workspace, company, branch, department,
-employee) are all established outside the interface. What you can see of each one on screen is
-stated in its own row. Only the sixth, the login user, has screens of its own.
+**REFERENCE** — this section defines the words. Where each record is created, and by whom, is 2.1.3.
+
+**What changed at this version, in one paragraph.** The workspace itself is still created outside
+your organisation, by the platform owner in their own console (Part 2A). Everything **inside** the
+workspace is now yours to run from the Administration screens: companies, branches, departments,
+employees, users, the roles each person holds and the places each role applies in. Where an earlier
+revision of this manual said "operator procedure, there is no screen", read the section again — in
+most cases there is now a screen, and its limits are the subscription's rather than the software's.
 
 ### 2.1.1 The words
 
-**OPERATOR PROCEDURE**
+**REFERENCE**
 
 **SaaS tenant — called the "Workspace" on screen** <!-- organization.tenant --> One paying customer
 of the platform. It is the outermost boundary: everything you can see, and everything anyone in your
@@ -68,9 +73,10 @@ personnel record — the records for this release state plainly "This is not an 
 register holds no contract, no salary, no contact detail and no document.
 
 **Login user (account)** Someone who signs in. An account has an email address, a display name, a
-status and a set of granted roles; roles carry permissions, and a grant can be restricted to
-particular companies and branches. Accounts are managed on the **Users** screen <!-- nav.users --> —
-see Part 3.
+status and a set of granted roles; roles carry permissions, and a grant applies in a stated set of
+places — the whole organisation, selected companies, selected branches or selected departments.
+Accounts are managed on the **Users** screen <!-- nav.users --> , and each account's roles and
+places on its own **Roles and access** screen — see Part 3.
 
 An employee and a login user are two different records. A person handing a vehicle over may exist in
 the employee register with no login at all; a person with a login may have no employee-register
@@ -78,7 +84,7 @@ entry. Linking the two is optional and is done when the employee record is creat
 
 ### 2.1.2 How they fit together
 
-**OPERATOR PROCEDURE**
+**REFERENCE**
 
 ```
 Platform  (operated by RootLco, the company that supplies this software)
@@ -103,41 +109,55 @@ Platform  (operated by RootLco, the company that supplies this software)
                       which companies and branches each may do it in.
 ```
 
-Note on the diagram: a workspace is created with **one** company and **one** branch. The second
-branch shown above illustrates the intended shape; see 2.5.1 for what can actually be created at
-this version.
+Note on the diagram: a workspace is created with **one** company and **one** branch. Further
+companies and branches are added afterwards — by you on the **Organization** screen (2.4, 2.5), or
+by the platform owner from their console (Part 2A, §2A.8) — within the limits your subscription
+allows (2.9).
 
 ### 2.1.3 Where each record is created, and what you see of it
 
-**OPERATOR PROCEDURE**
+**REFERENCE**
 
-| Record             | Created by                               | What you see in the interface                                                                                                                            |
-| ------------------ | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Workspace (tenant) | Platform operator, by service call (2.2) | Read-only facts on the **Organization** screen. Its settings are editable with the right permission.                                                     |
-| Company            | Created once, with the workspace (2.2)   | Its name appears in the **Company** filter on the **Audit log**, and in branch choosers on operational screens. There is no company screen.              |
-| Branch             | Created once, with the workspace (2.2)   | Its name appears in the **Branch** filter on the **Audit log** and in the branch choosers that operational screens open with. There is no branch screen. |
-| Department         | Operator procedure / service call (2.6)  | Departments appear only where work is routed on the work-order detail. There is no department screen.                                                    |
-| Employee           | Operator procedure / service call (2.7)  | The delivering employee appears on a vehicle-handover record. There is no employee screen.                                                               |
-| Login user         | **Users** screen                         | Full screen: invite, activate, lock, unlock, archive, sign out everywhere. See Part 3.                                                                   |
+| Record             | Created by                                                  | What you see in the interface                                                                                      |
+| ------------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Workspace (tenant) | The platform owner, in their console (2.2)                  | Read-only facts on the **Organization** screen. Its settings are editable with the right permission.               |
+| Company            | You, on **Organization** → **Companies and branches** (2.4) | Listed by name with its code and status, and creatable and deactivatable there.                                    |
+| Branch             | You, on **Organization** → **Companies and branches** (2.5) | Listed by name under its company, with its city, country, time zone and status; creatable and deactivatable there. |
+| Department         | You, on the **Departments** screen (2.6)                    | A full screen: add, rename, retire, reinstate — one branch at a time.                                              |
+| Employee           | You, on the **Employees** screen (2.7)                      | A full screen: add, deactivate, reactivate — one branch at a time.                                                 |
+| Login user         | You, on the **Users** screen                                | Full screen: invite, activate, lock, unlock, archive, sign out everywhere, and roles and access. See Part 3.       |
 
-There is a standing notice on the **Organization** screen that explains why most of the middle
-column above shows references and not names: **"Limited in this release"** <!-- admin.contractGap.title -->
-— _"The service publishes no company or branch directory, so references are shown rather than
-names."_ <!-- admin.contractGap.noDirectory -->
+A standing notice remains on the **Organization** screen: **"Limited in this release"**
+<!-- admin.contractGap.title --> — _"The service publishes no company or branch directory, so
+
+references are shown rather than names."_ <!-- admin.contractGap.noDirectory --> It now applies to
+the **settings** blocks lower down that page, and to the other settings-backed screens, where a
+company or a branch is still identified by reference. The **Companies and branches** block above
+those settings names both by name.
 
 ---
 
 ## 2.2 Creating a workspace (tenant onboarding)
 
-**OPERATOR PROCEDURE** — there is no screen for this, and no account inside any workspace can do it.
-It is a platform act, performed against the control plane.
+**IMPLEMENTED (UI), but not by you.** There is a screen for this, and it is in the platform owner's
+console, not in your workspace. No account inside a workspace can create a workspace: no workspace
+role carries any platform authority, and a role can only be given permissions the person granting it
+already holds.
 
-**Label** Provision an organisation **Who** A platform operator holding the platform provisioning
-authority. Nobody inside a workspace holds it: no workspace role carries any platform permission,
-and a role can only be given permissions the person granting it already holds. **Where** No
-navigation path. The control plane is reached by a service call to `POST
-/api/v1/platform/organizations`. There is no page for it anywhere in the application. **Steps** (the
-operator supplies one request; every field below is required unless marked optional)
+**Where it is done.** The platform owner opens **Organisations** → **New organisation** in the
+Platform Owner Console and fills one form. The full description — every field, what the codes must
+look like, the optional subscription, and the message each refusal produces — is **Part 2A, §2A.7**.
+It is written there once so there is one description to keep correct.
+
+**What you receive.** One request produces, in a single transaction, either nothing at all or a
+working workspace: the tenant, its first company, its first branch, its settings, its
+document-number sequences, its payment methods, the first administrator's account, and the roles
+granted to that person. The first administrator receives an invitation email and sets their own
+password through it; no password is ever set, sent or seen by the platform owner.
+
+**The same act described as a service call.** For completeness, the console posts to
+`POST /api/v1/platform/organizations` with the following content. The list is kept because it says
+exactly what a new workspace is made of.
 
 1. **Workspace** — code (2–63 characters), display name, default language, default time zone.
    Example: code `al_noor_auto (example)`, display name "Al-Noor Auto Services (example)", language
@@ -151,30 +171,19 @@ operator supplies one request; every field below is required unless marked optio
 5. **Subscription** _(optional)_ — a plan code, and optionally a status and an effective date.
 6. **Activate** _(optional)_ — whether the workspace should be switched on immediately.
 
-**Result** One request produces, in a single transaction, either nothing at all or a working
-workspace: the tenant, its first company, its first branch, its settings, its document-number
-sequences, its payment methods, the first person's account, and two roles granted to that person —
-`first_owner` and `tenant_administrator`. The operator receives the new workspace's reference, the
-account reference and the two role references. The first person receives an invitation from the
-sign-in provider and sets their own password through it; no password is ever set, sent or seen by
-the operator. If the request did not ask for activation, the workspace stays in the `provisioning`
-status until it is activated (2.3).
-
 **Restrictions**
 
-- Neither the roles nor the permissions can be chosen in the request. They are fixed by the
-  platform. A request that tries to name a role, a permission, a user or a target workspace is
-  refused outright rather than quietly ignored.
-- If the request asks for activation, the operator must also hold the lifecycle authority; this is
-  checked before anything is written, so a caller who cannot activate is refused with nothing
-  created.
-- The request must carry an idempotency key. Repeating the same key with the same document replays
-  the original result; repeating it with a different document is refused as a conflict.
-- **Only one company and one branch are created.** See 2.4.1 and 2.5.1.
+- Neither the roles nor the permissions can be chosen. They are fixed by the platform. A request
+  that tries to name a role, a permission, a user or a target workspace is refused outright rather
+  than quietly ignored.
+- Activating at the same time needs the platform lifecycle authority as well; this is checked before
+  anything is written, so an owner who cannot activate is refused with nothing created.
+- **One company and one branch are created here.** Further ones are added afterwards — see 2.4, 2.5
+  and Part 2A, §2A.8 — within the limits the subscription allows (2.9).
 
 **If it goes wrong** Any refusal at any step rolls the whole thing back. There is no half-created
 workspace: either nothing exists, or a workspace with a working administrator exists. Ask the
-platform operator for the reference printed with the refusal and quote it when reporting the problem
+platform owner for the reference printed with the refusal and quote it when reporting the problem
 (Part 7 explains how a reference is used).
 
 **Screenshot** no screenshot available at this version.
@@ -183,155 +192,263 @@ platform operator for the reference printed with the refusal and quote it when r
 
 ## 2.3 Activating, suspending or closing a workspace
 
-**OPERATOR PROCEDURE** — no screen, and deliberately so. The **Organization** screen shows the
-workspace **Status** <!-- organization.status --> as a plain fact with no control beside it, because
-changing it is a platform act and there is nobody inside the application who can do it.
+**IMPLEMENTED (UI), in the platform owner's console only.** The **Organization** screen inside your
+workspace shows the workspace **Status** <!-- organization.status --> as a plain fact with no control
+beside it, because changing it belongs to the platform owner and there is nobody inside your
+workspace who can do it.
 
-**Label** Change the workspace status **Who** A platform operator holding the platform lifecycle
-authority. **Where** A service call to `POST /api/v1/platform/organizations/{workspace}/status`. No
-page. **Steps** The operator supplies the destination status — one of `active`, `suspended` or
-`closed` — **and a reason** (required, up to 500 characters). **Result** The workspace moves to the
-new status and the change is written to an append-only history with the operator and the time. The
-new status appears in the **Status** field on the **Organization** screen. **Restrictions** A
-workspace can never go back to `provisioning`: the bootstrap window closes on the first transition
-and nothing reopens it. Two independent controls refuse it. **If it goes wrong** Nothing in the
-interface will tell you a workspace has been suspended other than the **Status** field; if people
-cannot sign in and the status is not `active`, this is the first thing to check with the platform
-operator. **Screenshot** no screenshot available at this version.
+**Label** Suspend / Activate / Close **Who** The platform owner, holding the platform lifecycle
+authority. **Where** The organisation's page in the Platform Owner Console — Part 2A, §2A.6.1.
+**Steps** The owner chooses the action and confirms it; a reason is recorded with the change.
+**Result** The workspace moves to the new status and the change is written to an append-only history
+with the owner and the time. The new status appears in the **Status** field on your **Organization**
+screen, and in the **Status history** block of the organisation's page in the console.
+**Restrictions** A workspace can never go back to **"Being set up"**: the bootstrap window closes on
+the first transition and nothing reopens it. Two independent controls refuse it. **Closing is
+permanent** — the console says so before it acts, and no screen reverses it. **If it goes wrong**
+Nothing in your workspace will tell you it has been suspended other than the **Status** field; if
+people cannot sign in and the status is not active, that is the first thing to check with the
+platform owner. **Screenshot** no screenshot available at this version.
+
+**One consequence worth knowing.** While an organisation is not active, nothing new can be added to
+it. An administrator who tries meets **"This organisation is not active, so nothing new can be
+added to it. Ask the platform owner to reactivate it."** <!-- capacity.organisationInactive -->
 
 ---
 
 ## 2.4 Companies
 
-### 2.4.1 Creating a second company — NOT AVAILABLE
+### 2.4.1 Adding a company — IMPLEMENTED (UI)
 
-**NOT AVAILABLE.** At this version no operation creates a company. The only company your workspace
-has is the one created with it (2.2). There is no screen, no command and no service call that adds a
-second one.
+**Label** **Companies** <!-- organization.company.title --> — _"The legal companies in your
+organisation."_ <!-- organization.company.description --> , inside the block **"Companies and
+branches"** <!-- organization.structure.title --> .
+**Who** Someone holding the company-management permission.
+**Where** Sidebar → **Administration** → **Organization**, then the **Companies and branches** block.
 
-### 2.4.2 Editing a company, and changing its status — OPERATOR PROCEDURE
+**Steps** Choose **Add company** <!-- organization.company.add --> — _"A new legal company in your
+organisation."_ <!-- organization.company.addDescription --> — and fill in:
 
-**OPERATOR PROCEDURE** — the operations exist, but no screen calls them, and the permission they
-need is not held by anyone in a newly created workspace (2.11).
+| Field                              | Notes                                                                                                    |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| **Code**                           | _"Lower case letters, digits and underscores, starting with a letter."_ It cannot be changed afterwards. |
+| **Display name**                   | What the company is called day to day.                                                                   |
+| **Legal name**                     | The name it trades under legally.                                                                        |
+| **Base currency**                  | _"Chosen from the currencies enabled for your companies."_ Three capital letters, for example JOD.       |
+| **Commercial registration number** | Optional.                                                                                                |
+| **Tax registration number**        | Optional.                                                                                                |
 
-**Label** Update a company / Set a company's status **Who** Someone holding the company-management
-permission. It is **not** part of the set given to the first administrator, and because a permission
-can only be granted by someone who already holds it, nobody inside a newly created workspace can
-grant it either. Obtaining it is a platform act. **Where** Service calls to `PATCH
-/api/v1/org/companies/{company}` and `POST /api/v1/org/companies/{company}/status`. No page.
-**Steps**
+**Result** **"The company was added."** <!-- organization.company.created --> It appears in the list
+straight away, by name, with its code and status.
 
-1. To edit: supply at least one of legal name, three-letter base currency, registration number or
-   tax registration number. The last two can also be cleared.
-2. To change status: supply the status — `active` or `inactive` — **and a reason** (required).
-   **Result** The company record changes; the status change is recorded with its reason.
-   **Restrictions** The company code cannot be changed. A company has only the two states above;
-   `suspended` and `provisioning` belong to the workspace, not to a company. **If it goes wrong**
-   The edit is refused if the record changed since it was read. Read the record again and re-apply
-   the change. **Screenshot** no screenshot available at this version.
+**Restrictions**
+
+- Codes are unique inside your organisation. A repeat is refused with **"A company with this code
+  already exists in your organisation."** <!-- organization.company.duplicateCode -->
+- A new company counts against your subscription's company limit. At the limit, the attempt is
+  refused with **"Your subscription allows {limit} companies and {used} are in use. Ask the platform
+  owner to raise the limit."** <!-- capacity.reached.companies --> Nothing is created. See 2.9.
+- Where there are none yet: **"No companies yet."** — _"Add a company to start adding branches to
+  it."_
+
+**If it goes wrong** A refusal names what it refused and creates nothing. Read 2.9 before asking for
+a limit to be raised: the figures are on the same screen.
+
+**Screenshot** no screenshot available at this version.
+
+### 2.4.2 Activating or deactivating a company — IMPLEMENTED (UI)
+
+**Label** **Activate** <!-- organization.structure.activate --> / **Deactivate** <!-- organization.structure.deactivate -->
+, beside each company.
+**Who** Someone holding the company-management permission.
+**Where** The same **Companies and branches** block.
+
+**Steps** Choose the action and confirm — **"Activate this company?"** <!-- organization.company.confirmActivate -->
+or **"Deactivate this company?"** <!-- organization.company.confirmDeactivate --> .
+
+**Result** The company's **Status** reads **Active** or **Inactive**, and the change is recorded
+with its reason.
+
+**Restrictions** The company code cannot be changed, ever. A company has only those two states;
+"suspended" and "being set up" belong to the workspace, not to a company. Editing a company's legal
+name, currency or registration numbers is a service call (`PATCH /api/v1/org/companies/{company}`)
+and has no screen at this version — **OPERATOR PROCEDURE** for that one act.
+
+**Screenshot** no screenshot available at this version.
 
 ### 2.4.3 Where a company appears in the interface — IMPLEMENTED (UI)
 
-**IMPLEMENTED (UI).** There is no company screen, but a company is not invisible:
+**IMPLEMENTED (UI).** A company now appears by name in three places:
 
-- On the **Audit log** <!-- nav.auditLog --> the **Company** filter <!-- audit.filter.company --> is
-  a list of the companies you may reach, **by legal name**, with the placeholder **"All accessible
-  audit records"** <!-- audit.filter.allCompanies --> .
-- Operational screens that need one open a branch chooser built the same way.
-- Everywhere else — the **Organization**, **System settings**, **Numbering rules**, **Taxes** and
-  **Currencies** screens — a company is identified by a **Company reference** <!-- admin.scope.companyId -->
-  , not by name, with the notice _"The service publishes no company or branch directory, so
-  references are shown rather than names."_ <!-- admin.contractGap.noDirectory -->
+- In the **Companies and branches** block on the **Organization** screen, with its code and status.
+- On the **Audit log** <!-- nav.auditLog --> , where the **Company** filter <!-- audit.filter.company -->
+  lists the companies you may reach **by legal name**, with the placeholder **"All accessible audit
+  records"** <!-- audit.filter.allCompanies --> .
+- In the branch choosers that operational screens open with.
+
+In the **settings** blocks — **System settings**, **Numbering rules**, **Taxes**, **Currencies**,
+and the company and branch settings lower down the **Organization** screen — a company is still
+identified by a **Company reference** <!-- admin.scope.companyId --> rather than by name, and those
+screens still carry the notice _"The service publishes no company or branch directory, so references
+are shown rather than names."_ <!-- admin.contractGap.noDirectory -->
 
 ---
 
 ## 2.5 Branches
 
-### 2.5.1 Creating a second branch — NOT AVAILABLE
+### 2.5.1 Adding a branch — IMPLEMENTED (UI)
 
-**NOT AVAILABLE.** At this version no operation creates a branch. Your workspace has the one branch
-created with it (2.2). A workspace that needs a second site cannot yet have one.
+**Label** **Branches** <!-- organization.branch.title --> — _"The workshops and locations of your
+companies."_ <!-- organization.branch.description -->
+**Who** Someone holding the branch-management permission.
+**Where** Sidebar → **Administration** → **Organization** → **Companies and branches**.
 
-### 2.5.2 Editing a branch — OPERATOR PROCEDURE
+**Steps** Choose **Add branch** <!-- organization.branch.add --> — _"A new branch of one of your
+companies."_ <!-- organization.branch.addDescription --> — and fill in:
 
-**OPERATOR PROCEDURE.**
+| Field           | Notes                                                                                                |
+| --------------- | ---------------------------------------------------------------------------------------------------- |
+| **Company**     | Which company the branch belongs to. Required: _"Choose the company this branch belongs to."_        |
+| **Code**        | Lower case letters, digits and underscores, starting with a letter. It cannot be changed afterwards. |
+| **Branch name** | What the site is called.                                                                             |
+| **City**        | Optional.                                                                                            |
+| **Country**     | _"Two capital letters, for example JO."_                                                             |
+| **Time zone**   | _"For example Asia/Amman. It must be a time zone the platform recognises."_                          |
 
-**Label** Update a branch **Who** Someone holding the branch-management permission — again, not held
-by the first administrator and not grantable from inside the workspace. **Where** A service call to
-`PATCH /api/v1/org/branches/{branch}`. No page. **Steps** Supply at least one of: name, time zone,
-address line 1, address line 2, city, region, postal code, two-letter country code. The address
-fields can also be cleared. **Result** The branch record changes. **Restrictions** The branch code
-and the company the branch belongs to are both frozen — a branch cannot be renamed by code and
-cannot be moved between companies. The status is not changed here; that is 2.5.3. **If it goes
-wrong** The edit is refused if the record changed since it was read, and refused by name if it
-carries a field that is not allowed. **Screenshot** no screenshot available at this version.
+**Result** **"The branch was added."** <!-- organization.branch.created --> Its invoice, quotation
+and receipt numbering is set up with it, so it can start trading without a further step.
 
-### 2.5.3 Activating or deactivating a branch — OPERATOR PROCEDURE
+**Restrictions**
 
-**OPERATOR PROCEDURE.** The wording **"Branch status"** <!-- organization.branchStatus --> ,
-**"Active"** <!-- organization.branchStatus.active --> , **"Inactive"** <!-- organization.branchStatus.inactive -->
-and **"Change branch status"** <!-- organization.branchStatus.change --> exists in the application's
-text catalogue, but **no screen renders it at this version**. Do not look for the control on the
-**Organization** screen; it is not there.
+- A branch code is unique inside its company: **"A branch with this code already exists in that
+  company."** <!-- organization.branch.duplicateCode -->
+- A branch belongs to one company and cannot be moved to another.
+- A new branch counts against your subscription's branch limit. At the limit: **"Your subscription
+  allows {limit} branches and {used} are in use. Ask the platform owner to raise the limit."**
+  <!-- capacity.reached.branches --> Nothing is created. See 2.9.
+- Where there are none yet: **"No branches yet."** — _"Add a branch to start working in it."_
+- Editing a branch's name, address or time zone afterwards is a service call
+  (`PATCH /api/v1/org/branches/{branch}`) with no screen at this version — **OPERATOR PROCEDURE**
+  for that one act.
 
-**Label** Activate or deactivate a branch **Who** Someone holding the settings-management permission
-— not held by the first administrator. **Where** A service call to `POST
-/api/v1/organization/branches/{branch}/status`. No page. **Steps** Supply the destination status —
-`active` or `inactive` — **and a reason** (required). **Result** The branch moves state through the
-transition engine, and the change is written to an append-only branch status history with the actor
-and the time taken from the session, not from the request. **Restrictions** A branch-scoped
-administrator may change their own branch and no other; this is enforced by the database, not only
-by the application. **If it goes wrong** The change is refused if the branch changed since it was
-read. **Screenshot** no screenshot available at this version.
+**Screenshot** no screenshot available at this version.
+
+### 2.5.3 Activating or deactivating a branch — IMPLEMENTED (UI)
+
+**Label** **Branch status** <!-- organization.branchStatus --> , **Active** <!-- organization.branchStatus.active -->
+, **Inactive** <!-- organization.branchStatus.inactive --> , **Change branch status**
+<!-- organization.branchStatus.change --> .
+
+**Who** Someone holding the settings-management permission.
+**Where** Beside each branch in the **Companies and branches** block on the **Organization** screen.
+
+**Steps** Choose **Activate** or **Deactivate** and confirm — **"Activate this branch?"**
+<!-- organization.branch.confirmActivate --> or **"Deactivate this branch?"**
+<!-- organization.branch.confirmDeactivate --> .
+
+**Result** The branch moves state through the transition engine, and the change is written to an
+append-only branch status history with the actor and the time taken from the session, not from the
+request.
+
+**Restrictions** A branch-scoped administrator may change their own branch and no other; this is
+enforced by the database, not only by the application.
+
+**If it goes wrong** The change is refused if the branch changed since it was read. Re-open the
+screen and try again.
+
+**Screenshot** no screenshot available at this version.
 
 ---
 
-## 2.6 Departments
+## 2.6 Departments — IMPLEMENTED (UI)
 
-**OPERATOR PROCEDURE.** Departments exist, and the first administrator does hold the permission to
-manage them — but there is **no department screen**. Departments are read by the work-order detail
-for routing; that is the only place an operator meets one.
+**Label** **Departments** <!-- nav.departments --> — _"The departments inside each branch."_
+<!-- departments.description -->
 
-**Label** Create, rename, retire or reinstate a department **Who** Someone holding the
-department-management permission. This **is** part of the set the first administrator receives.
-**Where** Service calls to `POST /api/v1/org/departments` and `PATCH
-/api/v1/org/departments/{department}`. Listing is `GET /api/v1/org/departments`. No page. **Steps**
+**Who** Someone holding the department-read permission to open the screen, and the
+department-management permission to change anything. Both are part of the set the first
+administrator receives.
+**Where** Sidebar → **Administration** → **Departments**, at `/{language}/administration/departments`.
 
-1. To create: company reference _(required)_, branch reference _(required)_, department code
-   _(required_ — lower-case letters, digits and underscores, 2 to 63 characters*)_, name
-   *(required*, up to 200 characters_)*. Example: code `mechanical`, name "Mechanical (example)".
-2. To rename, retire or reinstate: call the update with the department reference. **Result** The
-   department exists inside that branch and becomes available where work is routed. **Restrictions**
-   A department belongs to one branch. Listing departments needs the department read permission,
-   which is a different, lower-risk permission from managing them. **If it goes wrong** A malformed
-   code is refused naming the field, rather than failing deep in the database. **Screenshot** no
-   screenshot available at this version.
+**Steps**
+
+1. Open the screen. It asks you to pick a branch first: **"Choose a branch to see its departments."**
+   <!-- departments.chooseBranch --> Departments belong to one branch, so there is no organisation-wide
+   list to show.
+2. Choose **Add department** <!-- departments.add --> . The panel names the branch it is adding to:
+   **"The department is added to"** <!-- departments.addDescription --> …
+3. Give the **Code** — _"Lower case letters, digits and underscores, starting with a letter."_ — and
+   the **Department name** <!-- departments.name --> .
+
+**Result** **"The department was added."** <!-- departments.created --> It becomes available where
+work is routed on the work-order detail, and where a role is restricted to particular departments
+(Part 3).
+
+**Other actions.** **Rename** <!-- departments.rename --> ; **Retire** <!-- departments.retire -->
+— confirmed with **"Retire this department?"** and _"Its code stays reserved, and you can reinstate
+it later."_ ; **Reinstate** <!-- departments.reinstate --> — _"It can be chosen again when giving
+someone access."_
+
+**Restrictions**
+
+- A department belongs to one branch and cannot be moved.
+- The code cannot be changed after the department exists, and a retired department keeps its code
+  reserved, so the same code cannot be reused for something else.
+- Where a branch has none: **"This branch has no departments yet."** — _"Add a department to
+  organise the people in this branch."_
+
+**If it goes wrong** A malformed code is refused naming the field, rather than failing deep in the
+database.
+
+**Screenshot** no screenshot available at this version.
 
 ---
 
-## 2.7 Employees
+## 2.7 Employees — IMPLEMENTED (UI)
 
-**OPERATOR PROCEDURE.** There is **no employee screen**. The first administrator does hold the
-permission to manage the register, but only a service call reaches it.
+**Label** **Employees** <!-- nav.employees --> — _"The people who work in each branch, whether or not
+they sign in."_ <!-- employees.description -->
+**Who** Someone holding the employee-read permission to open the screen, and the
+employee-management permission to change anything. The split is deliberate: a handover clerk who
+must choose a delivering employee should be able to read the register without being able to alter
+it.
+**Where** Sidebar → **Administration** → **Employees**, at `/{language}/administration/employees`.
 
-**Label** Add an employee, list a branch's register, retire or reinstate an employee **Who** Someone
-holding the employee-management permission for writes, or the employee-read permission for the list.
-Both are part of the first administrator's set. The split is deliberate: a handover clerk who must
-choose a delivering employee should be able to read the register without being able to alter it.
-**Where** Service calls to `POST /api/v1/org/employees`, `GET /api/v1/org/employees` (which requires
-**both** a company reference and a branch reference), `GET /api/v1/org/employees/{employee}` and
-`POST /api/v1/org/employees/{employee}/status`. No page. **Steps** To add: company reference
-_(required)_, branch reference _(required)_, display name _(required)_, login-account reference
-_(optional)_, employment reference _(optional, and opaque — it is a link to a record kept elsewhere,
-not personal data)_. Example: "Faris Al-Mutairi (example)", with no login account. **Result** The
-person can be named as the employee who handed a vehicle over. An employee is `active` or
-`inactive`; the unfiltered list shows retired employees, so that reinstating one is possible.
-**Restrictions** The login-account link is optional on purpose — a workshop cannot always give a
-login to the person who drives a car out to a customer. This register is not an HR record: it holds
-no contract, salary, contact detail or document. **If it goes wrong** The create is authorised
-against the company and branch in the request before anything is written, and refused identically
-whether or not the pair names a real branch — so a wrong reference tells you nothing about what
-exists. **Screenshot** no screenshot available at this version.
+**Steps**
+
+1. Open the screen and pick a branch: **"Choose a branch to see its employees."**
+   <!-- employees.chooseBranch -->
+2. Choose **Add employee** <!-- employees.add --> . The panel names the branch it is adding to.
+3. Give the **Name** <!-- employees.displayName --> . Two fields are optional:
+   - **Login account** <!-- employees.loginAccount --> — _"Link the account this person signs in
+     with, if they have one."_ <!-- employees.loginAccountHint -->
+   - **Employment reference** <!-- employees.employmentRef --> — _"A reference to their record in
+     your personnel system, if you use one."_ <!-- employees.employmentRefHint -->
+
+**Result** **"The employee was added."** <!-- employees.created --> The person can now be named as
+the employee who handed a vehicle over. Each row shows **Has a login** <!-- employees.hasLogin --> or
+**No login** <!-- employees.noLogin --> . Long registers are paged with **Show more**
+<!-- employees.showMore --> .
+
+**Deactivating and reactivating.** **Deactivate** <!-- employees.deactivate --> is confirmed with a
+sentence that states exactly what it costs: _"They can no longer be named on a new vehicle handover.
+Handovers already recorded do not change."_ <!-- employees.confirmDeactivateBody --> **Reactivate**
+<!-- employees.reactivate --> reverses it: _"They can be named on new vehicle handovers again."_
+
+**Restrictions**
+
+- The login link is optional on purpose — a workshop cannot always give a login to the person who
+  drives a car out to a customer.
+- **This register is not an HR record.** It holds no contract, salary, contact detail or document,
+  and nothing on this screen asks for one.
+- Where a branch has none: **"This branch has no employees yet."** — _"Add the people who work in
+  this branch."_
+
+**If it goes wrong** A create is authorised against the branch before anything is written, and
+refused identically whether or not the branch exists — so a wrong choice tells you nothing about
+what exists elsewhere.
+
+**Screenshot** no screenshot available at this version.
 
 ### 2.7.1 Filling the register for handovers that already happened — OPERATOR PROCEDURE
 
@@ -347,40 +464,90 @@ nothing and overwrites nothing. You cannot start it and will see no trace of it 
 
 ## 2.8 Login users
 
-**IMPLEMENTED (UI).** Accounts are the one part of this structure with full screens: **Users** <!-- nav.users -->
-(المستخدمون), **Roles** <!-- nav.roles --> (الأدوار), **Permissions** <!-- nav.permissions -->
-(الصلاحيات). Creating and inviting people, granting roles, restricting a grant to particular
-branches, locking and archiving accounts, and the role-to-capability table are all covered in **Part
-3 — Users and permissions**.
+**IMPLEMENTED (UI).** Accounts have full screens: **Users** <!-- nav.users --> (المستخدمون),
+**Roles** <!-- nav.roles --> (الأدوار), **Permissions** <!-- nav.permissions --> (الصلاحيات), and a
+**Roles and access** screen for each individual account. Inviting people, granting and withdrawing
+roles, choosing the places each role applies in, locking and archiving accounts, and the
+role-to-capability table are all covered in **Part 3 — Users and permissions**.
 
-Two facts belong here, because they are about the shape of the organisation rather than about
+Three facts belong here, because they are about the shape of the organisation rather than about
 access:
 
 - An account belongs to one workspace. The same email address can hold an account in another
   workspace; they are separate people as far as this application is concerned.
+- **A new account counts against your subscription's user limit.** At the limit, the invitation is
+  refused with **"Your subscription allows {limit} user accounts and {used} are in use. Ask the
+  platform owner to raise the limit."** <!-- capacity.reached.users --> Nothing is created. See 2.9.
 - The set of permissions the first administrator receives is written **once**, at the moment the
   workspace is created, and nothing re-applies it. A workspace created before a permission existed
   keeps the set it was given, and because a permission can only be granted by someone who already
-  holds it, nobody inside that workspace can ever be given the newer code from a screen. Correcting
-  this is a platform operator act (an additive backfill), not something you can do yourself.
+  holds it, nobody inside that workspace can be given the newer code from a screen. Correcting this
+  is a platform-side act (an additive backfill), not something you can do yourself.
 
 ---
 
 ## 2.9 Limits on a workspace — how many users, branches or companies
 
-**NOT AVAILABLE.** No user limit, seat count or capacity limit is applied by any screen or any
-published operation at this version.
+**IMPLEMENTED (UI).** Your subscription sets how many companies, branches and user accounts your
+organisation may have, the figures are on screen, and they are enforced: an attempt past a limit is
+refused and nothing is created.
 
-- A subscription plan code may be named when the workspace is created (2.2), and the platform can
-  hold capacity figures against a plan, but **no part of the application reads them**. Nothing is
-  counted and nothing is refused on the grounds of a limit.
-- There is no subscription administration screen and no published operation to change a plan.
-- The practical limits at this version are structural rather than commercial: one company and one
-  branch per workspace, because no operation creates a second of either (2.4.1, 2.5.1).
+**Where to see them.** Sidebar → **Administration** → **Organization**, in the block **"Subscription
+and capacity"** <!-- organization.capacity.title --> — _"What your subscription allows, and how much
+of it is in use."_ <!-- organization.capacity.description --> The block shows the **Subscription**
+<!-- organization.capacity.plan --> , when it **Started** and when it **Ends** (or **"No end date"**),
 
-A separate mechanism, feature entitlement, does exist: the platform can switch a named feature on or
-off for a workspace, and a caller who is not entitled is refused without being told which feature is
-involved. It is not adjustable from any screen.
+and one row per limit:
+
+| Row               | What it reads                                                                          |
+| ----------------- | -------------------------------------------------------------------------------------- |
+| **Companies**     | **"{used} of {limit} in use"**, or **"{used} in use"** where the plan sets no ceiling. |
+| **Branches**      | The same.                                                                              |
+| **User accounts** | The same.                                                                              |
+
+A limit the plan leaves blank reads **Unlimited** <!-- organization.capacity.unlimited --> . A row
+approaching its ceiling reads **"Nearly full."** <!-- organization.capacity.nearlyFull --> ; one that
+has reached it reads **"The limit is reached. Ask the platform owner to raise it."**
+<!-- organization.capacity.full --> Where your organisation has no subscription at all, the block
+
+reads **"No active subscription was found for this organisation."**
+<!-- organization.capacity.noPlan -->
+
+**What a refusal looks like.** Each of the three has its own sentence, and each names both figures
+and what to do next:
+
+- **"Your subscription allows {limit} companies and {used} are in use. Ask the platform owner to
+  raise the limit."** <!-- capacity.reached.companies -->
+- **"Your subscription allows {limit} branches and {used} are in use. Ask the platform owner to
+  raise the limit."** <!-- capacity.reached.branches -->
+- **"Your subscription allows {limit} user accounts and {used} are in use. Ask the platform owner to
+  raise the limit."** <!-- capacity.reached.users -->
+
+Where the limit concerned cannot be named: **"Your subscription does not allow any more of these.
+Ask the platform owner to raise the limit."** <!-- capacity.reached.unknown -->
+
+**A second refusal, with the same shape.** While the organisation is not active, nothing new can be
+added at all: **"This organisation is not active, so nothing new can be added to it. Ask the
+platform owner to reactivate it."** <!-- capacity.organisationInactive --> That is a status matter,
+not a limit (2.3).
+
+**Restrictions**
+
+- **You cannot raise your own limit.** Every message above says who can: the platform owner, from
+  their console (Part 2A, §2A.11). There is no screen inside your workspace that changes a plan.
+- **An organisation can be over its limits without anything being removed.** If the platform owner
+  deliberately assigns a plan smaller than the organisation is already using — which they can only
+  do by accepting it explicitly and stating why (Part 2A, §2A.11.1) — nothing of yours is deleted
+  or disabled. What happens is that the refusals above start, and continue until the usage or the
+  plan changes.
+- **Being close to a limit is a signal, not a refusal.** The **Attention** screen lists a limit that
+  is reached, passed, or nine tenths used, under **"Subscription limits"**. See Part 5.
+
+**A separate mechanism, feature entitlement, also exists**: the platform can switch a named feature
+on or off for a workspace, and a caller who is not entitled is refused without being told which
+feature is involved. It is not adjustable from any screen, on either side.
+
+**Screenshot** no screenshot available at this version.
 
 ---
 
@@ -437,10 +604,16 @@ branches respectively. **Where** Sidebar → **Administration** → **Settings**
    and **Default time zone** <!-- organization.defaultTimezone --> (_"An IANA time zone name, for
    example Asia/Amman."_ <!-- organization.defaultTimezoneHint --> ). Press **Save** <!-- admin.save -->
    .
-2. The **Company settings** panel <!-- organization.settings.company --> and the **Branch settings**
+2. Below it, **"Subscription and capacity"** <!-- organization.capacity.title --> shows what your
+   plan allows and how much is in use. Read 2.9 for what each row means and what a refusal says.
+3. Below that, **"Companies and branches"** <!-- organization.structure.title --> lists both by name
+   and is where each is created and its status changed. Read 2.4 and 2.5. This block appears only if
+   you may read companies or branches; the create and status controls appear only with the matching
+   management permission.
+4. The **Company settings** panel <!-- organization.settings.company --> and the **Branch settings**
    panel <!-- organization.settings.branch --> each ask for a **Company reference** <!-- admin.scope.companyId -->
    or **Branch reference** <!-- admin.scope.branchId --> first.
-3. With a reference entered, add a value under **Add or update a setting** <!-- organization.setting.add -->
+5. With a reference entered, add a value under **Add or update a setting** <!-- organization.setting.add -->
    : **Setting** _(required_ — _"Lower case letters, digits, dots and underscores."_ <!-- organization.setting.keyHint -->
    _)_, **Type** <!-- organization.setting.type --> , **Value** <!-- organization.setting.value -->
    (_"The value is stored exactly as entered and validated against the type you choose."_ <!-- organization.setting.valueHint -->
@@ -685,33 +858,47 @@ withheld values are revealed; the first administrator holds that too. **Where** 
 ## 2.11 What the first administrator of a new workspace can actually open
 
 **IMPLEMENTED (UI).** This matters more than any single screen, so read it before you plan your
-first day. The permissions given to the first administrator are a deliberately narrow set. Four of
-the administration screens are gated on a permission that set does **not** include, so their
-navigation entries and their links on the overview page are simply **not shown**.
+first day. The set of permissions the first administrator is given is fixed, and a screen gated on a
+code outside it is not shown at all — neither its navigation entry nor its link on the overview
+page.
 
-| Screen                                | Visible to the first administrator? | Why                                                                                                                  |
-| ------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| **Users**, **Roles**, **Permissions** | Yes                                 | The identity and access permissions are in the set.                                                                  |
-| **Approval limits**                   | Yes                                 | The approval-management permission is in the set.                                                                    |
-| **Organization**                      | Yes, but read-only                  | Tenant-read is in the set; settings-management is not, so the screen shows _"You can view this, but not change it."_ |
-| **Languages**                         | Yes, read-only                      | Same reason.                                                                                                         |
-| **Audit log**                         | Yes                                 | Audit-view and sensitive-view are both in the set.                                                                   |
-| **Numbering rules**                   | **No**                              | Gated on settings-management, which is not in the set.                                                               |
-| **Taxes**                             | **No**                              | Same.                                                                                                                |
-| **Currencies**                        | **No**                              | Same.                                                                                                                |
-| **System settings**                   | **No**                              | Same.                                                                                                                |
-| **Notifications**, **Documents**      | **No**                              | Planned, not built — see 2.13.                                                                                       |
-| **Appointments**                      | **No**                              | No appointment permission is in the set. See Part 4.                                                                 |
+**The set is wider than it was.** An organisation provisioned at this version gives its first
+administrator the identity and access codes, the organisation codes (companies, branches,
+departments, employees), and the operational codes the workshop and inventory personas need, so that
+those can be delegated to other people.
 
-**You cannot fix this from inside the workspace.** A role may only be given a permission that the
-person granting it already holds, and this is enforced by the database as well as by the
-application, so the missing permissions cannot be granted by anyone in the workspace, including the
-first administrator and the first owner. Widening the set is a platform operator act. If you need
-**Numbering rules**, **Taxes**, **Currencies** or **System settings**, ask the platform operator.
+| Screen                                       | Visible to the first administrator? | Why                                                                                                         |
+| -------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| **Users**, **Roles**, **Permissions**        | Yes                                 | The identity and access permissions are in the set.                                                         |
+| **Approval limits**                          | Yes                                 | The approval-management permission is in the set.                                                           |
+| **Departments**, **Employees**               | Yes, and fully usable               | Their read and management permissions are both in the set.                                                  |
+| **Organization** — companies and branches    | Yes, and fully usable               | Company and branch management are both in the set.                                                          |
+| **Organization** — subscription and capacity | Yes, read-only                      | Tenant-read is in the set. Nobody inside a workspace can change a plan; that is the platform owner's (2.9). |
+| **Organization** — settings blocks           | Yes, read-only                      | Settings-management is **not** in the set, so those blocks show _"You can view this, but not change it."_   |
+| **Organization** — branch status             | **No**                              | Activating or deactivating a branch is gated on settings-management (2.5.3).                                |
+| **Languages**                                | Yes, read-only                      | Same reason as the settings blocks.                                                                         |
+| **Audit log**                                | Yes                                 | Audit-view and sensitive-view are both in the set.                                                          |
+| **Numbering rules**                          | **No**                              | Gated on settings-management, which is not in the set.                                                      |
+| **Taxes**                                    | **No**                              | Same.                                                                                                       |
+| **Currencies**                               | **No**                              | Same.                                                                                                       |
+| **System settings**                          | **No**                              | Same.                                                                                                       |
+| **Notifications**, **Documents**             | **No**                              | Planned, not built — see 2.13.                                                                              |
+| **Appointments**                             | **No**                              | No appointment permission is in the set. See Part 4A.                                                       |
+
+**You still cannot fix the gaps from inside the workspace.** A role may only be given a permission
+that the person granting it already holds, and this is enforced by the database as well as by the
+application, so a code outside the set cannot be granted by anyone in the workspace, including the
+first administrator. If you need **Numbering rules**, **Taxes**, **Currencies**, **System settings**
+or the ability to deactivate a branch, ask whoever runs the platform.
 
 The same rule explains the report export limitation described in Part 6: the export permission is
-deliberately left out of the first administrator's set, so exporting a report is unavailable until a
-platform operator grants the code.
+deliberately left out of the set, so exporting a report is unavailable until that code is granted.
+
+**And one thing that does not travel backwards.** The set above is written **once**, when the
+organisation is provisioned. An organisation created before a code existed keeps the set it was
+given — so an older workspace may find **Departments**, **Employees** or the **Companies and
+branches** block missing even at this version. Putting that right is a platform-side act (an
+additive backfill), not something a screen can do.
 
 ---
 
@@ -746,12 +933,16 @@ platform operator grants the code.
 
 **NOT AVAILABLE** unless a backlog item is named, in which case **DEFERRED**.
 
-- **NOT AVAILABLE** — a screen for creating or editing a company, a branch, a department or an
-  employee. Also no technician roster screen.
-- **NOT AVAILABLE** — creating a second company or a second branch, by any means (2.4.1, 2.5.1).
-- **NOT AVAILABLE** — a company or branch directory anywhere except the **Audit log** filters and
-  the branch choosers on operational screens; elsewhere you supply a reference.
-- **NOT AVAILABLE** — subscription or plan administration, seat counts, user limits (2.9).
+- **NOT AVAILABLE** — a screen for **editing** a company's legal name, currency or registration
+  numbers, or a branch's name, address or time zone, after it has been created. Creating them,
+  and changing their status, do have screens (2.4, 2.5); editing them is a service call.
+- **NOT AVAILABLE** — a technician roster screen.
+- **NOT AVAILABLE** — a company or branch directory in the **settings** screens; there you still
+  supply a reference. The **Companies and branches** block, the **Audit log** filters and the branch
+  choosers on operational screens all name them.
+- **NOT AVAILABLE, inside your workspace** — subscription or plan administration. You can see what
+  your plan allows and how much is in use, and nothing more (2.9). Changing a plan belongs to the
+  platform owner (Part 2A, §2A.11).
 - **NOT AVAILABLE** — platform-wide settings, from this application.
 - **NOT AVAILABLE** — exporting the audit log.
 - **NOT AVAILABLE** — any HR, accounting or AI capability. None exists in any form, and this manual
@@ -776,24 +967,57 @@ platform operator grants the code.
 The following could not be established from the application's own source and records at this
 version, and is stated here rather than guessed:
 
-1. **Where an operator can find a company reference or a branch reference from inside the
-   interface.** No directory screen exists. The **Audit log** filters show companies and branches by
-   name but do not display their references. The reliable source is the record kept when the
-   workspace was provisioned (2.2). NOT ESTABLISHED.
-2. **Whether the workspace **Status** values other than `active` change anything an operator can
-   see** beyond the value shown on the **Organization** screen. NOT ESTABLISHED.
-3. **Whether any feature entitlement flag is actually applied to an operation at this version.** The
+1. **Where an operator can find a company reference or a branch reference for the settings screens.**
+   The **Companies and branches** block names both, but does not display their references, and no
+   other screen does either. The reliable source is still the record kept when the company or branch
+   was created. NOT ESTABLISHED.
+2. **Whether any feature entitlement flag is actually applied to an operation at this version.** The
    mechanism exists; which features it currently governs was not established.
-4. **Whether the workspace default language set on the **Languages** screen is read by any server
+3. **Whether the workspace default language set on the **Languages** screen is read by any server
    operation**, as distinct from being stored as a setting. NOT ESTABLISHED.
+4. **Whether an administrator has walked the new company, branch, department and employee screens in
+   a browser at this commit.** The screens, their labels and their refusals are read from the code.
+   An authenticated walk of them is recorded as still owed in
+   [`../product/owner-directive-2026-09-16/capability-status.md`](../product/owner-directive-2026-09-16/capability-status.md),
+   and this part does not claim one happened.
 
 Nothing in this part is a statement that any check, test or gate was run. No hosted testing,
 certification, audit or approval is claimed. This phase of the product is not certified.
 
 <!--
-SOURCES (read at origin/develop beebc6c28c873f498fe0503161eb53caa107a9e3, via `git show`, from the
-checkout C:/Users/Ezzaldeen/wt-p9; plus the module inventory handover-map-B.json and the
-environment map handover-map-A.json supplied with the brief).
+REVISION 2026-09-18 — sections 2.1, 2.1.2, 2.1.3, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 2.10.2,
+2.11, 2.13 and 2.14 were re-read and rewritten at develop 5b2c7840da1821f973438d5429665ef4448132f2.
+Everything else in this part is carried unchanged from the reading below.
+
+Re-read for this revision:
+  apps/web/src/app/[locale]/(dashboard)/administration/organization/page.tsx — tenant panel,
+    capacity panel (org.capacity-read), OrganizationStructure (companies and branches by name),
+    the noDirectory notice now above the settings blocks, canManageCompanies / canManageBranches /
+    canChangeBranchStatus = canWriteSettings
+  apps/web/src/features/administration/organization/{actions.ts,api.ts,types.ts}
+    — POST /api/v1/org/companies (org.company-create), POST /api/v1/org/branches
+      (org.branch-create), POST …/companies/{id}/status (org.company-status-set),
+      POST /api/v1/organization/branches/{id}/status (shared.branch-status-change),
+      GET /api/v1/org/capacity (org.capacity-read), GET /api/v1/org/companies, GET /api/v1/org/branches
+  apps/web/src/features/administration/organization/components/{CapacityPanel,OrganizationStructure}.tsx
+  apps/web/src/features/administration/departments/components/DepartmentsScreen.tsx and
+    apps/web/src/app/[locale]/(dashboard)/administration/departments/page.tsx
+  apps/web/src/features/administration/employees/components/EmployeesScreen.tsx and
+    apps/web/src/app/[locale]/(dashboard)/administration/employees/page.tsx
+  apps/web/src/config/navigation.ts — nav.departments (org.department.read),
+    nav.employees (org.employee.read)
+  apps/api/src/modules/iam/domain/bootstrap-roles.ts — the tenant administration bundle now carries
+    org.company.manage, org.branch.manage, org.department.read/.manage, org.employee.read/.manage
+    and the inventory codes, and does NOT carry org.settings.manage, rpt.report.export,
+    shared.notification.read or any apt.* code
+  New message keys quoted: organization.structure.*, organization.company.*, organization.branch.*,
+    organization.capacity.*, departments.*, employees.*, capacity.reached.*,
+    capacity.organisationInactive, capacity.planBelowUsage, nav.departments, nav.employees
+
+SOURCES for everything carried forward (read at origin/develop
+beebc6c28c873f498fe0503161eb53caa107a9e3, via `git show`, from the checkout
+C:/Users/Ezzaldeen/wt-p9; plus the module inventory handover-map-B.json and the environment map
+handover-map-A.json supplied with the brief).
 
 Message catalogue keys, apps/web/src/i18n/messages/en.json (Arabic from ar.json, same keys):
 app.provisionalBrand; brand.byCompany; admin.title, admin.description, admin.readOnly, admin.save,
@@ -805,8 +1029,9 @@ organization.title/.description/.tenant/.tenantCode/.displayName/.status/.defaul
 .defaultLocaleHint/.defaultTimezone/.defaultTimezoneHint/.settings.company/.settings.branch/
 .setting.add/.setting.key/.setting.keyHint/.setting.type/.setting.value/.setting.valueHint/
 .setting.sensitive/.setting.version/.setting.withheld/.error.unknownReference/
-.branchStatus/.branchStatus.active/.branchStatus.inactive/.branchStatus.change (the four
-branchStatus keys are present in both catalogues and referenced by NO component); numbering.*,
+.branchStatus/.branchStatus.active/.branchStatus.inactive/.branchStatus.change (at 5b2c7840 these
+four are rendered by OrganizationStructure.tsx; at beebc6c2 they were referenced by no component);
+numbering.*,
 taxes.*, currencies.*, languages.*, systemSettings.*; approvalLimits.* (including .mayBeTruncated
 and .completeList); audit.* (including .noExport, .readOnly, .viewedNotice,
 .filter.company/.branch/.allCompanies/ .chooseBranch/.scopeUnavailable); state.denied.*,
@@ -819,8 +1044,9 @@ isProvisional false) apps/web/src/components/shell/AppShell.tsx:394-397 (banner 
 provisional) apps/web/src/app/[locale]/(dashboard)/page.tsx:54 (identityTitle vs brandTitle
 selection) apps/web/src/app/[locale]/(dashboard)/administration/page.tsx:38-100 (the three sections
 and the per-link permission gate)
-apps/web/src/app/[locale]/(dashboard)/administration/organization/page.tsx (three panels only; no
-branch-status control)
+apps/web/src/app/[locale]/(dashboard)/administration/organization/page.tsx (at beebc6c2: three
+panels only, no branch-status control; superseded by the re-reading noted at the top of this
+comment)
 apps/web/src/features/administration/organization/components/TenantForm.tsx:14-26, 54-66 (tenantCode
 and status shown as facts; read-only variant)
 apps/web/src/features/administration/organization/components/SettingsEditor.tsx:14-38, 104-120 (no
