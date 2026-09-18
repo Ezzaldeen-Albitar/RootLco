@@ -107,21 +107,48 @@ at.** Seven pull requests merged after `beebc6c2` (the merge of #405) and before
 | the phase-1-31 records as a set                                                                                    | **three files changed and no figure moved**: `error-path-matrix.md`, `isolation-matrix.md` and `least-privilege-grant-map.md` were re-anchored to line numbers that drifted under the merged work. No count, state or verdict changed |
 | `docs/governance/`                                                                                                 | **unchanged**                                                                                                                                                                                                                         |
 | the artefacts the nine items cite                                                                                  | every file named in this index exists at this head, and every line anchor in it was read at this head                                                                                                                                 |
-| the NON-DOCUMENTARY artefacts the nine items cite (source, gates, suites, baselines)                               | **SEVEN CHANGED**, and they are set out one by one at § 3.1 below. Three of them are the instruments behind **QA-C1**, **QA-C4** and **SEC-C4**                                                                                       |
+| the NON-DOCUMENTARY artefacts the nine items cite (source, gates, suites, baselines)                               | **EIGHT CHANGED**, re-derived mechanically at § 3.1 below and set out there one by one. They are the instruments behind **QA-C1**, **QA-C3**, **QA-C4** and **SEC-C4**                                                                |
 
 **So the correct statement is narrower than "nothing moved", and § 3.1 is the reason it has to be.**
 The nine **questions** are unchanged and the nine **fields** are still empty; the phase records that
-state the P1-31 figures did not move. But **three of the instruments those records were measured with
+state the P1-31 figures did not move. But **eight of the instruments those records were measured with
 did move**, and one register **figure now reads differently at this head than the register's own words
-say** (§ 3.1, row 7). Both facts are disclosed here rather than left for the reviewer to find. The one
+say** (§ 3.1, rows 5 and 6). Both facts are disclosed here rather than left for the reviewer to find. The one
 citation drift is recorded at [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) § 76.3
 and proposed for mechanical repair there rather than applied here; the movement below is recorded at
 § 77 of the same register, likewise analysed and not applied.
 
-### 3.1 The seven non-documentary artefacts that changed between `beebc6c2` and `3b50f26c`
+### 3.1 The eight non-documentary artefacts that changed between `beebc6c2` and `3b50f26c`
 
-**Read from `git diff --stat beebc6c2 3b50f26c` restricted to the files this index cites. Every line
-below is a static read; nothing was executed.** The artefacts this index cites and which did **NOT**
+**How the set below was derived, stated so it can be repeated and falsified.** The first draft of this
+section listed **seven** and was wrong by one, because the set had been assembled by hand from the rows
+rather than computed. It is now derived mechanically, in three steps, and the count is whatever the
+derivation yields:
+
+1. **The changed set.** `git diff --name-only beebc6c2 3b50f26c` — **523 paths**.
+2. **The cited set.** Every backtick-quoted token in this file, with any `:line` suffix stripped —
+   **106 tokens**, of which **41** end in a source, script, config or data extension rather than being
+   prose — and one of those 41 is a glob (`scripts/ci/*.mjs`), leaving **40** concrete file paths.
+3. **The intersection**, taken as exact paths, and then the cited tokens that the first two steps could
+   not match exactly — the ellipsis-abbreviated ones (`…/organization-settings-service.ts` and the
+   like) and the specs this index names by bare filename — checked one by one against the changed set
+   by substring. **The exact intersection is eight paths and the by-hand pass adds none**;
+   `package.json`, `scripts/ci/coverage-gate.mjs`, both reusable workflow files, the IAM and attachment
+   sources, the download-authorizations route and every P1-31 backend, CI, database and browser suite
+   this index names are **not** in the changed set.
+
+**The one class-form reference is deliberately excluded**: § 2's definition of kind B names
+`scripts/ci/*.mjs` as a category of instrument, not as a citation of a particular gate, and the two
+gates this index does cite by name are covered by step 2 above.
+
+**Nothing was executed to produce any of this; `git diff` and `git diff --name-only` are static reads
+of committed trees.** The row numbers **1 … 7** below are unchanged from the first draft, so that every
+existing cross-reference to them — in this file, in
+[`change-control-2026-09-08.md`](./change-control-2026-09-08.md) § 77 and in
+[`reviewer-packet-2026-09-18.md`](./reviewer-packet-2026-09-18.md) — still resolves; the artefact the
+first draft missed is appended as **row 8**.
+
+The artefacts this index cites and which did **NOT**
 change are also stated, because a reviewer needs both halves: `apps/api/src/modules/shared-services/domain/attachment-policy.ts`,
 `…/application/attachment-service.ts`, the download-authorizations route,
 `apps/api/src/modules/iam/application/access-administration-service.ts`,
@@ -131,17 +158,18 @@ change are also stated, because a reviewer needs both halves: `apps/api/src/modu
 `tests/db/p1-11-isolation.test.ts` and every P1-31 spec under
 `apps/web/tests/e2e/authenticated/` are **byte-identical at the two heads**.
 
-| #   | artefact                                          | what changed                                                                                                                                                                                        | whose instrument it is | does a figure in the nine rows move?                                                                                                                                                                               |
-| --- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1   | `apps/web/vitest.config.ts`                       | **+10.** `COVERAGE_INCLUDE` gained `src/features/platform/**` and the `(platform)` route group                                                                                                      | **QA-C1**              | **no P1-31 figure moves**, and the widening is **not** re-measured here. The P1-31 denominator is larger than the one the coverage record's globals were taken over, so those globals are **older than this head** |
-| 2   | `.github/ci-baselines/coverage-baseline.web.json` | **+21.** Two new critical-module floors, `platform-console-surface` and `platform-console-routes`, both labelled `LOCAL` and pending a hosted run; the file's own note states no global floor moved | **QA-C1**              | **no.** No P1-31 floor and no global floor changed                                                                                                                                                                 |
-| 3   | `tests/ci/baseline-integrity.test.ts`             | **+48/-…** the measured backend file count moves `291 → 310` as later slices add files                                                                                                              | **QA-C1** (kind B)     | **no.** The cited anchors `:445`, `:450`, `:457` and `:506` were re-read at this head and hold                                                                                                                     |
-| 4   | `tests/db/shared-hardening.test.ts`               | **+7.** Two P1-32 search-folding functions added to an EXECUTE-grant list                                                                                                                           | **QA-C3** (kind B)     | **no.** The cited `:336` was re-read at this head and is still the RLS-enabled-and-forced case                                                                                                                     |
-| 5   | `scripts/ci/check-p1-31-version-sourcing.mjs`     | **-8/+8.** The gate's own prose now reads "**Six** of the eleven have no consumer", with the retirement recorded in it                                                                              | **QA-C4**              | **YES — see row 7**                                                                                                                                                                                                |
-| 6   | `tests/ci/p1-31-version-sourcing.test.ts`         | **+32/-…** `:111` now asserts `pending.length` is **6** and the compared set is **5**, naming `org.employee-status-set` as the fifth                                                                | **QA-C4**              | **YES — see row 7**                                                                                                                                                                                                |
-| 7   | `apps/api/src/server/auth/audit-actions.ts`       | **+364/-1.** New action registrations for later slices, and one existing description extended (`sal.invoice.issued`). **No P1-31 action entry was removed, renamed or re-classed**                  | **SEC-C4**             | **no.** `audit-class-review.md`'s 21 `none` and 24 `privileged` P1-31 declarations are untouched; the registry each resolves against is simply larger                                                              |
+| #   | artefact                                          | what changed                                                                                                                                                                                                                                          | whose instrument it is | does a figure in the nine rows move?                                                                                                                                                                               |
+| --- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | `apps/web/vitest.config.ts`                       | **+10.** `COVERAGE_INCLUDE` gained `src/features/platform/**` and the `(platform)` route group                                                                                                                                                        | **QA-C1**              | **no P1-31 figure moves**, and the widening is **not** re-measured here. The P1-31 denominator is larger than the one the coverage record's globals were taken over, so those globals are **older than this head** |
+| 2   | `.github/ci-baselines/coverage-baseline.web.json` | **+21.** Two new critical-module floors, `platform-console-surface` and `platform-console-routes`, both labelled `LOCAL` and pending a hosted run; the file's own note states no global floor moved                                                   | **QA-C1**              | **no.** No P1-31 floor and no global floor changed                                                                                                                                                                 |
+| 3   | `tests/ci/baseline-integrity.test.ts`             | **+48/-…** the measured backend file count moves `291 → 310` as later slices add files                                                                                                                                                                | **QA-C1** (kind B)     | **no.** The cited anchors `:445`, `:450`, `:457` and `:506` were re-read at this head and hold                                                                                                                     |
+| 4   | `tests/db/shared-hardening.test.ts`               | **+7.** Two P1-32 search-folding functions added to an EXECUTE-grant list                                                                                                                                                                             | **QA-C3** (kind B)     | **no.** The cited `:336` was re-read at this head and is still the RLS-enabled-and-forced case                                                                                                                     |
+| 5   | `scripts/ci/check-p1-31-version-sourcing.mjs`     | **-8/+8.** The gate's own prose now reads "**Six** of the eleven have no consumer", with the retirement recorded in it                                                                                                                                | **QA-C4**              | **YES — see the note on CC-57 (a) below this table**                                                                                                                                                               |
+| 6   | `tests/ci/p1-31-version-sourcing.test.ts`         | **+32/-…** `:111` now asserts `pending.length` is **6** and the compared set is **5**, naming `org.employee-status-set` as the fifth                                                                                                                  | **QA-C4**              | **YES — see the note on CC-57 (a) below this table**                                                                                                                                                               |
+| 7   | `apps/api/src/server/auth/audit-actions.ts`       | **+364/-1.** New action registrations for later slices, and one existing description extended (`sal.invoice.issued`). **No P1-31 action entry was removed, renamed or re-classed**                                                                    | **SEC-C4**             | **no.** `audit-class-review.md`'s 21 `none` and 24 `privileged` P1-31 declarations are untouched; the registry each resolves against is simply larger                                                              |
+| 8   | `apps/web/tests/security.test.ts`                 | **+27, one new case and nothing else.** A case over the Platform Owner Console asserts six console files are inside the instrumented surface and that the unescaped `(platform)` pattern matches nothing. **No existing case was changed or removed** | **QA-C1** (kind B)     | **no.** It asserts over row 1's widened include list rather than over any P1-31 figure; the QA-C1 evidence cell's cited `:8` import of `COVERAGE_INCLUDE`/`COVERAGE_EXCLUDE` was re-read at this head and holds    |
 
-**Row 7, stated in full because it is the one figure that changed.** The register's **CC-57 (a)** cell
+**Rows 5 and 6, stated in full because they are the one figure that changed.** The register's **CC-57 (a)** cell
 (§ 67) reads "the **seven** PENDING operations remain unreachable". At `beebc6c2` that was correct. At
 `3b50f26c` the gate declares **six**: the entry for `org.employee-status-set` was deleted by commit
 `8bc4bfec` ("Retire a pending-consumer entry that now has a consumer"), which merged into `develop`
@@ -192,7 +220,10 @@ lines to 25/25**; **H-1 remains open** and is counted on FE-004
 - **The instrument behind this row MOVED between the packet's head and this one**, and a determination
   over QA-C1 should know it: `apps/web/vitest.config.ts` widened `COVERAGE_INCLUDE` by two prefixes and
   `.github/ci-baselines/coverage-baseline.web.json` gained two critical-module floors (§ 3.1, rows 1 and
-  2). **No P1-31 figure and no global floor moved**, and nothing here re-measures the widened list — so
+  2), and **the kind-B instruments of this row moved with them** — `tests/ci/baseline-integrity.test.ts`
+  (§ 3.1, row 3) and `apps/web/tests/security.test.ts`, which gained one case asserting the widened
+  include list over the Platform Owner Console (§ 3.1, row 8). **No P1-31 figure and no global floor
+  moved**, and nothing here re-measures the widened list — so
   the coverage record's global figures were taken over a **smaller denominator than the one configured
   at this head**, and they are quoted as what they are: measurements of an earlier head, still
   **LOCAL**.

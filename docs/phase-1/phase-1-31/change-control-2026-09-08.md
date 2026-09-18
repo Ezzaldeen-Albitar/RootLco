@@ -10287,9 +10287,9 @@ anywhere in this section.**
 the **documents** — `docs/phase-1/phase-1-31/`, `docs/governance/`, and, for § 76's three rows, the IAM
 and attachment sources those rows name — and concluded that nothing had moved. **That conclusion was
 too wide.** The nine determination rows also rest on **configuration, gates, baselines and suites**,
-and **seven of those changed** between `beebc6c2` (the head the Owner's decisions and the certification
-packet were measured at) and this one. Three of the seven are the instruments behind **QA-C1**,
-**QA-C4** and **SEC-C4**. A reviewer told "the evidence base is unmoved" while an instrument moved
+and **eight of those changed** between `beebc6c2` (the head the Owner's decisions and the certification
+packet were measured at) and this one. They are the instruments behind **QA-C1**, **QA-C3**, **QA-C4**
+and **SEC-C4**. A reviewer told "the evidence base is unmoved" while an instrument moved
 underneath it is being misinformed, so the movement is recorded here.
 
 **What this section is and is not.** It is a **disclosure**. **It closes no row, marks nothing fixed or
@@ -10306,12 +10306,18 @@ browser tier or hosted job was run to produce it.**
 nine **QA and Security determinations** are **absent**; the **formal P1-G31 prerequisites** are **not
 satisfied**.
 
-### 77.1 The seven non-documentary artefacts that moved
+### 77.1 The eight non-documentary artefacts that moved
 
-Read from `git diff --stat beebc6c2 3b50f26c`, restricted to the artefacts the nine rows cite. The full
-table, with the effect on each row, is at
-[`determination-evidence-index-2026-09-18.md`](./determination-evidence-index-2026-09-18.md) § 3.1 and
-is not duplicated here; this is the register's record that it happened.
+Read from `git diff --stat beebc6c2 3b50f26c`, restricted to the artefacts the nine rows cite. **The
+first version of this section and of the index listed seven and was wrong by one**, because the set had
+been assembled by hand from the rows. The set below is the mechanical derivation — the intersection of
+`git diff --name-only beebc6c2 3b50f26c` (523 paths) with every path this index cites (40 concrete
+paths out of 106 backtick-quoted tokens), plus a by-hand pass over the abbreviated citations that an
+exact match cannot reach. The derivation, its steps and what it excludes are stated at
+[`determination-evidence-index-2026-09-18.md`](./determination-evidence-index-2026-09-18.md) § 3.1; the
+full table, with the effect on each row, is there too and is not duplicated here. This is the
+register's record that it happened, and that the first count was corrected upward by derivation rather
+than by reading.
 
 | artefact                                          | size of change | row whose instrument it is |
 | ------------------------------------------------- | -------------- | -------------------------- |
@@ -10322,9 +10328,10 @@ is not duplicated here; this is the register's record that it happened.
 | `scripts/ci/check-p1-31-version-sourcing.mjs`     | +8 / −8        | **QA-C4**                  |
 | `tests/ci/p1-31-version-sourcing.test.ts`         | +32 / −…       | **QA-C4**                  |
 | `apps/api/src/server/auth/audit-actions.ts`       | +364 / −1      | **SEC-C4**                 |
+| `apps/web/tests/security.test.ts`                 | +27            | **QA-C1**, kind B          |
 
-**Only one of the seven changes a figure any of the nine rows rests on**, and that is § 77.2. The other
-six leave every P1-31 figure where it was: no P1-31 coverage floor and no global floor moved, every
+**Only one of the eight changes a figure any of the nine rows rests on**, and that is § 77.2. The other
+seven leave every P1-31 figure where it was: no P1-31 coverage floor and no global floor moved, every
 cited line anchor was re-read at this head and holds, and no P1-31 audit action entry was removed,
 renamed or re-classed. **The widened web coverage include list is not re-measured here**, so the
 coverage record's global figures remain what they were labelled — **LOCAL**, and now also taken over a

@@ -79,9 +79,11 @@ review, and records that **P1-EC-016 remains open and is not claimed by it**. Th
 of a self-review is the reason the sentence is required, not a reason to drop it.
 
 **What moved since the head the certification packet was written against.** The nine **questions** are
-unchanged and the nine **fields** are still empty, but **seven non-documentary artefacts changed**
-between `beebc6c2` and this head, three of them the instruments behind **QA-C1**, **QA-C4** and
-**SEC-C4**. They are enumerated, with what does and does not move because of them, at
+unchanged and the nine **fields** are still empty, but **eight non-documentary artefacts changed**
+between `beebc6c2` and this head — the instruments behind **QA-C1**, **QA-C3**, **QA-C4** and
+**SEC-C4**. The count is a mechanical derivation and not a reading: an earlier draft said seven and
+missed one, and the derivation that replaced it is written out where the set is. They are enumerated,
+with what does and does not move because of them, at
 [`determination-evidence-index-2026-09-18.md`](./determination-evidence-index-2026-09-18.md) § 3.1, and
 analysed at [`change-control-2026-09-08.md`](./change-control-2026-09-08.md) § 77. **One register
 figure is stale as a result — CC-57 (a)'s "seven" reads six at this head** — and it is stated in full
@@ -116,9 +118,11 @@ closed by nothing; (c) `scripts/ci/coverage-gate.mjs` is reachable from no npm s
 only from the workflows, so no local aggregate enforces the floors; (d) **the instrument moved after
 the figures were taken** — `apps/web/vitest.config.ts` widened `COVERAGE_INCLUDE` by two prefixes and
 the web coverage baseline gained two critical-module floors between `beebc6c2` and this head (evidence
-index § 3.1, rows 1 and 2), so the record's global figures were measured over a **smaller denominator
-than the one configured here**, and nothing in this packet re-measures them. **No P1-31 figure and no
-global floor moved.**
+index § 3.1, rows 1 and 2), and this row's two committed instruments moved with them —
+`tests/ci/baseline-integrity.test.ts` and `apps/web/tests/security.test.ts`, the latter gaining one
+case over the widened include list (evidence index § 3.1, rows 3 and 8) — so the record's global
+figures were measured over a **smaller denominator than the one configured here**, and nothing in this
+packet re-measures them. **No P1-31 figure and no global floor moved.**
 
 **Fields to fill, in [`certification-and-clearance-packet.md`](./certification-and-clearance-packet.md)
 § 7, QA table, row QA-C1:** determination; conditions; certifier's name; date. **Plus the § 2
