@@ -3018,7 +3018,7 @@
         "unauthenticated"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-32-account-security.test.ts"],
+      "tests": ["tests/backend/p1-32-platform-console.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/platform/account/password/route.ts"
     },

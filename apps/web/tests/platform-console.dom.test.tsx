@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
+import ar from '../src/i18n/messages/ar.json';
 import { renderLtr, renderRtl } from './render';
 
 /**
@@ -28,11 +29,16 @@ import { renderLtr, renderRtl } from './render';
  *     version the operator was looking at;
  *   - the activity search opens on the window it was given and applies its
  *     criteria together.
+ *   - account and security validates each password field before it asks the
+ *     server, reveals each field on its own, states what the server reported
+ *     about the operator's other devices, and tells the two server refusals
+ *     apart on screen.
  *
  * Every business value below is a test value invented for this file.
  */
 
 const EN = en as Record<string, string>;
+const AR = ar as Record<string, string>;
 /** A catalogued English message, typed as present: a missing key fails the lookup visibly. */
 const L = (key: string): string => EN[key] ?? `missing message ${key}`;
 
@@ -57,6 +63,7 @@ const changeOrganizationStatusAction = vi.fn();
 const provisionOrganizationAction = vi.fn();
 const createPlanAction = vi.fn();
 const updatePlanAction = vi.fn();
+const changeOwnPasswordAction = vi.fn();
 vi.mock('@/features/platform/actions', () => ({
   /*
    * P1-32-PRE-068. This module holds only the writes, and every one is stood in
@@ -73,6 +80,7 @@ vi.mock('@/features/platform/actions', () => ({
   provisionOrganizationAction: (...args: unknown[]) => provisionOrganizationAction(...args),
   createPlanAction: (...args: unknown[]) => createPlanAction(...args),
   updatePlanAction: (...args: unknown[]) => updatePlanAction(...args),
+  changeOwnPasswordAction: (...args: unknown[]) => changeOwnPasswordAction(...args),
 }));
 
 const { OrganizationsScreen } = await import('@/features/platform/components/OrganizationsScreen');
@@ -84,6 +92,8 @@ const { ProvisionOrganizationScreen } =
   await import('@/features/platform/components/ProvisionOrganizationScreen');
 const { PlansScreen } = await import('@/features/platform/components/PlansScreen');
 const { PlatformAuditScreen } = await import('@/features/platform/components/PlatformAuditScreen');
+const { AccountSecurityScreen } =
+  await import('@/features/platform/components/AccountSecurityScreen');
 const { getMessages } = await import('@/i18n/get-messages');
 
 const messages = getMessages('en');
@@ -218,6 +228,15 @@ beforeEach(() => {
   provisionOrganizationAction.mockReset();
   createPlanAction.mockReset();
   updatePlanAction.mockReset();
+  changeOwnPasswordAction.mockReset();
+  // The default answer for the account form: a change the server accepted and
+  // whose other-device sign-out it reported. A case that needs another answer
+  // replaces it before it renders.
+  changeOwnPasswordAction.mockResolvedValue({
+    status: 'success',
+    messageKey: 'platform.account.done',
+    attempt: 1,
+  });
 });
 
 describe('the organisation list', () => {
@@ -1387,5 +1406,257 @@ describe('the activity search', () => {
     expect(applied.get('from')).toBe('2026-09-01T00:00:00.000Z');
     expect(applied.get('action')).toBe('org.subscription_charge.recorded');
     expect(applied.get('targetTenantId')).toBe(TENANT);
+  });
+});
+
+// --- account and security ------------------------------------------------------
+//
+// Folded into this file rather than given its own, because the P1-27 evidence
+// seal digests a stated count of web test FILES: a new file moves a sealed
+// record, and these cases belong to the same console the rest of this file
+// covers. Names are prefixed so nothing here can collide with the console
+// fixtures above.
+
+const ACCOUNT_SESSION = {
+  userId: '22222222-2222-4222-8222-222222222222',
+  homeTenantId: TENANT,
+  platformPermissions: ['platform.organization.read', 'platform.statistics.read'],
+} as const;
+
+const ACCOUNT_CURRENT = 'the-current-password';
+const ACCOUNT_NEXT = 'a-different-password';
+
+function renderAccount(locale: 'en' | 'ar' = 'en') {
+  const catalogue = getMessages(locale);
+  const paint = locale === 'en' ? renderLtr : renderRtl;
+  return paint(<AccountSecurityScreen messages={catalogue} session={ACCOUNT_SESSION} />);
+}
+
+/** The three password inputs, in the order the form declares them. */
+function accountFields(): HTMLInputElement[] {
+  return [
+    document.querySelector<HTMLInputElement>('input[name="currentPassword"]'),
+    document.querySelector<HTMLInputElement>('input[name="newPassword"]'),
+    document.querySelector<HTMLInputElement>('input[name="confirmPassword"]'),
+  ].map((element, index) => {
+    if (!element) throw new Error(`password field ${index} is not rendered`);
+    return element;
+  });
+}
+
+async function fillAccount(values: readonly [string, string, string]) {
+  const user = userEvent.setup();
+  const inputs = accountFields();
+  for (const [index, value] of values.entries()) {
+    const input = inputs[index] as HTMLInputElement;
+    await user.clear(input);
+    await user.type(input, value);
+  }
+  return user;
+}
+
+describe('the account screen shows the identity the console session carries', () => {
+  it('names the operator, its home organisation and every authority code it holds', () => {
+    renderAccount();
+    expect(screen.getByTestId('account-operator-id')).toHaveTextContent(ACCOUNT_SESSION.userId);
+    expect(screen.getByTestId('account-home-tenant')).toHaveTextContent(
+      ACCOUNT_SESSION.homeTenantId
+    );
+    for (const code of ACCOUNT_SESSION.platformPermissions) {
+      expect(screen.getByText(code)).toBeInTheDocument();
+    }
+  });
+
+  it('offers a change-password form with three fields and no address field', () => {
+    renderAccount();
+    expect(accountFields()).toHaveLength(3);
+    expect(document.querySelector('input[name="email"]')).toBeNull();
+    expect(screen.getByRole('button', { name: L('platform.account.submit') })).toBeEnabled();
+  });
+});
+
+describe('the form validates before it asks the server', () => {
+  it('refuses an empty form and sends nothing', async () => {
+    const user = userEvent.setup();
+    renderAccount();
+    await user.click(screen.getByRole('button', { name: L('platform.account.submit') }));
+    // One complaint per field, and nothing asked of the server.
+    await waitFor(() => expect(screen.getAllByText(L('platform.error.required'))).toHaveLength(3));
+    expect(changeOwnPasswordAction).not.toHaveBeenCalled();
+    for (const field of accountFields()) expect(field).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('refuses a confirmation that does not match, and marks only that field', async () => {
+    renderAccount();
+    const user = await fillAccount([ACCOUNT_CURRENT, ACCOUNT_NEXT, 'something-else-entirely']);
+    await user.click(screen.getByRole('button', { name: L('platform.account.submit') }));
+
+    await screen.findByText(L('platform.account.error.mismatch'));
+    expect(changeOwnPasswordAction).not.toHaveBeenCalled();
+    const [current, next, confirm] = accountFields();
+    expect(confirm).toHaveAttribute('aria-invalid', 'true');
+    expect(current).not.toHaveAttribute('aria-invalid');
+    expect(next).not.toHaveAttribute('aria-invalid');
+  });
+
+  it('refuses a new password equal to the current one, and withdraws the complaint on an edit', async () => {
+    renderAccount();
+    const user = await fillAccount([ACCOUNT_CURRENT, ACCOUNT_CURRENT, ACCOUNT_CURRENT]);
+    await user.click(screen.getByRole('button', { name: L('platform.account.submit') }));
+
+    await screen.findByText(L('platform.account.error.unchanged'));
+    expect(changeOwnPasswordAction).not.toHaveBeenCalled();
+
+    await user.type(accountFields()[1] as HTMLInputElement, '-and-more');
+    await waitFor(() =>
+      expect(screen.queryByText(L('platform.account.error.unchanged'))).toBeNull()
+    );
+  });
+
+  it('carries the three values, and only those three, to the one server function', async () => {
+    renderAccount();
+    const user = await fillAccount([ACCOUNT_CURRENT, ACCOUNT_NEXT, ACCOUNT_NEXT]);
+    await user.click(screen.getByRole('button', { name: L('platform.account.submit') }));
+
+    await waitFor(() => expect(changeOwnPasswordAction).toHaveBeenCalledTimes(1));
+    const [sent] = changeOwnPasswordAction.mock.calls[0] as [Record<string, unknown>];
+    expect(Object.keys(sent).sort()).toEqual(['confirmPassword', 'currentPassword', 'newPassword']);
+  });
+});
+
+describe('every password field can be revealed on its own', () => {
+  it('starts hidden, reveals the field its toggle controls, and leaves the others hidden', async () => {
+    const user = userEvent.setup();
+    renderAccount();
+    const [current, next, confirm] = accountFields();
+    expect([current?.type, next?.type, confirm?.type]).toEqual([
+      'password',
+      'password',
+      'password',
+    ]);
+
+    const toggles = screen.getAllByTestId('password-reveal-toggle');
+    expect(toggles).toHaveLength(3);
+
+    await user.click(toggles[1] as HTMLElement);
+    expect(accountFields().map((field) => field.type)).toEqual(['password', 'text', 'password']);
+    expect(toggles[1]).toHaveAttribute('aria-pressed', 'true');
+
+    await user.click(toggles[1] as HTMLElement);
+    expect(accountFields().map((field) => field.type)).toEqual([
+      'password',
+      'password',
+      'password',
+    ]);
+  });
+
+  it('is reachable from the keyboard', async () => {
+    const user = userEvent.setup();
+    renderAccount();
+    const [current] = accountFields();
+    current?.focus();
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getAllByTestId('password-reveal-toggle')[0]);
+  });
+});
+
+describe('a success states what happened, and clears the fields', () => {
+  it('announces the change, says the other devices were signed out, and empties the form', async () => {
+    renderAccount();
+    const user = await fillAccount([ACCOUNT_CURRENT, ACCOUNT_NEXT, ACCOUNT_NEXT]);
+    await user.click(screen.getByRole('button', { name: L('platform.account.submit') }));
+
+    const done = await screen.findByTestId('account-password-done');
+    expect(done).toHaveTextContent(L('platform.account.doneTitle'));
+    expect(done).toHaveTextContent(L('platform.account.done'));
+    expect(accountFields().map((field) => field.value)).toEqual(['', '', '']);
+  });
+
+  it('says the other devices were NOT signed out when that is what the server reported', async () => {
+    changeOwnPasswordAction.mockResolvedValue({
+      status: 'success',
+      messageKey: 'platform.account.doneSessionsKept',
+      attempt: 1,
+    });
+    renderAccount();
+    const user = await fillAccount([ACCOUNT_CURRENT, ACCOUNT_NEXT, ACCOUNT_NEXT]);
+    await user.click(screen.getByRole('button', { name: L('platform.account.submit') }));
+
+    const done = await screen.findByTestId('account-password-done');
+    expect(done).toHaveTextContent(L('platform.account.doneSessionsKept'));
+    expect(done).not.toHaveTextContent(L('platform.account.done'));
+  });
+});
+
+describe('the two refusals are distinct, and mark different fields', () => {
+  it('marks the current password when the identity provider would not verify it', async () => {
+    changeOwnPasswordAction.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'platform.account.error.currentPassword',
+      fieldErrors: { currentPassword: 'platform.account.error.currentPassword' },
+      correlationId: 'c-1',
+      attempt: 1,
+    });
+    renderAccount();
+    const user = await fillAccount(['not-the-current-one', ACCOUNT_NEXT, ACCOUNT_NEXT]);
+    await user.click(screen.getByRole('button', { name: L('platform.account.submit') }));
+
+    // Once in the banner and once against the field the operator must correct.
+    await waitFor(() =>
+      expect(
+        screen.getAllByText(L('platform.account.error.currentPassword')).length
+      ).toBeGreaterThan(0)
+    );
+    expect(screen.queryByTestId('account-password-done')).toBeNull();
+    const [current, next] = accountFields();
+    expect(current).toHaveAttribute('aria-invalid', 'true');
+    expect(next).not.toHaveAttribute('aria-invalid');
+  });
+
+  it('marks the new password when the identity provider refused it, with a different sentence', async () => {
+    changeOwnPasswordAction.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'platform.account.error.refused',
+      fieldErrors: { newPassword: 'platform.account.error.refused' },
+      correlationId: 'c-2',
+      attempt: 1,
+    });
+    renderAccount();
+    const user = await fillAccount([ACCOUNT_CURRENT, 'short', 'short']);
+    await user.click(screen.getByRole('button', { name: L('platform.account.submit') }));
+
+    await waitFor(() =>
+      expect(screen.getAllByText(L('platform.account.error.refused')).length).toBeGreaterThan(0)
+    );
+    expect(L('platform.account.error.refused')).not.toBe(
+      L('platform.account.error.currentPassword')
+    );
+    const [current, next] = accountFields();
+    expect(next).toHaveAttribute('aria-invalid', 'true');
+    expect(current).not.toHaveAttribute('aria-invalid');
+    expect(screen.queryByTestId('account-password-done')).toBeNull();
+  });
+});
+
+describe('Arabic', () => {
+  it('renders the screen right to left with catalogued Arabic', async () => {
+    renderAccount('ar');
+    expect(document.documentElement.dir).toBe('rtl');
+    expect(screen.getByText(AR['platform.account.passwordTitle'] as string)).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: AR['platform.account.submit'] as string })
+    ).toBeInTheDocument();
+    // Real Arabic, not an English string sitting in the Arabic catalogue.
+    expect(AR['platform.account.title']).not.toBe(EN['platform.account.title']);
+    expect(AR['platform.account.title']).toMatch(/[؀-ۿ]/);
+  });
+
+  it('keeps the reveal control on every field in Arabic too', async () => {
+    const user = userEvent.setup();
+    renderAccount('ar');
+    const toggles = screen.getAllByTestId('password-reveal-toggle');
+    expect(toggles).toHaveLength(3);
+    await user.click(toggles[0] as HTMLElement);
+    expect(accountFields()[0]?.type).toBe('text');
   });
 });

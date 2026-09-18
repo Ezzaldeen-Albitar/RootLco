@@ -2625,7 +2625,7 @@
       "method": "POST",
       "path": "/platform/account/password",
       "public": false,
-      "files": ["tests/backend/p1-32-account-security.test.ts"],
+      "files": ["tests/backend/p1-32-platform-console.test.ts"],
       "referenced": true,
       "derived": ["route", "service", "success", "authorization", "audit"],
       "declared": [

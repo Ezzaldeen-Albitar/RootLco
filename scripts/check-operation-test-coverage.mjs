@@ -2008,7 +2008,7 @@ export const MANIFEST = {
     note: 'token + session + success audit; every failure generic; failure audited',
   },
   'iam.account-password-change': {
-    files: ['tests/backend/p1-32-account-security.test.ts'],
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
     required: [
       'route',
       'service',
