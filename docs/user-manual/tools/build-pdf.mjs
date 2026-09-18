@@ -38,6 +38,7 @@ const ORDER = [
   'README.md',
   '01-access-and-account-recovery.md',
   '02-saas-and-organisation-administration.md',
+  '02a-platform-owner-console.md',
   '03-users-and-permissions.md',
   '04a-customers-vehicles-appointments-reception.md',
   '04b-work-orders-diagnostics-technicians-quality.md',

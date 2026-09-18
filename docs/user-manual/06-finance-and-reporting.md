@@ -1,10 +1,10 @@
 ---
 manual: 'CRM User Manual'
 title: 'Part 6 — Finance and reporting'
-application_version: 'beebc6c28c873f498fe0503161eb53caa107a9e3'
-application_version_short: 'beebc6c2'
+application_version: '5b2c7840da1821f973438d5429665ef4448132f2'
+application_version_short: '5b2c7840'
 environment: 'LOCAL — a private single-machine environment at http://localhost:3100. Not public, not hosted.'
-date: '2026-09-16'
+date: '2026-09-18'
 scope_statement: 'This manual describes behaviour implemented at the commit named above, and nothing else.'
 ---
 
@@ -64,14 +64,21 @@ by the service, and its decision is the one that applies." <!-- permissions.visi
 The screen is titled "Invoice" <!-- invoices.page.title --> ("الفاتورة") and describes itself as
 "What a work order would bill, its invoice once made, the open balance, and a printable copy." <!-- invoices.page.description -->
 
-**There is no invoice list.** The screen opens on the question "Which work order?" <!-- invoices.choose.heading -->
+**There is no invoice list on this screen.** It opens on the question "Which work order?" <!-- invoices.choose.heading -->
 , and it explains why: "An invoice belongs to a work order. Open one from the work-order board, or
 enter its identifier here." <!-- invoices.choose.explain --> A work order named in the address is
-the only way in. There is no tenant-wide or branch-wide register of invoices anywhere in this
-release.
+the only way in. There is no tenant-wide register of invoices anywhere in this release.
 
-One invoice belongs to one work order. Everything on the screen — the preview, the draft, the issue,
-the cancellation, the balance and the printable copy — is about that one work order.
+One invoice on this screen belongs to one work order. Everything on it — the preview, the draft, the
+issue, the cancellation, the balance and the printable copy — is about that one work order.
+
+**One kind of invoice has no work order at all.** A **counter sale** is a sale of parts to somebody
+who left no vehicle with you. It is an invoice like any other — it is issued, settled, printed and
+credited exactly as the rest of this section describes — but it is built on the **Counter sales**
+screen in inventory, because what the person doing it is selling is stock. That screen, its buyer
+search, the rule that an item with no selling price refuses the whole sale, and the fact that an
+issued sale cannot be undone, are **Part 5, §5.23.2**. A branch's counter sales are listed there,
+newest first, which is the one branch-wide list of invoices that does exist.
 
 ### 6.2.2 Open the invoice of a work order
 
@@ -286,23 +293,29 @@ your work requires the figures.
 
 ### 6.2.10 Credit notes, reversals and cancelling after issue
 
-**NOT AVAILABLE**
+**PARTLY AVAILABLE — read which half.**
 
-There is no credit-note screen and no payment-reversal screen in this release. The permission codes
-`sal.credit.manage` and `sal.reversal.approve` exist in the permission catalogue, and **no page
-calls either of them**. Neither code is in the tenant-administrator bundle.
+**A credit note is now raised, by one route only: taking a part back that was sold over the
+counter.** When a customer return is recorded against a counter-sale line, the application raises a
+credit note for it, and the screen states what that does and does not mean: "A part sold over the
+counter raises a credit note when it comes back. The note waits for a second person to approve it,
+and nobody has been refunded until then." <!-- inventory.returns.creditExplain --> The return itself
+is Part 5, §5.23.3. The note is born waiting for approval, and approving it is a second person's act.
 
-Consequences you must plan for:
+**What is still NOT AVAILABLE:**
 
-- An **issued** invoice cannot be cancelled, reversed or credited from any screen. Only a draft can
-  be cancelled (6.2.6).
-- The status "Credited" <!-- invoices.status.credited --> can appear on an invoice, and the
-  "Invoices and payments" report has a "Credit notes" <!-- reports.field.creditNotes --> column, but
-  no screen in this release creates a credit note.
-- A receipt can appear as "Reversed" <!-- payments.status.reversed --> , and no screen reverses one.
+- **There is no screen that creates a credit note against an invoice directly.** An invoice that was
+  not a counter sale, or a counter-sale line nobody brought back, cannot be credited from any screen.
+- **There is no payment-reversal screen.** A receipt can appear as "Reversed" <!-- payments.status.reversed -->
+  , and no screen reverses one.
+- An **issued** invoice still cannot be cancelled from any screen. Only a draft can be cancelled
+  (6.2.6). For a counter sale, the equivalent of cancelling after issue is taking the part back.
+
+The status "Credited" <!-- invoices.status.credited --> can appear on an invoice, and the "Invoices
+and payments" report has a "Credit notes" <!-- reports.field.creditNotes --> column.
 
 There is no ledger, no chart of accounts and no accounting module of any kind. Nothing beyond
-invoices, receipts and allocations exists.
+invoices, credit notes, receipts and allocations exists.
 
 ### 6.2.11 Setting up invoice numbering for a branch
 
@@ -1120,6 +1133,21 @@ rules", [9] "Currencies"; navigation[]; roles_reference[0..4]; cross_cutting.pri
 .correlation_id_for_support, .stale_version_and_conflict, .notifications_audit_documents;
 known_limitations_for_operators items 1,2,3,6,7,8,9,13,14; screenshots_available; not_found items 3,6,8,9.
 Environment: scratchpad/handover-map-A.json — environment.kind, .urls.
+REVISION 2026-09-18 — sections 6.2.1 and 6.2.10 were re-read and rewritten at develop
+5b2c7840da1821f973438d5429665ef4448132f2. Read for this revision:
+  apps/web/src/features/billing/api.ts — listCounterSales (sal.counter-sale-list) and
+    createCounterSale (sal.counter-sale-create); issueInvoice and cancelInvoice are the same
+    functions a work-order invoice uses
+  apps/web/src/lib/contracts/billing-contract.ts — SALE_KINDS = work_order | counter_sale
+  apps/web/src/features/inventory/components/{CounterSalesScreen,CustomerReturnsScreen}.tsx
+  apps/api/src/modules/inventory/application/inventory-sales-return-service.ts — a return against a
+    counter-sale line raises a PENDING credit note through sal.request_return_credit_note;
+    sal.credit-note-approve still requires a second person; a return against a part issue raises
+    no credit note
+  No web screen calls sal.credit-note-create against an invoice directly, and none calls
+    sal.credit-note-approve.
+Everything else in this part is carried unchanged from the reading below.
+
 Message catalogue at origin/develop beebc6c28c873f498fe0503161eb53caa107a9e3,
 apps/web/src/i18n/messages/en.json (and ar.json for the Arabic labels quoted):
 keys invoices.* (all), payments.* (all), reports.* (all), audit.* (all), overview.*, nav.*, state.*,

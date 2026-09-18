@@ -1,18 +1,19 @@
 ---
 manual: 'CRM User Manual'
 title: 'Part 3 — Users and permissions'
-application_version: 'beebc6c28c873f498fe0503161eb53caa107a9e3'
-application_version_short: 'beebc6c2'
+application_version: '5b2c7840da1821f973438d5429665ef4448132f2'
+application_version_short: '5b2c7840'
 environment: 'LOCAL — a private single-machine environment at http://localhost:3100. Not public, not hosted.'
-date: '2026-09-16'
+date: '2026-09-18'
 scope_statement: 'This manual describes behaviour implemented at the commit named above, and nothing else.'
 ---
 
 # Part 3 — Users and permissions
 
 This part explains how a person gets an account, what that account may do, and where their access
-stops. It also says plainly which of those acts you can perform on a screen and which ones only
-exist as a service operation your technical operator runs for you.
+stops. At this version every act in it — inviting, activating, granting a role, choosing the places
+that role applies in, taking it away, locking, archiving and signing somebody out — is on a screen.
+Where something is still a service operation, the section says so.
 
 Every screen name, button, field and message quoted here is the application's own English wording.
 The catalogue key is given in a hidden comment beside the first use of each one.
@@ -393,34 +394,62 @@ reach.
 Use it only when that is exactly what you want — for a workspace-wide administrator, for example.
 For anybody whose work belongs to one site, invite them with **no role**, then use 3.8.2.
 
-### 3.8.2 As a separate, scoped grant — OPERATOR PROCEDURE
+### 3.8.2 As a separate grant, with the places it applies in — IMPLEMENTED (UI)
 
-**Label:** Grant a role to an existing account, limited to a company, a branch or a department.
+**Label:** **Roles and access** <!-- users.access.title --> — _"The roles this person holds, and
+where each one applies."_ <!-- users.access.description -->
 
-**Who:** an account holding `iam.grant.manage`. In practice your technical operator performs it,
-because there is no screen.
+**Who:** an account holding `iam.grant.manage`. You also need to be able to see the list of roles:
+the screen says so — _"You can grant roles only if you can also see the list of roles."_
+<!-- users.access.needsRoleRead --> Company, branch and department names appear only if you may read
 
-**Where:** no screen. The service operation is `POST /iam/grants` — _Grant a role to a user,
-optionally scoped to companies or branches._ Related operations: `DELETE /iam/grants/{grantId}`
-(_Revoke a role grant with immediate effect_), `GET`, `POST` and `DELETE` on
-`/iam/grants/{grantId}/scopes` (_Attach a company, branch, or department scope to a grant_ and
-_Remove a scope from a grant_).
+each of those; what you may not read shows as **"Not visible to you"** <!-- users.access.unnamed -->
+and a role you may not read as **"A role you cannot see"** <!-- users.access.unnamedRole --> .
 
-**Steps (what you ask for, and what your operator supplies):**
+**Where:** Sidebar → **Administration** → **Users** → choose the person → **Roles and access**, at
+`/{language}/administration/users/{account}`.
 
-1. The **account** (the person, already invited and activated).
-2. The **role**.
-3. Either _no scope_ — meaning the whole workspace — or one or more **scope rows**, each of exactly
-   one of these shapes:
-   - **company scope** — the company reference only;
-   - **branch scope** — the company reference _and_ the branch reference;
-   - **department scope** — the company, the branch _and_ the department reference.
-4. Optionally an end date, after which the grant stops applying.
+**Steps**
 
-**Result:** the person's resolved access changes on their next request. They can confirm it
-themselves on **Your profile** under **Where you can work** — **Companies** <!-- profile.scope.companies -->
-, **Branches** <!-- profile.scope.branches --> — or, when there is no limit, **Every company and
-branch in this workspace.** <!-- profile.scope.unrestricted -->
+1. Choose **Grant a role** <!-- users.access.grant --> .
+2. Choose the **Role** <!-- users.access.role --> . Leaving it unchosen is refused with **"Choose a
+   role."**
+3. Choose **Where the role applies** <!-- users.access.where --> . There are four ways, and the
+   screen explains each as you pick it:
+
+| Choice                   | What it means                                                        |
+| ------------------------ | -------------------------------------------------------------------- |
+| **Whole organisation**   | _"Everywhere, including companies and branches added later."_        |
+| **Selected companies**   | _"Every branch of each company you select."_                         |
+| **Selected branches**    | _"One branch, or several. The role applies in each one you select."_ |
+| **Selected departments** | _"Only the departments you select, inside their branches."_          |
+
+4. Select the places themselves from **Companies**, **Branches** or **Departments**. As you do, the
+   screen states in one sentence what you are about to create — for example _"The role will apply in
+   each of the {count} selected branches, and nowhere else."_ <!-- users.access.scope.summaryBranches -->
+   , or _"The role applies across the whole organisation."_ Selecting nothing shows **"Nothing is
+   selected yet."** and is refused with **"Choose at least one place, or choose the whole
+   organisation."** <!-- users.access.scope.pickOne -->
+
+**Result:** **"The role was granted."** <!-- users.access.granted --> The grant appears in the list
+with **Since {date}** and, where an end date was set, **until {date}**. Beneath it the screen states
+where it applies — **"This role applies in one place only:"** <!-- users.access.appliesInOne --> or
+**"This role applies in each of these places:"** <!-- users.access.appliesInSeveral --> — naming
+each company, branch or department. The person's resolved access changes on their next request, and
+they can confirm it themselves on **Your profile** under **Where you can work** —
+**Companies** <!-- profile.scope.companies --> , **Branches** <!-- profile.scope.branches --> — or,
+when there is no limit, **Every company and branch in this workspace.**
+<!-- profile.scope.unrestricted -->
+
+**Adding or removing a place afterwards.** **Add a place** <!-- users.access.addScope --> adds one
+to an existing grant — **"The place was added."** **Remove** <!-- users.access.removeScope --> takes
+one away, confirmed with **"Stop this role applying here?"** A grant must apply somewhere, so its
+last place cannot be removed: **"A role must apply somewhere, so its only place cannot be removed.
+Add another place first."** <!-- users.access.lastScope -->
+
+**The same acts as service calls**, for anyone reading the interface from the outside: `POST
+/api/v1/iam/grants`, `POST` and `DELETE` on `/api/v1/iam/grants/{grantId}/scopes`, and `DELETE
+/api/v1/iam/grants/{grantId}`.
 
 **One branch versus several:** one grant may carry **several scope rows**, up to 50. Two branch rows
 on one grant is how a person works at two sites with the same role. It is _not_ the same as one
@@ -447,22 +476,36 @@ reference is wrong _or_ your own scope does not cover it, and check both.
 
 **Screenshot:** no screenshot available at this version.
 
-### 3.8.3 Changing scope from a screen — NOT AVAILABLE
+### 3.8.3 Changing where a role applies, from a screen — IMPLEMENTED (UI)
 
-There is no scope editor anywhere in the interface. Scope rows are added and removed only by the
-operations in 3.8.2.
+The **Roles and access** screen described in 3.8.2 is the scope editor. **Add a place** and
+**Remove** are on each grant. Where the places cannot be read at all, the screen says so rather than
+showing an empty list: **"The places this role applies in could not be shown."**
+<!-- users.access.scopesUnavailable -->
 
 ---
 
-## 3.9 Revoke a role from a person — OPERATOR PROCEDURE
+## 3.9 Take a role away from a person — IMPLEMENTED (UI)
 
-There is no revoke button on the Users screen. Revocation is `DELETE /iam/grants/{grantId}`,
-described as _Revoke a role grant with immediate effect_, and the last-holder protection in 3.8.2
-applies to it.
+**Label:** **Take the role away** <!-- users.access.revoke --> , on the **Roles and access** screen.
 
-If what you actually need is to stop someone signing in **now**, do not wait for a grant to be
-revoked — lock the account (3.10) and end their sessions (3.12). Both are on the screen and both
-take effect immediately.
+**Who:** an account holding `iam.grant.manage`.
+
+**Steps:** choose **Take the role away** beside the grant and confirm — **"Take this role away?"**
+<!-- users.access.confirmRevoke -->
+
+**Result:** **"The role was taken away."** <!-- users.access.revoked --> It stops applying
+immediately.
+
+**Restrictions.** Two, and the screen states both: **"You cannot take a role away from yourself, and
+the last person who can manage people and roles must keep theirs."**
+<!-- users.access.revokeLimits --> The second is the last-holder protection — a workspace that nobody
+
+can administer is not a state this application will let you create.
+
+If what you actually need is to stop someone signing in **now**, do not start with a role — lock the
+account (3.10) and end their sessions (3.12). Both are on the screen and both take effect
+immediately.
 
 ---
 
@@ -549,22 +592,35 @@ permissions is missing.
 
 **Screenshot:** no screenshot available at this version.
 
-### 3.12.1 Seeing a person's roles and sessions — NOT AVAILABLE
+### 3.12.1 Seeing a person's roles and sessions — IMPLEMENTED (UI)
 
-The Users screen is a list with row actions. There is no detail panel: you cannot open a person and
-read which roles they hold, which scopes those grants carry, or which sessions are live. The words
-**User**, **Roles granted**, **Active sessions**, **No roles are granted to this account.** and **No
-active sessions.** exist in the application's wording catalogue <!-- users.detail.title, users.detail.grants, users.detail.sessions, users.detail.noGrants, users.detail.noSessions -->
-but no screen renders them at this version.
+**Label:** **User** <!-- users.detail.title --> , with **Roles granted** <!-- users.detail.grants -->
+and **Active sessions** <!-- users.detail.sessions --> .
 
-Two honest ways to answer "what does this person have":
+**Who:** anyone holding `iam.user.read` may open the page. Each block below is then decided by its
+own permission: role names and the places a grant applies in need role-read; company, branch and
+department names need the corresponding read permission for each.
 
-1. Ask them to open **Your profile** and read **Where you can work** and **What you may do** to you.
-2. Ask your technical operator to read the grant and session operations directly.
+**Where:** Sidebar → **Administration** → **Users** → choose the person.
+
+**Steps:** open the person's row. The page shows their account facts, the roles they hold and where
+each applies (3.8.2), and their live sessions.
+
+**Result:** you can answer "what does this person have" from the screen. Where there is nothing to
+show: **"No roles are granted to this account."** <!-- users.detail.noGrants --> and **"No active
+sessions."** <!-- users.detail.noSessions -->
+
+**Restrictions:** anything your own permissions do not cover is named as withheld rather than
+omitted silently — **"Not visible to you"** for a place, **"A role you cannot see"** for a role.
+
+**Screenshot:** no screenshot available at this version.
+
+A person can also answer the question for themselves: **Your profile** shows **Where you can work**
+and **What you may do**.
 
 ---
 
-## 3.13 An employee record is not a login account — OPERATOR PROCEDURE
+## 3.13 An employee record is not a login account — IMPLEMENTED (UI)
 
 Two different things share the word "employee".
 
@@ -576,9 +632,10 @@ Two different things share the word "employee".
 
 Three consequences you will meet:
 
-1. **There is no employee screen.** Adding an employee to a branch register, and retiring or
-   reinstating one, are service operations (`/org/employees`, `/org/employees/{id}/status`) with no
-   page. Your technical operator performs them. The same is true of departments.
+1. **There is an employee screen, and it is not this one.** Adding someone to a branch's employee
+   register, and deactivating or reactivating them, is done on **Administration** → **Employees** —
+   Part 2, §2.7. Departments have their own screen too (Part 2, §2.6). Neither gives anybody a
+   login; that is what this part is about.
 2. **The name on a handover is frozen.** The employee's name is stamped onto the delivery record
    when it is made and does not change afterwards, so the customer's copy stays accurate even if the
    record is renamed later. The same principle applies at reception: **The receiving employee is the
@@ -688,12 +745,22 @@ Three further facts about export belong here because they are access facts, not 
   who did it, the branch, the period and the counts — it does not keep the exported content, so it
   cannot later prove exactly which bytes left the system.
 
-**Two other exclusions worth naming:**
+**Three other exclusions worth naming:**
 
 - The bundle holds no notification permission, so the **Notifications** entry is hidden from a
   freshly provisioned administrator.
-- The bundle cannot change companies, branches or organisation settings, so **Numbering rules**,
-  **Taxes**, **Currencies** and **System settings** are hidden from it as well.
+- The bundle cannot change organisation **settings**, so **Numbering rules**, **Taxes**,
+  **Currencies** and **System settings** are hidden from it, and so is the control that activates or
+  deactivates a branch (Part 2, §2.5.3).
+- The bundle holds no appointment permission, so **Appointments** is hidden from it (Part 4A).
+
+**What it does now hold, and did not before.** At this version the bundle carries company and branch
+management, department and employee read and management, and the inventory codes an organisation
+needs to set up and run stock — so a freshly provisioned administrator can create companies,
+branches, departments and employees, and delegate the workshop and inventory work to other people,
+without asking anyone outside the organisation. Read Part 2, §2.11 for the screen-by-screen table,
+including the fact that an organisation provisioned before a code existed keeps the set it was
+given.
 
 ---
 
@@ -776,18 +843,22 @@ Riyadh site (example)`, and confirms. Each row becomes **Active**.
 If she tries this before Step 4 she gets **The invitation has not been accepted yet, so the account
 cannot be activated.** — the correction is to wait, not to retry.
 
-### Step 6 — the scoped grants (3.8.2) — OPERATOR PROCEDURE
+### Step 6 — the grants and where each applies (3.8.2) — IMPLEMENTED (UI)
 
-There is no screen for this step. Huda asks the technical operator for three grants:
+Huda does this herself. For each person she opens **Administration** → **Users** → the person →
+**Roles and access** → **Grant a role**, chooses the role, chooses **Selected branches**, and ticks
+the branches:
 
-| Person (example)         | Role                        | Scope rows                                                    |
-| ------------------------ | --------------------------- | ------------------------------------------------------------- |
-| Sami Al-Khatib (example) | Branch supervisor (example) | one **branch** row: the company + Riyadh — Exit 5 (example)   |
-| Rana Al-Dosari (example) | Reception desk (example)    | one **branch** row: the company + Jeddah — Corniche (example) |
-| Tariq Al-Farsi (example) | Reporting reader (example)  | **two branch rows**: one per branch                           |
+| Person (example)         | Role                        | Where it applies                                    |
+| ------------------------ | --------------------------- | --------------------------------------------------- |
+| Sami Al-Khatib (example) | Branch supervisor (example) | **Selected branches** — Riyadh — Exit 5 (example)   |
+| Rana Al-Dosari (example) | Reception desk (example)    | **Selected branches** — Jeddah — Corniche (example) |
+| Tariq Al-Farsi (example) | Reporting reader (example)  | **Selected branches** — both                        |
 
-Tariq gets two branch rows rather than one company row on purpose: a company row would also cover
-any third branch opened next year, which is a decision nobody has taken.
+Tariq gets two branches rather than **Selected companies** on purpose: a company would also cover
+any third branch opened next year, which is a decision nobody has taken. The screen states the
+difference as you choose — _"Every branch of each company you select."_ against _"One branch, or
+several. The role applies in each one you select."_
 
 Because Huda's own authority is workspace-wide, every one of these scopes is inside it and none is
 refused. A branch-limited administrator could have issued Sami's grant but not Tariq's, and could
@@ -820,37 +891,55 @@ administrator changes these.**
 - Stop them signing in, reversibly: **Lock account** (3.10).
 - Stop them permanently: **Archive account** (3.11) — and read the warning, because a new account
   would be needed to restore access.
-- Take the role away but keep the account: ask your technical operator to revoke the grant (3.9).
+- Take the role away but keep the account: **Take the role away** on their **Roles and access**
+  screen (3.9).
 
 ---
 
 ## 3.18 What is not available in this area — a single list
 
-| Thing                                                       | Label             | Note                                                                                                                                                                                                                      |
-| ----------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Company, branch, department or employee screens             | **NOT AVAILABLE** | Provisioning and service operations only. Creating a company or a branch is not even a service operation an administrator can call.                                                                                       |
-| A user detail panel (roles, scopes, sessions of one person) | **NOT AVAILABLE** | 3.12.1. Wording exists in the catalogue; no screen renders it.                                                                                                                                                            |
-| Granting or revoking a role after invitation, from a screen | **NOT AVAILABLE** | Operation only, 3.8.2 and 3.9.                                                                                                                                                                                            |
-| Any scope editor                                            | **NOT AVAILABLE** | Operation only, 3.8.2.                                                                                                                                                                                                    |
-| Renaming a role                                             | **NOT AVAILABLE** | 3.7.4.                                                                                                                                                                                                                    |
-| Deleting a role or a user                                   | **NOT AVAILABLE** | Archiving is the only ending.                                                                                                                                                                                             |
-| Self-service profile changes beyond display name            | **NOT AVAILABLE** | **Only an administrator can change these details** <!-- profile.readOnly --> / **The service has no self-service update for a profile. Ask an administrator to make the change for you.** <!-- profile.readOnlyDetail --> |
-| Exporting the audit log                                     | **NOT AVAILABLE** | **The service publishes no export operation for audit records, so none is offered here.**                                                                                                                                 |
-| Report export for a new administrator                       | Permission-gated  | Deliberate, 3.15.                                                                                                                                                                                                         |
-| Notifications surface                                       | **DEFERRED**      | The navigation entry is defined; its screens are not built. **This module is defined but its screens are not built yet.** <!-- nav.plannedHint -->                                                                        |
+| Thing                                                          | Label                | Note                                                                                                                                                                                                                      |
+| -------------------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Company, branch, department and employee screens               | **IMPLEMENTED (UI)** | All four now exist. See Part 2, §2.4 to §2.7.                                                                                                                                                                             |
+| A user detail panel (roles, places, sessions of one person)    | **IMPLEMENTED (UI)** | 3.12.1.                                                                                                                                                                                                                   |
+| Granting or taking away a role after invitation, from a screen | **IMPLEMENTED (UI)** | 3.8.2 and 3.9.                                                                                                                                                                                                            |
+| Choosing and changing where a role applies                     | **IMPLEMENTED (UI)** | 3.8.2 and 3.8.3.                                                                                                                                                                                                          |
+| Renaming a role                                                | **NOT AVAILABLE**    | 3.7.4.                                                                                                                                                                                                                    |
+| Deleting a role or a user                                      | **NOT AVAILABLE**    | Archiving is the only ending.                                                                                                                                                                                             |
+| Self-service profile changes beyond display name               | **NOT AVAILABLE**    | **Only an administrator can change these details** <!-- profile.readOnly --> / **The service has no self-service update for a profile. Ask an administrator to make the change for you.** <!-- profile.readOnlyDetail --> |
+| Exporting the audit log                                        | **NOT AVAILABLE**    | **The service publishes no export operation for audit records, so none is offered here.**                                                                                                                                 |
+| Report export for a new administrator                          | Permission-gated     | Deliberate, 3.15.                                                                                                                                                                                                         |
+| Notifications surface                                          | **DEFERRED**         | The navigation entry is defined; its screens are not built. **This module is defined but its screens are not built yet.** <!-- nav.plannedHint -->                                                                        |
 
 **NOT ESTABLISHED.** Two points I could not settle from the records and the code, and which you
 should confirm with your technical operator rather than assume:
 
 1. Whether a grant that carries an end date produces any visible warning to the person or the
    administrator as that date approaches. I found no such message.
-2. What an administrator sees in the interface when the last-holder protection refuses a revocation.
-   The rule and its wording exist in the service; because there is no revoke button, I could not
-   establish which of the standard refusal messages an operator would meet.
+2. Whether an administrator has walked the **Roles and access** screen in a browser at this commit.
+   Its labels, its four ways of choosing where a role applies, and its two protections are read from
+   the code; an authenticated walk is recorded as still owed in
+   [`../product/owner-directive-2026-09-16/capability-status.md`](../product/owner-directive-2026-09-16/capability-status.md),
+   and this part does not claim one happened.
 
 ---
 
 <!--
+REVISION 2026-09-18 — sections 3.8.2, 3.8.3, 3.9, 3.12.1, 3.13, 3.15, 3.17 step 6, "If somebody
+leaves" and 3.18 were re-read and rewritten at develop
+5b2c7840da1821f973438d5429665ef4448132f2. Re-read for this revision:
+  apps/web/src/app/[locale]/(dashboard)/administration/users/[userId]/page.tsx — gated on
+    iam.user.read; grant scopes and role names on iam.role.read; company, branch and department
+    names on their own read codes
+  apps/web/src/features/administration/users/components/UserAccessScreen.tsx
+  apps/web/src/features/administration/users/{actions.ts,api.ts,types.ts} — POST /api/v1/iam/grants
+    (iam.grant-issue), POST and DELETE on /api/v1/iam/grants/{grantId}/scopes
+    (iam.grant-scope-add, iam.grant-scope-remove), DELETE /api/v1/iam/grants/{grantId}
+    (iam.grant-revoke)
+  apps/api/src/modules/iam/domain/bootstrap-roles.ts — the tenant administration bundle at this head
+  New message keys quoted: users.access.*, users.detail.* (now rendered)
+Everything else in this part is carried unchanged from the reading below.
+
 Sources used for Part 3 (all read at origin/develop beebc6c28c873f498fe0503161eb53caa107a9e3):
 
 Wording catalogue — apps/web/src/i18n/messages/en.json, keys: nav.administration, nav.users,

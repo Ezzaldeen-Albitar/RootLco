@@ -1,10 +1,10 @@
 ---
 manual: 'CRM User Manual'
 title: 'Part 4B — The workshop journey, the floor: work orders, diagnostics, technicians, quality'
-application_version: 'beebc6c28c873f498fe0503161eb53caa107a9e3'
-application_version_short: 'beebc6c2'
+application_version: '5b2c7840da1821f973438d5429665ef4448132f2'
+application_version_short: '5b2c7840'
 environment: 'LOCAL — a private single-machine environment at http://localhost:3100. Not public, not hosted.'
-date: '2026-09-16'
+date: '2026-09-18'
 scope_statement: 'This manual describes behaviour implemented at the commit named above, and nothing else.'
 ---
 
@@ -164,7 +164,14 @@ described as "The work orders of this branch, most recently opened first." <!-- 
    , **Ordinary** <!-- workOrders.kind.ordinary --> or **Rework** <!-- workOrders.kind.rework --> —
    and by **State code** <!-- workOrders.queue.stateFilter --> , whose help text is "The state code
    as your workshop defines it. An unknown code returns nothing rather than an error." <!-- workOrders.queue.stateFilterHelp -->
-4. Press **Show work orders** <!-- workOrders.queue.show --> .
+4. To find one particular work order, use either of the two boxes added at this version:
+   - **Work order number** <!-- workOrders.queue.numberFilter --> — "The exact number." <!-- workOrders.queue.numberFilterHelp -->
+     This is how you answer a customer who is holding their copy and reading the number off it.
+   - **Search** <!-- workOrders.queue.searchFilter --> — "Part of the number, a customer name, a plate
+     or a VIN." <!-- workOrders.queue.searchFilterHelp --> At least two characters: "Type at least two
+     characters." <!-- workOrders.queue.searchTooShort --> Arabic-Indic digits are treated the same as
+     ASCII ones, so a number or a plate typed either way matches.
+5. Press **Show work orders** <!-- workOrders.queue.show --> .
 
 **Result** · **Work orders for the chosen branch** <!-- workOrders.queue.resultsHeading --> with the
 columns **Number** <!-- workOrders.queue.column.reference --> , **State**, **Kind**, **Vehicle**,
@@ -1191,6 +1198,13 @@ Inventory and brief (read, not quoted):
   screenshots_available (29 entries — none for this part), not_found items 1, 2, 5, 7
 - scratchpad/handover-map-A.json — environment.urls (web http://localhost:3100), environment.kind
   (LOCAL only)
+
+REVISION 2026-09-18 — the work-order board filters were re-read at develop
+5b2c7840da1821f973438d5429665ef4448132f2 (apps/web/src/features/work-orders/components/
+WorkOrderQueueScreen.tsx, work-orders-contract.ts and api.ts), where a work-order number filter and
+a free-text search over number, customer name, plate and VIN were added; the new message keys are
+workOrders.queue.numberFilter/.numberFilterHelp/.searchFilter/.searchFilterHelp/.searchTooShort.
+Everything else in this part is carried unchanged from the reading below.
 
 Repository at origin/develop beebc6c28c873f498fe0503161eb53caa107a9e3 (read via git show,
 C:/Users/Ezzaldeen/wt-p9):

@@ -1,10 +1,10 @@
 ---
 manual: 'CRM User Manual'
 title: 'Part 4C — The workshop journey, commercial: services, pricing, quotations, approvals, execution, parts'
-application_version: 'beebc6c28c873f498fe0503161eb53caa107a9e3'
-application_version_short: 'beebc6c2'
+application_version: '5b2c7840da1821f973438d5429665ef4448132f2'
+application_version_short: '5b2c7840'
 environment: 'LOCAL — a private single-machine environment at http://localhost:3100. Not public, not hosted.'
-date: '2026-09-16'
+date: '2026-09-18'
 scope_statement: 'This manual describes behaviour implemented at the commit named above, and nothing else.'
 ---
 
@@ -1047,19 +1047,30 @@ and **Quality and closure** <!-- workOrders.detail.closureLink --> .
 
 ## 4C.6 Parts of a work order — IMPLEMENTED (UI)
 
-### 4C.6.1 Before you start: stock has to exist — OPERATOR PROCEDURE
+### 4C.6.1 Before you start: two things must be true — IMPLEMENTED (UI)
 
-You cannot issue a part that the system does not believe is on the shelf, and stock cannot be
-conjured. Stock comes into existence in exactly two ways: an **approved opening-stock batch**, or a
-stock movement. Opening stock is **maker–checker**: the person who counted a batch may not approve
-it, and the screen refuses in those words — "The server refused this approval: the person who
-counted a batch may not approve it. A second person with the approval permission must do so."
+**First, the stock has to exist.** You cannot issue a part the system does not believe is on the
+shelf. Stock comes into existence through an **approved opening-stock batch**, a **posted goods
+receipt**, a **transfer received**, an **approved adjustment** that adds to stock, or a part **taken
+back**. Opening stock is maker–checker: the person who counted a batch may not approve it, and the
+screen refuses in those words — "The server refused this approval: the person who counted a batch
+may not approve it. A second person with the approval permission must do so."
 
 A cell that has been counted once cannot be counted again: "This item at this location already has
 an approved opening count, so the batch was not approved and no stock moved. A wrong quantity is
 corrected with an approved stock adjustment, never by counting the opening balance a second time."
+That correction route exists — see Part 5, §5.20.
 
-Items, categories, units and stock locations are created on **Inventory setup**. All of this is part 5. It is stated here because it is the commonest reason a first attempt to issue a part is refused.
+**Second, the job has to be allowed to use the part.** At this version a reservation or an issue
+against a work order is measured against an approved **material requirement** for the service line
+concerned, and the parts screen says so before you try: "Choose what this job is allowed to use
+before reserving or issuing. Nothing can be drawn on a job without it." <!-- inventory.parts.draw.needRequirement -->
+Asking for material, having it approved by a different person, asking for extra, and every refusal
+you can meet, are **Part 5, §5.26**. Read that section before the first attempt on a new job; it is
+now the commonest reason a first attempt to issue a part is refused.
+
+Items, categories, units and stock locations are created on **Inventory setup**. All of that is Part
+5 as well.
 
 ### 4C.6.2 Reserve stock for a work order — IMPLEMENTED (UI)
 
@@ -1380,6 +1391,13 @@ lists, approval-limit truncation, no company/branch/department/employee screen, 
 only from an authorized visit, opening stock maker-checker, provisional brand, no hosted execution;
 screenshots_available[] (28 PNGs, none of a screen in this part); not_found[] items 2, 3 and 8.
 Environment: scratchpad/handover-map-A.json — environment.kind (Local is the only environment).
+REVISION 2026-09-18 — section 4C.6.1 was rewritten at develop
+5b2c7840da1821f973438d5429665ef4448132f2, where a draw against a work order became measurable
+against an approved material requirement (apps/web/src/features/inventory/components/
+MaterialRequirementsPanel.tsx and PartsScreen.tsx; message keys inventory.parts.draw.* and
+inventory.material.*). The rest of 4C.6 is carried unchanged from the reading below; the material
+chapter itself is Part 5, §5.26.
+
 Repository at origin/develop beebc6c28c873f498fe0503161eb53caa107a9e3, read with git show:
   apps/web/src/i18n/messages/en.json — services.* :2335-2441; pricing.* :2442-2599;
   quotations.* :2601-2796; inventory.reservations/reserve.* :2870-2910;
