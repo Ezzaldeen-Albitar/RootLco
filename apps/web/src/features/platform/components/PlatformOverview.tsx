@@ -1,10 +1,11 @@
 import Link from 'next/link';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
-import { formatDateTime, formatInteger, intlLocale } from '@/lib/format';
+import { formatMessage, translate, translateDynamic } from '@/i18n/get-messages';
+import type { CursorPage, ReadState } from '@/lib/api/read-operation';
+import { formatDate, formatDateTime, formatInteger, intlLocale } from '@/lib/format';
 import { formatMoney } from '@/lib/money';
-import type { PlatformStatistics } from '../types';
+import { expiringOrganizations, type OrganizationRow, type PlatformStatistics } from '../types';
 import { Section, SimpleTable, Cell } from './ui';
 
 /**
@@ -49,11 +50,22 @@ export function PlatformOverview({
   messages,
   statistics,
   canReadOrganizations,
+  organizations,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly statistics: PlatformStatistics;
   readonly canReadOrganizations: boolean;
+  /**
+   * One page of organisations, from which the expiring ones are named.
+   *
+   * `null` means the operator holds no organisation-read code, so the page was
+   * never asked for — which is a different sentence from "no subscription is
+   * expiring", and the section says which of the two it is. A failed read is
+   * likewise reported as a failure: the tiles above already carry the counts,
+   * and drawing an empty table beneath them would contradict them in silence.
+   */
+  readonly organizations: ReadState<CursorPage<OrganizationRow>> | null;
 }) {
   const t = (key: string) => translateDynamic(messages, key);
   const count = (status: string) =>
@@ -64,6 +76,15 @@ export function PlatformOverview({
       : formatInteger(value, locale);
   const money = (amount: string, currency: string) =>
     formatMoney({ amount, currency }, intlLocale(locale));
+  /*
+   * Decided against the SERVER's instant, never this machine's clock: a console
+   * open on a laptop whose time is wrong must not report an organisation as
+   * expired a day early, or hide one that expired yesterday.
+   */
+  const expiring =
+    organizations !== null && organizations.status === 'ok'
+      ? expiringOrganizations(organizations.data.items, statistics.asOf)
+      : null;
 
   const tiles: readonly { key: string; label: string; value: number }[] = [
     { key: 'active', label: t('platform.overview.activeOrganizations'), value: count('active') },
@@ -148,6 +169,72 @@ export function PlatformOverview({
             </tr>
           ))}
         </SimpleTable>
+      </Section>
+
+      <Section title={t('platform.overview.expiringOrganizations')}>
+        {organizations === null ? (
+          <p className="text-body text-text-muted">{t('platform.overview.expiringNotOffered')}</p>
+        ) : organizations.status !== 'ok' ? (
+          <p role="alert" className="text-body text-error">
+            {t('platform.overview.expiringUnavailable')}
+            {organizations.correlationId ? (
+              <>
+                {' '}
+                <span className="text-caption text-text-muted">
+                  {translate(messages, 'state.correlationId')}{' '}
+                  <code className="font-mono" dir="ltr">
+                    {organizations.correlationId}
+                  </code>
+                </span>
+              </>
+            ) : null}
+          </p>
+        ) : (
+          <>
+            <SimpleTable
+              caption={t('platform.overview.expiringOrganizations')}
+              headers={[
+                t('platform.overview.organization'),
+                t('platform.overview.plan'),
+                t('platform.overview.endsOn'),
+                t('platform.overview.remaining'),
+              ]}
+              empty={expiring?.length === 0 ? t('platform.overview.noExpiring') : null}
+            >
+              {(expiring ?? []).map((row) => (
+                <tr key={row.id} className="border-t border-border-subtle">
+                  <Cell>
+                    {canReadOrganizations ? (
+                      <Link
+                        href={`/${locale}/platform/organizations/${row.id}`}
+                        className="font-medium text-text-primary underline"
+                      >
+                        {row.displayName}
+                      </Link>
+                    ) : (
+                      <span className="font-medium text-text-primary">{row.displayName}</span>
+                    )}
+                  </Cell>
+                  <Cell>{row.planCode ?? t('platform.overview.noPlan')}</Cell>
+                  <Cell>{formatDate(row.endsOn, locale)}</Cell>
+                  <Cell>
+                    {row.daysRemaining < 0
+                      ? t('platform.overview.alreadyEnded')
+                      : formatMessage(t('platform.overview.daysRemaining'), {
+                          days: formatInteger(row.daysRemaining, locale),
+                        })}
+                  </Cell>
+                </tr>
+              ))}
+            </SimpleTable>
+            <p className="mt-2 text-caption text-text-muted">
+              {formatMessage(t('platform.overview.expiringScope'), {
+                count: formatInteger(organizations.data.items.length, locale),
+              })}
+              {organizations.data.hasMore ? ` ${t('platform.overview.expiringMore')}` : null}
+            </p>
+          </>
+        )}
       </Section>
 
       <Section title={t('platform.overview.capacityAlerts')}>

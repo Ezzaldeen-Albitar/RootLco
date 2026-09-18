@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import { PageBody, PageHeader } from '@/components/shell/PageHeader';
 import { PermissionDeniedState } from '@/components/states/States';
-import { readStatistics } from '@/features/platform/api';
+import { readOrganizationsPage, readStatistics } from '@/features/platform/api';
 import { requirePlatformSession } from '@/features/platform/api/session';
 import { PlatformOverview } from '@/features/platform/components/PlatformOverview';
 import { ReadFailure } from '@/features/platform/components/ui';
@@ -45,6 +45,18 @@ export default async function PlatformOverviewPage({
   }
 
   const statistics = await readStatistics();
+  /*
+   * The organisations behind the expiry TILES, read only by an operator who
+   * holds the organisation code — the tiles publish counts, and naming the
+   * organisations those counts are about needs `platform.organization.read`.
+   * An operator without it keeps the counts and is told the list is not theirs,
+   * rather than shown an empty one.
+   */
+  const canReadOrganizations = holds(
+    session.platformPermissions,
+    PLATFORM_PERMISSIONS.organizationRead
+  );
+  const organizations = canReadOrganizations ? await readOrganizationsPage() : null;
 
   return (
     <>
@@ -61,10 +73,8 @@ export default async function PlatformOverviewPage({
             locale={locale}
             messages={messages}
             statistics={statistics.data}
-            canReadOrganizations={holds(
-              session.platformPermissions,
-              PLATFORM_PERMISSIONS.organizationRead
-            )}
+            canReadOrganizations={canReadOrganizations}
+            organizations={organizations}
           />
         ) : (
           <ReadFailure

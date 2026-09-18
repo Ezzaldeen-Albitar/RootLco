@@ -88,6 +88,9 @@ const { getMessages } = await import('@/i18n/get-messages');
 
 const messages = getMessages('en');
 const TENANT = '11111111-1111-4111-8111-111111111111';
+/** Two more organisations, for the expiry window cases on the overview. */
+const OTHER_TENANT = '11111111-1111-4111-8111-111111111112';
+const THIRD_TENANT = '11111111-1111-4111-8111-111111111113';
 const SUBSCRIPTION = '22222222-2222-4222-8222-222222222222';
 const PLAN = '33333333-3333-4333-8333-333333333333';
 const CHARGE = '44444444-4444-4444-8444-444444444444';
@@ -820,9 +823,13 @@ describe('the overview', () => {
         messages={messages}
         statistics={statistics}
         canReadOrganizations
+        organizations={null}
       />
     );
-    const headers = screen.getAllByRole('columnheader').map((cell) => cell.textContent);
+    const revenue = screen.getByRole('table', { name: L('platform.overview.revenue') as string });
+    const headers = within(revenue)
+      .getAllByRole('columnheader')
+      .map((cell) => cell.textContent);
     expect(headers).toEqual([
       L('platform.overview.currency'),
       L('platform.overview.contracted'),
@@ -843,6 +850,7 @@ describe('the overview', () => {
         messages={messages}
         statistics={statistics}
         canReadOrganizations
+        organizations={null}
       />
     );
     expect(screen.getByTestId('platform-tile-active')).toHaveTextContent('4');
@@ -880,6 +888,7 @@ describe('the overview', () => {
           ],
         }}
         canReadOrganizations={false}
+        organizations={null}
       />
     );
     const line = screen.getByText(new RegExp(`${L('platform.capacity.overLimit')}$`));
@@ -890,6 +899,133 @@ describe('the overview', () => {
     expect(frame?.className).not.toContain('bg-warning-subtle');
   });
 
+  /*
+   * The expiry TILES publish counts; these cases are about the organisations
+   * behind them. A count an operator cannot act on is a number, not a warning,
+   * so each organisation inside the window is named and linked to its detail —
+   * and the three states of that read (not offered, failed, answered) are three
+   * different sentences rather than one empty table.
+   */
+  const organizationRow = (over: Record<string, unknown> = {}) => ({
+    id: TENANT,
+    tenantCode: 'test_org_one',
+    displayName: 'Test Organisation One',
+    status: 'active',
+    defaultLocale: 'en',
+    defaultTimezone: 'Asia/Riyadh',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    activePlanCode: 'test_plan_one',
+    activePlanEffectiveTo: '2026-10-01T00:00:00.000Z',
+    activeCompanyCount: 1,
+    activeBranchCount: 2,
+    activeUserCount: 9,
+    ...over,
+  });
+
+  const organizationsRead = (rows: readonly unknown[], hasMore = false) =>
+    ({
+      status: 'ok',
+      data: { items: rows, nextCursor: null, hasMore },
+      correlationId: 'cid-organizations',
+    }) as never;
+
+  it('names each organisation whose subscription ends inside the window, and links to it', () => {
+    renderLtr(
+      <PlatformOverview
+        locale="en"
+        messages={messages}
+        statistics={statistics}
+        canReadOrganizations
+        organizations={organizationsRead([
+          organizationRow(),
+          organizationRow({
+            id: OTHER_TENANT,
+            displayName: 'Test Organisation Two',
+            activePlanEffectiveTo: '2027-06-01T00:00:00.000Z',
+          }),
+          organizationRow({
+            id: THIRD_TENANT,
+            displayName: 'Test Organisation Three',
+            activePlanEffectiveTo: '2026-09-01T00:00:00.000Z',
+          }),
+        ])}
+      />
+    );
+
+    const table = screen.getByRole('table', {
+      name: L('platform.overview.expiringOrganizations'),
+    });
+    const rows = within(table).getAllByRole('row').slice(1);
+    // The one beyond ninety days is absent; the one already past is present and
+    // says so rather than counting down into a negative number.
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.textContent).toContain('Test Organisation Three');
+    expect(rows[0]?.textContent).toContain(L('platform.overview.alreadyEnded'));
+    expect(rows[1]?.textContent).toContain('Test Organisation One');
+    expect(within(table).queryByText('Test Organisation Two')).toBeNull();
+    expect(within(table).getByRole('link', { name: 'Test Organisation One' })).toHaveAttribute(
+      'href',
+      `/en/platform/organizations/${TENANT}`
+    );
+  });
+
+  it('states what it examined, and says when more organisations exist behind the page', () => {
+    renderLtr(
+      <PlatformOverview
+        locale="en"
+        messages={messages}
+        statistics={statistics}
+        canReadOrganizations
+        organizations={organizationsRead([organizationRow()], true)}
+      />
+    );
+    expect(screen.getByText(/The first 1 organisations were examined/)).toHaveTextContent(
+      L('platform.overview.expiringMore')
+    );
+  });
+
+  it('says the organisations could not be read rather than showing none expiring', () => {
+    renderLtr(
+      <PlatformOverview
+        locale="en"
+        messages={messages}
+        statistics={statistics}
+        canReadOrganizations
+        organizations={{ status: 'unavailable', correlationId: 'cid-organizations' }}
+      />
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(L('platform.overview.expiringUnavailable'));
+    expect(screen.getByRole('alert')).toHaveTextContent('cid-organizations');
+    expect(screen.queryByText(L('platform.overview.noExpiring'))).toBeNull();
+  });
+
+  it('says the list was never asked for when the operator holds no organisation code', () => {
+    renderLtr(
+      <PlatformOverview
+        locale="en"
+        messages={messages}
+        statistics={statistics}
+        canReadOrganizations={false}
+        organizations={null}
+      />
+    );
+    expect(screen.getByText(L('platform.overview.expiringNotOffered'))).toBeInTheDocument();
+    expect(screen.queryByText(L('platform.overview.noExpiring'))).toBeNull();
+  });
+
+  it('reports an empty window as empty, once the page was actually read', () => {
+    renderLtr(
+      <PlatformOverview
+        locale="en"
+        messages={messages}
+        statistics={statistics}
+        canReadOrganizations
+        organizations={organizationsRead([organizationRow({ activePlanEffectiveTo: null })])}
+      />
+    );
+    expect(screen.getByText(L('platform.overview.noExpiring'))).toBeInTheDocument();
+  });
+
   it('renders in Arabic, right to left', () => {
     const { container } = renderRtl(
       <PlatformOverview
@@ -897,6 +1033,7 @@ describe('the overview', () => {
         messages={getMessages('ar')}
         statistics={statistics}
         canReadOrganizations={false}
+        organizations={null}
       />
     );
     expect(document.documentElement.dir).toBe('rtl');
