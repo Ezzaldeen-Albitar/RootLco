@@ -5,6 +5,7 @@ import { DataTable, type Column } from '@/components/data-table/DataTable';
 import type { TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
 import { SelectField, TextField } from '@/components/forms/Field';
+import { EmptyState } from '@/components/states/States';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translateDynamic } from '@/i18n/get-messages';
@@ -40,6 +41,13 @@ import { PRIMARY_BUTTON } from './ui';
  *     from an empty trail: left to itself it announced "Nothing here yet" — a
  *     claim about every change ever made from this console — on the evidence of
  *     one window that happened to hold none.
+ *
+ *     Only the WORDING is this screen's. The state itself is the design
+ *     system's `EmptyState`, with the title and description overridden, because
+ *     the shell around it is what carries `role="status"`, the heading and the
+ *     icon. A plain paragraph in its place told a sighted operator the search
+ *     had matched nothing and told a screen-reader operator nothing at all: the
+ *     rows simply vanished with no announcement and no heading to land on.
  */
 
 const ENTITY_KEYS: Readonly<Record<string, string>> = {
@@ -252,9 +260,18 @@ export function PlatformAuditScreen({
       />
 
       {table.status === 'idle' && (table.response?.rows.length ?? 0) === 0 ? (
-        <p data-testid="platform-audit-empty" className="text-body text-text-muted">
-          {t('platform.audit.noMatches')}
-        </p>
+        <div data-testid="platform-audit-empty">
+          {/*
+            The design system's own no-result wording for the title, this
+            screen's sentence for the description: "No matches" is true of a
+            search, where "Nothing here yet" is a claim about the whole record.
+          */}
+          <EmptyState
+            messages={messages}
+            titleKey="state.noResults.title"
+            descriptionKey="platform.audit.noMatches"
+          />
+        </div>
       ) : null}
     </div>
   );

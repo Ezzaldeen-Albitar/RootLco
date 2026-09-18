@@ -958,7 +958,7 @@
   "platform.billing.description": "Description",
   "platform.billing.due": "Due date",
   "platform.billing.method": "Payment method",
-  "platform.billing.morePages": "The first {count} charges are shown. More exist beyond them.",
+  "platform.billing.morePages": "Charges shown on this page: {count}. More exist beyond them.",
   "platform.billing.noReceipts": "None yet",
   "platform.billing.noSubscriptionLink": "Not linked to a subscription",
   "platform.billing.none": "No charges have been recorded for this organisation.",

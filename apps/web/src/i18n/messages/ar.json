@@ -958,7 +958,7 @@
   "platform.billing.description": "الوصف",
   "platform.billing.due": "تاريخ الاستحقاق",
   "platform.billing.method": "طريقة الدفع",
-  "platform.billing.morePages": "تظهر أول {count} من الرسوم. توجد رسوم أخرى بعدها.",
+  "platform.billing.morePages": "الرسوم الظاهرة في هذه الصفحة: {count}. توجد رسوم أخرى بعدها.",
   "platform.billing.noReceipts": "لا يوجد بعد",
   "platform.billing.noSubscriptionLink": "غير مرتبطة باشتراك",
   "platform.billing.none": "لم تُسجل أي رسوم لهذه المؤسسة.",

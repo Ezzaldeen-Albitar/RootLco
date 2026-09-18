@@ -51,8 +51,19 @@ const refresh = vi.fn();
 const push = vi.fn();
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push, refresh }),
-  usePathname: () => '/en/platform',
+  usePathname: () => mockPathname,
 }));
+
+/**
+ * The address the route boundaries read their language from.
+ *
+ * A constant here would have made the three boundary files untestable in the
+ * only respect they exist for: `loading.tsx`, `error.tsx` and `not-found.tsx`
+ * are given no props by Next, so the locale can only come from the path
+ * (P1-26-F-059, P1-26-F-071). Every case resets it to the English console
+ * address in `beforeEach`.
+ */
+let mockPathname = '/en/platform';
 
 const assignSubscriptionAction = vi.fn();
 const cancelSubscriptionAction = vi.fn();
@@ -216,6 +227,7 @@ const NONE = {
 };
 
 beforeEach(() => {
+  mockPathname = '/en/platform';
   apiGet.mockReset();
   refresh.mockReset();
   push.mockReset();
@@ -849,7 +861,60 @@ describe('billing', () => {
     );
     // The count is the rows actually drawn, so the sentence cannot claim to have
     // examined more than it did.
-    expect(screen.getByTestId('platform-billing-more')).toHaveTextContent('The first 1 charges');
+    expect(screen.getByTestId('platform-billing-more')).toHaveTextContent(
+      'Charges shown on this page: 1.'
+    );
+  });
+
+  /*
+   * The sentence has to read correctly at EVERY count, in a catalogue with no
+   * plural forms. "The first 1 charges are shown" was grammatical at two and
+   * wrong at one, and a test pinning the wrong half would have made it
+   * permanent — so both counts are read here, and in Arabic as well.
+   */
+  it('states the page count grammatically at one charge and at several, in both languages', () => {
+    const second = { ...charge, id: '44444444-4444-4444-8444-444444444445' };
+    const { unmount } = renderLtr(
+      <BillingPanel
+        locale="en"
+        messages={messages}
+        tenantId={TENANT}
+        charges={[charge, second]}
+        hasMore
+        subscriptions={[]}
+        canManage={false}
+        defaultCurrency=""
+      />
+    );
+    expect(screen.getByTestId('platform-billing-more')).toHaveTextContent(
+      'Charges shown on this page: 2. More exist beyond them.'
+    );
+    unmount();
+
+    renderRtl(
+      <BillingPanel
+        locale="ar"
+        messages={getMessages('ar')}
+        tenantId={TENANT}
+        charges={[charge]}
+        hasMore
+        subscriptions={[]}
+        canManage={false}
+        defaultCurrency=""
+      />
+    );
+    expect(document.documentElement.dir).toBe('rtl');
+    // The digits are the locale's, so the words either side of the count are
+    // what the sentence is recognised by.
+    const arabic = screen.getByTestId('platform-billing-more').textContent ?? '';
+    expect(arabic).toContain('الرسوم الظاهرة في هذه الصفحة');
+    expect(arabic).toContain('توجد رسوم أخرى بعدها');
+    expect(AR['platform.billing.morePages']).not.toBe(EN['platform.billing.morePages']);
+    // The commercial sentence is new too, and an Arabic reader is the one most
+    // likely to meet this console first.
+    expect(screen.getByTestId('platform-billing-model')).toHaveTextContent(
+      AR['platform.billing.recordedNote'] as string
+    );
   });
 });
 
@@ -1536,10 +1601,80 @@ describe('the activity search', () => {
     });
     renderScreen();
 
-    expect(await screen.findByTestId('platform-audit-empty')).toHaveTextContent(
-      L('platform.audit.noMatches')
-    );
+    const empty = await screen.findByTestId('platform-audit-empty');
+    expect(empty).toHaveTextContent(L('platform.audit.noMatches'));
     expect(screen.queryByText(L('state.empty.title'))).toBeNull();
+    /*
+     * ANNOUNCED, not merely printed. The rows disappear on a search that
+     * matched nothing; a bare paragraph in their place leaves an operator who
+     * cannot see the table with no announcement and no heading to land on, so
+     * the sentence is carried by the shared state shell.
+     */
+    const announced = within(empty).getByRole('status');
+    expect(within(announced).getByRole('heading')).toHaveTextContent(L('state.noResults.title'));
+  });
+
+  /*
+   * Arabic, right to left, and by keyboard alone — the three things the English
+   * mouse-driven cases above cannot show. Both refusals and the zero-row
+   * sentence are the screen's own new words, so all three are read in Arabic.
+   */
+  it('refuses the window and states the empty result in Arabic, right to left', async () => {
+    const arabic = getMessages('ar');
+    apiGet.mockResolvedValue({
+      ok: true,
+      data: { items: [], nextCursor: null, hasMore: false },
+      correlationId: 'c',
+    });
+    renderRtl(
+      <PlatformAuditScreen
+        locale="ar"
+        messages={arabic}
+        initialFrom="2026-08-17"
+        initialTo="2026-09-16"
+        initialOrganizationId=""
+        organizations={[row]}
+      />
+    );
+
+    expect(document.documentElement.dir).toBe('rtl');
+    const empty = await screen.findByTestId('platform-audit-empty');
+    expect(empty).toHaveTextContent(AR['platform.audit.noMatches'] as string);
+    // Real Arabic, not an English string sitting in the Arabic catalogue.
+    expect(AR['platform.audit.noMatches']).not.toBe(EN['platform.audit.noMatches']);
+
+    fireEvent.change(screen.getByLabelText(new RegExp(`^${AR['platform.audit.from'] as string}`)), {
+      target: { value: '2026-01-01' },
+    });
+    await userEvent.click(
+      screen.getByRole('button', { name: AR['platform.audit.apply'] as string })
+    );
+    // The day count is formatted in the locale's own digits, so the sentence is
+    // recognised by its words rather than by a hard-coded numeral.
+    expect(await screen.findByText(/اختر مدة لا تتجاوز/)).toBeInTheDocument();
+    expect(apiGet).toHaveBeenCalledTimes(1);
+  });
+
+  it('applies the criteria from the keyboard alone', async () => {
+    apiGet.mockResolvedValue({
+      ok: true,
+      data: { items: [event], nextCursor: null, hasMore: false },
+      correlationId: 'c',
+    });
+    renderScreen();
+    await screen.findByText(L('platform.audit.action.0'));
+
+    fireEvent.change(screen.getByLabelText(new RegExp(`^${L('platform.audit.from')}`)), {
+      target: { value: '2026-09-01' },
+    });
+    const apply = screen.getByRole('button', { name: L('platform.audit.apply') });
+    apply.focus();
+    expect(apply).toHaveFocus();
+    await userEvent.keyboard('{Enter}');
+
+    await waitFor(() => expect(apiGet).toHaveBeenCalledTimes(2));
+    const applied = new URLSearchParams(String(apiGet.mock.calls[1]?.[0]).split('?')[1]);
+    expect(applied.get('from')).toBe('2026-09-01T00:00:00.000Z');
   });
 });
 
@@ -1838,6 +1973,56 @@ describe('the console route group draws its own waiting, failure and not-found s
     }
 
     await userEvent.click(screen.getByRole('button', { name: L('state.retry') }));
+    expect(reset).toHaveBeenCalledTimes(1);
+    logged.mockRestore();
+  });
+
+  /*
+   * The three files exist BECAUSE the language has to come from the address:
+   * Next gives a boundary no props, so reading the default locale instead would
+   * announce an Arabic waiting state to an English reader, and an English
+   * failure inside an Arabic document (P1-26-F-059, P1-26-F-071). An English
+   * address is the only one the cases above ever visit, which is exactly the
+   * half that cannot fail — so each boundary is visited in Arabic too.
+   */
+  it('speaks Arabic on an Arabic address, in all three boundaries', async () => {
+    mockPathname = '/ar/platform';
+
+    const loading = renderRtl(<PlatformLoading />);
+    expect(document.documentElement.dir).toBe('rtl');
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent(AR['state.loading'] as string);
+    expect(status).not.toHaveTextContent(L('state.loading'));
+    loading.unmount();
+
+    const missing = renderRtl(<PlatformNotFound />);
+    expect(screen.getByText(AR['state.notFound.title'] as string)).toBeInTheDocument();
+    missing.unmount();
+
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    renderRtl(<PlatformError error={new Error('boom')} reset={vi.fn()} />);
+    expect(screen.getByText(AR['state.error.title'] as string)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: AR['state.retry'] as string })).toBeInTheDocument();
+    logged.mockRestore();
+  });
+
+  it('falls back to the default language when the address carries none', () => {
+    // Not hypothetical: `usePathname` returns `/` during a transition, and what
+    // happens then must be a decision rather than a crash.
+    mockPathname = '/';
+    renderRtl(<PlatformLoading />);
+    expect(screen.getByRole('status')).toHaveTextContent(AR['state.loading'] as string);
+  });
+
+  it('lets the keyboard reach and press the retry control', async () => {
+    const reset = vi.fn();
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    renderLtr(<PlatformError error={new Error('boom')} reset={reset} />);
+
+    const retry = screen.getByRole('button', { name: L('state.retry') });
+    await userEvent.tab();
+    expect(retry).toHaveFocus();
+    await userEvent.keyboard('{Enter}');
     expect(reset).toHaveBeenCalledTimes(1);
     logged.mockRestore();
   });
