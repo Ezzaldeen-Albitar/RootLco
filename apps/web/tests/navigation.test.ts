@@ -106,6 +106,14 @@ describe('the navigation model', () => {
       'inventory.labels',
       'inventory.stock',
       'inventory.transfers',
+      /*
+       * P1-32 material demand control: the two facts a work-order requirement is
+       * derived from. Both gate on `inv.item.read` — the code their list
+       * operations declare — while the writes on them need a second, tenant-wide
+       * code each, which is not what a navigation gate names.
+       */
+      'inventory.unitConversions',
+      'inventory.vehicleSpecifications',
       'overview',
       // P1-30 W7: the branch's receipts at `/payments`, gated on
       // `sal.finance.view` — the only code both receipt reads declare, and the

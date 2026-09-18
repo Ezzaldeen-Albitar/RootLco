@@ -188,6 +188,20 @@ export function InventoryScreen({
             </Link>
           </>
         ) : null}
+        {' · '}
+        <Link
+          href={`/${locale}/inventory/unit-conversions`}
+          className="text-primary underline-offset-2 hover:underline"
+        >
+          {translate(messages, 'inventory.links.unitConversions')}
+        </Link>
+        {' · '}
+        <Link
+          href={`/${locale}/inventory/vehicle-specifications`}
+          className="text-primary underline-offset-2 hover:underline"
+        >
+          {translate(messages, 'inventory.links.vehicleSpecifications')}
+        </Link>
       </p>
 
       {canReadStock ? (

@@ -465,6 +465,33 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
             status: 'available',
             scope: 'branch',
           },
+          /*
+           * P1-32: the two facts a work-order material requirement is derived
+           * from. Both carry `inv.item.read`, the code their LIST operations
+           * declare and the code their pages gate on. Stating a conversion or
+           * confirming a capacity needs a second, tenant-wide code each
+           * (`inv.unit_conversion.manage`, `inv.specification.manage`); naming
+           * those here would hide the reference data from everyone who may read
+           * it and only needs to look a figure up.
+           */
+          {
+            key: 'inventory.unitConversions',
+            labelKey: 'nav.inventoryUnitConversions',
+            icon: 'inventory',
+            href: '/inventory/unit-conversions',
+            permission: 'inv.item.read',
+            status: 'available',
+            scope: 'branch',
+          },
+          {
+            key: 'inventory.vehicleSpecifications',
+            labelKey: 'nav.inventoryVehicleSpecifications',
+            icon: 'inventory',
+            href: '/inventory/vehicle-specifications',
+            permission: 'inv.item.read',
+            status: 'available',
+            scope: 'branch',
+          },
         ],
       },
       {
