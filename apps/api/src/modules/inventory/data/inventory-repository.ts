@@ -1729,6 +1729,166 @@ export interface TransferSettlementListRow extends TransferSettlementRow {
 /** The decision a settlement list is narrowed by; see `listTransferSettlements`. */
 export type TransferSettlementDecisionFilter = 'pending' | 'approved' | 'rejected';
 
+// ---------------------------------------------------------------------------
+// Operational alerts (Owner directive) — reorder levels and the four stock
+// alerts computed over them and over the ledger.
+//
+// Every one of these is a READ. None writes stock, none writes money, and none
+// asks anything outside this database: an alert here is an arithmetic statement
+// about rows the caller is already allowed to see, and the operations publish the
+// inputs so a reader can redo the arithmetic.
+// ---------------------------------------------------------------------------
+
+/** Reorder levels are listed by SKU, with the level's own id as the tie-break. */
+export const REORDER_LEVEL_ORDER: OrderingContract = Object.freeze({
+  key: 'inv.item_reorder_levels:sku_asc',
+  direction: 'asc',
+});
+
+/**
+ * Low-stock rows are listed by SKU.
+ *
+ * NOT by shortfall, though a "worst first" list is the tempting default: the
+ * shortfall changes with every movement, so a cursor issued against it would page
+ * over a set that has re-sorted itself underneath the reader. The SKU is stable,
+ * and the shortfall is published on every row for a client to sort a page by.
+ */
+export const LOW_STOCK_ORDER: OrderingContract = Object.freeze({
+  key: 'inv.low_stock:sku_asc',
+  direction: 'asc',
+});
+
+/** Count variances are listed newest count first; the LINE id is the tie-break. */
+export const COUNT_DISCREPANCY_ORDER: OrderingContract = Object.freeze({
+  key: 'inv.count_discrepancy:reconciled_at_desc',
+  direction: 'desc',
+});
+
+/** Unusual consumption is listed by SKU, for the reason `LOW_STOCK_ORDER` gives. */
+export const UNUSUAL_CONSUMPTION_ORDER: OrderingContract = Object.freeze({
+  key: 'inv.unusual_consumption:sku_asc',
+  direction: 'asc',
+});
+
+/** Aged transfers are listed oldest dispatch first — the point of the alert. */
+export const AGED_TRANSIT_ORDER: OrderingContract = Object.freeze({
+  key: 'inv.aged_in_transit:dispatched_at_asc',
+  direction: 'asc',
+});
+
+/** One configured reorder level, exactly as the table stores it. */
+export interface ReorderLevelRow {
+  readonly id: string;
+  readonly itemId: string;
+  readonly sku: string;
+  readonly itemName: string;
+  readonly companyId: string | null;
+  readonly branchId: string | null;
+  readonly locationId: string | null;
+  readonly locationCode: string | null;
+  /** `numeric(12,3)` — a decimal STRING, never a JSON number. */
+  readonly reorderLevelQty: string;
+  readonly preferredOrderQty: string | null;
+  readonly status: string;
+  readonly retiredAt: Date | null;
+  readonly recordVersion: number;
+}
+
+/** The narrowing a level is written against. NULLs are the wider scope. */
+export interface ReorderLevelSignature {
+  readonly itemId: string;
+  readonly companyId: string | null;
+  readonly branchId: string | null;
+  readonly locationId: string | null;
+}
+
+/** One low-stock finding: what applies, what is there, and the gap. */
+export interface LowStockRow {
+  readonly reorderLevelId: string;
+  readonly itemId: string;
+  readonly sku: string;
+  readonly itemName: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  /** `location` when the level names a shelf, `branch` when it does not. */
+  readonly scope: string;
+  readonly locationId: string | null;
+  readonly locationCode: string | null;
+  readonly onHandQty: string;
+  readonly reservedQty: string;
+  readonly availableQty: string;
+  readonly reorderLevelQty: string;
+  /** `reorderLevelQty - availableQty`, computed in `numeric` by the database. */
+  readonly shortfallQty: string;
+  readonly preferredOrderQty: string | null;
+}
+
+/** One counted line whose variance was not zero, with its adjustment's state. */
+export interface CountDiscrepancyRow {
+  readonly countId: string;
+  readonly lineId: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly locationId: string;
+  readonly locationCode: string;
+  readonly itemId: string;
+  readonly sku: string;
+  readonly itemName: string;
+  readonly snapshotQty: string;
+  readonly countedQty: string | null;
+  readonly movementDeltaDuringCount: string;
+  readonly varianceQty: string;
+  readonly reconciledAt: Date;
+  readonly adjustmentId: string | null;
+  /** `pending` | `approved` | `rejected`, or null when no adjustment was raised. */
+  readonly adjustmentStatus: string | null;
+  readonly adjustmentApprovedAt: Date | null;
+}
+
+/** One window of the consumption comparison, with what was issued in it. */
+export interface ConsumptionPeriodRow {
+  /** Inclusive start, ISO-8601. */
+  readonly from: string;
+  /** Exclusive end, ISO-8601. */
+  readonly to: string;
+  readonly issuedQty: string;
+}
+
+/** One item whose issued quantity broke out of its own recent history. */
+export interface UnusualConsumptionRow {
+  readonly itemId: string;
+  readonly sku: string;
+  readonly itemName: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly observedQty: string;
+  readonly baselineMedianQty: string;
+  readonly observedPeriod: ConsumptionPeriodRow;
+  readonly baselinePeriods: readonly ConsumptionPeriodRow[];
+}
+
+/** One transfer that has been in transit longer than the caller asked about. */
+export interface AgedInTransitRow {
+  readonly transferId: string;
+  readonly itemId: string;
+  readonly sku: string;
+  readonly itemName: string;
+  readonly status: string;
+  readonly companyId: string;
+  readonly fromBranchId: string;
+  readonly fromLocationId: string;
+  readonly fromLocationCode: string;
+  readonly toBranchId: string;
+  readonly toLocationId: string;
+  readonly toLocationCode: string;
+  readonly quantity: string;
+  readonly receivedQuantity: string | null;
+  readonly outstandingQuantity: string;
+  readonly dispatchedAt: Date;
+  /** Whole days between dispatch and the read's own `asOf`. */
+  readonly ageDays: number;
+}
+
 export class InventoryRepository extends Repository {
   protected readonly module = 'inventory';
 
@@ -6032,4 +6192,734 @@ export class InventoryRepository extends Repository {
   ): Promise<void> {
     await this.run(db, `SELECT inv.decide_transfer_write_off($1, $2)`, [settlementId, approve]);
   }
+
+  // -------------------------------------------------------------------------
+  // Operational alerts (Owner directive).
+  //
+  // `readAsOf` is taken from the DATABASE, inside the request's transaction, and
+  // published with every alert. A clock read in this process is a different
+  // instant from the one the rows were selected at, and an alert whose freshness
+  // stamp does not belong to its own snapshot is worse than none: it invites a
+  // reader to trust a figure that was already stale when it was rendered.
+  // -------------------------------------------------------------------------
+
+  public async readAsOf(db: DbHandle): Promise<Date> {
+    const row = await this.runOne<{ as_of: Date }>(db, `SELECT now() AS as_of`);
+    if (!row) throw new Error('inventory: now() returned no row');
+    return row.as_of;
+  }
+
+  /** Reads one reorder level by id, or null when it is absent or invisible. */
+  public async readReorderLevel(db: DbHandle, levelId: string): Promise<ReorderLevelRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ReorderLevelSqlRow>(
+      db,
+      `${REORDER_LEVEL_COLUMNS}
+         FROM inv.item_reorder_levels r
+         JOIN inv.item_master i ON i.tenant_id = r.tenant_id AND i.id = r.item_id
+         LEFT JOIN inv.stock_locations l ON l.tenant_id = r.tenant_id AND l.id = r.location_id
+        WHERE r.tenant_id = $1 AND r.id = $2`,
+      [context.principal.tenantId, levelId]
+    );
+    return row === null ? null : toReorderLevel(row);
+  }
+
+  /**
+   * The configured levels, most-specific narrowing NOT applied.
+   *
+   * This is the CONFIGURATION list, so it shows every row rather than the winner:
+   * an operator editing levels has to be able to see the company-wide row that a
+   * branch row is currently overriding, or they cannot understand why changing it
+   * had no effect. Resolution happens in the low-stock read, which is the place
+   * that has to pick one.
+   */
+  public async listReorderLevels(
+    db: DbHandle,
+    filter: {
+      readonly itemId?: string | undefined;
+      readonly companyId?: string | undefined;
+      readonly branchId?: string | undefined;
+      readonly includeRetired?: boolean | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<ReorderLevelRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.itemId ?? null,
+      filter.companyId ?? null,
+      filter.branchId ?? null,
+      filter.includeRetired === true,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'i.sku', id: 'r.id' },
+      REORDER_LEVEL_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<ReorderLevelSqlRow & { sort_value: string }>(
+      db,
+      `${REORDER_LEVEL_COLUMNS}, i.sku AS sort_value
+         FROM inv.item_reorder_levels r
+         JOIN inv.item_master i ON i.tenant_id = r.tenant_id AND i.id = r.item_id
+         LEFT JOIN inv.stock_locations l ON l.tenant_id = r.tenant_id AND l.id = r.location_id
+        WHERE r.tenant_id = $1
+          AND ($2::uuid IS NULL OR r.item_id = $2)
+          -- A company or branch filter asks "what applies HERE", so the wider
+          -- rows that also apply here are included rather than hidden.
+          AND ($3::uuid IS NULL OR r.company_id IS NULL OR r.company_id = $3)
+          AND ($4::uuid IS NULL OR r.branch_id IS NULL OR r.branch_id = $4)
+          AND ($5::boolean OR r.status = 'active')
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: toReorderLevel(row),
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      REORDER_LEVEL_ORDER
+    );
+  }
+
+  /** The live level holding one signature, or null. Used to decide set vs insert. */
+  public async findActiveReorderLevel(
+    db: DbHandle,
+    signature: ReorderLevelSignature
+  ): Promise<ReorderLevelRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ReorderLevelSqlRow>(
+      db,
+      `${REORDER_LEVEL_COLUMNS}
+         FROM inv.item_reorder_levels r
+         JOIN inv.item_master i ON i.tenant_id = r.tenant_id AND i.id = r.item_id
+         LEFT JOIN inv.stock_locations l ON l.tenant_id = r.tenant_id AND l.id = r.location_id
+        WHERE r.tenant_id = $1 AND r.status = 'active' AND r.item_id = $2
+          AND r.company_id IS NOT DISTINCT FROM $3::uuid
+          AND r.branch_id IS NOT DISTINCT FROM $4::uuid
+          AND r.location_id IS NOT DISTINCT FROM $5::uuid`,
+      [
+        context.principal.tenantId,
+        signature.itemId,
+        signature.companyId,
+        signature.branchId,
+        signature.locationId,
+      ]
+    );
+    return row === null ? null : toReorderLevel(row);
+  }
+
+  public async insertReorderLevel(
+    db: DbHandle,
+    signature: ReorderLevelSignature,
+    quantities: { readonly reorderLevelQty: string; readonly preferredOrderQty: string | null }
+  ): Promise<string> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `INSERT INTO inv.item_reorder_levels
+         (tenant_id, item_id, company_id, branch_id, location_id,
+          reorder_level_qty, preferred_order_qty, created_by)
+       VALUES ($1, $2, $3::uuid, $4::uuid, $5::uuid, $6::numeric, $7::numeric, $8)
+       RETURNING id`,
+      [
+        context.principal.tenantId,
+        signature.itemId,
+        signature.companyId,
+        signature.branchId,
+        signature.locationId,
+        quantities.reorderLevelQty,
+        quantities.preferredOrderQty,
+        context.principal.userId,
+      ]
+    );
+    if (!row) throw new Error('inventory: reorder level insert returned no row');
+    return row.id;
+  }
+
+  /**
+   * Revises the quantities on a live level. Returns null when the expected version
+   * does not match, which the caller turns into the shared stale-version refusal.
+   */
+  public async reviseReorderLevel(
+    db: DbHandle,
+    levelId: string,
+    quantities: { readonly reorderLevelQty: string; readonly preferredOrderQty: string | null },
+    expectedVersion: number
+  ): Promise<string | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `UPDATE inv.item_reorder_levels
+          SET reorder_level_qty = $3::numeric,
+              preferred_order_qty = $4::numeric,
+              record_version = record_version + 1,
+              updated_by = $5
+        WHERE tenant_id = $1 AND id = $2 AND status = 'active' AND record_version = $6
+        RETURNING id`,
+      [
+        context.principal.tenantId,
+        levelId,
+        quantities.reorderLevelQty,
+        quantities.preferredOrderQty,
+        context.principal.userId,
+        expectedVersion,
+      ]
+    );
+    return row?.id ?? null;
+  }
+
+  /** Retires a live level. Returns null when it is already retired or stale. */
+  public async retireReorderLevel(
+    db: DbHandle,
+    levelId: string,
+    expectedVersion: number
+  ): Promise<string | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `UPDATE inv.item_reorder_levels
+          SET status = 'retired',
+              retired_at = now(),
+              retired_by = $3,
+              record_version = record_version + 1,
+              updated_by = $3
+        WHERE tenant_id = $1 AND id = $2 AND status = 'active' AND record_version = $4
+        RETURNING id`,
+      [context.principal.tenantId, levelId, context.principal.userId, expectedVersion]
+    );
+    return row?.id ?? null;
+  }
+
+  /**
+   * Items at or below the level that applies to them, in one branch.
+   *
+   * Three properties are structural rather than intended:
+   *
+   *  - the query STARTS from `inv.item_reorder_levels`, so an item with no level
+   *    cannot appear however low it is. "Low" is only a fact once somebody has
+   *    said what low means for that item;
+   *  - the comparison is on `available_qty`, which is the GENERATED column
+   *    `on_hand_qty - reserved_qty`. It is never re-derived here, so the alert and
+   *    the availability read cannot disagree;
+   *  - QUARANTINE and TRANSIT cells are excluded from the branch total. Damaged
+   *    stock and stock that has left one branch and not reached another are not
+   *    available to anybody, so counting them would answer the alert with units
+   *    nobody can fit.
+   *
+   * A level naming a location is compared against that one cell; a level naming
+   * none is compared against the branch's whole sellable holding. When two levels
+   * could apply to the same target, the narrower one wins: branch over company
+   * over tenant-wide.
+   */
+  public async listLowStock(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly itemId?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<LowStockRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.itemId ?? null,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'i.sku', id: 'a.id' },
+      LOW_STOCK_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<LowStockSqlRow & { sort_value: string }>(
+      db,
+      `WITH applicable AS (
+         SELECT r.id, r.item_id, r.location_id, r.reorder_level_qty, r.preferred_order_qty,
+                row_number() OVER (
+                  PARTITION BY r.item_id, r.location_id
+                  ORDER BY (r.branch_id IS NOT NULL) DESC, (r.company_id IS NOT NULL) DESC
+                ) AS specificity_rank
+           FROM inv.item_reorder_levels r
+          WHERE r.tenant_id = $1
+            AND r.status = 'active'
+            AND (r.company_id IS NULL OR r.company_id = $2)
+            AND (r.branch_id IS NULL OR r.branch_id = $3)
+            AND ($4::uuid IS NULL OR r.item_id = $4)
+       ),
+       branch_totals AS (
+         SELECT b.item_id,
+                sum(b.on_hand_qty)   AS on_hand_qty,
+                sum(b.reserved_qty)  AS reserved_qty,
+                sum(b.available_qty) AS available_qty
+           FROM inv.stock_balances b
+           JOIN inv.stock_locations sl ON sl.tenant_id = b.tenant_id AND sl.id = b.location_id
+          WHERE b.tenant_id = $1 AND b.company_id = $2 AND b.branch_id = $3
+            AND sl.location_type NOT IN ('quarantine', 'transit')
+          GROUP BY b.item_id
+       )
+       SELECT a.id, a.item_id, i.sku, i.name AS item_name,
+              CASE WHEN a.location_id IS NULL THEN 'branch' ELSE 'location' END AS scope,
+              a.location_id, l.location_code,
+              q.on_hand_qty, q.reserved_qty, q.available_qty,
+              a.reorder_level_qty,
+              a.reorder_level_qty - q.available_qty AS shortfall_qty,
+              a.preferred_order_qty,
+              i.sku AS sort_value
+         FROM applicable a
+         JOIN inv.item_master i ON i.tenant_id = $1 AND i.id = a.item_id
+         LEFT JOIN inv.stock_locations l ON l.tenant_id = $1 AND l.id = a.location_id
+         LEFT JOIN branch_totals bt ON bt.item_id = a.item_id
+         LEFT JOIN inv.stock_balances c
+           ON c.tenant_id = $1 AND c.company_id = $2 AND c.branch_id = $3
+          AND c.item_id = a.item_id AND c.location_id = a.location_id
+         CROSS JOIN LATERAL (
+           SELECT COALESCE(CASE WHEN a.location_id IS NULL THEN bt.on_hand_qty   ELSE c.on_hand_qty   END, 0) AS on_hand_qty,
+                  COALESCE(CASE WHEN a.location_id IS NULL THEN bt.reserved_qty  ELSE c.reserved_qty  END, 0) AS reserved_qty,
+                  COALESCE(CASE WHEN a.location_id IS NULL THEN bt.available_qty ELSE c.available_qty END, 0) AS available_qty
+         ) q
+        WHERE a.specificity_rank = 1
+          AND i.deleted_at IS NULL
+          AND i.lifecycle_status <> 'archived'
+          AND q.available_qty <= a.reorder_level_qty
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: {
+          reorderLevelId: row.id,
+          itemId: row.item_id,
+          sku: row.sku,
+          itemName: row.item_name,
+          companyId: filter.companyId,
+          branchId: filter.branchId,
+          scope: row.scope,
+          locationId: row.location_id,
+          locationCode: row.location_code,
+          onHandQty: row.on_hand_qty,
+          reservedQty: row.reserved_qty,
+          availableQty: row.available_qty,
+          reorderLevelQty: row.reorder_level_qty,
+          shortfallQty: row.shortfall_qty,
+          preferredOrderQty: row.preferred_order_qty,
+        },
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      LOW_STOCK_ORDER
+    );
+  }
+
+  /**
+   * Counted lines whose variance was not zero, on counts that were reconciled.
+   *
+   * Only RECONCILED counts: an open count's lines are a work in progress, and
+   * `variance_qty` on one is the difference between a snapshot and a half-finished
+   * tally. `variance_qty` is the GENERATED column, so the figure published here is
+   * the same one the adjustment was raised from.
+   */
+  public async listCountDiscrepancies(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly itemId?: string | undefined;
+      readonly locationId?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<CountDiscrepancyRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.itemId ?? null,
+      filter.locationId ?? null,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'c.reconciled_at', id: 'cl.id' },
+      COUNT_DISCREPANCY_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<CountDiscrepancySqlRow & { sort_value: string }>(
+      db,
+      `SELECT c.id AS count_id, cl.id AS line_id, cl.company_id, cl.branch_id,
+              c.location_id, l.location_code,
+              cl.item_id, i.sku, i.name AS item_name,
+              cl.snapshot_qty, cl.counted_qty, cl.movement_delta_during_count, cl.variance_qty,
+              c.reconciled_at, cl.adjustment_id,
+              adj.status AS adjustment_status, adj.approved_at AS adjustment_approved_at,
+              ${cursorTimestamp('c.reconciled_at')} AS sort_value
+         FROM inv.stock_count_lines cl
+         JOIN inv.stock_counts c ON c.tenant_id = cl.tenant_id AND c.id = cl.count_id
+         JOIN inv.stock_locations l ON l.tenant_id = c.tenant_id AND l.id = c.location_id
+         JOIN inv.item_master i ON i.tenant_id = cl.tenant_id AND i.id = cl.item_id
+         LEFT JOIN inv.stock_adjustments adj
+           ON adj.tenant_id = cl.tenant_id AND adj.id = cl.adjustment_id
+        WHERE cl.tenant_id = $1 AND cl.company_id = $2 AND cl.branch_id = $3
+          AND c.status = 'reconciled'
+          AND cl.variance_qty IS NOT NULL
+          AND cl.variance_qty <> 0
+          AND ($4::uuid IS NULL OR cl.item_id = $4)
+          AND ($5::uuid IS NULL OR c.location_id = $5)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: {
+          countId: row.count_id,
+          lineId: row.line_id,
+          companyId: row.company_id,
+          branchId: row.branch_id,
+          locationId: row.location_id,
+          locationCode: row.location_code,
+          itemId: row.item_id,
+          sku: row.sku,
+          itemName: row.item_name,
+          snapshotQty: row.snapshot_qty,
+          countedQty: row.counted_qty,
+          movementDeltaDuringCount: row.movement_delta_during_count,
+          varianceQty: row.variance_qty,
+          reconciledAt: row.reconciled_at,
+          adjustmentId: row.adjustment_id,
+          adjustmentStatus: row.adjustment_status,
+          adjustmentApprovedAt: row.adjustment_approved_at,
+        },
+        sortValue: row.sort_value,
+        id: row.line_id,
+      })),
+      request,
+      COUNT_DISCREPANCY_ORDER
+    );
+  }
+
+  /**
+   * Items whose issued quantity broke out of their OWN preceding history.
+   *
+   * The windows are cut by the database from its own `now()`, so every period the
+   * response publishes is the period the arithmetic used. The baseline is
+   * `percentile_disc(0.5)` — the lower of the two middle values on an even count —
+   * chosen over `percentile_cont` because the continuous form averages two
+   * observations into a quantity nobody issued and returns it as a float. There is
+   * no weighting of any kind: each baseline window counts once.
+   *
+   * Every figure the comparison rests on is returned, per item and per window, so
+   * the decision can be re-done by hand from the response.
+   */
+  public async listUnusualConsumption(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly periodDays: number;
+      readonly baselinePeriods: number;
+      readonly multiple: string;
+      readonly minimumQty: string;
+      readonly itemId?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<UnusualConsumptionRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.periodDays,
+      filter.baselinePeriods,
+      filter.multiple,
+      filter.minimumQty,
+      filter.itemId ?? null,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'im.sku', id: 'o.item_id' },
+      UNUSUAL_CONSUMPTION_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<UnusualConsumptionSqlRow & { sort_value: string }>(
+      db,
+      `WITH windows AS (
+         SELECT g.idx,
+                now() - make_interval(days => $4::int * (g.idx + 1)) AS win_from,
+                now() - make_interval(days => $4::int * g.idx)       AS win_to
+           FROM generate_series(0, $5::int) AS g(idx)
+       ),
+       issued AS (
+         SELECT w.idx, m.item_id, sum(m.quantity) AS qty
+           FROM windows w
+           JOIN inv.stock_movements m
+             ON m.tenant_id = $1 AND m.company_id = $2 AND m.branch_id = $3
+            AND m.movement_type = 'issue' AND m.direction = 'out'
+            AND m.occurred_at >= w.win_from AND m.occurred_at < w.win_to
+            AND ($8::uuid IS NULL OR m.item_id = $8)
+          GROUP BY w.idx, m.item_id
+       ),
+       moved_items AS (SELECT DISTINCT item_id FROM issued),
+       grid AS (
+         SELECT mi.item_id, w.idx, w.win_from, w.win_to, COALESCE(s.qty, 0) AS qty
+           FROM moved_items mi
+           CROSS JOIN windows w
+           LEFT JOIN issued s ON s.item_id = mi.item_id AND s.idx = w.idx
+       ),
+       observed AS (SELECT item_id, qty, win_from, win_to FROM grid WHERE idx = 0),
+       baseline AS (
+         SELECT item_id, percentile_disc(0.5) WITHIN GROUP (ORDER BY qty) AS median_qty
+           FROM grid WHERE idx > 0 GROUP BY item_id
+       ),
+       baseline_windows AS (
+         SELECT item_id,
+                jsonb_agg(jsonb_build_object(
+                  'from', ${cursorTimestamp('win_from')},
+                  'to',   ${cursorTimestamp('win_to')},
+                  'issuedQty', qty::text) ORDER BY idx ASC) AS periods
+           FROM grid WHERE idx > 0 GROUP BY item_id
+       )
+       SELECT o.item_id, im.sku, im.name AS item_name,
+              o.qty AS observed_qty, b.median_qty,
+              ${cursorTimestamp('o.win_from')} AS observed_from,
+              ${cursorTimestamp('o.win_to')}   AS observed_to,
+              bw.periods AS baseline_periods,
+              im.sku AS sort_value
+         FROM observed o
+         JOIN baseline b ON b.item_id = o.item_id
+         JOIN baseline_windows bw ON bw.item_id = o.item_id
+         JOIN inv.item_master im ON im.tenant_id = $1 AND im.id = o.item_id
+        WHERE o.qty >= $7::numeric
+          AND o.qty >= $6::numeric * b.median_qty
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: {
+          itemId: row.item_id,
+          sku: row.sku,
+          itemName: row.item_name,
+          companyId: filter.companyId,
+          branchId: filter.branchId,
+          observedQty: row.observed_qty,
+          baselineMedianQty: row.median_qty,
+          observedPeriod: {
+            from: row.observed_from,
+            to: row.observed_to,
+            issuedQty: row.observed_qty,
+          },
+          baselinePeriods: row.baseline_periods,
+        },
+        sortValue: row.sort_value,
+        id: row.item_id,
+      })),
+      request,
+      UNUSUAL_CONSUMPTION_ORDER
+    );
+  }
+
+  /**
+   * Transfers dispatched more than `minimumAgeDays` ago that have not arrived.
+   *
+   * Both ends of a transfer are served: the predicate matches the branch as SOURCE
+   * or as DESTINATION, because a consignment lost in transit is the receiving
+   * branch's problem as much as the sending one's, and the destination already has
+   * a SELECT policy for exactly that reason.
+   *
+   * `outstanding_quantity` is the GENERATED column on `inv.stock_transfers` —
+   * dispatched less received less resolved — so the quantity still in transit is
+   * the schema's own figure and not arithmetic invented here.
+   */
+  public async listAgedInTransit(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly minimumAgeDays: number;
+      readonly itemId?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<AgedInTransitRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.minimumAgeDays,
+      filter.itemId ?? null,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 't.dispatched_at', id: 't.id' },
+      AGED_TRANSIT_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<AgedInTransitSqlRow & { sort_value: string }>(
+      db,
+      `SELECT t.id AS transfer_id, t.item_id, i.sku, i.name AS item_name, t.status,
+              t.company_id, t.branch_id AS from_branch_id,
+              t.from_location_id, fl.location_code AS from_location_code,
+              t.to_branch_id, t.to_location_id, tl.location_code AS to_location_code,
+              t.quantity, t.received_quantity, t.outstanding_quantity, t.dispatched_at,
+              floor(extract(epoch FROM (now() - t.dispatched_at)) / 86400)::int AS age_days,
+              ${cursorTimestamp('t.dispatched_at')} AS sort_value
+         FROM inv.stock_transfers t
+         JOIN inv.item_master i ON i.tenant_id = t.tenant_id AND i.id = t.item_id
+         JOIN inv.stock_locations fl ON fl.tenant_id = t.tenant_id AND fl.id = t.from_location_id
+         JOIN inv.stock_locations tl ON tl.tenant_id = t.tenant_id AND tl.id = t.to_location_id
+        WHERE t.tenant_id = $1 AND t.company_id = $2
+          AND (t.branch_id = $3 OR t.to_branch_id = $3)
+          AND t.status IN ('dispatched', 'partially_received')
+          AND t.dispatched_at < now() - make_interval(days => $4::int)
+          AND ($5::uuid IS NULL OR t.item_id = $5)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: {
+          transferId: row.transfer_id,
+          itemId: row.item_id,
+          sku: row.sku,
+          itemName: row.item_name,
+          status: row.status,
+          companyId: row.company_id,
+          fromBranchId: row.from_branch_id,
+          fromLocationId: row.from_location_id,
+          fromLocationCode: row.from_location_code,
+          toBranchId: row.to_branch_id,
+          toLocationId: row.to_location_id,
+          toLocationCode: row.to_location_code,
+          quantity: row.quantity,
+          receivedQuantity: row.received_quantity,
+          outstandingQuantity: row.outstanding_quantity,
+          dispatchedAt: row.dispatched_at,
+          ageDays: row.age_days,
+        },
+        sortValue: row.sort_value,
+        id: row.transfer_id,
+      })),
+      request,
+      AGED_TRANSIT_ORDER
+    );
+  }
+}
+
+/** The projection every reorder-level read shares. */
+const REORDER_LEVEL_COLUMNS = `SELECT r.id, r.item_id, i.sku, i.name AS item_name,
+              r.company_id, r.branch_id, r.location_id, l.location_code,
+              r.reorder_level_qty, r.preferred_order_qty, r.status,
+              r.retired_at, r.record_version`;
+
+interface ReorderLevelSqlRow {
+  id: string;
+  item_id: string;
+  sku: string;
+  item_name: string;
+  company_id: string | null;
+  branch_id: string | null;
+  location_id: string | null;
+  location_code: string | null;
+  reorder_level_qty: string;
+  preferred_order_qty: string | null;
+  status: string;
+  retired_at: Date | null;
+  record_version: number;
+}
+
+const toReorderLevel = (r: ReorderLevelSqlRow): ReorderLevelRow => ({
+  id: r.id,
+  itemId: r.item_id,
+  sku: r.sku,
+  itemName: r.item_name,
+  companyId: r.company_id,
+  branchId: r.branch_id,
+  locationId: r.location_id,
+  locationCode: r.location_code,
+  reorderLevelQty: r.reorder_level_qty,
+  preferredOrderQty: r.preferred_order_qty,
+  status: r.status,
+  retiredAt: r.retired_at,
+  recordVersion: r.record_version,
+});
+
+interface LowStockSqlRow {
+  id: string;
+  item_id: string;
+  sku: string;
+  item_name: string;
+  scope: string;
+  location_id: string | null;
+  location_code: string | null;
+  on_hand_qty: string;
+  reserved_qty: string;
+  available_qty: string;
+  reorder_level_qty: string;
+  shortfall_qty: string;
+  preferred_order_qty: string | null;
+}
+
+interface CountDiscrepancySqlRow {
+  count_id: string;
+  line_id: string;
+  company_id: string;
+  branch_id: string;
+  location_id: string;
+  location_code: string;
+  item_id: string;
+  sku: string;
+  item_name: string;
+  snapshot_qty: string;
+  counted_qty: string | null;
+  movement_delta_during_count: string;
+  variance_qty: string;
+  reconciled_at: Date;
+  adjustment_id: string | null;
+  adjustment_status: string | null;
+  adjustment_approved_at: Date | null;
+}
+
+interface UnusualConsumptionSqlRow {
+  item_id: string;
+  sku: string;
+  item_name: string;
+  observed_qty: string;
+  median_qty: string;
+  observed_from: string;
+  observed_to: string;
+  baseline_periods: ConsumptionPeriodRow[];
+}
+
+interface AgedInTransitSqlRow {
+  transfer_id: string;
+  item_id: string;
+  sku: string;
+  item_name: string;
+  status: string;
+  company_id: string;
+  from_branch_id: string;
+  from_location_id: string;
+  from_location_code: string;
+  to_branch_id: string;
+  to_location_id: string;
+  to_location_code: string;
+  quantity: string;
+  received_quantity: string | null;
+  outstanding_quantity: string;
+  dispatched_at: Date;
+  age_days: number;
 }
