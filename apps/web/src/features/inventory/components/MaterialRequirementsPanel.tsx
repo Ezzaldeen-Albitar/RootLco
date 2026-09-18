@@ -1056,7 +1056,7 @@ function CreateRequirementForm({
       ...(itemCategoryId ? { itemCategoryId } : {}),
     };
 
-    let body: MaterialRequirementCreateBody | null = null;
+    let body: MaterialRequirementCreateBody;
     if (form.basis === 'specification') {
       const serviceCondition = form.serviceCondition.trim();
       if (!SERVICE_CONDITION.test(serviceCondition)) {
@@ -1092,7 +1092,7 @@ function CreateRequirementForm({
     }
 
     setErrors(found);
-    if (Object.keys(found).length > 0 || body === null) return;
+    if (Object.keys(found).length > 0) return;
 
     setBusy(true);
     const result = await createMaterialRequirement(body);
