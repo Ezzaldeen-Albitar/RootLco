@@ -7,12 +7,14 @@ import { useServerTable } from '@/components/data-table/use-server-table';
 import { SelectField, TextField } from '@/components/forms/Field';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translateDynamic } from '@/i18n/get-messages';
-import { formatDateTime } from '@/lib/format';
+import { formatMessage, translateDynamic } from '@/i18n/get-messages';
+import { formatDateTime, formatInteger } from '@/lib/format';
 import { searchPlatformAudit } from '../table-reads';
 import {
+  AUDIT_MAX_WINDOW_DAYS,
   PLATFORM_AUDIT_ACTIONS,
   auditActionKey,
+  auditWindowProblem,
   type OrganizationRow,
   type PlatformAuditCriteria,
   type PlatformAuditEvent,
@@ -25,6 +27,19 @@ import { PRIMARY_BUTTON } from './ui';
  * The window opens on the dates the page was given — the last thirty days — and
  * the server bounds it. Criteria are applied together when the operator asks,
  * and applying them returns the table to its first page.
+ *
+ * Two things this screen owns rather than the table (P1-32-PRE-OD-CONSOLE-004):
+ *
+ *   - **The day range is judged before the request is spent.** A reversed range
+ *     and a range wider than the server's ceiling are both refused as validation
+ *     failures, and a refused read reaches a table as the general error state —
+ *     "something went wrong", with a Retry that repeats the same refusal. The
+ *     operator is told which date to change instead.
+ *   - **The zero-row sentence is this screen's.** The criteria are held OUTSIDE
+ *     the table request on purpose, so the table cannot tell a narrowed search
+ *     from an empty trail: left to itself it announced "Nothing here yet" — a
+ *     claim about every change ever made from this console — on the evidence of
+ *     one window that happened to hold none.
  */
 
 const ENTITY_KEYS: Readonly<Record<string, string>> = {
@@ -78,6 +93,7 @@ export function PlatformAuditScreen({
       organizationId: initialOrganizationId,
     })
   );
+  const [windowProblem, setWindowProblem] = useState<string | null>(null);
 
   const table = useServerTable<PlatformAuditEvent>(
     (request, cursor) => searchPlatformAudit(applied, request, cursor),
@@ -137,6 +153,9 @@ export function PlatformAuditScreen({
         className="flex flex-wrap items-end gap-3"
         onSubmit={(event) => {
           event.preventDefault();
+          const problem = auditWindowProblem(fromDay, toDay);
+          setWindowProblem(problem);
+          if (problem !== null) return;
           setApplied(auditCriteria({ fromDay, toDay, action, organizationId }));
         }}
       >
@@ -147,7 +166,10 @@ export function PlatformAuditScreen({
             label={t('platform.audit.from')}
             required
             value={fromDay}
-            onChange={(event) => setFromDay(event.target.value)}
+            onChange={(event) => {
+              setFromDay(event.target.value);
+              setWindowProblem(null);
+            }}
           />
         </div>
         <div className="w-44">
@@ -157,7 +179,24 @@ export function PlatformAuditScreen({
             label={t('platform.audit.to')}
             required
             value={toDay}
-            onChange={(event) => setToDay(event.target.value)}
+            onChange={(event) => {
+              setToDay(event.target.value);
+              setWindowProblem(null);
+            }}
+            /*
+             * Both refusals are about the END of the window, which is the field
+             * the server names too (`query.to`), and only one of the two can be
+             * true at a time.
+             */
+            error={
+              windowProblem === null
+                ? undefined
+                : windowProblem === 'platform.audit.error.window'
+                  ? formatMessage(t(windowProblem), {
+                      days: formatInteger(AUDIT_MAX_WINDOW_DAYS, locale),
+                    })
+                  : t(windowProblem)
+            }
           />
         </div>
         <div className="w-60">
@@ -209,7 +248,14 @@ export function PlatformAuditScreen({
         onRetry={table.refresh}
         correlationId={table.correlationId}
         caption={t('platform.audit.title')}
+        suppressEmptyState
       />
+
+      {table.status === 'idle' && (table.response?.rows.length ?? 0) === 0 ? (
+        <p data-testid="platform-audit-empty" className="text-body text-text-muted">
+          {t('platform.audit.noMatches')}
+        </p>
+      ) : null}
     </div>
   );
 }

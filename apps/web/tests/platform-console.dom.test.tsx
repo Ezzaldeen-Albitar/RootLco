@@ -643,6 +643,7 @@ describe('billing', () => {
         messages={messages}
         tenantId={TENANT}
         charges={[charge]}
+        hasMore={false}
         subscriptions={[subscription]}
         canManage
         defaultCurrency="SAR"
@@ -698,6 +699,7 @@ describe('billing', () => {
         messages={messages}
         tenantId={TENANT}
         charges={[charge]}
+        hasMore={false}
         subscriptions={[subscription]}
         canManage
         defaultCurrency="SAR"
@@ -752,6 +754,7 @@ describe('billing', () => {
         messages={messages}
         tenantId={TENANT}
         charges={[charge]}
+        hasMore={false}
         subscriptions={[subscription]}
         canManage
         defaultCurrency="SAR"
@@ -779,6 +782,7 @@ describe('billing', () => {
         messages={messages}
         tenantId={TENANT}
         charges={[charge]}
+        hasMore={false}
         subscriptions={[]}
         canManage={false}
         defaultCurrency=""
@@ -787,6 +791,65 @@ describe('billing', () => {
     expect(screen.queryByRole('button', { name: L('platform.billing.recordCharge') })).toBeNull();
     expect(screen.queryByRole('button', { name: L('platform.billing.void') })).toBeNull();
     expect(screen.getByText(/500\.00 SAR/)).toBeInTheDocument();
+  });
+
+  /*
+   * The commercial model is the Owner's decision D-OD-04: the Platform Owner
+   * enters each charge and each payment, and no payment provider exists in this
+   * repository. A panel headed "Billing" that offers "Record payment" is read as
+   * the front of a system collecting money unless it says otherwise, so the
+   * sentence is asserted for its content and not merely for its presence.
+   */
+  it('states that every charge and payment is entered by hand, and that nothing collects itself', () => {
+    renderLtr(
+      <BillingPanel
+        locale="en"
+        messages={messages}
+        tenantId={TENANT}
+        charges={[charge]}
+        hasMore={false}
+        subscriptions={[]}
+        canManage
+        defaultCurrency="SAR"
+      />
+    );
+    const note = screen.getByTestId('platform-billing-model');
+    expect(note).toHaveTextContent(L('platform.billing.recordedNote'));
+    expect(note.textContent ?? '').toMatch(/entered by the platform owner/i);
+    expect(note.textContent ?? '').toMatch(/no subscription renews or charges itself/i);
+  });
+
+  it('says more charges exist behind the page when the server said so, and otherwise says nothing', () => {
+    const { unmount } = renderLtr(
+      <BillingPanel
+        locale="en"
+        messages={messages}
+        tenantId={TENANT}
+        charges={[charge]}
+        hasMore={false}
+        subscriptions={[]}
+        canManage={false}
+        defaultCurrency=""
+      />
+    );
+    expect(screen.queryByTestId('platform-billing-more')).toBeNull();
+    unmount();
+
+    renderLtr(
+      <BillingPanel
+        locale="en"
+        messages={messages}
+        tenantId={TENANT}
+        charges={[charge]}
+        hasMore
+        subscriptions={[]}
+        canManage={false}
+        defaultCurrency=""
+      />
+    );
+    // The count is the rows actually drawn, so the sentence cannot claim to have
+    // examined more than it did.
+    expect(screen.getByTestId('platform-billing-more')).toHaveTextContent('The first 1 charges');
   });
 });
 
@@ -1407,6 +1470,77 @@ describe('the activity search', () => {
     expect(applied.get('action')).toBe('org.subscription_charge.recorded');
     expect(applied.get('targetTenantId')).toBe(TENANT);
   });
+
+  /*
+   * The server caps the window at 92 days and refuses a wider one as a
+   * validation failure. A refused read reaches the table as the undifferentiated
+   * error state — "something went wrong" over a Retry that can only be refused
+   * again — so the screen names the limit before it spends the request.
+   */
+  it('refuses a window wider than the server accepts, naming the limit, and asks for nothing', async () => {
+    apiGet.mockResolvedValue({
+      ok: true,
+      data: { items: [event], nextCursor: null, hasMore: false },
+      correlationId: 'c',
+    });
+    renderScreen();
+    await screen.findByText(L('platform.audit.action.0'));
+
+    fireEvent.change(screen.getByLabelText(new RegExp(`^${L('platform.audit.from')}`)), {
+      target: { value: '2026-01-01' },
+    });
+    await userEvent.click(screen.getByRole('button', { name: L('platform.audit.apply') }));
+
+    expect(await screen.findByText('Choose a range of 92 days or fewer.')).toBeInTheDocument();
+    expect(apiGet).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses an end date before the start date, and withdraws the complaint on an edit', async () => {
+    apiGet.mockResolvedValue({
+      ok: true,
+      data: { items: [event], nextCursor: null, hasMore: false },
+      correlationId: 'c',
+    });
+    renderScreen();
+    await screen.findByText(L('platform.audit.action.0'));
+
+    fireEvent.change(screen.getByLabelText(new RegExp(`^${L('platform.audit.to')}`)), {
+      target: { value: '2026-08-01' },
+    });
+    await userEvent.click(screen.getByRole('button', { name: L('platform.audit.apply') }));
+    expect(await screen.findByText(L('platform.audit.error.range'))).toBeInTheDocument();
+    expect(apiGet).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByLabelText(new RegExp(`^${L('platform.audit.to')}`)), {
+      target: { value: '2026-09-15' },
+    });
+    await waitFor(() => expect(screen.queryByText(L('platform.audit.error.range'))).toBeNull());
+
+    await userEvent.click(screen.getByRole('button', { name: L('platform.audit.apply') }));
+    await waitFor(() => expect(apiGet).toHaveBeenCalledTimes(2));
+    const applied = new URLSearchParams(String(apiGet.mock.calls[1]?.[0]).split('?')[1]);
+    expect(applied.get('to')).toBe('2026-09-15T23:59:59.999Z');
+  });
+
+  /*
+   * The criteria are held outside the table request on purpose, so the table
+   * cannot tell a narrowed search from an empty trail. Left to itself it said
+   * "Nothing here yet" — a claim about every change ever made from this console
+   * — on the evidence of one window that held none.
+   */
+  it('says no change matches the criteria, rather than that the record is empty', async () => {
+    apiGet.mockResolvedValue({
+      ok: true,
+      data: { items: [], nextCursor: null, hasMore: false },
+      correlationId: 'c',
+    });
+    renderScreen();
+
+    expect(await screen.findByTestId('platform-audit-empty')).toHaveTextContent(
+      L('platform.audit.noMatches')
+    );
+    expect(screen.queryByText(L('state.empty.title'))).toBeNull();
+  });
 });
 
 // --- account and security ------------------------------------------------------
@@ -1658,5 +1792,53 @@ describe('Arabic', () => {
     expect(toggles).toHaveLength(3);
     await user.click(toggles[0] as HTMLElement);
     expect(accountFields()[0]?.type).toBe('text');
+  });
+});
+
+// --- the console route group's own boundaries ----------------------------------
+//
+// Every console page is a Server Component that awaits at least one
+// control-plane read, and each of those reads is rated `expensive-read`. The
+// group carried no `loading.tsx`, `error.tsx` or `not-found.tsx` at all, so a
+// slow read looked like a console that had stopped responding and a render that
+// threw took the shell, the navigation and the language down with it. These
+// three files are the workspace group's, written for this group.
+
+const PlatformLoading = (await import('@/app/[locale]/(platform)/loading')).default;
+const PlatformError = (await import('@/app/[locale]/(platform)/error')).default;
+const PlatformNotFound = (await import('@/app/[locale]/(platform)/not-found')).default;
+
+describe('the console route group draws its own waiting, failure and not-found screens', () => {
+  it('says it is loading, in the language of the address', () => {
+    renderLtr(<PlatformLoading />);
+    expect(screen.getByText(L('state.loading'))).toBeInTheDocument();
+  });
+
+  it('says the page could not be found', () => {
+    renderLtr(<PlatformNotFound />);
+    expect(screen.getByText(L('state.notFound.title'))).toBeInTheDocument();
+  });
+
+  it('shows the failure reference and retries, and publishes nothing from the error itself', async () => {
+    const reset = vi.fn();
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const failure = Object.assign(new Error('connect ECONNREFUSED /var/secret/socket'), {
+      digest: 'digest-9',
+    });
+
+    renderLtr(<PlatformError error={failure} reset={reset} />);
+
+    expect(screen.getByText(L('state.error.title'))).toBeInTheDocument();
+    expect(screen.getByText('digest-9')).toBeInTheDocument();
+    // The message and the path inside it stay off the screen and out of the log
+    // line: a Next.js error message routinely carries both.
+    expect(document.body.textContent ?? '').not.toContain('ECONNREFUSED');
+    for (const call of logged.mock.calls) {
+      expect(String(call[0])).not.toContain('ECONNREFUSED');
+    }
+
+    await userEvent.click(screen.getByRole('button', { name: L('state.retry') }));
+    expect(reset).toHaveBeenCalledTimes(1);
+    logged.mockRestore();
   });
 });

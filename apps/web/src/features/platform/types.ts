@@ -29,6 +29,35 @@ export const CAPACITY_WARNING_PERCENT = 90;
 /** The audit window the search opens on, in days. */
 export const AUDIT_DEFAULT_WINDOW_DAYS = 30;
 
+/**
+ * The widest window `platform.audit-search` accepts, in days.
+ *
+ * `MAX_AUDIT_WINDOW_DAYS` in `modules/platform/application/insight-service.ts`.
+ * The server refuses a wider range with a validation failure, and a refused read
+ * reaches a table as the undifferentiated error state — an operator who asked
+ * for a year would be told the system had broken and offered a Retry that can
+ * only break again. Repeating the figure here lets the screen name the actual
+ * limit before it spends the request; the server still decides.
+ */
+export const AUDIT_MAX_WINDOW_DAYS = 92;
+
+/**
+ * What is wrong with a chosen day range, as a message key, or null when nothing
+ * is.
+ *
+ * A day either side is read as the whole day, exactly as `auditCriteria` sends
+ * it: from the first instant of `fromDay` to the last of `toDay`. A day that is
+ * not a date at all is left to the controls that produced it.
+ */
+export function auditWindowProblem(fromDay: string, toDay: string): string | null {
+  const from = Date.parse(`${fromDay}T00:00:00.000Z`);
+  const to = Date.parse(`${toDay}T23:59:59.999Z`);
+  if (Number.isNaN(from) || Number.isNaN(to)) return null;
+  if (to < from) return 'platform.audit.error.range';
+  if (to - from > AUDIT_MAX_WINDOW_DAYS * 86_400_000) return 'platform.audit.error.window';
+  return null;
+}
+
 export interface OrganizationRow {
   readonly id: string;
   readonly tenantCode: string;

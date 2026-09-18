@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { NAVIGATION, flattenNavigation } from '@/config/navigation';
 import { PLATFORM_NAVIGATION } from '@/config/platform-navigation';
 import { PLATFORM_PERMISSIONS, holds } from '@/features/platform/permissions';
-import { auditActionKey, usagePercent, usageWarns } from '@/features/platform/types';
+import {
+  AUDIT_MAX_WINDOW_DAYS,
+  auditActionKey,
+  auditWindowProblem,
+  usagePercent,
+  usageWarns,
+} from '@/features/platform/types';
 import { visibleNavigation } from '@/lib/permissions';
 import en from '../src/i18n/messages/en.json';
 
@@ -103,5 +109,33 @@ describe('console presentation rules', () => {
     expect(catalogue[auditActionKey('org.tenant.provisioned')]).toBe('Organisation created');
     expect(auditActionKey('something.else')).toBe('platform.audit.action.other');
     expect(catalogue['platform.audit.action.other']).toBeTruthy();
+  });
+
+  /*
+   * The activity search judges its day range before it spends a request. The
+   * server refuses a reversed range and one wider than its ceiling as validation
+   * failures, and a refused read reaches a table as the general error state, so
+   * the screen has to name the reason itself.
+   */
+  it('accepts a range inside the ceiling, and names what is wrong with one that is not', () => {
+    const catalogue = en as Record<string, string>;
+    expect(AUDIT_MAX_WINDOW_DAYS).toBe(92);
+    expect(auditWindowProblem('2026-08-17', '2026-09-16')).toBeNull();
+    /*
+     * Both days count in full — the first instant of the start day to the last
+     * of the end day — which is exactly the pair of instants the request sends
+     * and the server measures. Ninety-two days counted inclusively is the widest
+     * that fits; the ninety-third does not.
+     */
+    expect(auditWindowProblem('2026-06-17', '2026-09-16')).toBeNull();
+    expect(auditWindowProblem('2026-09-16', '2026-09-16')).toBeNull();
+    expect(auditWindowProblem('2026-06-16', '2026-09-16')).toBe('platform.audit.error.window');
+    expect(auditWindowProblem('2026-09-16', '2026-09-15')).toBe('platform.audit.error.range');
+    // A day the controls have not filled in yet is nothing to complain about.
+    expect(auditWindowProblem('', '2026-09-16')).toBeNull();
+    for (const key of ['platform.audit.error.window', 'platform.audit.error.range']) {
+      expect(catalogue[key]).toBeTruthy();
+    }
+    expect(catalogue['platform.audit.error.window']).toContain('{days}');
   });
 });

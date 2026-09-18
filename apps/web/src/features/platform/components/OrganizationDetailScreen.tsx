@@ -220,6 +220,7 @@ export function OrganizationDetailScreen({
             messages={messages}
             tenantId={organization.id}
             charges={charges.data.items}
+            hasMore={charges.data.hasMore}
             subscriptions={organization.subscriptions}
             canManage={capabilities.canManageBilling}
             defaultCurrency={currentPlan?.currencyCode ?? ''}

@@ -8,11 +8,20 @@ import { FormFeedback } from '@/features/authentication/components/FormFeedback'
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translateDynamic } from '@/i18n/get-messages';
-import { formatDate, intlLocale } from '@/lib/format';
+import { formatDate, formatInteger, intlLocale } from '@/lib/format';
+import { formatMessage, translate } from '@/i18n/get-messages';
 import { formatMoney } from '@/lib/money';
 import { recordChargeAction, recordReceiptAction, voidChargeAction } from '../actions';
 import type { OrganizationSubscription, SubscriptionCharge } from '../types';
-import { Cell, PRIMARY_BUTTON, SECONDARY_BUTTON, Section, SimpleTable, StatusBadge } from './ui';
+import {
+  Cell,
+  PRIMARY_BUTTON,
+  SECONDARY_BUTTON,
+  SECTION_HINT,
+  Section,
+  SimpleTable,
+  StatusBadge,
+} from './ui';
 import { useConsoleAction } from './use-console-action';
 
 /**
@@ -21,7 +30,21 @@ import { useConsoleAction } from './use-console-action';
  * Charges, the receipts against each, and what is still outstanding — every
  * figure as the server computed it. Amounts are typed through `MoneyField`,
  * which keeps them as canonical decimal strings; nothing here adds, subtracts or
- * converts money.
+ * converts money. Nothing is totalled across charges either: two charges in two
+ * currencies have no sum, and the platform-wide figures that DO add up are the
+ * overview's, one row per currency.
+ *
+ * Two sentences the panel owes its reader (P1-32-PRE-OD-CONSOLE-004):
+ *
+ *   - **What this commercial model is.** Every charge and every payment here is
+ *     entered by the Platform Owner (D-OD-04). No payment provider exists in this
+ *     repository, nothing is collected from a card, and no subscription renews
+ *     and bills itself. A panel headed "Billing" with a "Record payment" button
+ *     and no such statement reads as the front end of a system that takes money.
+ *   - **What the table actually holds.** The page is the server's first page.
+ *     When the server says more charges exist behind it, the panel says so,
+ *     because an outstanding column read as the whole account when it is one
+ *     page of it is a wrong number rather than a missing one.
  */
 
 type Pending =
@@ -34,6 +57,7 @@ export function BillingPanel({
   messages,
   tenantId,
   charges,
+  hasMore,
   subscriptions,
   canManage,
   defaultCurrency,
@@ -42,6 +66,8 @@ export function BillingPanel({
   readonly messages: Messages;
   readonly tenantId: string;
   readonly charges: readonly SubscriptionCharge[];
+  /** The server's own end-of-set signal for the page above. */
+  readonly hasMore: boolean;
   readonly subscriptions: readonly OrganizationSubscription[];
   readonly canManage: boolean;
   readonly defaultCurrency: string;
@@ -67,6 +93,10 @@ export function BillingPanel({
         ) : null
       }
     >
+      <p data-testid="platform-billing-model" className={`mb-3 ${SECTION_HINT}`}>
+        {t('platform.billing.recordedNote')}
+      </p>
+
       <SimpleTable
         caption={t('platform.billing.title')}
         headers={[
@@ -148,6 +178,14 @@ export function BillingPanel({
           </tr>
         ))}
       </SimpleTable>
+
+      {hasMore ? (
+        <p data-testid="platform-billing-more" className="mt-2 text-caption text-text-muted">
+          {formatMessage(translate(messages, 'platform.billing.morePages'), {
+            count: formatInteger(charges.length, locale),
+          })}
+        </p>
+      ) : null}
 
       {pending?.type === 'charge' ? (
         <ChargeDialog
