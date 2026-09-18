@@ -137,7 +137,7 @@ sit in the tree looking like coverage while running nowhere.
 
 ## Current tree
 
-The live web suite holds **167 web test files**, every one matched by a `vitest`
+The live web suite holds **168 web test files**, every one matched by a `vitest`
 project, and the current tree executes **4714** tests. Both are derived on every
 run of `npm run validate:p1-27-closing-values` rather than recorded by hand.
 
@@ -160,7 +160,7 @@ what marks it hosted.
 
 | measure                                    | value | the command that decides it                                       |
 | ------------------------------------------ | ----- | ------------------------------------------------------------------ |
-| Web test files under `apps/web/tests`       | 167    | a walk of the tree                                                 |
+| Web test files under `apps/web/tests`       | 168    | a walk of the tree                                                 |
 | Web tier — tests executed                   | 4714  | `--record web`, from the `vitest` JSON report                      |
 | Web tier — files the run reported           | 167    | the same report, cross-checked against the walk above              |
 | Root unit tier — tests executed             | 3595  | `--record unit`, from the `vitest` JSON report                     |
@@ -181,7 +181,7 @@ the tree was running.
 | --------------------------------------------------- | ------------------------------------------- |
 | Tracked files under `docs/phase-1/phase-1-27`        | 42                                          |
 | Tracked `.md` files under the same directory         | 32                                          |
-| Migrations tracked by git at `HEAD`                  | 158                                         |
+| Migrations tracked by git at `HEAD`                  | 159                                         |
 | `CODE_CANDIDATE_SHA`                                 | `501f5f0d48d7b8cafc12dad51f6c501534b66a18`  |
 | Executable paths changed, candidate to accepted `develop` | 0                                      |
 

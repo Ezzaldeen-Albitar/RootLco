@@ -22,8 +22,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "The live web suite holds **167 web test files**",
-      "value": "167",
+      "locator": "The live web suite holds **168 web test files**",
+      "value": "168",
       "binding": {
         "kind": "derived",
         "table": "counts",
@@ -64,8 +64,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Web test files under `apps/web/tests`       | 167    | a walk of the tree                                                 |",
-      "value": "167",
+      "locator": "| Web test files under `apps/web/tests`       | 168    | a walk of the tree                                                 |",
+      "value": "168",
       "binding": {
         "kind": "derived",
         "table": "counts",
@@ -212,8 +212,8 @@
       "class": "DERIVABLE_GIT",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Migrations tracked by git at `HEAD`                  | 158                                         |",
-      "value": "158",
+      "locator": "| Migrations tracked by git at `HEAD`                  | 159                                         |",
+      "value": "159",
       "binding": {
         "kind": "git",
         "op": "lsTree",
