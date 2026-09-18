@@ -151,17 +151,17 @@ anywhere in this file.
 
 ## Section 7 — Search
 
-| capability                     | status      | UI route                  | backend operation         | evidence                                                                                                  |
-| ------------------------------ | ----------- | ------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Customer by name               | implemented | `/[locale]/crm/customers` | `crm.customer-search`     | Contains rather than prefix, over a folded name                                                           |
-| Customer by phone              | implemented | `/[locale]/crm/customers` | `crm.customer-search`     | Exact, or a suffix from seven digits up; the result is masked to four digits without `iam.sensitive.view` |
-| Vehicle by make and model      | implemented | `/[locale]/vehicles`      | `veh.vehicle-search`      | Contains, each needing at least two characters                                                            |
-| Vehicle by chassis number      | implemented | `/[locale]/vehicles`      | `veh.vehicle-search`      | Exact match                                                                                               |
-| Vehicle by plate, with history | implemented | `/[locale]/vehicles`      | `veh.vehicle-search`      | A previous plate matches, and the row says so and names the date that plate stopped being current         |
-| Work order by number           | implemented | `/[locale]/work-orders`   | `wo.work-order-list`      | An exact-number filter, and a fragment search over number, customer name, plate and VIN                   |
-| Digit normalization            | implemented | every search above        | `shared.fold_search_text` | Arabic-Indic digits fold to ASCII, tashkeel and tatweel are removed, and the alef forms collapse          |
-| Server-side paging             | implemented | every list                | n/a                       |                                                                                                           |
-| Scope isolation                | implemented | every list                | n/a                       | Enforced by row-level security                                                                            |
+| capability                     | status      | UI route                  | backend operation       | evidence                                                                                                                                            |
+| ------------------------------ | ----------- | ------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Customer by name               | implemented | `/[locale]/crm/customers` | `crm.customer-search`   | Contains rather than prefix, over a folded name                                                                                                     |
+| Customer by phone              | implemented | `/[locale]/crm/customers` | `crm.customer-search`   | Exact, or a suffix from seven digits up; the result is masked to four digits without `iam.sensitive.view`                                           |
+| Vehicle by make and model      | implemented | `/[locale]/vehicles`      | `veh.vehicle-search`    | Contains, each needing at least two characters                                                                                                      |
+| Vehicle by chassis number      | implemented | `/[locale]/vehicles`      | `veh.vehicle-search`    | Exact match                                                                                                                                         |
+| Vehicle by plate, with history | implemented | `/[locale]/vehicles`      | `veh.vehicle-search`    | A previous plate matches, and the row says so and names the date that plate stopped being current                                                   |
+| Work order by number           | implemented | `/[locale]/work-orders`   | `wo.work-order-list`    | An exact-number filter, and a fragment search over number, customer name, plate and VIN                                                             |
+| Digit normalization            | implemented | every search above        | n/a — a shared function | `shared.fold_search_text` and its TypeScript twin: Arabic-Indic digits fold to ASCII, tashkeel and tatweel are removed, and the alef forms collapse |
+| Server-side paging             | implemented | every list                | n/a                     |                                                                                                                                                     |
+| Scope isolation                | implemented | every list                | n/a                     | Enforced by row-level security                                                                                                                      |
 
 ## Sections 1 and 11 — Environment and delivery
 
