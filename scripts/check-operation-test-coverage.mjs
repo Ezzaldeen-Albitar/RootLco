@@ -3421,6 +3421,59 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
     note: 'a second retirement changes nothing; another tenant answers 404',
   },
+  // ---- Owner directive: operational stock alerts ----
+  //
+  // The four stock reads are branch-scoped, so `isolation` is derived; each is
+  // additionally required to prove a `denial`, because an alert a caller should not
+  // see is the same disclosure as the underlying balance they may not read.
+  'inv.reorder-level-set': {
+    files: ['tests/backend/od-inventory-alerts.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'one live row per (item, company, branch, location), so a second call revises rather than duplicating and an unchanged call writes nothing at all; a branch narrowing without its company and a location without its branch are refused on the field; an organisation-wide level requires inv.item.manage held across the organisation',
+  },
+  'inv.reorder-level-list': {
+    files: ['tests/backend/od-inventory-alerts.test.ts'],
+    required: ['success', 'denial', 'isolation'],
+    note: 'the configuration list shows every narrowing rather than the winner, so an operator can see the wider row a branch row is overriding; another tenant holding the same authority sees none of it',
+  },
+  'inv.reorder-level-retire': {
+    files: ['tests/backend/od-inventory-alerts.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'stale-version',
+      'audit',
+      'idempotency',
+      'isolation',
+    ],
+    note: 'If-Match is required and a stale version is refused; the row is kept and the signature freed, so a replacement can be set at once; a second retirement changes nothing and is audited once; another tenant answers 404',
+  },
+  'inv.low-stock-alert-read': {
+    files: ['tests/backend/od-inventory-alerts.test.ts'],
+    required: ['success', 'denial', 'isolation'],
+    note: 'an item with no configured level never appears however empty its shelf; the boundary is at, one below and one above the level; a level naming a location is compared against that location alone; quarantine and transit are excluded from a branch total and the response names them',
+  },
+  'inv.count-discrepancy-alert-read': {
+    files: ['tests/backend/od-inventory-alerts.test.ts'],
+    required: ['success', 'denial', 'isolation'],
+    note: 'a reconciled line carries the generated variance the adjustment was raised from and that adjustment approval state; a line counted exactly right is not a discrepancy',
+  },
+  'inv.unusual-consumption-alert-read': {
+    files: ['tests/backend/od-inventory-alerts.test.ts'],
+    required: ['success', 'denial', 'isolation'],
+    note: 'fires at the stated multiple of the median and not one step above it; the absolute floor can refuse on its own; every compared window and the baseline travel with the finding; a period outside the published bounds is refused on query.periodDays',
+  },
+  'inv.aged-in-transit-alert-read': {
+    files: ['tests/backend/od-inventory-alerts.test.ts'],
+    required: ['success', 'denial', 'isolation'],
+    note: 'reported past the age asked about and silent inside it; the remaining quantity is the schema generated outstanding figure and both branches travel with the finding',
+  },
+  'org.capacity-alert-read': {
+    files: ['tests/backend/od-organization-administration.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'every alert restates a kind org.capacity_usage already reports, with the same figures and a severity from the shared classifier the platform console uses; a tenant exactly on all three ceilings is at-limit on all three with no headroom, a tenant on no plan is flagged for nothing because an unlimited kind cannot run out, and a caller without org.tenant.read is refused',
+  },
   'inv.stock-transfer-discrepancy-resolve': {
     files: ['tests/backend/p1-32-material-demand.test.ts'],
     required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],

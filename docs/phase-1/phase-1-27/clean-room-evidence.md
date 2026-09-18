@@ -167,7 +167,7 @@ what marks it hosted.
 | Root unit tier — files the run reported     | 138   | the same report, cross-checked against the tier's include rule      |
 | Committed web floor (`minTests`)            | 4459  | `.github/ci-baselines/test-count-baseline.json`                    |
 | Committed unit floor (`minTests`)           | 1050  | the same baseline                                                  |
-| Migrations on disk                          | 158   | a walk of `supabase/migrations`                                    |
+| Migrations on disk                          | 159   | a walk of `supabase/migrations`                                    |
 
 The floor and the measurement are different questions and they have different
 authorities. The baseline file defines the FLOOR, so binding "the floor is 4459"

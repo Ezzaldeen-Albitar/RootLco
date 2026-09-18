@@ -85,7 +85,9 @@ describe('every operation publishes the success status it returns', () => {
     // and the capacity read is one new module.
     // 484 at the integration of the two lines: 416 in the shared base, 52 more
     // operations from this branch and 16 from the console.
-    expect(actual.size).toBe(484);
+    // 492 with the Owner directive operational stock alerts: eight operations over
+    // seven new route modules, the reorder-level collection carrying both verbs.
+    expect(actual.size).toBe(492);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -212,7 +214,11 @@ describe('every operation publishes the success status it returns', () => {
     // its two sibling creates move the 201 count above instead.
     // 336 + 307 - 298 = 345 at the integration of the two lines: the console's
     // nine 200s and this branch's thirty-eight land on disjoint route modules.
-    expect(counts[200]).toBe(345);
+    // 345 -> 353 with the Owner directive operational stock alerts. All eight
+    // publish 200: six are reads, and the two writes change or create a row whose
+    // identity the caller already named by its signature, so neither handler sets
+    // 201 and neither declares it.
+    expect(counts[200]).toBe(353);
   });
 
   it('reads the handler, not the declaration', () => {

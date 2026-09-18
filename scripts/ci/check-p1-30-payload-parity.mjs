@@ -79,6 +79,12 @@ export const BODYLESS = Object.freeze({
   // approver is the caller. Entered scope with `inv` in W4; no P1-30 screen sends it.
   'inv.opening-batch-approve':
     'the approval carries nothing but the batch in the path and the caller as approver',
+  // Retiring a reorder level names the level in the path and its version in
+  // If-Match. There is nothing else to send: retirement is a state, not a
+  // decision with parameters, and a reason field nobody is required to fill is a
+  // field that records nothing.
+  'inv.reorder-level-retire':
+    'retirement carries nothing but the level in the path and its version as If-Match',
   // Issuance has no parameters: the invoice is the path parameter and the
   // version travels as If-Match. Sent by the W6 screen with no body.
   'sal.invoice-issue':
@@ -176,6 +182,15 @@ export const PENDING_MIRRORS = Object.freeze({
   // change teaches the shared comparison to walk a discriminated union.
   'inv.material-requirement-create':
     'PENDING: the body is a discriminated union (`basis`) and the shared comparison reads one object shape only; the screen sends it and the shape is declared in features/inventory/inventory-contract.ts',
+  // The Owner directive operational stock alerts are a BACKEND slice: the reorder
+  // level is set through the API and no screen sends it yet. Declaring a mirror
+  // now would be a shape with no consumer, which is the "declared but never wired"
+  // defect this repository keeps refusing; leaving it undeclared would be a red
+  // that says nothing. The P1-29 comparison enforces the lifecycle — the moment a
+  // mirror declares `ReorderLevelSetBody`, this entry is STALE and fails, so the
+  // change that builds the screen must delete it in the same commit.
+  'inv.reorder-level-set':
+    'PENDING: the alerts slice is backend-only and no screen sends this yet; the change that builds the reorder-level screen owes the mirror and must delete this entry',
   // The `sal` writes entered this scope with W6, which mirrors the invoice
   // create and cancel bodies. Payments belong to W7 (canonical plan §4); credit
   // notes are sent by no P1-30 screen.

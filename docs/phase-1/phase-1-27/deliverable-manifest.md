@@ -986,11 +986,11 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files tests/ci = 77 -->
 <!-- derived: files scripts/ci = 66 -->
 <!-- derived: files apps/web/scripts = 4 -->
-<!-- derived: files supabase/migrations = 158 -->
-<!-- derived: files tests/db = 154 -->
-<!-- derived: files tests/db:all = 158 -->
-<!-- derived: files tests/backend = 156 -->
-<!-- derived: files tests/backend:all = 165 -->
+<!-- derived: files supabase/migrations = 159 -->
+<!-- derived: files tests/db = 155 -->
+<!-- derived: files tests/db:all = 159 -->
+<!-- derived: files tests/backend = 157 -->
+<!-- derived: files tests/backend:all = 166 -->
 <!-- derived: files apps/web/src/features/crm = 20 -->
 <!-- derived: files apps/web/src/features/vehicles = 23 -->
 <!-- derived: files p1-27-frontend-gate = 171 -->

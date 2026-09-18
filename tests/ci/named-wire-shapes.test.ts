@@ -178,8 +178,12 @@ describe('every route body serialises a named type', () => {
     // console's sixteen bodies and this branch's fifty-two add without overlap;
     // `named` moves by seventeen and by fifty-two, and `composed` falls by one
     // for the console's `platform.organization-read` alone.
-    expect(summary.bodies).toBe(484);
-    expect(summary.named).toBe(432);
+    // 492 with the Owner directive operational stock alerts: eight operations —
+    // the three reorder-level ones, the four stock alerts and the tenant capacity
+    // alert — each serialising a NAMED view, so `named` moves by eight and
+    // `composed` does not move at all.
+    expect(summary.bodies).toBe(492);
+    expect(summary.named).toBe(440);
     expect(summary.composed).toBe(52);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);
