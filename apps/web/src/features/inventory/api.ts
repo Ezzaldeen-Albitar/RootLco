@@ -49,6 +49,7 @@ import type {
 } from '@/lib/contracts/inventory-contract';
 import type { BranchOption } from '@/features/services/services-contract';
 import {
+  ALERT_PAGE_SIZE,
   MATERIAL_DRAW_REASONS,
   type AdjustmentEcho,
   type AdjustmentState,
@@ -1622,16 +1623,17 @@ export async function retireVehicleSpecification(
  * Operational stock alerts (Owner directive) — four READS, no writes
  * ------------------------------------------------------------------ */
 
-/**
- * How many findings one card asks for.
+/*
+ * HOW MANY FINDINGS ONE CARD ASKS FOR is declared in `inventory-contract.ts`,
+ * not here, and it is imported above.
  *
- * A card is a summons to act, not a report: it shows the head of the list and
- * says so when the server answered that more exist. The alternative — asking
- * for everything so a total can be shown — would make an expensive read more
- * expensive in order to publish a number no screen acts on. `hasMore` is the
- * server's own end-of-set signal and is the only claim made about the rest.
+ * This file carries `'use server'`, and such a module may export async
+ * functions and types and nothing else: every other export is handed to the
+ * client as a server reference, which is a thing a number cannot be. The gate
+ * `validate:use-server-exports` says so, and it said so about this constant.
+ * The figure is a contract value in any case — it describes what the cards ask
+ * the server for — so the contract is where it belongs.
  */
-export const ALERT_PAGE_SIZE = 10;
 
 /**
  * `inv.low-stock-alert-read` — what this branch is running out of.

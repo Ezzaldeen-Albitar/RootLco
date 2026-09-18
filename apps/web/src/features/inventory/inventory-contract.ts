@@ -1425,6 +1425,21 @@ export interface VehicleSpecificationEcho extends VehicleSpecification {
  * ------------------------------------------------------------------ */
 
 /**
+ * How many findings one card asks for.
+ *
+ * A card is a summons to act, not a report: it shows the head of the list and
+ * says so when the server answered that more exist. The alternative — asking
+ * for everything so a total can be shown — would make an expensive read more
+ * expensive in order to publish a number no screen acts on. `hasMore` is the
+ * server's own end-of-set signal and is the only claim made about the rest.
+ *
+ * DECLARED HERE, not beside the reads that default to it: `api.ts` is a
+ * `'use server'` module and may export async functions and types only, so a
+ * constant exported from there is a server reference handed to the client.
+ */
+export const ALERT_PAGE_SIZE = 10;
+
+/**
  * Every alert list carries the instant the DATABASE answered.
  *
  * Not this process's clock and not the moment the screen painted: a freshness
