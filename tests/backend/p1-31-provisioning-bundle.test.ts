@@ -242,6 +242,22 @@ const EXCLUDED = Object.freeze([...EXCLUDED_UNDECLARED, ...EXCLUDED_BY_DECISION]
 /** The bundle before this slice: 48 → 65 (#321) → 67 (#322). Eleven added: 78; two more: 80. */
 const BUNDLE_BEFORE = 67;
 
+/**
+ * The widening AFTER P1-31: the five P1-32 material codes (P1-32-PRE-134), carried
+ * once every reservation and issue for a work order had to draw on an approved
+ * material requirement, so that an administrator can ask for, approve and delegate
+ * one. Kept apart from `ADDED_ALL` because it answers a later question than the
+ * five P1-31 widenings; B1 holds the arithmetic for both and the register
+ * measurement for each. 78 + 5 = 83.
+ */
+const ADDED_AFTER_P1_31 = Object.freeze([
+  'inv.material.request',
+  'inv.material.approve',
+  'inv.material.exception.approve',
+  'inv.unit_conversion.manage',
+  'inv.specification.manage',
+]);
+
 const IDENTITY_PROVIDER = 'test_harness';
 const SUBJECT_HOLDER = 'fx_p131_platform_holder';
 const USER_HOLDER = 'd3100000-0000-4000-8000-00000000001b';
@@ -491,9 +507,13 @@ describe('P1-31 P-1 — the derivation', () => {
     const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
 
     // The delta, stated two ways so neither can drift alone.
-    expect(bundle).toHaveLength(BUNDLE_BEFORE + ADDED_ALL.length);
-    expect(bundle.filter((code) => !ADDED_ALL.includes(code))).toHaveLength(BUNDLE_BEFORE);
-    for (const code of ADDED_ALL) expect(bundle.filter((c) => c === code)).toHaveLength(1);
+    expect(bundle).toHaveLength(BUNDLE_BEFORE + ADDED_ALL.length + ADDED_AFTER_P1_31.length);
+    expect(
+      bundle.filter((code) => !ADDED_ALL.includes(code) && !ADDED_AFTER_P1_31.includes(code))
+    ).toHaveLength(BUNDLE_BEFORE);
+    for (const code of [...ADDED_ALL, ...ADDED_AFTER_P1_31]) {
+      expect(bundle.filter((c) => c === code)).toHaveLength(1);
+    }
     for (const code of EXCLUDED) expect(bundle).not.toContain(code);
     expect(new Set(bundle).size).toBe(bundle.length);
     expect(bundle.some((c) => c.includes('*'))).toBe(false);
@@ -513,6 +533,7 @@ describe('P1-31 P-1 — the derivation', () => {
       register.operations.filter((op) => op.permissions.includes(code)).map((op) => op.id);
 
     for (const code of ADDED_ALL) expect(declarersOf(code).length).toBeGreaterThan(0);
+    for (const code of ADDED_AFTER_P1_31) expect(declarersOf(code).length).toBeGreaterThan(0);
 
     // CC-01 and CC-02: withheld BECAUSE nothing declared them. Both were released
     // on 2026-09-09 by the slices that published their writers, so the list is

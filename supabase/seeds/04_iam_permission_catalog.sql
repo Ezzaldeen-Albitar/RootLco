@@ -74,6 +74,30 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   ('inv.custody.manage',       'inv', 'Record custody of customer-supplied parts','medium', '00000000-0000-4000-8000-000000000001'),
   ('inv.external_purchase.record','inv','Record ad-hoc external purchase references','medium','00000000-0000-4000-8000-000000000001'),
   ('inv.audit.read',           'inv', 'Read inventory reconciliation evidence',  'high',   '00000000-0000-4000-8000-000000000001'),
+  -- P1-32 preparatory slice 3a — material demand control. Five codes, because five
+  -- different authorities are involved and collapsing any two would let one person
+  -- do another's job:
+  --   * requesting material for a job is not approving how much the job may take,
+  --     and the database refuses an approval by the requester in any case
+  --     (ck_material_requirements_separation) — so the requester and the approver
+  --     hold two codes, and a storekeeper who issues stock needs neither;
+  --   * approving an EXCEPTION beyond an approved allowance is a stronger authority
+  --     than approving the allowance. It is a dedicated code rather than an
+  --     iam.approval_limits limit type because that table is monetary only
+  --     (amount with a NOT NULL currency_code), and a quantity of litres has no
+  --     currency — see 20260917097000_inv_material_requirements.sql;
+  --   * stating how many litres a pack holds, and recording a vehicle's service
+  --     capacity with its source, are reference-data authorities that change what
+  --     every later requirement is measured against, so neither rides on
+  --     inv.item.manage.
+  -- The transfer write-off added in the same slice reuses inv.adjustment.approve
+  -- (a second person approving a stock loss), and a partial receipt or a return to
+  -- origin reuses inv.stock.operate; neither mints a code.
+  ('inv.material.request',     'inv', 'Request material for a work order service line', 'medium', '00000000-0000-4000-8000-000000000001'),
+  ('inv.material.approve',     'inv', 'Approve how much material a work order may use',  'high',   '00000000-0000-4000-8000-000000000001'),
+  ('inv.material.exception.approve', 'inv', 'Approve extra material beyond an approved amount', 'high', '00000000-0000-4000-8000-000000000001'),
+  ('inv.unit_conversion.manage', 'inv', 'Manage exact unit conversions for items',       'medium', '00000000-0000-4000-8000-000000000001'),
+  ('inv.specification.manage', 'inv', 'Record and confirm vehicle service capacities',   'medium', '00000000-0000-4000-8000-000000000001'),
   -- Phase 1-11 — Billing & Payment (sal)
   ('sal.invoice.manage',       'sal', 'Create and manage draft invoices',         'medium', '00000000-0000-4000-8000-000000000001'),
   ('sal.invoice.issue',        'sal', 'Issue invoices (allocate numbers)',         'high',   '00000000-0000-4000-8000-000000000001'),

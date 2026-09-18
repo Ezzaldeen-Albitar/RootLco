@@ -39,6 +39,7 @@ export const ERROR_CODES = [
   'ERR-NTF-001',
   'ERR-EXP-001',
   'ERR-TRN-001',
+  'ERR-INV-001',
   'ERR-WO-001',
   'ERR-WO-002',
   'ERR-TECH-001',
@@ -306,6 +307,16 @@ const DEFINITIONS: Readonly<Record<ErrorCode, ErrorDefinition>> = Object.freeze(
     class: 'conflict',
     description:
       'The requested target state is registered for this aggregate, but the aggregate is not in a state the transition may start from — including the case where it is already in the target state. Distinct from ERR-CON-001, which means the caller held a stale record version: re-reading and retrying fixes a version conflict and cannot fix this one.',
+  },
+  'ERR-INV-001': {
+    code: 'ERR-INV-001',
+    title: 'Material draw not covered by an approved requirement',
+    status: 409,
+    owner: 'transition',
+    retryable: false,
+    class: 'conflict',
+    description:
+      'A reservation or issue for a work order drew on no material requirement or on one that does not allow it: no requirement on the work order covers the item at all (no_requirement — the absence of a requirement is a refusal, never an unlimited draw), the requirement is not approved, the item has no exact conversion into the requirement unit, no confirmed specification supplied the allowance, or the quantity would take the committed total past the approved allowance plus approved exceptions. The response carries materialDraw with the effective allowance, the quantity already committed and the quantity requested, all in the requirement unit as exact decimal strings, and the reason. Nothing moved. Deliberately NOT ERR-TRN-001: the stock may be there and the work order may accept parts; what refuses the draw is the approved demand, and the remedy is an approval, a reference fact or an approved exception.',
   },
   'ERR-WO-001': {
     code: 'ERR-WO-001',

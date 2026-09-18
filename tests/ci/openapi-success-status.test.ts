@@ -27,6 +27,7 @@ import { readFileSync } from 'node:fs';
 import {
   actualSuccessStatuses,
   declaredOperations,
+  publishedSuccessStatuses,
   routeFiles,
   successStatuses,
 } from '../../scripts/ci/check-openapi-success-status.mjs';
@@ -38,14 +39,14 @@ const SPEC = JSON.parse(readFileSync('docs/api/openapi.v1.json', 'utf8')) as {
   >;
 };
 
+/** The published success status of each operation, the replay status set apart. */
 function publishedSuccess(): Map<string, number> {
   const out = new Map<string, number>();
-  for (const methods of Object.values(SPEC.paths)) {
-    for (const op of Object.values(methods)) {
-      if (!op || typeof op !== 'object' || !op.responses || !op.operationId) continue;
-      const success = Object.keys(op.responses).find((code) => code.startsWith('2'));
-      if (success) out.set(op.operationId, Number(success));
-    }
+  for (const [id, published] of publishedSuccessStatuses(SPEC) as Map<
+    string,
+    { success: number; replay: number | null; codes: number[] }
+  >) {
+    out.set(id, published.success);
   }
   return out;
 }
@@ -68,7 +69,23 @@ describe('every operation publishes the success status it returns', () => {
     // capacity read is one new module.
     // 432 with the P1-32-PRE-151 organisation growth: three operations over three
     // new route modules under the organisation the console is administering.
-    expect(actual.size).toBe(432);
+    // 431 with the P1-32 preparatory inventory slice: eighteen more route
+    // handlers, each resolved from its own literal status or its absence.
+    // 437 with P1-32 preparatory slice 2: six identifier operations.
+    // 444 with the rest of that slice: two item-price operations, two counter-sale
+    // operations and three return operations.
+    // 459 with P1-32 preparatory slice 3b: six material-requirement operations,
+    // three unit-conversion operations, four specification operations and the two
+    // transfer discrepancy acts.
+    // 463 with slice 3c: the requirement re-check and cancellation and the request
+    // closure and cancellation.
+    // 465 with P1-32-PRE-141: the transfer settlement list and read.
+    // 468 with the Owner directive organisation administration merged in: the
+    // company and branch creates co-locate a POST on two existing route modules,
+    // and the capacity read is one new module.
+    // 484 at the integration of the two lines: 416 in the shared base, 52 more
+    // operations from this branch and 16 from the console.
+    expect(actual.size).toBe(484);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -117,7 +134,28 @@ describe('every operation publishes the success status it returns', () => {
     // returns 200.
     // The three growth operations all return 201: each of them either writes a
     // row or issues an invitation, and a re-invitation is still an act.
-    expect(counts[201]).toBe(124);
+    // The P1-32 preparatory inventory slice publishes eighteen operations and
+    // exactly ONE literal 201: the adjustment request. The three creates that can
+    // replay — transfer dispatch, goods receipt, count open — return
+    // `replayed ? 200 : 201`, which the scanner cannot read as a literal and so
+    // publishes as 200, exactly as `inv.stock-reservation-create` already does.
+    // P1-32 preparatory slice 2 adds ONE literal 201, the identifier add; the
+    // internal-barcode allocation returns `replayed ? 200 : 201` and publishes 200.
+    // P1-32 preparatory slice 3b adds FOUR literal 201s — the requirement create,
+    // the exception create, the conversion set and the specification record — and
+    // the discrepancy resolution returns `replayed ? 200 : 201` and publishes 200.
+    // 121 -> 129 when slice 3c taught the scanner the replay ternary: the EIGHT
+    // creates written `x.replayed ? 200 : 201` — reservation, transfer dispatch,
+    // goods receipt, count open, barcode allocation, counter sale, sales return and
+    // discrepancy resolution — now resolve to the 201 they return on a create, and
+    // publish their replay 200 beside it (`x-replay-status`). None of slice 3c's own
+    // four operations creates anything, so none of them moves this count.
+    // 129 -> 131 with the Owner directive organisation administration merged in:
+    // the company and branch creates each return a literal 201; its capacity read
+    // returns 200 and moves the count below instead.
+    // 131 + 124 - 117 = 138 at the integration of the two lines: the console's
+    // seven 201s and this branch's fourteen land on disjoint route modules.
+    expect(counts[201]).toBe(138);
     expect(counts[202]).toBe(1);
     // The two P1-30 opening-batch reads (S-17) are GETs returning 200, so
     // 264 -> 266 while 201 and 202 are unchanged.
@@ -151,7 +189,30 @@ describe('every operation publishes the success status it returns', () => {
     // 297 -> 306 with the P1-32 console's nine 200s.
     // 306 -> 307 with the Owner directive capacity read, a GET returning 200;
     // its two sibling creates move the 201 count above instead.
-    expect(counts[200]).toBe(307);
+    // 297 -> 314 with the P1-32 preparatory inventory slice: seventeen of its
+    // eighteen operations publish 200 — the seven reads, the seven state changes,
+    // and the three replayable creates whose status is not a literal — and the
+    // adjustment request is the one 201 counted above.
+    // 314 -> 319 with P1-32 preparatory slice 2: the list, the retirement, the
+    // barcode allocation, the resolver and the label read.
+    // 319 -> 326 with the rest of that slice: the two item-price operations (the
+    // set REVISES a row and returns 200), the two counter-sale operations and the
+    // three return operations — the counter-sale create and the return receipt
+    // resolve to 200 because their status is a replay ternary rather than a literal.
+    // 326 -> 337 with P1-32 preparatory slice 3b: eleven of its fifteen operations —
+    // the four reads, the four decisions and retirements of rows that already exist,
+    // the confirmation, and the discrepancy resolution whose status is a replay
+    // ternary — publish 200.
+    // 337 -> 333 with slice 3c: minus the eight replayable creates now resolved to
+    // 201 (see above), plus its four operations — the re-check, the requirement
+    // cancellation, the request closure and the request cancellation — all of which
+    // change a row that already exists and return 200.
+    // 333 -> 335 with P1-32-PRE-141: the transfer settlement list and read.
+    // 335 -> 336 with the Owner directive capacity read, a GET returning 200;
+    // its two sibling creates move the 201 count above instead.
+    // 336 + 307 - 298 = 345 at the integration of the two lines: the console's
+    // nine 200s and this branch's thirty-eight land on disjoint route modules.
+    expect(counts[200]).toBe(345);
   });
 
   it('reads the handler, not the declaration', () => {
@@ -182,6 +243,53 @@ describe('every operation publishes the success status it returns', () => {
     expect(found.resolved.size).toBe(0);
     expect(found.unresolved).toHaveLength(1);
     expect(found.unresolved[0]).toContain('names no defineOperation');
+  });
+
+  it('reads a replayable create as its create status, with the replay status beside it', () => {
+    const replayable = `
+      export const R_OPERATION = defineOperation({ id: 'fx.replayable' });
+      export async function POST(): Promise<Response> {
+        return handleOperation(R_OPERATION, request, async () => {
+          const created = await create();
+          return { status: created.replayed ? 200 : 201, body: created };
+        });
+      }`;
+    const found = successStatuses(replayable, 'fixture');
+    expect(found.unresolved).toEqual([]);
+    expect(found.resolved.get('fx.replayable')).toBe(201);
+    expect(found.replays.get('fx.replayable')).toBe(200);
+
+    // Any OTHER computed status is still not a literal and publishes nothing new.
+    const other = `
+      export const O_OPERATION = defineOperation({ id: 'fx.other' });
+      export async function POST(): Promise<Response> {
+        return handleOperation(O_OPERATION, request, async () => {
+          return { status: result.created ? 201 : 200, body: result };
+        });
+      }`;
+    const otherFound = successStatuses(other, 'fixture');
+    expect(otherFound.replays.has('fx.other')).toBe(false);
+  });
+
+  it('publishes both statuses of every replayable create, and names the replay one', () => {
+    const { replays } = actualSuccessStatuses();
+    const published = publishedSuccessStatuses(SPEC) as Map<
+      string,
+      { success: number; replay: number | null; codes: number[] }
+    >;
+    expect([...replays.keys()].sort()).toEqual([
+      'inv.goods-receipt-create',
+      'inv.item-barcode-assign',
+      'inv.sales-return-create',
+      'inv.stock-count-open',
+      'inv.stock-reservation-create',
+      'inv.stock-transfer-create',
+      'inv.stock-transfer-discrepancy-resolve',
+      'sal.counter-sale-create',
+    ]);
+    for (const [id, replay] of replays) {
+      expect(published.get(id), id).toEqual({ success: 201, replay, codes: [200, 201] });
+    }
   });
 
   it('refuses a handler with two different literal statuses', () => {

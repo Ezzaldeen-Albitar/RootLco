@@ -25,6 +25,16 @@
  * spans the reservation's whole lifetime — so a retry after a released or consumed
  * reservation still resolves to the original rather than booking new stock. Reusing
  * a key for a *different* quantity, item, or location is a conflict, not a success.
+ *
+ * ## Material demand (P1-32-PRE-128)
+ *
+ * A reservation for a work order whose requirement covers the item draws on that
+ * requirement: it must name it, and it is refused with `ERR-INV-001` — carrying the
+ * allowance, what is already committed and what was asked for — when the requirement
+ * is not approved, lacks a conversion or a specification, or would be exceeded. The
+ * check runs under the requirement lock, so two reservations racing for the last of
+ * an allowance produce one winner. A work order with no requirement for the item
+ * reserves as it always did.
  */
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
@@ -152,6 +162,12 @@ export const CreateBody = z
     workOrderId: schemas.uuid.optional(),
     idempotencyKey: z.string().min(1).max(255).optional(),
     expiresAt: z.string().datetime({ offset: true }).optional(),
+    /**
+     * The material requirement the reservation draws on (P1-32-PRE-128). Required
+     * when the work order has a requirement covering the item; the draw is then
+     * refused with `ERR-INV-001` beyond the approved allowance.
+     */
+    materialRequirementId: schemas.uuid.optional(),
   })
   .strict();
 
@@ -159,6 +175,9 @@ export const STOCK_RESERVATION_CREATE_OPERATION = defineOperation({
   id: 'inv.stock-reservation-create',
   module: 'inventory',
   method: 'POST',
+  // `status: x.replayed ? 200 : 201`: a create, and the replay of one.
+  successStatus: 201,
+  replayStatus: 200,
   path: '/stock-reservations',
   summary: 'Reserve stock at a location, optionally against a work order.',
   permissions: ['inv.stock.operate'],
@@ -193,6 +212,9 @@ export async function POST(request: Request): Promise<Response> {
           ...(parsed.workOrderId === undefined ? {} : { workOrderId: parsed.workOrderId }),
           ...(parsed.idempotencyKey === undefined ? {} : { idempotencyKey: parsed.idempotencyKey }),
           ...(parsed.expiresAt === undefined ? {} : { expiresAt: parsed.expiresAt }),
+          ...(parsed.materialRequirementId === undefined
+            ? {}
+            : { materialRequirementId: parsed.materialRequirementId }),
         },
         authorizeScope
       );

@@ -1573,6 +1573,260 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'Stored stock balances were re-derived from the movement ledger and compared. A non-zero incoherent count is evidence that inv.guard_stock_balance_coherence was bypassed rather than a routine finding, which is why the result is reported and never silently repaired.',
   },
 
+  // P1-32 preparatory slice: transfers, goods receipts, adjustments and counts.
+  // Quantity movements stay `privileged`, for the reason stated at the head of
+  // this block. The adjustment DECISIONS are `approval`, like the opening-batch
+  // approval, because the fact each records is a second person's decision.
+  {
+    code: 'inv.stock_transfer.dispatched',
+    class: 'privileged',
+    entityType: 'inv.stock_transfer',
+    description:
+      'A stock transfer was dispatched: the quantity left its source location and entered the branch transit location. It is at neither end until received, so it is excluded from available stock at both and reported as in transit.',
+  },
+  {
+    code: 'inv.stock_transfer.received',
+    class: 'privileged',
+    entityType: 'inv.stock_transfer',
+    description:
+      'Units of a dispatched stock transfer were received: what arrived left transit and entered the destination location. A receipt records only what arrived; a remainder stays in transit until a further receipt, a return to the origin, or a write-off approved by a second person settles it.',
+  },
+  {
+    code: 'inv.stock_transfer.cancelled',
+    class: 'privileged',
+    entityType: 'inv.stock_transfer',
+    description:
+      'A dispatched stock transfer was cancelled and its quantity returned from transit to the origin. The four movements remain in the ledger with a zero net effect; nothing is deleted or reversed in place.',
+  },
+  {
+    code: 'inv.goods_receipt.created',
+    class: 'privileged',
+    entityType: 'inv.goods_receipt',
+    description:
+      'A draft goods receipt was created with its counted lines. Creates no stock and no cost history: both appear only when the receipt is posted.',
+  },
+  {
+    code: 'inv.goods_receipt.posted',
+    class: 'privileged',
+    entityType: 'inv.goods_receipt',
+    description:
+      'A goods receipt was posted, adding one receipt movement per line and appending one restricted cost layer per priced line. Earlier cost layers and the item standard cost are never rewritten.',
+  },
+  {
+    code: 'inv.stock_adjustment.requested',
+    class: 'privileged',
+    entityType: 'inv.stock_adjustment',
+    description:
+      'A stock adjustment was requested. It stays pending and moves no stock until a different person approves it; any value impact is held in the restricted adjustment detail.',
+  },
+  {
+    code: 'inv.stock_adjustment.approved',
+    class: 'approval',
+    entityType: 'inv.stock_adjustment',
+    description:
+      'A pending stock adjustment was approved by someone other than its requester, posting its adjustment movement. Reservations the correction made unsatisfiable are released and recorded separately.',
+  },
+  {
+    code: 'inv.stock_adjustment.rejected',
+    class: 'approval',
+    entityType: 'inv.stock_adjustment',
+    description:
+      'A pending stock adjustment was rejected by someone other than its requester. Moves no stock; the decision reason is recorded here because the adjustment row has no column for it.',
+  },
+  {
+    code: 'inv.stock_count.opened',
+    class: 'privileged',
+    entityType: 'inv.stock_count',
+    description:
+      'A stock count of one location was opened, snapshotting the on-hand quantity of every item held there. Trading continues during the count; the ledger is not frozen.',
+  },
+  {
+    code: 'inv.stock_count.line_recorded',
+    class: 'privileged',
+    entityType: 'inv.stock_count',
+    description:
+      'The physically counted quantity of one item was recorded on an open stock count. Moves no stock.',
+  },
+  {
+    code: 'inv.stock_count.reconciled',
+    class: 'privileged',
+    entityType: 'inv.stock_count',
+    description:
+      'A stock count was reconciled: movements posted during the count were folded into the expected quantity and a pending adjustment was raised for each non-zero variance. Posts no stock; each adjustment still needs a second person to approve it.',
+  },
+  {
+    code: 'inv.stock_count.cancelled',
+    class: 'privileged',
+    entityType: 'inv.stock_count',
+    description:
+      'An open stock count was cancelled with a reason. Raises no adjustment and moves no stock.',
+  },
+
+  // P1-32 preparatory slice 2: item barcodes and packaging identifiers. Catalogue
+  // reference data, like the item it identifies, so `privileged` and no stock.
+  {
+    code: 'inv.item_identifier.added',
+    class: 'privileged',
+    entityType: 'inv.item_identifier',
+    description:
+      'A barcode or packaging identifier entered by a user was attached to an item, with the unit and pack quantity one scan of it represents. Retail codes carry a verified check digit. Moves no stock.',
+  },
+  {
+    code: 'inv.item_identifier.retired',
+    class: 'privileged',
+    entityType: 'inv.item_identifier',
+    description:
+      'An item identifier was retired. The row is kept as history and its value is freed for a new identifier; a label that still carries it no longer resolves.',
+  },
+  {
+    code: 'inv.item_barcode.assigned',
+    class: 'privileged',
+    entityType: 'inv.item_identifier',
+    description:
+      'An internal barcode was allocated to an item from the tenant counter, once per item. An allocated number is never reused, including after retirement.',
+  },
+  {
+    code: 'inv.item_sale_price.set',
+    class: 'privileged',
+    entityType: 'inv.item_sale_price',
+    description:
+      'The price at which the tenant sells an item was set for a tenant, a company or a branch. Configuration, not a transaction: it moves no stock and no money, and it is what a later counter sale resolves. The figure itself is recorded as a restricted value, because audit records carry no sal.finance.view gate.',
+  },
+  {
+    code: 'inv.sales_return.received',
+    class: 'privileged',
+    entityType: 'inv.sales_return',
+    description:
+      'A part came back and was taken into stock: into a sellable location when restockable, into a quarantine location when damaged. Bounded by inv.guard_sales_return_ceiling, which locks the source and counts the legacy inv.part_returns rows too. A return against an issued counter sale also raises a pending credit note, whose identity is recorded here and whose amount is not.',
+  },
+  // ---- P1-32 preparatory slice 3b — material demand control ----
+  {
+    code: 'inv.material_requirement.requested',
+    class: 'privileged',
+    entityType: 'inv.material_requirement',
+    description:
+      'Material was asked for on a work-order service line: an entered allowance with its source, or one derived from the confirmed vehicle specification. A derivation that found no confirmed specification, or an item with no exact conversion into the allowance unit, is recorded as approval_required with the reason and no usable allowance.',
+  },
+  {
+    code: 'inv.material_requirement.approved',
+    class: 'approval',
+    entityType: 'inv.material_requirement',
+    description:
+      'A person other than the requester approved a material requirement, so reservations and issues for the work order may draw on it up to its allowance plus approved exceptions.',
+  },
+  {
+    code: 'inv.material_requirement.rejected',
+    class: 'approval',
+    entityType: 'inv.material_requirement',
+    description:
+      'A person other than the requester rejected a material requirement with a reason. It still governs the item on its work order, so nothing may be drawn on it.',
+  },
+  {
+    code: 'inv.material_exception.requested',
+    class: 'privileged',
+    entityType: 'inv.material_requirement_exception',
+    description:
+      'A finite additional quantity beyond an approved material allowance was asked for, with a reason. It adds nothing until a different person approves it.',
+  },
+  {
+    code: 'inv.material_exception.approved',
+    class: 'approval',
+    entityType: 'inv.material_requirement_exception',
+    description:
+      'A person other than the requester approved a material exception under inv.material.exception.approve, and the resulting allowance was recorded on the exception.',
+  },
+  {
+    code: 'inv.material_exception.rejected',
+    class: 'approval',
+    entityType: 'inv.material_requirement_exception',
+    description:
+      'A person other than the requester rejected a material exception. The allowance is unchanged.',
+  },
+  {
+    code: 'inv.material_requirement.rechecked',
+    class: 'privileged',
+    entityType: 'inv.material_requirement',
+    description:
+      'A material requirement that was waiting on a missing specification or unit conversion was checked again once the fact existed, and moved on: it took the confirmed specification capacity and is awaiting a decision, or it still records the reason nothing can be approved.',
+  },
+  {
+    code: 'inv.material_requirement.cancelled',
+    class: 'privileged',
+    entityType: 'inv.material_requirement',
+    description:
+      'A material requirement was cancelled with a reason while nothing was requested, reserved, or issued and not returned against it. It allows no draw and still governs the item on its work order.',
+  },
+  {
+    code: 'inv.material_request.closed',
+    class: 'privileged',
+    entityType: 'inv.material_request',
+    description:
+      'A material request was closed: what it issued stays counted against the requirement, and what it still asked for or held stopped counting. Its active reservations were released by the same act and each release is recorded on its own.',
+  },
+  {
+    code: 'inv.material_request.cancelled',
+    class: 'privileged',
+    entityType: 'inv.material_request',
+    description:
+      'A material request that issued nothing was cancelled with a reason, releasing its active reservations and giving its whole quantity back to the requirement allowance.',
+  },
+  {
+    code: 'inv.unit_conversion.set',
+    class: 'privileged',
+    entityType: 'inv.item_unit_conversion',
+    description:
+      'An exact unit conversion was stated with its source, tenant-wide within one kind of unit or for one item across kinds. A live conversion with the same signature was retired in the same transaction, so a changed factor is a new row and the old one remains.',
+  },
+  {
+    code: 'inv.unit_conversion.retired',
+    class: 'privileged',
+    entityType: 'inv.item_unit_conversion',
+    description:
+      'A unit conversion was retired. Requirements and draws that need it are refused as missing a conversion until another is stated.',
+  },
+  {
+    code: 'inv.vehicle_specification.recorded',
+    class: 'privileged',
+    entityType: 'inv.vehicle_fluid_specification',
+    description:
+      'A service capacity was recorded for a make, an optional model, model years and engine variant, with its unit and the source it was read from. A recorded specification resolves nothing until it is confirmed.',
+  },
+  {
+    code: 'inv.vehicle_specification.confirmed',
+    class: 'privileged',
+    entityType: 'inv.vehicle_fluid_specification',
+    description:
+      'A recorded service capacity was confirmed by an attributable person, so material requirements derived for matching vehicles take their allowance from it.',
+  },
+  {
+    code: 'inv.vehicle_specification.retired',
+    class: 'privileged',
+    entityType: 'inv.vehicle_fluid_specification',
+    description:
+      'A service capacity was retired. It no longer resolves; requirements already derived from it keep the figure they were approved with.',
+  },
+  {
+    code: 'inv.stock_transfer.discrepancy_resolved',
+    class: 'privileged',
+    entityType: 'inv.stock_transfer_settlement',
+    description:
+      'Units of a transfer that did not arrive were settled with a reason: returned to the origin at once, or put forward for write-off, which moves nothing until a different person approves it.',
+  },
+  {
+    code: 'inv.stock_transfer.write_off_approved',
+    class: 'approval',
+    entityType: 'inv.stock_transfer_settlement',
+    description:
+      'A person other than the requester approved a transfer write-off, and the written-off units left the transit location.',
+  },
+  {
+    code: 'inv.stock_transfer.write_off_rejected',
+    class: 'approval',
+    entityType: 'inv.stock_transfer_settlement',
+    description:
+      'A person other than the requester rejected a transfer write-off. The units stay in transit, to be received or returned.',
+  },
+
   // ---- Phase 1-22 — Billing and payment (sal) ----
   //
   // Every action in this block is `financial` except the credit-note approval,
@@ -1588,11 +1842,18 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'A draft invoice was created from approved commercial data. Creates no receivable: sal.guard_invoice_freeze refuses an INSERT whose status is not `draft`, so the document carries no number and no issue timestamp until sal.issue_invoice allocates one, and uq_invoices_work_order_active permits at most one live invoice per work order.',
   },
   {
+    code: 'sal.counter_sale.created',
+    class: 'financial',
+    entityType: 'sal.invoice',
+    description:
+      'A draft counter sale was created: an invoice for stock sold over the counter, with no work order. Every line is priced by inv.resolve_item_sale_price inside sal.create_counter_sale_invoice — no amount can be sent — and no stock moves until the sale is issued.',
+  },
+  {
     code: 'sal.invoice.issued',
     class: 'financial',
     entityType: 'sal.invoice',
     description:
-      'A draft invoice was issued and consumed exactly one number from its branch sequence. The point of no return: post-issue correction is impossible by design, and the only remaining instruments are a credit note and a new invoice. sal.issue_invoice is idempotent on an already-issued invoice and returns the existing number rather than allocating a second one.',
+      'A draft invoice was issued and consumed exactly one number from its branch sequence. The point of no return: post-issue correction is impossible by design, and the only remaining instruments are a credit note and a new invoice. sal.issue_invoice is idempotent on an already-issued invoice and returns the existing number rather than allocating a second one. For a counter sale this is also the moment the stock leaves the shelf, in the same transaction; cancelling the document later never puts it back, because an issued invoice cannot be voided at all.',
   },
   {
     code: 'sal.invoice.voided',

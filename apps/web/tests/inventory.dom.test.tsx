@@ -102,6 +102,7 @@ const cell = {
   onHand: '12.500',
   reserved: '2.000',
   available: '10.500',
+  inTransitQty: '1.250',
 };
 function reservation(over: Record<string, unknown> = {}) {
   return {
@@ -484,6 +485,51 @@ describe('FE-009 — stock is read only for a named branch', () => {
     await waitFor(() =>
       expect(listAvailability.mock.calls.at(-1)?.[1]).toEqual({ includeQuarantine: 'true' })
     );
+  });
+
+  it('shows the in-transit figure beside availability, and says what quarantine rows are', async () => {
+    const user = userEvent.setup();
+    listAvailability.mockResolvedValue(
+      page([
+        cell,
+        {
+          ...cell,
+          locationId: 'quarantine-1',
+          locationCode: 'QA-1',
+          locationType: 'quarantine',
+          onHand: '3.000',
+          reserved: '0.000',
+          available: '3.000',
+        },
+      ])
+    );
+    renderScreen({ canReadStock: true, canReadBranches: true });
+    await chooseBranch(user);
+    const availability = region('inventory.availability.heading');
+    const table = await within(availability).findByRole('table');
+    expect(
+      within(table).getByRole('columnheader', {
+        name: EN['inventory.availability.column.inTransit'] as string,
+      })
+    ).toBeVisible();
+    // The server repeats the item's in-transit figure on every cell; it is shown, never summed.
+    expect(within(table).getAllByText('1.250')).toHaveLength(2);
+    expect(
+      within(table).getByText(EN['inventory.locationType.quarantine'] as string)
+    ).toBeVisible();
+    expect(screen.getByText(EN['inventory.availability.inTransitNote'] as string)).toBeVisible();
+    expect(screen.queryByText(EN['inventory.availability.quarantineNote'] as string)).toBeNull();
+    await user.click(
+      within(availability).getByLabelText(labelled('inventory.availability.includeQuarantine'))
+    );
+    await user.click(
+      within(availability).getByRole('button', {
+        name: EN['inventory.availability.show'] as string,
+      })
+    );
+    expect(
+      await screen.findByText(EN['inventory.availability.quarantineNote'] as string)
+    ).toBeVisible();
   });
 
   it('a refused stock read is a refusal, and says so where the read lives', async () => {

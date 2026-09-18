@@ -63,7 +63,14 @@
  * `app_runtime` grant.
  */
 import { Repository } from '@/server/db/repository';
-import { cursorTimestamp } from '@/server/db/pagination';
+import {
+  buildPageWithCursors,
+  cursorTimestamp,
+  keysetFragment,
+  type OrderingContract,
+  type Page,
+  type PageRequest,
+} from '@/server/db/pagination';
 import { halfOpenLocalDayRange } from '@/server/db/period';
 import type { DbHandle } from '@/server/db/transaction';
 
@@ -75,6 +82,18 @@ import type { DbHandle } from '@/server/db/transaction';
  * raise `no_data_found`, and only the position in the call sequence distinguishes
  * them (see `issueInvoice`).
  */
+/**
+ * Counter sales are listed newest-first by `created_at` (P1-32-PRE-110).
+ *
+ * `created_at` rather than the invoice number: a draft has no number, and a list
+ * whose order depended on one would page inconsistently across the moment a sale
+ * is issued.
+ */
+export const COUNTER_SALE_ORDER: OrderingContract = Object.freeze({
+  key: 'sal.invoices:created_at_desc',
+  direction: 'desc',
+});
+
 export const BILLING_SQLSTATE = {
   /**
    * `RAISE … USING ERRCODE = 'no_data_found'`.
@@ -161,7 +180,13 @@ export interface InvoiceRow {
   readonly id: string;
   readonly companyId: string;
   readonly branchId: string;
-  readonly workOrderId: string;
+  /**
+   * The job this invoice bills — NULL exactly when `saleKind` is `counter_sale`
+   * (`ck_invoices_sale_kind_source`, P1-32 preparatory slice 2).
+   */
+  readonly workOrderId: string | null;
+  /** `work_order` or `counter_sale`. Frozen for the life of the document. */
+  readonly saleKind: string;
   readonly quotationRevisionId: string | null;
   readonly payerPartnerId: string;
   readonly currencyCode: string;
@@ -459,7 +484,8 @@ export interface CommercialSourceLineRow {
 // SQL-shape interfaces and mappers.
 // ---------------------------------------------------------------------------
 
-const INVOICE_COLUMNS = `i.id, i.company_id, i.branch_id, i.work_order_id, i.quotation_revision_id,
+const INVOICE_COLUMNS = `i.id, i.company_id, i.branch_id, i.work_order_id, i.sale_kind,
+  i.quotation_revision_id,
   i.payer_partner_id, i.currency_code, i.status, i.invoice_number, i.issued_at,
   i.idempotency_key, i.record_version`;
 
@@ -467,7 +493,8 @@ interface InvoiceSql {
   id: string;
   company_id: string;
   branch_id: string;
-  work_order_id: string;
+  work_order_id: string | null;
+  sale_kind: string;
   quotation_revision_id: string | null;
   payer_partner_id: string;
   currency_code: string;
@@ -494,6 +521,7 @@ const toInvoice = (r: InvoiceSql): InvoiceRow => ({
   companyId: r.company_id,
   branchId: r.branch_id,
   workOrderId: r.work_order_id,
+  saleKind: r.sale_kind,
   quotationRevisionId: r.quotation_revision_id,
   payerPartnerId: r.payer_partner_id,
   currencyCode: r.currency_code,
@@ -1487,7 +1515,7 @@ export class BillingRepository extends Repository {
          (tenant_id, company_id, branch_id, work_order_id, quotation_revision_id,
           payer_partner_id, currency_code, idempotency_key, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       RETURNING id, company_id, branch_id, work_order_id, quotation_revision_id,
+       RETURNING id, company_id, branch_id, work_order_id, sale_kind, quotation_revision_id,
                  payer_partner_id, currency_code, status, invoice_number, issued_at,
                  idempotency_key, record_version`,
       [
@@ -1888,5 +1916,127 @@ export class BillingRepository extends Repository {
       creditNoteId,
       correlationId,
     ]);
+  }
+
+  // -------------------------------------------------------------------------
+  // P1-32-PRE-107…110 — the counter sale.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Creates the whole draft counter sale through `sal.create_counter_sale_invoice`.
+   *
+   * ONE call rather than the header/amounts/lines sequence `createInvoice` runs,
+   * and the difference is the money. A work-order invoice copies amounts that the
+   * accepted quotation already computed and stored; a counter sale has no prior
+   * document, so its amounts must be COMPUTED — price resolution, tax rate, line
+   * net, line tax, header totals. Every one of those is `numeric` arithmetic inside
+   * the function, which is the only engine this platform computes money with.
+   * Returning the priced lines to TypeScript to multiply them here would be a
+   * second engine, in IEEE-754, on the customer's bill.
+   */
+  public async createCounterSaleInvoice(
+    db: DbHandle,
+    input: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly customerPartnerId: string;
+      readonly lines: readonly {
+        readonly itemId: string;
+        readonly locationId: string;
+        /** Exact decimal STRING. */
+        readonly quantity: string;
+      }[];
+      readonly idempotencyKey: string | null;
+    }
+  ): Promise<string> {
+    this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `SELECT sal.create_counter_sale_invoice($1, $2, $3, $4::jsonb, $5, $6) AS id`,
+      [
+        input.companyId,
+        input.branchId,
+        input.customerPartnerId,
+        JSON.stringify(input.lines),
+        input.idempotencyKey,
+        db.context.correlationId,
+      ]
+    );
+    if (!row) throw new Error('billing: sal.create_counter_sale_invoice returned no row');
+    return row.id;
+  }
+
+  /**
+   * The line ids of a counter sale, in line order.
+   *
+   * Ids only. The inventory module posts each line's `sale`/`out` movement from the
+   * line itself, so it needs no item, no cell and no quantity from here — and
+   * passing them would create a second statement of facts the line already holds.
+   */
+  public async listCounterSaleLineIds(db: DbHandle, invoiceId: string): Promise<readonly string[]> {
+    const context = this.assertContext(db);
+    const rows = await this.run<{ id: string }>(
+      db,
+      `SELECT l.id
+         FROM sal.invoice_lines l
+        WHERE l.tenant_id = $1 AND l.invoice_id = $2 AND l.deleted_at IS NULL
+          AND l.item_id IS NOT NULL
+        ORDER BY l.line_number`,
+      [context.principal.tenantId, invoiceId]
+    );
+    return rows.rows.map((r) => r.id);
+  }
+
+  /** One branch's counter sales, newest first. */
+  public async listCounterSales(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly status?: string | undefined;
+      readonly customerPartnerId?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<InvoiceRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.status ?? null,
+      filter.customerPartnerId ?? null,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'i.created_at', id: 'i.id' },
+      COUNTER_SALE_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<InvoiceSql & { sort_value: string }>(
+      db,
+      `SELECT ${INVOICE_COLUMNS},
+              a.net_total::text   AS net_total,
+              a.tax_total::text   AS tax_total,
+              a.gross_total::text AS gross_total,
+              ${cursorTimestamp('i.created_at')} AS sort_value
+         FROM sal.invoices i
+         LEFT JOIN sal.invoice_amounts a
+           ON a.tenant_id = i.tenant_id AND a.company_id = i.company_id
+          AND a.branch_id = i.branch_id AND a.invoice_id = i.id
+          AND a.deleted_at IS NULL
+        WHERE i.tenant_id = $1 AND i.company_id = $2 AND i.branch_id = $3
+          AND i.sale_kind = 'counter_sale' AND i.deleted_at IS NULL
+          AND ($4::text IS NULL OR i.status = $4)
+          AND ($5::uuid IS NULL OR i.payer_partner_id = $5)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({ item: toInvoice(row), sortValue: row.sort_value, id: row.id })),
+      request,
+      COUNTER_SALE_ORDER
+    );
   }
 }

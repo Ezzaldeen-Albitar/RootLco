@@ -514,7 +514,17 @@ describe('the coverage include lists are pinned, because they are the denominato
     // so the merge of both holds 299.
     // P1-32-PRE-151 adds iam/application/identity-compensation.ts, the one place
     // the provider identity of a refused write is undone, so 299 -> 300.
-    expect(files.length).toBe(300);
+    // 296 with the P1-32 preparatory inventory slice: the transfer, receipt,
+    // adjustment and count services and the shared failure mapper.
+    // 298 with P1-32 preparatory slice 2: the item identifier service and the
+    // sales-return service.
+    // 300 with P1-32 preparatory slice 3b: the material service and the reference
+    // data service.
+    // 301 with the Owner directive organisation administration merged in, which
+    // adds capacity-failure.ts.
+    // 309 at the integration of the two lines: 292 in the shared base, 9 more
+    // from this branch and 8 from the console line.
+    expect(files.length).toBe(309);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -598,11 +608,19 @@ describe('the coverage include lists are pinned, because they are the denominato
      * together by the same count is what says no file slipped in behind the
      * exclusion.
      *
-     * 291 with the Owner directive organisation administration: ONE more,
-     * `modules/iam/application/capacity-failure.ts`, the single reader of the
-     * database capacity refusal that both organisation creation and invitation
-     * share. The floors stay untouched for the same reason.
+     * 295 with the P1-32 preparatory inventory slice, and 296 above: five new
+     * inventory application files, none under `server/openapi/`, so both numbers
+     * move by five. The floors are untouched for the same reason.
      */
-    expect(instrumented.length).toBe(299);
+    // 297 with P1-32 preparatory slice 2, for the same two files.
+    // 299 with P1-32 preparatory slice 3b, for the same two files.
+    // 300 with the Owner directive organisation administration merged in: ONE
+    // more, `modules/iam/application/capacity-failure.ts`, the single reader of
+    // the database capacity refusal that both organisation creation and
+    // invitation share. The floors stay untouched for the same reason.
+    // 308 at the integration of the two lines: 291 in the shared base, 9 more
+    // application files from this branch and 8 from the console line, none of
+    // them under `server/openapi/`. The floors stay untouched for that reason.
+    expect(instrumented.length).toBe(308);
   });
 });

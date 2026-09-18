@@ -25,6 +25,13 @@
  *    match this item, location, and work order, and refuses an issue larger than
  *    the reservation holds.
  *
+ * ## Material demand (P1-32-PRE-128)
+ *
+ * An issue for a work order whose requirement covers the item is a draw on that
+ * requirement, refused with `ERR-INV-001` beyond what it allows. An issue that
+ * consumes a reservation already drawn on the requirement is not counted twice: it
+ * fulfills the same material request the reservation did.
+ *
  * None of this edits a migration: every statement uses an existing `app_runtime`
  * grant, and every database guard still applies underneath.
  */
@@ -52,6 +59,12 @@ export const CreateBody = z
     quantity: QuantityString,
     reservationId: schemas.uuid.optional(),
     requiredPartRef: schemas.uuid.optional(),
+    /**
+     * The material requirement the issue draws on (P1-32-PRE-128). Required when the
+     * work order has a requirement covering the item, unless the named reservation
+     * already draws on it.
+     */
+    materialRequirementId: schemas.uuid.optional(),
   })
   .strict();
 
@@ -92,6 +105,9 @@ export async function POST(request: Request): Promise<Response> {
           ...(parsed.requiredPartRef === undefined
             ? {}
             : { requiredPartRef: parsed.requiredPartRef }),
+          ...(parsed.materialRequirementId === undefined
+            ? {}
+            : { materialRequirementId: parsed.materialRequirementId }),
         },
         authorizeScope
       );

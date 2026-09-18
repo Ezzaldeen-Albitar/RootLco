@@ -67,6 +67,7 @@ import {
   outboxCountFor,
   countRowsOf,
   reservationStatusOf,
+  seedApprovedMaterialRequirement,
   seedStock,
 } from './p1-21-helpers';
 import { Quantity } from '@/modules/inventory';
@@ -78,6 +79,21 @@ import { POST as DAMAGE } from '@/app/api/v1/damaged-stock/route';
 import { GET as ELIGIBILITY } from '@/app/api/v1/work-orders/[workOrderId]/closure-eligibility/route';
 import { POST as CLOSURE } from '@/app/api/v1/work-orders/[workOrderId]/closure/route';
 import { POST as TRANSITION } from '@/app/api/v1/work-orders/[workOrderId]/transition/route';
+
+/**
+ * Every reservation and issue for a work order draws on an APPROVED material
+ * requirement since P1-32-PRE-132, and one with none is refused. These cases are about
+ * stock, so each work order they draw for is given approved demand for both fixture
+ * items, created and approved by two different people (`seedApprovedMaterialRequirement`),
+ * and each draw names it. The allowance is generous on purpose: what is refused here
+ * is refused for a stock reason, never for want of an allowance.
+ */
+async function approvedDemandFor(workOrderId: string): Promise<Record<string, string>> {
+  return {
+    [ITEM_A]: await seedApprovedMaterialRequirement({ workOrderId, itemId: ITEM_A }),
+    [ITEM_A_ALT]: await seedApprovedMaterialRequirement({ workOrderId, itemId: ITEM_A_ALT }),
+  };
+}
 
 let admin: Pool;
 
@@ -392,6 +408,7 @@ describe('inv.stock-issue-create', () => {
     // still held and ck_stock_balances_available rejects it. Reserve 5 of 5 and issue
     // 5 is exactly that case, and it must SUCCEED.
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A_ALT, locationId: WAREHOUSE_A1, quantity: '5.000' });
     authAs(INV_FULL);
     const balanceBefore = await balanceOf(ITEM_A_ALT, WAREHOUSE_A1);
@@ -403,6 +420,7 @@ describe('inv.stock-issue-create', () => {
         locationId: WAREHOUSE_A1,
         quantity: available,
         workOrderId: wo.workOrderId,
+        materialRequirementId: demand[ITEM_A_ALT],
       })
     );
     expect((await balanceOf(ITEM_A_ALT, WAREHOUSE_A1))?.available).toBe('0.000');
@@ -455,6 +473,7 @@ describe('inv.stock-issue-create', () => {
 
   it('refuses a reservation belonging to a different item (closes D-03)', async () => {
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '10.000' });
     await seedStock({ itemId: ITEM_A_ALT, locationId: WAREHOUSE_A1, quantity: '10.000' });
     authAs(INV_FULL);
@@ -464,6 +483,7 @@ describe('inv.stock-issue-create', () => {
         locationId: WAREHOUSE_A1,
         quantity: '4.000',
         workOrderId: wo.workOrderId,
+        materialRequirementId: demand[ITEM_A_ALT],
       })
     );
     const response = await post(ISSUE, '/api/v1/stock-issues', {
@@ -480,6 +500,7 @@ describe('inv.stock-issue-create', () => {
 
   it('refuses an issue larger than the reservation holds (denial)', async () => {
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '10.000' });
     authAs(INV_FULL);
     const reservation = await bodyOf<{ id: string }>(
@@ -488,6 +509,7 @@ describe('inv.stock-issue-create', () => {
         locationId: WAREHOUSE_A1,
         quantity: '2.000',
         workOrderId: wo.workOrderId,
+        materialRequirementId: demand[ITEM_A],
       })
     );
     // inv.consume_reservation releases the reservation IN FULL whatever the issued
@@ -506,11 +528,13 @@ describe('inv.stock-issue-create', () => {
 
   it('refuses an issue that would drive stock negative (BE-012)', async () => {
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A_ALT, locationId: STORAGE_A1, quantity: '1.000' });
     authAs(INV_FULL);
     const before = await balanceOf(ITEM_A_ALT, STORAGE_A1);
     const response = await post(ISSUE, '/api/v1/stock-issues', {
       workOrderId: wo.workOrderId,
+      materialRequirementId: demand[ITEM_A_ALT],
       itemId: ITEM_A_ALT,
       locationId: STORAGE_A1,
       quantity: '999.000',
@@ -523,9 +547,11 @@ describe('inv.stock-issue-create', () => {
 
   it('refuses a caller lacking inv.stock.operate (authorization)', async () => {
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     authAs(INV_READER);
     const response = await post(ISSUE, '/api/v1/stock-issues', {
       workOrderId: wo.workOrderId,
+      materialRequirementId: demand[ITEM_A],
       itemId: ITEM_A,
       locationId: WAREHOUSE_A1,
       quantity: '1.000',
@@ -535,9 +561,11 @@ describe('inv.stock-issue-create', () => {
 
   it('refuses an issue in a branch the caller is not scoped to (isolation)', async () => {
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     authAs(INV_PERMISSION_ELSEWHERE);
     const response = await post(ISSUE, '/api/v1/stock-issues', {
       workOrderId: wo.workOrderId,
+      materialRequirementId: demand[ITEM_A],
       itemId: ITEM_A,
       locationId: WAREHOUSE_A1,
       quantity: '1.000',
@@ -547,11 +575,13 @@ describe('inv.stock-issue-create', () => {
 
   it('replays an idempotency key without issuing twice (idempotency)', async () => {
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '10.000' });
     authAs(INV_FULL);
     const key = `fx-${randomUUID()}`;
     const payload = {
       workOrderId: wo.workOrderId,
+      materialRequirementId: demand[ITEM_A],
       itemId: ITEM_A,
       locationId: WAREHOUSE_A1,
       quantity: '1.000',
@@ -578,11 +608,13 @@ describe('inv.stock-issue-create', () => {
 describe('inv.stock-return-create', () => {
   it('returns an issued part and bounds the total at the issued quantity', async () => {
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '10.000' });
     authAs(INV_FULL);
     const issued = await bodyOf<{ id: string }>(
       await post(ISSUE, '/api/v1/stock-issues', {
         workOrderId: wo.workOrderId,
+        materialRequirementId: demand[ITEM_A],
         itemId: ITEM_A,
         locationId: WAREHOUSE_A1,
         quantity: '5.000',
@@ -651,11 +683,13 @@ describe('inv.stock-return-create', () => {
 
   it('refuses a return in a branch the caller is not scoped to (isolation)', async () => {
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '10.000' });
     authAs(INV_FULL);
     const issued = await bodyOf<{ id: string }>(
       await post(ISSUE, '/api/v1/stock-issues', {
         workOrderId: wo.workOrderId,
+        materialRequirementId: demand[ITEM_A],
         itemId: ITEM_A,
         locationId: WAREHOUSE_A1,
         quantity: '1.000',
@@ -898,6 +932,7 @@ describe('work-order closure is blocked while inventory is outstanding', () => {
     // parts — the D-02 rule this phase added — so the fixture has to walk the graph
     // in the same order a real branch would.
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '10.000' });
     authAs(INV_FULL);
     const created = await post(RESERVE, '/api/v1/stock-reservations', {
@@ -905,6 +940,7 @@ describe('work-order closure is blocked while inventory is outstanding', () => {
       locationId: WAREHOUSE_A1,
       quantity: '2.000',
       workOrderId: wo.workOrderId,
+      materialRequirementId: demand[ITEM_A],
     });
     expect(created.status).toBe(201);
     const reservation = await bodyOf<{ id: string }>(created);
@@ -947,11 +983,13 @@ describe('work-order closure is blocked while inventory is outstanding', () => {
     // The work order must be open before it can receive parts, so the issue is made
     // mid-path rather than before it.
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A_ALT, locationId: WAREHOUSE_A1, quantity: '10.000' });
     authAs(INV_FULL);
     const issued = await bodyOf<{ id: string }>(
       await post(ISSUE, '/api/v1/stock-issues', {
         workOrderId: wo.workOrderId,
+        materialRequirementId: demand[ITEM_A_ALT],
         itemId: ITEM_A_ALT,
         locationId: WAREHOUSE_A1,
         quantity: '3.000',
@@ -991,6 +1029,7 @@ describe('work-order closure is blocked while inventory is outstanding', () => {
     // inventory blocker follows the same rule: stock outstanding on an abandoned
     // order is a different problem from stock outstanding on a completed one.
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '5.000' });
     authAs(INV_FULL);
     const reserved = await post(RESERVE, '/api/v1/stock-reservations', {
@@ -998,6 +1037,7 @@ describe('work-order closure is blocked while inventory is outstanding', () => {
       locationId: WAREHOUSE_A1,
       quantity: '1.000',
       workOrderId: wo.workOrderId,
+      materialRequirementId: demand[ITEM_A],
     });
     expect(reserved.status).toBe(201);
     const version = wo.recordVersion;
@@ -1032,6 +1072,7 @@ describe('H5 — quarantined stock is not reservable and not issuable', () => {
     // because /stock-availability excludes quarantine by default, the drawdown would
     // not even show in the operator's view. Measured before the fix: 201, 201, 201.
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '8.000' });
     authAs(INV_FULL);
     const damaged = await post(DAMAGE, '/api/v1/damaged-stock', {
@@ -1053,6 +1094,7 @@ describe('H5 — quarantined stock is not reservable and not issuable', () => {
           locationId: QUARANTINE_A1,
           quantity: '2.000',
           workOrderId: wo.workOrderId,
+          materialRequirementId: demand[ITEM_A],
         })
       ).status
     ).toBe(409);
@@ -1060,6 +1102,7 @@ describe('H5 — quarantined stock is not reservable and not issuable', () => {
       (
         await post(ISSUE, '/api/v1/stock-issues', {
           workOrderId: wo.workOrderId,
+          materialRequirementId: demand[ITEM_A],
           itemId: ITEM_A,
           locationId: QUARANTINE_A1,
           quantity: '1.000',
@@ -1085,6 +1128,7 @@ describe('H4 — a release that changed nothing records nothing', () => {
     // locked, so the decision and the release are atomic. This is the sequential
     // shadow of that race: a consumed reservation must produce no release evidence.
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A_ALT, locationId: WAREHOUSE_A1, quantity: '5.000' });
     authAs(INV_FULL);
     const reservation = await bodyOf<{ id: string }>(
@@ -1093,6 +1137,7 @@ describe('H4 — a release that changed nothing records nothing', () => {
         locationId: WAREHOUSE_A1,
         quantity: '2.000',
         workOrderId: wo.workOrderId,
+        materialRequirementId: demand[ITEM_A_ALT],
       })
     );
     await post(ISSUE, '/api/v1/stock-issues', {
@@ -1121,11 +1166,13 @@ describe('T1 — the declared idempotency of return and damage is real', () => {
     // `idempotency` was declared for this operation with no replay test behind it, so
     // deleting `idempotent: true` from the route left the block green.
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '10.000' });
     authAs(INV_FULL);
     const issued = await bodyOf<{ id: string }>(
       await post(ISSUE, '/api/v1/stock-issues', {
         workOrderId: wo.workOrderId,
+        materialRequirementId: demand[ITEM_A],
         itemId: ITEM_A,
         locationId: WAREHOUSE_A1,
         quantity: '4.000',
@@ -1174,11 +1221,13 @@ describe('T1 — the declared idempotency of return and damage is real', () => {
 describe('H3 — a return publishes its movement too', () => {
   it('publishes stock.movement.posted for the return leg', async () => {
     const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
     await seedStock({ itemId: ITEM_A_ALT, locationId: WAREHOUSE_A1, quantity: '7.000' });
     authAs(INV_FULL);
     const issued = await bodyOf<{ id: string }>(
       await post(ISSUE, '/api/v1/stock-issues', {
         workOrderId: wo.workOrderId,
+        materialRequirementId: demand[ITEM_A_ALT],
         itemId: ITEM_A_ALT,
         locationId: WAREHOUSE_A1,
         quantity: '3.000',

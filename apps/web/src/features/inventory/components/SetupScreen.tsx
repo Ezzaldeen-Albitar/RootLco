@@ -46,14 +46,14 @@ import {
   CATEGORY_CODE,
   ITEM_TYPES,
   LOCATION_CODE,
-  LOCATION_TYPES,
+  OPERATOR_LOCATION_TYPES,
   MAX_DESCRIPTION,
   MAX_NAME,
   SKU_CODE,
   type CreatedStockLocation,
   type InventoryItem,
   type ItemType,
-  type LocationType,
+  type OperatorLocationType,
   type StockLocation,
   type StockTarget,
   type UnitOfMeasureOption,
@@ -824,7 +824,7 @@ function LocationForm({
   const [form, setForm] = useState({
     locationCode: '',
     name: '',
-    locationType: 'warehouse' as LocationType,
+    locationType: 'warehouse' as OperatorLocationType,
     parentLocationId: '',
   });
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
@@ -913,11 +913,11 @@ function LocationForm({
         onChange={(event) =>
           setForm((f) => ({
             ...f,
-            locationType: event.target.value as LocationType,
+            locationType: event.target.value as OperatorLocationType,
             parentLocationId: event.target.value === 'warehouse' ? '' : f.parentLocationId,
           }))
         }
-        options={LOCATION_TYPES.map((type) => ({
+        options={OPERATOR_LOCATION_TYPES.map((type) => ({
           value: type,
           label: translate(messages, `inventory.locationType.${type}`),
         }))}

@@ -38,7 +38,12 @@
  *     and since P1-29 `W3` that tree also holds versioned adapters for `wo`
  *     operations — real, correct, and outside an apt/rec contract's subject.
  *     They are declared by name in `OUT_OF_SUBJECT_ADAPTERS`, never by a path
- *     rule that would admit the next one silently. Within the subject, an
+ *     rule that would admit the next one silently — or, since P1-32, excluded by
+ *     the CONTRACT rule `contractSubjectOfAdapter` states: an adapter whose own
+ *     body sends only to operations the published contract guards with
+ *     `If-Match` under an id outside `apt.`/`rec.`. That is a fact read off
+ *     the adapter and the contract, not a directory, and an adapter the rule
+ *     cannot attribute stays inside the subject. Within the subject, an
  *     operation the contract guards with no adapter demanding a version, or an
  *     adapter demanding one for an operation that is not guarded, is still a
  *     disagreement worth failing on.
@@ -97,12 +102,14 @@
  * Exit:   0 clean · 1 a violation · 2 the check could not run.
  */
 import { readFileSync, readdirSync, lstatSync, statSync } from 'node:fs';
+import ts from 'typescript';
 import { join, relative, sep } from 'node:path';
 import { REPOSITORY_ROOT } from '../lib/repository-paths.mjs';
 import {
   callsToNode,
   declaredFunctionsOf,
   enclosingFunctionNode,
+  literalPathOf,
   parseModule,
 } from '../lib/typescript-source.mjs';
 import { recordedDecisions } from './check-p1-28-write-reachability.mjs';
@@ -355,7 +362,112 @@ export const OUT_OF_SUBJECT_ADAPTERS = Object.freeze({
     'wty.warranty-policy-status-set — P1-31 FE-008, not an apt/rec operation',
   setCoverageWindowStatus:
     'wty.warranty-coverage-status-set — P1-31 FE-008, not an apt/rec operation',
+  // P1-32 stock operations: the first guards the RECEIPT's record version and the
+  // second the COUNT's, each sourced from the read or the write answer on screen.
 });
+
+/** An id inside this gate's subject: the apt/rec surface `guardedOperations` derives. */
+const IN_SUBJECT_ID = /^(apt|rec)\./;
+
+/**
+ * Whether one guarded adapter is outside this gate's subject BY THE CONTRACT, and
+ * which operations make it so (P1-32).
+ *
+ * The subject is stated once, in `guardedOperations`: the operations the published
+ * contract guards with `If-Match` whose id is `apt.*` or `rec.*`. The count
+ * equality asks whether THAT set and the adapters serving it agree. An adapter that
+ * provably serves a guarded operation of another namespace is not a member of either
+ * side, and counting it reports "an adapter demanding a version for an unguarded
+ * operation" about an operation that IS guarded.
+ *
+ * So the question is answered from the adapter's own body and the contract, never
+ * from its name or its directory:
+ *
+ *   - every `x.send(METHOD, PATH, body, { ifMatch })` in the exported function's
+ *     own body — the one shape the transport turns into an `If-Match` header — is
+ *     read with a literal method and a literal or template path;
+ *   - each is matched to a published operation by method and path template;
+ *   - the adapter is outside the subject only when it has at least one such send,
+ *     EVERY one resolves, and every resolved operation carries the `IfMatch`
+ *     parameter under an id outside `apt.`/`rec.`.
+ *
+ * Anything else stays inside the subject and is counted: a send through a helper
+ * this rule cannot read, a path the contract does not publish, a delegation with no
+ * send of its own, an operation the contract does not guard, and above all any send
+ * to an apt/rec operation. The rule narrows only the count equality. Every adapter
+ * it places outside is still held to every other rule here — `ifMatch` required and
+ * used, each call site's version traced to a read or a response, the outcome handed
+ * onward — exactly as the named declarations above are.
+ */
+export function contractSubjectOfAdapter(content, name, document) {
+  const inside = { outside: false, operations: [] };
+  const sourceFile = parseModule(content);
+  if (sourceFile === null) return inside;
+
+  let declaration = null;
+  ts.forEachChild(sourceFile, (node) => {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === name && node.body) {
+      declaration = node;
+    }
+  });
+  if (declaration === null) return inside;
+
+  const templates = [];
+  for (const [path, methods] of Object.entries(document.paths ?? {})) {
+    for (const [method, operation] of Object.entries(methods ?? {})) {
+      if (typeof operation?.operationId !== 'string') continue;
+      templates.push({
+        template: path.replace(/\{[^}]+\}/g, ':p'),
+        method: method.toUpperCase(),
+        id: operation.operationId,
+        guarded: (operation.parameters ?? []).some((one) => one?.$ref === IF_MATCH_REF),
+      });
+    }
+  }
+
+  const sends = [];
+  const visit = (node) => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.text === 'send'
+    ) {
+      const options = node.arguments[3];
+      const versioned =
+        options !== undefined &&
+        ts.isObjectLiteralExpression(options) &&
+        options.properties.some(
+          (property) =>
+            (ts.isShorthandPropertyAssignment(property) || ts.isPropertyAssignment(property)) &&
+            property.name.getText() === 'ifMatch'
+        );
+      if (versioned) {
+        const methodNode = node.arguments[0];
+        const method =
+          methodNode &&
+          (ts.isStringLiteral(methodNode) || ts.isNoSubstitutionTemplateLiteral(methodNode))
+            ? methodNode.text.toUpperCase()
+            : null;
+        const pathNode = node.arguments[1];
+        const path = pathNode === undefined ? null : literalPathOf(pathNode);
+        const bare = path === null ? null : path.split(/[?#]/)[0];
+        const match =
+          method === null || bare === null
+            ? undefined
+            : templates.find((one) => one.method === method && one.template === bare);
+        sends.push(match ?? null);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(declaration.body, visit);
+
+  if (sends.length === 0) return inside;
+  if (sends.some((one) => one === null || !one.guarded || IN_SUBJECT_ID.test(one.id))) {
+    return inside;
+  }
+  return { outside: true, operations: [...new Set(sends.map((one) => one.id))].sort() };
+}
 
 export function expectedAdapterOperations(guarded, manifest, decisions) {
   const classified = manifest?.operations ?? {};
@@ -900,7 +1012,8 @@ export function run(injected = {}) {
       continue;
     }
     for (const adapter of guardedAdaptersIn(content)) {
-      adapters.set(adapter.name, { ...adapter, file: path });
+      const contractSubject = contractSubjectOfAdapter(content, adapter.name, document);
+      adapters.set(adapter.name, { ...adapter, file: path, contractSubject });
     }
   }
 
@@ -1041,7 +1154,21 @@ export function run(injected = {}) {
    * check below refuses a name that no longer exists — so this cannot outlive its
    * reason the way a satisfied exception does.
    */
-  const accountedFor = [...adapters.keys()].filter((name) => !(name in OUT_OF_SUBJECT_ADAPTERS));
+  /*
+   * …and since P1-32 an adapter is also outside when the CONTRACT says so, by the
+   * rule `contractSubjectOfAdapter` states: every versioned send in its own body
+   * reaches an operation the contract guards under an id outside apt/rec. That is
+   * derived per adapter from what it sends, so it cannot admit an adapter whose
+   * send it cannot read, and an apt/rec send keeps an adapter inside.
+   */
+  const outsideByContract = [...adapters.values()]
+    .filter((adapter) => !(adapter.name in OUT_OF_SUBJECT_ADAPTERS))
+    .filter((adapter) => adapter.contractSubject.outside)
+    .map((adapter) => ({ name: adapter.name, operations: adapter.contractSubject.operations }));
+  const outsideNames = new Set(outsideByContract.map((one) => one.name));
+  const accountedFor = [...adapters.keys()].filter(
+    (name) => !(name in OUT_OF_SUBJECT_ADAPTERS) && !outsideNames.has(name)
+  );
   // The rot check is about the REAL tree. A synthetic tree built by a test holds
   // none of these adapters by design, and reporting them missing there would
   // make every fixture fail for a fact about a repository it is not describing.
@@ -1072,6 +1199,7 @@ export function run(injected = {}) {
     withheld: subject.withheld,
     adapters: [...adapters.values()],
     accountedFor,
+    outsideByContract,
     sites,
     violations,
   };

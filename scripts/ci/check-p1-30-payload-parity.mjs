@@ -91,6 +91,31 @@ export const BODYLESS = Object.freeze({
   // `sal` DELETE (P1-31 P-9), not because a P1-30 screen sends it.
   'sal.delivery-checklist-template-item-remove':
     'the withdrawal carries nothing but the template and item in the path and the caller as actor',
+  // P1-32 preparatory inventory slice. Posting names the receipt in the path and its
+  // version as If-Match; reconciling names the count in the path. Neither has a field
+  // a body could carry.
+  'inv.goods-receipt-post':
+    'posting carries nothing but the receipt in the path and its version as If-Match',
+  'inv.stock-count-reconcile':
+    'reconciliation carries nothing but the count in the path and the caller as actor',
+  // P1-32 preparatory slice 2. Retirement names the item and the identifier in the
+  // path; allocation names the item. The internal code is allocated, never sent.
+  'inv.item-identifier-retire':
+    'retirement carries nothing but the item and the identifier in the path and the caller as actor',
+  'inv.item-barcode-assign':
+    'allocation carries nothing but the item in the path; the code comes from the tenant counter',
+  // P1-32 preparatory slice 3b. Retiring a conversion, and confirming or retiring a
+  // specification, name the row in the path and the caller as actor.
+  'inv.unit-conversion-retire':
+    'retirement carries nothing but the conversion in the path and the caller as actor',
+  'inv.vehicle-specification-confirm':
+    'confirmation carries nothing but the specification in the path and the caller as confirmer',
+  'inv.vehicle-specification-retire':
+    'retirement carries nothing but the specification in the path and the caller as actor',
+  // P1-32 preparatory slice 3c. A re-check reads the requirement named in the path
+  // again; there is nothing for a caller to state.
+  'inv.material-requirement-recheck':
+    're-check carries nothing but the requirement in the path and the caller as actor',
 });
 
 /** Field-level omissions the web side has decided, with reasons. Empty today. */
@@ -125,6 +150,32 @@ export const PENDING_MIRRORS = Object.freeze({
     'PENDING: no P1-30 screen sends this (outside FE-008…FE-013); a later phase owes the mirror',
   'inv.external-purchase-part-create':
     'PENDING: no P1-30 screen sends this (outside FE-008…FE-013); a later phase owes the mirror',
+  // The P1-32 preparatory inventory writes entered this scope the moment they were
+  // registered. The stock-operation screens (transfers, goods receipts, adjustments
+  // and counts) declared ten mirrors and deleted their entries in that same change.
+  // P1-32 preparatory slice 2 stood here for the same reason and no longer does: the
+  // barcode, pricing, counter-sale and customer-return screens send all four writes,
+  // so `lib/contracts/inventory-contract.ts` and `lib/contracts/billing-contract.ts`
+  // declare their bodies and the entries were deleted in that same change.
+  // P1-32 preparatory slices 3b and 3c stood here for the same reason and no longer
+  // do: the material requirements panel on the parts screen, and the unit-conversion
+  // and vehicle-specification screens, send every one of those writes, so
+  // `lib/contracts/inventory-contract.ts` declares their bodies and eight entries were
+  // deleted in that same change.
+  //
+  // ONE remains, and its reason is not "no screen sends it" — the panel does. Its zod
+  // schema is a `z.discriminatedUnion` on `basis`: an ENTERED allowance with its source
+  // unit and source reference, or a derivation from the confirmed vehicle
+  // specification. `z.toJSONSchema` renders that as a top-level `oneOf` with no
+  // `properties` of its own, and `compareOperation` comprehends one object shape: it
+  // would report every field of any single-interface mirror as unknown to the API. A
+  // mirror flattening the two branches into one interface would be worse than none —
+  // it would state a shape the route refuses, which is the drift this gate exists to
+  // catch. The shape the screen sends is declared beside it, in
+  // `features/inventory/inventory-contract.ts`, and this entry is owed to whichever
+  // change teaches the shared comparison to walk a discriminated union.
+  'inv.material-requirement-create':
+    'PENDING: the body is a discriminated union (`basis`) and the shared comparison reads one object shape only; the screen sends it and the shape is declared in features/inventory/inventory-contract.ts',
   // The `sal` writes entered this scope with W6, which mirrors the invoice
   // create and cancel bodies. Payments belong to W7 (canonical plan §4); credit
   // notes are sent by no P1-30 screen.

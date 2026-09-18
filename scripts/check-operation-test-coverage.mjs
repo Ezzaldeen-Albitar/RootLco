@@ -2547,7 +2547,7 @@ export const MANIFEST = {
   'inv.stock-reservation-create': {
     files: ['tests/backend/p1-21-inventory-stock.test.ts'],
     required: ['success', 'denial', 'audit', 'outbox', 'idempotency', 'isolation'],
-    note: 'the last-unit race is resolved in the DATABASE and not here: inv.reserve_stock takes the balance-row FOR UPDATE lock, expires stale rows for the cell, and re-reads on_hand and the active-reservation sum INSIDE the lock, so two concurrent requests for the same final unit leave exactly one winner and one 23514 — checking availability in application code first would add a read-then-write race and change nothing; the replay is detected BEFORE the call by looking the idempotency key up, because inv.reserve_stock resolves it inside the lock and returns the existing id, which from outside is indistinguishable from a fresh booking, so a retrying client could not otherwise tell whether it reserved twice (idempotency); a key reused for a DIFFERENT quantity, item or location is a conflict and not a silent success under someone else booking; the location is the scope anchor and its company/branch are the authorizationTarget (isolation)',
+    note: 'the last-unit race is resolved in the DATABASE and not here: inv.reserve_stock takes the balance-row FOR UPDATE lock, expires stale rows for the cell, and re-reads on_hand and the active-reservation sum INSIDE the lock, so two concurrent requests for the same final unit leave exactly one winner and one 23514 — checking availability in application code first would add a read-then-write race and change nothing; the replay is detected BEFORE the call by looking the idempotency key up, because inv.reserve_stock resolves it inside the lock and returns the existing id, which from outside is indistinguishable from a fresh booking, so a retrying client could not otherwise tell whether it reserved twice (idempotency); a key reused for a DIFFERENT quantity, item or location is a conflict and not a silent success under someone else booking; the location is the scope anchor and its company/branch are the authorizationTarget (isolation); a reservation FOR A WORK ORDER is a draw on an approved material requirement through inv.reserve_material_request (P1-32-PRE-132), and one with no requirement is refused',
   },
   'inv.stock-reservation-release': {
     files: ['tests/backend/p1-21-inventory-stock.test.ts'],
@@ -2557,7 +2557,7 @@ export const MANIFEST = {
   'inv.stock-issue-create': {
     files: ['tests/backend/p1-21-inventory-stock.test.ts'],
     required: ['success', 'denial', 'audit', 'outbox', 'idempotency', 'isolation'],
-    note: 'closes three defects in inv.issue_part, each reproduced against a live database: D-01 the function posts the out movement BEFORE consuming the reservation, so on_hand falls while reserved is still held and ck_stock_balances_available rejects the write whenever the reservation covers the stock being issued — the natural reserve-exactly-then-issue flow FAILS inside the protected function, and the fix is ordering rather than privilege, inserting part_issues then consuming then posting; D-02 the function selects wo.work_orders.state and never reads the variable, so a draft work order accepts an issue, and the service instead locks the work order and reads the data-driven wo.work_order_states flags so a concurrent transition cannot race the check; D-03 the function consumes whatever reservation id it is handed including one belonging to a different ITEM, releasing reserved quantity on an unrelated cell, and the service refuses a reservation that does not match this item, location and work order and refuses an issue larger than the reservation holds, since inv.consume_reservation releases it in full whatever the issued quantity',
+    note: 'closes three defects in inv.issue_part, each reproduced against a live database: D-01 the function posted the out movement BEFORE consuming the reservation, so on_hand fell while reserved was still held and ck_stock_balances_available rejected the write whenever the reservation covered the stock being issued — the natural reserve-exactly-then-issue flow FAILED inside the protected function, and 20260917099000 fixed the function itself to insert part_issues, consume, then post, so there is no hand-ordered second path; every issue is a draw on an approved material requirement through inv.issue_material_request (P1-32-PRE-132), and one with no requirement is refused; D-02 the function selects wo.work_orders.state and never reads the variable, so a draft work order accepts an issue, and the service instead locks the work order and reads the data-driven wo.work_order_states flags so a concurrent transition cannot race the check; D-03 the function consumes whatever reservation id it is handed including one belonging to a different ITEM, releasing reserved quantity on an unrelated cell, and the service refuses a reservation that does not match this item, location and work order and refuses an issue larger than the reservation holds, since inv.consume_reservation releases it in full whatever the issued quantity',
   },
   'inv.stock-return-create': {
     files: ['tests/backend/p1-21-inventory-stock.test.ts'],
@@ -3172,6 +3172,298 @@ export const MANIFEST = {
     files: ['tests/backend/p1-30-a2-inventory-reads.test.ts'],
     required: ['success', 'denial', 'cross-tenant', 'isolation', 'pagination'],
     note: 'P1-30 A2 seam S-16, class B, and the read every other stock operation depended on. The location is the SCOPE ANCHOR: inv.post_stock_movement derives company_id and branch_id from it rather than from anything the caller sends, and reserving, issuing, returning, adjusting and recording damage all take a locationId — so before this route every one of those commands required an id the product could not produce, while readLocation existed as an internal scope resolver with no list in front of it. companyId and branchId are REQUIRED and are the authorizationTarget: a branch-blind location list would be a directory of which branches exist and how they are laid out. INACTIVE locations are listed rather than hidden, because stock already sitting in a location that was later deactivated still has to be findable and a picker that omitted it would strand that stock; status is on every row and offered as a filter instead. Ordered by location_code ascending, which uq_stock_locations_code makes total within a branch and which is the string an operator actually reads; name and parentLocationId are carried because two bins in different warehouses can be indistinguishable otherwise. No amount and no quantity crosses — a location is reference data. Falsifiability measured: neutralising the company/branch predicate is RED on three cases with no change to the suite, because the location fixtures already span both branches',
+  },
+  // P1-32 preparatory inventory slice: transfers, goods receipts, cost history,
+  // adjustments and counts. The assertions rest on balances, movement rows, cost
+  // layers and adjustment states rather than on HTTP statuses.
+  'inv.stock-transfer-create': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'audit', 'outbox', 'idempotency', 'isolation'],
+    note: 'dispatch moves the quantity out of the source and into the branch transit location under the balance lock; the source loses it, the destination does not yet have it, availability never lists the transit cell and reports inTransitQty instead; availability is CHECKED, not freed, so reserved stock refuses the dispatch; a replayed body key returns the same transfer with replayed true and a different request under that key is a conflict',
+  },
+  'inv.stock-transfer-list': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'isolation'],
+    note: 'companyId and branchId are the authorizationTarget; direction=inbound matches the destination branch, which reads the row through sel_stock_transfers_destination',
+  },
+  'inv.stock-transfer-receive': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'idempotency', 'isolation'],
+    note: 'a receipt records what arrived, up to what is still in transit (20260917098000 replaced ck_stock_transfers_received_quantity), and the remainder stays in transit until received, returned to the origin or written off; the row is locked before its status is re-read so a second receipt is refused; a cross-branch receipt settles the source transit AND the destination, so it is authorized at both ends and a destination-only caller who can list the transfer is refused',
+  },
+  'inv.stock-transfer-cancel': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'idempotency', 'isolation'],
+    note: 'returns the quantity from transit to the origin through the settlement pair; four movements remain with zero net effect; only a dispatched transfer can be cancelled',
+  },
+  'inv.goods-receipt-create': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'a draft moves nothing; a unit cost is accepted only from a caller holding inv.cost.view in the branch and is otherwise refused on the field rather than silently dropped',
+  },
+  'inv.goods-receipt-list': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'isolation'],
+    note: 'branch-scoped by the required companyId/branchId authorizationTarget',
+  },
+  'inv.goods-receipt-read': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'cross-tenant', 'isolation'],
+    note: 'lines carry hasUnitCost and never the figure, so an inv.stock.read caller cannot use this read to see cost',
+  },
+  'inv.goods-receipt-post': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'stale-version',
+      'audit',
+      'outbox',
+      'idempotency',
+      'isolation',
+    ],
+    note: 'one receipt movement per line and one APPENDED cost layer per priced line; an earlier layer keeps its row and figure after a later receipt at a different price, and inv.item_cost_details is never written; a priced posting without inv.cost.view is refused before the gated insert',
+  },
+  'inv.item-cost-history-read': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'latest and quantity-weighted average cost are derived in SQL numeric from the layers on every read and stored nowhere; the operation declares inv.cost.view and RLS on the layers requires it again',
+  },
+  'inv.stock-adjustment-create': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'pending and moves nothing; the restricted value impact needs inv.cost.view; the table has no idempotency column, so replay is the Idempotency-Key header and no second adjustment is written',
+  },
+  'inv.stock-adjustment-list': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'isolation'],
+    note: 'branch-scoped list with status, item and location filters',
+  },
+  'inv.stock-adjustment-approve': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'idempotency', 'isolation'],
+    note: 'inv.adjustment.approve; the requester may not decide their own request (trigger for approvals, inv.reject_adjustment for rejections); only an approval posts a movement and a rejection moves nothing',
+  },
+  'inv.stock-count-open': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'snapshots on-hand for every item at the location without freezing the ledger; one open count per location (uq_stock_counts_open_location)',
+  },
+  'inv.stock-count-list': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'isolation'],
+    note: 'every row carries varianceLineCount and absoluteVarianceQty so a discrepancy is visible without opening the count',
+  },
+  'inv.stock-count-read': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'cross-tenant', 'isolation'],
+    note: 'lines carry snapshot, movements during the count, counted quantity, the GENERATED variance and the raised adjustment status',
+  },
+  'inv.stock-count-line-record': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'stale-version',
+      'audit',
+      'idempotency',
+      'isolation',
+    ],
+    note: 'If-Match on the COUNT version, the aggregate two counters race on; zero is a legal count',
+  },
+  'inv.stock-count-reconcile': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'movements posted after the snapshot are folded into the expected quantity, so a transfer mid-count is not reported as a loss; each non-zero variance raises a PENDING adjustment and nothing is posted until a second person approves it',
+  },
+  'inv.stock-count-cancel': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'only an open or counting count; raises no adjustment and moves no stock',
+  },
+  // P1-32 preparatory slice 2: item barcodes and packaging identifiers. Tenant-wide
+  // catalogue reference data; the assertions rest on identifier rows and audit rows.
+  'inv.item-identifier-list': {
+    files: ['tests/backend/p1-32-item-identifiers.test.ts'],
+    required: ['success', 'cross-tenant', 'isolation'],
+    note: 'live identifiers first; retired ones only with includeRetired=true; another tenant item answers 404',
+  },
+  'inv.item-identifier-add': {
+    files: ['tests/backend/p1-32-item-identifiers.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'requires inv.item.manage granted tenant-wide, so a branch-scoped holder is refused; a retail code with a wrong check digit is refused on body.value; a live duplicate is a conflict; marking a code primary demotes the previous primary; the Idempotency-Key header replays a doubled scan instead of refusing it as a duplicate code',
+  },
+  'inv.item-identifier-retire': {
+    files: ['tests/backend/p1-32-item-identifiers.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'the row is kept and its value freed for a new live identifier; retiring twice changes nothing and writes no second audit record',
+  },
+  'inv.item-barcode-assign': {
+    files: ['tests/backend/p1-32-item-identifiers.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'RL + nine-digit per-tenant counter + mod-10 check digit, once per item; a second call returns the same code with replayed true and consumes no number; a retired number is never reallocated',
+  },
+  'inv.barcode-resolve': {
+    files: ['tests/backend/p1-32-item-identifiers.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'the scanned value is normalised by the same SQL function that generates the stored column; an unknown code answers 404; availability at a branch needs inv.stock.read there; a code of another tenant does not resolve',
+  },
+  'inv.item-label-data': {
+    files: ['tests/backend/p1-32-item-identifiers.test.ts'],
+    required: ['success', 'cross-tenant', 'isolation'],
+    note: 'primary code else internal code else first live code, with a symbology hint by kind and length; carries no price, because the label is tenant-wide and a selling price is narrowed to a company and a branch, so nothing here could say which one applies',
+  },
+  // P1-32 preparatory slice 2: the selling price of an item, and the counter sale
+  // that resolves it. The assertions rest on invoice rows, invoice line amounts and
+  // the stock movements the issuance posts.
+  'inv.item-sale-price-list': {
+    files: ['tests/backend/p1-32-counter-sales.test.ts'],
+    required: ['success', 'cross-tenant', 'isolation'],
+    note: 'most specific first — branch rows, then company rows, then the tenant-wide row; another tenant item answers 404',
+  },
+  'inv.item-sale-price-set': {
+    files: ['tests/backend/p1-32-counter-sales.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'isolation'],
+    note: 'one live row per (item, company, branch), so a second call revises rather than duplicating; a branch narrowing without its company is refused on body.companyId; a tenant-wide price requires inv.item.manage held tenant-wide; the audit record carries the figure as restricted',
+  },
+  'sal.counter-sale-create': {
+    files: ['tests/backend/p1-32-counter-sales.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'priced from inv.item_sale_prices and taxed from org.tax_rates inside the database; an item with no price refuses the whole sale; no body field can carry an amount; the draft moves no stock; the Idempotency-Key header replays the first sale',
+  },
+  'sal.counter-sale-list': {
+    files: ['tests/backend/p1-32-counter-sales.test.ts'],
+    required: ['success', 'isolation'],
+    note: 'counter sales only — a work-order invoice in the same branch is never listed',
+  },
+  'inv.sales-return-create': {
+    files: ['tests/backend/p1-32-sales-returns.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'the movement lands in the received location when restockable and in the quarantine location when damaged; the ceiling counts inv.part_returns too; an invoice-line source raises exactly one pending credit note for the returned share of the line gross; a replayed key receives nothing twice',
+  },
+  'inv.sales-return-list': {
+    files: ['tests/backend/p1-32-sales-returns.test.ts'],
+    required: ['success', 'isolation'],
+    note: 'one branch, newest first, narrowable to one source',
+  },
+  'inv.returnable-quantity-read': {
+    files: ['tests/backend/p1-32-sales-returns.test.ts'],
+    required: ['success', 'cross-tenant', 'isolation'],
+    note: 'what left, what has come back through BOTH return tables, and the remainder; a source in another tenant answers 404',
+  },
+  // P1-32 preparatory slice 3b: material demand control, the reference data it is
+  // measured against, and the transfer discrepancy acts. The assertions rest on the
+  // requirement's usage figures, balances, settlement rows and audit rows.
+  'inv.material-requirement-create': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'an entered allowance is pending approval; a derivation with no confirmed specification is stored as approval_required / missing_specification with no allowance, and with one it carries the specification capacity and unit; a second active requirement for the same need on the line is refused; a replayed key returns the first',
+  },
+  'inv.material-requirement-list': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'one branch, narrowable to a work order; a grant in another branch is refused',
+  },
+  'inv.material-requirement-read': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'allowance, approved exceptions, requested, reserved, issued, committed and remaining in the requirement unit, moved by every governed draw and release; another tenant answers 404',
+  },
+  'inv.material-requirement-approve': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'the requester is refused, a caller without inv.material.approve is refused, an approval_required requirement cannot be decided, a rejection needs a reason; approval and rejection are audited',
+  },
+  'inv.material-exception-create': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'finite quantity with a reason on an approved requirement only; pending adds nothing to the allowance',
+  },
+  'inv.material-exception-decide': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'isolation'],
+    note: 'the requester, a caller without inv.material.exception.approve, another branch and another tenant are all refused; an approval records the resulting allowance and lets the next draw through',
+  },
+  'inv.unit-conversion-list': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'live rows by default, retired rows on request, narrowed to what applies to one item',
+  },
+  'inv.unit-conversion-set': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'exact factor with its source; a changed factor retires the old row; a branch-scoped grant and a tenant-wide cross-dimension row are refused and write nothing',
+  },
+  'inv.unit-conversion-retire': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'a second retirement changes nothing and is audited once; another tenant answers 404',
+  },
+  'inv.vehicle-specification-list': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'narrowable by make, model, service condition and status',
+  },
+  'inv.vehicle-specification-create': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'isolation'],
+    note: 'born recorded with capacity, unit and source; a caller without the code or with a branch-scoped grant writes nothing',
+  },
+  'inv.vehicle-specification-confirm': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'attributable confirmation, once; a confirmed rival with overlapping model years is refused as a conflict; another tenant answers 404',
+  },
+  'inv.vehicle-specification-retire': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'a second retirement changes nothing; another tenant answers 404',
+  },
+  'inv.stock-transfer-discrepancy-resolve': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'a return to origin posts at once and puts the unit back in the origin; a write-off is born pending and claims its units against a further receipt; a replayed key returns the first settlement; a reader and another tenant are refused',
+  },
+  'inv.stock-transfer-write-off-decide': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'isolation'],
+    note: 'the requester, a reader and another tenant are refused; approval takes the units out of transit and settles the transfer; rejection leaves them in transit',
+  },
+  // P1-32-PRE-141: the reads that publish a settlement id to the person who decides it.
+  'inv.stock-transfer-settlement-list': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'lists returns to origin and write-offs, never a receipt, for the sending branch and for the destination branch; narrowed by decision, kind and transfer; a caller without inv.stock.read, a branch that is neither end and another tenant see nothing',
+  },
+  'inv.stock-transfer-settlement-read': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'readable by a reader of the source branch and by a reader of the destination branch only, with who decided it and when; a caller without the code is refused and another tenant answers 404',
+  },
+  // P1-32 preparatory slice 3c: re-check and cancel a requirement; close and cancel
+  // a material request. Asserted on the requirement's status and usage, the released
+  // reservations, and audit and outbox rows.
+  'inv.material-requirement-recheck': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'before the fact exists the requirement stays approval_required and nothing is audited; once the specification is confirmed it takes the capacity and unit and awaits a decision, audited once; a repeated call changes nothing; a caller without inv.material.request, another branch and another tenant are refused',
+  },
+  'inv.material-requirement-cancel': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'refused while quantity is reserved or issued and not returned against it; cancelled with a reason once nothing is committed, audited once; a cancelled requirement allows no draw',
+  },
+  'inv.material-request-close': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'releases the reservations the request still holds by the same act, each audited as a release; what it issued stays counted; a cancelled request is not closed',
+  },
+  'inv.material-request-cancel': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'idempotency', 'isolation'],
+    note: 'a reason is required; the held reservation is released once, with its audit row and stock.reservation.released event, and the whole quantity goes back to the allowance; a repeated call says replayed and records nothing more',
   },
 };
 

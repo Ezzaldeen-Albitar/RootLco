@@ -271,7 +271,29 @@ describe('the API application lives in the workspace', () => {
     // 336 with the P1-32-PRE-151 organisation growth: three operations over THREE
     // new route modules — companies, branches and administrators, each hung off
     // the organisation path the console already addresses.
-    expect(routeFiles.length).toBe(336);
+    // 335 with the P1-32 preparatory inventory slice: eighteen operations over
+    // FOURTEEN new modules, because the transfer, goods-receipt, adjustment and
+    // count collections each co-locate a GET and a POST on one path.
+    // 340 with P1-32 preparatory slice 2: six identifier operations over five new
+    // modules, because the identifier collection co-locates a GET and a POST.
+    // 344 with the rest of that slice: seven operations over FOUR new modules,
+    // because the item-price, counter-sale and sales-return collections each
+    // co-locate a GET and a POST on one path, and the returnable-quantity read is
+    // the only module with a single verb.
+    // 356 with P1-32 preparatory slice 3b: fifteen operations over TWELVE new
+    // modules, because the requirement, conversion and specification collections
+    // each co-locate a GET and a POST.
+    // 360 with P1-32 preparatory slice 3c: four operations over four new modules —
+    // the requirement re-check and cancellation, the request closure and cancellation.
+    // 362 with P1-32-PRE-141: the transfer settlement list and read, one module each.
+    // 363 with the Owner directive organisation administration merged in: three
+    // operations over ONE new route module. The company and branch creates are
+    // POSTs co-located on the existing collection modules; only `/org/capacity`
+    // is new.
+    // 377 with the Owner directive inventory operations and the Platform Owner
+    // Console line integrated: 322 in the shared base, 41 more route modules from
+    // this branch and 14 from the console, landing on disjoint paths.
+    expect(routeFiles.length).toBe(377);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -292,7 +314,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 432 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 484 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -358,7 +380,21 @@ describe('the API application lives in the workspace', () => {
     // 426 with the P1-32 Platform Owner Console backend (thirteen operations).
     // 429 with the Owner directive organisation administration: three operations
     // over one new module, for the reason stated above the route-module count.
-    expect(report.operations).toHaveLength(432);
+    // 431 with the P1-32 preparatory inventory slice: eighteen operations over
+    // fourteen new modules, for the reason stated above the route-module count.
+    // 437 with P1-32 preparatory slice 2, for the reason stated above.
+    // 444 with the rest of that slice: seven operations over four new modules, for
+    // the reason stated above the route-module count.
+    // 459 with P1-32 preparatory slice 3b: fifteen operations over twelve new
+    // modules, for the reason stated above the route-module count.
+    // 463 with P1-32 preparatory slice 3c: four operations over four new modules.
+    // 465 with P1-32-PRE-141: two operations over two new modules.
+    // 468 with the Owner directive organisation administration merged in: three
+    // operations over one new module, for the reason stated above the
+    // route-module count.
+    // 484 at the integration of the two lines: 416 in the shared base, 52 more
+    // operations from this branch and 16 from the console.
+    expect(report.operations).toHaveLength(484);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the

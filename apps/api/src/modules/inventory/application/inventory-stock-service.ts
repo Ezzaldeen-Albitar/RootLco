@@ -14,21 +14,24 @@
  * service does **not** re-implement them, and deliberately never reads availability
  * and then writes based on the read: that is the race the lock exists to prevent.
  *
- * What it does own are the three rules the protected functions demonstrably do not
- * enforce (`P1-21-D-01…D-03`, each reproduced against a live database and recorded
- * in `docs/phase-1/phase-1-21/wave-1-contract-archaeology.md`): the order in which
- * an issue releases its reservation, the work-order lifecycle, and
- * reservation↔issue coherence.
+ * What it does own are the two rules the protected functions demonstrably do not
+ * enforce (`P1-21-D-02` and `D-03`, each reproduced against a live database and
+ * recorded in `docs/phase-1/phase-1-21/wave-1-contract-archaeology.md`): the
+ * work-order lifecycle and reservation↔issue coherence. The third, the order in which
+ * an issue releases its reservation (`D-01`), was fixed in `inv.issue_part` itself by
+ * `20260917099000`. Since the same migration every reservation and issue for a work
+ * order draws on an approved material requirement (P1-32-PRE-132), through
+ * `MaterialDrawGovernor`.
  */
 import { AppFailure } from '@/server/errors/app-failure';
 import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
-import { isSqlState, SQLSTATE } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import type { InventoryRepository, StockLocationRow } from '../data/inventory-repository';
+import { parseQuantity, toDomainFailure } from './inventory-failures';
+import { MaterialDrawGovernor } from './inventory-material-service';
 import {
-  InventoryRuleError,
   Quantity,
   assertLegalMovementReference,
   assertQuarantineDestination,
@@ -47,6 +50,11 @@ export interface ReservationView {
   readonly status: string;
   readonly expiresAt: string | null;
   readonly recordVersion: number;
+  /**
+   * The material request this reservation fulfills, when the draw was governed by a
+   * material requirement; null for an ungoverned reservation.
+   */
+  readonly materialRequestId: string | null;
   /** True when an idempotent replay returned the reservation that already existed. */
   readonly replayed: boolean;
 }
@@ -61,6 +69,8 @@ export interface IssueView {
   readonly branchId: string;
   readonly quantity: string;
   readonly reservationId: string | null;
+  /** The material request the issue fulfilled; null for an ungoverned issue. */
+  readonly materialRequestId: string | null;
 }
 
 export interface ReturnView {
@@ -80,62 +90,12 @@ export interface DamageView {
   readonly disposition: string;
 }
 
-/**
- * Translates the protected schema's refusals into the controlled error catalog.
- *
- * The SQLSTATE is the contract, not the message text: `23514` from
- * `ck_stock_balances_available` and `23514` from `inv.reserve_stock` are the same
- * class of answer — the database refused because the invariant would break — and a
- * caller needs `ERR-TRN-001` for both. Constraint names and SQL are never echoed.
- */
-function toDomainFailure(error: unknown, what: string): never {
-  if (error instanceof InventoryRuleError) {
-    throw new AppFailure('ERR-TRN-001', { message: error.message });
-  }
-  if (isSqlState(error, SQLSTATE.checkViolation)) {
-    throw new AppFailure('ERR-TRN-001', {
-      message: `${what} was refused because it would break a stock invariant`,
-    });
-  }
-  if (isSqlState(error, SQLSTATE.foreignKeyViolation)) {
-    throw new AppFailure('ERR-RES-001', {
-      message: `${what} names an item, location, or work order that does not exist in scope`,
-    });
-  }
-  if (isSqlState(error, SQLSTATE.uniqueViolation)) {
-    throw new AppFailure('ERR-INT-001', {
-      message: `${what} has already been recorded`,
-    });
-  }
-  throw error;
-}
-
-/**
- * Parses a quantity and maps a domain refusal onto the error catalog.
- *
- * The parse and the postable check BOTH throw `InventoryRuleError`, and an
- * unmapped domain error surfaces as `ERR-SYS-001` — a 500 that tells a caller its
- * request broke the server when in fact the server refused it. The Zod schema
- * catches most malformed shapes at the edge, but not every one: `"0"` is a
- * well-formed decimal string and only the `> 0` rule refuses it, so this wrapper is
- * the difference between a 409 and a 500 for the zero case.
- */
-function parseQuantity(raw: string, field = 'quantity'): Quantity {
-  try {
-    return Quantity.parse(raw, field).assertPostable(field);
-  } catch (error) {
-    if (error instanceof InventoryRuleError) {
-      throw new AppFailure('ERR-VAL-001', {
-        message: error.message,
-        safeDetails: { violations: [{ path: `body.${field}`, rule: 'custom' }] },
-      });
-    }
-    throw error;
-  }
-}
-
 export class InventoryStockService {
-  public constructor(private readonly repository: InventoryRepository) {}
+  private readonly governor: MaterialDrawGovernor;
+
+  public constructor(private readonly repository: InventoryRepository) {
+    this.governor = new MaterialDrawGovernor(repository);
+  }
 
   // -------------------------------------------------------------------------
   // P1-21-BE-004 / BE-013 — reservation and concurrent-reservation protection.
@@ -163,6 +123,7 @@ export class InventoryStockService {
       readonly workOrderId?: string;
       readonly idempotencyKey?: string;
       readonly expiresAt?: string;
+      readonly materialRequirementId?: string;
     },
     authorizeScope: ScopeAuthorizer
   ): Promise<ReservationView> {
@@ -171,8 +132,22 @@ export class InventoryStockService {
     await authorizeScope({ companyId: location.companyId, branchId: location.branchId });
     await this.requireStockTrackedItem(db, input.itemId);
 
+    if (input.materialRequirementId !== undefined && input.workOrderId === undefined) {
+      throw new AppFailure('ERR-VAL-001', {
+        message: 'A material requirement governs a draw for a work order; name the work order',
+        safeDetails: { violations: [{ path: 'body.workOrderId', rule: 'required' }] },
+      });
+    }
+    // P1-32-PRE-132: EVERY reservation for a work order is a draw on its approved
+    // demand; one with no requirement covering the item is refused.
+    let requirementId: string | null = null;
     if (input.workOrderId !== undefined) {
       await this.requireWorkOrderAcceptingParts(db, input.workOrderId, location);
+      requirementId = await this.governor.resolve(db, {
+        workOrderId: input.workOrderId,
+        itemId: input.itemId,
+        materialRequirementId: input.materialRequirementId,
+      });
     }
 
     /**
@@ -204,23 +179,46 @@ export class InventoryStockService {
             'only for an identical request.',
         });
       }
-      return this.toReservationView(existing, true);
+      const link = await this.repository.readMaterialLinkForReservation(db, existing.id);
+      return this.toReservationView(existing, true, link?.requestId ?? null);
     }
 
+    // A work-order reservation is a draw on its approved demand: the database opens a
+    // material request on the requirement and reserves against it under the
+    // requirement lock, and refuses anything the allowance does not cover. Nothing
+    // is reserved and no request remains when it refuses.
     let reservationId: string;
-    try {
-      const created = await this.repository.reserveStock(db, {
-        itemId: input.itemId,
-        locationId: input.locationId,
-        quantity: quantity.toString(),
-        workOrderId: input.workOrderId ?? null,
-        idempotencyKey: input.idempotencyKey ?? null,
-        expiresAt: input.expiresAt ?? null,
-        correlationId: db.context.correlationId,
-      });
-      reservationId = created.id;
-    } catch (error) {
-      toDomainFailure(error, 'Reservation');
+    let materialRequestId: string | null = null;
+    if (requirementId !== null) {
+      const drawn = await this.governor.draw(
+        db,
+        { requirementId, itemId: input.itemId, quantity: quantity.toString() },
+        (nested, requestId) =>
+          this.repository.reserveMaterialRequest(nested, {
+            requestId,
+            locationId: input.locationId,
+            quantity: quantity.toString(),
+            idempotencyKey: input.idempotencyKey ?? null,
+            expiresAt: input.expiresAt ?? null,
+          }),
+        'Reservation'
+      );
+      reservationId = drawn.result.id;
+      materialRequestId = drawn.requestId;
+    } else {
+      try {
+        const created = await this.repository.reserveStock(db, {
+          itemId: input.itemId,
+          locationId: input.locationId,
+          quantity: quantity.toString(),
+          idempotencyKey: input.idempotencyKey ?? null,
+          expiresAt: input.expiresAt ?? null,
+          correlationId: db.context.correlationId,
+        });
+        reservationId = created.id;
+      } catch (error) {
+        toDomainFailure(error, 'Reservation');
+      }
     }
 
     const reservation = await this.repository.readReservation(db, reservationId);
@@ -240,6 +238,7 @@ export class InventoryStockService {
         { field: 'locationId', classification: 'internal', value: reservation.locationId },
         { field: 'quantity', classification: 'internal', value: reservation.quantity },
         { field: 'workOrderId', classification: 'internal', value: reservation.workOrderId },
+        { field: 'materialRequestId', classification: 'internal', value: materialRequestId },
       ],
     });
 
@@ -262,7 +261,7 @@ export class InventoryStockService {
       },
     });
 
-    return this.toReservationView(reservation, false);
+    return this.toReservationView(reservation, false, materialRequestId);
   }
 
   // -------------------------------------------------------------------------
@@ -304,8 +303,21 @@ export class InventoryStockService {
     await authorizeScope({ companyId: before.companyId, branchId: before.branchId });
 
     const wasActive = before.status === 'active';
+    // A reservation that fulfills an open material request is released by finishing
+    // the request, which releases it explicitly AND stops its remainder counting
+    // against the allowance. Releasing the reservation alone would leave the units
+    // committed to the job with nothing held on the shelf for them.
+    const link = await this.repository.readMaterialLinkForReservation(db, reservationId);
     try {
-      await this.repository.releaseReservation(db, reservationId, reason);
+      if (wasActive && link !== null && link.requestStatus === 'open') {
+        await this.repository.finishMaterialRequest(db, {
+          requestId: link.requestId,
+          outcome: link.hasIssue ? 'closed' : 'cancelled',
+          reason,
+        });
+      } else {
+        await this.repository.releaseReservation(db, reservationId, reason);
+      }
     } catch (error) {
       toDomainFailure(error, 'Reservation release');
     }
@@ -355,7 +367,7 @@ export class InventoryStockService {
       });
     }
 
-    return this.toReservationView(after, !wasActive);
+    return this.toReservationView(after, !wasActive, link?.requestId ?? null);
   }
 
   // -------------------------------------------------------------------------
@@ -368,8 +380,8 @@ export class InventoryStockService {
    * Three checks the protected function does not make happen here first: the work
    * order must be accepting parts (`D-02`), the reservation must belong to this
    * item, location, and work order (`D-03`), and the location must be in the work
-   * order's own company and branch. The repository then performs the issue in the
-   * only order the constraints permit (`D-01`).
+   * order's own company and branch. The issue itself is a draw on an approved
+   * material requirement, performed by `inv.issue_material_request`.
    */
   public async issue(
     db: DbHandle,
@@ -380,6 +392,7 @@ export class InventoryStockService {
       readonly quantity: string;
       readonly reservationId?: string;
       readonly requiredPartRef?: string;
+      readonly materialRequirementId?: string;
     },
     authorizeScope: ScopeAuthorizer
   ): Promise<IssueView> {
@@ -424,21 +437,73 @@ export class InventoryStockService {
       }
     }
 
-    let issued: { issueId: string; movementId: string };
-    try {
-      issued = await this.repository.issuePart(db, {
-        workOrderId: input.workOrderId,
-        companyId: location.companyId,
-        branchId: location.branchId,
-        itemId: input.itemId,
+    // P1-32-PRE-132: EVERY issue to a work order draws on a material request. An issue
+    // against a reservation that already fulfills an open request draws on THAT request:
+    // its units were measured against the allowance when they were reserved, and
+    // counting them again would spend the allowance twice. Any other issue opens a
+    // request of its own on the requirement it names. The database performs both
+    // under the requirement lock and refuses whatever the allowance does not cover;
+    // the request is then closed, so what it asked for and did not issue stops
+    // counting, by an act rather than a filter.
+    const reservationLink =
+      input.reservationId === undefined
+        ? null
+        : await this.repository.readMaterialLinkForReservation(db, input.reservationId);
+    const issueOn = async (nested: DbHandle, requestId: string) => {
+      const result = await this.repository.issuePart(nested, {
+        requestId,
         locationId: input.locationId,
         quantity: quantity.toString(),
         reservationId: input.reservationId ?? null,
         requiredPartRef: input.requiredPartRef ?? null,
-        correlationId: db.context.correlationId,
       });
-    } catch (error) {
-      toDomainFailure(error, 'Part issue');
+      await this.repository.finishMaterialRequest(nested, {
+        requestId,
+        outcome: 'closed',
+        reason: null,
+      });
+      return result;
+    };
+
+    let issued: { issueId: string; movementId: string };
+    let materialRequestId: string;
+    if (reservationLink !== null && reservationLink.requestStatus === 'open') {
+      if (
+        input.materialRequirementId !== undefined &&
+        input.materialRequirementId !== reservationLink.requirementId
+      ) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: 'The reservation was drawn on a different material requirement',
+          safeDetails: {
+            violations: [{ path: 'body.materialRequirementId', rule: 'other_requirement' }],
+          },
+        });
+      }
+      materialRequestId = reservationLink.requestId;
+      issued = await this.governor.drawOnRequest(
+        db,
+        {
+          requirementId: reservationLink.requirementId,
+          itemId: input.itemId,
+          quantity: quantity.toString(),
+        },
+        (nested) => issueOn(nested, reservationLink.requestId),
+        'Part issue'
+      );
+    } else {
+      const requirementId = await this.governor.resolve(db, {
+        workOrderId: input.workOrderId,
+        itemId: input.itemId,
+        materialRequirementId: input.materialRequirementId,
+      });
+      const drawn = await this.governor.draw(
+        db,
+        { requirementId, itemId: input.itemId, quantity: quantity.toString() },
+        issueOn,
+        'Part issue'
+      );
+      materialRequestId = drawn.requestId;
+      issued = drawn.result;
     }
 
     await appendAudit(db, {
@@ -458,6 +523,7 @@ export class InventoryStockService {
           classification: 'internal',
           value: input.reservationId ?? null,
         },
+        { field: 'materialRequestId', classification: 'internal', value: materialRequestId },
       ],
     });
 
@@ -484,6 +550,7 @@ export class InventoryStockService {
       branchId: location.branchId,
       quantity: quantity.toString(),
       reservationId: input.reservationId ?? null,
+      materialRequestId,
     };
   }
 
@@ -770,10 +837,60 @@ export class InventoryStockService {
   }
 
   // -------------------------------------------------------------------------
+  // P1-32-PRE-111 — the counter sale's stock leg (the port `billing` calls).
+  // -------------------------------------------------------------------------
+
+  /**
+   * Posts the `sale`/`out` movement of every line of a counter sale that has just
+   * been issued, in the caller's transaction.
+   *
+   * This is the ONLY way an invoice moves stock, and it is here rather than in
+   * `billing` because a module that is not this one may not write `inv`. The
+   * argument is a list of invoice LINE ids: `inv.post_counter_sale_line` reads the
+   * item, the cell and the quantity from the line itself, checks availability
+   * inside the balance-row lock, and posts through `inv.post_stock_movement` — so
+   * nothing a caller passes can redirect a posting or sell more than is there.
+   *
+   * Exactly once, structurally: `uq_stock_movements_source` is UNIQUE on
+   * (reference_kind, reference_id, direction), so a second call for one line is
+   * refused by the index rather than by a code path that could be skipped. The
+   * caller's own replay guard — `issueInvoice` short-circuits on an already-issued
+   * invoice — means that index is a backstop and not the routine path.
+   *
+   * No audit record: the act being audited is the ISSUANCE, and `billing` writes
+   * `sal.invoice.issued` for it. A second record here would report one event twice
+   * under two names. The movements are published as `stock.movement.posted`, which
+   * is what a consumer projecting availability needs.
+   */
+  public async postCounterSaleLines(
+    db: DbHandle,
+    input: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly invoiceLineIds: readonly string[];
+    },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<readonly string[]> {
+    await authorizeScope({ companyId: input.companyId, branchId: input.branchId });
+    assertLegalMovementReference('sale', 'invoice_line', 'out');
+
+    const movementIds: string[] = [];
+    for (const invoiceLineId of input.invoiceLineIds) {
+      try {
+        movementIds.push(await this.repository.postCounterSaleLine(db, invoiceLineId));
+      } catch (error) {
+        toDomainFailure(error, 'Counter sale');
+      }
+      await this.publishPostedMovements(db, 'invoice_line', invoiceLineId);
+    }
+    return movementIds;
+  }
+
+  // -------------------------------------------------------------------------
   // Shared preconditions.
   // -------------------------------------------------------------------------
 
-  private async requireLocation(db: DbHandle, locationId: string): Promise<StockLocationRow> {
+  public async requireLocation(db: DbHandle, locationId: string): Promise<StockLocationRow> {
     const location = await this.repository.readLocation(db, locationId);
     if (!location) {
       throw new AppFailure('ERR-RES-001', {
@@ -805,7 +922,7 @@ export class InventoryStockService {
    * `inv.stock_adjustments` and `inv.approve_adjustment`, which need
    * `inv.adjustment.approve` and a second person — not through `inv.stock.operate`.
    */
-  private async requireSellableLocation(
+  public async requireSellableLocation(
     db: DbHandle,
     locationId: string
   ): Promise<StockLocationRow> {
@@ -815,6 +932,16 @@ export class InventoryStockService {
         message:
           `Stock location ${location.locationCode} is a quarantine location; damaged stock ` +
           'cannot be reserved or issued. Dispose of it through an approved adjustment.',
+      });
+    }
+    // Transit for the same reason quarantine is excluded: the quantity there belongs
+    // to a transfer under way, and reserving or issuing it would take a part out of a
+    // delivery that has not arrived at either end.
+    if (location.locationType === 'transit') {
+      throw new AppFailure('ERR-TRN-001', {
+        message:
+          `Stock location ${location.locationCode} holds transfers in transit; that stock ` +
+          'cannot be reserved or issued until the transfer is received.',
       });
     }
     return location;
@@ -828,7 +955,7 @@ export class InventoryStockService {
    * quantity means nothing. An archived item is refused for the same reason its
    * lifecycle is terminal.
    */
-  private async requireStockTrackedItem(db: DbHandle, itemId: string): Promise<void> {
+  public async requireStockTrackedItem(db: DbHandle, itemId: string): Promise<void> {
     const item = await this.repository.readItem(db, itemId);
     if (!item) {
       throw new AppFailure('ERR-RES-001', { message: `Item ${itemId} was not found` });
@@ -965,7 +1092,8 @@ export class InventoryStockService {
       readonly expiresAt: Date | null;
       readonly recordVersion: number;
     },
-    replayed: boolean
+    replayed: boolean,
+    materialRequestId: string | null
   ): ReservationView {
     return {
       id: row.id,
@@ -978,6 +1106,7 @@ export class InventoryStockService {
       status: row.status,
       expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
       recordVersion: row.recordVersion,
+      materialRequestId,
       replayed,
     };
   }

@@ -58,6 +58,7 @@ import {
   type BranchPair,
   type Locations,
 } from './shared';
+import { LINK } from './stock-operations';
 
 /**
  * Inventory (P1-30, `W4`): item search (FE-008), stock balance (FE-009) and
@@ -157,8 +158,50 @@ export function InventoryScreen({
             >
               {translate(messages, 'inventory.links.movements')}
             </Link>
+            {' · '}
+            <Link
+              href={`/${locale}/inventory/transfers`}
+              className="text-primary underline-offset-2 hover:underline"
+            >
+              {translate(messages, 'inventory.stockOps.links.transfers')}
+            </Link>
+            {' · '}
+            <Link
+              href={`/${locale}/inventory/goods-receipts`}
+              className="text-primary underline-offset-2 hover:underline"
+            >
+              {translate(messages, 'inventory.stockOps.links.receipts')}
+            </Link>
+            {' · '}
+            <Link
+              href={`/${locale}/inventory/adjustments`}
+              className="text-primary underline-offset-2 hover:underline"
+            >
+              {translate(messages, 'inventory.stockOps.links.adjustments')}
+            </Link>
+            {' · '}
+            <Link
+              href={`/${locale}/inventory/counts`}
+              className="text-primary underline-offset-2 hover:underline"
+            >
+              {translate(messages, 'inventory.stockOps.links.counts')}
+            </Link>
           </>
         ) : null}
+        {' · '}
+        <Link
+          href={`/${locale}/inventory/unit-conversions`}
+          className="text-primary underline-offset-2 hover:underline"
+        >
+          {translate(messages, 'inventory.links.unitConversions')}
+        </Link>
+        {' · '}
+        <Link
+          href={`/${locale}/inventory/vehicle-specifications`}
+          className="text-primary underline-offset-2 hover:underline"
+        >
+          {translate(messages, 'inventory.links.vehicleSpecifications')}
+        </Link>
       </p>
 
       {canReadStock ? (
@@ -370,10 +413,17 @@ function ItemResults({
       {
         id: 'sku',
         headerKey: 'inventory.items.column.sku',
+        /*
+         * The stock code is the way into the item's own page (P1-32), where its
+         * barcodes and its selling prices live. A code with nowhere to go is how
+         * that surface would have stayed unreachable from the catalogue.
+         */
         cell: (row) => (
-          <code className="font-mono text-caption" dir="ltr">
-            {row.sku}
-          </code>
+          <Link href={`/${locale}/inventory/items/${row.id}`} className={LINK}>
+            <code className="font-mono text-caption" dir="ltr">
+              {row.sku}
+            </code>
+          </Link>
         ),
       },
       {
@@ -428,7 +478,7 @@ function ItemResults({
         ),
       },
     ],
-    [messages]
+    [messages, locale]
   );
 
   return (
@@ -669,6 +719,14 @@ function AvailabilityResults({
           </strong>
         ),
       },
+      {
+        // The item's quantity in transit in this branch, as the server repeats it
+        // on every cell of the item: part of neither `onHand` nor `available`.
+        id: 'inTransit',
+        headerKey: 'inventory.availability.column.inTransit',
+        numeric: true,
+        cell: (row) => <Qty value={row.inTransitQty} />,
+      },
     ],
     [messages]
   );
@@ -696,6 +754,14 @@ function AvailabilityResults({
       <p className="text-caption text-text-muted" lang={locale}>
         {translate(messages, 'inventory.availability.cellNote')}
       </p>
+      <p className="text-caption text-text-muted" lang={locale}>
+        {translate(messages, 'inventory.availability.inTransitNote')}
+      </p>
+      {criteria.includeQuarantine === 'true' ? (
+        <p className="text-caption text-text-muted" lang={locale}>
+          {translate(messages, 'inventory.availability.quarantineNote')}
+        </p>
+      ) : null}
     </div>
   );
 }

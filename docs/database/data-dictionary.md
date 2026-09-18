@@ -4369,6 +4369,418 @@ Generated from the live catalog (svc / quo / inv). Money is `numeric(18,4)`; qua
 | 13  | `deleted_at`         | timestamp with time zone | yes      |
 | 14  | `deleted_by`         | uuid                     | yes      |
 
+### Inventory operations (`inv`, P1-32 preparatory slice)
+
+Generated from the live catalog after `20260917090000_inv_transfers_receipts_counts.sql`. Transfers hold stock in a branch-level `transit` location between dispatch and receipt; goods receipts append restricted cost layers and never rewrite earlier ones; stock counts raise pending adjustments and post nothing. Restricted columns: `inv.item_cost_layers.unit_cost` (every policy gated by `inv.cost.view`) and `inv.goods_receipt_lines.unit_cost` (the posting input, never returned by any read).
+
+#### inv.goods_receipt_lines
+
+| #   | Column           | Type                     | Nullable |
+| --- | ---------------- | ------------------------ | -------- |
+| 1   | `id`             | uuid                     | no       |
+| 2   | `tenant_id`      | uuid                     | no       |
+| 3   | `company_id`     | uuid                     | no       |
+| 4   | `branch_id`      | uuid                     | no       |
+| 5   | `receipt_id`     | uuid                     | no       |
+| 6   | `line_no`        | integer                  | no       |
+| 7   | `item_id`        | uuid                     | no       |
+| 8   | `location_id`    | uuid                     | no       |
+| 9   | `quantity`       | numeric                  | no       |
+| 10  | `unit_cost`      | numeric                  | yes      |
+| 11  | `currency_code`  | text                     | yes      |
+| 12  | `record_version` | integer                  | no       |
+| 13  | `created_at`     | timestamp with time zone | no       |
+| 14  | `created_by`     | uuid                     | no       |
+| 15  | `updated_at`     | timestamp with time zone | yes      |
+| 16  | `updated_by`     | uuid                     | yes      |
+
+#### inv.goods_receipts
+
+| #   | Column               | Type                     | Nullable |
+| --- | -------------------- | ------------------------ | -------- |
+| 1   | `id`                 | uuid                     | no       |
+| 2   | `tenant_id`          | uuid                     | no       |
+| 3   | `company_id`         | uuid                     | no       |
+| 4   | `branch_id`          | uuid                     | no       |
+| 5   | `reference`          | text                     | yes      |
+| 6   | `supplier_reference` | text                     | yes      |
+| 7   | `received_on`        | date                     | no       |
+| 8   | `status`             | text                     | no       |
+| 9   | `notes`              | text                     | yes      |
+| 10  | `posted_at`          | timestamp with time zone | yes      |
+| 11  | `posted_by`          | uuid                     | yes      |
+| 12  | `cancelled_at`       | timestamp with time zone | yes      |
+| 13  | `cancelled_by`       | uuid                     | yes      |
+| 14  | `correlation_id`     | uuid                     | yes      |
+| 15  | `idempotency_key`    | text                     | yes      |
+| 16  | `record_version`     | integer                  | no       |
+| 17  | `created_at`         | timestamp with time zone | no       |
+| 18  | `created_by`         | uuid                     | no       |
+| 19  | `updated_at`         | timestamp with time zone | yes      |
+| 20  | `updated_by`         | uuid                     | yes      |
+
+#### inv.item_cost_layers
+
+| #   | Column           | Type                     | Nullable |
+| --- | ---------------- | ------------------------ | -------- |
+| 1   | `id`             | uuid                     | no       |
+| 2   | `tenant_id`      | uuid                     | no       |
+| 3   | `company_id`     | uuid                     | no       |
+| 4   | `branch_id`      | uuid                     | no       |
+| 5   | `item_id`        | uuid                     | no       |
+| 6   | `source_kind`    | text                     | no       |
+| 7   | `source_id`      | uuid                     | no       |
+| 8   | `quantity`       | numeric                  | no       |
+| 9   | `unit_cost`      | numeric                  | no       |
+| 10  | `currency_code`  | text                     | no       |
+| 11  | `effective_at`   | timestamp with time zone | no       |
+| 12  | `classification` | text                     | no       |
+| 13  | `created_at`     | timestamp with time zone | no       |
+| 14  | `created_by`     | uuid                     | no       |
+
+#### inv.stock_count_lines
+
+| #   | Column                        | Type                     | Nullable |
+| --- | ----------------------------- | ------------------------ | -------- |
+| 1   | `id`                          | uuid                     | no       |
+| 2   | `tenant_id`                   | uuid                     | no       |
+| 3   | `company_id`                  | uuid                     | no       |
+| 4   | `branch_id`                   | uuid                     | no       |
+| 5   | `count_id`                    | uuid                     | no       |
+| 6   | `item_id`                     | uuid                     | no       |
+| 7   | `snapshot_qty`                | numeric                  | no       |
+| 8   | `counted_qty`                 | numeric                  | yes      |
+| 9   | `movement_delta_during_count` | numeric                  | no       |
+| 10  | `variance_qty`                | numeric                  | yes      |
+| 11  | `adjustment_id`               | uuid                     | yes      |
+| 12  | `record_version`              | integer                  | no       |
+| 13  | `created_at`                  | timestamp with time zone | no       |
+| 14  | `created_by`                  | uuid                     | no       |
+| 15  | `updated_at`                  | timestamp with time zone | yes      |
+| 16  | `updated_by`                  | uuid                     | yes      |
+
+#### inv.stock_counts
+
+| #   | Column            | Type                     | Nullable |
+| --- | ----------------- | ------------------------ | -------- |
+| 1   | `id`              | uuid                     | no       |
+| 2   | `tenant_id`       | uuid                     | no       |
+| 3   | `company_id`      | uuid                     | no       |
+| 4   | `branch_id`       | uuid                     | no       |
+| 5   | `location_id`     | uuid                     | no       |
+| 6   | `status`          | text                     | no       |
+| 7   | `snapshot_at`     | timestamp with time zone | no       |
+| 8   | `counted_by`      | uuid                     | no       |
+| 9   | `reconciled_at`   | timestamp with time zone | yes      |
+| 10  | `reconciled_by`   | uuid                     | yes      |
+| 11  | `cancelled_at`    | timestamp with time zone | yes      |
+| 12  | `cancelled_by`    | uuid                     | yes      |
+| 13  | `cancel_reason`   | text                     | yes      |
+| 14  | `notes`           | text                     | yes      |
+| 15  | `correlation_id`  | uuid                     | yes      |
+| 16  | `idempotency_key` | text                     | yes      |
+| 17  | `record_version`  | integer                  | no       |
+| 18  | `created_at`      | timestamp with time zone | no       |
+| 19  | `created_by`      | uuid                     | no       |
+| 20  | `updated_at`      | timestamp with time zone | yes      |
+| 21  | `updated_by`      | uuid                     | yes      |
+
+#### inv.stock_transfers
+
+| #   | Column                 | Type                     | Nullable |
+| --- | ---------------------- | ------------------------ | -------- |
+| 1   | `id`                   | uuid                     | no       |
+| 2   | `tenant_id`            | uuid                     | no       |
+| 3   | `company_id`           | uuid                     | no       |
+| 4   | `branch_id`            | uuid                     | no       |
+| 5   | `item_id`              | uuid                     | no       |
+| 6   | `from_location_id`     | uuid                     | no       |
+| 7   | `transit_location_id`  | uuid                     | no       |
+| 8   | `to_branch_id`         | uuid                     | no       |
+| 9   | `to_location_id`       | uuid                     | no       |
+| 10  | `quantity`             | numeric                  | no       |
+| 11  | `received_quantity`    | numeric                  | yes      |
+| 12  | `status`               | text                     | no       |
+| 13  | `reason`               | text                     | yes      |
+| 14  | `cancel_reason`        | text                     | yes      |
+| 15  | `dispatched_at`        | timestamp with time zone | no       |
+| 16  | `dispatched_by`        | uuid                     | no       |
+| 17  | `received_at`          | timestamp with time zone | yes      |
+| 18  | `received_by`          | uuid                     | yes      |
+| 19  | `cancelled_at`         | timestamp with time zone | yes      |
+| 20  | `cancelled_by`         | uuid                     | yes      |
+| 21  | `correlation_id`       | uuid                     | yes      |
+| 22  | `idempotency_key`      | text                     | yes      |
+| 23  | `record_version`       | integer                  | no       |
+| 24  | `created_at`           | timestamp with time zone | no       |
+| 25  | `created_by`           | uuid                     | no       |
+| 26  | `updated_at`           | timestamp with time zone | yes      |
+| 27  | `updated_by`           | uuid                     | yes      |
+| 28  | `resolved_quantity`    | numeric                  | no       |
+| 29  | `outstanding_quantity` | numeric                  | yes      |
+
+Since `20260917098000_inv_transfer_partial_receipt.sql` a receipt records only what arrived: `received_quantity` may be less than `quantity`, `resolved_quantity` counts units settled without arriving (returned to origin or written off), and `outstanding_quantity` is GENERATED from the three. Status adds `partially_received` and `settled`; each part settlement is a row of `inv.stock_transfer_settlements`.
+
+### Item identifiers (`inv`, P1-32 preparatory slice 2)
+
+Generated from the live catalog after `20260917091000_inv_item_identifiers.sql`. Barcodes and packaging identifiers of a tenant item: `normalized_value` is GENERATED by `inv.normalize_item_identifier`, GTIN/EAN/UPC check digits are enforced by `ck_item_identifiers_check_digit`, a live code is unique per (tenant, kind, normalised value), and internal codes are allocated by `inv.assign_internal_barcode`. A scan resolves to the item, never to a serialised unit. No restricted column.
+
+#### inv.item_identifiers
+
+| #   | Column             | Type                     | Nullable |
+| --- | ------------------ | ------------------------ | -------- |
+| 1   | `id`               | uuid                     | no       |
+| 2   | `tenant_id`        | uuid                     | no       |
+| 3   | `item_id`          | uuid                     | no       |
+| 4   | `identifier_kind`  | text                     | no       |
+| 5   | `value`            | text                     | no       |
+| 6   | `normalized_value` | text                     | yes      |
+| 7   | `unit_id`          | uuid                     | no       |
+| 8   | `pack_quantity`    | numeric                  | no       |
+| 9   | `is_primary`       | boolean                  | no       |
+| 10  | `retired_at`       | timestamp with time zone | yes      |
+| 11  | `retired_by`       | uuid                     | yes      |
+| 12  | `record_version`   | integer                  | no       |
+| 13  | `created_at`       | timestamp with time zone | no       |
+| 14  | `created_by`       | uuid                     | no       |
+| 15  | `updated_at`       | timestamp with time zone | yes      |
+| 16  | `updated_by`       | uuid                     | yes      |
+
+### Item selling prices (`inv`, P1-32 preparatory slice 2)
+
+Generated from the live catalog after `20260917092000_inv_item_sale_prices.sql`. What the tenant SELLS an item for, optionally narrowed to a company and a branch: one live row per (tenant, item, company, branch) (`uq_item_sale_prices_signature`, NULLS NOT DISTINCT), resolved most-specific-first by `inv.resolve_item_sale_price`, which returns NO ROW when nothing is configured. This is a selling price and is `internal`; item COST stays in `inv.item_cost_details` / `inv.item_cost_layers`, gated by `inv.cost.view`. The tax CLASS is stored and the rate is read from `org.tax_rates` at the moment of sale.
+
+#### inv.item_sale_prices
+
+| #   | Column           | Type                     | Nullable |
+| --- | ---------------- | ------------------------ | -------- |
+| 1   | `id`             | uuid                     | no       |
+| 2   | `tenant_id`      | uuid                     | no       |
+| 3   | `item_id`        | uuid                     | no       |
+| 4   | `company_id`     | uuid                     | yes      |
+| 5   | `branch_id`      | uuid                     | yes      |
+| 6   | `currency_code`  | text                     | no       |
+| 7   | `unit_price`     | numeric                  | no       |
+| 8   | `tax_class_id`   | uuid                     | yes      |
+| 9   | `status`         | text                     | no       |
+| 10  | `record_version` | integer                  | no       |
+| 11  | `created_at`     | timestamp with time zone | no       |
+| 12  | `created_by`     | uuid                     | no       |
+| 13  | `updated_at`     | timestamp with time zone | yes      |
+| 14  | `updated_by`     | uuid                     | yes      |
+| 15  | `deleted_at`     | timestamp with time zone | yes      |
+| 16  | `deleted_by`     | uuid                     | yes      |
+
+### Sales returns (`inv`, P1-32 preparatory slice 2)
+
+Generated from the live catalog after `20260917094000_inv_sales_returns.sql`. A part coming back, from the part issue it was fitted from or the counter-sale invoice line it was sold on. `return_condition` decides the destination cell — the receiving location when `restockable`, the quarantine location when `damaged` — and `inv.guard_sales_return_ceiling` bounds the running total against the source, counting `inv.part_returns` as well for a part-issue source. An invoice-line source also raises a PENDING `sal.credit_notes` row, linked by `credit_note_id`. No restricted column: the amount lives on the credit note, under its own policy.
+
+#### inv.sales_returns
+
+| #   | Column                   | Type                     | Nullable |
+| --- | ------------------------ | ------------------------ | -------- |
+| 1   | `id`                     | uuid                     | no       |
+| 2   | `tenant_id`              | uuid                     | no       |
+| 3   | `company_id`             | uuid                     | no       |
+| 4   | `branch_id`              | uuid                     | no       |
+| 5   | `source_kind`            | text                     | no       |
+| 6   | `source_id`              | uuid                     | no       |
+| 7   | `item_id`                | uuid                     | no       |
+| 8   | `quantity`               | numeric                  | no       |
+| 9   | `return_condition`       | text                     | no       |
+| 10  | `received_location_id`   | uuid                     | no       |
+| 11  | `quarantine_location_id` | uuid                     | yes      |
+| 12  | `reason`                 | text                     | yes      |
+| 13  | `credit_note_id`         | uuid                     | yes      |
+| 14  | `status`                 | text                     | no       |
+| 15  | `idempotency_key`        | text                     | yes      |
+| 16  | `record_version`         | integer                  | no       |
+| 17  | `created_at`             | timestamp with time zone | no       |
+| 18  | `created_by`             | uuid                     | no       |
+| 19  | `updated_at`             | timestamp with time zone | yes      |
+| 20  | `updated_by`             | uuid                     | yes      |
+
+### Material demand control (`inv`, P1-32 preparatory slice 3a)
+
+Generated from the live catalog after `20260917095000_inv_item_unit_conversions.sql`, `20260917096000_inv_vehicle_fluid_specifications.sql`, `20260917097000_inv_material_requirements.sql` and `20260917098000_inv_transfer_partial_receipt.sql`. A work-order material draw needs an APPROVED requirement for its service line and item or item family; a missing specification or a missing unit conversion is stored as `approval_required` with its reason and no allowance is assumed. `inv.material_requirement_usage` counts each unit once across open requests, active reservations, issues and restockable returns, and `inv.guard_material_request_ceiling` enforces the allowance plus approved exceptions under the requirement row lock. Exceptions are finite and decided by a person other than the requester. Conversions are exact numeric factors in one direction; specifications resolve only once confirmed and never as zero. No column in this section is restricted: none is a cost or a price.
+
+#### inv.item_unit_conversions
+
+| #   | Column             | Type                     | Nullable |
+| --- | ------------------ | ------------------------ | -------- |
+| 1   | `id`               | uuid                     | no       |
+| 2   | `tenant_id`        | uuid                     | no       |
+| 3   | `item_id`          | uuid                     | yes      |
+| 4   | `from_uom_id`      | uuid                     | no       |
+| 5   | `to_uom_id`        | uuid                     | no       |
+| 6   | `factor`           | numeric                  | no       |
+| 7   | `source_reference` | text                     | no       |
+| 8   | `status`           | text                     | no       |
+| 9   | `retired_at`       | timestamp with time zone | yes      |
+| 10  | `retired_by`       | uuid                     | yes      |
+| 11  | `record_version`   | integer                  | no       |
+| 12  | `created_at`       | timestamp with time zone | no       |
+| 13  | `created_by`       | uuid                     | no       |
+| 14  | `updated_at`       | timestamp with time zone | yes      |
+| 15  | `updated_by`       | uuid                     | yes      |
+
+#### inv.vehicle_fluid_specifications
+
+| #   | Column              | Type                     | Nullable |
+| --- | ------------------- | ------------------------ | -------- |
+| 1   | `id`                | uuid                     | no       |
+| 2   | `tenant_id`         | uuid                     | no       |
+| 3   | `make_id`           | uuid                     | no       |
+| 4   | `model_id`          | uuid                     | yes      |
+| 5   | `model_year_from`   | integer                  | yes      |
+| 6   | `model_year_to`     | integer                  | yes      |
+| 7   | `engine_variant`    | text                     | yes      |
+| 8   | `service_condition` | text                     | no       |
+| 9   | `item_category_id`  | uuid                     | yes      |
+| 10  | `capacity`          | numeric                  | no       |
+| 11  | `uom_id`            | uuid                     | no       |
+| 12  | `source_reference`  | text                     | no       |
+| 13  | `status`            | text                     | no       |
+| 14  | `confirmed_by`      | uuid                     | yes      |
+| 15  | `confirmed_at`      | timestamp with time zone | yes      |
+| 16  | `retired_by`        | uuid                     | yes      |
+| 17  | `retired_at`        | timestamp with time zone | yes      |
+| 18  | `record_version`    | integer                  | no       |
+| 19  | `created_at`        | timestamp with time zone | no       |
+| 20  | `created_by`        | uuid                     | no       |
+| 21  | `updated_at`        | timestamp with time zone | yes      |
+| 22  | `updated_by`        | uuid                     | yes      |
+
+#### inv.material_requirements
+
+| #   | Column                     | Type                     | Nullable |
+| --- | -------------------------- | ------------------------ | -------- |
+| 1   | `id`                       | uuid                     | no       |
+| 2   | `tenant_id`                | uuid                     | no       |
+| 3   | `company_id`               | uuid                     | no       |
+| 4   | `branch_id`                | uuid                     | no       |
+| 5   | `work_order_id`            | uuid                     | no       |
+| 6   | `service_line_id`          | uuid                     | no       |
+| 7   | `item_id`                  | uuid                     | yes      |
+| 8   | `item_category_id`         | uuid                     | yes      |
+| 9   | `basis`                    | text                     | no       |
+| 10  | `specification_id`         | uuid                     | yes      |
+| 11  | `service_condition`        | text                     | yes      |
+| 12  | `engine_variant`           | text                     | yes      |
+| 13  | `allowance_quantity`       | numeric                  | yes      |
+| 14  | `uom_id`                   | uuid                     | yes      |
+| 15  | `source_reference`         | text                     | yes      |
+| 16  | `status`                   | text                     | no       |
+| 17  | `approval_required_reason` | text                     | yes      |
+| 18  | `requested_by`             | uuid                     | no       |
+| 19  | `approved_by`              | uuid                     | yes      |
+| 20  | `approved_at`              | timestamp with time zone | yes      |
+| 21  | `rejected_by`              | uuid                     | yes      |
+| 22  | `rejected_at`              | timestamp with time zone | yes      |
+| 23  | `rejection_reason`         | text                     | yes      |
+| 24  | `cancelled_by`             | uuid                     | yes      |
+| 25  | `cancelled_at`             | timestamp with time zone | yes      |
+| 26  | `cancel_reason`            | text                     | yes      |
+| 27  | `record_version`           | integer                  | no       |
+| 28  | `created_at`               | timestamp with time zone | no       |
+| 29  | `created_by`               | uuid                     | no       |
+| 30  | `updated_at`               | timestamp with time zone | yes      |
+| 31  | `updated_by`               | uuid                     | yes      |
+
+#### inv.material_requirement_exceptions
+
+| #   | Column                | Type                     | Nullable |
+| --- | --------------------- | ------------------------ | -------- |
+| 1   | `id`                  | uuid                     | no       |
+| 2   | `tenant_id`           | uuid                     | no       |
+| 3   | `company_id`          | uuid                     | no       |
+| 4   | `branch_id`           | uuid                     | no       |
+| 5   | `requirement_id`      | uuid                     | no       |
+| 6   | `additional_quantity` | numeric                  | no       |
+| 7   | `resulting_allowance` | numeric                  | yes      |
+| 8   | `reason`              | text                     | no       |
+| 9   | `status`              | text                     | no       |
+| 10  | `requested_by`        | uuid                     | no       |
+| 11  | `decided_by`          | uuid                     | yes      |
+| 12  | `decided_at`          | timestamp with time zone | yes      |
+| 13  | `decision_note`       | text                     | yes      |
+| 14  | `record_version`      | integer                  | no       |
+| 15  | `created_at`          | timestamp with time zone | no       |
+| 16  | `created_by`          | uuid                     | no       |
+| 17  | `updated_at`          | timestamp with time zone | yes      |
+| 18  | `updated_by`          | uuid                     | yes      |
+
+#### inv.material_requests
+
+| #   | Column                    | Type                     | Nullable |
+| --- | ------------------------- | ------------------------ | -------- |
+| 1   | `id`                      | uuid                     | no       |
+| 2   | `tenant_id`               | uuid                     | no       |
+| 3   | `company_id`              | uuid                     | no       |
+| 4   | `branch_id`               | uuid                     | no       |
+| 5   | `requirement_id`          | uuid                     | no       |
+| 6   | `work_order_id`           | uuid                     | no       |
+| 7   | `item_id`                 | uuid                     | no       |
+| 8   | `quantity`                | numeric                  | no       |
+| 9   | `requirement_unit_factor` | numeric                  | no       |
+| 10  | `status`                  | text                     | no       |
+| 11  | `requested_by`            | uuid                     | no       |
+| 12  | `closed_by`               | uuid                     | yes      |
+| 13  | `closed_at`               | timestamp with time zone | yes      |
+| 14  | `close_reason`            | text                     | yes      |
+| 15  | `cancelled_by`            | uuid                     | yes      |
+| 16  | `cancelled_at`            | timestamp with time zone | yes      |
+| 17  | `cancel_reason`           | text                     | yes      |
+| 18  | `idempotency_key`         | text                     | yes      |
+| 19  | `correlation_id`          | uuid                     | yes      |
+| 20  | `record_version`          | integer                  | no       |
+| 21  | `created_at`              | timestamp with time zone | no       |
+| 22  | `created_by`              | uuid                     | no       |
+| 23  | `updated_at`              | timestamp with time zone | yes      |
+| 24  | `updated_by`              | uuid                     | yes      |
+
+#### inv.material_request_fulfillments
+
+| #   | Column                | Type                     | Nullable |
+| --- | --------------------- | ------------------------ | -------- |
+| 1   | `id`                  | uuid                     | no       |
+| 2   | `tenant_id`           | uuid                     | no       |
+| 3   | `company_id`          | uuid                     | no       |
+| 4   | `branch_id`           | uuid                     | no       |
+| 5   | `material_request_id` | uuid                     | no       |
+| 6   | `fulfillment_kind`    | text                     | no       |
+| 7   | `reservation_id`      | uuid                     | yes      |
+| 8   | `part_issue_id`       | uuid                     | yes      |
+| 9   | `created_at`          | timestamp with time zone | no       |
+| 10  | `created_by`          | uuid                     | no       |
+
+#### inv.stock_transfer_settlements
+
+| #   | Column            | Type                     | Nullable |
+| --- | ----------------- | ------------------------ | -------- |
+| 1   | `id`              | uuid                     | no       |
+| 2   | `tenant_id`       | uuid                     | no       |
+| 3   | `company_id`      | uuid                     | no       |
+| 4   | `branch_id`       | uuid                     | no       |
+| 5   | `transfer_id`     | uuid                     | no       |
+| 6   | `to_branch_id`    | uuid                     | no       |
+| 7   | `settlement_kind` | text                     | no       |
+| 8   | `quantity`        | numeric                  | no       |
+| 9   | `reason`          | text                     | yes      |
+| 10  | `status`          | text                     | no       |
+| 11  | `requested_by`    | uuid                     | no       |
+| 12  | `approved_by`     | uuid                     | yes      |
+| 13  | `approved_at`     | timestamp with time zone | yes      |
+| 14  | `rejected_by`     | uuid                     | yes      |
+| 15  | `rejected_at`     | timestamp with time zone | yes      |
+| 16  | `idempotency_key` | text                     | yes      |
+| 17  | `correlation_id`  | uuid                     | yes      |
+| 18  | `record_version`  | integer                  | no       |
+| 19  | `created_at`      | timestamp with time zone | no       |
+| 20  | `created_by`      | uuid                     | no       |
+| 21  | `updated_at`      | timestamp with time zone | yes      |
+| 22  | `updated_by`      | uuid                     | yes      |
+
 ---
 
 # Phase 1-11 — SAL / WTY / RPT (Billing, Payment, Delivery, Warranty, Reporting)
@@ -4642,28 +5054,30 @@ RESTRICTED 1:1 invoice-line money + payer split (gated by `sal.finance.view`).
 
 Invoice line (structural); amounts + payer split in restricted `sal.invoice_line_amounts`.
 
-| Column                     | Type            | class    | Null? | Purpose                                                                                                 |
-| -------------------------- | --------------- | -------- | ----- | ------------------------------------------------------------------------------------------------------- |
-| `id`                       | `uuid`          | internal | no    | Primary key (UUID).                                                                                     |
-| `tenant_id`                | `uuid`          | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                         |
-| `company_id`               | `uuid`          | internal | no    | Company scope (branch composite scope).                                                                 |
-| `branch_id`                | `uuid`          | internal | no    | Branch scope (branch composite scope).                                                                  |
-| `invoice_id`               | `uuid`          | internal | no    | Composite FK -> `sal.invoices(...)` RESTRICT; frozen once invoice issued (`guard_invoice_line_frozen`). |
-| `line_number`              | `integer`       | internal | no    | Line ordinal (>=1); `UNIQUE(...,invoice_id, line_number)`.                                              |
-| `line_type`                | `text`          | internal | no    | CHECK IN ('service','part','fee').                                                                      |
-| `quantity`                 | `numeric(12,3)` | internal | no    | Line quantity `NUMERIC(12,3)` (>0).                                                                     |
-| `tax_class_id`             | `uuid`          | internal | yes   | Composite FK -> `org.tax_classes(tenant_id, company_id, id)` RESTRICT (nullable).                       |
-| `currency_code`            | `text`          | internal | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                 |
-| `source_service_line_id`   | `uuid`          | internal | yes   | Opaque source ref to a work-order service line (nullable).                                              |
-| `source_part_issue_id`     | `uuid`          | internal | yes   | Opaque source ref to an `inv` part issue (nullable).                                                    |
-| `source_quotation_item_id` | `uuid`          | internal | yes   | Opaque source ref to a `quo` quotation item (nullable).                                                 |
-| `record_version`           | `integer`       | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                  |
-| `created_at`               | `timestamptz`   | internal | no    | Row creation timestamp.                                                                                 |
-| `created_by`               | `uuid`          | internal | no    | Creating actor (user id).                                                                               |
-| `updated_at`               | `timestamptz`   | internal | yes   | Last-update timestamp (NULL until first update).                                                        |
-| `updated_by`               | `uuid`          | internal | yes   | Last-updating actor.                                                                                    |
-| `deleted_at`               | `timestamptz`   | internal | yes   | Soft-delete timestamp (NULL = live).                                                                    |
-| `deleted_by`               | `uuid`          | internal | yes   | Soft-deleting actor.                                                                                    |
+| Column                     | Type            | class    | Null? | Purpose                                                                                                                                                         |
+| -------------------------- | --------------- | -------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                       | `uuid`          | internal | no    | Primary key (UUID).                                                                                                                                             |
+| `tenant_id`                | `uuid`          | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                                                                 |
+| `company_id`               | `uuid`          | internal | no    | Company scope (branch composite scope).                                                                                                                         |
+| `branch_id`                | `uuid`          | internal | no    | Branch scope (branch composite scope).                                                                                                                          |
+| `invoice_id`               | `uuid`          | internal | no    | Composite FK -> `sal.invoices(...)` RESTRICT; frozen once invoice issued (`guard_invoice_line_frozen`).                                                         |
+| `line_number`              | `integer`       | internal | no    | Line ordinal (>=1); `UNIQUE(...,invoice_id, line_number)`.                                                                                                      |
+| `line_type`                | `text`          | internal | no    | CHECK IN ('service','part','fee').                                                                                                                              |
+| `quantity`                 | `numeric(12,3)` | internal | no    | Line quantity `NUMERIC(12,3)` (>0).                                                                                                                             |
+| `tax_class_id`             | `uuid`          | internal | yes   | Composite FK -> `org.tax_classes(tenant_id, company_id, id)` RESTRICT (nullable).                                                                               |
+| `currency_code`            | `text`          | internal | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                                                                         |
+| `source_service_line_id`   | `uuid`          | internal | yes   | Opaque source ref to a work-order service line (nullable).                                                                                                      |
+| `source_part_issue_id`     | `uuid`          | internal | yes   | Opaque source ref to an `inv` part issue (nullable).                                                                                                            |
+| `source_quotation_item_id` | `uuid`          | internal | yes   | Opaque source ref to a `quo` quotation item (nullable).                                                                                                         |
+| `item_id`                  | `uuid`          | internal | yes   | P1-32: the stock item a counter-sale line sells; composite FK -> `inv.item_master(tenant_id, id)` RESTRICT. NULL on a work-order invoice.                       |
+| `stock_location_id`        | `uuid`          | internal | yes   | P1-32: the cell the line is drawn from at issuance; composite FK -> `inv.stock_locations(...)` RESTRICT. Paired with `item_id` (`ck_invoice_lines_stock_pair`). |
+| `record_version`           | `integer`       | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                                                                          |
+| `created_at`               | `timestamptz`   | internal | no    | Row creation timestamp.                                                                                                                                         |
+| `created_by`               | `uuid`          | internal | no    | Creating actor (user id).                                                                                                                                       |
+| `updated_at`               | `timestamptz`   | internal | yes   | Last-update timestamp (NULL until first update).                                                                                                                |
+| `updated_by`               | `uuid`          | internal | yes   | Last-updating actor.                                                                                                                                            |
+| `deleted_at`               | `timestamptz`   | internal | yes   | Soft-delete timestamp (NULL = live).                                                                                                                            |
+| `deleted_by`               | `uuid`          | internal | yes   | Soft-deleting actor.                                                                                                                                            |
 
 ### `sal.invoice_numbering_configs`
 
@@ -4708,27 +5122,28 @@ Append-only invoice status ledger (SELECT+INSERT).
 
 Invoice master (branch-scoped, structural). Money lives in restricted `sal.invoice_amounts`.
 
-| Column                  | Type          | class    | Null? | Purpose                                                                                                                |
-| ----------------------- | ------------- | -------- | ----- | ---------------------------------------------------------------------------------------------------------------------- |
-| `id`                    | `uuid`        | internal | no    | Primary key (UUID).                                                                                                    |
-| `tenant_id`             | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                        |
-| `company_id`            | `uuid`        | internal | no    | Company scope (branch composite scope).                                                                                |
-| `branch_id`             | `uuid`        | internal | no    | Branch scope (branch composite scope).                                                                                 |
-| `work_order_id`         | `uuid`        | internal | no    | Composite FK -> `wo.work_orders(...)` RESTRICT; one live invoice per WO (`uq_invoices_work_order_active`).             |
-| `quotation_revision_id` | `uuid`        | internal | yes   | Composite FK -> `quo.quotation_revisions(...)` RESTRICT; provenance only (nullable).                                   |
-| `payer_partner_id`      | `uuid`        | internal | no    | Payer; composite FK -> `crm.business_partners(tenant_id, id)` RESTRICT.                                                |
-| `currency_code`         | `text`        | internal | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                                |
-| `status`                | `text`        | internal | no    | Lifecycle only; CHECK IN ('draft','issued','credited','void_before_issue'); paid/partially_paid are derived (M-fin-1). |
-| `invoice_number`        | `text`        | internal | yes   | Allocated at issue via `shared.next_display_number`; NULL until issued; CHECK number-iff-issued (H-fin-5).             |
-| `issued_at`             | `timestamptz` | internal | yes   | Issue timestamp; NULL until issued; frozen by `guard_invoice_freeze`.                                                  |
-| `idempotency_key`       | `text`        | internal | yes   | Business idempotency key; partial `UNIQUE(tenant_id, idempotency_key)` (BR-SAL-001).                                   |
-| `record_version`        | `integer`     | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                                 |
-| `created_at`            | `timestamptz` | internal | no    | Row creation timestamp.                                                                                                |
-| `created_by`            | `uuid`        | internal | no    | Creating actor (user id).                                                                                              |
-| `updated_at`            | `timestamptz` | internal | yes   | Last-update timestamp (NULL until first update).                                                                       |
-| `updated_by`            | `uuid`        | internal | yes   | Last-updating actor.                                                                                                   |
-| `deleted_at`            | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                                                                   |
-| `deleted_by`            | `uuid`        | internal | yes   | Soft-deleting actor.                                                                                                   |
+| Column                  | Type          | class    | Null? | Purpose                                                                                                                                                                                                         |
+| ----------------------- | ------------- | -------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                    | `uuid`        | internal | no    | Primary key (UUID).                                                                                                                                                                                             |
+| `tenant_id`             | `uuid`        | internal | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                                                                                                                 |
+| `company_id`            | `uuid`        | internal | no    | Company scope (branch composite scope).                                                                                                                                                                         |
+| `branch_id`             | `uuid`        | internal | no    | Branch scope (branch composite scope).                                                                                                                                                                          |
+| `work_order_id`         | `uuid`        | internal | yes   | Composite FK -> `wo.work_orders(...)` RESTRICT; one live invoice per WO (`uq_invoices_work_order_active`, partial on `work_order_id IS NOT NULL` since P1-32). NULL exactly when `sale_kind` is `counter_sale`. |
+| `sale_kind`             | `text`        | internal | no    | P1-32: CHECK IN ('work_order','counter_sale'); `ck_invoices_sale_kind_source` makes it a biconditional with `work_order_id`. Frozen by `tg_invoices_immutable`.                                                 |
+| `quotation_revision_id` | `uuid`        | internal | yes   | Composite FK -> `quo.quotation_revisions(...)` RESTRICT; provenance only (nullable).                                                                                                                            |
+| `payer_partner_id`      | `uuid`        | internal | no    | Payer; composite FK -> `crm.business_partners(tenant_id, id)` RESTRICT.                                                                                                                                         |
+| `currency_code`         | `text`        | internal | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                                                                                                                         |
+| `status`                | `text`        | internal | no    | Lifecycle only; CHECK IN ('draft','issued','credited','void_before_issue'); paid/partially_paid are derived (M-fin-1).                                                                                          |
+| `invoice_number`        | `text`        | internal | yes   | Allocated at issue via `shared.next_display_number`; NULL until issued; CHECK number-iff-issued (H-fin-5).                                                                                                      |
+| `issued_at`             | `timestamptz` | internal | yes   | Issue timestamp; NULL until issued; frozen by `guard_invoice_freeze`.                                                                                                                                           |
+| `idempotency_key`       | `text`        | internal | yes   | Business idempotency key; partial `UNIQUE(tenant_id, idempotency_key)` (BR-SAL-001).                                                                                                                            |
+| `record_version`        | `integer`     | internal | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                                                                                                                          |
+| `created_at`            | `timestamptz` | internal | no    | Row creation timestamp.                                                                                                                                                                                         |
+| `created_by`            | `uuid`        | internal | no    | Creating actor (user id).                                                                                                                                                                                       |
+| `updated_at`            | `timestamptz` | internal | yes   | Last-update timestamp (NULL until first update).                                                                                                                                                                |
+| `updated_by`            | `uuid`        | internal | yes   | Last-updating actor.                                                                                                                                                                                            |
+| `deleted_at`            | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                                                                                                                                                            |
+| `deleted_by`            | `uuid`        | internal | yes   | Soft-deleting actor.                                                                                                                                                                                            |
 
 ### `sal.payment_allocations`
 

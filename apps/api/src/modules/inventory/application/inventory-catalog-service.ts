@@ -48,12 +48,14 @@ import { AppFailure } from '@/server/errors/app-failure';
 import { appendAudit } from '@/server/audit/audit';
 import { isSqlState, SQLSTATE } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
-import type { ScopeAuthorizer } from '@/server/auth/authorization';
+import { callerHoldsPermissionTenantWide, type ScopeAuthorizer } from '@/server/auth/authorization';
 import { pageRequest, type Page } from '@/server/db/pagination';
+import { DecimalError, MONEY, assertCurrencyCode, parseNonNegative } from '@/modules/pricing';
 import type {
   InventoryRepository,
   ItemCategoryRow,
   ItemRow,
+  ItemSalePriceRow,
   StockLocationListRow,
   UnitOfMeasureRow,
 } from '../data/inventory-repository';
@@ -178,6 +180,46 @@ const toCreatedLocationView = (
   status: row.status,
   recordVersion: row.recordVersion,
 });
+
+/** One configured selling price of an item (P1-32-PRE-105). */
+export interface ItemSalePriceView {
+  readonly id: string;
+  readonly itemId: string;
+  /** Null applies the price to every company of the tenant. */
+  readonly companyId: string | null;
+  /** Null applies the price to every branch of the named company. */
+  readonly branchId: string | null;
+  readonly currencyCode: string;
+  /** Exact decimal string. */
+  readonly unitPrice: string;
+  readonly taxClassId: string | null;
+  readonly taxClassCode: string | null;
+  readonly status: string;
+  readonly recordVersion: number;
+}
+
+export interface ItemSalePriceListView {
+  readonly itemId: string;
+  readonly sku: string;
+  /** Most specific first: branch rows, then company rows, then the tenant-wide row. */
+  readonly prices: readonly ItemSalePriceView[];
+}
+
+const toSalePriceView = (row: ItemSalePriceRow): ItemSalePriceView => ({
+  id: row.id,
+  itemId: row.itemId,
+  companyId: row.companyId,
+  branchId: row.branchId,
+  currencyCode: row.currencyCode,
+  unitPrice: row.unitPrice,
+  taxClassId: row.taxClassId,
+  taxClassCode: row.taxClassCode,
+  status: row.status,
+  recordVersion: row.recordVersion,
+});
+
+/** The catalogue authority a price write requires; tenant-wide when unnarrowed. */
+const MANAGE_PERMISSION = 'inv.item.manage';
 
 function refuse(path: string, rule: string, message: string): never {
   throw new AppFailure('ERR-VAL-001', { message, safeDetails: { violations: [{ path, rule }] } });
@@ -443,5 +485,154 @@ export class InventoryCatalogService {
       ],
     });
     return toCreatedLocationView(created);
+  }
+
+  // -------------------------------------------------------------------------
+  // P1-32-PRE-105…106 — what the tenant sells an item for.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Every configured price of one item, most specific first.
+   *
+   * Readable with `inv.item.read`, tenant-wide, like the item itself. A selling
+   * price is what a customer is quoted at the counter, not what the part cost the
+   * tenant to buy: `inv.item_cost_details` and `inv.item_cost_layers` are the cost
+   * side and stay gated by `inv.cost.view` in the database.
+   */
+  public async listSalePrices(db: DbHandle, itemId: string): Promise<ItemSalePriceListView> {
+    const item = await this.requireItem(db, itemId);
+    const prices = await this.repository.listItemSalePrices(db, itemId);
+    return { itemId: item.id, sku: item.sku, prices: prices.map(toSalePriceView) };
+  }
+
+  /**
+   * Sets the price for one (item, company, branch) signature.
+   *
+   * Create and revise are the same act on purpose: `uq_item_sale_prices_signature`
+   * permits exactly one live row per signature, so a caller repricing an item is
+   * not asked to discover whether a row already exists, and a repeated call is
+   * naturally idempotent rather than a `23505`.
+   *
+   * A branch narrowing must name its company, and both are authorized where they
+   * are named — a tenant-wide price requires the code held tenant-wide, because a
+   * row with no company applies in every branch of every company.
+   */
+  public async setSalePrice(
+    db: DbHandle,
+    itemId: string,
+    input: {
+      readonly companyId?: string | undefined;
+      readonly branchId?: string | undefined;
+      readonly currencyCode: string;
+      /** Exact decimal STRING. Never a number: `numeric(18,4)` is not IEEE-754. */
+      readonly unitPrice: string;
+      readonly taxClassId?: string | undefined;
+    },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<ItemSalePriceView> {
+    const item = await this.requireItem(db, itemId);
+    if (input.branchId !== undefined && input.companyId === undefined) {
+      refuse(
+        'body.companyId',
+        'branch_needs_company',
+        'A price narrowed to a branch must name the company that branch belongs to'
+      );
+    }
+    if (input.taxClassId !== undefined && input.companyId === undefined) {
+      refuse(
+        'body.companyId',
+        'tax_class_needs_company',
+        'A tax class belongs to a company, so a tenant-wide price cannot name one'
+      );
+    }
+    if (input.companyId === undefined) {
+      // A price with no company applies in every branch of every company, so the
+      // authority must be held the same way. Checked here and not by the route:
+      // `scope: 'tenant'` with no concrete target degrades to the scope-blind
+      // `iam.has_permission`, which a grant scoped to ONE branch satisfies — and
+      // that caller would otherwise set the price the whole tenant sells at.
+      if (!(await callerHoldsPermissionTenantWide(db, MANAGE_PERMISSION))) {
+        throw new AppFailure('ERR-IAM-001', {
+          message:
+            'A price with no company applies in every branch of the tenant, so setting one ' +
+            'requires inv.item.manage granted tenant-wide. Name the company to price one.',
+          safeDetails: { requiredPermissions: [MANAGE_PERMISSION] },
+        });
+      }
+    } else {
+      await authorizeScope({
+        companyId: input.companyId,
+        ...(input.branchId === undefined ? {} : { branchId: input.branchId }),
+      });
+    }
+
+    let unitPrice: string;
+    let currencyCode: string;
+    try {
+      unitPrice = parseNonNegative(input.unitPrice, MONEY).toString();
+      currencyCode = assertCurrencyCode(input.currencyCode);
+    } catch (cause) {
+      if (cause instanceof DecimalError) {
+        refuse('body.unitPrice', 'custom', cause.message);
+      }
+      throw cause;
+    }
+
+    let priceId: string;
+    try {
+      priceId = await this.repository.setItemSalePrice(db, {
+        itemId,
+        companyId: input.companyId ?? null,
+        branchId: input.branchId ?? null,
+        currencyCode,
+        unitPrice,
+        taxClassId: input.taxClassId ?? null,
+      });
+    } catch (cause) {
+      if (isSqlState(cause, SQLSTATE.foreignKeyViolation)) {
+        throw new AppFailure('ERR-RES-001', {
+          message: 'The company, branch, tax class or currency named is not in this organisation',
+        });
+      }
+      if (isSqlState(cause, SQLSTATE.checkViolation)) {
+        throw new AppFailure('ERR-TRN-001', {
+          message: 'The price was refused: an archived item takes no price',
+        });
+      }
+      throw cause;
+    }
+
+    const saved = await this.repository.readItemSalePrice(db, priceId);
+    /* c8 ignore next 3 -- written in this transaction under the tenant predicate
+       the read applies; unreachable without a policy change. */
+    if (saved === null) {
+      throw new Error('inventory: item sale price was not readable back');
+    }
+    await appendAudit(db, {
+      action: 'inv.item_sale_price.set',
+      entityType: 'inv.item_sale_price',
+      entityId: saved.id,
+      ...(saved.companyId === null ? {} : { companyId: saved.companyId }),
+      ...(saved.branchId === null ? {} : { branchId: saved.branchId }),
+      requestRef: 'inv.item-sale-price-set',
+      details: [
+        { field: 'sku', classification: 'internal', value: item.sku },
+        { field: 'currencyCode', classification: 'internal', value: saved.currencyCode },
+        // `restricted`: a selling price is money, and `iam.audit_records` carries no
+        // `sal.finance.view` gate. The trail records THAT the price was set and by
+        // whom, which is the fact an investigation needs; the figure lives on the row.
+        { field: 'unitPrice', classification: 'restricted', value: saved.unitPrice },
+        { field: 'taxClassId', classification: 'internal', value: saved.taxClassId },
+      ],
+    });
+    return toSalePriceView(saved);
+  }
+
+  private async requireItem(db: DbHandle, itemId: string): Promise<ItemRow> {
+    const item = await this.repository.readItem(db, itemId);
+    if (item === null) {
+      throw new AppFailure('ERR-RES-001', { message: `Item ${itemId} was not found` });
+    }
+    return item;
   }
 }

@@ -384,6 +384,11 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('sal.delivery_checklist_templates');
   await deleteFrom('sal.payment_allocations');
   await deleteFrom('sal.receipt_reversals');
+  // P1-32 preparatory slice 2: a sales return cites the credit note it raised
+  // (fk_sales_returns_credit_note is ON DELETE RESTRICT), so it goes before
+  // sal.credit_notes — and therefore before the inv block below, which removes
+  // the part issues and locations it also cites.
+  await deleteFrom('inv.sales_returns');
   await deleteFrom('sal.credit_notes');
   await deleteFrom('sal.receipts');
   await deleteFrom('sal.invoice_status_history');
@@ -409,12 +414,32 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('wo.customer_approvals');
   await deleteFrom('quo.quotation_revisions');
   await deleteFrom('quo.quotations');
+  // P1-32 preparatory slice 3a: a fulfillment link cites the part issue and the
+  // reservation it names, a request cites its requirement, and a requirement cites
+  // the work order, its service line and the specification it was derived from —
+  // so the four go, children first, before any of those parents below.
+  await deleteFrom('inv.material_request_fulfillments');
+  await deleteFrom('inv.material_requests');
+  await deleteFrom('inv.material_requirement_exceptions');
+  await deleteFrom('inv.material_requirements');
   await deleteFrom('inv.part_returns');
   await deleteFrom('inv.part_issues');
   await deleteFrom('inv.damaged_stock');
   await deleteFrom('inv.customer_supplied_parts');
   await deleteFrom('inv.external_purchase_part_details');
   await deleteFrom('inv.external_purchase_parts');
+  // P1-32 preparatory slice. Count lines cite the adjustments their variances
+  // raised, so they go before `inv.stock_adjustments`; receipt lines before their
+  // receipts; the append-only cost layers and the transfers cite items and
+  // locations and carry no child of their own.
+  await deleteFrom('inv.stock_count_lines');
+  await deleteFrom('inv.stock_counts');
+  await deleteFrom('inv.goods_receipt_lines');
+  await deleteFrom('inv.goods_receipts');
+  await deleteFrom('inv.item_cost_layers');
+  // Slice 3a: a settlement cites its transfer.
+  await deleteFrom('inv.stock_transfer_settlements');
+  await deleteFrom('inv.stock_transfers');
   await deleteFrom('inv.stock_adjustment_details');
   await deleteFrom('inv.stock_adjustments');
   await deleteFrom('inv.opening_inventory_lines');
@@ -499,6 +524,14 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('svc.services');
   await deleteFrom('svc.service_categories');
   await deleteFrom('inv.item_cost_details');
+  // P1-32 preparatory slice 2: identifiers cite the item and a unit.
+  await deleteFrom('inv.item_identifiers');
+  // Selling prices cite the item, a company, a branch and a tax class.
+  await deleteFrom('inv.item_sale_prices');
+  // Slice 3a: conversions cite the item and two units; specifications cite a unit,
+  // an item family and a vehicle make and model (removed further below).
+  await deleteFrom('inv.item_unit_conversions');
+  await deleteFrom('inv.vehicle_fluid_specifications');
   await deleteFrom('inv.item_master');
   await deleteFrom('inv.stock_locations');
   await deleteFrom('inv.item_categories');

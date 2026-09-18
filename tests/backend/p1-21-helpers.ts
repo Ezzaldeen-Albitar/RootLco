@@ -42,6 +42,20 @@ export const EXTERNAL_PURCHASE_RECORD = 'inv.external_purchase.record';
 export const AUDIT_READ = 'inv.audit.read';
 /** Needed to create the work orders stock is issued to. */
 export const WORK_ORDER_READ = 'wo.work_order.read';
+/** P1-32 preparatory slice 2: the catalogue authority identifier writes require. */
+export const ITEM_MANAGE = 'inv.item.manage';
+/**
+ * P1-32 preparatory slice 2: the three `sal` codes a counter sale needs.
+ *
+ * A counter sale is sold from stock and invoiced in one act, so the principal that
+ * performs it holds inventory AND billing authority. They are named here rather
+ * than imported from `p1-22-helpers.ts` because that module seeds its own tenant-A
+ * fixtures, principals and payment methods, and a suite that wanted three codes
+ * would inherit all of it.
+ */
+export const INVOICE_MANAGE = 'sal.invoice.manage';
+export const INVOICE_ISSUE = 'sal.invoice.issue';
+export const FINANCE_VIEW = 'sal.finance.view';
 
 const ALL_INVENTORY = [
   ITEM_READ,
@@ -189,6 +203,140 @@ export const INV_TENANT_B: Principal = {
   permissions: ALL_INVENTORY,
 };
 
+/**
+ * P1-32 preparatory slice 2. Every inventory permission plus `inv.item.manage`,
+ * UNRESTRICTED — the tenant-wide catalogue authority an identifier write requires.
+ */
+export const INV_CATALOG: Principal = {
+  roleId: 'e1000000-0000-4000-8000-000000000171',
+  userId: 'e1000000-0000-4000-8000-000000000172',
+  subject: 'fx_p1_21_catalog',
+  tenantId: TENANT_A,
+  permissions: [...ALL_INVENTORY, ITEM_MANAGE],
+};
+
+/**
+ * The same authority scoped to branch A1 only. An identifier resolves its item in
+ * every branch, so a branch-scoped `inv.item.manage` must be refused.
+ */
+export const INV_CATALOG_SCOPED_A1: Principal = {
+  roleId: 'e1000000-0000-4000-8000-000000000181',
+  userId: 'e1000000-0000-4000-8000-000000000182',
+  subject: 'fx_p1_21_catalog_scoped_a1',
+  tenantId: TENANT_A,
+  permissions: [...ALL_INVENTORY, ITEM_MANAGE],
+  scope: { companyId: COMPANY_A1, branchId: BRANCH_A1 },
+  grantId: 'e1000000-0000-4000-8000-0000000001f3',
+};
+
+/** Tenant B with the same unrestricted catalogue authority: a refusal is the tenant boundary. */
+export const INV_TENANT_B_CATALOG: Principal = {
+  roleId: 'e1000000-0000-4000-8000-000000000191',
+  userId: 'e1000000-0000-4000-8000-000000000192',
+  subject: 'fx_p1_21_tenant_b_catalog',
+  tenantId: TENANT_B,
+  permissions: [...ALL_INVENTORY, ITEM_MANAGE],
+};
+
+/**
+ * P1-32 preparatory slice 2. Everything the counter needs: the inventory codes, the
+ * tenant-wide catalogue authority a selling price requires, and the three `sal`
+ * codes that create and issue the invoice.
+ */
+export const INV_COUNTER: Principal = {
+  roleId: 'e1000000-0000-4000-8000-0000000001a1',
+  userId: 'e1000000-0000-4000-8000-0000000001a2',
+  subject: 'fx_p1_21_counter',
+  tenantId: TENANT_A,
+  permissions: [...ALL_INVENTORY, ITEM_MANAGE, INVOICE_MANAGE, INVOICE_ISSUE, FINANCE_VIEW],
+};
+
+/**
+ * The same authority scoped to branch A2.
+ *
+ * A2 is a real branch of the same company, so RLS does not hide A1's rows from a
+ * caller whose union includes them — which is what makes a refusal here a statement
+ * about the scoped permission check and not about row visibility.
+ */
+export const INV_COUNTER_SCOPED_A2: Principal = {
+  roleId: 'e1000000-0000-4000-8000-0000000001b1',
+  userId: 'e1000000-0000-4000-8000-0000000001b2',
+  subject: 'fx_p1_21_counter_scoped_a2',
+  tenantId: TENANT_A,
+  permissions: [...ALL_INVENTORY, ITEM_MANAGE, INVOICE_MANAGE, INVOICE_ISSUE, FINANCE_VIEW],
+  scope: { companyId: COMPANY_A1, branchId: BRANCH_A2 },
+  grantId: 'e1000000-0000-4000-8000-0000000001f4',
+};
+
+/** Tenant B with the same authority: a refusal is the tenant boundary. */
+export const INV_TENANT_B_COUNTER: Principal = {
+  roleId: 'e1000000-0000-4000-8000-0000000001c1',
+  userId: 'e1000000-0000-4000-8000-0000000001c2',
+  subject: 'fx_p1_21_tenant_b_counter',
+  tenantId: TENANT_B,
+  permissions: [...ALL_INVENTORY, ITEM_MANAGE, INVOICE_MANAGE, INVOICE_ISSUE, FINANCE_VIEW],
+};
+
+/**
+ * P1-32 preparatory slice 3b. The five material-demand codes on top of every
+ * inventory code, UNRESTRICTED — a requester who can also operate stock, and the
+ * tenant-wide authority reference-data writes require.
+ */
+export const MATERIAL_REQUEST = 'inv.material.request';
+export const MATERIAL_APPROVE = 'inv.material.approve';
+export const MATERIAL_EXCEPTION_APPROVE = 'inv.material.exception.approve';
+export const UNIT_CONVERSION_MANAGE = 'inv.unit_conversion.manage';
+export const SPECIFICATION_MANAGE = 'inv.specification.manage';
+const ALL_MATERIAL = [
+  ...ALL_INVENTORY,
+  MATERIAL_REQUEST,
+  MATERIAL_APPROVE,
+  MATERIAL_EXCEPTION_APPROVE,
+  UNIT_CONVERSION_MANAGE,
+  SPECIFICATION_MANAGE,
+];
+
+export const INV_MATERIAL: Principal = {
+  roleId: 'e1000000-0000-4000-8000-0000000001d1',
+  userId: 'e1000000-0000-4000-8000-0000000001d2',
+  subject: 'fx_p1_21_material',
+  tenantId: TENANT_A,
+  permissions: ALL_MATERIAL,
+};
+
+/** The same codes held by a second person, so requester <> approver is satisfiable. */
+export const INV_MATERIAL_APPROVER: Principal = {
+  roleId: 'e1000000-0000-4000-8000-0000000001e1',
+  userId: 'e1000000-0000-4000-8000-0000000001e2',
+  subject: 'fx_p1_21_material_approver',
+  tenantId: TENANT_A,
+  permissions: ALL_MATERIAL,
+};
+
+/**
+ * The same codes scoped to branch A2. A2 is a real branch of the same company, so a
+ * refusal of an A1 request is the scoped check; a reference-data write is refused
+ * because the authority is not held tenant-wide.
+ */
+export const INV_MATERIAL_SCOPED_A2: Principal = {
+  roleId: 'e1000000-0000-4000-8000-0000000001d3',
+  userId: 'e1000000-0000-4000-8000-0000000001d4',
+  subject: 'fx_p1_21_material_scoped_a2',
+  tenantId: TENANT_A,
+  permissions: ALL_MATERIAL,
+  scope: { companyId: COMPANY_A1, branchId: BRANCH_A2 },
+  grantId: 'e1000000-0000-4000-8000-0000000001f5',
+};
+
+/** Tenant B with the same authority: a refusal is the tenant boundary. */
+export const INV_TENANT_B_MATERIAL: Principal = {
+  roleId: 'e1000000-0000-4000-8000-0000000001e3',
+  userId: 'e1000000-0000-4000-8000-0000000001e4',
+  subject: 'fx_p1_21_tenant_b_material',
+  tenantId: TENANT_B,
+  permissions: ALL_MATERIAL,
+};
+
 export const P1_21_PRINCIPALS: readonly Principal[] = [
   INV_FULL,
   INV_APPROVER,
@@ -198,6 +346,16 @@ export const P1_21_PRINCIPALS: readonly Principal[] = [
   INV_PERMISSION_ELSEWHERE,
   INV_COMPANY_SCOPED,
   INV_TENANT_B,
+  INV_CATALOG,
+  INV_CATALOG_SCOPED_A1,
+  INV_TENANT_B_CATALOG,
+  INV_COUNTER,
+  INV_COUNTER_SCOPED_A2,
+  INV_TENANT_B_COUNTER,
+  INV_MATERIAL,
+  INV_MATERIAL_APPROVER,
+  INV_MATERIAL_SCOPED_A2,
+  INV_TENANT_B_MATERIAL,
 ];
 
 let admin: Pool;
@@ -756,15 +914,141 @@ export async function seedStock(input: {
   }
 }
 
+/**
+ * The approved demand a work-order draw needs (P1-32-PRE-132).
+ *
+ * Since `20260917099000_inv_material_draw_enforcement.sql` every reservation and
+ * issue for a work order draws on an APPROVED material requirement that covers the
+ * item, and one with none is refused — by the API with `ERR-INV-001`
+ * (`no_requirement`) and by the database whatever the path. A suite that exercises
+ * stock rather than material demand still owes that fact, and it is created here the
+ * way the product creates it, never by exempting the draw: a service line on the
+ * work order, an ENTERED allowance in the item's own stock unit with its source,
+ * proposed by `USER_A` and approved by a second person (`INV_APPROVER`) through
+ * `inv.approve_material_requirement`. Returns the requirement a draw names in
+ * `materialRequirementId`.
+ */
+export async function seedApprovedMaterialRequirement(input: {
+  readonly workOrderId: string;
+  readonly itemId: string;
+  readonly allowance?: string;
+  readonly tenantId?: string;
+}): Promise<string> {
+  const tenantId = input.tenantId ?? TENANT_A;
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `SELECT set_config('app.user_id',$1,true), set_config('app.tenant_id',$2,true)`,
+      [USER_A, tenantId]
+    );
+    const line = await client.query<{ id: string }>(
+      `INSERT INTO wo.work_order_service_lines
+         (tenant_id, company_id, branch_id, work_order_id, description, created_by)
+       SELECT tenant_id, company_id, branch_id, id, 'Parts for the job', $3
+         FROM wo.work_orders WHERE tenant_id = $1 AND id = $2
+       RETURNING id`,
+      [tenantId, input.workOrderId, USER_A]
+    );
+    const requirement = await client.query<{ id: string }>(
+      `SELECT inv.propose_material_requirement($1, $2, NULL, $3::numeric,
+                (SELECT uom_id FROM inv.item_master WHERE tenant_id = $4 AND id = $2),
+                'Job card parts list') AS id`,
+      [line.rows[0]?.id ?? '', input.itemId, input.allowance ?? '1000', tenantId]
+    );
+    const requirementId = requirement.rows[0]?.id ?? '';
+    await client.query(`SELECT set_config('app.user_id',$1,true)`, [INV_APPROVER.userId]);
+    await client.query(`SELECT inv.approve_material_requirement($1)`, [requirementId]);
+    await client.query('COMMIT');
+    return requirementId;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 /** Removes only what this file created, newest dependency first. */
+/**
+ * Removes the counter sales this slice's suites create, and the returns that cite
+ * them, in ONE transaction.
+ *
+ * One transaction because of `tg_invoice_line_amounts_reconcile`, which is
+ * DEFERRABLE INITIALLY DEFERRED: deleting an issued sale's line amounts in its own
+ * statement commits a document whose header totals no longer match its (now absent)
+ * lines, and the trigger raises at that COMMIT. With the header, the lines and the
+ * INVOICE removed together, the trigger finds no invoice at commit time and has
+ * nothing to reconcile.
+ *
+ * Only `counter_sale` invoices are removed: a work-order invoice in this tenant
+ * belongs to another suite's fixtures.
+ */
+async function removeCounterSales(): Promise<void> {
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    const sales = `SELECT id FROM sal.invoices WHERE tenant_id IN ($1,$2) AND sale_kind = 'counter_sale'`;
+    // The returns go first: they cite the credit note and the invoice line.
+    await client.query(`DELETE FROM inv.sales_returns WHERE tenant_id IN ($1,$2)`, [
+      TENANT_A,
+      TENANT_B,
+    ]);
+    for (const table of [
+      'sal.credit_notes',
+      'sal.invoice_status_history',
+      'sal.invoice_line_amounts',
+      'sal.invoice_lines',
+      'sal.invoice_amounts',
+    ]) {
+      await client.query(
+        `DELETE FROM ${table} WHERE tenant_id IN ($1,$2) AND invoice_id IN (${sales})`,
+        [TENANT_A, TENANT_B]
+      );
+    }
+    await client.query(
+      `DELETE FROM sal.invoices WHERE tenant_id IN ($1,$2) AND sale_kind = 'counter_sale'`,
+      [TENANT_A, TENANT_B]
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function cleanP1_21Fixtures(): Promise<void> {
+  await removeCounterSales();
   for (const statement of [
+    // P1-32 preparatory slice 3b: a fulfillment cites a reservation or an issue, a
+    // request its requirement, a requirement a specification, a unit and an item.
+    `DELETE FROM inv.material_request_fulfillments WHERE tenant_id IN ($1,$2)`,
+    `DELETE FROM inv.material_requests WHERE tenant_id IN ($1,$2)`,
+    `DELETE FROM inv.material_requirement_exceptions WHERE tenant_id IN ($1,$2)`,
+    `DELETE FROM inv.material_requirements WHERE tenant_id IN ($1,$2)`,
+    `DELETE FROM inv.vehicle_fluid_specifications WHERE tenant_id IN ($1,$2)`,
+    `DELETE FROM inv.item_unit_conversions WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.external_purchase_part_details WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.external_purchase_parts WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.customer_supplied_parts WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.part_returns WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.part_issues WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.damaged_stock WHERE tenant_id IN ($1,$2)`,
+    // P1-32 preparatory slice: count lines cite adjustments, receipt lines their
+    // receipts, and every one of these cites an item or a location below.
+    `DELETE FROM inv.stock_count_lines WHERE tenant_id IN ($1,$2)`,
+    `DELETE FROM inv.stock_counts WHERE tenant_id IN ($1,$2)`,
+    `DELETE FROM inv.goods_receipt_lines WHERE tenant_id IN ($1,$2)`,
+    `DELETE FROM inv.goods_receipts WHERE tenant_id IN ($1,$2)`,
+    `DELETE FROM inv.item_cost_layers WHERE tenant_id IN ($1,$2)`,
+    `DELETE FROM inv.stock_transfer_settlements WHERE tenant_id IN ($1,$2)`,
+    `DELETE FROM inv.stock_transfers WHERE tenant_id IN ($1,$2)`,
+    // P1-32 preparatory slice 2: identifiers cite an item and a unit below.
+    `DELETE FROM inv.item_identifiers WHERE tenant_id IN ($1,$2)`,
+    // Selling prices cite the item, a company, a branch and a tax class.
+    `DELETE FROM inv.item_sale_prices WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.stock_movements WHERE tenant_id IN ($1,$2)`,
     // After the movements that cite them: a top-up seed approves an adjustment,
     // and a leftover row would keep the item and location rows below undeletable.

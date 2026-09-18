@@ -83,6 +83,27 @@ function problemSchema(): JsonObject {
           used: { type: 'integer', minimum: 0 },
         },
       },
+      materialDraw: {
+        type: 'object',
+        description:
+          'ERR-INV-001 only. Quantities are exact decimal strings in the requirement unit.',
+        required: ['allowance', 'alreadyCommitted', 'requested', 'reason'],
+        properties: {
+          allowance: { type: ['string', 'null'] },
+          alreadyCommitted: { type: 'string' },
+          requested: { type: ['string', 'null'] },
+          reason: {
+            type: 'string',
+            enum: [
+              'exceeds_requirement',
+              'approval_required',
+              'missing_conversion',
+              'missing_specification',
+              'no_requirement',
+            ],
+          },
+        },
+      },
     },
   };
 }
@@ -261,8 +282,23 @@ function operationObject(operation: RegisteredOperation): JsonObject {
           'application/json': { schema: operation.successBodySchema ?? { type: 'object' } },
         },
       },
+      // An idempotent create that replays answers with what it already created, under
+      // a different status. Both are published, so the create's own status is not
+      // hidden behind its retry status.
+      ...(operation.replayStatus !== undefined
+        ? {
+            [String(operation.replayStatus)]: {
+              description: 'Replayed: the resource this request already created, unchanged.',
+              headers: { [CORRELATION_HEADER]: { $ref: '#/components/headers/CorrelationId' } },
+              content: {
+                'application/json': { schema: operation.successBodySchema ?? { type: 'object' } },
+              },
+            },
+          }
+        : {}),
       ...standardFailureResponses(operation),
     },
+    ...(operation.replayStatus !== undefined ? { 'x-replay-status': operation.replayStatus } : {}),
     // Machine-readable authorization metadata: the same declaration the runtime
     // enforces, so a reviewer can diff intent against behaviour.
     'x-required-permissions': operation.permissions,

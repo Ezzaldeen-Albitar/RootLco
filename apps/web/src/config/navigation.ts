@@ -376,6 +376,123 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         permission: 'inv.item.read',
         status: 'available',
         scope: 'branch',
+        children: [
+          {
+            // The parent's own route, named by a child for the reason
+            // `work-orders.queue` records: an expanded parent is a disclosure
+            // button, and a button can carry no current-page marker.
+            key: 'inventory.stock',
+            labelKey: 'nav.inventoryStock',
+            icon: 'inventory',
+            href: '/inventory',
+            permission: 'inv.item.read',
+            status: 'available',
+            scope: 'branch',
+          },
+          /*
+           * P1-32: the stock-operation screens. Each page gates on
+           * `inv.stock.read` — the code every list it reads declares — before
+           * any read, so each entry is gated on that code too.
+           */
+          {
+            key: 'inventory.transfers',
+            labelKey: 'nav.inventoryTransfers',
+            icon: 'inventory',
+            href: '/inventory/transfers',
+            permission: 'inv.stock.read',
+            status: 'available',
+            scope: 'branch',
+          },
+          {
+            key: 'inventory.goods-receipts',
+            labelKey: 'nav.inventoryReceipts',
+            icon: 'inventory',
+            href: '/inventory/goods-receipts',
+            permission: 'inv.stock.read',
+            status: 'available',
+            scope: 'branch',
+          },
+          {
+            key: 'inventory.adjustments',
+            labelKey: 'nav.inventoryAdjustments',
+            icon: 'inventory',
+            href: '/inventory/adjustments',
+            permission: 'inv.stock.read',
+            status: 'available',
+            scope: 'branch',
+          },
+          {
+            key: 'inventory.counts',
+            labelKey: 'nav.inventoryCounts',
+            icon: 'inventory',
+            href: '/inventory/counts',
+            permission: 'inv.stock.read',
+            status: 'available',
+            scope: 'branch',
+          },
+          /*
+           * P1-32: the counter, the returns desk and the label printer. Each
+           * entry carries the code its PAGE gates on, which is not the same code
+           * for all three: labels are `inv.item.read` (a label carries no stock
+           * figure and no price), a customer return is `inv.stock.read`, and a
+           * counter sale is `sal.invoice.manage` — it is an invoice, and the
+           * authority to write one is the authority the entry must name.
+           */
+          {
+            key: 'inventory.counterSales',
+            labelKey: 'nav.inventoryCounterSales',
+            icon: 'inventory',
+            href: '/inventory/counter-sales',
+            permission: 'sal.invoice.manage',
+            status: 'available',
+            scope: 'branch',
+          },
+          {
+            key: 'inventory.customerReturns',
+            labelKey: 'nav.inventoryCustomerReturns',
+            icon: 'inventory',
+            href: '/inventory/customer-returns',
+            permission: 'inv.stock.read',
+            status: 'available',
+            scope: 'branch',
+          },
+          {
+            key: 'inventory.labels',
+            labelKey: 'nav.inventoryLabels',
+            icon: 'inventory',
+            href: '/inventory/labels',
+            permission: 'inv.item.read',
+            status: 'available',
+            scope: 'branch',
+          },
+          /*
+           * P1-32: the two facts a work-order material requirement is derived
+           * from. Both carry `inv.item.read`, the code their LIST operations
+           * declare and the code their pages gate on. Stating a conversion or
+           * confirming a capacity needs a second, tenant-wide code each
+           * (`inv.unit_conversion.manage`, `inv.specification.manage`); naming
+           * those here would hide the reference data from everyone who may read
+           * it and only needs to look a figure up.
+           */
+          {
+            key: 'inventory.unitConversions',
+            labelKey: 'nav.inventoryUnitConversions',
+            icon: 'inventory',
+            href: '/inventory/unit-conversions',
+            permission: 'inv.item.read',
+            status: 'available',
+            scope: 'branch',
+          },
+          {
+            key: 'inventory.vehicleSpecifications',
+            labelKey: 'nav.inventoryVehicleSpecifications',
+            icon: 'inventory',
+            href: '/inventory/vehicle-specifications',
+            permission: 'inv.item.read',
+            status: 'available',
+            scope: 'branch',
+          },
+        ],
       },
       {
         key: 'billing',

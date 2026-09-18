@@ -8,7 +8,7 @@
   "fileCount": 41,
   "files": {
     "docs/phase-1/phase-1-27/adversarial-round-five.md": {
-      "sha256": "821fd2618bc1090ea5b2ce45882c03b4d9523e648cb99a6c3a86dffe073bfcc4",
+      "sha256": "5286b52921e49c2738bd0ea934222a360c2ae4dd7715d169367572183b930ebb",
       "bytes": 549224
     },
     "docs/phase-1/phase-1-27/adversarial-round-four.md": {
@@ -36,11 +36,11 @@
       "bytes": 15409
     },
     "docs/phase-1/phase-1-27/clean-room-evidence.md": {
-      "sha256": "c52ade54e69488ff9a12e4390f2a6fdf014c845c1db43094f970f46c225b5d8d",
+      "sha256": "3ef15f7f6358cf91bec57e85a95bec0fed3efcc721d578797f4d68424bd03771",
       "bytes": 23705
     },
     "docs/phase-1/phase-1-27/closure-record.md": {
-      "sha256": "5812d145a0b8d1ac7fe23485876dfc4bf98094f0a0b185bcc0c6a80750441dd3",
+      "sha256": "ab4ac194a2000c2f7473dc620f42c503443c1931abffebd844904e436b356a5e",
       "bytes": 8630
     },
     "docs/phase-1/phase-1-27/continuation-checkpoint.md": {
@@ -52,7 +52,7 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "50cdbf141ca4a862cdaf855bfa8ae833e8124e39d85a9122b8c7669a8103b565",
+      "sha256": "c038224d38cf38647f6d12a7a8d31260af232a926a9d5c38c1dd2378b0fd2ae1",
       "bytes": 149609
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
@@ -64,7 +64,7 @@
       "bytes": 81669
     },
     "docs/phase-1/phase-1-27/evidence/closing-value-ledger.json": {
-      "sha256": "cefad127d33c9746edb9bcdca2a49314f1748f1e59529241f625803945a1307c",
+      "sha256": "b73eecf1843099b3c4b6de8e23ba0bf3d2a2014e343fec35106e3af708288c43",
       "bytes": 50610
     },
     "docs/phase-1/phase-1-27/evidence/lifecycle-ledger.json": {
@@ -72,7 +72,7 @@
       "bytes": 9208
     },
     "docs/phase-1/phase-1-27/evidence/local-run-ledger.json": {
-      "sha256": "72ea7028bb442e6d7437365ad7244fc83579f6cdbb0dc15b6c67645282314f3f",
+      "sha256": "6c9275a054b361917a33880ad4083c6c52459b73a1059f7925682f75d2a5d9ce",
       "bytes": 2581
     },
     "docs/phase-1/phase-1-27/evidence/task-traceability.md": {
@@ -100,7 +100,7 @@
       "bytes": 76545
     },
     "docs/phase-1/phase-1-27/finding-phase-disposition.md": {
-      "sha256": "e0b907faf7b0c6dab4aa548fc89bd2b126620d6775811bea266406be2aec45e6",
+      "sha256": "f2ced89b870d12c7ee517dda74a9b60787f163081f3901ccd7561e7d23aa51f2",
       "bytes": 167366
     },
     "docs/phase-1/phase-1-27/finding-task-map.json": {
@@ -124,7 +124,7 @@
       "bytes": 14530
     },
     "docs/phase-1/phase-1-27/open-decisions.md": {
-      "sha256": "21ffbc4ca4ad49491092666315cf31263774a4db1f560c181153885d62e0f8a0",
+      "sha256": "72595455f4e662dd46237def8cde645e4a3b185ae3448a650836393926f25acd",
       "bytes": 124614
     },
     "docs/phase-1/phase-1-27/operator-guide.md": {
@@ -136,7 +136,7 @@
       "bytes": 5776
     },
     "docs/phase-1/phase-1-27/owner-acceptance-fail-remediation.md": {
-      "sha256": "584f4612c6bf5e2078f3544cd0191fbb3315a94ca272303e391a572a9f55908d",
+      "sha256": "a4a993edd142735ff318bd7cc985e5ceb8296f51b1333ab56ab1f2b7e7ec4114",
       "bytes": 13549
     },
     "docs/phase-1/phase-1-27/p1-27-int-113-unregistered-rate-limit-policy.md": {
@@ -156,15 +156,15 @@
       "bytes": 62211
     },
     "docs/phase-1/phase-1-27/risk-register.md": {
-      "sha256": "e21e18e32b78f170e990d46b43d005703e608cd3ccedb84ad43defae9cb8748e",
+      "sha256": "d29233cd8b02217bb6f720c614c0398966c876c90b845ff47e016e49e403b418",
       "bytes": 187802
     },
     "docs/phase-1/phase-1-27/task-matrix-verdicts.json": {
-      "sha256": "e69a864b69f22c11d2bbf2e00c4b5f3a3424f131f38127a4edccb4a59c721939",
+      "sha256": "64a87cca293822ca3b062591dde27574e3a16c8ae340685d6e80ec066e74ac01",
       "bytes": 264827
     },
     "docs/phase-1/phase-1-27/task-matrix.json": {
-      "sha256": "fb6950a624b93e2fa9afb91dd6b7e901674af541847f262f0fad27f7210dcf44",
+      "sha256": "f4bd02e45290b9db05eb12d78bbf011124c4cfba81df13cb224b5e04bc6333e6",
       "bytes": 284228
     },
     "docs/phase-1/phase-1-27/task-register.md": {

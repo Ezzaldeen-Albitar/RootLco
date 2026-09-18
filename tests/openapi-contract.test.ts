@@ -344,6 +344,54 @@ import '@/app/api/v1/stock-returns/route';
 import '@/app/api/v1/damaged-stock/route';
 import '@/app/api/v1/customer-supplied-parts/route';
 import '@/app/api/v1/external-purchase-parts/route';
+// P1-32 preparatory slice — transfers, goods receipts, adjustments and counts.
+import '@/app/api/v1/stock-transfers/route';
+import '@/app/api/v1/stock-transfers/[transferId]/receipt/route';
+import '@/app/api/v1/stock-transfers/[transferId]/cancellation/route';
+import '@/app/api/v1/goods-receipts/route';
+import '@/app/api/v1/goods-receipts/[receiptId]/route';
+import '@/app/api/v1/goods-receipts/[receiptId]/posting/route';
+import '@/app/api/v1/items/[itemId]/cost-history/route';
+import '@/app/api/v1/stock-adjustments/route';
+import '@/app/api/v1/stock-adjustments/[adjustmentId]/approval/route';
+import '@/app/api/v1/stock-counts/route';
+import '@/app/api/v1/stock-counts/[countId]/route';
+import '@/app/api/v1/stock-counts/[countId]/lines/[itemId]/route';
+import '@/app/api/v1/stock-counts/[countId]/reconciliation/route';
+import '@/app/api/v1/stock-counts/[countId]/cancellation/route';
+// P1-32 preparatory slice 2 — item barcodes and packaging identifiers.
+import '@/app/api/v1/items/[itemId]/identifiers/route';
+import '@/app/api/v1/items/[itemId]/identifiers/[identifierId]/retirement/route';
+import '@/app/api/v1/items/[itemId]/internal-barcode/route';
+import '@/app/api/v1/items/[itemId]/label/route';
+import '@/app/api/v1/barcodes/[value]/route';
+// P1-32 preparatory slice 2 — item selling prices, the counter sale, and returns.
+import '@/app/api/v1/items/[itemId]/sale-prices/route';
+import '@/app/api/v1/counter-sales/route';
+import '@/app/api/v1/sales-returns/route';
+import '@/app/api/v1/returnable-quantities/route';
+// P1-32 preparatory slice 3b — material demand control, reference data and transfer
+// settlements.
+import '@/app/api/v1/material-requirements/route';
+import '@/app/api/v1/material-requirements/[requirementId]/route';
+import '@/app/api/v1/material-requirements/[requirementId]/approval/route';
+import '@/app/api/v1/material-requirements/[requirementId]/exceptions/route';
+import '@/app/api/v1/material-exceptions/[exceptionId]/decision/route';
+// P1-32 preparatory slice 3c: re-check and cancel a requirement; close and cancel a request.
+import '@/app/api/v1/material-requirements/[requirementId]/recheck/route';
+import '@/app/api/v1/material-requirements/[requirementId]/cancellation/route';
+import '@/app/api/v1/material-requests/[requestId]/closure/route';
+import '@/app/api/v1/material-requests/[requestId]/cancellation/route';
+import '@/app/api/v1/unit-conversions/route';
+import '@/app/api/v1/unit-conversions/[conversionId]/retirement/route';
+import '@/app/api/v1/vehicle-fluid-specifications/route';
+import '@/app/api/v1/vehicle-fluid-specifications/[specificationId]/confirmation/route';
+import '@/app/api/v1/vehicle-fluid-specifications/[specificationId]/retirement/route';
+import '@/app/api/v1/stock-transfers/[transferId]/discrepancy-resolution/route';
+import '@/app/api/v1/stock-transfer-settlements/[settlementId]/decision/route';
+// The two reads that let the second person reach a pending write-off.
+import '@/app/api/v1/stock-transfer-settlements/route';
+import '@/app/api/v1/stock-transfer-settlements/[settlementId]/route';
 
 // Phase 1-22 — billing, payment, delivery and warranty.
 //

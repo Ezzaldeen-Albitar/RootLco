@@ -118,8 +118,9 @@ export const FLOORS = Object.freeze({
  * somewhere a route declaration cannot show".
  */
 export const DATABASE_ENFORCED = Object.freeze({
-  'inv.cost.view':
-    'checked twelve times across nine RLS policies on the three restricted cost tables',
+  // `inv.cost.view` left this list with the P1-32 preparatory inventory slice:
+  // `inv.item-cost-history-read` declares it, so it is no longer unreferenced by
+  // executable code and the annotation would describe a state that has ended.
   'iam.login.view_all':
     'one RLS policy — supabase/migrations/20260718098000_iam_rls_grants_hardening.sql:73',
   'rec.reception.receiving_employee.assign_any':

@@ -88,6 +88,32 @@ describe('the navigation model', () => {
       'gallery',
       // P1-30 W4: item search, stock availability and reservations at `/inventory`.
       'inventory',
+      // P1-32 stock operations: the parent's own route as a child (a disclosure
+      // parent carries no current-page marker), and the four screens, each gated
+      // on `inv.stock.read`.
+      'inventory.adjustments',
+      /*
+       * P1-32 barcodes and the counter: selling over the counter, taking a part
+       * back, and printing labels. Each names the code its own PAGE gates on,
+       * which is deliberately not one code for all three — a counter sale is an
+       * invoice (`sal.invoice.manage`), a customer return is stock
+       * (`inv.stock.read`), and a label is the catalogue (`inv.item.read`).
+       */
+      'inventory.counterSales',
+      'inventory.counts',
+      'inventory.customerReturns',
+      'inventory.goods-receipts',
+      'inventory.labels',
+      'inventory.stock',
+      'inventory.transfers',
+      /*
+       * P1-32 material demand control: the two facts a work-order requirement is
+       * derived from. Both gate on `inv.item.read` — the code their list
+       * operations declare — while the writes on them need a second, tenant-wide
+       * code each, which is not what a navigation gate names.
+       */
+      'inventory.unitConversions',
+      'inventory.vehicleSpecifications',
       'overview',
       // P1-30 W7: the branch's receipts at `/payments`, gated on
       // `sal.finance.view` — the only code both receipt reads declare, and the

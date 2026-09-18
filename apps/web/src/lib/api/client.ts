@@ -123,6 +123,25 @@ export interface ProblemDetails {
   readonly capacity?: CapacityDetail; // `ERR-CAP-001` only. See `CapacityDetail` below.
   /** `ERR-CAP-003` only: every kind a plan change would leave below current usage. */
   readonly overCapacity?: readonly OverCapacityEntry[];
+  /**
+   * The allowance a work-order draw was measured against. `ERR-INV-001` only.
+   * Quantities are exact decimal strings in the requirement unit; `allowance` and
+   * `requested` are null when no allowance or no exact conversion exists.
+   */
+  readonly materialDraw?: MaterialDrawDetails;
+}
+
+/** Why a work-order draw was refused by its material requirement. */
+export interface MaterialDrawDetails {
+  readonly allowance: string | null;
+  readonly alreadyCommitted: string;
+  readonly requested: string | null;
+  readonly reason:
+    | 'exceeds_requirement'
+    | 'approval_required'
+    | 'missing_conversion'
+    | 'missing_specification'
+    | 'no_requirement';
 }
 
 export type ApiFailureKind =

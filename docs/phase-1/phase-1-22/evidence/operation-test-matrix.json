@@ -1,9 +1,9 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 47,
-    "publicApi": 47,
-    "operationDepth": 47,
+    "registered": 49,
+    "publicApi": 49,
+    "operationDepth": 49,
     "invocationOnly": 0,
     "pending": 0,
     "unitOnly": 0,
@@ -11,6 +11,65 @@
     "metadataOnly": 0
   },
   "operations": [
+    {
+      "id": "sal.counter-sale-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/counter-sales",
+      "public": false,
+      "files": ["tests/backend/p1-32-counter-sales.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["success", "denial", "audit", "idempotency", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "sal.counter-sale-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/counter-sales",
+      "public": false,
+      "files": ["tests/backend/p1-32-counter-sales.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["success", "isolation"],
+      "required": ["route", "service", "success", "authorization", "isolation"],
+      "provided": ["authorization", "isolation", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
     {
       "id": "sal.credit-note-approve",
       "surface": "public-api",

@@ -241,3 +241,56 @@ export async function addServiceItem(
     )
   ).rows[0].id;
 }
+
+/**
+ * The approved demand a work-order draw needs (P1-32-PRE-132).
+ *
+ * Since `20260917099000_inv_material_draw_enforcement.sql` a reservation or a part
+ * issue for a work order is refused unless it draws on a material request against an
+ * APPROVED requirement covering the item. This creates that demand the way the
+ * product does, never by exempting the row: a service line on the work order, an
+ * ENTERED requirement in the item's own stock unit proposed by the current actor and
+ * approved by `OTHER_ACTOR`, and an open request for `quantity` against it. The
+ * request is what `inv.reserve_material_request` and `inv.issue_material_request`
+ * draw on. `allowance` defaults to `quantity`.
+ */
+export async function seedMaterialRequest(
+  c: Q,
+  workOrder: string,
+  item: string,
+  quantity: number | string,
+  allowance: number | string = quantity
+): Promise<{ serviceLine: string; requirement: string; request: string }> {
+  const scope = (
+    await c.query(
+      `SELECT w.tenant_id, w.company_id, w.branch_id, current_setting('app.user_id', true) AS actor
+         FROM wo.work_orders w WHERE w.id = $1`,
+      [workOrder]
+    )
+  ).rows[0] as { tenant_id: string; company_id: string; branch_id: string; actor: string };
+  const serviceLine = (
+    await c.query(
+      `INSERT INTO wo.work_order_service_lines (tenant_id, company_id, branch_id, work_order_id, description, created_by)
+       VALUES ($1,$2,$3,$4,'Parts for the job',$5) RETURNING id`,
+      [scope.tenant_id, scope.company_id, scope.branch_id, workOrder, scope.actor]
+    )
+  ).rows[0].id as string;
+  const requirement = (
+    await c.query(
+      `SELECT inv.propose_material_requirement($1,$2,NULL,$3::numeric,
+                (SELECT uom_id FROM inv.item_master WHERE id = $2),'Job card parts list') AS id`,
+      [serviceLine, item, String(allowance)]
+    )
+  ).rows[0].id as string;
+  await c.query(`SELECT set_config('app.user_id', $1, true)`, [OTHER_ACTOR]);
+  await c.query(`SELECT inv.approve_material_requirement($1)`, [requirement]);
+  await c.query(`SELECT set_config('app.user_id', $1, true)`, [scope.actor]);
+  const request = (
+    await c.query(`SELECT inv.create_material_request($1,$2,$3::numeric) AS id`, [
+      requirement,
+      item,
+      String(quantity),
+    ])
+  ).rows[0].id as string;
+  return { serviceLine, requirement, request };
+}

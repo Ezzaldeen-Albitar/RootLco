@@ -45,6 +45,7 @@ import {
   LOCATION_CODE_FORMAT,
   LOCATION_TYPES,
   MAX_NAME,
+  OPERATOR_LOCATION_TYPES,
   inventoryModule,
 } from '@/modules/inventory';
 
@@ -109,7 +110,10 @@ export async function GET(request: Request): Promise<Response> {
  * `ins_stock_locations_scope` enforces the same pair a second time. A
  * `warehouse` stands alone; `storage` and `quarantine` name the warehouse they
  * nest under (`inv.guard_stock_location_hierarchy`). `status` is refused —
- * a location created `inactive` could hold nothing.
+ * a location created `inactive` could hold nothing. `transit` is refused too: it
+ * is system-owned, one per branch, created by `inv.ensure_transit_location` when
+ * the first transfer is dispatched, and a hand-made second one would hold stock no
+ * transfer points at.
  */
 export const CreateBody = z
   .object({
@@ -117,7 +121,7 @@ export const CreateBody = z
     branchId: schemas.uuid,
     locationCode: z.string().regex(LOCATION_CODE_FORMAT, 'must be an alphanumeric location code'),
     name: z.string().min(1).max(MAX_NAME),
-    locationType: z.enum(LOCATION_TYPES),
+    locationType: z.enum(OPERATOR_LOCATION_TYPES),
     parentLocationId: schemas.uuid.optional(),
   })
   .strict();
