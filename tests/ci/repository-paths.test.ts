@@ -293,7 +293,11 @@ describe('the API application lives in the workspace', () => {
     // 377 with the Owner directive inventory operations and the Platform Owner
     // Console line integrated: 322 in the shared base, 41 more route modules from
     // this branch and 14 from the console, landing on disjoint paths.
-    expect(routeFiles.length).toBe(377);
+    // 384 with the Owner directive operational stock alerts: seven new route
+    // modules — four alert reads, the reorder-level collection and its retirement,
+    // and the tenant capacity alert — carrying eight operations, because the
+    // collection module co-locates the list and the set on one path.
+    expect(routeFiles.length).toBe(384);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -314,7 +318,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 484 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 492 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -394,7 +398,9 @@ describe('the API application lives in the workspace', () => {
     // route-module count.
     // 484 at the integration of the two lines: 416 in the shared base, 52 more
     // operations from this branch and 16 from the console.
-    expect(report.operations).toHaveLength(484);
+    // 492 with the Owner directive operational stock alerts: eight operations over
+    // seven new route modules, for the reason stated above the route-module count.
+    expect(report.operations).toHaveLength(492);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the

@@ -58,6 +58,7 @@ import {
   type BranchPair,
   type Locations,
 } from './shared';
+import { StockAlertIndicator } from './StockAlertIndicator';
 import { LINK } from './stock-operations';
 
 /**
@@ -231,6 +232,15 @@ export function InventoryScreen({
             </>
           ) : null}
         </p>
+      ) : null}
+
+      {/*
+        The branch's low-stock and count-difference signals, beside the stock
+        they are about. Reads only, and nothing is rendered until a branch is
+        named — there is no claim to make about a branch nobody has chosen.
+      */}
+      {canReadStock ? (
+        <StockAlertIndicator messages={messages} locale={locale} target={target} />
       ) : null}
 
       {canReadStock && target ? (

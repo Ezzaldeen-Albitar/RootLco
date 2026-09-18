@@ -294,3 +294,61 @@ export function usageWarns(usage: CapacityUsage): boolean {
   const percent = usagePercent(usage);
   return percent !== null && percent >= CAPACITY_WARNING_PERCENT;
 }
+
+/**
+ * How far ahead the overview looks for a subscription that is about to end.
+ *
+ * Ninety days, because that is the widest window the statistics read already
+ * publishes a count for: the named list and the tile above it then answer the
+ * same question, and an operator cannot see a count of five beside a list of
+ * three and be left to guess which is wrong.
+ */
+export const EXPIRY_HORIZON_DAYS = 90;
+
+/** One organisation whose active plan ends inside the horizon, or has ended. */
+export interface ExpiringOrganization {
+  readonly id: string;
+  readonly displayName: string;
+  readonly planCode: string | null;
+  readonly endsOn: string;
+  /** Whole days from the reading instant. NEGATIVE once the date has passed. */
+  readonly daysRemaining: number;
+}
+
+/**
+ * The organisations whose active plan ends inside the horizon, soonest first.
+ *
+ * `asOf` is the instant the SERVER answered, carried on the statistics read, not
+ * this machine's clock: a console open on a laptop whose time is wrong must not
+ * report an organisation as expired a day early.
+ *
+ * An organisation with no end date is not expiring — there is nothing to count
+ * down to — and one whose date the server sent in a shape this screen cannot
+ * read is left out rather than guessed at. Both are silent omissions from a list
+ * that is already labelled as one page of the organisations, which is why the
+ * caller states what it examined.
+ */
+export function expiringOrganizations(
+  rows: readonly OrganizationRow[],
+  asOf: string,
+  horizonDays: number = EXPIRY_HORIZON_DAYS
+): readonly ExpiringOrganization[] {
+  const now = Date.parse(asOf);
+  if (Number.isNaN(now)) return [];
+  const found: ExpiringOrganization[] = [];
+  for (const row of rows) {
+    if (row.activePlanEffectiveTo === null) continue;
+    const ends = Date.parse(row.activePlanEffectiveTo);
+    if (Number.isNaN(ends)) continue;
+    const daysRemaining = Math.floor((ends - now) / 86_400_000);
+    if (daysRemaining > horizonDays) continue;
+    found.push({
+      id: row.id,
+      displayName: row.displayName,
+      planCode: row.activePlanCode,
+      endsOn: row.activePlanEffectiveTo,
+      daysRemaining,
+    });
+  }
+  return found.sort((first, second) => first.endsOn.localeCompare(second.endsOn));
+}

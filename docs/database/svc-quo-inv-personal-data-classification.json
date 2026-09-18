@@ -2,7 +2,7 @@
   "$schema": "./classification.schema.json",
   "description": "P1-10-SEC — Service Catalog / Pricing / Quotation / Inventory personal-and-financial-data classification registry. Restricted = cost/margin fields gated by inv.cost.view. Prices and quotation totals are operational (internal). No restricted column is searchable.",
   "allowedClassifications": ["public", "internal", "restricted", "secret"],
-  "columnCount": 892,
+  "columnCount": 908,
   "columns": {
     "inv.customer_supplied_parts.branch_id": {
       "classification": "internal",
@@ -930,6 +930,86 @@
       "dataType": "timestamp with time zone"
     },
     "inv.item_master.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_reorder_levels.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_reorder_levels.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_reorder_levels.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.item_reorder_levels.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_reorder_levels.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_reorder_levels.item_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_reorder_levels.location_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_reorder_levels.preferred_order_qty": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "inv.item_reorder_levels.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "inv.item_reorder_levels.reorder_level_qty": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "inv.item_reorder_levels.retired_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.item_reorder_levels.retired_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_reorder_levels.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "inv.item_reorder_levels.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_reorder_levels.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.item_reorder_levels.updated_by": {
       "classification": "internal",
       "searchable": false,
       "dataType": "uuid"

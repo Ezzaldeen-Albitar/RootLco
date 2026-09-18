@@ -10,7 +10,7 @@
  * The backend requires an `Idempotency-Key` header on every operation it
  * registers as idempotent, and answers `400 ERR-INT-002` without one — before
  * authorization is evaluated. That set is NOT "the POST operations": it is
- * currently 217 operations (PATCH 4, POST 206, PUT 7).
+ * currently 218 operations (PATCH 4, POST 207, PUT 7).
  *
  * The client used to infer the answer from the HTTP method, which was wrong for
  * every non-POST member of that set. This table is the contract instead of a
@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 17, export 2, financial 15, none 206, privileged 231, security 13.
+ * Currently approval 17, export 2, financial 15, none 212, privileged 233, security 13.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 484 of them. */
+/** Every operation the contract publishes. 492 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -1130,6 +1130,34 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'privileged',
   },
   {
+    template: '/inventory-alerts/aged-in-transit',
+    method: 'GET',
+    operationId: 'inv.aged-in-transit-alert-read',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/inventory-alerts/count-discrepancies',
+    method: 'GET',
+    operationId: 'inv.count-discrepancy-alert-read',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/inventory-alerts/low-stock',
+    method: 'GET',
+    operationId: 'inv.low-stock-alert-read',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/inventory-alerts/unusual-consumption',
+    method: 'GET',
+    operationId: 'inv.unusual-consumption-alert-read',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
     template: '/inventory-reconciliations',
     method: 'GET',
     operationId: 'inv.inventory-reconciliation-read',
@@ -1616,6 +1644,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     template: '/org/capacity',
     method: 'GET',
     operationId: 'org.capacity-read',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/org/capacity-alerts',
+    method: 'GET',
+    operationId: 'org.capacity-alert-read',
     idempotent: false,
     auditClass: 'none',
   },
@@ -2414,6 +2449,27 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     template: '/receptions/{receptionId}/signatures/{signatureId}/events',
     method: 'POST',
     operationId: 'rec.reception-signature-event',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/reorder-levels',
+    method: 'GET',
+    operationId: 'inv.reorder-level-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/reorder-levels',
+    method: 'POST',
+    operationId: 'inv.reorder-level-set',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/reorder-levels/{reorderLevelId}/retirement',
+    method: 'POST',
+    operationId: 'inv.reorder-level-retire',
     idempotent: true,
     auditClass: 'privileged',
   },

@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 484,
-    "openapiPaths": 377,
-    "openapiOperations": 484,
+    "operations": 492,
+    "openapiPaths": 384,
+    "openapiOperations": 492,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -11,10 +11,10 @@
     "outboxForeignWriters": 0,
     "errorCodes": 32,
     "permissionCodes": 132,
-    "auditActions": 281
+    "auditActions": 283
   },
   "counts": {
-    "Covered": 484
+    "Covered": 492
   },
   "operations": [
     {
@@ -4366,6 +4366,44 @@
       "file": "apps/api/src/app/api/v1/iam/users/[userId]/route.ts"
     },
     {
+      "id": "inv.aged-in-transit-alert-read",
+      "domain": "inventory",
+      "method": "GET",
+      "route": "/api/v1/inventory-alerts/aged-in-transit",
+      "permissions": ["inv.stock.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/inventory-alerts/aged-in-transit",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/od-inventory-alerts.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/inventory-alerts/aged-in-transit/route.ts"
+    },
+    {
       "id": "inv.barcode-resolve",
       "domain": "inventory",
       "method": "GET",
@@ -4402,6 +4440,44 @@
       "tests": ["tests/backend/p1-32-item-identifiers.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/barcodes/[value]/route.ts"
+    },
+    {
+      "id": "inv.count-discrepancy-alert-read",
+      "domain": "inventory",
+      "method": "GET",
+      "route": "/api/v1/inventory-alerts/count-discrepancies",
+      "permissions": ["inv.stock.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/inventory-alerts/count-discrepancies",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/od-inventory-alerts.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/inventory-alerts/count-discrepancies/route.ts"
     },
     {
       "id": "inv.customer-supplied-part-create",
@@ -5168,6 +5244,44 @@
       "file": "apps/api/src/app/api/v1/items/route.ts"
     },
     {
+      "id": "inv.low-stock-alert-read",
+      "domain": "inventory",
+      "method": "GET",
+      "route": "/api/v1/inventory-alerts/low-stock",
+      "permissions": ["inv.stock.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/inventory-alerts/low-stock",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/od-inventory-alerts.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/inventory-alerts/low-stock/route.ts"
+    },
+    {
       "id": "inv.material-exception-create",
       "domain": "inventory",
       "method": "POST",
@@ -5788,6 +5902,112 @@
       "tests": ["tests/backend/p1-30-opening-batch-reads.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/opening-inventory-batches/[batchId]/route.ts"
+    },
+    {
+      "id": "inv.reorder-level-list",
+      "domain": "inventory",
+      "method": "GET",
+      "route": "/api/v1/reorder-levels",
+      "permissions": ["inv.stock.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/reorder-levels",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": ["route", "service", "success", "authorization", "denial", "isolation"],
+      "providedEvidence": ["authorization", "denial", "isolation", "route", "service", "success"],
+      "missingEvidence": [],
+      "tests": ["tests/backend/od-inventory-alerts.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/reorder-levels/route.ts"
+    },
+    {
+      "id": "inv.reorder-level-retire",
+      "domain": "inventory",
+      "method": "POST",
+      "route": "/api/v1/reorder-levels/{reorderLevelId}/retirement",
+      "permissions": ["inv.item.manage"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "inv.item_reorder_level.retired",
+      "idempotent": true,
+      "versionGuarded": true,
+      "openapi": "POST /api/v1/reorder-levels/{reorderLevelId}/retirement",
+      "documentedResponses": ["200", "401", "403", "404", "409", "422", "428", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "denial",
+        "isolation"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/od-inventory-alerts.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/reorder-levels/[reorderLevelId]/retirement/route.ts"
+    },
+    {
+      "id": "inv.reorder-level-set",
+      "domain": "inventory",
+      "method": "POST",
+      "route": "/api/v1/reorder-levels",
+      "permissions": ["inv.item.manage"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "inv.item_reorder_level.set",
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/reorder-levels",
+      "documentedResponses": ["200", "401", "403", "404", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "audit",
+        "denial",
+        "idempotency",
+        "isolation"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/od-inventory-alerts.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/reorder-levels/route.ts"
     },
     {
       "id": "inv.returnable-quantity-read",
@@ -7066,6 +7286,44 @@
       "file": "apps/api/src/app/api/v1/unit-conversions/route.ts"
     },
     {
+      "id": "inv.unusual-consumption-alert-read",
+      "domain": "inventory",
+      "method": "GET",
+      "route": "/api/v1/inventory-alerts/unusual-consumption",
+      "permissions": ["inv.stock.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/inventory-alerts/unusual-consumption",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/od-inventory-alerts.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/inventory-alerts/unusual-consumption/route.ts"
+    },
+    {
       "id": "inv.uom-list",
       "domain": "inventory",
       "method": "GET",
@@ -7443,6 +7701,42 @@
       "tests": ["tests/backend/pre-p1-29-wave-c-company-rbac.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/org/branches/[branchId]/route.ts"
+    },
+    {
+      "id": "org.capacity-alert-read",
+      "domain": "iam",
+      "method": "GET",
+      "route": "/api/v1/org/capacity-alerts",
+      "permissions": ["org.tenant.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/org/capacity-alerts",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "denial",
+        "cross-tenant"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/od-organization-administration.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/org/capacity-alerts/route.ts"
     },
     {
       "id": "org.capacity-read",

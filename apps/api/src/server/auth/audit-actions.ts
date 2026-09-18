@@ -1827,6 +1827,27 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'A person other than the requester rejected a transfer write-off. The units stay in transit, to be received or returned.',
   },
 
+  // ---- Owner directive — operational stock alerts ----
+  //
+  // Only the CONFIGURATION is audited. The five alert reads are not: each is an
+  // arithmetic statement over rows the caller already holds a read permission
+  // for, and recording every glance at a dashboard would bury the trail of the
+  // decisions that actually change what the alerts say.
+  {
+    code: 'inv.item_reorder_level.set',
+    class: 'privileged',
+    entityType: 'inv.item_reorder_level',
+    description:
+      'The quantity at or below which an item counts as low was set, for the whole organisation, a company, a branch or one stock location, together with the optional preferred order quantity. Configuration, not a transaction: it moves no stock and no money, and it is what the low-stock read compares an available balance against. A call that would leave both quantities unchanged is answered as a replay and records nothing.',
+  },
+  {
+    code: 'inv.item_reorder_level.retired',
+    class: 'privileged',
+    entityType: 'inv.item_reorder_level',
+    description:
+      'A reorder level was retired, keeping the row as the record of what the branch once thought it needed. The item stops appearing in the low-stock read unless a wider level still applies to it, and the signature is freed so a replacement can be set at once.',
+  },
+
   // ---- Phase 1-22 — Billing and payment (sal) ----
   //
   // Every action in this block is `financial` except the credit-note approval,

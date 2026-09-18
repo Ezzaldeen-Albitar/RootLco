@@ -1049,6 +1049,9 @@ export async function cleanP1_21Fixtures(): Promise<void> {
     `DELETE FROM inv.item_identifiers WHERE tenant_id IN ($1,$2)`,
     // Selling prices cite the item, a company, a branch and a tax class.
     `DELETE FROM inv.item_sale_prices WHERE tenant_id IN ($1,$2)`,
+    // Owner directive: a reorder level cites the item, a company, a branch and a
+    // stock location, and is cited by nothing.
+    `DELETE FROM inv.item_reorder_levels WHERE tenant_id IN ($1,$2)`,
     `DELETE FROM inv.stock_movements WHERE tenant_id IN ($1,$2)`,
     // After the movements that cite them: a top-up seed approves an adjustment,
     // and a leftover row would keep the item and location rows below undeletable.

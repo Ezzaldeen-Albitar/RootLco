@@ -524,7 +524,11 @@ describe('the coverage include lists are pinned, because they are the denominato
     // adds capacity-failure.ts.
     // 309 at the integration of the two lines: 292 in the shared base, 9 more
     // from this branch and 8 from the console line.
-    expect(files.length).toBe(309);
+    // 310 with the Owner directive operational stock alerts, which adds exactly one
+    // measured backend file: inventory/application/inventory-alert-service.ts. The
+    // shared capacity classifier lives under `src/shared`, which this include list
+    // does not admit, so it moves the count by nothing.
+    expect(files.length).toBe(310);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -621,6 +625,9 @@ describe('the coverage include lists are pinned, because they are the denominato
     // 308 at the integration of the two lines: 291 in the shared base, 9 more
     // application files from this branch and 8 from the console line, none of
     // them under `server/openapi/`. The floors stay untouched for that reason.
-    expect(instrumented.length).toBe(308);
+    // 309 with the Owner directive operational stock alerts: the one added file,
+    // inventory/application/inventory-alert-service.ts, is not under
+    // `server/openapi/`, so it is instrumented as well as measured.
+    expect(instrumented.length).toBe(309);
   });
 });

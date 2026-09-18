@@ -49,11 +49,14 @@ import type {
 } from '@/lib/contracts/inventory-contract';
 import type { BranchOption } from '@/features/services/services-contract';
 import {
+  ALERT_PAGE_SIZE,
   MATERIAL_DRAW_REASONS,
   type AdjustmentEcho,
   type AdjustmentState,
+  type AgedInTransitAlerts,
   type AvailabilityCriteria,
   type BarcodeResolution,
+  type CountDiscrepancyAlerts,
   type CreatedStockLocation,
   type GoodsReceiptDetail,
   type GoodsReceiptSummary,
@@ -67,6 +70,7 @@ import {
   type ItemSalePrice,
   type ItemSalePriceList,
   type ItemSearchCriteria,
+  type LowStockAlerts,
   type MaterialException,
   type MaterialRequestEcho,
   type MaterialRequirement,
@@ -105,6 +109,7 @@ import {
   type UnitConversion,
   type UnitConversionEcho,
   type UnitOfMeasureOption,
+  type UnusualConsumptionAlerts,
   type VehicleSpecification,
   type VehicleSpecificationEcho,
   type VehicleSpecificationState,
@@ -1611,5 +1616,77 @@ export async function retireVehicleSpecification(
     'inventory.specifications.retire.success',
     attempt,
     { stateRefusedKey: 'inventory.specifications.retire.refused' }
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Operational stock alerts (Owner directive) — four READS, no writes
+ * ------------------------------------------------------------------ */
+
+/*
+ * HOW MANY FINDINGS ONE CARD ASKS FOR is declared in `inventory-contract.ts`,
+ * not here, and it is imported above.
+ *
+ * This file carries `'use server'`, and such a module may export async
+ * functions and types and nothing else: every other export is handed to the
+ * client as a server reference, which is a thing a number cannot be. The gate
+ * `validate:use-server-exports` says so, and it said so about this constant.
+ * The figure is a contract value in any case — it describes what the cards ask
+ * the server for — so the contract is where it belongs.
+ */
+
+/**
+ * `inv.low-stock-alert-read` — what this branch is running out of.
+ *
+ * Branch-targeted like every other stock read: the pair is the read's TARGET
+ * and is re-authorized server-side, so it travels through `branchTargetQuery`.
+ * Nothing here computes: the shortfall and the preferred order quantity are the
+ * server's own strings, and the preferred quantity is a SUGGESTION that orders
+ * nothing.
+ */
+export async function readLowStockAlerts(
+  target: StockTarget,
+  limit: number = ALERT_PAGE_SIZE
+): Promise<ReadState<LowStockAlerts>> {
+  return readOperation<LowStockAlerts>(
+    '/api/v1/inventory-alerts/low-stock' + branchTargetQuery(target, { limit })
+  );
+}
+
+/** `inv.count-discrepancy-alert-read` — where the shelf and the ledger disagreed. */
+export async function readCountDiscrepancyAlerts(
+  target: StockTarget,
+  limit: number = ALERT_PAGE_SIZE
+): Promise<ReadState<CountDiscrepancyAlerts>> {
+  return readOperation<CountDiscrepancyAlerts>(
+    '/api/v1/inventory-alerts/count-discrepancies' + branchTargetQuery(target, { limit })
+  );
+}
+
+/**
+ * `inv.unusual-consumption-alert-read` — items leaving far faster than they have.
+ *
+ * The rule's numbers travel with the answer, so the card states the rule in the
+ * reader's own language rather than printing the server's English sentence.
+ * None of those numbers is sent: the server's published defaults decide the
+ * window, and a screen that invented one would be asking a different question
+ * from the one the card explains.
+ */
+export async function readUnusualConsumptionAlerts(
+  target: StockTarget,
+  limit: number = ALERT_PAGE_SIZE
+): Promise<ReadState<UnusualConsumptionAlerts>> {
+  return readOperation<UnusualConsumptionAlerts>(
+    '/api/v1/inventory-alerts/unusual-consumption' + branchTargetQuery(target, { limit })
+  );
+}
+
+/** `inv.aged-in-transit-alert-read` — consignments that left and have not arrived. */
+export async function readAgedInTransitAlerts(
+  target: StockTarget,
+  limit: number = ALERT_PAGE_SIZE
+): Promise<ReadState<AgedInTransitAlerts>> {
+  return readOperation<AgedInTransitAlerts>(
+    '/api/v1/inventory-alerts/aged-in-transit' + branchTargetQuery(target, { limit })
   );
 }

@@ -38,6 +38,11 @@ import { SQLSTATE, isSqlState } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 import type { AuthorizationTarget } from '@/server/auth/authorization';
 import { sharedServicesModule } from '@/modules/shared-services';
+import {
+  CAPACITY_ALERT_NEAR_LIMIT_RATIO,
+  capacityAlertSeverity,
+  type CapacityAlertSeverity,
+} from '@/shared/capacity/capacity-alert';
 import { throwCapacityFailure } from './capacity-failure';
 import type {
   BranchChanges,
@@ -109,6 +114,53 @@ export interface DepartmentResult {
  * not a retry.
  */
 export interface CapacityResult {
+  readonly capacity: CapacityUsageView;
+  readonly subscription: SubscriptionSummaryView | null;
+}
+
+/** One capacity kind that is worth telling an administrator about. */
+export interface CapacityAlertView {
+  /** `companies`, `branches` or `users`. */
+  readonly kind: string;
+  readonly used: number;
+  readonly limit: number;
+  /**
+   * `near-limit` from 90%, `at-limit` exactly on it, `over-limit` past it.
+   *
+   * The union, never `string`: a reader that handles two of the three states
+   * must fail to compile rather than quietly call the third something else.
+   */
+  readonly severity: CapacityAlertSeverity;
+  /** `limit - used`. Negative when the organisation is already over its limit. */
+  readonly headroom: number;
+}
+
+/** The rule the alerts were selected by, in words and in numbers. */
+export interface CapacityAlertRuleView {
+  readonly statement: string;
+  /** The fraction of a limit at which a kind starts being reported. */
+  readonly nearLimitRatio: number;
+}
+
+/**
+ * What an organisation's own administrators are told about their ceilings.
+ *
+ * The same three figures the platform console publishes, classified by the same
+ * function, so an organisation is never warned about something its operator
+ * cannot see — or, worse, left unwarned while the operator's console shows it at
+ * its limit. The subscription travels with the alerts because the remedy is a plan
+ * change and not a retry, and because its end date is the other thing an
+ * administrator has to be watching.
+ *
+ * Every kind is returned in `capacity`, alerting or not, so a reader can check
+ * which ones did not qualify and why.
+ */
+export interface CapacityAlertResult {
+  /** The database's own `now()` for this request's transaction (ISO-8601). */
+  readonly asOf: string;
+  readonly rule: CapacityAlertRuleView;
+  /** Only the kinds that qualify. An empty list means nothing is close. */
+  readonly alerts: readonly CapacityAlertView[];
   readonly capacity: CapacityUsageView;
   readonly subscription: SubscriptionSummaryView | null;
 }
@@ -484,6 +536,52 @@ export class OrganizationAdministrationService {
   async readCapacity(db: DbHandle): Promise<CapacityResult> {
     return {
       capacity: await this.repository.readCapacityUsage(db),
+      subscription: await this.repository.readActiveSubscription(db),
+    };
+  }
+
+  /**
+   * The subset of the allowance that is worth acting on today.
+   *
+   * `readCapacity` answers "what am I entitled to"; this answers "what is about to
+   * stop working". The difference matters because the first is a screen somebody
+   * opens deliberately and the second is a thing that should find them.
+   *
+   * The classification is `capacityAlertSeverity` in `@/shared`, the same function
+   * the platform console calls, so the two surfaces cannot select different rows
+   * or name the same row differently. An unlimited kind (`limit === null`) is
+   * never an alert: there is nothing to run out of.
+   */
+  async readCapacityAlerts(db: DbHandle): Promise<CapacityAlertResult> {
+    const asOf = await this.repository.readDatabaseNow(db);
+    const capacity = await this.repository.readCapacityUsage(db);
+    const alerts: CapacityAlertView[] = [];
+    for (const kind of ['companies', 'branches', 'users'] as const) {
+      const allowance = capacity[kind];
+      const severity = capacityAlertSeverity(allowance.used, allowance.limit);
+      if (severity === null || allowance.limit === null) continue;
+      alerts.push({
+        kind,
+        used: allowance.used,
+        limit: allowance.limit,
+        severity,
+        headroom: allowance.limit - allowance.used,
+      });
+    }
+    return {
+      asOf,
+      rule: {
+        statement:
+          'A capacity kind is reported when the organisation is over its limit, exactly on it, ' +
+          'or has reached ninety per cent of it. A kind the plan places no ceiling on is never ' +
+          'reported. A ceiling of zero is reported only when something is actually held against ' +
+          'it, because ninety per cent of nothing would otherwise report every organisation on ' +
+          'such a plan. The numbers are org.capacity_usage, the function a refusal is computed ' +
+          'from, so this warning and that refusal can never disagree.',
+        nearLimitRatio: CAPACITY_ALERT_NEAR_LIMIT_RATIO,
+      },
+      alerts,
+      capacity,
       subscription: await this.repository.readActiveSubscription(db),
     };
   }

@@ -4781,6 +4781,31 @@ Generated from the live catalog after `20260917095000_inv_item_unit_conversions.
 | 21  | `updated_at`      | timestamp with time zone | yes      |
 | 22  | `updated_by`      | uuid                     | yes      |
 
+### Item reorder levels (`inv`, Owner directive — operational stock alerts)
+
+Generated from the live catalog after `20260918090000_inv_item_reorder_levels.sql`. The quantity at or below which an item counts as low, optionally narrowed to a company, a branch and a stock location, with an optional preferred order quantity. One ACTIVE row per (tenant, item, company, branch, location) (`uq_item_reorder_levels_signature`, NULLS NOT DISTINCT, partial on `status = 'active'`), resolved most-specific-first by the low-stock read: branch over company over the whole organisation, with a row naming a location scoped to that location alone. Retirement keeps the row and frees the signature. No column is restricted and none is an amount: the table holds a threshold and a preferred order quantity, moves no stock, and is cited by no ledger row. Narrowing columns are frozen by `org.guard_immutable_columns`.
+
+#### inv.item_reorder_levels
+
+| #   | Column                | Type                     | Nullable |
+| --- | --------------------- | ------------------------ | -------- |
+| 1   | `id`                  | uuid                     | no       |
+| 2   | `tenant_id`           | uuid                     | no       |
+| 3   | `item_id`             | uuid                     | no       |
+| 4   | `company_id`          | uuid                     | yes      |
+| 5   | `branch_id`           | uuid                     | yes      |
+| 6   | `location_id`         | uuid                     | yes      |
+| 7   | `reorder_level_qty`   | numeric                  | no       |
+| 8   | `preferred_order_qty` | numeric                  | yes      |
+| 9   | `status`              | text                     | no       |
+| 10  | `retired_at`          | timestamp with time zone | yes      |
+| 11  | `retired_by`          | uuid                     | yes      |
+| 12  | `record_version`      | integer                  | no       |
+| 13  | `created_at`          | timestamp with time zone | no       |
+| 14  | `created_by`          | uuid                     | no       |
+| 15  | `updated_at`          | timestamp with time zone | yes      |
+| 16  | `updated_by`          | uuid                     | yes      |
+
 ---
 
 # Phase 1-11 — SAL / WTY / RPT (Billing, Payment, Delivery, Warranty, Reporting)

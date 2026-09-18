@@ -572,6 +572,24 @@ export class OrganizationAdministrationRepository extends Repository {
   // --- capacity -------------------------------------------------------------
 
   /**
+   * The database's `now()` for this transaction, as ISO-8601 text.
+   *
+   * The capacity alert stamps its answer with this rather than with a clock read
+   * in the request handler: inside one transaction PostgreSQL returns the same
+   * value every time, so this IS the instant the figures were read at, which a
+   * process clock is not. Rendered in SQL so the wire shape is a string here and a
+   * string in the published contract.
+   */
+  async readDatabaseNow(db: DbHandle): Promise<string> {
+    const row = await this.runOne<{ as_of: string }>(
+      db,
+      `SELECT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS as_of`
+    );
+    if (row === null) throw new Error('capacity alert could not read the database clock');
+    return row.as_of;
+  }
+
+  /**
    * The three ceilings and what the organisation is consuming against them.
    *
    * org.capacity_usage is the authority and is called by name: the platform

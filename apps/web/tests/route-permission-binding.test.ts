@@ -95,6 +95,7 @@ vi.mock('@/features/vehicles/documents-api', () => ({
 let PLATFORM_CODES: string[] = [];
 const platformReads = vi.hoisted(() => ({
   readStatistics: vi.fn(),
+  readOrganizationsPage: vi.fn(),
   readOrganization: vi.fn(),
   listPlans: vi.fn(),
   listCharges: vi.fn(),
@@ -109,6 +110,8 @@ vi.mock('@/features/platform/api/session', () => ({
 }));
 vi.mock('@/features/platform/api', () => ({
   readStatistics: (...args: unknown[]) => platformReads.readStatistics(...args),
+  // The overview names the organisations behind its expiry tiles.
+  readOrganizationsPage: (...args: unknown[]) => platformReads.readOrganizationsPage(...args),
   readOrganization: (...args: unknown[]) => platformReads.readOrganization(...args),
   listPlans: (...args: unknown[]) => platformReads.listPlans(...args),
   listCharges: (...args: unknown[]) => platformReads.listCharges(...args),
@@ -305,6 +308,11 @@ describe('the Platform Owner Console routes decide on their own platform code be
   beforeEach(() => {
     for (const read of Object.values(platformReads)) read.mockReset();
     platformReads.readStatistics.mockResolvedValue({ status: 'error', correlationId: 'c' });
+    platformReads.readOrganizationsPage.mockResolvedValue({
+      status: 'ok',
+      data: { items: [], nextCursor: null, hasMore: false },
+      correlationId: 'c',
+    });
     platformReads.readOrganization.mockResolvedValue({
       status: 'ok',
       data: CONSOLE_ORGANIZATION,

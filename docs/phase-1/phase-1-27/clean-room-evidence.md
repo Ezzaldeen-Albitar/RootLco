@@ -137,8 +137,8 @@ sit in the tree looking like coverage while running nowhere.
 
 ## Current tree
 
-The live web suite holds **167 web test files**, every one matched by a `vitest`
-project, and the current tree executes **4714** tests. Both are derived on every
+The live web suite holds **168 web test files**, every one matched by a `vitest`
+project, and the current tree executes **4754** tests. Both are derived on every
 run of `npm run validate:p1-27-closing-values` rather than recorded by hand.
 
 That executed figure is the one a test reads. It used to read the `Web tier` row
@@ -149,7 +149,7 @@ comparing a live baseline against a record of a head the branch had left behind.
 The superseded figures are left exactly as they were, because they are a true
 account of that head; what moved is which number the check consults.
 
-**The 4714 is HOSTED, and it is the binding measurement.** It is the output of
+**The 4754 is HOSTED, and it is the binding measurement.** It is the output of
 `node scripts/ci/check-p1-27-closing-values.mjs --record web --hosted-run`, read
 from a hosted run of the exact head it was taken at and recorded in
 `evidence/local-run-ledger.json` with that commit and with the provenance block —
@@ -160,14 +160,14 @@ what marks it hosted.
 
 | measure                                    | value | the command that decides it                                       |
 | ------------------------------------------ | ----- | ------------------------------------------------------------------ |
-| Web test files under `apps/web/tests`       | 167    | a walk of the tree                                                 |
-| Web tier — tests executed                   | 4714  | `--record web`, from the `vitest` JSON report                      |
-| Web tier — files the run reported           | 167    | the same report, cross-checked against the walk above              |
+| Web test files under `apps/web/tests`       | 168    | a walk of the tree                                                 |
+| Web tier — tests executed                   | 4754  | `--record web`, from the `vitest` JSON report                      |
+| Web tier — files the run reported           | 168    | the same report, cross-checked against the walk above              |
 | Root unit tier — tests executed             | 3595  | `--record unit`, from the `vitest` JSON report                     |
 | Root unit tier — files the run reported     | 138   | the same report, cross-checked against the tier's include rule      |
 | Committed web floor (`minTests`)            | 4459  | `.github/ci-baselines/test-count-baseline.json`                    |
 | Committed unit floor (`minTests`)           | 1050  | the same baseline                                                  |
-| Migrations on disk                          | 158   | a walk of `supabase/migrations`                                    |
+| Migrations on disk                          | 159   | a walk of `supabase/migrations`                                    |
 
 The floor and the measurement are different questions and they have different
 authorities. The baseline file defines the FLOOR, so binding "the floor is 4459"
@@ -181,7 +181,7 @@ the tree was running.
 | --------------------------------------------------- | ------------------------------------------- |
 | Tracked files under `docs/phase-1/phase-1-27`        | 42                                          |
 | Tracked `.md` files under the same directory         | 32                                          |
-| Migrations tracked by git at `HEAD`                  | 158                                         |
+| Migrations tracked by git at `HEAD`                  | 159                                         |
 | `CODE_CANDIDATE_SHA`                                 | `501f5f0d48d7b8cafc12dad51f6c501534b66a18`  |
 | Executable paths changed, candidate to accepted `develop` | 0                                      |
 

@@ -51,7 +51,11 @@ describe('p1-10 tenant isolation', () => {
     // inv.vehicle_fluid_specifications, inv.material_requirements,
     // inv.material_requirement_exceptions, inv.material_requests,
     // inv.material_request_fulfillments and inv.stock_transfer_settlements.
-    expect(tables.length).toBe(51);
+    // 52 with the Owner directive operational stock alerts:
+    // inv.item_reorder_levels, which this loop then holds to the same rule as
+    // every other inv table — RLS forced, a SELECT and an INSERT policy, and
+    // iam.current_tenant_id() in the predicate.
+    expect(tables.length).toBe(52);
     for (const t of tables) {
       const fq = `${t.table_schema}.${t.table_name}`;
       const pol = (

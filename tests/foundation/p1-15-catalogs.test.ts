@@ -293,6 +293,8 @@ const EXPECTED_AUDIT_ACTIONS = [
   'inv.item_category.created',
   'inv.item_identifier.added',
   'inv.item_identifier.retired',
+  'inv.item_reorder_level.retired',
+  'inv.item_reorder_level.set',
   'inv.item_sale_price.set',
   'inv.material_exception.approved',
   'inv.material_exception.rejected',

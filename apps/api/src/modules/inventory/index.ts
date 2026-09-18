@@ -79,6 +79,7 @@ import { InventoryIdentifierService } from './application/inventory-identifier-s
 import { InventorySalesReturnService } from './application/inventory-sales-return-service';
 import { InventoryMaterialService } from './application/inventory-material-service';
 import { InventoryReferenceDataService } from './application/inventory-reference-data-service';
+import { InventoryAlertService } from './application/inventory-alert-service';
 
 export type {
   AdjustmentListRow,
@@ -140,6 +141,37 @@ export type {
   VehicleSpecificationView,
   VehicleSpecificationWriteView,
 } from './application/inventory-reference-data-service';
+
+export type {
+  AgedInTransitAlertView,
+  AgedInTransitView,
+  ConsumptionPeriodView,
+  CountDiscrepancyAlertView,
+  CountDiscrepancyView,
+  LowStockAlertView,
+  LowStockRuleView,
+  LowStockView,
+  ReorderLevelListView,
+  ReorderLevelView,
+  ReorderLevelWriteView,
+  UnusualConsumptionAlertView,
+  UnusualConsumptionRuleView,
+  UnusualConsumptionView,
+} from './application/inventory-alert-service';
+
+export {
+  AGED_TRANSIT_BOUNDS,
+  UNUSUAL_CONSUMPTION_BOUNDS,
+} from './application/inventory-alert-service';
+
+export type {
+  AgedInTransitRow,
+  ConsumptionPeriodRow,
+  CountDiscrepancyRow,
+  LowStockRow,
+  ReorderLevelRow,
+  UnusualConsumptionRow,
+} from './data/inventory-repository';
 
 export type {
   BarcodeResolutionView,
@@ -377,6 +409,12 @@ export const inventoryModule = composeModule({
       // P1-32 preparatory slice 3b. Tenant-wide unit conversions and vehicle service
       // specifications: the facts every allowance is measured against.
       referenceData: new InventoryReferenceDataService(repository),
+      // Owner directive. Reorder levels and the four stock alerts computed over
+      // them and over the ledger. Composes NOTHING but the repository, and that is
+      // the design: an alert is an arithmetic statement about rows the caller may
+      // already read, so it needs no stock service, posts no movement, and must
+      // never acquire a path that could.
+      alerts: new InventoryAlertService(repository),
     };
   },
 });

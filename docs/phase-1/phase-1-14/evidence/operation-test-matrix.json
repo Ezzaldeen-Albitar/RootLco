@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 484,
-    "publicApi": 484,
+    "registered": 492,
+    "publicApi": 492,
     "internal": 0,
-    "withRequiredEvidence": 484,
+    "withRequiredEvidence": 492,
     "invocationOnly": 0,
     "p1_15": {
       "registered": 28,
@@ -67,9 +67,9 @@
       "metadataOnly": 0
     },
     "p1_21": {
-      "registered": 74,
-      "publicApi": 74,
-      "operationDepth": 74,
+      "registered": 81,
+      "publicApi": 81,
+      "operationDepth": 81,
       "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
@@ -3777,6 +3777,38 @@
       "unitOnly": false
     },
     {
+      "id": "inv.aged-in-transit-alert-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/inventory-alerts/aged-in-transit",
+      "public": false,
+      "files": ["tests/backend/od-inventory-alerts.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "inv.barcode-resolve",
       "surface": "public-api",
       "method": "GET",
@@ -3794,6 +3826,38 @@
         "cross-tenant",
         "denial",
         "isolation"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "inv.count-discrepancy-alert-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/inventory-alerts/count-discrepancies",
+      "public": false,
+      "files": ["tests/backend/od-inventory-alerts.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant"
       ],
       "provided": [
         "authorization",
@@ -4448,6 +4512,38 @@
       "unitOnly": false
     },
     {
+      "id": "inv.low-stock-alert-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/inventory-alerts/low-stock",
+      "public": false,
+      "files": ["tests/backend/od-inventory-alerts.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "inv.material-exception-create",
       "surface": "public-api",
       "method": "POST",
@@ -5056,6 +5152,111 @@
         "authorization",
         "cross-tenant",
         "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "inv.reorder-level-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/reorder-levels",
+      "public": false,
+      "files": ["tests/backend/od-inventory-alerts.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["success", "denial", "isolation"],
+      "required": ["route", "service", "success", "authorization", "denial", "isolation"],
+      "provided": ["authorization", "denial", "isolation", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "inv.reorder-level-retire",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/reorder-levels/{reorderLevelId}/retirement",
+      "public": false,
+      "files": ["tests/backend/od-inventory-alerts.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit"
+      ],
+      "declared": [
+        "success",
+        "denial",
+        "cross-tenant",
+        "stale-version",
+        "audit",
+        "idempotency",
+        "isolation"
+      ],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "denial",
+        "isolation"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "inv.reorder-level-set",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/reorder-levels",
+      "public": false,
+      "files": ["tests/backend/od-inventory-alerts.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "audit"],
+      "declared": ["success", "denial", "audit", "idempotency", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "audit",
+        "denial",
+        "idempotency",
+        "isolation"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "denial",
+        "idempotency",
         "isolation",
         "route",
         "service",
@@ -6263,6 +6464,38 @@
       "unitOnly": false
     },
     {
+      "id": "inv.unusual-consumption-alert-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/inventory-alerts/unusual-consumption",
+      "public": false,
+      "files": ["tests/backend/od-inventory-alerts.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "inv.uom-list",
       "surface": "public-api",
       "method": "GET",
@@ -6585,6 +6818,22 @@
         "stale-version",
         "success"
       ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "org.capacity-alert-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/org/capacity-alerts",
+      "public": false,
+      "files": ["tests/backend/od-organization-administration.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["success", "denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "denial", "cross-tenant"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false

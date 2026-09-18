@@ -40,6 +40,11 @@ import {
   type Page,
   type PageRequest,
 } from '@/server/db/pagination';
+import {
+  CAPACITY_ALERT_NEAR_LIMIT_RATIO,
+  capacityAlertSeverity,
+  type CapacityAlertSeverity,
+} from '@/shared/capacity/capacity-alert';
 import { toIsoString } from './platform-repository';
 
 /** Ordering contract for the operator's own audit trail. */
@@ -75,8 +80,16 @@ export interface CapacityAlertRow {
   readonly kind: string;
   readonly used: number;
   readonly limit: number;
-  /** `at-limit` when used has reached the limit, `near-limit` from 90%. */
-  readonly severity: string;
+  /**
+   * `over-limit` past the ceiling, `at-limit` exactly on it, `near-limit` from
+   * 90% of it. Decided by `capacityAlertSeverity`, which the organisation's own
+   * capacity alert calls too, so the console and the tenant never disagree.
+   *
+   * The union, never `string`: widening it at this boundary lets a consumer
+   * handle two of the three states and still compile, which is how a breach
+   * comes to be drawn and labelled as a near miss.
+   */
+  readonly severity: CapacityAlertSeverity;
 }
 
 /** Platform revenue in one currency. Every amount is a decimal string. */
@@ -204,11 +217,7 @@ export class InsightRepository extends Repository {
   }
 
   /**
-   * Organisations at or approaching a plan capacity limit.
-   *
-   * A limit of zero is skipped rather than reported as "always breached": a
-   * plan that grants no branches at all is a configuration statement, not an
-   * alert about every tenant holding it. Ratios are computed in `numeric`.
+   * Organisations at, near or past a plan capacity limit.
    *
    * Both halves come from `org.capacity_usage`, by name. They used to be
    * assembled here — three counts and a plan-document read — and the counts
@@ -216,6 +225,23 @@ export class InsightRepository extends Repository {
    * `invited` account as well as an `active` one, so an organisation could be
    * refused its next user while this alert reported it comfortably inside its
    * allowance.
+   *
+   * ## The threshold is not written here, and neither is the classification
+   *
+   * `CAPACITY_ALERT_NEAR_LIMIT_RATIO` is bound as a parameter and
+   * `capacityAlertSeverity` decides the label, so this query and the tenant-side
+   * capacity alert select the same rows and name them the same way. Two copies of
+   * "ninety per cent" is how the console comes to warn about an organisation that
+   * has not been warned about itself.
+   *
+   * ## A zero limit is a breach, not an exemption
+   *
+   * It was skipped entirely, which read as "a plan that grants no branches is a
+   * configuration statement". That is true of the NEAR band — ninety per cent of
+   * nothing would flag every organisation holding such a plan, including those
+   * holding nothing — and false of the breach: an organisation that holds branches
+   * on a plan granting none is over its limit, and an operator has to see it. The
+   * predicate now says exactly that.
    */
   async listCapacityAlerts(db: DbHandle): Promise<readonly CapacityAlertRow[]> {
     const result = await this.run<{
@@ -225,7 +251,6 @@ export class InsightRepository extends Repository {
       kind: string;
       used: number;
       limit_value: number;
-      severity: string;
     }>(
       db,
       `WITH usage AS (
@@ -236,27 +261,37 @@ export class InsightRepository extends Repository {
        SELECT u.tenant_id, u.tenant_code, u.display_name,
               k.kind,
               (u.allowance -> k.kind ->> 'used')::int AS used,
-              (u.allowance -> k.kind ->> 'limit')::int AS limit_value,
-              CASE WHEN (u.allowance -> k.kind ->> 'used')::numeric
-                     >= (u.allowance -> k.kind ->> 'limit')::numeric
-                   THEN 'at-limit' ELSE 'near-limit' END AS severity
+              (u.allowance -> k.kind ->> 'limit')::int AS limit_value
          FROM usage u
          CROSS JOIN LATERAL (VALUES ('companies'), ('branches'), ('users')) AS k(kind)
         WHERE (u.allowance -> k.kind ->> 'limit') IS NOT NULL
-          AND (u.allowance -> k.kind ->> 'limit')::numeric > 0
-          AND (u.allowance -> k.kind ->> 'used')::numeric
-                >= 0.9 * (u.allowance -> k.kind ->> 'limit')::numeric
-        ORDER BY u.tenant_code ASC, k.kind ASC`
+          AND ((u.allowance -> k.kind ->> 'used')::numeric
+                 > (u.allowance -> k.kind ->> 'limit')::numeric
+            OR ((u.allowance -> k.kind ->> 'limit')::numeric > 0
+              AND (u.allowance -> k.kind ->> 'used')::numeric
+                    >= $1::numeric * (u.allowance -> k.kind ->> 'limit')::numeric))
+        ORDER BY u.tenant_code ASC, k.kind ASC`,
+      [CAPACITY_ALERT_NEAR_LIMIT_RATIO]
     );
-    return result.rows.map((r) => ({
-      tenantId: r.tenant_id,
-      tenantCode: r.tenant_code,
-      displayName: r.display_name,
-      kind: r.kind,
-      used: r.used,
-      limit: r.limit_value,
-      severity: r.severity,
-    }));
+    return result.rows.flatMap((r) => {
+      const severity = capacityAlertSeverity(r.used, r.limit_value);
+      // The SQL predicate and the classifier are the same rule read twice, so a
+      // row that reaches here always has a severity. Dropping the impossible case
+      // rather than asserting it keeps the published list free of a null label.
+      return severity === null
+        ? []
+        : [
+            {
+              tenantId: r.tenant_id,
+              tenantCode: r.tenant_code,
+              displayName: r.display_name,
+              kind: r.kind,
+              used: r.used,
+              limit: r.limit_value,
+              severity,
+            },
+          ];
+    });
   }
 
   /**

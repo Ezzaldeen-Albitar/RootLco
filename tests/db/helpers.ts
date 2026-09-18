@@ -528,6 +528,9 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('inv.item_identifiers');
   // Selling prices cite the item, a company, a branch and a tax class.
   await deleteFrom('inv.item_sale_prices');
+  // Owner directive: a reorder level cites the item, a company, a branch and a
+  // stock location, and is cited by nothing.
+  await deleteFrom('inv.item_reorder_levels');
   // Slice 3a: conversions cite the item and two units; specifications cite a unit,
   // an item family and a vehicle make and model (removed further below).
   await deleteFrom('inv.item_unit_conversions');

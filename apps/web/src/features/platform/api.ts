@@ -114,3 +114,23 @@ export async function listCharges(
 export async function readStatistics(): Promise<ReadState<PlatformStatistics>> {
   return read<PlatformStatistics>('/api/v1/platform/statistics');
 }
+
+/**
+ * `platform.organization-read` — one page of organisations, for the overview.
+ *
+ * The statistics read publishes how MANY subscriptions expire inside each
+ * window; it does not say which organisations they belong to, and a count an
+ * operator cannot act on is a number rather than a warning. This is the same
+ * list the organisations screen drives, read once for the overview so each
+ * expiring organisation can be named and linked to.
+ *
+ * It is a PAGE, and the screen says so. Asking for everything to guarantee no
+ * organisation is missed would turn an overview into an unbounded read; the
+ * page's own `hasMore` is stated beside the table instead, so a reader knows
+ * exactly what was examined.
+ */
+export async function readOrganizationsPage(
+  limit = 100
+): Promise<ReadState<CursorPage<OrganizationRow>>> {
+  return read<CursorPage<OrganizationRow>>(`/api/v1/platform/organizations?limit=${limit}`);
+}
