@@ -114,6 +114,19 @@ describe('the recovery token', () => {
     expect(tokenFromQuery({ code: 'b'.repeat(12) })).toBe('b'.repeat(12));
   });
 
+  it('resolves the shape a recovery mail delivers', () => {
+    // The link the operator opens carries the provider's single-use token hash
+    // as `token`, beside `type=recovery`, on the locale-prefixed reset path:
+    //   /{locale}/reset-password?token={hash}&type=recovery
+    // Measured 2026-09-19 on the local stack (CC-OD-23). The page reads the
+    // token from the query, so a narrowing of TOKEN_PARAMS or of the shape
+    // bound would strand every emailed recovery link with no other signal.
+    const hash = 'a1b2c3d4'.repeat(8);
+    expect(tokenFromQuery({ token: hash, type: 'recovery' })).toBe(hash);
+    // Next.js hands a repeated parameter through as an array.
+    expect(tokenFromQuery({ token: [hash, 'other'], type: 'recovery' })).toBe(hash);
+  });
+
   it('is bounded by the backend contract, not trusted', () => {
     expect(isTokenShaped('short')).toBe(false);
     expect(isTokenShaped('a'.repeat(2049))).toBe(false);

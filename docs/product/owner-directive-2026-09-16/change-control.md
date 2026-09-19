@@ -33,17 +33,45 @@ recorded here rather than left to be noticed later.
 | CC-OD-20 | The cross-dimension unit-conversion rule has no UI test. `apps/web/tests/inventory-unit-conversions.dom.test.tsx` covers the same-unit refusal and a refused read; the rule that a conversion between two kinds of unit must name a part is asserted nowhere in the web tier.                                                                                                                                                                                                                                                                         | 5b2c7840    | Open.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |                                                                     | open                                                              |
 | CC-OD-21 | `inv.material-requirement-create` is still declared PENDING in `scripts/ci/check-p1-30-payload-parity.mjs` (line 183). Its body is a discriminated union on `basis` and the shared comparison reads one object shape only; the screen does send it, and the shape is declared in `features/inventory/inventory-contract.ts`, so the gap is in the checker rather than in the code it checks.                                                                                                                                                          | 5b2c7840    | Open.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |                                                                     | open                                                              |
 | CC-OD-22 | Recorded 2026-09-19. There is no supported operator path to establish an ADDITIONAL platform identity once a first one exists. `scripts/platform/genesis-platform-operator.mjs` is one-time by design and refuses when any active platform grant already exists for a different address; `scripts/platform/grant-platform-authority.mjs` completes an EXISTING holder of platform authority and refuses an account that holds none. Between the two there is no admissible path to a second platform identity, and neither script is wrong to refuse. | bc28cf19    | Open. Because both supported scripts refuse by design, the Platform Owner identity used for the local acceptance run on 2026-09-19 was established by a minimal direct insert into `iam.user_accounts` and `iam.platform_grants`, mirroring the shape genesis itself writes. That is a manual act in one local environment, not a product path: it carries none of genesis's owner confirmation, audit append or fail-closed single transaction. No decision is claimed here and no script was changed. A supported script for establishing an additional platform identity, with those same protections, is owed.                         | `feature/owner-directive-acceptance-evidence`                       | open                                                              |
-| CC-OD-23 | Recorded 2026-09-19. Password recovery by email could not complete. `supabase/config.toml` named the API origin as the site URL and allow-listed `https://127.0.0.1:3000`: wrong tier, wrong scheme, and a literal `127.0.0.1` both dev servers refuse because they bind `[::1]`. And the default link goes through `/auth/v1/verify`, which spends the single-use token hash and hands back an access token, while `iam.auth-password-reset-completion` can only spend a token hash — so the delivered link could never complete.                    | bc28cf19    | Fixed in this branch. `site_url` is now the web origin `http://localhost:3100`, `additional_redirect_urls` carries the locale-prefixed credential pages, and a recovery mail template addresses the link to the reset page with the token hash itself. `email_sent` is raised to 30 as a harness value, measured as not passed through on a local stack. Proven in a real browser on the running stack: request, mailbox, link followed AS DELIVERED, password set, new password signs in to the console. How the running stack was made to take the change is recorded under the table.                                                   | `feature/owner-directive-acceptance-evidence`                       | fixed in this branch (hosted result pending)                      |
+| CC-OD-23 | Recorded 2026-09-19. Password recovery by email could not complete. `supabase/config.toml` named the API origin as the site URL and allow-listed `https://127.0.0.1:3000`: wrong tier, wrong scheme, and a literal `127.0.0.1` both dev servers refuse because they bind `[::1]`. And the default link goes through `/auth/v1/verify`, which spends the single-use token hash and hands back an access token, while `iam.auth-password-reset-completion` can only spend a token hash — so the delivered link could never complete.                    | bc28cf19    | Open. Both causes were diagnosed, and the repaired configuration was proven end to end in a real browser on the running local stack on 2026-09-19 — request, mailbox, link followed AS DELIVERED, password set, new password signs in to the console. The repair itself is NOT carried by this branch: it is a database-harness change, and this branch's ownership profile refuses that bucket by name, so it was withdrawn on 2026-09-19 and is owed as its own review. The three settings that review needs, and the exact boundary between what is proven and what is not, are stated under the table.                                 | `feature/owner-directive-acceptance-evidence`                       | open — repaired on the running stack, withheld from this branch   |
 
-**CC-OD-23, how the running stack took the change.** Auth configuration is read from the
-environment the container was created with, so a restart re-uses the old values; the container
-was therefore recreated with the corrected environment. Nothing else was recreated and the
-database was not touched. One difference remains between the running stack and this file: the
-CLI serves a configured mail template through the API gateway, and the gateway was not
-recreated, so the running container is held on an equivalent setting that points the recovery
-link at the same reset page. Stopping and starting the stack rebuilds both from this
-repository and takes the template route; the delivered link is the same either way, and both
-shapes were measured.
+**CC-OD-23, what was repaired and why this branch does not carry it.** The repair is a change to
+the local database harness — `supabase/config.toml`, plus a recovery mail template beside it — and
+the ownership profile this branch runs under, `owner-directive-saas-operation`, refuses the
+`supabase` bucket by name: the directive must not change the harness, because config.toml and the
+local bootstrap are their own review. `node scripts/ci/check-phase-ownership.mjs
+owner-directive-saas-operation origin/develop` exits 1 on exactly those two files. The harness edit
+was therefore withdrawn from this branch on 2026-09-19 and is owed as a separate change under its
+own review. The repository still holds the broken values, so a stack started from this checkout
+reproduces the defect; the settings the separate review needs are these three, all measured on
+2026-09-19:
+
+- `site_url` must be the WEB origin the application is served from, `http://localhost:3100`, not
+  the API origin on 3000. It must say `localhost` rather than `127.0.0.1`: both dev servers bind
+  `[::1]` on this machine, so `http://127.0.0.1:3100` is refused at the socket while
+  `http://localhost:3100` answers 200, and the two host strings are different browser origins —
+  `apps/web/.env.example` states the same rule for `NEXT_PUBLIC_API_BASE_URL`.
+- `additional_redirect_urls` must carry the locale-prefixed credential pages on that same origin
+  and scheme. The committed value is `https://127.0.0.1:3000`: the wrong scheme, on the wrong host,
+  for the wrong tier, which is three reasons an exact-match allow-list can never match anything
+  this stack issues.
+- The recovery mail must address the link to the reset page and carry the token hash itself
+  (`{SiteURL}/{locale}/reset-password?token={TokenHash}&type=recovery`). The default link goes
+  through `/auth/v1/verify`, which SPENDS the single-use hash and returns an access token instead,
+  while `iam.auth-password-reset-completion` can only spend a token hash through the provider's
+  `verifyOtp` — so the default link makes every completion fail by construction.
+
+**CC-OD-23, what is proven and what is not.** The running stack was corrected by hand: auth
+configuration is read from the environment the container was created with, so the auth container
+was recreated with the corrected values. Nothing else was recreated and the database was not
+touched. With that in place the journey was run end to end in a real browser on 2026-09-19 —
+request, mailbox, link followed as delivered, password set, new password signs in to the console —
+so the link SHAPE above is proven. The mail-template route itself is NOT proven: the running
+container is held on an equivalent URL-path setting rather than on a configured template, and
+proving the template route needs a stack restart, which was not attempted. The local mail
+rate-limit value `email_sent` was also measured to be inert on a local stack — the auth container
+runs with a very large fixed limit regardless of it — so whatever throttled testing came from
+somewhere else and is not identified here.
 
 ## Rules
 
