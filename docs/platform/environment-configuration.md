@@ -319,13 +319,13 @@ inputs to a command you run by hand or that CI runs for you.
 
 ## 13. Inventory — values that are not the application's
 
-| Name                                                                                             | Where                              | Status                                                                                                         |
-| ------------------------------------------------------------------------------------------------ | ---------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `SUPABASE_INTERNAL_URL`                                                                          | `docker-compose.yml:53`            | **Dead.** Substituted into the container's environment; **no source file reads it**. Compose-level only.       |
-| `OPENAI_API_KEY`                                                                                 | `supabase/config.toml:110`         | Supabase Studio's assistant feature. Not the application's, and the feature is not used.                       |
-| `SENDGRID_API_KEY`, `SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN`, `SUPABASE_AUTH_EXTERNAL_APPLE_SECRET` | `supabase/config.toml:251,303,335` | Supabase features that are **not enabled**. No code path reaches any of them.                                  |
-| `S3_HOST`, `S3_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`                                         | `supabase/config.toml:413-419`     | The Supabase CLI's own storage settings, not the application's. The app's names are the `STORAGE_S3_*` family. |
-| `SECRET_VALUE`                                                                                   | `supabase/config.toml:57,395`      | An illustrative `env()` reference in the CLI's own documentation comments.                                     |
+| Name                                                                         | Where                          | Status                                                                                                         |
+| ---------------------------------------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `SUPABASE_INTERNAL_URL`                                                      | `docker-compose.yml:53`        | **Dead.** Substituted into the container's environment; **no source file reads it**. Compose-level only.       |
+| `OPENAI_API_KEY`                                                             | `supabase/config.toml:110`     | Supabase Studio's assistant feature. Not the application's, and the feature is not used.                       |
+| `SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN`, `SUPABASE_AUTH_EXTERNAL_APPLE_SECRET` | `supabase/config.toml:417,449` | Supabase features that are **not enabled**. No code path reaches either of them.                               |
+| `S3_HOST`, `S3_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`                     | `supabase/config.toml:413-419` | The Supabase CLI's own storage settings, not the application's. The app's names are the `STORAGE_S3_*` family. |
+| `SECRET_VALUE`                                                               | `supabase/config.toml:57,395`  | An illustrative `env()` reference in the CLI's own documentation comments.                                     |
 
 ---
 
@@ -470,3 +470,60 @@ which is why the three names in section 3 do not appear here.
   names of `apps/api/src/config/env.ts` and `apps/web/src/lib/env.ts` to the reserved-settings
   guard, where a shape it cannot see would shrink the set instead of failing; a floor on the number
   of names extracted from each is what refuses that silently.
+
+---
+
+## 17. Outbound mail for the local acceptance environment
+
+**Until `[auth.email.smtp]` is enabled, mail is local-only.** Every message the auth service
+produces — confirmation, recovery, invitation — is captured by the local mailbox on 54324
+(`supabase/config.toml:119`, `[local_smtp]`) and nothing leaves the machine. That is the default and
+it is what every acceptance run so far has measured. `supabase/config.toml:314` now carries an
+`[auth.email.smtp]` block that changes this, and the moment the stack is restarted with it enabled,
+those messages are handed to an outside relay and arrive in real inboxes.
+
+The block is written entirely as `env(...)` references, so the account and its password are not in
+this repository and cannot be. The Supabase CLI expands them from an **untracked `.env` at the
+repository root**, which is matched by the `.env` rule in `.gitignore`. There is no template for
+this file and no example value: whoever configures a machine writes it there and nowhere else. If a
+name is missing the CLI does not fall back — the unexpanded text fails the `port` field and the file
+is refused with `ProjectConfigParseError`, so a half-configured machine cannot start.
+
+| Name               | Config key                        | Purpose                                                                                 |
+| ------------------ | --------------------------------- | --------------------------------------------------------------------------------------- |
+| `SMTP_HOST`        | `auth.email.smtp.host:318`        | Hostname of the relay the auth service hands mail to.                                   |
+| `SMTP_PORT`        | `auth.email.smtp.port:321`        | Relay port. Read as a number, so the value must be digits only; 465 means implicit TLS. |
+| `SMTP_USER`        | `auth.email.smtp.user:323`        | The account that authenticates to the relay.                                            |
+| `SMTP_PASS`        | `auth.email.smtp.pass:325`        | That account's password. Secret. The only one of the six that is.                       |
+| `SMTP_ADMIN_EMAIL` | `auth.email.smtp.admin_email:329` | The From address on every message the auth service sends.                               |
+| `SMTP_SENDER_NAME` | `auth.email.smtp.sender_name:331` | The display name shown beside that From address.                                        |
+
+Six names, not five: `SMTP_PASS` is the secret and the other five are ordinary settings.
+`scripts/dev/check-smtp.mjs` reads five of them — everything except `SMTP_ADMIN_EMAIL`, because it
+builds its own envelope — and speaks SMTP to the relay directly. It needs no container and no
+running stack, which is what makes it usable for proving a relay while an acceptance campaign is in
+progress. It sends one real message each time it is run.
+
+### Gmail specifics, if the relay is a Gmail account
+
+- **The sender is rewritten.** Gmail delivers as the authenticated account regardless of what
+  `admin_email` says. Setting that name to anything other than the account is not an error the CLI
+  will catch; it simply has no effect on what recipients see. Keep the two equal so the
+  configuration and the delivered mail agree.
+- **An ordinary account password will not work.** Gmail requires an application-specific password
+  generated for the account, and the account must have two-step verification enabled before one can
+  be created. A rejected password is reported by the server at the AUTH step and nowhere else.
+- **Sending is rate-limited by the provider, not by this repository.** A free Gmail account carries a
+  daily recipient ceiling, and a burst of recovery mail from a test run counts against it. The
+  per-hour allowance in `[auth.rate_limit] email_sent` limits what the auth service will attempt; it
+  does not raise what the provider will accept.
+
+### The open question this does not settle
+
+The Platform Owner account keeps the address it already has — that is decided, and nothing in this
+change alters it. What is **not** established is whether that address can receive mail at all.
+Recovery for that account is only as real as its mailbox: if the domain has no mail exchanger, a
+relay can accept the message and it will still never arrive, and the account would be recoverable
+only by a database-level intervention. Establishing this needs a DNS answer and a delivered test
+message, not a decision — and until both exist, the honest statement is that outbound mail is proven
+and inbound delivery to the Owner's address is not.

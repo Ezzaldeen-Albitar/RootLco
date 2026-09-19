@@ -111,6 +111,11 @@ openai_api_key = "env(OPENAI_API_KEY)"
 
 # Email testing server. Emails sent with the local dev setup are not actually sent - rather, they
 # are monitored, and you can view the emails that would have been sent from the web interface.
+#
+# LEFT ENABLED DELIBERATELY. This block is the way back from real delivery: see
+# `[auth.email.smtp]` below, whose `enabled` flag decides whether auth mail is
+# captured here or handed to an outside relay. Nothing here is changed by that
+# choice, so turning the flag off restores local-only mail with no other edit.
 [local_smtp]
 enabled = true
 # Port to use for the email testing server web interface.
@@ -285,14 +290,45 @@ otp_length = 6
 otp_expiry = 3600
 
 # Use a production-ready SMTP server
-# [auth.email.smtp]
-# enabled = true
-# host = "smtp.sendgrid.net"
-# port = 587
-# user = "apikey"
-# pass = "env(SENDGRID_API_KEY)"
-# admin_email = "admin@email.com"
-# sender_name = "Admin"
+#
+# THIS SENDS REAL MAIL. While `enabled = true` below, the auth service stops
+# handing its messages to the local mailbox on 54324 and hands them to the
+# relay named here instead: confirmation, recovery and invitation mail LEAVES
+# THIS MACHINE and arrives in real inboxes, including inboxes that belong to
+# people who did not ask to be part of a test. The local mailbox above
+# (`[local_smtp]`) is left enabled and untouched, so switching back is one
+# edit — set `enabled = false` on the next line and restart the stack, and
+# every message is captured locally again with nothing delivered.
+#
+# Every value is an `env(...)` reference and no value is written here. The
+# Supabase CLI expands these from the untracked `.env` at the repository root
+# when it reads this file, which keeps the account and its password out of the
+# repository entirely. A missing variable is not silently ignored: the
+# unexpanded `env(SMTP_PORT)` text fails the port field and the CLI refuses the
+# file with ProjectConfigParseError, so an unconfigured machine cannot start
+# with half a mail configuration.
+#
+# The key names below are the ones this pinned CLI defines for the block
+# (enabled, host, port, user, pass, admin_email, sender_name); host, port,
+# user, pass and admin_email are all required once `enabled = true`.
+[auth.email.smtp]
+# The switch. `false` returns all auth mail to the local mailbox on 54324.
+enabled = true
+# Relay hostname. Implicit TLS on 465 for the configured provider.
+host = "env(SMTP_HOST)"
+# Relay port. Expanded as a string and read as a number, so the variable must
+# hold digits only.
+port = "env(SMTP_PORT)"
+# The account authenticating to the relay.
+user = "env(SMTP_USER)"
+# The account's password, held only in the untracked root `.env`.
+pass = "env(SMTP_PASS)"
+# The From address. A relay that only accepts mail from its own authenticated
+# account will rewrite the sender to that account regardless of what is set
+# here, so keep this equal to the authenticating account to avoid a mismatch.
+admin_email = "env(SMTP_ADMIN_EMAIL)"
+# The display name shown beside the From address.
+sender_name = "env(SMTP_SENDER_NAME)"
 
 # Uncomment to customize email template
 # [auth.email.template.invite]
