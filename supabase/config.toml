@@ -299,6 +299,42 @@ otp_expiry = 3600
 # subject = "You have been invited"
 # content_path = "./supabase/templates/invite.html"
 
+# The recovery mail is CUSTOMISED, and it has to be.
+#
+# The default body is `{{ .ConfirmationURL }}`, which the provider builds
+# against its own verify endpoint: `/auth/v1/verify?token=<hash>&type=recovery`.
+# Following that link SPENDS the single-use credential at the provider, which
+# then redirects to the allow-listed page with a session in the URL FRAGMENT.
+# The application cannot use either half of that. It reads a recovery credential
+# out of the QUERY only — `apps/web/src/features/authentication/api/recovery-token.ts`
+# declares `TOKEN_PARAMS = ['token', 'access_token', 'code']`, and the fragment
+# reader beside it is for an `access_token` the API tier has no way to redeem —
+# and `POST /api/v1/auth/password-reset/completion` spends what it is given as a
+# TOKEN HASH: `modules/iam/provider/supabase-provider.ts`, `verifyPasswordToken`,
+# calls `verifyOtp({ token_hash, type })`. So the default link is spent before
+# the page sees it, and what the page would see is not what the API can redeem.
+# A delivered link could not complete; measured on the local stack, 2026-09-19.
+#
+# The template below addresses the reset page DIRECTLY and carries the value the
+# API can actually redeem. Both halves come from variables the provider exposes
+# to a recovery mail: `{{ .SiteURL }}` is the web origin set above, and
+# `{{ .TokenHash }}` is the same hash the default link would have handed to
+# `/auth/v1/verify` — so nothing is invented and nothing is widened. It is
+# carried as `token` because that is the FIRST name `TOKEN_PARAMS` reads, and
+# the page's own shape check accepts it (the hash is 56 characters of hex; the
+# check bounds length 8..2048 over a base64url alphabet).
+#
+# The path is locale `en` because a mail carries no locale and a template cannot
+# branch on one. The Arabic reset page stays allow-listed above so a link built
+# by hand or by a later, locale-aware sender still lands.
+#
+# LOCAL HARNESS VALUE, like everything else in this file: nothing here is read by
+# a deployed environment, where the sender and the site URL are configured at the
+# provider.
+[auth.email.template.recovery]
+subject = "Reset your password"
+content_path = "./supabase/templates/recovery.html"
+
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]
 # enabled = true
