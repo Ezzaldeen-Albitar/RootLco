@@ -165,11 +165,44 @@ max_indexes = 5
 enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
 # in emails.
-site_url = "http://127.0.0.1:3000"
+#
+# LOCAL HARNESS VALUE. This is the WEB origin, not the API one. It was
+# `http://127.0.0.1:3000`, which is wrong twice over: 3000 is the API tier
+# (`scripts/dev/dev-config.mjs`, API_PORT), and a recovery mail built from it
+# addresses a human at a server that serves no page; and the literal `127.0.0.1`
+# is refused at the socket, because both dev servers are started with
+# `--hostname localhost` and a hostname binds ONE address family — measured on
+# the Owner's machine and written up in dev-config.mjs: `localhost` resolves to
+# `::1` first, the servers bind `::1`, and a request to the literal gets
+# ECONNREFUSED. `apps/web/.env.example` states the same rule for the browser's
+# API address, and for the second reason as well: Next decides "cross-origin" by
+# host STRING, so `127.0.0.1` and `localhost` are different origins to it even
+# when both connect. The browser run of 2026-09-19 confirmed both halves —
+# `http://localhost:3100/en/login` answers 200, `http://127.0.0.1:3100/en/login`
+# is refused at the socket.
+site_url = "http://localhost:3100"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["https://127.0.0.1:3000"]
+#
+# LOCAL HARNESS VALUE. It was `["https://127.0.0.1:3000"]` — `https` on a stack
+# that serves `http`, the API port, and the loopback literal the servers do not
+# answer on. Not one request could ever have matched it.
+#
+# These are the four pages a credential link may land on. The API resolves the
+# destination it hands the provider against AUTH_REDIRECT_ALLOWLIST
+# (`modules/iam/domain/credential-policy.ts`, `resolveRedirect`) and the provider
+# then matches it against THIS list, so the two must agree exactly; the routes
+# are locale-prefixed because every page in the web app is
+# (`apps/web/src/i18n/config.ts` declares `ar` and `en`). Exact URLs, not a
+# pattern: an allow-list for a single-use credential link is the last place to
+# widen a match, and four lines is not a maintenance burden.
+additional_redirect_urls = [
+  "http://localhost:3100/ar/reset-password",
+  "http://localhost:3100/en/reset-password",
+  "http://localhost:3100/ar/activate-account",
+  "http://localhost:3100/en/activate-account",
+]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to auth.external_url.
@@ -205,7 +238,16 @@ password_requirements = ""
 
 [auth.rate_limit]
 # Number of emails that can be sent per hour. Requires auth.email.smtp to be enabled.
-email_sent = 2
+#
+# LOCAL HARNESS VALUE, raised from 2. Two messages an hour is a production-shaped
+# number and it makes the local flow untestable: one reset request, one retry,
+# and the next hour is spent waiting rather than measuring. 30 is the value the
+# siblings in this same table already carry for a per-hour allowance
+# (`sms_sent`), so it introduces no new number, and it is far below anything that
+# would hide a runaway send on a stack whose mail goes to the local inbox and
+# nowhere else. This limit governs the LOCAL stack only; nothing in this file is
+# read by a deployed environment.
+email_sent = 30
 # Number of SMS messages that can be sent per hour. Requires auth.sms to be enabled.
 sms_sent = 30
 # Number of anonymous sign-ins that can be made per hour per IP address. Requires enable_anonymous_sign_ins = true.
